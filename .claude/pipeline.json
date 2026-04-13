@@ -1,0 +1,280 @@
+{
+  "$schema": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
+  "pipeline": [
+
+    {
+      "agent": "issue-classifier",
+      "phase": "product-docs",
+      "object": ["issue"],
+      "trigger": {
+        "event": "issue.opened"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "description": "Classifies the issue as bug, feature, chore, or spike. Validates required fields (acceptance criteria, stakeholder). Rejects malformed issues with a correction comment."
+    },
+
+    {
+      "agent": "prd-writer",
+      "phase": "product-docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "issue-classifier:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "prd:approved",
+      "dependencies": ["issue-classifier"],
+      "description": "Produces a Product Requirements Document as a comment. Covers problem statement, user stories, success metrics, and out-of-scope items. Blocks on human approval."
+    },
+
+    {
+      "agent": "product-standards-checker",
+      "phase": "product-docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "prd:approved"
+      },
+      "human_gate_after": false,
+      "dependencies": ["prd-writer"],
+      "description": "Cross-references the PRD against all active product-layer standards. Flags violations before design begins, with STD ID and rationale."
+    },
+
+    {
+      "agent": "impact-assessor",
+      "phase": "product-docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "product-standards-checker:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["product-standards-checker"],
+      "description": "Analyses the blast radius of the proposed change. Identifies affected layers, services, files, and data models. Flags if scope crosses more than one bounded context."
+    },
+
+    {
+      "agent": "dependency-resolver",
+      "phase": "product-docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "impact-assessor:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["impact-assessor"],
+      "description": "Identifies external dependencies: open tickets that must complete first, third-party APIs, required data, and team dependencies. Blocks progression on unresolved hard dependencies."
+    },
+
+    {
+      "agent": "ticket-sizer",
+      "phase": "product-docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "dependency-resolver:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "size:approved",
+      "dependencies": ["dependency-resolver", "impact-assessor"],
+      "description": "Assesses whether the ticket fits a single development cycle. Applies S/M/L/XL sizing. If XL, mandates decomposition into child tickets before design work begins. Each child re-enters the pipeline from issue-classifier."
+    },
+
+    {
+      "agent": "architect",
+      "phase": "technical-docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "size:approved"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "design:approved",
+      "dependencies": ["ticket-sizer"],
+      "description": "Produces a technical design covering data model changes, API contracts, component boundaries, integration points, and non-functional requirements. Flags ADR candidates."
+    },
+
+    {
+      "agent": "adr-proposer",
+      "phase": "technical-docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "design:approved"
+      },
+      "human_gate_after": false,
+      "dependencies": ["architect"],
+      "description": "Reviews the technical design for decisions warranting an ADR. Drafts ADR stubs in the correct JSON schema format. Non-blocking if no ADRs are needed."
+    },
+
+    {
+      "agent": "test-spec-writer",
+      "phase": "testing-spec",
+      "object": ["issue"],
+      "trigger": {
+        "label": "adr-proposer:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["architect", "prd-writer"],
+      "description": "Generates a testing specification from PRD acceptance criteria and technical design. Produces numbered Gherkin scenarios (SC-NNN). Distinguishes unit, integration, and E2E scope."
+    },
+
+    {
+      "agent": "test-coverage-auditor",
+      "phase": "testing-spec",
+      "object": ["issue"],
+      "trigger": {
+        "label": "test-spec-writer:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "test-spec:approved",
+      "dependencies": ["test-spec-writer"],
+      "description": "Validates the test spec for completeness. Every PRD acceptance criterion must map to a Gherkin scenario. Every API endpoint or data mutation must have a test case. Blocks on gaps."
+    },
+
+    {
+      "agent": "task-decomposer",
+      "phase": "build-plan",
+      "object": ["issue"],
+      "trigger": {
+        "label": "test-spec:approved"
+      },
+      "human_gate_after": false,
+      "dependencies": ["architect", "test-spec-writer"],
+      "description": "Breaks the parent issue into ordered child implementation task issues. Each task is scoped to a single file or concern, carries a done condition, and references applicable STD IDs."
+    },
+
+    {
+      "agent": "dependency-planner",
+      "phase": "build-plan",
+      "object": ["issue"],
+      "trigger": {
+        "label": "task-decomposer:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "plan:approved",
+      "dependencies": ["task-decomposer"],
+      "description": "Analyses child task dependencies, identifies the critical path, and produces a sequenced build order. Flags tasks that can run in parallel."
+    },
+
+    {
+      "agent": "coder",
+      "phase": "execute",
+      "object": ["issue", "pr"],
+      "trigger": {
+        "label": "plan:approved"
+      },
+      "human_gate_after": false,
+      "dependencies": ["dependency-planner"],
+      "description": "Implements each child task in dependency order. Opens one PR per task prefixed [coder]. Follows applicable STDs. Self-reviews against the done condition and linked Gherkin scenario."
+    },
+
+    {
+      "agent": "standards-compliance-reviewer",
+      "phase": "execute",
+      "object": ["pr"],
+      "trigger": {
+        "event": "pr.opened",
+        "schedule": "0 7 * * *"
+      },
+      "human_gate_after": false,
+      "dependencies": ["coder"],
+      "description": "Reviews changed files against active architecture standards. Raises issues prefixed [standards-compliance-reviewer] for violations with rationale and proposed diffs for simple fixes."
+    },
+
+    {
+      "agent": "migration-validator",
+      "phase": "execute",
+      "object": ["pr"],
+      "trigger": {
+        "event": "pr.opened",
+        "path_filter": "**/*.sql"
+      },
+      "human_gate_after": false,
+      "dependencies": ["coder"],
+      "description": "Validates SQL migration files against database-layer standards. Confirms forward-only, idempotent migrations. Blocks merge on naming, RLS, or type violations."
+    },
+
+    {
+      "agent": "pr-reviewer",
+      "phase": "execute",
+      "object": ["pr"],
+      "trigger": {
+        "label": "standards-compliance-reviewer:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "pr:approved",
+      "dependencies": ["coder", "standards-compliance-reviewer"],
+      "description": "Reviews the PR against the technical design and test spec. Checks scope creep, confirms implementation matches architecture decisions, and verifies all STD violations are resolved."
+    },
+
+    {
+      "agent": "test-writer",
+      "phase": "test",
+      "object": ["pr"],
+      "trigger": {
+        "label": "pr:approved"
+      },
+      "human_gate_after": false,
+      "dependencies": ["pr-reviewer", "test-spec-writer"],
+      "description": "Implements tests from the testing spec. Names each test to its Gherkin scenario ID (SC-NNN). Follows testing-layer standards."
+    },
+
+    {
+      "agent": "test-runner",
+      "phase": "test",
+      "object": ["pr"],
+      "trigger": {
+        "event": "pr.push"
+      },
+      "human_gate_after": false,
+      "dependencies": ["test-writer"],
+      "description": "Runs the full test suite. Posts coverage delta, pass/fail summary, and failing scenario IDs as a PR comment. Blocks merge on failures or coverage regression."
+    },
+
+    {
+      "agent": "coverage-enforcer",
+      "phase": "test",
+      "object": ["pr"],
+      "trigger": {
+        "label": "test-runner:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "coverage:approved",
+      "dependencies": ["test-runner", "test-coverage-auditor"],
+      "description": "Compares coverage against test spec thresholds. Flags acceptance criterion scenarios without a passing test. Blocks merge if coverage drops or any required scenario is uncovered."
+    },
+
+    {
+      "agent": "release-noter",
+      "phase": "evaluate",
+      "object": ["issue"],
+      "trigger": {
+        "event": "pr.merged"
+      },
+      "human_gate_after": false,
+      "dependencies": ["test-runner", "pr-reviewer"],
+      "description": "Generates a changelog entry from the PRD and merged PR. Opens a follow-up PR to add it to CHANGELOG. Closes all child task issues and posts a completion summary on the parent issue."
+    },
+
+    {
+      "agent": "retrospective-writer",
+      "phase": "evaluate",
+      "object": ["issue"],
+      "trigger": {
+        "event": "issue.closed"
+      },
+      "human_gate_after": false,
+      "dependencies": ["release-noter"],
+      "description": "Produces a structured retrospective: phase durations, standards violations raised, test spec completeness at build start, PRD changes post-design, and improvement suggestions."
+    },
+
+    {
+      "agent": "standards-evolver",
+      "phase": "evaluate",
+      "object": ["issue"],
+      "trigger": {
+        "schedule": "0 9 * * 1"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "standards-proposal:approved",
+      "dependencies": ["retrospective-writer"],
+      "description": "Reviews closed retrospectives and recurring violation patterns. Drafts new or updated standards in JSON schema format and opens an issue for human review and approval."
+    }
+
+  ]
+}

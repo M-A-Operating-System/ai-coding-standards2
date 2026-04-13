@@ -1,0 +1,93 @@
+{
+  "$schema": "https://ai-agile.org/standards/schemas/standards.schema.json",
+  "standards": [
+    {
+      "id": "STD000000001",
+      "standard_type": "technical",
+      "title": "Tables use snake_case plural nouns",
+      "status": "active",
+      "severity": "required",
+      "layer": "database",
+      "pattern": "naming",
+      "category": "tables",
+      "created": "2026-04-09",
+      "owner": "platform-team",
+      "description": "Table names must be lowercase snake_case and plural. No prefixes such as tbl_ or t_. No camelCase or PascalCase.",
+      "rationale": "PostgreSQL silently lowercases unquoted identifiers, making camelCase invisible at the SQL layer and requiring double-quoting everywhere. Supabase auto-generates TypeScript types and API routes directly from table names — inconsistent casing produces inconsistent API surfaces.",
+      "tags": ["snake_case", "plurals", "table-naming", "postgresql"],
+      "examples": {
+        "valid": [
+          "users",
+          "workflow_runs",
+          "audit_log_entries"
+        ],
+        "invalid": [
+          "User — PascalCase",
+          "workflowRun — camelCase and singular",
+          "tbl_users — prefix"
+        ]
+      },
+      "enforcement": {
+        "method": "ci-lint",
+        "verified_by": "CI pipeline",
+        "ci_rule_ref": "custom/db-naming-check"
+      },
+      "agent_guidance": "Before generating any CREATE TABLE statement, verify the name is lowercase snake_case and plural. Reject names that are singular, camelCase, PascalCase, or prefixed. For junction tables, combine both table names alphabetically: course_users not user_courses.",
+      "supersedes": null,
+      "superseded_by": null,
+      "adr_refs": [],
+      "exceptions": []
+    },
+
+    {
+      "id": "STD000000007",
+      "standard_type": "product",
+      "title": "All user-initiated write actions must produce an activity log entry",
+      "status": "active",
+      "severity": "required",
+      "layer": "product-behaviour",
+      "pattern": "activity-logging",
+      "category": "write-actions",
+      "created": "2026-04-09",
+      "owner": "product-design",
+      "description": "Every create, update, delete, or status-change action initiated by an authenticated user must write a corresponding entry to the activity log capturing who, what, which entity, and when.",
+      "rationale": "Activity logs are the foundation of auditability and debugging. Without them there is no way to answer who changed this and when. Retroactive logging is not possible — entries must be written at the time of the action.",
+      "tags": ["activity-log", "audit-trail", "write-actions", "compliance"],
+      "examples": {
+        "valid": [
+          "User creates a workflow → activity_log: actor_id, action='workflow.created', entity_type, entity_id, occurred_at",
+          "Admin deletes a member → activity_log: actor_id, action='member.deleted', entity_type, entity_id, occurred_at",
+          "User updates a profile field → activity_log: actor_id, action='profile.updated', entity_type, entity_id, changes={field, old, new}, occurred_at"
+        ],
+        "invalid": [
+          "Workflow deleted with no activity log entry written",
+          "Log entry written without actor_id — attributed to system instead of user",
+          "Log entry written after the transaction commits via a background job with no synchronous fallback"
+        ]
+      },
+      "enforcement": {
+        "method": "acceptance-test",
+        "verified_by": "QA engineer",
+        "ci_rule_ref": "playwright/activity-log-spec.ts"
+      },
+      "acceptance_criteria": [
+        "Given an authenticated user, when they create any entity, then an activity_log entry is written within the same transaction with actor_id, action='{entity}.created', entity_type, entity_id, and occurred_at",
+        "Given an authenticated user, when they update an entity, then an activity_log entry is written with action='{entity}.updated' and a changes object recording field, old value, and new value",
+        "Given an authenticated user, when they delete or archive an entity, then an activity_log entry is written before or within the same transaction as the deletion",
+        "Given any write action, when the activity log write fails, then the entire transaction is rolled back and the action does not succeed"
+      ],
+      "agent_guidance": "Whenever generating a backend mutation — insert, update, delete, or status change — also generate an insert into activity_log within the same transaction. Required fields: actor_id, action (format: '{entity_type}.{verb}'), entity_type, entity_id, occurred_at (default now()). For updates include a changes jsonb column with before/after values. Never write the log entry in a separate job or after the transaction commits.",
+      "supersedes": null,
+      "superseded_by": null,
+      "adr_refs": [],
+      "exceptions": [
+        {
+          "scope": "bulk-import feature only — single completion entry written per job, not per row",
+          "adr_ref": "ADR000000003",
+          "approved": "2026-04-09",
+          "expiry": null
+        }
+      ]
+    }
+  ]
+}

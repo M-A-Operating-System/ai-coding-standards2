@@ -1,0 +1,182 @@
+name: Standards Compliance Check
+
+on:
+  schedule:
+    # Runs at 07:00 UTC daily — catches overnight commits before the working day
+    - cron: '0 7 * * *'
+
+  push:
+    branches:
+      - main
+      - master
+    # Only trigger on pushes that touch source files — not the standards themselves
+    paths-ignore:
+      - 'ai-agile/standards/**'
+      - '.github/agents/**'
+      - '.github/workflows/**'
+      - '*.md'
+
+  # Allow manual trigger with optional scope override
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'How many days of commits to review (default: 7)'
+        required: false
+        default: '7'
+      severity:
+        description: 'Minimum severity to flag (required | recommended)'
+        required: false
+        default: 'required'
+      dry_run:
+        description: 'Dry run — report violations without creating issues'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  DAYS_BACK: ${{ github.event.inputs.days_back || '7' }}
+  MIN_SEVERITY: ${{ github.event.inputs.severity || 'required' }}
+  DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+
+jobs:
+  compliance-check:
+    name: Review code against architecture standards
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          # Full history needed for git log recency ordering
+          fetch-depth: 0
+
+      - name: Validate standards files are present
+        run: |
+          if [ ! -f "ai-agile/standards/schemas/standards.schema.json" ]; then
+            echo "::error::Standards schema not found at ai-agile/standards/schemas/standards.schema.json"
+            exit 1
+          fi
+
+          # Count active standards
+          STANDARD_COUNT=$(find ai-agile/standards -name "*.json" ! -name "*.schema.json" \
+            -exec grep -l '"status": "active"' {} \; | wc -l)
+
+          if [ "$STANDARD_COUNT" -eq 0 ]; then
+            echo "::warning::No active standards files found in ai-agile/standards/"
+            echo "Nothing to check against — exiting cleanly."
+            exit 0
+          fi
+
+          echo "Found standards files with active standards: $STANDARD_COUNT"
+
+      - name: Get recently changed files
+        id: changed-files
+        run: |
+          echo "Collecting files changed in the last $DAYS_BACK days..."
+
+          # Get changed files with metadata, most recent first
+          # Excludes: deleted files, binary files, lock files, generated files
+          git log \
+            --since="${DAYS_BACK} days ago" \
+            --name-only \
+            --pretty=format:"COMMIT:%aI %H %an <%ae>" \
+            --diff-filter=ACMR \
+          | awk '
+            /^COMMIT:/ {
+              ts = substr($0, 8, 25)
+              hash = $2
+              author = substr($0, index($0,$3))
+            }
+            /\.(py|ts|tsx|js|jsx|java|go|rs|sql|kt|cs|rb|php)$/ {
+              print ts, hash, author, $0
+            }
+          ' \
+          | sort -r \
+          | awk '!seen[$NF]++' \
+          | head -50 \
+          > /tmp/changed_files.txt
+
+          FILE_COUNT=$(wc -l < /tmp/changed_files.txt)
+          echo "changed_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "Files to review: $FILE_COUNT"
+          cat /tmp/changed_files.txt
+
+      - name: Skip if no relevant changes
+        if: steps.changed-files.outputs.changed_count == '0'
+        run: |
+          echo "No source files changed in the last $DAYS_BACK days. Skipping compliance check."
+          exit 0
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run standards compliance agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # Build the agent prompt with full context
+          CHANGED_FILES=$(cat /tmp/changed_files.txt)
+          STANDARDS_JSON=$(find ai-agile/standards -name "*.json" \
+            ! -name "*.schema.json" -exec cat {} +)
+          RUN_DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+          DRY_RUN_NOTE=""
+          if [ "$DRY_RUN" = "true" ]; then
+            DRY_RUN_NOTE="THIS IS A DRY RUN. Report all violations but do NOT create any GitHub issues."
+          fi
+
+          claude --allowedTools "Bash(git *),Bash(gh issue *),Bash(cat *),Bash(head *),Bash(grep *),Read,Glob" \
+            --max-turns 80 \
+            -p "
+          You are the standards-compliance-reviewer agent defined in
+          .github/agents/standards-compliance-reviewer.md.
+
+          Follow those instructions exactly. The inputs for this run are below.
+
+          ${DRY_RUN_NOTE}
+
+          ## Run context
+          - Date: ${RUN_DATE}
+          - Triggered by: ${{ github.event_name }}
+          - Minimum severity to flag: ${MIN_SEVERITY}
+          - Repository: ${GITHUB_REPOSITORY}
+
+          ## Recently changed files (most recent first)
+          ${CHANGED_FILES}
+
+          ## Active standards
+          ${STANDARDS_JSON}
+
+          Work through Steps 1–7 from the agent instructions.
+          Start with Step 1 now.
+          "
+
+      - name: Upload summary as job artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-review-${{ github.run_id }}
+          path: /tmp/compliance-summary.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Annotate PR if triggered by push
+        if: github.event_name == 'push'
+        run: |
+          # If issues were raised, post a summary comment on the most recent commit
+          if [ -f /tmp/compliance-summary.txt ]; then
+            SUMMARY=$(cat /tmp/compliance-summary.txt)
+            gh api \
+              --method POST \
+              "/repos/${GITHUB_REPOSITORY}/commits/${{ github.sha }}/comments" \
+              -f body="## Standards Compliance Review\n\n${SUMMARY}\n\nSee [open violations](https://github.com/${GITHUB_REPOSITORY}/issues?q=is%3Aopen+label%3Astandards-violation) for details."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

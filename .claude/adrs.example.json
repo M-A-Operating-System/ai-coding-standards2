@@ -1,0 +1,51 @@
+{
+  "$schema": "https://ai-agile.org/standards/schemas/adrs.schema.json",
+  "decisions": [
+    {
+      "id": "ADR000000001",
+      "title": "Adopt Supabase as the primary backend platform",
+      "type": "architectural",
+      "status": "accepted",
+      "created": "2026-04-09",
+      "owner": "platform-team",
+      "context": "We needed a backend platform covering auth, database, storage, and realtime. Evaluated Firebase, PlanetScale with custom auth, and Supabase.",
+      "decision": "Use Supabase. PostgreSQL underneath gives full SQL portability, RLS enforces security at the database layer, and Lovable integrates natively without additional backend plumbing.",
+      "alternatives_rejected": [
+        "Firebase — document model doesn't fit relational data, no SQL, significant vendor lock-in",
+        "PlanetScale + custom auth — too much infrastructure overhead for current team size"
+      ],
+      "consequences": [
+        "All database standards are anchored to PostgreSQL conventions — STD000000001 through STD000000006",
+        "RLS replaces a custom auth middleware layer, reducing backend surface area",
+        "Supabase Edge Function cold start latency is an accepted tradeoff for reduced ops burden",
+        "Supabase-specific RLS syntax is not portable if we migrate databases in future"
+      ],
+      "supersedes": null,
+      "superseded_by": null
+    },
+    {
+      "id": "ADR000000003",
+      "title": "Activity logging deferred to job completion for bulk-import feature",
+      "type": "exception",
+      "status": "accepted",
+      "created": "2026-04-09",
+      "owner": "product-design",
+      "context": "STD000000007 requires an activity log entry per write action within the same transaction. Bulk imports can process tens of thousands of rows in a single job.",
+      "decision": "Write a single 'import.completed' activity log entry when the job finishes, recording the row count and source reference, rather than one entry per row.",
+      "alternatives_rejected": [
+        "One log entry per row — prohibitively expensive at scale, causes transaction timeouts above ~5000 rows",
+        "Batch log entries in chunks — adds complexity with no meaningful audit benefit over a single completion entry"
+      ],
+      "consequences": [
+        "Individual row-level changes within a bulk import are not attributable in the activity log",
+        "Import jobs must always write the completion entry on success and a failure entry on error — partial imports must not be silently swallowed"
+      ],
+      "exception_to": {
+        "standard_id": "STD000000007",
+        "scope": "bulk-import feature only — activity log entry written on job completion, not per-row"
+      },
+      "supersedes": null,
+      "superseded_by": null
+    }
+  ]
+}

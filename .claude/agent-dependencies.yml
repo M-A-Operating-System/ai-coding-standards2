@@ -1,0 +1,142 @@
+# Agent Dependencies Configuration
+
+Defines the dependency graph between agents. The orchestrator agent reads this
+file to determine what to trigger when an agent's work completes or status changes.
+
+---
+
+## Format
+
+Each agent entry defines:
+- `depends_on` — agents that must complete before this agent can start
+- `triggers` — agents to notify/start when this agent completes
+- `watch_labels` — the status labels this agent cares about on issues
+- `auto_start` — whether the orchestrator should auto-invoke the agent when dependencies are met
+- `schedule` — (optional) cron expression for scheduled runs via GitHub Actions
+
+```yaml
+# Agent dependency graph
+# Read by the orchestrator agent to coordinate multi-agent workflows
+
+agents:
+
+  reverse-doc:
+    short_name: REVDOC
+    description: Reads source code, generates functional documentation
+    depends_on: []
+    triggers: [test-coverage, lint-agent]
+    watch_labels: ["reverse-doc: review", "reverse-doc: na"]
+    auto_start: true
+    schedule: "0 6 * * 1-5"  # Weekdays at 06:00 UTC
+    output_paths:
+      - docs/codebase/
+
+  orchestrator:
+    short_name: ORCH
+    description: Watches issues, evaluates dependency graph, triggers next agents
+    depends_on: []
+    triggers: []
+    watch_labels: []
+    auto_start: false
+    schedule: "*/30 * * * *"  # Every 30 minutes
+    output_paths:
+      - .claude/todos/
+
+  agent-factory:
+    short_name: FACTORY
+    description: Creates new agents following project standards
+    depends_on: []
+    triggers: []
+    watch_labels: ["agent-factory: review", "agent-factory: na"]
+    auto_start: false
+    # no schedule — on-demand only
+    output_paths:
+      - .claude/agents/
+      - .claude/todos/
+
+# ── Add new agents below this line ─────────────────────────────────────────
+# Template:
+#
+#   <agent-name>:
+#     short_name: <UPPERCASE_SHORT>
+#     description: <what it does>
+#     depends_on: [<agent-name>, ...]
+#     triggers: [<agent-name>, ...]
+#     watch_labels: ["<agent-name>: review", "<agent-name>: na"]
+#     auto_start: true|false
+#     schedule: "<cron>"  # optional — omit for on-demand only
+#     output_paths:
+#       - <path/>
+```
+
+## Dependency Rules
+
+1. **depends_on** — This agent cannot start until ALL listed agents have at least one
+   issue in `<dep-agent>: na` status (meaning their work is complete).
+   An empty list means the agent has no dependencies and can run immediately.
+
+2. **triggers** — When this agent closes an issue (sets status to `na`), the orchestrator
+   checks whether the triggered agents' dependencies are now fully satisfied.
+   If so, it creates a kickoff issue for the triggered agent.
+
+3. **watch_labels** — The orchestrator monitors these labels for status changes.
+   When a watched label appears or changes, the orchestrator evaluates the dependency graph.
+
+4. **auto_start** — If `true`, the orchestrator will automatically create a kickoff issue
+   for this agent when all dependencies are met. If `false`, the orchestrator will
+   only notify (comment on a tracking issue) that the agent is ready to run.
+
+5. **output_paths** — Directories this agent writes to. Used by dependent agents to know
+   where to find the upstream agent's output.
+
+6. **schedule** — (Optional) A cron expression defining when this agent should run
+   automatically via GitHub Actions. Omit for on-demand-only agents.
+   - Uses standard 5-field cron syntax: `minute hour day-of-month month day-of-week`
+   - The GitHub Action reads this config and dispatches the agent accordingly.
+   - Scheduled agents still respect `depends_on` — if dependencies are not met at
+     trigger time, the run is skipped and a `blocked` status is logged.
+
+## Kickoff Issue Format
+
+When the orchestrator starts an agent, it creates an issue:
+
+```
+Title: [orchestrator] - ORCH-START-<hash> - Start <agent-name>: dependencies met
+Labels: ["orchestrator: new", "<agent-name>: new"]
+Body:
+  **Issue Key:** `ORCH-START-<hash>`
+
+  ## Dependencies Satisfied
+  - [x] <dep-1>: completed (issue #N)
+  - [x] <dep-2>: completed (issue #M)
+
+  ## Action
+  Run `claude --agent <agent-name>` to begin processing.
+
+  ---
+  **Agent:** orchestrator
+  **Timestamp:** YYYY-MM-DD HH:MM UTC
+```
+
+## Cycle Prevention
+
+The orchestrator MUST reject dependency configurations that form cycles.
+Before evaluating, it performs a topological sort. If a cycle is detected,
+it raises an issue: `[orchestrator] - ORCH-GEN-<hash> - Dependency cycle detected`
+
+## GitHub Actions Integration
+
+A GitHub Action at `.github/workflows/agent-scheduler.yml` reads this file and
+dispatches scheduled agents. The action runs on a master cron schedule (every 15
+minutes) and for each agent:
+
+1. Parses the `schedule` field from this config.
+2. Checks whether the current time matches the cron expression (within tolerance).
+3. If it matches, checks `depends_on`:
+   - If dependencies are met → invokes the agent and creates a tracking issue.
+   - If dependencies are NOT met → creates an issue labeled `<agent>: blocked`
+     with an explanation of which dependencies are unsatisfied.
+4. Logs the dispatch to the workflow run summary.
+
+Agents without a `schedule` field are never auto-dispatched by the action —
+they run only when manually invoked or triggered by the orchestrator.

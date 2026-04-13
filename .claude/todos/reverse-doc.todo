@@ -1,0 +1,33 @@
+# reverse-doc — Task Tracker
+# Last updated: 04/09/26
+
+## Current Run
+
+## Completed
+[X] - Raised: 04/09/26 | Document src/lib/dag-types.ts | Completed: 04/09/26
+[X] - Raised: 04/09/26 | Document src/lib/dag-parser.ts | Completed: 04/09/26
+[X] - Raised: 04/09/26 | Document src/lib/dag-engine.ts | Completed: 04/09/26
+[X] - Raised: 04/09/26 | Document src/lib/embed-utils.ts | Completed: 04/09/26
+[X] - Raised: 04/09/26 | Document src/hooks/useWizard.ts | Completed: 04/09/26
+[X] - Raised: 04/09/26 | Create _overview.md | Completed: 04/09/26
+[X] - Raised: 04/09/26 | Create _cross-cutting.md | Completed: 04/09/26
+
+## Backlog
+[ ] - Raised: 04/09/26 | Document src/components/WizardRunner.tsx |
+[ ] - Raised: 04/09/26 | Document src/components/DslEditor.tsx |
+[ ] - Raised: 04/09/26 | Document src/components/TreeRenderer.tsx |
+[ ] - Raised: 04/09/26 | Document src/components/EmbedModal.tsx |
+[ ] - Raised: 04/09/26 | Document src/components/PathVisualisation.tsx |
+[ ] - Raised: 04/09/26 | Document src/components/PathVisualization.tsx |
+[ ] - Raised: 04/09/26 | Document src/pages/EmbedPage.tsx |
+[ ] - Raised: 04/09/26 | Document src/App.tsx |
+[ ] - Raised: 04/09/26 | Document src/main.tsx |
+[ ] - Raised: 04/09/26 | Document src/config.ts |
+[ ] - Raised: 04/09/26 | Document src/decisionTreeProcessor.ts |
+[ ] - Raised: 04/09/26 | Document src/__tests__/dag-parser.test.ts |
+[ ] - Raised: 04/09/26 | Document src/__tests__/dag-engine.test.ts |
+[ ] - Raised: 04/09/26 | Document src/__tests__/embed-utils.test.ts |
+[ ] - Raised: 04/09/26 | Document backend/file-api.js |
+[ ] - Raised: 04/09/26 | Document vite.config.ts |
+
+## Issues Raised

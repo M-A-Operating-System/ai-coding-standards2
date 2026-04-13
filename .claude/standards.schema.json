@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agile.org/standards/schemas/standards.schema.json",
+  "title": "Standards Collection",
+  "description": "Technical and product design standards. Technical standards govern code structure and implementation. Product standards govern feature behaviour and UX. acceptance_criteria is required for product standards.",
+  "type": "object",
+  "required": ["$schema", "standards"],
+  "additionalProperties": false,
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "https://ai-agile.org/standards/schemas/standards.schema.json"
+    },
+    "standards": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Standard" }
+    }
+  },
+
+  "$defs": {
+
+    "Standard": {
+      "type": "object",
+      "required": [
+        "id",
+        "standard_type",
+        "title",
+        "status",
+        "severity",
+        "layer",
+        "pattern",
+        "category",
+        "created",
+        "owner",
+        "description",
+        "rationale",
+        "tags",
+        "examples",
+        "enforcement",
+        "agent_guidance",
+        "supersedes",
+        "superseded_by",
+        "adr_refs",
+        "exceptions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+
+        "id": {
+          "type": "string",
+          "pattern": "^STD[0-9]{9}$"
+        },
+
+        "standard_type": {
+          "type": "string",
+          "enum": ["technical", "product"]
+        },
+
+        "title": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 120
+        },
+
+        "status": {
+          "type": "string",
+          "enum": ["active", "deprecated", "proposed", "superseded"]
+        },
+
+        "severity": {
+          "type": "string",
+          "description": "required: must pass before merge or release. recommended: warning on violation. optional: guidance only.",
+          "enum": ["required", "recommended", "optional"]
+        },
+
+        "layer": {
+          "type": "string",
+          "enum": [
+            "database",
+            "api",
+            "backend",
+            "frontend",
+            "security",
+            "testing",
+            "infra",
+            "product-ux",
+            "product-data",
+            "product-behaviour",
+            "product-accessibility",
+            "product-compliance",
+            "cross-cutting"
+          ]
+        },
+
+        "pattern": {
+          "type": "string",
+          "description": "Design pattern group within the layer. Used as a query filter.",
+          "minLength": 2,
+          "maxLength": 60
+        },
+
+        "category": {
+          "type": "string",
+          "description": "Specific concern within the pattern.",
+          "minLength": 2,
+          "maxLength": 60
+        },
+
+        "created": {
+          "type": "string",
+          "format": "date"
+        },
+
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+
+        "description": {
+          "type": "string",
+          "description": "Unambiguous statement of the rule. Specific enough to produce a clear pass or fail.",
+          "minLength": 10,
+          "maxLength": 600
+        },
+
+        "rationale": {
+          "type": "string",
+          "description": "Why this rule exists and what harm it prevents.",
+          "minLength": 10,
+          "maxLength": 1000
+        },
+
+        "tags": {
+          "type": "array",
+          "description": "Retrieval tags for RAG and MCP search. Lowercase kebab-case.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]+$"
+          }
+        },
+
+        "examples": {
+          "type": "object",
+          "required": ["valid", "invalid"],
+          "additionalProperties": false,
+          "properties": {
+            "valid": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "invalid": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+
+        "enforcement": {
+          "type": "object",
+          "required": ["method", "verified_by"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "type": "string",
+              "enum": [
+                "ci-lint",
+                "automated-test",
+                "code-review",
+                "design-review",
+                "acceptance-test",
+                "functional-test",
+                "security-audit",
+                "manual-review"
+              ]
+            },
+            "verified_by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ci_rule_ref": {
+              "type": "string",
+              "description": "Linter rule key or test file path. Only when method is ci-lint or automated-test."
+            }
+          }
+        },
+
+        "acceptance_criteria": {
+          "type": "array",
+          "description": "Given/When/Then statements of compliance. Required for product standards.",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 10 }
+        },
+
+        "agent_guidance": {
+          "type": "string",
+          "description": "Direct instruction for AI agents. Self-contained imperative — what to generate, check, or flag.",
+          "minLength": 10,
+          "maxLength": 800
+        },
+
+        "supersedes": {
+          "oneOf": [
+            { "type": "string", "pattern": "^STD[0-9]{9}$" },
+            { "type": "null" }
+          ]
+        },
+
+        "superseded_by": {
+          "oneOf": [
+            { "type": "string", "pattern": "^STD[0-9]{9}$" },
+            { "type": "null" }
+          ]
+        },
+
+        "adr_refs": {
+          "type": "array",
+          "description": "ADR IDs that authorized or provide context for this standard.",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^ADR[0-9]{9}$" }
+        },
+
+        "exceptions": {
+          "type": "array",
+          "description": "Approved deviations. Each must have a corresponding ADR.",
+          "items": {
+            "type": "object",
+            "required": ["scope", "adr_ref", "approved"],
+            "additionalProperties": false,
+            "properties": {
+              "scope": {
+                "type": "string",
+                "description": "Exact scope of the deviation.",
+                "minLength": 5
+              },
+              "adr_ref": {
+                "type": "string",
+                "pattern": "^ADR[0-9]{9}$"
+              },
+              "approved": {
+                "type": "string",
+                "format": "date"
+              },
+              "expiry": {
+                "oneOf": [
+                  { "type": "string", "format": "date" },
+                  { "type": "null" }
+                ]
+              }
+            }
+          }
+        }
+
+      },
+
+      "if": {
+        "properties": { "standard_type": { "const": "product" } }
+      },
+      "then": {
+        "required": [
+          "id", "standard_type", "title", "status", "severity", "layer",
+          "pattern", "category", "created", "owner", "description", "rationale",
+          "tags", "examples", "enforcement", "acceptance_criteria",
+          "agent_guidance", "supersedes", "superseded_by", "adr_refs", "exceptions"
+        ]
+      }
+    }
+
+  }
+}

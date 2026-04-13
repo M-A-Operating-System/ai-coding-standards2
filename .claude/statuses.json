@@ -1,0 +1,111 @@
+{
+  "$schema": "https://ai-agile.org/standards/schemas/statuses.schema.json",
+  "description": "Canonical status definitions for all pipeline agents. Every agent uses exactly these statuses. Labels are applied in the form {agent-name}:{status}. This file is the single source of truth — colours, semantics, and behaviour rules are defined here and referenced by all agents, the orchestrator, and the setup scripts.",
+
+  "statuses": [
+    {
+      "status": "wip",
+      "label_suffix": "wip",
+      "colour": "E4E669",
+      "colour_name": "yellow",
+      "meaning": "Agent is actively running. Applied by the orchestrator at the moment the agent is invoked. Removed and replaced with the outcome status when the agent finishes.",
+      "set_by": "orchestrator",
+      "cleared_by": "orchestrator",
+      "blocks_pipeline": true,
+      "terminal": false,
+      "human_action_required": false,
+      "orchestrator_behaviour": "Skip — another process is already handling this agent on this item. Do not trigger again."
+    },
+    {
+      "status": "complete",
+      "label_suffix": "complete",
+      "colour": "0E8A16",
+      "colour_name": "green",
+      "meaning": "Agent completed its work successfully. All automated checks passed. If the agent has a human_gate_label configured, the pipeline still waits for that gate before the next agent fires.",
+      "set_by": "orchestrator",
+      "cleared_by": "never",
+      "blocks_pipeline": false,
+      "terminal": true,
+      "human_action_required": false,
+      "orchestrator_behaviour": "Treat as a satisfied dependency for downstream agents."
+    },
+    {
+      "status": "review",
+      "label_suffix": "review",
+      "colour": "D4C5F9",
+      "colour_name": "purple",
+      "meaning": "Agent has completed its automated work and is explicitly requesting formal human review and approval before the pipeline advances. Used when the agent produces an artefact (PRD, design doc, test spec, build plan) that must be read and signed off by a person. Distinct from human_gate_label in pipeline.json — this is raised by the agent itself, not pre-configured.",
+      "set_by": "agent",
+      "cleared_by": "human",
+      "blocks_pipeline": true,
+      "terminal": false,
+      "human_action_required": true,
+      "human_instruction": "Review the artefact posted in the issue comments. If approved, remove this label. The pipeline will advance automatically. If changes are needed, comment with your feedback and remove this label — the agent will re-run.",
+      "orchestrator_behaviour": "Halt pipeline for this item. Do not trigger any further agents until the label is removed by a human."
+    },
+    {
+      "status": "blocked",
+      "label_suffix": "blocked",
+      "colour": "E99695",
+      "colour_name": "red-orange",
+      "meaning": "Agent cannot proceed without human intervention. Applied when the agent encounters something it cannot resolve autonomously: ambiguous or contradictory requirements, missing data, a hard dependency that is unresolved, or a decision that exceeds its authority. The agent must post a comment explaining exactly what is blocking it and what information or decision is needed.",
+      "set_by": "agent",
+      "cleared_by": "human",
+      "blocks_pipeline": true,
+      "terminal": false,
+      "human_action_required": true,
+      "human_instruction": "Read the agent comment explaining the blocker. Resolve the underlying issue (clarify the spec, provide missing data, make the decision), then remove this label. The agent will re-run from the start.",
+      "orchestrator_behaviour": "Halt pipeline for this item. Post a comment tagging the owner. Do not trigger any further agents until the label is removed by a human."
+    },
+    {
+      "status": "failed",
+      "label_suffix": "failed",
+      "colour": "B60205",
+      "colour_name": "red",
+      "meaning": "Agent exited with an error — a technical failure, not a business decision. The agent output or CI logs should contain the error detail. This is distinct from blocked: failed means the agent crashed or returned a non-zero exit code, not that it encountered an unresolvable decision.",
+      "set_by": "orchestrator",
+      "cleared_by": "human",
+      "blocks_pipeline": true,
+      "terminal": true,
+      "human_action_required": true,
+      "human_instruction": "Review the agent logs. Fix the underlying error, then remove this label to allow the orchestrator to retry. Or apply skipped to bypass this agent entirely.",
+      "orchestrator_behaviour": "Halt pipeline for this item. Do not retry automatically — require a human to remove the label."
+    },
+    {
+      "status": "skipped",
+      "label_suffix": "skipped",
+      "colour": "BFD4F2",
+      "colour_name": "light-blue",
+      "meaning": "Agent was intentionally bypassed by a human. Treated as equivalent to complete for the purposes of dependency resolution — downstream agents will proceed. Use when the agent's work is not applicable to this ticket or has been done manually.",
+      "set_by": "human",
+      "cleared_by": "never",
+      "blocks_pipeline": false,
+      "terminal": true,
+      "human_action_required": false,
+      "orchestrator_behaviour": "Treat as a satisfied dependency. Do not trigger this agent."
+    }
+  ],
+
+  "label_format": "{agent-name}:{status}",
+  "label_format_examples": [
+    "prd-writer:wip",
+    "prd-writer:complete",
+    "prd-writer:review",
+    "architect:blocked",
+    "coder:failed",
+    "test-coverage-auditor:skipped"
+  ],
+
+  "status_transitions": {
+    "description": "Valid transitions from each status. The orchestrator enforces these — it will not apply a transition that is not listed here.",
+    "transitions": {
+      "none":     ["wip"],
+      "wip":      ["complete", "review", "blocked", "failed"],
+      "review":   ["wip"],
+      "blocked":  ["wip"],
+      "failed":   ["wip", "skipped"],
+      "complete": [],
+      "skipped":  []
+    }
+  }
+}

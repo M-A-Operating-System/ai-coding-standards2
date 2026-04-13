@@ -1,0 +1,78 @@
+name: Pipeline Orchestrator
+
+on:
+  # Run whenever a label is added to an issue or PR — the primary trigger
+  issues:
+    types: [labeled, unlabeled]
+  pull_request:
+    types: [labeled, unlabeled, opened, synchronize, closed]
+
+  # Catch anything the label events missed (agent took time, etc.)
+  schedule:
+    - cron: '*/15 6-20 * * 1-5'  # Every 15 min, 06:00–20:00 UTC, weekdays
+
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Process a single issue/PR number (leave blank for all)'
+        required: false
+      dry_run:
+        description: 'Dry run — show what would trigger without executing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  orchestrate:
+    name: Evaluate pipeline state
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Build orchestrator args
+        id: args
+        run: |
+          ARGS=""
+
+          if [ -n "${{ github.event.inputs.issue_number }}" ]; then
+            ARGS="$ARGS --issue ${{ github.event.inputs.issue_number }}"
+          elif [ "${{ github.event_name }}" = "issues" ]; then
+            ARGS="$ARGS --issue ${{ github.event.issue.number }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            ARGS="$ARGS --issue ${{ github.event.pull_request.number }}"
+          fi
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+
+      - name: Run orchestrator
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python ai-agile/pipeline/pipeline_orchestrator.py \
+            --repo "$GITHUB_REPOSITORY" \
+            ${{ steps.args.outputs.args }}

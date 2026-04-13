@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agile.org/standards/schemas/adrs.schema.json",
+  "title": "Architecture Decision Records",
+  "description": "ADRs are optional and situational. Use type 'architectural' for significant choices that explain why a family of standards exist. Use type 'exception' to authorize a bounded deviation from a specific standard.",
+  "type": "object",
+  "required": ["$schema", "decisions"],
+  "additionalProperties": false,
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "https://ai-agile.org/standards/schemas/adrs.schema.json"
+    },
+    "decisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/ADR" }
+    }
+  },
+
+  "$defs": {
+
+    "ADR": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "type",
+        "status",
+        "created",
+        "owner",
+        "context",
+        "decision",
+        "alternatives_rejected",
+        "consequences"
+      ],
+      "additionalProperties": false,
+      "properties": {
+
+        "id": {
+          "type": "string",
+          "pattern": "^ADR[0-9]{9}$"
+        },
+
+        "title": {
+          "type": "string",
+          "description": "The decision made, not the question. For exceptions: name the standard and scope.",
+          "minLength": 5,
+          "maxLength": 120
+        },
+
+        "type": {
+          "type": "string",
+          "enum": ["architectural", "exception"]
+        },
+
+        "status": {
+          "type": "string",
+          "enum": ["proposed", "accepted", "deprecated", "superseded"]
+        },
+
+        "created": {
+          "type": "string",
+          "format": "date"
+        },
+
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+
+        "context": {
+          "type": "string",
+          "description": "What situation prompted this decision and what constraints existed.",
+          "minLength": 20,
+          "maxLength": 2000
+        },
+
+        "decision": {
+          "type": "string",
+          "description": "What was decided and the primary reason why.",
+          "minLength": 10,
+          "maxLength": 1000
+        },
+
+        "alternatives_rejected": {
+          "type": "array",
+          "description": "Other options considered and why each was rejected.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 5
+          }
+        },
+
+        "consequences": {
+          "type": "array",
+          "description": "What this decision means going forward — tradeoffs, constraints, and STD IDs influenced.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 5
+          }
+        },
+
+        "exception_to": {
+          "type": "object",
+          "description": "Required when type is 'exception'. Identifies the standard being deviated from.",
+          "required": ["standard_id", "scope"],
+          "additionalProperties": false,
+          "properties": {
+            "standard_id": {
+              "type": "string",
+              "pattern": "^STD[0-9]{9}$"
+            },
+            "scope": {
+              "type": "string",
+              "description": "Exact scope of the deviation. Must match the scope in the standard's exceptions array.",
+              "minLength": 5
+            }
+          }
+        },
+
+        "supersedes": {
+          "description": "ADR ID this record replaces. Null if original.",
+          "oneOf": [
+            { "type": "string", "pattern": "^ADR[0-9]{9}$" },
+            { "type": "null" }
+          ]
+        },
+
+        "superseded_by": {
+          "description": "ADR ID that replaces this record. Null if still in force.",
+          "oneOf": [
+            { "type": "string", "pattern": "^ADR[0-9]{9}$" },
+            { "type": "null" }
+          ]
+        }
+      },
+
+      "if": {
+        "properties": { "type": { "const": "exception" } }
+      },
+      "then": {
+        "required": [
+          "id", "title", "type", "status", "created", "owner",
+          "context", "decision", "alternatives_rejected", "consequences",
+          "exception_to"
+        ]
+      }
+    }
+
+  }
+}
