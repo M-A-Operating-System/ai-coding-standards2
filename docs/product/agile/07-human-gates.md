@@ -12,21 +12,25 @@ remains a human responsibility. Agents draft. Humans decide.
 
 ---
 
-## The seven gates
+## The gates
+
+The full, authoritative list of gates is generated from
+[`ai-agile/pipeline/pipeline.json`](../../../ai-agile/pipeline/pipeline.json)
+to [`generated/gates.md`](generated/gates.md). The summary below is for
+orientation; the generated file is the source of truth (see
+[P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
 
 | Gate label | Phase | Approver | What they are signing off |
 |---|---|---|---|
 | `prd:approved` | Product docs | Stakeholder | The PRD captures the right problem and acceptance criteria |
 | `size:approved` | Product docs | Engineer | The ticket is the right size for one cycle, or has been broken up |
+| `super-issue:approved` | Product docs | Engineer | The proposed grouping of small tickets is correct |
 | `design:approved` | Technical docs | Engineer | The technical design is right and complete |
 | `test-spec:approved` | Testing spec | Engineer | The Gherkin scenarios cover every acceptance criterion |
 | `plan:approved` | Build plan | Engineer | The task breakdown and order are correct |
 | `pr:approved` | Execute | Engineer | The implementation matches the design and resolves all `required` violations |
 | `coverage:approved` | Test | Engineer | Tests pass and cover every required scenario |
 | `standards-proposal:approved` | Evaluate (weekly) | Standards owner | The proposed change to the standards is sound |
-
-Eight gate labels in total. Seven on the per-ticket lifecycle; one on the
-weekly standards-evolver run.
 
 ---
 

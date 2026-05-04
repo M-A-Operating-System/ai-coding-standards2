@@ -32,28 +32,15 @@ tradeoffs, and signing off that the work is right.
 
 ## Principles
 
-1. **One issue, one trail.** Every artefact for a piece of work lives on or is
-   linked from a single GitHub issue. Anyone can reconstruct what was decided,
-   when, and by whom from that issue alone.
-2. **Agents do the writing, humans do the deciding.** Agents draft. Humans
-   approve at named gates by applying or removing a label. No work advances
-   past a gate without an explicit human action.
-3. **Status is a label.** The pipeline state is visible in the GitHub UI.
-   There is no separate dashboard, no hidden state machine, no other system
-   to learn.
-4. **Standards are code.** Every architecture and product standard is
-   declared in JSON conforming to a published schema, has a stable ID, and
-   is referenced from code, PRs, and design docs by that ID.
-5. **The system improves itself.** Retrospectives feed the standards-evolver,
-   which proposes new or updated standards based on recurring violations.
-   Humans approve the proposals. The next ticket benefits.
-6. **Resumable by default.** Any agent can be re-run. No agent assumes the
-   pipeline is in any particular state — it reads labels and acts on what it
-   finds. A failed run is recovered by removing a label, not by editing
-   internal state.
-7. **Transparent over clever.** When in doubt the system prefers a comment on
-   the issue, an explicit label, and a named status over inferred state or
-   silent retries.
+The rules AI Agile is built on are documented as a numbered, referenced
+list in [`02-principles.md`](02-principles.md). Every principle has a
+stable ID (`P-1`, `P-2`, …) referenced from code, agent prompts, and
+design docs.
+
+In summary: Git is authoritative; every fact has one machine-readable
+source; every event is appended to an immutable log; agents draft and
+humans decide; the system is resumable, transparent, and built so swarms
+can scale without a separate coordination layer.
 
 ## What success looks like
 
