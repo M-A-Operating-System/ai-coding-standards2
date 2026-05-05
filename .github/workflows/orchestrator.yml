@@ -1,11 +1,12 @@
 name: Pipeline Orchestrator
 
 on:
-  # Run whenever a label is added to an issue or PR — the primary trigger
+  # Issue lifecycle events — opened/reopened brings new work in;
+  # labeled/unlabeled is the primary advance trigger.
   issues:
-    types: [labeled, unlabeled]
+    types: [opened, reopened, labeled, unlabeled]
   pull_request:
-    types: [labeled, unlabeled, opened, synchronize, closed]
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
 
   # Catch anything the label events missed (agent took time, etc.)
   schedule:
