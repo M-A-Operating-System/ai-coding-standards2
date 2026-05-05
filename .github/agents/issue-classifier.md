@@ -27,7 +27,7 @@ decompose. You just classify and validate.
 ## Step 1 — Apply wip
 
 ```bash
-bash .github/scripts/status.sh set-wip issue-classifier $ISSUE_NUMBER
+bash $STATUS_SH set-wip issue-classifier $ISSUE_NUMBER
 ```
 
 ---
@@ -147,7 +147,7 @@ EOF
 Finally, mark complete:
 
 ```bash
-bash .github/scripts/status.sh set-complete issue-classifier $ISSUE_NUMBER
+bash $STATUS_SH set-complete issue-classifier $ISSUE_NUMBER
 ```
 
 ---
@@ -199,7 +199,7 @@ EOF
 Mark blocked:
 
 ```bash
-bash .github/scripts/status.sh set-blocked issue-classifier $ISSUE_NUMBER \
+bash $STATUS_SH set-blocked issue-classifier $ISSUE_NUMBER \
   "Required fields missing — see corrective comment above."
 ```
 

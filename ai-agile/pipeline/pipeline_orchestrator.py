@@ -83,6 +83,16 @@ TERMINAL_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED}
 
 STATUSES_JSON = Path(__file__).parent / "statuses.json"
 
+# Submodule root — the directory containing this repo's .github/ and
+# ai-agile/. When installed as a submodule, it is the submodule's root,
+# not the consuming repo's root. Used to locate status.sh and agent
+# prompt files. Override with $AI_AGILE_ROOT for non-standard layouts.
+SUBMODULE_ROOT = (
+    Path(os.environ["AI_AGILE_ROOT"]).resolve()
+    if os.environ.get("AI_AGILE_ROOT")
+    else Path(__file__).resolve().parent.parent.parent
+)
+
 def load_statuses() -> list[dict]:
     """Load status definitions from statuses.json. Exits if file is missing or malformed."""
     if not STATUSES_JSON.exists():
@@ -379,7 +389,7 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
 # Agent execution
 # ---------------------------------------------------------------------------
 
-STATUS_SH = Path(".github/scripts/status.sh")
+STATUS_SH = SUBMODULE_ROOT / ".github/scripts/status.sh"
 
 
 def invoke_agent(
@@ -405,14 +415,17 @@ def invoke_agent(
 
     Returns True if the invocation succeeded, False otherwise.
     """
-    agent_file = Path(".github/agents") / f"{agent_def.agent}.md"
+    agent_file = SUBMODULE_ROOT / ".github/agents" / f"{agent_def.agent}.md"
 
     if not STATUS_SH.exists():
         log.error("status.sh not found at %s", STATUS_SH)
         return False
 
     # Build the prompt that is passed to every agent.
-    # Agents MUST use status.sh for all label transitions.
+    # Agents MUST use status.sh for all label transitions and reference
+    # it via the $STATUS_SH env var the orchestrator exports below — that
+    # way the same prompt works whether this repo is checked out at the
+    # consuming repo's root or as a submodule under it.
     prompt = (
         f"You are the {agent_def.agent} agent defined in {agent_file}.\n"
         f"Follow those instructions exactly.\n\n"
@@ -422,19 +435,20 @@ def invoke_agent(
         f"- Title: {work_item.title}\n"
         f"- URL: {work_item.url}\n\n"
         f"## Status commands\n"
-        f"Use these commands for all label transitions. Do not apply labels directly.\n\n"
+        f"Use these commands for all label transitions. Do not apply labels directly.\n"
+        f"$STATUS_SH is exported in your environment and resolves to:\n"
+        f"  {STATUS_SH}\n\n"
         f"  # Mark yourself as running (already applied by orchestrator — skip if present)\n"
-        f"  bash {STATUS_SH} set-wip {agent_def.agent} {work_item.number}\n\n"
-        f"  # Mark complete when your work is done\n"
-        f"  bash {STATUS_SH} set-complete {agent_def.agent} {work_item.number}\n\n"
-        f"  # Request human review (post your artefact first, then call this)\n"
-        f"  bash {STATUS_SH} set-review {agent_def.agent} {work_item.number} \"<message>\"\n\n"
+        f"  bash $STATUS_SH set-wip {agent_def.agent} {work_item.number}\n\n"
+        f"  # Mark complete when your work is done (non-gated agents only)\n"
+        f"  bash $STATUS_SH set-complete {agent_def.agent} {work_item.number}\n\n"
+        f"  # Request human review (post your artefact first, then call this — gated agents)\n"
+        f"  bash $STATUS_SH set-review {agent_def.agent} {work_item.number} \"<message>\"\n\n"
         f"  # Mark blocked when you cannot proceed without human help\n"
-        f"  bash {STATUS_SH} set-blocked {agent_def.agent} {work_item.number} \"<reason>\"\n\n"
-        f"  # Mark failed on a technical error\n"
-        f"  bash {STATUS_SH} set-failed {agent_def.agent} {work_item.number} \"<detail>\"\n\n"
+        f"  bash $STATUS_SH set-blocked {agent_def.agent} {work_item.number} \"<reason>\"\n\n"
         f"You MUST call exactly one of set-complete, set-review, or set-blocked before exiting.\n"
-        f"set-failed is called by the orchestrator if you exit non-zero."
+        f"You MUST NOT call set-failed — the orchestrator applies :failed if you exit non-zero "
+        f"without one of the three terminal calls above."
     )
 
     cmd = [
@@ -456,12 +470,23 @@ def invoke_agent(
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
 
+    # Export resolved paths so the agent prompt's bash snippets work
+    # regardless of CWD or where this repo is mounted in the consuming repo.
+    agent_env = {
+        **os.environ,
+        "STATUS_SH": str(STATUS_SH),
+        "AI_AGILE_ROOT": str(SUBMODULE_ROOT),
+        "REPO": repo,
+        "ISSUE_NUMBER": str(work_item.number),
+        "PR_NUMBER": str(work_item.number),
+    }
+
     try:
         result = subprocess.run(
             cmd,
             capture_output=False,
             timeout=1800,  # 30 min max per agent run
-            env={**os.environ},
+            env=agent_env,
         )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
