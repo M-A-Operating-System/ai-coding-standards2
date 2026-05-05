@@ -25,6 +25,7 @@ evolve them as the system matures.
 | 08 | [Audit log](08-audit-log.md) | The immutable cross-session timeline branch |
 | 09 | [Human interaction](09-human-interaction.md) | How agents and humans communicate; the Question Card protocol |
 | 10 | [Roadmap](10-roadmap.md) | MVP scope, agent merges, and phased rollout |
+| 11 | [Orchestrator](11-orchestrator.md) | Python orchestrator technical design, decision logic, and GitHub Actions workflows |
 
 ## Generated views
 
