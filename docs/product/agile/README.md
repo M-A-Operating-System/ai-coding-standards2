@@ -26,6 +26,7 @@ evolve them as the system matures.
 | 09 | [Human interaction](09-human-interaction.md) | How agents and humans communicate; the Question Card protocol |
 | 10 | [Roadmap](10-roadmap.md) | MVP scope, agent merges, and phased rollout |
 | 11 | [Orchestrator](11-orchestrator.md) | Python orchestrator technical design, decision logic, and GitHub Actions workflows |
+| 12 | [Agent specification](12-agent-spec.md) | Required shape of an agent prompt file: frontmatter, body sections, tool allowlist |
 
 ## Generated views
 
