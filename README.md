@@ -146,6 +146,33 @@ git commit -m "Bump ai-coding-standards2 to <ref>"
 Pin to tags for predictable upgrades. Do not track `main` directly
 in production unless you want every change auto-applied.
 
+### What auto-flows vs. what needs `get_started.py --force`
+
+After a submodule bump, **most things just work** because the
+orchestrator reads them straight from the submodule:
+
+- Agent prompts (`.github/agents/{phase}/*.md`) — read via `AI_AGILE_ROOT`
+- `pipeline.json`, `status.sh`, validators — read via `AI_AGILE_ROOT`
+- Schema and CI checks — referenced by their submodule paths
+
+A small set of files were copied into your repo by `get_started.py`
+and **don't** auto-update:
+
+- `.github/workflows/orchestrator.yml` (GitHub Actions can't read workflows from submodules)
+- `.claude/commands/*.md` (path rewrites are baked in at install time)
+
+If those have changed in the new submodule version, re-run:
+
+```bash
+python ai-coding-standards2/get_started.py --force
+git add .github/workflows/orchestrator.yml .claude/
+git commit -m "Refresh ai-coding-standards2 wrapper files"
+```
+
+Look at the submodule's CHANGELOG (when one exists) or the diff
+between tags to know whether re-running is needed. If neither the
+workflow nor any slash command changed, no re-run is required.
+
 ---
 
 ## Repo layout
