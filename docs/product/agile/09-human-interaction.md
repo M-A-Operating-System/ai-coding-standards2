@@ -301,3 +301,109 @@ gate, propose a new gate rather than reusing the question protocol.
 - **Gates, status, locks, cross-issue dependencies, and standards
   violations** are **not** questions — they have their own
   mechanisms.
+
+---
+
+## 3. Agent announcements
+
+Every agent posts **two structured comments per run**: an opening
+announcement when it starts, and a closing summary when it finishes.
+This makes the timeline self-explanatory in the GitHub UI — anyone
+scrolling the issue can see at a glance which agent ran, when, what
+it read, and what it produced.
+
+Both comments use the marker `<!-- ai-agile/announcement/v1 -->`.
+
+**Opening announcement** (posted immediately after `status.sh set-wip`):
+
+````
+<!-- ai-agile/announcement/v1 -->
+```json
+{
+  "session_id": "ais-v1-iss-42-prd-writer",
+  "agent": "prd-writer",
+  "phase": "start",
+  "started_at": "2026-05-04T11:02:00Z",
+  "intent": "Drafting PRD from issue body and any clarifying comments.",
+  "inputs_read": ["issue body", "comment 192837461"]
+}
+```
+````
+
+**Closing announcement** (posted immediately before the terminal
+`status.sh` call):
+
+````
+<!-- ai-agile/announcement/v1 -->
+```json
+{
+  "session_id": "ais-v1-iss-42-prd-writer",
+  "agent": "prd-writer",
+  "phase": "end",
+  "ended_at": "2026-05-04T11:04:31Z",
+  "outcome": "review",
+  "summary": "PRD posted; requesting stakeholder review.",
+  "artefacts": ["comment 192837982"]
+}
+```
+````
+
+**Rules.**
+
+- Start and end announcements are *required*, not optional. An agent
+  that exits without a closing announcement is treated as having
+  crashed and is marked `:failed` by the orchestrator.
+- The opening announcement is for transparency. The closing
+  announcement is for replay — `artefacts` lists the comments,
+  PRs, files, or issues the agent produced this run.
+- Free-text prose is allowed alongside the JSON, but the JSON is the
+  contract. The orchestrator parses only the JSON.
+- The audit log emits `agent.invoked` on the opening announcement
+  and `agent.complete` / `agent.review` / `agent.blocked` on the
+  closing announcement, mirroring the comment.
+
+---
+
+## 4. Agent identity (open question)
+
+**Question.** Should agents act under a dedicated GitHub account
+(e.g. `ai-agile-bot`) rather than under the human user's account?
+
+**Why it matters.**
+
+- **Audit clarity.** A separate account makes it visually obvious in
+  the GitHub UI whether a comment, label, or commit came from a human
+  or an agent. Distinct avatar, distinct login, no ambiguity.
+- **Permission scoping.** Agents can hold a narrower set of
+  permissions than humans (e.g., no force-push, no branch deletion
+  except auto-cleanup, no admin actions).
+- **Audit log fidelity.** The `actor.kind` field in the audit log
+  events (see [`08-audit-log.md`](08-audit-log.md)) becomes truly
+  reliable — the GitHub login already separates the two; the field
+  is no longer just a hint we set in the JSON.
+- **Quota and rate-limit isolation.** An agent account's API usage
+  doesn't compete with human contributors' quota.
+
+**Tradeoffs.**
+
+- Extra account to provision, secure, rotate credentials for.
+- Some GitHub features (mentions, review-required policies) need to
+  account for the bot identity. Branch protections, CODEOWNERS, and
+  required-reviewers may need updating to permit (or exclude) the
+  bot.
+- Cost: organisations on per-seat plans pay for one more seat. (For
+  this project, GitHub Apps are typically free for the first install
+  but have rate-limit considerations.)
+
+**Recommendation (to be confirmed).** Use a GitHub App or a dedicated
+bot account, not a human's PAT. Specifically:
+
+- A **GitHub App** is the cleanest path: app-scoped permissions,
+  short-lived installation tokens, generous rate limits, a distinct
+  bot identity in the UI. Recommended for production.
+- A **bot user account** is acceptable for local/dev use but
+  requires PAT management and competes with the org's seat budget.
+
+**Status.** Open. To be resolved before the orchestrator goes into
+production. Once decided, this section is replaced with the chosen
+approach and a link to the implementing ADR.
