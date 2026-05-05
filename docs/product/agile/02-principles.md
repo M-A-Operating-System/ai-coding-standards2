@@ -128,43 +128,58 @@ claim+verify dance. Acceptable at expected swarm volume.
 
 ## Operational
 
-### P-5 — One issue, one PR
+### P-5 — One shippable unit, one PR
 
-**Statement.** Every PR closes exactly one issue. Every issue produces at
-most one PR. The orchestrator rejects multi-issue PRs at
-`pr.draft_opened`.
+**Statement.** Every PR closes exactly one *shippable-unit* issue.
+Every shippable-unit issue produces at most one PR. The orchestrator
+rejects multi-issue PRs at `pr.draft_opened`.
+
+A **shippable unit** is an issue that owns a deliverable: a feature
+issue, a chore issue, or a super-issue grouping smaller items. Child
+issues (tasks decomposed from a parent, or bugs grouped under a
+super-issue) are *not* shippable units — they are tracking and audit
+units that close when their parent's PR merges.
 
 **Consequences.**
 
-- Audit, retrospective, and changelog generation each have a 1:1 mapping
-  to work.
-- A second PR for the same issue requires the first to be closed and the
-  session iteration to advance (P-7).
-- Tasks decomposed from a parent issue produce *child issues*, each of
-  which is itself 1:1 with a PR. The parent does not produce a PR.
+- The PR opens against the shippable-unit issue. The branch is named for
+  it. The changelog entry refers to it.
+- Children attach via commit trailers (`Closes #{child}`) and close
+  automatically on PR merge.
+- A second PR for the same shippable unit requires the first to be
+  closed and the session iteration to advance (P-7).
+- `task-decomposer` produces child task issues for tracking; `coder`
+  opens **one PR for the parent**, with one commit per child task.
 
-**Tradeoff.** Forces explicit decomposition for changes that span multiple
-files or concerns. This is intentional.
+**Tradeoff.** Forces explicit decomposition into child tasks for visibility,
+without fragmenting the deliverable into many small PRs. Reviews are larger
+but match the shape of the actual change.
 
 ### P-6 — Group small work under a super-issue
 
 **Statement.** When the `ticket-sizer` returns `S` and the issue is the
 Nth small bug or chore in a configured time window, the orchestrator
-suggests grouping under a super-issue (epic) before sizing completes.
-Bugs remain 1:1 with their own PRs (P-5); the super-issue exists for
-planning, release coordination, and retrospective aggregation.
+suggests grouping under a super-issue before sizing completes. The
+super-issue becomes the shippable unit (P-5); the grouped children
+attach to it and stop running their own pipelines from that point on.
 
 **Consequences.**
 
-- A new agent (`super-issue-grouper`) drafts the grouping. Humans approve
-  via a `super-issue:approved` gate.
-- The super-issue produces no PR. Its child issues each follow the
-  standard pipeline.
-- Retrospectives roll up at the super-issue level when the children all
-  close.
+- A new agent (`super-issue-grouper`) drafts the grouping. Humans
+  approve via a `super-issue:approved` gate.
+- On approval, the grouped child issues are linked to the super-issue
+  and their individual pipelines pause. The super-issue runs through
+  the full pipeline as a single unit (PRD covers all children, design
+  covers all children, one PR fixes all children).
+- One PR closes the super-issue and all its children on merge.
+- Retrospectives roll up at the super-issue level.
+- A child added to a super-issue after grouping (late-arriving bug)
+  attaches to the super-issue's open session if `pr.draft_opened` has
+  not yet fired; otherwise it waits for the next super-issue cycle.
 
-**Tradeoff.** Adds a new gate. Worth it because ungrouped bug streams are
-the primary cause of duplicate, conflicting, and lost work.
+**Tradeoff.** A bad child can block the whole batch. Mitigated by the
+super-issue-grouper proposing tightly-scoped groupings (related area,
+similar fix shape) rather than time-window dumps.
 
 ### P-7 — Re-entry increments the session iteration
 

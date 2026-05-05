@@ -24,7 +24,7 @@ orientation; the generated file is the source of truth (see
 |---|---|---|---|
 | `prd:approved` | Product docs | Stakeholder | The PRD captures the right problem and acceptance criteria |
 | `size:approved` | Product docs | Engineer | The ticket is the right size for one cycle, or has been broken up |
-| `super-issue:approved` | Product docs | Engineer | The proposed grouping of small tickets is correct |
+| `super-issue:approved` | Product docs | Engineer | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it |
 | `design:approved` | Technical docs | Engineer | The technical design is right and complete |
 | `test-spec:approved` | Testing spec | Engineer | The Gherkin scenarios cover every acceptance criterion |
 | `plan:approved` | Build plan | Engineer | The task breakdown and order are correct |

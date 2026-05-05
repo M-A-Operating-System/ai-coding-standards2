@@ -81,10 +81,13 @@ children for retrospective purposes.
 
 If `ticket-sizer` returns `S` and the issue is the Nth small bug or
 chore in a configured window, the orchestrator suggests grouping under
-a super-issue (epic) before sizing completes. Bugs remain 1:1 with their
-own PRs (see [P-5](02-principles.md#p-5--one-issue-one-pr)); the
-super-issue exists for planning, release coordination, and aggregated
-retrospectives. See [P-6](02-principles.md#p-6--group-small-work-under-a-super-issue).
+a super-issue before sizing completes. On approval the super-issue
+becomes the shippable unit
+(see [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)): it runs
+through the full pipeline as a single unit, the grouped children pause
+their own pipelines and attach, and one PR closes the super-issue and
+all its children on merge. See
+[P-6](02-principles.md#p-6--group-small-work-under-a-super-issue).
 
 ### SQL changes
 
