@@ -124,6 +124,49 @@ an `agent.failed` audit event.
 **Tradeoff.** Two extra GitHub round-trips per agent run for the
 claim+verify dance. Acceptable at expected swarm volume.
 
+### P-14 — Deterministic Python orchestrator with sole routing authority
+
+**Statement.** A single Python-based orchestrator has exclusive
+responsibility for reacting to events and deciding which agent runs
+next. The routing logic is deterministic: given the same labels, the
+same `pipeline.json`, and the same session state, the orchestrator
+always reaches the same decision. **No LLM is in the routing path.**
+Cleverness lives in the agents; predictability lives in the
+orchestrator.
+
+**Exclusive responsibilities of the orchestrator.**
+
+- Translate raw GitHub events into the semantic event vocabulary
+  (`issue.labeled`, `pr.draft_opened`, `agent.complete`, …).
+- Read pipeline state (labels, session comments, PR metadata).
+- Evaluate the dependency graph in
+  `ai-agile/pipeline/pipeline.json` and decide which agent is
+  eligible.
+- Acquire and release the `:wip` mutex (P-4).
+- Invoke the agent (and only that — the agent runs its own session).
+- Append events to the audit log branch (P-3).
+
+**Consequences.**
+
+- Routing is unit-testable Python. Every decision the orchestrator
+  makes can be reproduced from inputs alone, in CI, without API
+  calls.
+- Agents do not invoke other agents and do not read the dependency
+  graph. They receive an invocation, do their one job, and report
+  status via `status.sh`.
+- The orchestrator can be replaced or upgraded without touching
+  agents. Its API to agents is `status.sh` plus the agent prompt
+  file.
+- Multiple orchestrator instances share work via the mutex (P-4),
+  not via global coordination — so the orchestrator can be deployed
+  redundantly.
+
+**Tradeoff.** Routing decisions cannot use LLM reasoning. We accept
+this trade because predictability, testability, and trust are
+higher-value at the routing layer than flexibility. Decisions that
+require judgment belong to humans (at gates) or to specific agents
+(within their own scope) — not to the routing layer.
+
 ---
 
 ## Operational
