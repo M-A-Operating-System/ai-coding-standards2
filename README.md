@@ -26,6 +26,9 @@ The full design is in `docs/product/agile/`. Start with
 
 ## Install in a consuming repo
 
+The whole flow is four shell commands plus one secret. The
+`get_started.py` script does the bulk of the wiring.
+
 ### 1. Add the submodule
 
 From your consuming repo's root:
@@ -33,121 +36,58 @@ From your consuming repo's root:
 ```bash
 git submodule add https://github.com/M-A-Operating-System/ai-coding-standards2 ai-coding-standards2
 git submodule update --init --recursive
-git commit -m "Add ai-coding-standards2 as submodule"
 ```
 
 The submodule lives at `ai-coding-standards2/` in your repo. Pin to a
 tag or specific commit when you're ready to control upgrades.
 
-### 2. Add the orchestrator workflow
-
-GitHub Actions only reads workflows from the consuming repo's own
-`.github/workflows/` — it does **not** pick up workflows from
-submodules. Copy the template below into your repo at
-`.github/workflows/orchestrator.yml`:
-
-```yaml
-name: AI Agile orchestrator
-
-on:
-  issues:
-    types: [opened, reopened, labeled, unlabeled]
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
-  schedule:
-    - cron: '*/15 6-20 * * 1-5'   # backstop reconciler
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: 'Issue or PR number (blank = all open items)'
-        required: false
-      dry_run:
-        description: 'Dry run — log decisions without changing labels'
-        type: boolean
-        default: false
-
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: ai-agile-${{ github.event.issue.number || github.event.pull_request.number || 'scheduled' }}
-  cancel-in-progress: false
-
-jobs:
-  orchestrate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true   # IMPORTANT: pulls in ai-coding-standards2/
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - run: pip install requests jsonschema
-
-      - run: npm install -g @anthropic-ai/claude-code
-
-      - name: Build orchestrator args
-        id: args
-        run: |
-          ARGS=""
-          if [ -n "${{ github.event.inputs.issue_number }}" ]; then
-            ARGS="--issue ${{ github.event.inputs.issue_number }}"
-          elif [ "${{ github.event_name }}" = "issues" ]; then
-            ARGS="--issue ${{ github.event.issue.number }} --kind issue"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS="--issue ${{ github.event.pull_request.number }} --kind pr"
-          fi
-          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
-          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
-
-      - name: Run orchestrator
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AI_AGILE_ROOT: ${{ github.workspace }}/ai-coding-standards2
-        run: |
-          python ai-coding-standards2/ai-agile/pipeline/pipeline_orchestrator.py \
-            --repo "$GITHUB_REPOSITORY" \
-            ${{ steps.args.outputs.args }}
-```
-
-Commit it.
-
-### 3. Add the secret
-
-Add `ANTHROPIC_API_KEY` to your consuming repo's secrets
-(Settings → Secrets and variables → Actions → New repository secret).
-
-### 4. Bootstrap the labels
-
-Once, from your consuming repo's root, after the submodule is
-checked out locally:
+### 2. Run `get_started.py`
 
 ```bash
-bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all
+python ai-coding-standards2/get_started.py
+```
+
+This script:
+
+- Detects the consuming repo's root (via `git rev-parse --show-superproject-working-tree`).
+- Drops the orchestrator workflow into your `.github/workflows/orchestrator.yml`. (GitHub Actions only reads workflows from the consuming repo's own `.github/`; it cannot pick them up from submodules.)
+- Copies the slash commands from `ai-coding-standards2/.claude/commands/` into your `.claude/commands/`, rewriting any submodule-relative paths so they resolve from your repo's root.
+- Writes `.claude/settings.local.json` setting `AI_AGILE_ROOT=ai-coding-standards2` so anyone running the orchestrator manually from your repo's root finds the right `pipeline.json`, `status.sh`, and agent prompts.
+
+Re-run with `--force` to overwrite existing files; with `--dry-run` to preview.
+
+### 3. Bootstrap the labels
+
+```bash
+bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \
+     ai-coding-standards2/ai-agile/pipeline/pipeline.json
 ```
 
 This creates every `{agent}:{status}` label and every gate label in
-your consuming repo so the orchestrator can apply them later.
+your repo so the orchestrator can apply them later.
 
-### 5. Open a test issue
+### 4. Add the `ANTHROPIC_API_KEY` secret
+
+Settings → Secrets and variables → Actions → New repository secret.
+Name it `ANTHROPIC_API_KEY`. The `GITHUB_TOKEN` is auto-provisioned by
+Actions; no PAT needed.
+
+### 5. Commit and open a test issue
+
+```bash
+git add .gitmodules ai-coding-standards2 .github/workflows/orchestrator.yml .claude/
+git commit -m "Wire up ai-coding-standards2 orchestrator"
+git push
+```
 
 Open an issue with a problem statement and acceptance criteria. The
-workflow fires on `issues.opened`, the orchestrator picks up
-`issue-classifier`, and you should see the label flow
-`issue-classifier:wip` → `issue-classifier:complete`, plus a
+workflow fires on `issues.opened`; expect labels
+`01_product_docs/issue-classifier:wip` → `:complete`, plus a
 classification comment from the agent.
 
-If the issue is missing fields, you'll see
-`issue-classifier:blocked` and a corrective comment instead.
+If the issue is missing required fields, you'll see
+`01_product_docs/issue-classifier:blocked` and a corrective comment
+instead.
 
 ---
 
@@ -213,13 +153,21 @@ in production unless you want every change auto-applied.
 ```
 .
 ├── README.md                                # this file
+├── get_started.py                           # one-shot wiring script for consuming repos
 ├── docs/product/agile/                      # full design (target state) + roadmap
 │   ├── README.md                            # reading order
 │   ├── 01-vision.md ... 13-todos.md
 │   └── 10-roadmap.md                        # MVP scope and rollout phases
 ├── .github/
-│   ├── agents/
-│   │   ├── issue-classifier.md              # agent prompt
+│   ├── agents/                              # agent prompts, one subdir per phase
+│   │   ├── 01_product_docs/
+│   │   │   └── issue-classifier.md
+│   │   ├── 02_technical_docs/               # added in future Phase 1 slices
+│   │   ├── 03_testing_spec/
+│   │   ├── 04_build_plan/
+│   │   ├── 05_execute/
+│   │   ├── 06_test/
+│   │   ├── 07_evaluate/
 │   │   └── _templates/agent-template.md     # template for new agents
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # this repo's own CI (does not run from a consuming repo)
@@ -232,6 +180,17 @@ in production unless you want every change auto-applied.
         ├── statuses.json                    # canonical status definitions
         ├── validate.py                      # pipeline.json validator
         └── schemas/pipeline.schema.json
+```
+
+The numeric prefixes on the per-phase agent directories (`01_…` →
+`10_…`) make `ls` show phases in lifecycle order. Agent names in
+`pipeline.json` and on labels carry the same prefix:
+
+```
+01_product_docs/issue-classifier
+02_technical_docs/architect
+05_execute/coder
+07_evaluate/retrospective-writer
 ```
 
 ---
