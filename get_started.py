@@ -111,7 +111,13 @@ jobs:
 
       - name: Run orchestrator
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN is the bot account's PAT (see README §Install).
+          # Using a dedicated bot account (not the workflow's auto-
+          # provisioned ${{ secrets.GITHUB_TOKEN }}) makes every label,
+          # comment, and edit in the issue timeline visibly attributable
+          # to the bot vs a human, and isolates rate-limit quotas from
+          # human contributors.
+          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AI_AGILE_ROOT: ${{ github.workspace }}/ai-coding-standards2

@@ -66,11 +66,65 @@ bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \
 This creates every `{agent}:{status}` label and every gate label in
 your repo so the orchestrator can apply them later.
 
-### 4. Add the `ANTHROPIC_API_KEY` secret
+### 4. Set up the bot account and secrets
 
+The orchestrator runs under a **dedicated GitHub user account** rather
+than the workflow's auto-provisioned `GITHUB_TOKEN`. This makes every
+label, comment, and PR review in the timeline visibly attributable to
+the bot (vs a human contributor), and isolates the bot's rate-limit
+quota from real users.
+
+#### a. Create the bot account
+
+One-time, per organisation:
+
+1. Sign out, sign up for a new GitHub account at
+   `https://github.com/join`. Suggested handle: `<org>-ai-agile-bot`.
+   Use an email address you control (an alias on the team's mailbox
+   works well).
+2. Sign in to the bot account, enable 2FA, and add it as a
+   collaborator (or org member with `write` permission) on every repo
+   that will use this orchestrator.
+
+#### b. Generate the bot's PAT
+
+While signed in as the bot:
+
+1. Go to Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token.
+2. Set the resource owner to the org (or to the bot user for
+   single-repo trials), pick the repos this token can access, and
+   grant these repository permissions:
+   - **Issues** — Read and write
+   - **Pull requests** — Read and write
+   - **Contents** — Read and write *(needed when `coder` lands later;
+     read-only is enough for Phase 1 Slice 1)*
+   - **Metadata** — Read (auto-selected)
+3. Set an expiry — 90 days is a reasonable default; calendar a
+   reminder to rotate.
+4. Copy the token (you only see it once).
+
+#### c. Store the secrets in your repo
+
+In the consuming repo (signed in as a human admin):
 Settings → Secrets and variables → Actions → New repository secret.
-Name it `ANTHROPIC_API_KEY`. The `GITHUB_TOKEN` is auto-provisioned by
-Actions; no PAT needed.
+
+| Secret | Value |
+|---|---|
+| `AI_AGILE_BOT_TOKEN` | The bot's PAT from step (b) |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key (lives on the consuming repo, **not** in this submodule) |
+
+Both secrets are repo-scoped. Neither leaves the workflow runner.
+
+> **Why not the auto `GITHUB_TOKEN`?** The auto token shows the
+> workflow itself as the actor — every action looks like it came from
+> "github-actions[bot]", indistinguishable from any other workflow.
+> A dedicated bot user gives the AI Agile pipeline its own avatar
+> and login so reviewers can see at a glance which actions are
+> agent-driven vs human-driven. See
+> [`docs/product/agile/09-human-interaction.md`](docs/product/agile/09-human-interaction.md#4-agent-identity)
+> for the full rationale and the planned migration path to a GitHub
+> App.
 
 ### 5. Commit and open a test issue
 
