@@ -186,10 +186,10 @@ sections, in this order, identified by their headers.
 |---|---|---|
 | 1. Role statement | First paragraph(s) under `# {agent-name}` | Plain-English description of what the agent owns |
 | 2. Step 1 — Apply wip | `## Step 1 — Apply wip` | The `set-wip` call |
-| 3. Step 2 — Opening announcement | `## Step 2 — Opening announcement` | Post the `<!-- ai-agile/announcement/v1 -->` start comment ([`09-human-interaction.md`](09-human-interaction.md) §3) |
+| 3. Step 2 — Opening announcement | `## Step 2 — Opening announcement` | Post the `<!-- ai-agile/announcement/v1 by {agent-name} -->` start comment ([`09-human-interaction.md`](09-human-interaction.md) §3) |
 | 4. Read-input steps | `## Step 3 — Read inputs` (and further steps as needed) | Gather context from issue/PR body, comments, files |
 | 5. Work steps | `## Step N — {action}` | The actual work — drafting, validating, editing |
-| 6. Closing announcement | `## Step N+1 — Closing announcement` | Post the closing `<!-- ai-agile/announcement/v1 -->` comment |
+| 6. Closing announcement | `## Step N+1 — Closing announcement` | Post the closing `<!-- ai-agile/announcement/v1 by {agent-name} -->` comment |
 | 7. Terminal status step | `## Step N+2 — Act on findings` | Branches: `set-complete`, `set-review`, or `set-blocked` |
 | 8. Behaviour rules | `## Behaviour rules` | Bullet list of constraints; what the agent must / must not do |
 

@@ -27,10 +27,27 @@ Markers used:
 
 | Purpose | Marker |
 |---|---|
-| Session metadata for an `(object, agent)` pair | `<!-- ai-agile/session/v1 -->` |
-| A question requiring an answer | `<!-- ai-agile/question/v1 -->` |
-| An artefact awaiting review (PRD, design, spec) | `<!-- ai-agile/artefact/v1 -->` |
-| A claim during mutex acquisition (P-4) | `<!-- ai-agile/claim/v1 -->` |
+| Session metadata for an `(object, agent)` pair | `<!-- ai-agile/session/v1 by {agent-name} -->` |
+| A question requiring an answer | `<!-- ai-agile/question/v1 by {agent-name} -->` |
+| An artefact awaiting review (PRD, design, spec) | `<!-- ai-agile/artefact/v1 by {agent-name} -->` |
+| A claim during mutex acquisition (P-4) | `<!-- ai-agile/claim/v1 by {agent-name} -->` |
+| Opening / closing announcement | `<!-- ai-agile/announcement/v1 by {agent-name} -->` |
+
+Every marker carries the **actor** as a `by {actor-name}` suffix.
+The actor is the agent's full phase-prefixed name (e.g.
+`01_product_docs/prd-writer`) for agent-posted comments, or the
+literal `orchestrator` for orchestrator-posted comments (gate
+prompts, `:failed` recovery messages, etc.).
+
+This matters because every agent posts under the same bot account
+(see [§4](#4-agent-identity)), so the GitHub-side actor is
+identical for all of them — the marker is the only place each
+agent's identity surfaces in the timeline. Reviewers can grep one
+line per comment to see which agent posted what; tooling that wants
+"all artefacts from `02_technical_docs/architect`" needs only a
+regex on the marker, not JSON parsing of the body. The actor
+convention mirrors the line-level `by <actor>` annotations used in
+the todos block (see [`13-todos.md`](13-todos.md#timestamp-and-actor-format)).
 
 Free-text prose may appear *alongside* the JSON block — the human is
 expected to read it. The JSON block is the machine-readable contract.
@@ -97,10 +114,12 @@ structured answer.
 
 ### Marker and discovery
 
-Every Question Card begins with the marker `<!-- ai-agile/question/v1 -->`
-on its own line, followed by the JSON in a fenced ```` ```json ```` block.
-The orchestrator and any agent can find pending questions on an issue
-by grepping for the marker.
+Every Question Card begins with the marker
+`<!-- ai-agile/question/v1 by {asking-agent} -->` on its own line,
+followed by the JSON in a fenced ```` ```json ```` block. The
+orchestrator and any agent can find pending questions on an issue by
+grepping for the marker (and questions from a specific agent by
+extending the regex to include the `by` suffix).
 
 ### Schema
 
@@ -217,12 +236,12 @@ actually has a question, or split into two.
 **Decision question (architect needs schema choice):**
 
 ````
-<!-- ai-agile/question/v1 -->
+<!-- ai-agile/question/v1 by 02_technical_docs/architect -->
 ```json
 {
-  "id": "Q-ais-v1-iss-42-technical-docs/architect-001",
+  "id": "Q-ais-v1-iss-42-02_technical_docs/architect-001",
   "type": "decision",
-  "asked_by": "technical-docs/architect",
+  "asked_by": "02_technical_docs/architect",
   "asked_of": "engineer",
   "asked_at": "2026-05-04T14:23:11.482Z",
   "prompt": "Where should the new 'last_login_at' field live?",
@@ -232,13 +251,13 @@ actually has a question, or split into two.
       "key": "A",
       "label": "Add to users table",
       "consequence": "Simplest read path. Bumps users row size by 8 bytes.",
-      "label_to_apply": "answer:Q-ais-v1-iss-42-technical-docs/architect-001:A"
+      "label_to_apply": "answer:Q-ais-v1-iss-42-02_technical_docs/architect-001:A"
     },
     {
       "key": "B",
       "label": "New user_sessions table",
       "consequence": "Decouples hot writes; one extra read per request.",
-      "label_to_apply": "answer:Q-ais-v1-iss-42-technical-docs/architect-001:B"
+      "label_to_apply": "answer:Q-ais-v1-iss-42-02_technical_docs/architect-001:B"
     }
   ],
   "required_fields": [],
@@ -254,12 +273,12 @@ actually has a question, or split into two.
 **Clarification question (issue-classifier needs missing info):**
 
 ````
-<!-- ai-agile/question/v1 -->
+<!-- ai-agile/question/v1 by 01_product_docs/issue-classifier -->
 ```json
 {
-  "id": "Q-ais-v1-iss-42-product-docs/issue-classifier-001",
+  "id": "Q-ais-v1-iss-42-01_product_docs/issue-classifier-001",
   "type": "clarification",
-  "asked_by": "product-docs/issue-classifier",
+  "asked_by": "01_product_docs/issue-classifier",
   "asked_of": "stakeholder",
   "asked_at": "2026-05-04T11:02:00Z",
   "prompt": "What is the success metric for this feature? The issue body does not state one.",
@@ -321,16 +340,17 @@ This makes the timeline self-explanatory in the GitHub UI — anyone
 scrolling the issue can see at a glance which agent ran, when, what
 it read, and what it produced.
 
-Both comments use the marker `<!-- ai-agile/announcement/v1 -->`.
+Both comments use the marker
+`<!-- ai-agile/announcement/v1 by {agent-name} -->`.
 
 **Opening announcement** (posted immediately after `status.sh set-wip`):
 
 ````
-<!-- ai-agile/announcement/v1 -->
+<!-- ai-agile/announcement/v1 by 01_product_docs/prd-writer -->
 ```json
 {
-  "session_id": "ais-v1-iss-42-product-docs/prd-writer",
-  "agent": "product-docs/prd-writer",
+  "session_id": "ais-v1-iss-42-01_product_docs/prd-writer",
+  "agent": "01_product_docs/prd-writer",
   "phase": "start",
   "started_at": "2026-05-04T11:02:00Z",
   "intent": "Drafting PRD from issue body and any clarifying comments.",
@@ -343,11 +363,11 @@ Both comments use the marker `<!-- ai-agile/announcement/v1 -->`.
 `status.sh` call):
 
 ````
-<!-- ai-agile/announcement/v1 -->
+<!-- ai-agile/announcement/v1 by 01_product_docs/prd-writer -->
 ```json
 {
-  "session_id": "ais-v1-iss-42-product-docs/prd-writer",
-  "agent": "product-docs/prd-writer",
+  "session_id": "ais-v1-iss-42-01_product_docs/prd-writer",
+  "agent": "01_product_docs/prd-writer",
   "phase": "end",
   "ended_at": "2026-05-04T11:04:31Z",
   "outcome": "review",
