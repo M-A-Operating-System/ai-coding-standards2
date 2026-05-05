@@ -29,9 +29,10 @@ Usage:
     python pipeline_orchestrator.py [--repo OWNER/REPO] [--issue N] [--dry-run]
 
 Requirements:
-    pip install PyGithub requests
+    pip install requests
     gh CLI authenticated
-    ANTHROPIC_API_KEY set in environment (for agent execution)
+    ANTHROPIC_API_KEY set in environment (for agent execution; in CI
+        this comes from a secret on the consuming repo, not this repo)
     GITHUB_TOKEN set in environment (or gh CLI authenticated)
 """
 
@@ -194,6 +195,13 @@ def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
 # ---------------------------------------------------------------------------
 
 class GitHubClient:
+    # HTTP retry configuration. Honoured for transient errors:
+    # 429 (rate limit), 502/503/504 (transient server), and connection
+    # errors. Retry-After header is honoured when present.
+    _REQUEST_TIMEOUT_SECONDS = 30
+    _MAX_RETRIES = 4
+    _RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+
     def __init__(self, repo: str, token: str):
         self.repo = repo
         self.token = token
@@ -205,18 +213,79 @@ class GitHubClient:
             "X-GitHub-Api-Version": "2022-11-28",
         })
 
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict | None = None,
+        json_body: dict | None = None,
+    ) -> requests.Response:
+        """Issue an HTTP request with timeout and retry-with-backoff.
+
+        Retries on 429 / 5xx (transient) and connection errors with
+        delays of 2s, 4s, 8s, 16s. Honours `Retry-After` on 429. After
+        the final attempt, raises the underlying error.
+        """
+        url = f"{self.base}{path}"
+        last_exc: Exception | None = None
+        for attempt in range(self._MAX_RETRIES + 1):
+            try:
+                r = self.session.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json_body,
+                    timeout=self._REQUEST_TIMEOUT_SECONDS,
+                )
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                last_exc = exc
+                if attempt == self._MAX_RETRIES:
+                    raise
+                delay = 2 ** (attempt + 1)
+                log.warning(
+                    "  HTTP %s %s — connection error (%s); retrying in %ds (attempt %d/%d)",
+                    method, path, exc, delay, attempt + 1, self._MAX_RETRIES,
+                )
+                time.sleep(delay)
+                continue
+
+            # Non-retryable success or non-retryable error → return.
+            if r.status_code not in self._RETRYABLE_STATUSES:
+                return r
+
+            # Retryable status. Honour Retry-After if provided.
+            if attempt == self._MAX_RETRIES:
+                return r  # caller will raise_for_status
+
+            retry_after = r.headers.get("Retry-After")
+            if retry_after and retry_after.isdigit():
+                delay = min(int(retry_after), 60)  # cap at 60s per attempt
+            else:
+                delay = 2 ** (attempt + 1)
+            log.warning(
+                "  HTTP %s %s — %d; retrying in %ds (attempt %d/%d)",
+                method, path, r.status_code, delay, attempt + 1, self._MAX_RETRIES,
+            )
+            time.sleep(delay)
+
+        # Defensive: should not reach here.
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("retry loop exited without a response")
+
     def _get(self, path: str, params: dict = None) -> dict | list:
-        r = self.session.get(f"{self.base}{path}", params=params)
+        r = self._request("GET", path, params=params)
         r.raise_for_status()
         return r.json()
 
     def _post(self, path: str, body: dict) -> dict:
-        r = self.session.post(f"{self.base}{path}", json=body)
+        r = self._request("POST", path, json_body=body)
         r.raise_for_status()
         return r.json()
 
     def _delete(self, path: str) -> None:
-        r = self.session.delete(f"{self.base}{path}")
+        r = self._request("DELETE", path)
         if r.status_code not in (200, 204):
             r.raise_for_status()
 
@@ -296,7 +365,10 @@ class GitHubClient:
         try:
             self._get(f"/repos/{self.repo}/labels/{requests.utils.quote(label, safe='')}")
         except requests.HTTPError as e:
-            if e.response.status_code != 404:
+            # e.response can be None if the failure was connection-level
+            # rather than HTTP; in that case re-raise rather than silently
+            # treating it as 404.
+            if e.response is None or e.response.status_code != 404:
                 raise
             # Determine colour from the status suffix
             suffix = label.split(":")[-1] if ":" in label else "complete"
@@ -310,7 +382,7 @@ class GitHubClient:
                 log.debug("Created label: %s", label)
             except requests.HTTPError as create_err:
                 # Race condition — another process created it first
-                if create_err.response.status_code == 422:
+                if create_err.response is not None and create_err.response.status_code == 422:
                     pass
                 else:
                     raise
@@ -336,21 +408,42 @@ def is_pipeline_paused() -> tuple[bool, Optional[str], Optional[datetime]]:
 
     The pause marker is a JSON file at PAUSE_MARKER_PATH containing:
         { "until": "<ISO-8601>", "reason": "...", "paused_at": "<ISO-8601>" }
+
+    Safe against TOCTOU: a concurrent process may delete or rewrite
+    the marker between our existence check and read; either is
+    treated as "not paused" for this run.
     """
-    if not PAUSE_MARKER_PATH.exists():
-        return False, None, None
     try:
-        marker = json.loads(PAUSE_MARKER_PATH.read_text())
+        raw = PAUSE_MARKER_PATH.read_text()
+    except FileNotFoundError:
+        return False, None, None
+    except OSError as exc:
+        log.warning(
+            "Pause marker at %s could not be read (%s); ignoring.",
+            PAUSE_MARKER_PATH, exc,
+        )
+        return False, None, None
+
+    try:
+        marker = json.loads(raw)
         until = datetime.fromisoformat(marker["until"])
-        if _now_utc() < until:
-            return True, marker.get("reason", "pipeline paused"), until
-        # Expired — clear it so the next agent failure can write a fresh marker.
-        PAUSE_MARKER_PATH.unlink(missing_ok=True)
-        log.info("Pause marker expired (was until %s); cleared.", until.isoformat())
-        return False, None, None
     except (json.JSONDecodeError, KeyError, ValueError) as exc:
-        log.warning("Pause marker at %s is malformed (%s); ignoring.", PAUSE_MARKER_PATH, exc)
+        log.warning(
+            "Pause marker at %s is malformed (%s); ignoring.",
+            PAUSE_MARKER_PATH, exc,
+        )
         return False, None, None
+
+    if _now_utc() < until:
+        return True, marker.get("reason", "pipeline paused"), until
+
+    # Expired — clear it so the next agent failure can write a fresh marker.
+    try:
+        PAUSE_MARKER_PATH.unlink(missing_ok=True)
+    except OSError as exc:
+        log.debug("Could not unlink expired pause marker: %s", exc)
+    log.info("Pause marker expired (was until %s); cleared.", until.isoformat())
+    return False, None, None
 
 
 def pause_pipeline(seconds: int, reason: str) -> datetime:
@@ -405,6 +498,30 @@ def detect_rate_limit(output: str) -> tuple[bool, int]:
                 continue
 
     return True, DEFAULT_PAUSE_SECONDS
+
+
+def _terminate_subprocess(proc: subprocess.Popen) -> None:
+    """Kill a subprocess and reap it so it does not become a zombie.
+
+    Tries SIGTERM first, then SIGKILL after a short grace period.
+    Always calls wait() so the OS can free the process slot.
+    """
+    if proc.poll() is not None:
+        return  # already exited
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            log.warning("Subprocess pid=%d did not exit after SIGKILL", proc.pid)
+    except (ProcessLookupError, OSError) as exc:
+        log.debug("Could not terminate subprocess pid=%d: %s", proc.pid, exc)
 
 
 def _probe_kind(gh: "GitHubClient", number: int) -> str:
@@ -580,7 +697,33 @@ def invoke_agent(
     cmd = [
         "claude",
         "--allowedTools",
-        f"Bash(git *),Bash(gh *),Bash(bash {STATUS_SH} *),Read,Glob,Grep",
+        # Scoped allowlist. Each entry is a glob the bash command must
+        # match. Keeping these narrow blocks the agent from reaching
+        # secrets/settings/branches even if it is prompt-injected.
+        # If a future agent legitimately needs more (e.g. coder needs
+        # `git push`), broaden via the agent's frontmatter rather than
+        # widening the global default.
+        ",".join([
+            f"Bash(bash {STATUS_SH} *)",  # state transitions
+            "Bash(gh issue view *)",       # read issue body / labels
+            "Bash(gh issue comment *)",    # post artefact + announcement comments
+            "Bash(gh issue edit *)",       # apply kind/* and other labels
+            "Bash(gh issue list *)",       # cross-issue reads (impact-assessor etc.)
+            "Bash(gh pr view *)",          # PR-side agents read PR
+            "Bash(gh pr comment *)",       # PR-side agents post comments
+            "Bash(gh pr edit *)",          # PR-side label edits
+            "Bash(gh pr list *)",
+            "Bash(gh pr diff *)",          # pr-reviewer reads the diff
+            "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
+            "Bash(gh api repos/*/pulls/*)",
+            "Bash(date *)",                # ISO-8601 timestamps in announcements
+            "Bash(cat *)",                 # read prompt-side files
+            "Bash(grep *)",
+            "Bash(find *)",
+            "Read",
+            "Glob",
+            "Grep",
+        ]),
         "--max-turns", "60",
         "-p", prompt,
     ]
@@ -597,20 +740,31 @@ def invoke_agent(
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
 
     # Export resolved paths so the agent prompt's bash snippets work
-    # regardless of CWD or where this repo is mounted in the consuming repo.
+    # regardless of CWD or where this repo is mounted in the consuming
+    # repo. Only one of ISSUE_NUMBER / PR_NUMBER is set, matching the
+    # work item's kind, so the agent's prompt cannot get them confused.
     agent_env = {
         **os.environ,
         "STATUS_SH": str(STATUS_SH),
         "AI_AGILE_ROOT": str(SUBMODULE_ROOT),
         "REPO": repo,
-        "ISSUE_NUMBER": str(work_item.number),
-        "PR_NUMBER": str(work_item.number),
+        "WORK_ITEM_KIND": work_item.kind,
+        "WORK_ITEM_NUMBER": str(work_item.number),
     }
+    if work_item.kind == "issue":
+        agent_env["ISSUE_NUMBER"] = str(work_item.number)
+    else:
+        agent_env["PR_NUMBER"] = str(work_item.number)
 
     # Capture output so we can detect Anthropic rate-limit errors after
     # the run. Stream it to our stderr line-by-line so logs remain
-    # readable in real time, but keep a copy in `captured` for inspection.
+    # readable in real time, but keep a bounded copy for inspection.
+    # Cap retained lines so a chatty agent cannot exhaust runner memory.
+    MAX_CAPTURED_LINES = 5000
+    AGENT_TIMEOUT_SECONDS = 1800
     captured_lines: list[str] = []
+
+    proc: subprocess.Popen | None = None
     try:
         proc = subprocess.Popen(
             cmd,
@@ -619,24 +773,21 @@ def invoke_agent(
             text=True,
             env=agent_env,
         )
-        deadline = time.monotonic() + 1800   # 30 min max
+        deadline = time.monotonic() + AGENT_TIMEOUT_SECONDS
         try:
             assert proc.stdout is not None
             for line in proc.stdout:
-                captured_lines.append(line)
                 # Mirror to our stderr so the subprocess log is visible
                 # in the orchestrator's CI output.
                 sys.stderr.write(line)
+                if len(captured_lines) < MAX_CAPTURED_LINES:
+                    captured_lines.append(line)
                 if time.monotonic() > deadline:
-                    proc.kill()
-                    raise subprocess.TimeoutExpired(cmd, 1800)
-            proc.wait()
+                    raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
+            proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             log.error("    Agent %s timed out on #%d", agent_def.agent, work_item.number)
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
+            _terminate_subprocess(proc)
             return False
 
         # On non-zero exit, check whether the cause was a rate-limit
@@ -742,7 +893,7 @@ def process_work_item(
             # stop processing entirely. Do NOT mark :failed — the agent
             # never got a fair run. The next scheduled tick (after the
             # pause expires) will retry.
-            paused, reason, until = is_pipeline_paused()
+            paused, _reason, until = is_pipeline_paused()
             if paused:
                 log.warning(
                     "  PAUSED  %-38s  rate-limited; resuming after %s",
