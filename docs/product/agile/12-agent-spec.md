@@ -16,17 +16,62 @@ place.
 
 ---
 
-## File location and naming
+## Naming convention
+
+Every agent name carries its phase as a prefix, separated by a forward
+slash:
 
 ```
-.github/agents/{agent-name}.md
+{phase}/{short-name}
 ```
 
-- `{agent-name}` is the stable agent name.
-- It must match the filename exactly: `prd-writer.md` defines the
-  `prd-writer` agent.
-- It must match the `agent` field in `pipeline.json`.
-- It is lowercase, hyphenated, no spaces, no underscores.
+Examples: `product-docs/issue-classifier`, `technical-docs/architect`,
+`execute/coder`, `evaluate/retrospective-writer`,
+`learn/metrics-aggregator`.
+
+The phase prefix is one of the ten phase identifiers defined in
+[`04-lifecycle.md`](04-lifecycle.md):
+
+| Per-ticket | Continuous |
+|---|---|
+| `product-docs` | `learn` |
+| `technical-docs` | `gap-assessment` |
+| `testing-spec` | `tech-debt` |
+| `build-plan` | |
+| `execute` | |
+| `test` | |
+| `evaluate` | |
+
+The short-name is lowercase-hyphenated with no spaces or underscores.
+
+**Why prefix.** A glance at any label, comment, or audit-log line
+reveals which phase the agent belongs to without consulting
+`pipeline.json`. It also prevents future name collisions across phases
+(e.g. a hypothetical `execute/dependency-resolver` could coexist with
+`product-docs/dependency-resolver` if the design ever requires it).
+
+**Constraint.** An agent's phase prefix is part of its identity. If
+its phase changes, the agent is treated as renamed: a new entry
+replaces the old one in `pipeline.json`, the old prompt file is moved
+to the parking lot, and existing closed work keeps the old name in
+its audit trail. Renaming is rare; no Phase-1 agent is expected to
+move phases after launch.
+
+---
+
+## File location
+
+```
+.github/agents/{phase}/{short-name}.md
+```
+
+So `product-docs/issue-classifier` lives at
+`.github/agents/product-docs/issue-classifier.md`.
+
+- The directory **is** the phase prefix; the orchestrator computes the
+  file path by treating the agent name's `/` as a directory separator.
+- The filename and the frontmatter `name:` field together must match
+  the `agent` field in `pipeline.json`.
 
 A copy-paste starting point lives at
 [`.github/agents/_templates/agent-template.md`](../../../.github/agents/_templates/agent-template.md).
@@ -39,7 +84,7 @@ The file begins with a YAML block delimited by `---`:
 
 ```yaml
 ---
-name: agent-name
+name: product-docs/agent-name
 description: >
   One paragraph stating what the agent does and when it runs. Surfaces
   in agent listings and the generated agents.md catalogue.
@@ -52,7 +97,7 @@ model: claude-sonnet-4-6
 
 | Field | Required | Type | Constraints |
 |---|---|---|---|
-| `name` | yes | string | Matches filename; matches `pipeline.json` `agent` field; lowercase-hyphenated |
+| `name` | yes | string | Format `{phase}/{short-name}`; matches the file's path under `.github/agents/`; matches `pipeline.json` `agent` field; lowercase-hyphenated short-name |
 | `description` | yes | string | One paragraph; ≤ 500 characters; states what the agent does |
 | `tools` | yes | array of strings | Subset of the allowable-tools matrix below |
 | `model` | yes | string | One of: `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
@@ -88,16 +133,16 @@ is the policy; any deviation requires an ADR.
 
 | Agent type | Example agents | Tools |
 |---|---|---|
-| **Classifier / sizer** | `issue-classifier`, `ticket-sizer` | `[Bash, Read]` |
-| **Document drafter** | `prd-writer`, `architect`, `test-spec-writer`, `retrospective-writer`, `release-noter` | `[Bash, Read, Grep]` |
-| **Validator / reviewer** | `standards-compliance-reviewer`, `migration-validator`, `pr-reviewer`, `test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
-| **Decomposer / planner** | `task-decomposer`, `dependency-resolver`, `impact-assessor` | `[Bash, Read, Glob, Grep]` |
-| **ADR proposer** | `adr-proposer` (folded into `architect` per roadmap) | `[Bash, Read]` |
-| **Coder** | `coder` | `[Bash, Read, Edit, Write, Glob, Grep]` |
-| **Test writer / runner** | `test-writer`, `test-runner` | `[Bash, Read, Edit, Write, Glob, Grep]` |
-| **Standards evolver** | `standards-evolver` | `[Bash, Read, Glob, Grep, Edit]` |
-| **Phase 8/9/10 meta-agents** | `metrics-aggregator`, `gap-assessor`, `debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
-| **Phase 8 prompt mutator** | `prompt-tuner` | `[Bash, Read, Edit]` (edits agent prompt files only) |
+| **Classifier / sizer** | `product-docs/issue-classifier`, `product-docs/ticket-sizer` | `[Bash, Read]` |
+| **Document drafter** | `product-docs/prd-writer`, `technical-docs/architect`, `testing-spec/test-spec-writer`, `evaluate/retrospective-writer`, `evaluate/release-noter` | `[Bash, Read, Grep]` |
+| **Validator / reviewer** | `execute/standards-compliance-reviewer`, `execute/migration-validator`, `execute/pr-reviewer`, `testing-spec/test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
+| **Decomposer / planner** | `build-plan/task-decomposer`, `product-docs/dependency-resolver`, `product-docs/impact-assessor` | `[Bash, Read, Glob, Grep]` |
+| **ADR proposer** | `technical-docs/adr-proposer` (folded into `technical-docs/architect` per roadmap) | `[Bash, Read]` |
+| **Coder** | `execute/coder` | `[Bash, Read, Edit, Write, Glob, Grep]` |
+| **Test writer / runner** | `test/test-writer`, `test/test-runner` | `[Bash, Read, Edit, Write, Glob, Grep]` |
+| **Standards evolver** | `evaluate/standards-evolver` | `[Bash, Read, Glob, Grep, Edit]` |
+| **Phase 8/9/10 meta-agents** | `learn/metrics-aggregator`, `gap-assessment/gap-assessor`, `tech-debt/debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
+| **Phase 8 prompt mutator** | `learn/prompt-tuner` | `[Bash, Read, Edit]` (edits agent prompt files only) |
 
 ### Security note on WebFetch and WebSearch
 
@@ -119,9 +164,9 @@ inclusion documented as an exception ADR.
 
 | Model | When to use |
 |---|---|
-| `claude-opus-4-7` | Hardest reasoning: `architect`, `pr-reviewer`, `process-reviewer`, `standards-evolver` |
+| `claude-opus-4-7` | Hardest reasoning: `technical-docs/architect`, `execute/pr-reviewer`, `learn/process-reviewer`, `evaluate/standards-evolver` |
 | `claude-sonnet-4-6` | Default for most agents — drafters, decomposers, validators |
-| `claude-haiku-4-5` | Fast, cheap, deterministic: `issue-classifier`, `ticket-sizer`, `release-noter`, `metrics-aggregator` |
+| `claude-haiku-4-5` | Fast, cheap, deterministic: `product-docs/issue-classifier`, `product-docs/ticket-sizer`, `evaluate/release-noter`, `learn/metrics-aggregator` |
 
 Choosing a more expensive model than necessary wastes budget without
 improving outcomes. Choosing a cheaper model than necessary produces
@@ -232,7 +277,7 @@ Every PR that touches `.github/agents/*.md` runs
 1. **Frontmatter parses** as YAML.
 2. **Required fields** are present: `name`, `description`, `tools`,
    `model`.
-3. **`name` matches the filename** (`name: prd-writer` ↔ `prd-writer.md`).
+3. **`name` matches the path under `.github/agents/`** (`name: product-docs/prd-writer` ↔ `.github/agents/product-docs/prd-writer.md`).
 4. **`name` exists** in `pipeline.json` as a declared agent.
 5. **`tools` array** is a subset of the allowable-tools matrix.
 6. **`model`** is one of the three allowed model IDs.

@@ -220,9 +220,9 @@ actually has a question, or split into two.
 <!-- ai-agile/question/v1 -->
 ```json
 {
-  "id": "Q-ais-v1-iss-42-architect-001",
+  "id": "Q-ais-v1-iss-42-technical-docs/architect-001",
   "type": "decision",
-  "asked_by": "architect",
+  "asked_by": "technical-docs/architect",
   "asked_of": "engineer",
   "asked_at": "2026-05-04T14:23:11.482Z",
   "prompt": "Where should the new 'last_login_at' field live?",
@@ -232,13 +232,13 @@ actually has a question, or split into two.
       "key": "A",
       "label": "Add to users table",
       "consequence": "Simplest read path. Bumps users row size by 8 bytes.",
-      "label_to_apply": "answer:Q-ais-v1-iss-42-architect-001:A"
+      "label_to_apply": "answer:Q-ais-v1-iss-42-technical-docs/architect-001:A"
     },
     {
       "key": "B",
       "label": "New user_sessions table",
       "consequence": "Decouples hot writes; one extra read per request.",
-      "label_to_apply": "answer:Q-ais-v1-iss-42-architect-001:B"
+      "label_to_apply": "answer:Q-ais-v1-iss-42-technical-docs/architect-001:B"
     }
   ],
   "required_fields": [],
@@ -257,9 +257,9 @@ actually has a question, or split into two.
 <!-- ai-agile/question/v1 -->
 ```json
 {
-  "id": "Q-ais-v1-iss-42-issue-classifier-001",
+  "id": "Q-ais-v1-iss-42-product-docs/issue-classifier-001",
   "type": "clarification",
-  "asked_by": "issue-classifier",
+  "asked_by": "product-docs/issue-classifier",
   "asked_of": "stakeholder",
   "asked_at": "2026-05-04T11:02:00Z",
   "prompt": "What is the success metric for this feature? The issue body does not state one.",
@@ -329,8 +329,8 @@ Both comments use the marker `<!-- ai-agile/announcement/v1 -->`.
 <!-- ai-agile/announcement/v1 -->
 ```json
 {
-  "session_id": "ais-v1-iss-42-prd-writer",
-  "agent": "prd-writer",
+  "session_id": "ais-v1-iss-42-product-docs/prd-writer",
+  "agent": "product-docs/prd-writer",
   "phase": "start",
   "started_at": "2026-05-04T11:02:00Z",
   "intent": "Drafting PRD from issue body and any clarifying comments.",
@@ -346,8 +346,8 @@ Both comments use the marker `<!-- ai-agile/announcement/v1 -->`.
 <!-- ai-agile/announcement/v1 -->
 ```json
 {
-  "session_id": "ais-v1-iss-42-prd-writer",
-  "agent": "prd-writer",
+  "session_id": "ais-v1-iss-42-product-docs/prd-writer",
+  "agent": "product-docs/prd-writer",
   "phase": "end",
   "ended_at": "2026-05-04T11:04:31Z",
   "outcome": "review",

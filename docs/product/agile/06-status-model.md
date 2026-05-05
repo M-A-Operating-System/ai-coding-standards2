@@ -25,8 +25,11 @@ the model in product terms.
 | `failed` | Red | Agent crashed with a technical error | Orchestrator | Human (after debugging) |
 | `skipped` | Light blue | Agent was intentionally bypassed | Human | Never |
 
-The label format is `{agent}:{status}`. Examples: `prd-writer:wip`,
-`architect:review`, `coder:failed`, `adr-proposer:skipped`.
+The label format is `{agent}:{status}`, where `{agent}` is the
+phase-prefixed agent name (see
+[`12-agent-spec.md`](12-agent-spec.md#naming-convention)). Examples:
+`product-docs/prd-writer:wip`, `technical-docs/architect:review`,
+`execute/coder:failed`, `technical-docs/adr-proposer:skipped`.
 
 ---
 
@@ -172,11 +175,12 @@ orchestrator:  re-evaluates eligibility
 - **Single writer.** All transitions out of `:review` go through one
   code path. Easier to audit, easier to test, no race between a human
   applying `prd:approved` and a stale agent webhook setting
-  `prd-writer:complete`.
+  `product-docs/prd-writer:complete`.
 - **Atomic from the dependency-graph point of view.** The downstream
-  agent's eligibility check is one query: "is `prd-writer:complete`
-  present and `prd:approved` present?" The orchestrator guarantees
-  these two labels appear together or not at all.
+  agent's eligibility check is one query: "is
+  `product-docs/prd-writer:complete` present and `prd:approved`
+  present?" The orchestrator guarantees these two labels appear
+  together or not at all.
 - **Humans do less.** Approving a gate is one click (apply label).
   The human is not asked to remember to also remove `:review` and
   apply `:complete`.
@@ -204,10 +208,10 @@ that."
 
 Common skip cases:
 
-- **`adr-proposer:skipped`** — no architectural decisions in this ticket.
-- **`migration-validator:skipped`** — no SQL changes (often automatic by
+- **`technical-docs/adr-proposer:skipped`** — no architectural decisions in this ticket.
+- **`execute/migration-validator:skipped`** — no SQL changes (often automatic by
   path filter, but can be manual).
-- **`product-standards-checker:skipped`** — pure technical chore with no
+- **`product-docs/product-standards-checker:skipped`** — pure technical chore with no
   product surface.
 
 Skipping is treated as equivalent to `complete` for downstream

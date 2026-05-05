@@ -239,12 +239,17 @@ facts and is stable forever:
 ais-v1-{kind}-{id}-{agent}
 ```
 
+`{agent}` is the phase-prefixed agent name from `pipeline.json`
+(see [`12-agent-spec.md`](12-agent-spec.md#naming-convention)). The
+`/` in the agent name is preserved verbatim in the session ID — it is
+a literal character, not a hierarchy.
+
 | Object × Agent | Session ID |
 |---|---|
-| issue 42, prd-writer | `ais-v1-iss-42-prd-writer` |
-| issue 42, architect | `ais-v1-iss-42-architect` |
-| PR 77, coder | `ais-v1-pr-77-coder` |
-| PR 77, pr-reviewer | `ais-v1-pr-77-pr-reviewer` |
+| issue 42, `product-docs/prd-writer` | `ais-v1-iss-42-product-docs/prd-writer` |
+| issue 42, `technical-docs/architect` | `ais-v1-iss-42-technical-docs/architect` |
+| PR 77, `execute/coder` | `ais-v1-pr-77-execute/coder` |
+| PR 77, `execute/pr-reviewer` | `ais-v1-pr-77-execute/pr-reviewer` |
 
 Different agents on the same object have different sessions. The same
 agent on different objects has different sessions. Re-runs of the same

@@ -53,9 +53,9 @@ Every line in a `DD.jsonl` is one event:
 {
   "ts": "2026-05-04T14:23:11.482Z",
   "event_type": "agent.complete",
-  "session_id": "ais-v1-iss-42-prd-writer",
+  "session_id": "ais-v1-iss-42-product-docs/prd-writer",
   "object": { "kind": "issue", "id": 42, "repo": "m-a-os/acs2" },
-  "agent": "prd-writer",
+  "agent": "product-docs/prd-writer",
   "actor": { "kind": "agent", "id": "runner-7f3a", "human": null },
   "outcome": { "status": "complete", "detail": null },
   "ref": {

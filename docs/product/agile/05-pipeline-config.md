@@ -35,18 +35,18 @@ For each agent, exactly these facts:
 
 | Field | Required | Meaning |
 |---|---|---|
-| `agent` | yes | Stable agent name; matches `.github/agents/{agent}.md` |
-| `phase` | yes | One of: `product-docs`, `technical-docs`, `testing-spec`, `build-plan`, `execute`, `test`, `evaluate`, `learn`, `gap-assessment`, `tech-debt` |
+| `agent` | yes | Stable agent name in the form `{phase}/{short-name}` (e.g. `product-docs/prd-writer`); matches `.github/agents/{phase}/{short-name}.md` and the `name:` field in that prompt. See [`12-agent-spec.md`](12-agent-spec.md#naming-convention). |
+| `phase` | yes | One of: `product-docs`, `technical-docs`, `testing-spec`, `build-plan`, `execute`, `test`, `evaluate`, `learn`, `gap-assessment`, `tech-debt`. Must equal the prefix in `agent`. |
 | `object` | yes | Array containing `issue`, `pr`, or both |
 | `trigger` | yes | One of: `{event: "..."}`, `{label: "..."}`, `{schedule: "..."}`, optionally with `path_filter` |
-| `dependencies` | yes | Array of agent names that must reach `:complete` before this agent can run |
+| `dependencies` | yes | Array of agent names (in the same `{phase}/{short-name}` format) that must reach `:complete` before this agent can run |
 | `human_gate_after` | yes | Boolean — is there a human gate after this agent? |
-| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance |
+| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are NOT phase-prefixed — they are short and stable (e.g. `prd:approved`, `pr:approved`). |
 | `description` | yes | One-sentence statement of what the agent owns |
 
 Anything else about an agent — its prompt, its tools, its model — lives
-in `.github/agents/{agent}.md`, not in `pipeline.json`. The pipeline
-file describes the *graph*, not the *behaviour*.
+in `.github/agents/{phase}/{short-name}.md`, not in `pipeline.json`.
+The pipeline file describes the *graph*, not the *behaviour*.
 
 ---
 
