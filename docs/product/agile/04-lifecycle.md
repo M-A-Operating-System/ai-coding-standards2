@@ -1,7 +1,9 @@
 # Lifecycle
 
-Every change passes through seven phases. Each phase has clearly defined
-inputs, outputs, agents, and (where applicable) a human gate.
+Every change passes through seven per-ticket phases. An eighth phase
+runs continuously across all tickets to learn from the pipeline itself.
+Each phase has clearly defined inputs, outputs, agents, and (where
+applicable) a human gate.
 
 This document describes the phases conceptually. The authoritative list
 of agents per phase, their dependencies, triggers, and gates lives in
@@ -17,21 +19,27 @@ generated views are correct. See [P-2](02-principles.md#p-2--one-machine-readabl
 
 ---
 
-## The seven phases
+## The eight phases
 
-| # | Phase | Purpose | Primary artefact |
-|---|---|---|---|
-| 1 | Product docs | Establish what is being built and whether it fits | PRD + sized ticket + dependency map |
-| 2 | Technical docs | Establish how it will be built | Technical design + ADR drafts |
-| 3 | Testing spec | Establish what "done" means | Numbered Gherkin scenarios |
-| 4 | Build plan | Establish the order of work | Ordered child task list |
-| 5 | Execute | Build it | One PR per task |
-| 6 | Test | Verify it | Tests, coverage report |
-| 7 | Evaluate | Record and learn | Changelog, retrospective, standards proposals |
+Phases 1–7 run per ticket, in order. Phase 8 runs continuously across
+all tickets, mining the audit log to improve the pipeline itself.
 
-Each phase produces an artefact that is the input to the next. Skipping
-a phase is not supported — the orchestrator will not invoke a downstream
-agent until its declared dependencies are satisfied.
+| # | Phase | Cadence | Purpose | Primary artefact |
+|---|---|---|---|---|
+| 1 | Product docs | Per ticket | Establish what is being built and whether it fits | PRD + sized ticket + dependency map |
+| 2 | Technical docs | Per ticket | Establish how it will be built | Technical design + ADR drafts |
+| 3 | Testing spec | Per ticket | Establish what "done" means | Numbered Gherkin scenarios |
+| 4 | Build plan | Per ticket | Establish the order of work | Ordered child task list |
+| 5 | Execute | Per ticket | Build it | One PR (draft from first commit, per [P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr)) |
+| 6 | Test | Per ticket | Verify it | Tests, coverage report |
+| 7 | Evaluate | Per ticket | Record what shipped and reflect on this ticket | Changelog, per-ticket retrospective, targeted standards proposals |
+| 8 | Learn | Continuous | Improve the pipeline itself from accumulated experience | Pipeline metrics, pipeline-graph proposals, agent-prompt tuning proposals, knowledge artefacts |
+
+Each per-ticket phase produces an artefact that is the input to the
+next. Skipping a phase is not supported — the orchestrator will not
+invoke a downstream agent until its declared dependencies are
+satisfied. Phase 8 does not block any per-ticket flow; it operates
+independently on the audit log.
 
 ---
 
@@ -133,3 +141,70 @@ A typical small ticket flows like this:
 | Weekly | `standards-evolver` reviews retrospectives, drafts proposals |
 
 Total wall-clock human time: minutes. Total elapsed time: hours.
+
+---
+
+## Phase 8 — Learn
+
+Phase 8 is a continuously running meta-loop, not a per-ticket step. It
+treats the audit log branch (see [`08-audit-log.md`](08-audit-log.md))
+and the corpus of closed retrospectives as its primary inputs and
+proposes improvements to the pipeline itself.
+
+**Distinction from Phase 7.** Phase 7 closes one ticket: it writes the
+changelog, records a per-ticket retrospective, and feeds targeted
+standards proposals. Phase 8 looks across many tickets to find systemic
+patterns and tune the system that produced them.
+
+| Concern | Phase 7 (Evaluate) | Phase 8 (Learn) |
+|---|---|---|
+| Scope | One ticket | All tickets in a window |
+| Cadence | On PR merge / issue close | Continuous: daily metrics, weekly tuning |
+| Output | Changelog, retrospective, standards proposals | Pipeline metrics, pipeline-graph proposals, prompt tuning, knowledge artefacts |
+| Changes | Standards (`ai-agile/standards/*.json`) | The pipeline itself (`pipeline.json`, agent prompts, schedules) |
+
+**Agents (proposed; added to `pipeline.json` as Phase-8 agents).**
+
+- **`metrics-aggregator`** — runs daily. Reads the audit log and
+  computes cycle time per phase, gate dwell time per gate, agent
+  duration distributions, rejection rates, blocked/failed counts.
+  Writes a metrics report to `docs/product/agile/generated/metrics/`
+  (per [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
+- **`pipeline-tuner`** — runs monthly. Looks at the metrics for
+  systemic patterns: agents that consistently exceed timeout,
+  dependencies that always halt, gates that are rubber-stamped,
+  trigger schedules that miss work. Drafts proposals as PRs against
+  `pipeline.json` for standards-owner review.
+- **`prompt-tuner`** — runs monthly. For each agent, examines
+  rejection rates and the diff between the agent's first draft and
+  the human-approved version. Drafts targeted edits to the agent's
+  prompt at `.github/agents/{agent}.md` as PRs.
+- **`knowledge-curator`** — runs weekly. Identifies tickets whose
+  outcomes contain reusable patterns (a recurring incident shape, a
+  novel architecture choice, a useful test pattern) and drafts
+  knowledge artefacts (runbooks, templates, teaching examples)
+  into `docs/learnings/`.
+
+**Human gates.**
+
+- **`pipeline-change:approved`** (proposed) — standards owner
+  approves any change to `pipeline.json` proposed by `pipeline-tuner`.
+- **`prompt-change:approved`** (proposed) — agent owner approves
+  any change to an agent prompt proposed by `prompt-tuner`.
+- Changes from `knowledge-curator` follow normal PR review.
+
+**Why Phase 8 is its own phase.**
+
+- Per-ticket retrospectives surface ticket-shaped lessons.
+  Cross-ticket meta-analysis surfaces system-shaped lessons. They
+  use different inputs and produce different outputs.
+- Changes in Phase 8 affect *all future tickets*, so they need
+  higher review bars than per-ticket standards changes.
+- Separating Phase 8 lets us scale the cadence: daily metrics,
+  weekly knowledge curation, monthly tuning — without entangling
+  with the per-ticket lifecycle.
+
+Phase 8 implementation is deferred until the per-ticket pipeline
+(Phases 1–7) is running steadily and the audit log has accumulated
+enough data to mine. The phase is declared here so the system is
+designed for it from the start.

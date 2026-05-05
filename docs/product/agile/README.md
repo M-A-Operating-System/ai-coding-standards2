@@ -18,7 +18,7 @@ evolve them as the system matures.
 | 01 | [Vision](01-vision.md) | The problem, what success looks like |
 | 02 | [Principles](02-principles.md) | The rules AI Agile is built on (P-1..P-12) |
 | 03 | [Personas](03-personas.md) | Who uses AI Agile and what they need from it |
-| 04 | [Lifecycle](04-lifecycle.md) | The seven phases an issue passes through |
+| 04 | [Lifecycle](04-lifecycle.md) | The seven per-ticket phases plus the cross-ticket Learn phase |
 | 05 | [Pipeline configuration](05-pipeline-config.md) | The single JSON file that declares the agent graph |
 | 06 | [Status model](06-status-model.md) | The label-driven state machine |
 | 07 | [Human gates](07-human-gates.md) | Where humans approve, and what they are signing off |
