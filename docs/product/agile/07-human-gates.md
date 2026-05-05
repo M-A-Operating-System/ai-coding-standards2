@@ -6,6 +6,14 @@ agent applies a `:review` status, posts an artefact, and waits. A human reads
 the artefact and either approves (applies the gate label) or requests
 changes (removes the `:review` label after commenting; the agent re-runs).
 
+When the human applies the gate label, the **orchestrator** does the
+follow-through: it removes `{agent}:review`, applies `{agent}:complete`,
+and emits the matching events to the audit log. Humans never directly
+apply `{agent}:complete` — they apply the gate label, the orchestrator
+promotes the agent. See
+[`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition)
+for the full lifecycle.
+
 Gates exist for one reason: to make sure the deciding work — what to build,
 how to design it, what "done" looks like, whether the code is right —
 remains a human responsibility. Agents draft. Humans decide.
@@ -43,18 +51,24 @@ orientation; the generated file is the source of truth (see
    - Posts a comment naming the artefact and what action the human should
      take.
 4. The pipeline halts for this issue. The orchestrator skips it on every
-   subsequent run.
+   subsequent run, except to watch for the gate label.
 5. The human reads the artefact. They have three options:
    - **Approve as-is.** Apply the gate label (e.g., `prd:approved`). The
-     orchestrator advances on the next run.
-   - **Approve with edits.** Edit the artefact comment in place. Apply the
-     gate label. Edits to the comment are part of the audit trail.
-   - **Request changes.** Comment with feedback. Remove the `:review` label.
-     The agent re-runs, picks up the feedback comments, and produces a new
-     draft.
+     orchestrator detects the gate, removes `{agent}:review`, applies
+     `{agent}:complete`, emits `gate.approved` and `agent.complete` to
+     the audit log, and re-evaluates downstream eligibility on its next
+     tick.
+   - **Approve with edits.** Edit the artefact comment in place. Apply
+     the gate label. The orchestrator's promotion path is the same;
+     edits to the comment are part of the audit trail.
+   - **Request changes.** Comment with feedback. Remove the `:review`
+     label *without* applying the gate label. The orchestrator
+     re-evaluates eligibility, the agent re-runs, picks up the feedback
+     comments, and produces a new draft.
 
 There is never a "force push past a gate" path. The only way past is a
-human applying the gate label.
+human applying the gate label, after which the orchestrator promotes
+the agent to `:complete`.
 
 ---
 

@@ -51,8 +51,9 @@ Nothing to learn beyond ordinary GitHub usage:
 
 | Action | What it means |
 |---|---|
-| **Apply a gate label** (e.g., `prd:approved`) | Approve at this gate |
-| **Remove a `:review` or `:blocked` label** | Reject / unblock; the agent re-runs |
+| **Apply a gate label** (e.g., `prd:approved`) | Approve at this gate. The orchestrator then removes the agent's `:review` label and applies `:complete`. Humans never apply `{agent}:complete` directly. |
+| **Remove a `:review` label without a gate label** | Reject; the agent re-runs and reads feedback comments |
+| **Remove a `:blocked` label** | Unblock (after fixing the cause); the agent re-runs |
 | **Apply a `:skipped` label** | Take responsibility for bypassing this agent ([Status model](06-status-model.md)) |
 | **Inline comment on a PR diff or artefact line** | Targeted feedback on a specific line; the agent reads inline comments on its next run |
 | **Edit the agent's comment in place** | Correct a draft; the edit is in the issue's history |
@@ -62,6 +63,14 @@ Nothing to learn beyond ordinary GitHub usage:
 **The label is the binding decision.** Comments and edits are colour
 on top. The orchestrator advances the pipeline when a label changes,
 not when a comment is posted.
+
+**The orchestrator owns transitions out of `:review`.** When a gate
+label appears, the orchestrator promotes the agent from `:review` to
+`:complete`. When `:review` is removed without a gate label, the agent
+is rejected and re-runs. Humans interact with **gate labels** and with
+removing `:review`/`:blocked` — they never touch `:complete`
+themselves. See
+[`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition).
 
 ### Why not free text only
 

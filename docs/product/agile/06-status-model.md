@@ -19,8 +19,8 @@ the model in product terms.
 | Status | Colour | Meaning | Set by | Cleared by |
 |---|---|---|---|---|
 | `wip` | Yellow | Agent is actively running | Orchestrator | Orchestrator (replaced by outcome) |
-| `complete` | Green | Agent finished successfully | Orchestrator | Never |
-| `review` | Purple | Agent has finished and is requesting human review | Agent | Human (by approving or rejecting) |
+| `complete` | Green | Agent finished successfully | Agent (non-gated) **or** Orchestrator (gated, on gate-label) | Never |
+| `review` | Purple | Agent has finished and is requesting human review | Agent | Orchestrator (on gate-label) **or** Human (rejects by removing) |
 | `blocked` | Red-orange | Agent cannot proceed without human help | Agent | Human (after fixing the cause) |
 | `failed` | Red | Agent crashed with a technical error | Orchestrator | Human (after debugging) |
 | `skipped` | Light blue | Agent was intentionally bypassed | Human | Never |
@@ -33,9 +33,14 @@ The label format is `{agent}:{status}`. Examples: `prd-writer:wip`,
 ## Status transitions
 
 ```
-       ┌──────► complete (terminal)
-       │
-none ──┴──► wip ──┼──► review ──► (human removes) ──► wip ──► …
+                  ┌──► complete (terminal — non-gated agent)
+                  │
+                  │       ┌──► (human applies gate label)
+                  │       │       └──► orchestrator: review→complete (terminal)
+none ──► wip ─────┼──► review ──┤
+                  │             │
+                  │             └──► (human removes :review without gate)
+                  │                     └──► wip ──► …
                   │
                   ├──► blocked ──► (human removes) ──► wip ──► …
                   │
@@ -48,8 +53,10 @@ none ──┴──► wip ──┼──► review ──► (human removes) 
   removed. `complete` says "the agent succeeded." `skipped` says "we have
   decided this agent is not applicable."
 - `review`, `blocked`, and `failed` all halt the pipeline. They are not
-  terminal — a human resolves them by removing the label, after which the
-  agent re-runs.
+  terminal — `:blocked` and `:failed` are resolved by the human removing
+  the label; `:review` is resolved either by the orchestrator (when the
+  human applies a gate label, see below) or by the human removing the
+  label to reject and re-run the agent.
 
 ---
 
@@ -74,15 +81,18 @@ The cost is some label noise on long-lived issues, which is acceptable.
 | Status | Who applies | When |
 |---|---|---|
 | `wip` | Orchestrator (via the agent's `set-wip` call) | Immediately on agent start |
-| `complete` | Agent (via `set-complete`) | At successful end of the agent's run |
+| `complete` (non-gated agent) | Agent (via `set-complete`) | At successful end of a non-gated agent's run |
+| `complete` (gated agent) | Orchestrator | When the human applies the matching gate label, promoting the agent from `:review` to `:complete` |
 | `review` | Agent (via `set-review`) | When the agent has produced an artefact requiring approval |
 | `blocked` | Agent (via `set-blocked`) | When the agent encounters something it cannot resolve |
 | `failed` | Orchestrator | When the agent exits non-zero without a terminal status |
 | `skipped` | Human | When a human decides this agent is not applicable |
 
 Agents never apply labels directly — they always go through `status.sh`.
-This keeps the transition logic in one place and ensures every status change
-is consistent.
+Humans never apply `{agent}:complete` directly either — they apply the
+gate label and the orchestrator promotes the agent. This keeps the
+transition logic in one place and ensures every status change is
+consistent and auditable.
 
 ---
 
@@ -118,30 +128,79 @@ The agent has not run successfully. A human needs to debug.
 
 ---
 
-## Human gate labels vs. agent status labels
+## Gated agents: the `:review` → `:complete` transition
 
-A human gate label is a separate, additional label that the human applies
-*after* the agent's `:complete` or `:review` status. Examples: `prd:approved`,
-`design:approved`. They are listed in [`human-gates.md`](human-gates.md).
+Agents fall into two categories: **gated** (their dependency declares a
+human gate) and **non-gated** (no gate). They reach `:complete` by
+different paths.
 
-Status labels and gate labels work together:
+**Non-gated agents** (e.g., `issue-classifier`, `dependency-resolver`,
+`release-noter`) finish their work and call `set-complete` themselves.
+Done.
 
-- An agent posts an artefact and applies `{agent}:review`.
-- The human reads the artefact and either:
-  - Approves: removes `{agent}:review` AND applies the gate label
-    (e.g., `prd:approved`).
-  - Rejects: removes `{agent}:review` only. The agent re-runs.
+**Gated agents** (e.g., `prd-writer`, `architect`, `test-spec-writer`,
+`pr-reviewer`) finish their work, post the artefact, and call
+`set-review`. They never call `set-complete` themselves. The transition
+from `:review` to `:complete` is the orchestrator's job, triggered by
+the human applying the gate label.
 
-The orchestrator treats the dependency as satisfied only when both
-conditions are met: the upstream agent has `:complete` AND the gate label
-is present.
+**Lifecycle of a gated agent.**
+
+```
+agent:         set-wip               → {agent}:wip
+agent:         posts artefact comment
+agent:         set-review            → {agent}:review (replaces :wip)
+
+— pipeline halts; human reads artefact —
+
+(approve path)
+human:         applies gate label    → {gate}:approved
+orchestrator:  detects gate label
+orchestrator:  removes :review, applies :complete
+orchestrator:  emits gate.approved + agent.complete to audit log
+                                     → downstream agents now eligible
+
+(reject path)
+human:         posts feedback comment
+human:         removes :review (no gate label applied)
+orchestrator:  re-evaluates eligibility
+                                     → agent re-runs, reads feedback
+```
+
+**Why the orchestrator promotes, not the human.**
+
+- **Single writer.** All transitions out of `:review` go through one
+  code path. Easier to audit, easier to test, no race between a human
+  applying `prd:approved` and a stale agent webhook setting
+  `prd-writer:complete`.
+- **Atomic from the dependency-graph point of view.** The downstream
+  agent's eligibility check is one query: "is `prd-writer:complete`
+  present and `prd:approved` present?" The orchestrator guarantees
+  these two labels appear together or not at all.
+- **Humans do less.** Approving a gate is one click (apply label).
+  The human is not asked to remember to also remove `:review` and
+  apply `:complete`.
+- **The audit trail is uniform.** Every agent run ends with an event
+  emitted by the orchestrator (`agent.complete`, `agent.review`,
+  `agent.blocked`, or `agent.failed`), regardless of whether the
+  agent was gated. See [`08-audit-log.md`](08-audit-log.md).
+
+**What the dependency check sees.**
+
+Downstream agents declare dependencies in `pipeline.json` of the form
+`requires: ["{agent}:complete", "{gate}:approved"]`. After the
+orchestrator promotes, both are present, the dependency is satisfied,
+and the next agent becomes eligible. A gate label without `:complete`
+(or vice versa) is a transient state the orchestrator resolves on its
+next tick — downstream agents do not run on it.
 
 ---
 
 ## The "skipped" escape hatch
 
-Skipping an agent is a deliberate human action that says "this agent's work
-does not apply to this ticket and I am taking responsibility for that."
+Skipping an agent is a deliberate human action that says "this agent's
+work does not apply to this ticket and I am taking responsibility for
+that."
 
 Common skip cases:
 
@@ -151,6 +210,7 @@ Common skip cases:
 - **`product-standards-checker:skipped`** — pure technical chore with no
   product surface.
 
-Skipping is treated as equivalent to `complete` for downstream dependency
-resolution. There is no audit comment beyond the label change itself, so
-the human is implicitly accepting accountability by applying it.
+Skipping is treated as equivalent to `complete` for downstream
+dependency resolution. There is no audit comment beyond the label
+change itself, so the human is implicitly accepting accountability by
+applying it.

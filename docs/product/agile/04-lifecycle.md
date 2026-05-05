@@ -1,9 +1,11 @@
 # Lifecycle
 
-Every change passes through seven per-ticket phases. An eighth phase
-runs continuously across all tickets to learn from the pipeline itself.
-Each phase has clearly defined inputs, outputs, agents, and (where
-applicable) a human gate.
+Every change passes through seven per-ticket phases. Three additional
+phases run continuously across all tickets — learning from the
+pipeline itself, finding gaps between the product design and what
+actually shipped, and surfacing tech debt for remediation. Each phase
+has clearly defined inputs, outputs, agents, and (where applicable) a
+human gate.
 
 This document describes the phases conceptually. The authoritative list
 of agents per phase, their dependencies, triggers, and gates lives in
@@ -19,10 +21,11 @@ generated views are correct. See [P-2](02-principles.md#p-2--one-machine-readabl
 
 ---
 
-## The eight phases
+## The ten phases
 
-Phases 1–7 run per ticket, in order. Phase 8 runs continuously across
-all tickets, mining the audit log to improve the pipeline itself.
+Phases 1–7 run per ticket, in order. Phases 8, 9, and 10 run
+continuously across all tickets, each mining a different input to
+produce a different kind of improvement proposal.
 
 | # | Phase | Cadence | Purpose | Primary artefact |
 |---|---|---|---|---|
@@ -34,12 +37,27 @@ all tickets, mining the audit log to improve the pipeline itself.
 | 6 | Test | Per ticket | Verify it | Tests, coverage report |
 | 7 | Evaluate | Per ticket | Record what shipped and reflect on this ticket | Changelog, per-ticket retrospective, targeted standards proposals |
 | 8 | Learn | Continuous | Improve the pipeline itself from accumulated experience | Pipeline metrics, pipeline-graph proposals, agent-prompt tuning proposals, knowledge artefacts |
+| 9 | Gap assessment | Continuous | Find drift between product design (PRDs, vision, principles) and what was actually shipped | Gap-issue proposals, design-vs-implementation reports |
+| 10 | Tech debt | Continuous | Surface poor architecture or implementation choices that warrant remediation | Tech-debt issue proposals, remediation roadmaps |
 
 Each per-ticket phase produces an artefact that is the input to the
 next. Skipping a phase is not supported — the orchestrator will not
 invoke a downstream agent until its declared dependencies are
-satisfied. Phase 8 does not block any per-ticket flow; it operates
-independently on the audit log.
+satisfied. Phases 8, 9, and 10 do not block any per-ticket flow; they
+operate independently and feed back into the queue as new issues
+(gap-issues, debt-issues) or as proposals against `pipeline.json` and
+the standards.
+
+**Why three continuous phases, not one.** They have different inputs,
+different cadences, different review bars, and different consumers:
+
+| | Phase 8 (Learn) | Phase 9 (Gap assessment) | Phase 10 (Tech debt) |
+|---|---|---|---|
+| Inputs | Audit log + retrospectives | PRDs/vision + shipped code | Codebase + ADRs + standards |
+| Looks at | The pipeline | The product | The implementation |
+| Output | Pipeline/agent improvements | New "fill the gap" issues | New "remediate this" issues |
+| Approver | Standards owner | Stakeholder + standards owner | Engineer + standards owner |
+| Cadence | Daily / weekly / monthly | Weekly | Weekly |
 
 ---
 
@@ -184,12 +202,21 @@ Total wall-clock human time: minutes. Total elapsed time: hours.
 
 ---
 
+## Phases 8–10 — the continuous meta-loops
+
+Phases 8, 9, and 10 are continuously running meta-loops, not per-ticket
+steps. Each treats a different corpus as its primary input and produces
+a different kind of improvement proposal. None blocks the per-ticket
+pipeline; they feed it new issues and proposals.
+
+---
+
 ## Phase 8 — Learn
 
-Phase 8 is a continuously running meta-loop, not a per-ticket step. It
-treats the audit log branch (see [`08-audit-log.md`](08-audit-log.md))
-and the corpus of closed retrospectives as its primary inputs and
-proposes improvements to the pipeline itself.
+Phase 8 treats the audit log branch
+(see [`08-audit-log.md`](08-audit-log.md)) and the corpus of closed
+retrospectives as its primary inputs and proposes improvements to the
+pipeline itself.
 
 **Distinction from Phase 7.** Phase 7 closes one ticket: it writes the
 changelog, records a per-ticket retrospective, and feeds targeted
@@ -265,3 +292,162 @@ Phase 8 implementation is deferred until the per-ticket pipeline
 (Phases 1–7) is running steadily and the audit log has accumulated
 enough data to mine. The phase is declared here so the system is
 designed for it from the start.
+
+---
+
+## Phase 9 — Gap assessment
+
+Phase 9 looks for **drift between the product design and what was
+actually shipped**. The per-ticket pipeline is good at delivering what
+each ticket asks for, but it does not, by itself, ensure the *whole
+product* still matches the *whole design*. Acceptance criteria slip,
+edge cases get pruned during execution, PRDs evolve faster than code,
+and over time the cumulative gap becomes invisible to anyone not
+explicitly looking for it.
+
+**Inputs.**
+
+- The corpus of approved PRDs (issue comments tagged with the PRD
+  marker).
+- The product vision ([`01-vision.md`](01-vision.md)) and any
+  product-layer standards.
+- The shipped codebase: code, tests, public API surface, UI flows.
+- Closed retrospectives — sometimes a retrospective notes "we cut
+  scope X" and the gap-issue is the formal follow-up.
+
+**Outputs.** New GitHub issues — *gap-issues* — proposing work to
+close a gap. Gap-issues re-enter the per-ticket pipeline at
+`issue-classifier` and run through Phases 1–7 like any other ticket;
+the difference is their provenance, which is recorded in the issue
+body via a `Gap-source: ai-agile/gap-assessor` trailer for audit
+purposes.
+
+**Agents (proposed; added to `pipeline.json` as Phase-9 agents).**
+
+- **`gap-assessor`** — runs weekly. Walks the approved PRDs and
+  cross-checks each acceptance criterion against the test suite, the
+  shipped code, and the changelog. Flags criteria that have no
+  matching test, no shipped behaviour, or whose shipped behaviour
+  diverges from the spec.
+- **`vision-aligner`** — runs weekly. Reads the product vision and
+  product-layer standards and checks the codebase for *missing*
+  capabilities the vision implies but no ticket has yet captured.
+  Drafts gap-issues for the discovered gaps.
+- **`gap-curator`** — runs weekly. De-duplicates and clusters
+  candidate gaps from `gap-assessor` and `vision-aligner`, prioritises
+  them by severity (broken acceptance criterion > missing capability >
+  divergent behaviour), and posts a single rolled-up gap report as the
+  artefact for human review.
+
+**Human gates.**
+
+- **`gap-report:approved`** (proposed) — stakeholder *and* standards
+  owner approve which proposed gap-issues actually become issues.
+  Dual approval keeps the queue from being flooded with churn issues
+  that don't reflect real product intent.
+
+**Why Phase 9 is its own phase.**
+
+- The input corpus (PRDs + shipped code) is different from Phase 7's
+  per-ticket retrospective and Phase 8's audit log.
+- Gap-issues are *new product work*, not pipeline tweaks — they go
+  back through the per-ticket pipeline rather than being applied
+  directly.
+- The approver shape is different: gap-issues need product judgement
+  (is this still a real gap or has the product moved on?), which is
+  the stakeholder's call, not the standards owner's alone.
+
+Phase 9 implementation is deferred until at least one product surface
+has shipped multiple tickets, so there is enough material for drift to
+have accumulated.
+
+---
+
+## Phase 10 — Tech debt
+
+Phase 10 looks for **poor architecture or implementation choices that
+warrant remediation**. The per-ticket pipeline blocks `required`
+standards violations at merge time, but it does not catch slower
+problems: layered shortcuts that compound, abstractions that have
+ossified, modules that have grown beyond their original scope, ADRs
+whose tradeoff has aged badly, and patterns that are technically
+within standards but obviously wrong at scale.
+
+**Inputs.**
+
+- The codebase — module sizes, dependency graphs, test ratios,
+  duplication, coupling metrics, hot-spot files (most-changed,
+  most-bug-fixed).
+- ADRs (`ai-agile/standards/adrs.json`) — particularly any with
+  `status: accepted` whose context has materially changed.
+- Standards (`ai-agile/standards/*.json`) — to compare actual code
+  against the declared bar.
+- Closed retrospectives — frequently a phrase like "we'll come back
+  to this" is the seed of a debt-issue.
+- Audit log — agents that consistently `:blocked` against the same
+  surface area suggest that surface is structurally fragile.
+
+**Outputs.** New GitHub issues — *debt-issues* — proposing
+remediation. Like gap-issues, they re-enter the per-ticket pipeline at
+`issue-classifier` and carry a `Debt-source: ai-agile/debt-finder`
+trailer.
+
+**Agents (proposed; added to `pipeline.json` as Phase-10 agents).**
+
+- **`debt-finder`** — runs weekly. Computes structural metrics
+  (module size, cyclomatic complexity, coupling, test coverage on hot
+  files, churn) and surfaces outliers. Cross-references hot-spot
+  files against open issues and recent retrospectives. Drafts
+  candidate debt-issues with evidence (file paths, metric snapshots,
+  trend over the last N weeks).
+- **`adr-revisitor`** — runs monthly. Walks accepted ADRs and
+  evaluates whether the *context* on which the decision was made
+  still holds. Drafts revisit-this-ADR issues for those whose tradeoff
+  has materially shifted.
+- **`debt-curator`** — runs weekly. Like `gap-curator`: de-duplicates
+  and prioritises candidate debt-issues from `debt-finder` and
+  `adr-revisitor`, then posts a single rolled-up debt report as the
+  artefact for human review.
+
+**Human gates.**
+
+- **`debt-report:approved`** (proposed) — engineer (or tech lead)
+  *and* standards owner approve which proposed debt-issues actually
+  become issues. The engineer judges feasibility and priority; the
+  standards owner judges fit with architecture direction.
+
+**Why Phase 10 is its own phase.**
+
+- The signal is structural and slow-moving — it cannot be detected
+  inside a single ticket's flow.
+- The remediation cost is often material (refactor of a hot module,
+  ADR superseded by a new one), so the proposal-then-approval shape is
+  necessary; we do not want a Phase-10 agent quietly opening 30
+  refactor issues a week.
+- Distinct from Phase 8: Phase 8 changes the *pipeline*; Phase 10
+  changes the *product's implementation*. Both are improvements;
+  they're different surfaces.
+
+Phase 10 implementation is deferred until the codebase has enough
+mass and history for structural metrics to be meaningful.
+
+---
+
+## How Phases 9 and 10 integrate with the per-ticket pipeline
+
+Both phases produce **issues**, not direct edits. This keeps a hard
+boundary:
+
+- Continuous phases never touch the codebase directly.
+- Every change still flows through Phases 1–7, with the same gates,
+  the same standards checks, and the same audit trail.
+- Gap-issues and debt-issues are visible in the issue list alongside
+  feature work, so reviewers can see and prioritise them against the
+  feature backlog rather than as a hidden second queue.
+
+The cost is some queue mixing: a busy week may see gap-issues and
+debt-issues compete with feature issues for reviewer attention. The
+mitigation is curation — `gap-curator` and `debt-curator` produce
+prioritised, deduplicated reports rather than a firehose, and the
+human gates (`gap-report:approved`, `debt-report:approved`) are the
+throttle.
