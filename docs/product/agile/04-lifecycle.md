@@ -94,10 +94,25 @@ Two cases interrupt the linear flow:
 
 ### The ticket is too big
 
-If `ticket-sizer` returns `XL`, the parent issue does not advance. The
-human breaks the parent into child tickets; each child re-enters the
-pipeline at `issue-classifier`. The parent waits and rolls up the
-children for retrospective purposes.
+If `ticket-sizer` returns `XL`, the **`issue-decomposer`** agent runs.
+It drafts a roadmap of proposed child issues — each a smaller business
+outcome — and posts the roadmap as a comment on the parent. A human
+approves the decomposition by applying `decomposition:approved`. On
+approval, the agent auto-creates the child issues and links them back
+to the parent. Each child re-enters the pipeline at `issue-classifier`
+and runs through its own full lifecycle. The parent waits and closes
+when all children close, with a roll-up retrospective.
+
+This matters most when an issue represents a high-level product
+outcome (e.g. "self-service onboarding") that needs to be broken into
+a roadmap of smaller business outcomes (email verification, profile
+setup, walkthrough), each itself a feature.
+
+Distinct from `task-decomposer` (Phase 4): `task-decomposer` breaks a
+*sized* feature into implementation tasks (one file, one concern)
+that all ship in one PR. `issue-decomposer` runs *before* sizing
+clears, breaking a too-large issue into smaller business-outcome
+issues, each of which gets its own PR.
 
 ### Many small tickets in a window
 
