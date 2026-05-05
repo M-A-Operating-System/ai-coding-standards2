@@ -311,6 +311,22 @@ class GitHubClient:
 # Status helpers
 # ---------------------------------------------------------------------------
 
+def _probe_kind(gh: "GitHubClient", number: int) -> str:
+    """Determine whether a numeric ID refers to an issue or a PR.
+
+    GitHub's REST API treats every PR as an issue (they share number-space
+    in the issues endpoint), but PRs have an additional `pull_request` key
+    on the issues payload. We probe by fetching the issue and inspecting
+    that key.
+    """
+    try:
+        data = gh._get(f"/repos/{gh.repo}/issues/{number}")
+        return "pr" if "pull_request" in data else "issue"
+    except Exception as exc:
+        log.warning("Could not probe kind for #%d: %s — defaulting to 'issue'", number, exc)
+        return "issue"
+
+
 def agent_status(labels: set[str], agent: str) -> Optional[str]:
     """Return the current status of an agent from the label set, or None."""
     for status in ALL_STATUSES:
@@ -597,6 +613,13 @@ def parse_args() -> argparse.Namespace:
         help="Process only this issue/PR number (default: all open items)",
     )
     p.add_argument(
+        "--kind",
+        choices=["issue", "pr"],
+        default=None,
+        help="When --issue is given, declares whether the number is an issue or a PR. "
+             "If omitted, the orchestrator probes the GitHub API to determine the kind.",
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be triggered without invoking agents or modifying labels",
@@ -652,13 +675,15 @@ def main() -> None:
 
     # Fetch work items
     if args.issue:
+        kind = args.kind or _probe_kind(gh, args.issue)
         labels = gh.get_issue_labels(args.issue)
+        path = "pull" if kind == "pr" else "issues"
         work_items = [WorkItem(
             number=args.issue,
-            kind="issue",
-            title=f"Issue #{args.issue}",
+            kind=kind,
+            title=f"{kind.upper()} #{args.issue}",
             labels=labels,
-            url=f"https://github.com/{args.repo}/issues/{args.issue}",
+            url=f"https://github.com/{args.repo}/{path}/{args.issue}",
         )]
     else:
         work_items = gh.list_open_issues(kind="all")

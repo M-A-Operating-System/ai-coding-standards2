@@ -56,9 +56,9 @@ jobs:
           if [ -n "${{ github.event.inputs.issue_number }}" ]; then
             ARGS="$ARGS --issue ${{ github.event.inputs.issue_number }}"
           elif [ "${{ github.event_name }}" = "issues" ]; then
-            ARGS="$ARGS --issue ${{ github.event.issue.number }}"
+            ARGS="$ARGS --issue ${{ github.event.issue.number }} --kind issue"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS="$ARGS --issue ${{ github.event.pull_request.number }}"
+            ARGS="$ARGS --issue ${{ github.event.pull_request.number }} --kind pr"
           fi
 
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
