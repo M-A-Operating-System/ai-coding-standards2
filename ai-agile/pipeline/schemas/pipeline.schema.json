@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
+  "title": "AI Agile Pipeline",
+  "description": "The agent dependency graph that the orchestrator uses to decide which agent runs next. See docs/product/agile/05-pipeline-config.md.",
+  "type": "object",
+  "required": ["pipeline"],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": { "type": "string" },
+    "pipeline": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/agent" }
+    }
+  },
+  "definitions": {
+    "agent": {
+      "type": "object",
+      "required": [
+        "agent",
+        "phase",
+        "object",
+        "trigger",
+        "dependencies",
+        "human_gate_after",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "Stable agent name; matches the prompt filename at .github/agents/{agent}.md."
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "product-docs",
+            "technical-docs",
+            "testing-spec",
+            "build-plan",
+            "execute",
+            "test",
+            "evaluate",
+            "learn",
+            "gap-assessment",
+            "tech-debt"
+          ]
+        },
+        "object": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["issue", "pr"] }
+        },
+        "trigger": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "description": "One or more trigger shapes. The orchestrator fires when ANY shape is satisfied.",
+          "properties": {
+            "event": { "type": "string" },
+            "label": { "type": "string" },
+            "schedule": { "type": "string", "description": "cron expression" },
+            "path_filter": { "type": "string", "description": "glob; modifier on event triggers" }
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "human_gate_after": { "type": "boolean" },
+        "human_gate_label": {
+          "type": "string",
+          "description": "Required when human_gate_after is true."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "human_gate_after": { "const": true } } },
+          "then": { "required": ["human_gate_label"] }
+        }
+      ]
+    }
+  }
+}
