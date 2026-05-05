@@ -113,9 +113,92 @@ architecture and product standards that govern the codebase.
 
 ---
 
+## 5. The Security Owner
+
+**Role.** Security engineer, AppSec lead, or compliance officer
+responsible for the security posture of the codebase: authentication,
+authorisation, RLS, secret handling, PII, and regulatory compliance.
+
+**Wants.**
+
+- Confidence that security-layer standards are enforced in code, not
+  aspirational in documents.
+- Visibility into every change that touches a security-sensitive
+  surface (auth flows, RLS policies, IAM, secrets, PII fields).
+- Approval rights on PRs whose blast radius includes those surfaces.
+- An auditable trail of who approved what, suitable for compliance
+  evidence (SOC 2, ISO 27001, HIPAA — whichever applies).
+- Early signal on risk, not late surprises at PR review.
+
+**How AI Agile serves them.**
+
+- The standards schema has dedicated `security` and `product-compliance`
+  layers. Standards in those layers carry `severity: required` by
+  default and block merge on violation.
+- The `impact-assessor` flags any change whose touched files or schema
+  intersect with security-sensitive paths (a configurable allowlist
+  including `auth/**`, RLS policies, `secrets/**`, IAM definitions).
+  When flagged, the issue gets a `security-review-required` label.
+- A dedicated **`security-review:approved`** gate (proposed) blocks
+  merge on security-flagged PRs until the security owner approves.
+  The gate is added to [`07-human-gates.md`](07-human-gates.md) when
+  this persona is formalised.
+- The `standards-compliance-reviewer` raises violations against
+  `security`-layer standards as issues, with the STD ID and proposed
+  fix.
+- The audit log (`ai-agile/log`) provides timestamped evidence of
+  every security-related approval and change for compliance purposes.
+- `migration-validator` blocks SQL migrations that disable RLS,
+  expose PII columns, or weaken existing access controls.
+
+---
+
+## 6. The Data Owner
+
+**Role.** Owns the content, schema, and lifecycle of one or more data
+domains. Responsible for migrations, retention, deletion, GDPR/data
+residency, and the integrity of production data.
+
+**Wants.**
+
+- Every data migration is forward-only, idempotent, reversible by
+  policy (or explicitly flagged as not-reversible), and reviewed
+  before merge.
+- Schema changes that affect data shape or semantics are documented
+  as ADRs.
+- Data lifecycle rules (retention windows, soft-delete vs hard-delete,
+  PII redaction, export formats) are enforced as standards, not
+  guidelines.
+- Visibility into what data is being created, modified, or deleted by
+  any feature shipping into production.
+- A clear path to roll back or quarantine a migration that
+  misbehaves.
+
+**How AI Agile serves them.**
+
+- Database-layer standards govern naming (snake_case plural), FK
+  conventions, RLS, and type rules. The `migration-validator` blocks
+  merge on violations.
+- Migrations live in a known location and are required to be
+  forward-only and idempotent — checked by the `migration-validator`
+  agent.
+- The `architect` is required to flag any data model change as an
+  ADR candidate; the `adr-proposer` then drafts the ADR.
+- A dedicated **`data-migration:approved`** gate (proposed) blocks
+  merge on PRs that include migrations until the data owner
+  approves. The gate is added to [`07-human-gates.md`](07-human-gates.md)
+  when this persona is formalised.
+- The `impact-assessor` reports the data domains touched by a change,
+  so the right data owner is auto-tagged for review.
+- Every user-initiated write produces an activity log entry
+  (per the existing `STD000000007` product standard), giving the
+  data owner a complete change-of-record trail.
+
+---
+
 ## Cross-cutting needs
 
-All four personas share three needs the system must serve:
+All six personas share three needs the system must serve:
 
 1. **Auditability.** Every action is on GitHub: a comment, a label, a commit,
    a PR. Nothing happens in a side channel.
