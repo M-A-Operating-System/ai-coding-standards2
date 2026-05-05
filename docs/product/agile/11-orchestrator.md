@@ -633,9 +633,14 @@ python pipeline_orchestrator.py [options]
 Options:
   --repo OWNER/REPO     GitHub repository (default: $GITHUB_REPOSITORY)
   --issue N             Process only issue/PR number N (default: all open items)
+  --kind {issue,pr}     With --issue, declares whether the number is an issue or PR
+                        (orchestrator probes the API if omitted)
   --trigger EVENT       Semantic event name, e.g. pr.draft_opened (default: none)
   --reconcile           Run stale-lock reclaim pass in addition to eligibility check
   --dry-run             Log decisions without invoking agents or changing labels
+  --clear-pause         Clear the rate-limit pause marker if set, then exit
+                        (manual override for operators; see "Anthropic API"
+                        in Rate limit handling)
   --pipeline PATH       Path to pipeline.json (default: ai-agile/pipeline/pipeline.json)
   --verbose, -v         Debug-level output
 ```
@@ -678,17 +683,104 @@ proceeds. The loser aborts cleanly.
 
 ## Rate limit handling
 
-The GitHub REST API has a 5000-request-per-hour authenticated rate limit.
-The orchestrator mitigates exhaustion with:
+Two upstream rate limits matter to the orchestrator: the GitHub REST
+API and the Anthropic API. They are handled differently because they
+fail differently.
+
+### GitHub REST API
+
+The GitHub REST API has a 5000-request-per-hour authenticated rate
+limit. Exhaustion is rare (the orchestrator's per-tick API budget is
+tens of requests, not thousands), but the client mitigates with:
 
 - **ETag caching.** Label reads use `If-None-Match` headers; a 304 Not
   Modified response does not count toward the core rate limit.
 - **Per-item pause.** A 2-second sleep between agent invocations on
   different items reduces burst.
-- **Exponential backoff.** On 429 or 5xx responses, the client retries up
-  to 4 times with delays of 2 s, 4 s, 8 s, 16 s before failing.
+- **Exponential backoff.** On 429 or 5xx responses, the client retries
+  up to 4 times with delays of 2 s, 4 s, 8 s, 16 s before failing.
 - **Dry-run for audits.** `--dry-run` reads labels but does not write
   anything; useful for rate-limit-safe inspection.
+
+### Anthropic API
+
+The Claude CLI subprocess invokes the Anthropic API once per agent
+run, consuming token quota. Exhaustion is much more likely than
+GitHub-side exhaustion because token-per-minute and daily-token limits
+are smaller relative to typical agent payloads. The orchestrator
+treats Anthropic rate-limit errors as a **system-wide pause**, not a
+per-agent failure.
+
+**Why pause, not retry-and-fail.** A rate-limit hit at 09:00 means the
+next 4 scheduled ticks (every 15 minutes) plus every label-event tick
+will all fail the same way, burning more quota and producing
+`:failed` labels on every active item. Pausing instead lets the
+window naturally clear and lets the next tick resume with no
+intervention.
+
+**Detection.** After every agent subprocess exits non-zero, the
+orchestrator scans the captured stdout/stderr for indicators:
+
+| Pattern | Source |
+|---|---|
+| `rate_limit_error` | Anthropic SDK error class |
+| `\b429\b` | HTTP status |
+| `usage limit` / `quota (exceeded\|exhausted)` | quota messaging |
+| `tokens? per minute` / `daily token limit` | Anthropic-specific phrasing |
+| `too many requests` | HTTP status text |
+| `overloaded_error` | Anthropic SDK error class for capacity overload |
+
+If any indicator matches, the orchestrator parses an optional
+`retry-after`, `retry after Ns`, or `wait N seconds` value from the
+same output. If found, the value is honoured (capped at 1 hour). If
+not found, a default of 5 minutes is used.
+
+**Pause mechanism.** The orchestrator writes a JSON pause marker to
+`.pipeline-pause` at the submodule root:
+
+```json
+{
+  "until": "2026-05-05T21:57:00.533Z",
+  "reason": "Anthropic API rate limit while invoking issue-classifier on issue #42",
+  "paused_at": "2026-05-05T21:55:38.380Z",
+  "seconds": 300
+}
+```
+
+The marker is **runner-local** (gitignored). For multi-runner
+deployments the marker would need to live in GitHub state instead;
+that is out of MVP scope.
+
+**Pause behaviour on subsequent ticks.** Every run, before doing any
+other work, the orchestrator calls `is_pipeline_paused()`:
+
+- If the marker is missing or expired → proceed normally; expired
+  markers are auto-removed.
+- If the marker is active → log `Pipeline is paused until <time> — <reason>` and
+  exit 0.
+
+The orchestrator does **not** apply `:failed` to the agent that
+triggered the rate limit — the agent never got a fair run, so
+treating it as a logic failure would force a human to remove labels
+to retry later. Instead, on the next tick after the pause expires the
+orchestrator sees the agent in its prior state (no terminal label
+applied) and re-invokes it normally.
+
+**Manual override.** Operators can clear the pause without waiting:
+
+```bash
+python ai-agile/pipeline/pipeline_orchestrator.py --clear-pause
+```
+
+This deletes the marker file and exits. The next scheduled or
+event-driven tick proceeds as if no pause had been set.
+
+**Constants** (in `pipeline_orchestrator.py`, configurable if needed):
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `DEFAULT_PAUSE_SECONDS` | `300` (5 min) | Used when the API does not name a retry-after |
+| `MAX_PAUSE_SECONDS` | `3600` (1 h) | Cap on any retry-after honoured from the API |
 
 ---
 
