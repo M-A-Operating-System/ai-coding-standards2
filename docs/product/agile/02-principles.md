@@ -181,22 +181,40 @@ attach to it and stop running their own pipelines from that point on.
 super-issue-grouper proposing tightly-scoped groupings (related area,
 similar fix shape) rather than time-window dumps.
 
-### P-7 — Re-entry increments the session iteration
+### P-7 — Stable session, iterating attempts
 
-**Statement.** When an issue moves from a halt state (`blocked`, `failed`,
-`review`) back to active, the session iteration counter increments.
-Previous artefacts (PRs, comments, branches) are preserved with the old
-iteration number. New artefacts use the new iteration.
+**Statement.** A session ID is stable for the lifetime of a work item.
+It is deterministic from `(repo, object.kind, object.id)` and never
+changes — re-entry from a halt state, reopen of a closed issue, and
+multiple PR attempts all share the same session ID.
+
+The session has an `iter` counter that increments when a new
+*executable artefact* (a branch, a PR) is created that would otherwise
+collide with a previous one. Concretely: `iter` equals the count of PRs
+ever opened against this session. It starts at 0 and bumps to 1 when
+the first PR opens, to 2 if a second PR is needed, and so on.
+
+**Shape.**
+
+| Concept | Format | Stable across re-entry? |
+|---|---|---|
+| `session_id` | `ais-v1-{repo}-{kind}-{id}-{hash8}` | yes |
+| `iter` | integer, derived from PR count | no — increments per PR attempt |
 
 **Consequences.**
 
-- Session ID encodes the iteration (`ais-v1-…-{iter}-{hash8}`).
-- Branch and PR names derived from the session include the iteration in
-  their hash, so they never collide.
-- The audit log captures the increment as a `session.resumed` event.
+- Lookup is one ID. "All work on issue #42" is one session, not many.
+- Audit log events carry both `session_id` (grouping) and `iter`
+  (which attempt this event belongs to).
+- Branch and PR derived names include `iter` to prevent collision:
+  `feature/iss-42-i2-{slug}-{hash6}`.
+- `iter` is pure-derivable from GitHub state — the orchestrator does
+  not maintain a counter; it counts PRs.
+- Re-entry from a halt state emits `session.resumed`, not
+  `session.created`. `session.created` fires once per work item, ever.
 
-**Tradeoff.** Slightly longer derived names. Worth it for unambiguous
-history.
+**Tradeoff.** Branch names are slightly longer (one segment extra).
+Worth it for stable session identity.
 
 ### P-8 — Closed issue freezes the session
 

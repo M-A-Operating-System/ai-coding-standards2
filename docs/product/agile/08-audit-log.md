@@ -53,7 +53,7 @@ Every line in a `DD.jsonl` is one event:
 {
   "ts": "2026-05-04T14:23:11.482Z",
   "event_type": "agent.complete",
-  "session_id": "ais-v1-mos-acs2-iss-42-001-7d3a9c1b",
+  "session_id": "ais-v1-mos-acs2-iss-42-7d3a9c1b",
   "iter": 1,
   "object": { "kind": "issue", "id": 42, "repo": "m-a-os/acs2" },
   "agent": "prd-writer",
