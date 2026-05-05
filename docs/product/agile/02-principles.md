@@ -263,6 +263,54 @@ declared as a principle so swarms can rely on it.
 **Tradeoff.** Some intra-issue throughput is left on the table when two
 agents *could* run in parallel. Acceptable; safety wins.
 
+### P-13 — Draft PRs early; one branch per PR
+
+**Statement.** The `coder` opens a draft PR on the first commit pushed
+to a feature branch, not after the work is complete. Every PR has
+exactly one branch; every branch produces exactly one PR. Branches are
+short-lived: deleted on merge or close.
+
+**Why draft-early.**
+
+- The PR object exists from the start, so PR-side agent sessions
+  (`standards-compliance-reviewer`, `migration-validator`,
+  `pr-reviewer`) can run as commits land — not waiting for a "ready"
+  signal.
+- CI runs from commit 1, catching standards and test issues early
+  instead of big-bang at the end.
+- Reviewers can leave inline comments as work develops; large
+  surprises at the end are rarer.
+- The audit log captures the PR lifecycle from `pr.draft_opened`,
+  giving accurate cycle-time data.
+
+**Why one branch per PR.**
+
+- The branch is the working surface of the PR. A second PR off the
+  same branch creates ambiguous closing relationships.
+- Reusing a merged branch for new work risks resurrecting closed
+  scope.
+- Branch hygiene maps directly to the (object, session) model: the
+  PR is the object, the branch is its working file.
+
+**Consequences.**
+
+- `coder` flow: create branch → first commit → open draft PR →
+  continue committing per child task. The `pr.draft_opened` event
+  fires once, early.
+- A second attempt at the same shippable unit (after a
+  closed-without-merge) creates a *new* branch with a new name; the
+  old branch is preserved for the audit trail.
+- GitHub setting: auto-delete branches on merge.
+- Force-push within a PR's branch (rebase, fixup) is allowed; pushing
+  a different branch's history into the PR's branch is not.
+- The `pr.draft_ready` transition is a separate event signalling
+  "the coder believes this is done"; it triggers `pr-reviewer` and
+  the human gate flow.
+
+**Tradeoff.** Reviewers see incomplete work in their PR list.
+Mitigated by GitHub's draft filtering (drafts are excluded from
+default review queues) and by the existing `:wip` label discipline.
+
 ---
 
 ## Cultural

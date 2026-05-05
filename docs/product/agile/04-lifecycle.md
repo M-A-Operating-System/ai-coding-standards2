@@ -64,6 +64,14 @@ human removes the offending label. There is no separate "retry" button.
 Every transition emits one event to the audit log branch
 (see [`08-audit-log.md`](08-audit-log.md)).
 
+In the **Execute** phase the `coder` opens a draft PR on its first
+commit, not after the work is complete. PR-side agent sessions
+(`standards-compliance-reviewer`, `migration-validator`,
+`pr-reviewer`) start running as soon as the draft exists and continue
+as new commits land. The coder marks the PR ready-for-review only when
+all child tasks are done; this triggers the `pr-reviewer` gate flow.
+See [P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr).
+
 ---
 
 ## Forks in the path
