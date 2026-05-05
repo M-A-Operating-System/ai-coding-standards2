@@ -23,7 +23,9 @@ opens an issue describing a desired change.
   `issue-classifier` rejects malformed issues with a corrective comment.
 - The `prd-writer` produces a structured PRD as an issue comment within
   minutes.
-- They review and approve the PRD by removing the `prd:approved` gate label.
+- They review and approve the PRD by **applying** the `prd:approved`
+  gate label. To request changes, they comment with feedback and
+  remove the `prd-writer:review` label — the agent re-runs.
 - After that, the system runs without their involvement until the work is
   released. Status labels show progress at a glance.
 
@@ -51,9 +53,12 @@ quality of the change.
   scenario.
 - The `task-decomposer` and `dependency-planner` propose an ordered build
   plan. The engineer approves it before any code is written.
-- The `coder` opens one PR per task. The `standards-compliance-reviewer`
-  flags violations with proposed diffs. The `pr-reviewer` checks scope and
-  alignment with the design.
+- The `coder` opens one PR per shippable-unit issue (per
+  [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)) with one
+  commit per child task from the build plan. The
+  `standards-compliance-reviewer` flags violations with proposed
+  diffs. The `pr-reviewer` checks scope and alignment with the
+  design.
 - Standards are loaded from `ai-agile/standards/*.json` and referenced by
   STD ID in code comments and PR descriptions.
 

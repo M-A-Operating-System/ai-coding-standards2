@@ -36,10 +36,10 @@ Post the structured opening announcement so the timeline records that
 this run started, what its intent was, and what inputs it read. The
 schema is defined in `docs/product/agile/09-human-interaction.md` §3.
 
-```bash
+````bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
 <!-- ai-agile/announcement/v1 -->
-\`\`\`json
+```json
 {
   "session_id": "ais-v1-iss-$ISSUE_NUMBER-agent-name",
   "agent": "agent-name",
@@ -48,10 +48,10 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
   "intent": "Replace with one-sentence statement of what this run will do.",
   "inputs_read": ["issue body"]
 }
-\`\`\`
+```
 EOF
 )"
-```
+````
 
 Update `inputs_read` after the next step to reflect what was actually
 read (issue body, comment IDs, files, PRs).
@@ -111,10 +111,10 @@ Post the closing announcement immediately before the terminal status
 call. The orchestrator emits `agent.complete` / `agent.review` /
 `agent.blocked` to the audit log on this comment.
 
-```bash
+````bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
 <!-- ai-agile/announcement/v1 -->
-\`\`\`json
+```json
 {
   "session_id": "ais-v1-iss-$ISSUE_NUMBER-agent-name",
   "agent": "agent-name",
@@ -124,10 +124,10 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
   "summary": "Replace with one-sentence statement of what this run produced.",
   "artefacts": ["comment {comment-id}"]
 }
-\`\`\`
+```
 EOF
 )"
-```
+````
 
 Set `outcome` to match the terminal status: `complete`, `review`, or
 `blocked`.

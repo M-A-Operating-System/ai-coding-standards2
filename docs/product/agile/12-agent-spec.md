@@ -5,10 +5,14 @@ This document defines the required shape of that file: the YAML frontmatter
 schema, the required body sections, the tool allowlist policy, and the
 status-transition contract.
 
-A new agent prompt file must conform to this spec before it can be added to
-`pipeline.json` (per [`05-pipeline-config.md`](05-pipeline-config.md) —
-graph entry comes first, prompt comes second). CI validates the frontmatter
-and the required body markers on every PR that touches `.github/agents/`.
+When adding a new agent, the **graph entry in `pipeline.json` lands
+first** (per [`05-pipeline-config.md`](05-pipeline-config.md) — the
+orchestrator will not invoke an agent that is not declared in
+`pipeline.json` even if a prompt file exists). The prompt file lands
+in the same PR and must conform to this spec; CI validates the
+frontmatter and the required body markers on every PR that touches
+`.github/agents/` and refuses to merge until both halves are in
+place.
 
 ---
 

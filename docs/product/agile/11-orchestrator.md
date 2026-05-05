@@ -231,9 +231,13 @@ The system prompt injected by the orchestrator provides:
 - The agent's name and the path to its prompt file
   (`.github/agents/{agent}.md`)
 - The work item type, number, title, and URL
-- The full set of `status.sh` commands the agent must use for all label
-  transitions (set-wip, set-complete, set-review, set-blocked, set-failed)
-- The constraint: "call exactly one terminal status command before exiting"
+- The set of `status.sh` commands the agent uses for label
+  transitions: `set-wip`, `set-complete`, `set-review`, `set-blocked`.
+  `set-failed` is **not** in the agent's allowlist — only the
+  orchestrator applies `:failed`, when the agent exits non-zero
+  without one of the three terminal calls above.
+- The constraint: "call exactly one terminal status command
+  (set-complete, set-review, or set-blocked) before exiting"
 
 Agents use `status.sh` for every label write. They never call the GitHub
 API directly for status transitions. This keeps the transition logic in one

@@ -6,9 +6,14 @@ any principle is a significant architectural decision and goes through an ADR.
 
 The principles fall into three groups:
 
-- **Architectural** (P-1 to P-4) — commitments about how the system is built.
-- **Operational** (P-5 to P-9) — rules the orchestrator enforces on work.
+- **Architectural** (P-1 to P-4, P-14) — commitments about how the system is built.
+- **Operational** (P-5 to P-9, P-13) — rules the orchestrator enforces on work.
 - **Cultural** (P-10 to P-12) — how the system behaves toward people.
+
+The non-monotonic numbering (P-13 sits with P-5..P-9 operationally,
+P-14 sits with P-1..P-4 architecturally) reflects the order principles
+were ratified, not their grouping. IDs are stable; a retired principle
+keeps its ID and is marked `status: retired`.
 
 ---
 
@@ -385,13 +390,15 @@ default review queues) and by the existing `:wip` label discipline.
 
 ### P-10 — Agents draft, humans decide
 
-**Statement.** Agents produce artefacts. Humans approve at named gates by
-applying or removing labels. No work advances past a gate without an
-explicit human action.
+**Statement.** Agents produce artefacts. Humans approve at named
+gates. Approval is **applying** the gate label (e.g.,
+`prd:approved`); rejection is **removing** the agent's `:review`
+label (the agent re-runs and reads the feedback comments). No work
+advances past a gate without an explicit human action.
 
 **Consequences.**
 
-- Gates are listed in [`human-gates.md`](human-gates.md).
+- Gates are listed in [`07-human-gates.md`](07-human-gates.md).
 - Reviewer time is spent reading artefacts, not authoring them.
 - The system never edits human-authored content (issue bodies written by
   the stakeholder, review comments, ADRs after acceptance).

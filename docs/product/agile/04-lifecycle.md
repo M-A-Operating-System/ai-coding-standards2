@@ -155,7 +155,13 @@ review path.
 
 ## End-to-end happy path
 
-A typical small ticket flows like this:
+A typical small ticket flows like this. The table below reflects the
+**full design** with all 22 agents present. The MVP rollout (per
+[`10-roadmap.md`](10-roadmap.md)) merges some adjacent agents
+(`adr-proposer` into `architect`, `dependency-planner` into
+`task-decomposer`, `coverage-enforcer` into `test-runner`,
+`product-standards-checker` into `prd-writer`); in MVP the same
+phases run, but with fewer named agents.
 
 | Time | Object | Agent | Event | Outcome label |
 |---|---|---|---|---|

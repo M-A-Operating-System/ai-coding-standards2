@@ -141,8 +141,11 @@ scenarios — are what "done" means.
 
 **Approver.** Engineer.
 
-**Artefact.** A build plan from `dependency-planner` showing the ordered
-child task list and the critical path.
+**Artefact.** A build plan showing the ordered child task list and the
+critical path. In the full design this is produced by the
+`dependency-planner` agent; in the MVP rollout (per
+[`10-roadmap.md`](10-roadmap.md)) `dependency-planner` is folded into
+`task-decomposer`, which posts the combined output.
 
 **What you are signing off.** That the decomposition is sensible and the
 order is correct.
@@ -166,9 +169,11 @@ the actual diff, not just the agent's review summary.
 
 **Approver.** Engineer.
 
-**Artefact.** A coverage report from `coverage-enforcer` showing test
-results, coverage delta, and any acceptance criterion without a passing
-test.
+**Artefact.** A coverage report showing test results, coverage delta,
+and any acceptance criterion without a passing test. In the full
+design this is produced by the `coverage-enforcer` agent; in the MVP
+rollout (per [`10-roadmap.md`](10-roadmap.md)) `coverage-enforcer` is
+folded into `test-runner`, which posts the combined output.
 
 **What you are signing off.** That tests pass, coverage hasn't regressed,
 and every required scenario has a passing test.

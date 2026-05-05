@@ -16,7 +16,7 @@ evolve them as the system matures.
 | # | Document | What it tells you |
 |---|---|---|
 | 01 | [Vision](01-vision.md) | The problem, what success looks like |
-| 02 | [Principles](02-principles.md) | The rules AI Agile is built on (P-1..P-15) |
+| 02 | [Principles](02-principles.md) | The rules AI Agile is built on (P-1..P-14) |
 | 03 | [Personas](03-personas.md) | Who uses AI Agile and what they need from it |
 | 04 | [Lifecycle](04-lifecycle.md) | Seven per-ticket phases plus three continuous cross-ticket phases (Learn, Gap assessment, Tech debt) |
 | 05 | [Pipeline configuration](05-pipeline-config.md) | The single JSON file that declares the agent graph |
