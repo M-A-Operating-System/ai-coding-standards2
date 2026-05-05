@@ -249,19 +249,43 @@ state. Subsequent events on the same issue are dropped unless an explicit
 
 ### P-9 — Cross-issue parallel, intra-issue serial
 
-**Statement.** The pipeline runs many issues concurrently. Within a single
-issue, the orchestrator triggers at most one agent at a time (subject to
-P-4). This is a property of the eligibility check plus the mutex; it is
-declared as a principle so swarms can rely on it.
+**Statement.** The pipeline runs many issues concurrently. Within a
+single issue, the orchestrator triggers at most one agent at a time
+(subject to P-4). Cross-issue parallelism is unconstrained at the
+orchestrator level — the mutex is per (object, agent), not global.
+
+**Cross-issue race conditions are a real risk and are managed
+explicitly.** Two issues that touch the same files, schema, or API
+contract can produce conflicting PRs even when no single agent races
+another. Preventing this is a first-class **issue-management
+responsibility** owned by the issue-management agents in the
+product-docs phase:
+
+- `impact-assessor` computes the file, schema, and contract
+  intersection between this issue and every other active session.
+  Overlaps are flagged as candidates for sequencing.
+- `dependency-resolver` consumes the overlap report and proposes an
+  order: which issue must complete (or pause to a known checkpoint)
+  before another can proceed safely.
+- The proposed sequence is recorded as GitHub `blocked-by` issue
+  links. The orchestrator treats a `blocked-by` link as an unmet
+  dependency and will not advance the dependent issue past the
+  product-docs phase until the blocker resolves.
 
 **Consequences.**
 
-- Agents within a single issue can assume they are not racing each other.
-- Multi-orchestrator deployments rely on the mutex (P-4), not on global
-  coordination.
+- Agents within a single issue assume they are not racing each other.
+- Agents across issues do not assume isolation — overlap detection
+  runs on every new issue and on every re-entry from a halt state.
+- Sequencing decisions are made early (product-docs phase), before
+  any code is written, when the cost of resequencing is lowest.
+- Multi-orchestrator deployments rely on the mutex (P-4) for
+  per-(object, agent) safety and on issue-management sequencing for
+  cross-issue safety.
 
-**Tradeoff.** Some intra-issue throughput is left on the table when two
-agents *could* run in parallel. Acceptable; safety wins.
+**Tradeoff.** Issues with overlap are sequenced rather than parallel,
+reducing total throughput. Mitigated by the impact-assessor making
+overlaps visible early so non-overlapping work continues unblocked.
 
 ### P-13 — Draft PRs early; one branch per PR
 
