@@ -53,8 +53,7 @@ Every line in a `DD.jsonl` is one event:
 {
   "ts": "2026-05-04T14:23:11.482Z",
   "event_type": "agent.complete",
-  "session_id": "ais-v1-mos-acs2-iss-42-7d3a9c1b",
-  "iter": 1,
+  "session_id": "ais-v1-iss-42-prd-writer",
   "object": { "kind": "issue", "id": 42, "repo": "m-a-os/acs2" },
   "agent": "prd-writer",
   "actor": { "kind": "agent", "id": "runner-7f3a", "human": null },
@@ -69,8 +68,9 @@ Every line in a `DD.jsonl` is one event:
 }
 ```
 
-**Required fields.** `ts`, `event_type`, `session_id`, `iter`, `object`,
-`actor`, `outcome`.
+**Required fields.** `ts`, `event_type`, `session_id`, `object`,
+`actor`, `outcome`. The `agent` field duplicates the agent encoded in
+`session_id` and is included for query convenience.
 
 **`actor.kind`** is one of `agent`, `human`, `orchestrator`, `system`.
 Human actors record the GitHub login; agent actors record the runner

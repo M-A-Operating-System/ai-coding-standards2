@@ -181,40 +181,56 @@ attach to it and stop running their own pipelines from that point on.
 super-issue-grouper proposing tightly-scoped groupings (related area,
 similar fix shape) rather than time-window dumps.
 
-### P-7 — Stable session, iterating attempts
+### P-7 — One session per (object, agent)
 
-**Statement.** A session ID is stable for the lifetime of a work item.
-It is deterministic from `(repo, object.kind, object.id)` and never
-changes — re-entry from a halt state, reopen of a closed issue, and
-multiple PR attempts all share the same session ID.
+**Statement.** A session is the lifecycle of one agent's interactions
+with one object. The session ID is deterministic from those three
+facts and is stable forever:
 
-The session has an `iter` counter that increments when a new
-*executable artefact* (a branch, a PR) is created that would otherwise
-collide with a previous one. Concretely: `iter` equals the count of PRs
-ever opened against this session. It starts at 0 and bumps to 1 when
-the first PR opens, to 2 if a second PR is needed, and so on.
+```
+ais-v1-{kind}-{id}-{agent}
+```
 
-**Shape.**
+| Object × Agent | Session ID |
+|---|---|
+| issue 42, prd-writer | `ais-v1-iss-42-prd-writer` |
+| issue 42, architect | `ais-v1-iss-42-architect` |
+| PR 77, coder | `ais-v1-pr-77-coder` |
+| PR 77, pr-reviewer | `ais-v1-pr-77-pr-reviewer` |
 
-| Concept | Format | Stable across re-entry? |
-|---|---|---|
-| `session_id` | `ais-v1-{repo}-{kind}-{id}-{hash8}` | yes |
-| `iter` | integer, derived from PR count | no — increments per PR attempt |
+Different agents on the same object have different sessions. The same
+agent on different objects has different sessions. Re-runs of the same
+agent on the same object resume the same session.
+
+**Why per (object, agent).** Session granularity matches lock
+granularity (P-4). The `:wip` mutex is per (object, agent); the session
+that the mutex protects is the same scope. This is the smallest unit of
+work the orchestrator coordinates, and it is the right unit for
+identity, audit grouping, and replay.
 
 **Consequences.**
 
-- Lookup is one ID. "All work on issue #42" is one session, not many.
-- Audit log events carry both `session_id` (grouping) and `iter`
-  (which attempt this event belongs to).
-- Branch and PR derived names include `iter` to prevent collision:
-  `feature/iss-42-i2-{slug}-{hash6}`.
-- `iter` is pure-derivable from GitHub state — the orchestrator does
-  not maintain a counter; it counts PRs.
-- Re-entry from a halt state emits `session.resumed`, not
-  `session.created`. `session.created` fires once per work item, ever.
+- Lookup is unambiguous: "show me everything the architect did on
+  issue 42" is one session ID; "show me everything that happened to
+  PR 77" is `grep ais-v1-pr-77-`.
+- Re-runs (after rejection, blocked-then-resolved, or stale-lock
+  reclaim) all share the same session ID. There are no "session 1
+  vs session 2" of the same agent on the same object.
+- Each PR is its own object. If a PR is closed-without-merge and a
+  second PR is needed, the new PR has its own ID and therefore its own
+  set of (PR, agent) sessions. The issue-side sessions on the parent
+  are untouched.
+- Branch and PR derived names use a separate uniqueness mechanism (a
+  short suffix counted from existing artefacts of the same prefix)
+  rather than a session-level counter — sessions don't carry an
+  iteration number.
+- Audit log events carry the session ID; replay is `grep` on the ID.
+  No `iter` field.
 
-**Tradeoff.** Branch names are slightly longer (one segment extra).
-Worth it for stable session identity.
+**Tradeoff.** Aggregating "all work on issue 42" requires enumerating
+all (42, *) sessions rather than reading one. The fix is a thin
+convenience layer in the audit-log CLI — the underlying model stays
+clean.
 
 ### P-8 — Closed issue freezes the session
 
