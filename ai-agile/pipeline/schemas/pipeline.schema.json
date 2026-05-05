@@ -30,8 +30,8 @@
       "properties": {
         "agent": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
-          "description": "Stable agent name; matches the prompt filename at .github/agents/{agent}.md."
+          "pattern": "^(product-docs|technical-docs|testing-spec|build-plan|execute|test|evaluate|learn|gap-assessment|tech-debt)/[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .github/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix must equal the phase field. See docs/product/agile/12-agent-spec.md."
         },
         "phase": {
           "type": "string",

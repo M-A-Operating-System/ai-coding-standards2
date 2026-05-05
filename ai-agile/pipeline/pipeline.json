@@ -3,7 +3,7 @@
   "pipeline": [
 
     {
-      "agent": "issue-classifier",
+      "agent": "product-docs/issue-classifier",
       "phase": "product-docs",
       "object": ["issue"],
       "trigger": {

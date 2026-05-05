@@ -88,6 +88,32 @@ def validate_agent_names_unique(pipeline: dict) -> list[str]:
     return [f"duplicate agent name: {d}" for d in dupes]
 
 
+def validate_agent_phase_prefix(pipeline: dict) -> list[str]:
+    """The phase prefix in the agent name must equal the `phase` field.
+
+    e.g. agent: "product-docs/prd-writer" must have phase: "product-docs".
+    """
+    errors = []
+    for entry in pipeline["pipeline"]:
+        agent_name = entry.get("agent", "")
+        phase = entry.get("phase", "")
+        if "/" not in agent_name:
+            errors.append(
+                f"agent '{agent_name}' is missing phase prefix; expected '{phase}/<short-name>'"
+            )
+            continue
+        prefix, _, short = agent_name.partition("/")
+        if prefix != phase:
+            errors.append(
+                f"agent '{agent_name}' phase prefix '{prefix}' does not match phase field '{phase}'"
+            )
+        if not short:
+            errors.append(
+                f"agent '{agent_name}' has empty short-name after the phase prefix"
+            )
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate pipeline.json")
     parser.add_argument("--pipeline", type=Path, default=DEFAULT_PIPELINE)
@@ -100,6 +126,7 @@ def main() -> int:
     all_errors = []
     all_errors += validate_schema(pipeline, schema)
     all_errors += validate_agent_names_unique(pipeline)
+    all_errors += validate_agent_phase_prefix(pipeline)
     all_errors += validate_dependency_references(pipeline)
     all_errors += validate_acyclic(pipeline)
 

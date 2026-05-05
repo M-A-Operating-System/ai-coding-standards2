@@ -1,5 +1,5 @@
 ---
-name: issue-classifier
+name: product-docs/issue-classifier
 description: >
   Classifies a newly opened issue as bug, feature, chore, or spike, and
   validates that required fields are present (problem statement,
@@ -10,7 +10,7 @@ tools: [Bash, Read]
 model: claude-haiku-4-5-20251001
 ---
 
-# issue-classifier
+# product-docs/issue-classifier
 
 You are the entry point of the AI Agile pipeline. Every newly opened
 issue runs through you first. Your job is binary: either the issue is
@@ -27,7 +27,7 @@ decompose. You just classify and validate.
 ## Step 1 — Apply wip
 
 ```bash
-bash $STATUS_SH set-wip issue-classifier $ISSUE_NUMBER
+bash $STATUS_SH set-wip product-docs/issue-classifier $ISSUE_NUMBER
 ```
 
 ---
@@ -39,8 +39,8 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-issue-classifier",
-  "agent": "issue-classifier",
+  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-product-docs/issue-classifier",
+  "agent": "product-docs/issue-classifier",
   "phase": "start",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "intent": "Classify the issue and validate required fields.",
@@ -131,8 +131,8 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-issue-classifier",
-  "agent": "issue-classifier",
+  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-product-docs/issue-classifier",
+  "agent": "product-docs/issue-classifier",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "complete",
@@ -147,7 +147,7 @@ EOF
 Finally, mark complete:
 
 ```bash
-bash $STATUS_SH set-complete issue-classifier $ISSUE_NUMBER
+bash $STATUS_SH set-complete product-docs/issue-classifier $ISSUE_NUMBER
 ```
 
 ---
@@ -169,9 +169,9 @@ This issue is missing the following required field(s):
 To unblock the pipeline:
 
 1. Edit the issue body to add the missing field(s).
-2. Remove the \`issue-classifier:blocked\` label.
+2. Remove the \`product-docs/issue-classifier:blocked\` label.
 
-The pipeline will re-run \`issue-classifier\` automatically.
+The pipeline will re-run \`product-docs/issue-classifier\` automatically.
 EOF
 )"
 ```
@@ -183,8 +183,8 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-issue-classifier",
-  "agent": "issue-classifier",
+  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-product-docs/issue-classifier",
+  "agent": "product-docs/issue-classifier",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "blocked",
@@ -199,7 +199,7 @@ EOF
 Mark blocked:
 
 ```bash
-bash $STATUS_SH set-blocked issue-classifier $ISSUE_NUMBER \
+bash $STATUS_SH set-blocked product-docs/issue-classifier $ISSUE_NUMBER \
   "Required fields missing — see corrective comment above."
 ```
 
@@ -215,8 +215,8 @@ bash $STATUS_SH set-blocked issue-classifier $ISSUE_NUMBER \
   wrong. Classify from the body content.
 - Do not run on PRs. Your `object` declares `["issue"]`; the
   orchestrator should never invoke you on a PR. If somehow invoked on
-  a PR, set-blocked with reason "issue-classifier does not operate on
-  PRs."
+  a PR, set-blocked with reason "product-docs/issue-classifier does not
+  operate on PRs."
 - Choose `claude-haiku` for the model — classification is a
   bounded, fast task. Reasoning power is not the bottleneck.
 - One artefact comment per run. Do not re-post the classification on
