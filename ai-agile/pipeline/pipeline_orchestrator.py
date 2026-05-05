@@ -163,6 +163,25 @@ class WorkItem:
     is_closed: bool = False
 
 
+@dataclass
+class AgentRunResult:
+    """Outcome of one invoke_agent call.
+
+    success      — True if the agent subprocess exited 0.
+    returncode   — The subprocess return code (None if not run).
+    captured_tail — The last several lines of subprocess output, capped
+                    so it can fit in a GitHub comment. Empty when the
+                    agent didn't run (dry-run, missing prompt file).
+    rate_limited — True if the failure was an Anthropic rate-limit
+                    error and the orchestrator wrote the pause marker.
+                    Caller should NOT apply :failed in this case.
+    """
+    success: bool
+    returncode: Optional[int] = None
+    captured_tail: str = ""
+    rate_limited: bool = False
+
+
 # ---------------------------------------------------------------------------
 # Pipeline loader
 # ---------------------------------------------------------------------------
@@ -635,34 +654,53 @@ RETRY_AFTER_PATTERNS = [
 ]
 
 
+def _captured_tail(lines: list[str], max_lines: int = 50, max_chars: int = 4000) -> str:
+    """Return the tail of agent output, capped for inclusion in a comment.
+
+    Picks at most max_lines from the end; trims further if the result
+    exceeds max_chars (GitHub comments tolerate more, but we want
+    failure comments to stay readable in the timeline).
+    """
+    if not lines:
+        return ""
+    tail = lines[-max_lines:]
+    text = "".join(tail).rstrip()
+    if len(text) > max_chars:
+        text = "…(truncated)…\n" + text[-max_chars:]
+    return text
+
+
 def invoke_agent(
     agent_def: AgentDef,
     work_item: WorkItem,
     dry_run: bool,
     repo: str,
-) -> bool:
+) -> AgentRunResult:
     """
     Invoke the agent via claude CLI.
 
-    Agents use status.sh for all label transitions so they behave
-    identically whether called manually or by this orchestrator:
+    Agents use status.sh for label transitions so they behave identically
+    whether called manually or by this orchestrator:
 
       bash .github/scripts/status.sh set-wip      <agent> <number>
       bash .github/scripts/status.sh set-complete  <agent> <number>
       bash .github/scripts/status.sh set-review    <agent> <number> [message]
       bash .github/scripts/status.sh set-blocked   <agent> <number> <reason>
-      bash .github/scripts/status.sh set-failed    <agent> <number> [detail]
 
-    The orchestrator does NOT apply wip/complete itself — it tells the
-    agent to do so via status.sh, keeping the transition logic in one place.
+    Agents must NOT call set-failed; the orchestrator applies :failed if
+    the subprocess exits non-zero without one of the three terminal calls
+    above. set-failed is reserved for the orchestrator.
 
-    Returns True if the invocation succeeded, False otherwise.
+    Returns an AgentRunResult with success/returncode/captured_tail and
+    a rate_limited flag (set when a pause was written). Caller MUST NOT
+    apply :failed when rate_limited is True — the agent never got a fair
+    run.
     """
     agent_file = SUBMODULE_ROOT / ".github/agents" / f"{agent_def.agent}.md"
 
     if not STATUS_SH.exists():
         log.error("status.sh not found at %s", STATUS_SH)
-        return False
+        return AgentRunResult(success=False, captured_tail=f"status.sh not found at {STATUS_SH}")
 
     # Build the prompt that is passed to every agent.
     # Agents MUST use status.sh for all label transitions and reference
@@ -731,11 +769,14 @@ def invoke_agent(
     if dry_run:
         log.info("    [DRY RUN] Would invoke: claude --max-turns 60 -p <prompt>")
         log.info("    [DRY RUN] Agent: %s | Item: %s #%d", agent_def.agent, work_item.kind, work_item.number)
-        return True
+        return AgentRunResult(success=True)
 
     if not agent_file.exists():
         log.warning("    Agent file not found: %s — skipping", agent_file)
-        return False
+        return AgentRunResult(
+            success=False,
+            captured_tail=f"Agent prompt file not found at {agent_file}.",
+        )
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
 
@@ -788,7 +829,14 @@ def invoke_agent(
         except subprocess.TimeoutExpired:
             log.error("    Agent %s timed out on #%d", agent_def.agent, work_item.number)
             _terminate_subprocess(proc)
-            return False
+            return AgentRunResult(
+                success=False,
+                returncode=proc.returncode,
+                captured_tail=(
+                    f"Agent timed out after {AGENT_TIMEOUT_SECONDS}s.\n\n"
+                    f"Last output:\n{_captured_tail(captured_lines)}"
+                ),
+            )
 
         # On non-zero exit, check whether the cause was a rate-limit
         # error from the Anthropic API. If so, pause the pipeline so
@@ -808,18 +856,101 @@ def invoke_agent(
                     "    Rate limit detected. Pipeline paused until %s.",
                     until.isoformat(),
                 )
-                # Treat as a non-failure for the orchestrator's perspective:
-                # the agent did not get a fair chance to run, so we should
-                # not mark it :failed. Caller treats False as "did not
-                # succeed"; we rely on the pause marker to keep subsequent
-                # ticks from re-invoking until the limit clears.
-            return False
+                return AgentRunResult(
+                    success=False,
+                    returncode=proc.returncode,
+                    rate_limited=True,
+                    captured_tail=_captured_tail(captured_lines),
+                )
+            return AgentRunResult(
+                success=False,
+                returncode=proc.returncode,
+                captured_tail=_captured_tail(captured_lines),
+            )
 
-        return True
+        return AgentRunResult(success=True, returncode=0, captured_tail=_captured_tail(captured_lines))
 
     except FileNotFoundError:
         log.error("    'claude' CLI not found. Install: npm install -g @anthropic-ai/claude-code")
-        return False
+        return AgentRunResult(
+            success=False,
+            captured_tail="claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Failure handling
+# ---------------------------------------------------------------------------
+
+def _apply_failed(
+    gh: GitHubClient,
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    result: AgentRunResult,
+) -> None:
+    """Apply :failed for an agent, clear any other non-terminal status it
+    left behind, and post a diagnostic comment that includes the tail
+    of the agent's captured output.
+
+    Each step is wrapped in its own try/except so a partial failure
+    (e.g. comment post fails after label was applied) is logged but
+    never silently masks the :failed signal.
+    """
+    # Clear any non-terminal status the agent may have left behind so
+    # the work item has exactly one status label after this. We only
+    # touch this agent's labels — humans manage their own (skipped).
+    for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED):
+        try:
+            gh.remove_label(work_item.number, agent_def.status_label(stale))
+        except Exception as exc:  # pragma: no cover — best-effort cleanup
+            log.debug(
+                "  could not remove %s during failed transition: %s",
+                agent_def.status_label(stale), exc,
+            )
+
+    # Apply the :failed label. This is the load-bearing signal — if
+    # everything else fails, the label is still on the issue and the
+    # pipeline will halt.
+    try:
+        gh.add_label(work_item.number, agent_def.failed_label)
+    except Exception as exc:
+        log.error(
+            "  could not apply %s on #%d: %s — pipeline state may be inconsistent",
+            agent_def.failed_label, work_item.number, exc,
+        )
+
+    # Post the diagnostic comment. Wrapped because a comment-post
+    # failure (rate limit, transient API blip, missing scope) must not
+    # crash the orchestrator — the :failed label above is what gates
+    # the pipeline.
+    detail = result.captured_tail or "(no captured output)"
+    body_parts = [
+        f"### `{agent_def.agent}` exited with an error",
+        "",
+        f"Return code: `{result.returncode if result.returncode is not None else 'unknown'}`",
+        "",
+        "**Last output (tail):**",
+        "",
+        "```",
+        detail,
+        "```",
+        "",
+        "**To recover:**",
+        f"- Fix the underlying error, then **remove** the `{agent_def.failed_label}` label to retry, or",
+        f"- Apply the `{agent_def.status_label(STATUS_SKIPPED)}` label to bypass this agent on this item.",
+        "",
+        "_Posted by the orchestrator after the agent subprocess exited non-zero "
+        "without one of the three terminal status calls (set-complete / set-review / set-blocked)._",
+    ]
+    body = "\n".join(body_parts)
+    try:
+        gh.post_comment(work_item.number, body)
+    except Exception as exc:
+        log.error(
+            "  could not post failure comment on #%d (%s); :failed label is still applied. "
+            "Detail follows in this log:\n%s",
+            work_item.number, exc, body,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -886,15 +1017,15 @@ def process_work_item(
         # (non-zero exit) without setting a terminal status itself.
         log.info("  TRIGGER %-38s", agent_def.agent)
 
-        success = invoke_agent(agent_def, work_item, dry_run, repo)
+        result = invoke_agent(agent_def, work_item, dry_run, repo)
 
         if not dry_run:
-            # If invoke_agent set a pause marker (Anthropic rate limit),
-            # stop processing entirely. Do NOT mark :failed — the agent
-            # never got a fair run. The next scheduled tick (after the
-            # pause expires) will retry.
-            paused, _reason, until = is_pipeline_paused()
-            if paused:
+            # Rate-limit short-circuit: invoke_agent already wrote the
+            # pause marker. Do NOT mark :failed — the agent never got a
+            # fair run. The next scheduled tick (after the pause
+            # expires) will retry.
+            if result.rate_limited:
+                paused, _reason, until = is_pipeline_paused()
                 log.warning(
                     "  PAUSED  %-38s  rate-limited; resuming after %s",
                     agent_def.agent, until.isoformat() if until else "?"
@@ -907,20 +1038,14 @@ def process_work_item(
             work_item.labels = labels
             final_status = agent_status(labels, agent_def.agent)
 
-            if not success and final_status not in (
+            if not result.success and final_status not in (
                 STATUS_COMPLETE, STATUS_REVIEW, STATUS_BLOCKED, STATUS_SKIPPED
             ):
-                # Agent crashed without cleanly setting a status — apply failed.
-                gh.add_label(work_item.number, agent_def.failed_label)
-                gh.post_comment(
-                    work_item.number,
-                    (
-                        f"**{agent_def.agent}** exited with an error on #{work_item.number}.\n\n"
-                        f"The pipeline is paused. Review the agent logs, then either:\n"
-                        f"- Remove `{agent_def.failed_label}` to retry, or\n"
-                        f"- Apply `{agent_def.status_label(STATUS_SKIPPED)}` to bypass."
-                    )
-                )
+                # Agent crashed without cleanly setting a status. Mirror
+                # status.sh's behaviour: clear any non-terminal status
+                # the agent may have left behind (e.g. :wip), then apply
+                # :failed so exactly one status label remains.
+                _apply_failed(gh, agent_def, work_item, result)
                 log.error(
                     "  FAILED  %-38s  pipeline paused on #%d",
                     agent_def.agent, work_item.number
