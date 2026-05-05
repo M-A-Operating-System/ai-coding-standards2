@@ -139,32 +139,38 @@ review path.
 
 A typical small ticket flows like this:
 
-| Time | Object | Event | Outcome label |
-|---|---|---|---|
-| T+0 | Issue | Stakeholder opens issue | — |
-| T+2m | Issue | `issue-classifier` validates required fields | `issue-classifier:complete` |
-| T+5m | Issue | `prd-writer` posts PRD | `prd-writer:review` |
-| T+1h | Issue | Stakeholder approves PRD | `prd:approved` |
-| T+10m | Issue | `product-standards-checker`, `impact-assessor`, `dependency-resolver` run | `dependency-resolver:complete` |
-| T+5m | Issue | `ticket-sizer` posts size | `ticket-sizer:review` |
-| T+30m | Issue | Engineer approves size | `size:approved` |
-| T+15m | Issue | `architect` posts technical design | `architect:review` |
-| T+1h | Issue | Engineer approves design | `design:approved` |
-| T+5m | Issue | `adr-proposer` runs | `adr-proposer:complete` |
-| T+10m | Issue | `test-spec-writer` and `test-coverage-auditor` run | `test-coverage-auditor:review` |
-| T+30m | Issue | Engineer approves test spec | `test-spec:approved` |
-| T+10m | Issue | `task-decomposer` and `dependency-planner` run | `dependency-planner:review` |
-| T+15m | Issue | Engineer approves plan | `plan:approved` |
-| T+5m | Issue → PR | `coder` opens draft PR on first commit | (event) `pr.draft_opened` |
-| T+30m | PR | `coder` commits per child task; CI runs from commit 1 | (event) `pr.draft_synchronized` |
-| T+5m | PR | `coder` marks PR ready-for-review | (event) `pr.draft_ready` |
-| T+10m | PR | `standards-compliance-reviewer` and `pr-reviewer` run | `pr-reviewer:review` |
-| T+1h | PR | Engineer approves PR | `pr:approved` |
-| T+10m | PR | `test-writer`, `test-runner`, `coverage-enforcer` run | `coverage-enforcer:review` |
-| T+15m | PR | Engineer approves coverage; PR merges | `coverage:approved` + (event) `pr.merged` |
-| T+5m | Issue | `release-noter` opens changelog PR, closes child issues | `release-noter:complete` |
-| T+5m | Issue | `retrospective-writer` posts retrospective | `retrospective-writer:complete` |
-| Weekly | Issue (all) | `standards-evolver` reviews retrospectives, drafts proposals | `standards-evolver:review` |
+| Time | Object | Agent | Event | Outcome label |
+|---|---|---|---|---|
+| T+0 | Issue | Stakeholder | Opens issue | — |
+| T+2m | Issue | `issue-classifier` | Validates required fields | `issue-classifier:complete` |
+| T+5m | Issue | `prd-writer` | Posts PRD | `prd-writer:review` |
+| T+1h | Issue | Stakeholder | Approves PRD | `prd:approved` |
+| T+10m | Issue | `product-standards-checker`, `impact-assessor`, `dependency-resolver` | Run in sequence | `dependency-resolver:complete` |
+| T+5m | Issue | `ticket-sizer` | Posts size | `ticket-sizer:review` |
+| T+30m | Issue | Engineer | Approves size | `size:approved` |
+| T+15m | Issue | `architect` | Posts technical design | `architect:review` |
+| T+1h | Issue | Engineer | Approves design | `design:approved` |
+| T+5m | Issue | `adr-proposer` | Runs (no ADRs needed) | `adr-proposer:complete` |
+| T+10m | Issue | `test-spec-writer`, `test-coverage-auditor` | Generate spec and audit coverage | `test-coverage-auditor:review` |
+| T+30m | Issue | Engineer | Approves test spec | `test-spec:approved` |
+| T+10m | Issue | `task-decomposer`, `dependency-planner` | Decompose and order child tasks | `dependency-planner:review` |
+| T+15m | Issue | Engineer | Approves plan | `plan:approved` |
+| T+5m | Issue → PR | `coder` | Opens draft PR on first commit | (event) `pr.draft_opened` |
+| T+30m | PR | `coder` | Commits per child task; CI runs from commit 1 | (event) `pr.draft_synchronized` |
+| T+5m | PR | `coder` | Marks PR ready-for-review | (event) `pr.draft_ready` |
+| T+10m | PR | `standards-compliance-reviewer`, `pr-reviewer` | Review against design and standards | `pr-reviewer:review` |
+| T+1h | PR | Engineer | Approves PR | `pr:approved` |
+| T+10m | PR | `test-writer`, `test-runner`, `coverage-enforcer` | Write tests, run suite, enforce coverage | `coverage-enforcer:review` |
+| T+15m | PR | Engineer | Approves coverage; PR merges | `coverage:approved` + (event) `pr.merged` |
+| T+5m | Issue | `release-noter` | Opens changelog PR, closes child issues | `release-noter:complete` |
+| T+5m | Issue | `retrospective-writer` | Posts retrospective | `retrospective-writer:complete` |
+| Weekly | Issue (all) | `standards-evolver` | Reviews retrospectives, drafts proposals | `standards-evolver:review` |
+
+The **Agent** column shows the actor for that step. Lower-case
+hyphenated names (e.g. `prd-writer`) are agents from
+[`pipeline.json`](../../../ai-agile/pipeline/pipeline.json);
+capitalised names (e.g. Stakeholder, Engineer) are human personas
+from [`03-personas.md`](03-personas.md).
 
 The **Outcome label** column shows the label applied to the object at
 the end of that step. `agent:complete` and `agent:review` are agent
