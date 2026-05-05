@@ -139,27 +139,40 @@ review path.
 
 A typical small ticket flows like this:
 
-| Time | Event |
-|---|---|
-| T+0 | Stakeholder opens issue |
-| T+2m | `issue-classifier` validates required fields |
-| T+5m | `prd-writer` posts PRD; requests review |
-| T+1h | Stakeholder approves; applies `prd:approved` |
-| T+5m | Product-docs phase finishes; `ticket-sizer` posts size; requests review |
-| T+30m | Engineer applies `size:approved` |
-| T+15m | `architect` posts technical design; requests review |
-| T+1h | Engineer applies `design:approved` |
-| T+10m | Testing-spec phase runs; requests review |
-| T+30m | Engineer applies `test-spec:approved` |
-| T+10m | Build-plan phase runs; requests review |
-| T+15m | Engineer applies `plan:approved` |
-| T+30m | `coder` opens PR; reviewers run; requests PR review |
-| T+1h | Engineer applies `pr:approved` |
-| T+10m | Test phase runs; requests review |
-| T+15m | Engineer applies `coverage:approved`; PR is merged |
-| T+5m | `release-noter` opens changelog PR, closes child issues |
-| T+5m | `retrospective-writer` posts retrospective on parent issue |
-| Weekly | `standards-evolver` reviews retrospectives, drafts proposals |
+| Time | Object | Event | Outcome label |
+|---|---|---|---|
+| T+0 | Issue | Stakeholder opens issue | — |
+| T+2m | Issue | `issue-classifier` validates required fields | `issue-classifier:complete` |
+| T+5m | Issue | `prd-writer` posts PRD | `prd-writer:review` |
+| T+1h | Issue | Stakeholder approves PRD | `prd:approved` |
+| T+10m | Issue | `product-standards-checker`, `impact-assessor`, `dependency-resolver` run | `dependency-resolver:complete` |
+| T+5m | Issue | `ticket-sizer` posts size | `ticket-sizer:review` |
+| T+30m | Issue | Engineer approves size | `size:approved` |
+| T+15m | Issue | `architect` posts technical design | `architect:review` |
+| T+1h | Issue | Engineer approves design | `design:approved` |
+| T+5m | Issue | `adr-proposer` runs | `adr-proposer:complete` |
+| T+10m | Issue | `test-spec-writer` and `test-coverage-auditor` run | `test-coverage-auditor:review` |
+| T+30m | Issue | Engineer approves test spec | `test-spec:approved` |
+| T+10m | Issue | `task-decomposer` and `dependency-planner` run | `dependency-planner:review` |
+| T+15m | Issue | Engineer approves plan | `plan:approved` |
+| T+5m | Issue → PR | `coder` opens draft PR on first commit | (event) `pr.draft_opened` |
+| T+30m | PR | `coder` commits per child task; CI runs from commit 1 | (event) `pr.draft_synchronized` |
+| T+5m | PR | `coder` marks PR ready-for-review | (event) `pr.draft_ready` |
+| T+10m | PR | `standards-compliance-reviewer` and `pr-reviewer` run | `pr-reviewer:review` |
+| T+1h | PR | Engineer approves PR | `pr:approved` |
+| T+10m | PR | `test-writer`, `test-runner`, `coverage-enforcer` run | `coverage-enforcer:review` |
+| T+15m | PR | Engineer approves coverage; PR merges | `coverage:approved` + (event) `pr.merged` |
+| T+5m | Issue | `release-noter` opens changelog PR, closes child issues | `release-noter:complete` |
+| T+5m | Issue | `retrospective-writer` posts retrospective | `retrospective-writer:complete` |
+| Weekly | Issue (all) | `standards-evolver` reviews retrospectives, drafts proposals | `standards-evolver:review` |
+
+The **Outcome label** column shows the label applied to the object at
+the end of that step. `agent:complete` and `agent:review` are agent
+status labels (see [`06-status-model.md`](06-status-model.md)); the
+plain `*:approved` labels are human gates (see
+[`07-human-gates.md`](07-human-gates.md)). Rows marked **(event)** are
+GitHub-driven state changes that emit audit-log events but do not
+themselves apply a status label.
 
 Total wall-clock human time: minutes. Total elapsed time: hours.
 

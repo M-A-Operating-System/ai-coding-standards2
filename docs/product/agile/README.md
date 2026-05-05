@@ -23,6 +23,7 @@ evolve them as the system matures.
 | 06 | [Status model](06-status-model.md) | The label-driven state machine |
 | 07 | [Human gates](07-human-gates.md) | Where humans approve, and what they are signing off |
 | 08 | [Audit log](08-audit-log.md) | The immutable cross-session timeline branch |
+| 09 | [Human interaction](09-human-interaction.md) | How agents and humans communicate; the Question Card protocol |
 
 ## Generated views
 
