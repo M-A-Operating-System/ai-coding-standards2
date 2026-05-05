@@ -184,6 +184,19 @@ patterns and tune the system that produced them.
   novel architecture choice, a useful test pattern) and drafts
   knowledge artefacts (runbooks, templates, teaching examples)
   into `docs/learnings/`.
+- **`process-reviewer`** — runs quarterly. Reads the principles
+  ([`02-principles.md`](02-principles.md)), the vision
+  ([`01-vision.md`](01-vision.md)), the metrics produced by
+  `metrics-aggregator`, and the corpus of closed retrospectives.
+  Produces a holistic assessment: are we still honoring our own
+  principles, is the system serving its personas, and where has
+  practice drifted from intent? Drafts *coordinated* change proposals
+  that span the pipeline graph, agent prompts, standards, and docs —
+  not single-component edits. May also propose changes to the
+  principles themselves (rare; requires an ADR).
+  Distinct from `prompt-tuner`: that agent does narrow, one-agent-at-a-time
+  tactical tuning. `process-reviewer` does strategic, multi-component
+  review.
 
 **Human gates.**
 
@@ -191,6 +204,10 @@ patterns and tune the system that produced them.
   approves any change to `pipeline.json` proposed by `pipeline-tuner`.
 - **`prompt-change:approved`** (proposed) — agent owner approves
   any change to an agent prompt proposed by `prompt-tuner`.
+- **`process-review:approved`** (proposed) — standards owner *and*
+  a principal stakeholder approve any coordinated change proposed by
+  `process-reviewer`. The dual approval reflects the cross-cutting
+  nature of these changes.
 - Changes from `knowledge-curator` follow normal PR review.
 
 **Why Phase 8 is its own phase.**
