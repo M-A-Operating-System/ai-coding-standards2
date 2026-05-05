@@ -38,7 +38,7 @@ schema is defined in `docs/product/agile/09-human-interaction.md` §3.
 
 ````bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
-<!-- ai-agile/announcement/v1 -->
+<!-- ai-agile/announcement/v1 by {phase}/agent-name -->
 ```json
 {
   "session_id": "ais-v1-iss-$ISSUE_NUMBER-agent-name",
@@ -113,7 +113,7 @@ call. The orchestrator emits `agent.complete` / `agent.review` /
 
 ````bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
-<!-- ai-agile/announcement/v1 -->
+<!-- ai-agile/announcement/v1 by {phase}/agent-name -->
 ```json
 {
   "session_id": "ais-v1-iss-$ISSUE_NUMBER-agent-name",
