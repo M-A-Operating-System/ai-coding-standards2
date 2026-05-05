@@ -45,6 +45,32 @@ independently on the audit log.
 
 ## How the pipeline advances
 
+A single, deterministic, **Python-based orchestrator** has the sole
+responsibility for reacting to events and deciding which agent can
+work on what next. It is the only component permitted to:
+
+- Read pipeline state (labels, session comments, PR metadata).
+- Translate raw GitHub events into the semantic event vocabulary
+  (`issue.labeled`, `pr.draft_opened`, `agent.complete`, …).
+- Evaluate the dependency graph in
+  [`ai-agile/pipeline/pipeline.json`](../../../ai-agile/pipeline/pipeline.json)
+  and decide which agent is eligible.
+- Acquire the `:wip` mutex (see [P-4](02-principles.md#p-4--wip-is-the-mutex)).
+- Invoke an agent.
+- Append events to the audit log branch
+  (see [`08-audit-log.md`](08-audit-log.md)).
+
+Two design properties are enforced because the orchestrator is the
+only decider:
+
+- **Deterministic routing.** Given the same labels, the same
+  `pipeline.json`, and the same session state, the orchestrator
+  always reaches the same decision about who runs next. No LLM is in
+  the routing path. Routing is unit-testable Python.
+- **Single source of authority.** Agents do not invoke other agents.
+  Agents do not read the dependency graph. Agents do their one job
+  and report status. The orchestrator decides what happens next.
+
 The orchestrator is invoked on three triggers:
 
 1. **Label events.** Any time a label is added or removed on an issue
