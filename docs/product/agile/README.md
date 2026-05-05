@@ -27,7 +27,7 @@ evolve them as the system matures.
 | 10 | [Roadmap](10-roadmap.md) | MVP scope, agent merges, and phased rollout |
 | 11 | [Orchestrator](11-orchestrator.md) | Python orchestrator technical design, decision logic, and GitHub Actions workflows |
 | 12 | [Agent specification](12-agent-spec.md) | Required shape of an agent prompt file: frontmatter, body sections, tool allowlist |
-| 13 | [Todos](13-todos.md) | How tasks are stored in issue/PR bodies and in cross-ticket agent tracker issues |
+| 13 | [Todos](13-todos.md) | How tasks are stored in issue/PR bodies, with ISO 8601 timestamps |
 
 ## Generated views
 

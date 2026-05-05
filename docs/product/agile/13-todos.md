@@ -58,25 +58,25 @@ without touching surrounding content.
 <!-- ai-agile/todos/build-plan/v1 START -->
 ### Build plan
 
-- [x] Add `last_login_at` column to `users` table (#43)
-- [ ] Wire up middleware to update on each request (#44)
-- [ ] Add Gherkin scenarios and tests (#45)
+- [x] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z)
+- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z)
+- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z)
 
 <!-- ai-agile/todos/build-plan/v1 END -->
 
 <!-- ai-agile/todos/acceptance-criteria/v1 START -->
 ### Acceptance criteria
 
-- [ ] Login updates `last_login_at` within 1 second
-- [ ] `last_login_at` survives session expiry
-- [ ] Every update produces an audit log entry
+- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z)
+- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z)
+- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z)
 
 <!-- ai-agile/todos/acceptance-criteria/v1 END -->
 
 <!-- ai-agile/todos/open-questions/v1 START -->
 ### Open questions
 
-- [ ] Q-ais-v1-iss-42-architect-001 — schema choice (asked of: engineer)
+- [ ] Q-ais-v1-iss-42-architect-001 — schema choice (raised 2026-05-04T14:23Z, asked of: engineer)
 
 <!-- ai-agile/todos/open-questions/v1 END -->
 
@@ -116,21 +116,24 @@ authoritative:
 | `- [ ]` | Pending |
 | `- [x]` | Done |
 
-Two annotations may follow the task text in parentheses to convey
-non-binary state without breaking GitHub rendering:
+Every entry is annotated with timestamps for raised, done, blocked,
+or skipped events. The full annotation grammar is defined in
+"Timestamp format" below.
 
 | Annotation | Meaning |
 |---|---|
-| `(blocked: <reason>)` | Cannot proceed; reference a Question Card or `:blocked` agent if applicable |
-| `(skipped: <reason>)` | Intentionally not done; the writing agent or human takes responsibility |
+| `(raised <ts>)` | Required on every entry; when the task was added |
+| `(done <ts>)` | Added when an item is checked off |
+| `(blocked <ts>: <reason>)` | Cannot proceed; reference a Question Card or `:blocked` agent if applicable |
+| `(skipped <ts>: <reason>)` | Intentionally not done; the writing agent or human takes responsibility |
 
 GitHub renders the checkbox regardless of annotation, so the visual
 state stays accurate. Examples:
 
 ```markdown
-- [ ] Wire up middleware (blocked: waiting on Q-ais-v1-iss-42-architect-001)
-- [x] Add migration
-- [ ] ~~Add legacy auth path~~ (skipped: ADR-0019 retires legacy auth)
+- [ ] Wire up middleware (raised 2026-05-04T14:23Z, blocked 2026-05-04T16:02Z: waiting on Q-ais-v1-iss-42-architect-001)
+- [x] Add migration (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z)
+- [ ] ~~Add legacy auth path~~ (raised 2026-05-04T14:23Z, skipped 2026-05-05T08:00Z: ADR-0019 retires legacy auth)
 ```
 
 ---
@@ -214,18 +217,18 @@ The admin UI mock is in #38.
 <!-- ai-agile/todos/acceptance-criteria/v1 START -->
 ### Acceptance criteria
 
-- [ ] Login updates `last_login_at` within 1 second
-- [ ] `last_login_at` survives session expiry
-- [ ] Every update produces an audit log entry
+- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z)
+- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z)
+- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z)
 
 <!-- ai-agile/todos/acceptance-criteria/v1 END -->
 
 <!-- ai-agile/todos/build-plan/v1 START -->
 ### Build plan
 
-- [ ] Add `last_login_at` column to `users` table (#43)
-- [ ] Wire up middleware to update on each request (#44)
-- [ ] Add Gherkin scenarios and tests (#45)
+- [ ] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z)
+- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z)
+- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z)
 
 <!-- ai-agile/todos/build-plan/v1 END -->
 
@@ -258,25 +261,25 @@ Implements last-login tracking. Closes #42.
 <!-- ai-agile/todos/build-plan/v1 START -->
 ### Build plan
 
-- [x] Add `last_login_at` column to `users` table (#43)
-- [x] Wire up middleware to update on each request (#44)
-- [ ] Add Gherkin scenarios and tests (#45)
+- [x] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z, done 2026-05-04T15:48Z)
+- [x] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z, done 2026-05-04T16:31Z)
+- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z)
 
 <!-- ai-agile/todos/build-plan/v1 END -->
 
 <!-- ai-agile/todos/standards-remediations/v1 START -->
 ### Standards remediations
 
-- [ ] STD000000007 — activity log entry missing for failed login attempts
+- [ ] STD000000007 — activity log entry missing for failed login attempts (raised 2026-05-04T16:38Z)
 
 <!-- ai-agile/todos/standards-remediations/v1 END -->
 
 <!-- ai-agile/todos/test-scenarios/v1 START -->
 ### Test scenarios
 
-- [x] Successful login updates `last_login_at`
-- [ ] Failed login does **not** update `last_login_at`
-- [ ] Concurrent logins serialise correctly
+- [x] Successful login updates `last_login_at` (raised 2026-05-04T13:02Z, done 2026-05-04T16:40Z)
+- [ ] Failed login does **not** update `last_login_at` (raised 2026-05-04T13:02Z)
+- [ ] Concurrent logins serialise correctly (raised 2026-05-04T13:02Z)
 
 <!-- ai-agile/todos/test-scenarios/v1 END -->
 
@@ -318,146 +321,122 @@ modifies an issue or PR body (via the orchestrator) and checks:
 1. Markers are paired — every START has a matching END.
 2. Subsections are nested correctly inside the outer block.
 3. Every checkbox follows GitHub's `- [ ]` or `- [x]` syntax.
-4. The "Last updated" footer is present and parseable.
-5. No agent has written to a subsection it does not own.
+4. Every entry has a `(raised <ISO-8601-UTC>)` annotation.
+5. Checked items (`[x]`) have a `done <ISO-8601-UTC>` annotation in
+   addition to `raised`.
+6. Blocked / skipped annotations follow the
+   `(blocked <ts>: <reason>)` / `(skipped <ts>: <reason>)` form.
+7. Timestamps parse as ISO 8601 UTC with the trailing `Z`.
+8. The "Last updated" footer is present and parseable.
+9. No agent has written to a subsection it does not own.
 
 Bodies that fail validation cannot be saved. The orchestrator emits a
 `body.validation_failed` audit event and rolls back the write attempt.
 
 ---
 
-## Cross-ticket agent trackers
+## Cross-ticket improvement agents — no tracker, individual issues
 
 Some agents — the **improvement agents** in Phases 8, 9, and 10, plus
 codebase-wide agents like `reverse-doc` — do work that is fundamentally
-cross-ticket. Their *outputs* are GitHub issues (gap-issues,
-debt-issues, knowledge-artefact issues, refactor proposals); those
-issues then enter the per-ticket pipeline like any other work.
+cross-ticket. Their **outputs** are GitHub issues (gap-issues,
+debt-issues, knowledge-artefact issues, refactor proposals); each
+finding becomes its own issue, which then runs through the per-ticket
+pipeline like any other work.
 
-But the agent itself also has **internal tasks** it must complete to
-do its job correctly: modules to scan, PRDs to walk, ADRs to revisit,
-candidates to dedupe and rank. These tasks are not outputs — they are
-the agent's own backlog. They need a place to live, and per the
-storage rule above, that place is **a GitHub issue body**.
+These agents do **not** maintain a long-lived tracker issue or backlog
+file. Each scheduled run is self-contained:
 
-### The tracker issue
+1. Read inputs (the codebase, PRDs, ADRs, audit log) at run start.
+2. Apply the agent's rules to discover candidate findings.
+3. For each finding, generate the deterministic issue key
+   (`{AGENT}-{CATEGORY}-{HASH}`) and check whether an open issue with
+   that key already exists.
+4. File a new issue per new finding. Skip findings whose key already
+   has an open issue (de-duplication).
+5. Exit.
 
-Every long-running agent has exactly one **tracker issue** in the
-repo. It is opened once when the agent is first added to the pipeline
-and remains open for the lifetime of the agent.
+State is reconstructed from GitHub on each run, per P-11. There is no
+"scan target backlog" or "investigation list" carried between runs —
+the next run re-derives those from the same inputs and arrives at the
+same set of findings minus anything already filed.
 
-| Convention | Value |
+### Where the agent's todos live
+
+The "todos" for a cross-ticket agent's finding live in the body of
+**that finding's issue**, not in a separate tracker. Each filed issue
+is the unit of work, and its body uses the standard todos block to
+hold:
+
+- Acceptance criteria for resolving the finding
+- Investigation steps a human or downstream agent must take
+- Cross-references to related findings or ADRs
+
+### Within a single run — TodoWrite
+
+Within one scheduled run, an agent may use Claude's runtime
+`TodoWrite` tool to track in-progress steps (which file to scan next,
+which PRD to walk, which finding to dedupe). This is **runtime
+ephemeral state**, not persistent. It does not survive the run and is
+not stored in GitHub. It is purely a tool for the agent to keep its
+own multi-step plan organised inside one invocation.
+
+### Outputs are first-class issues
+
+| Concept | Mechanism |
 |---|---|
-| Title | `[agent-tracker] {agent-name}` |
-| Label | `agent-tracker:{agent-name}` |
-| State | Open for the lifetime of the agent |
-| Body | Standard todos block with subsections owned by the agent |
-| Closed when | The agent is retired (rare); never as part of normal operation |
+| Agent runs | Scheduled (weekly / monthly / daily, per `pipeline.json`) |
+| Per-finding issue | Filed by the agent; carries the issue-key as part of its title; flows through the per-ticket pipeline |
+| Per-finding todos | In the filed issue's body, in the standard todos block |
+| Across-run state | None — each run re-derives findings from current inputs |
+| Duplicate prevention | Issue-key check at file time; same key never produces two open issues |
 
-The tracker is **not** a feature issue — it does not flow through the
-per-ticket pipeline. The orchestrator skips it for all agents except
-the one whose name it tracks.
+This keeps the cross-ticket agents stateless, simple, and aligned with
+P-11 (resumable by default).
 
-### Tracker subsections
+---
 
-| Subsection marker | Holds |
+## Timestamp format
+
+Every checklist item carries the timestamp it was raised. Closed and
+annotated items carry the corresponding event timestamp too. This
+makes the body a self-contained audit trail without needing to cross-
+reference the issue's event history.
+
+### Format
+
+Timestamps are appended to the task text in parentheses, in **ISO 8601
+UTC** with minute precision (`YYYY-MM-DDTHH:MMZ`). Seconds are
+omitted to keep the line readable; the audit log holds full precision
+(see [`08-audit-log.md`](08-audit-log.md)).
+
+| State | Format |
 |---|---|
-| `ai-agile/todos/scan-targets/v1` | Things the agent must visit (modules, PRDs, ADRs, files) |
-| `ai-agile/todos/investigations/v1` | Multi-run investigations the agent has opened and not closed |
-| `ai-agile/todos/follow-ups/v1` | Tasks queued for the next run because they exceeded this run's budget |
-| `ai-agile/todos/deferrals/v1` | Items the agent decided not to act on, with reason |
+| Pending | `- [ ] {task} (raised 2026-05-04T14:23Z)` |
+| Done | `- [x] {task} (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z)` |
+| Blocked | `- [ ] {task} (raised 2026-05-04T14:23Z, blocked 2026-05-04T16:02Z: <reason>)` |
+| Skipped | `- [ ] ~~{task}~~ (raised 2026-05-04T14:23Z, skipped 2026-05-05T08:00Z: <reason>)` |
 
-Each entry has a stable issue-key suffix (per the issue-key standard)
-so re-runs do not duplicate it.
+### Why ISO 8601 UTC
 
-### Example — `gap-assessor` tracker body
+- Unambiguous across locales (no `MM/DD` vs `DD/MM` confusion).
+- Lexicographically sortable.
+- Parseable by every standard library.
+- The `Z` suffix makes timezone explicit; agents and humans in
+  different timezones see the same value.
+
+### Author identity
+
+If the writer is not the section's owning agent — for example, a human
+ticked the box manually — append the actor after the timestamp:
 
 ```markdown
-# Tracker — gap-assessor
-
-This is the working backlog for the `gap-assessor` agent. It runs
-weekly and updates the subsections below. Outputs (gap-issues) are
-filed as separate issues and linked from the items here when filed.
-
-<!-- ai-agile/todos/v1 START -->
-## AI Agile — Tasks
-
-<!-- ai-agile/todos/scan-targets/v1 START -->
-### Scan targets
-
-- [x] PRD #42 — last-login tracking (last walked 2026-05-03)
-- [x] PRD #51 — admin user-listing (last walked 2026-05-03)
-- [ ] PRD #58 — bulk export (added to backlog 2026-05-04)
-- [ ] PRD #61 — invitation flow (added to backlog 2026-05-04)
-
-<!-- ai-agile/todos/scan-targets/v1 END -->
-
-<!-- ai-agile/todos/investigations/v1 START -->
-### Investigations
-
-- [ ] GAP-AC-a3f2c1 — PRD #51 AC "list paginates above 100 rows"
-  has no matching test; opened 2026-05-03; awaiting test-suite scan
-  to confirm the gap is real before filing
-- [ ] GAP-VIS-7e9b04 — vision says "self-service onboarding"; no
-  email verification capability detected; cross-checking with
-  product-standards-checker before filing
-
-<!-- ai-agile/todos/investigations/v1 END -->
-
-<!-- ai-agile/todos/follow-ups/v1 START -->
-### Follow-ups for next run
-
-- [ ] Re-walk PRD #38 — admin UI mock referenced; check whether the
-  shipped UI matches the mock's acceptance criteria
-
-<!-- ai-agile/todos/follow-ups/v1 END -->
-
-<!-- ai-agile/todos/deferrals/v1 START -->
-### Deferred (not acted on)
-
-- [ ] GAP-DEP-d12f88 — PRD #19 acceptance criterion "supports IE11"
-  no longer applies (deferred: ADR-0014 dropped IE support)
-
-<!-- ai-agile/todos/deferrals/v1 END -->
-
-_Last updated by `gap-assessor` at 2026-05-04T03:00:14Z_
-<!-- ai-agile/todos/v1 END -->
+- [x] Wire up middleware (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z by @alice)
 ```
 
-### Read/write protocol
-
-Identical to the standard protocol. The agent finds its tracker by
-label query:
-
-```bash
-TRACKER=$(gh issue list --repo $REPO --label "agent-tracker:gap-assessor" \
-  --state open --json number -q '.[0].number')
-```
-
-Then reads, updates, and writes back the body using the same
-ETag-protected protocol as feature issues. The mutex
-(`gap-assessor:wip` on the tracker issue) ensures two scheduled runs
-cannot collide on the body.
-
-### Outputs vs todos
-
-The distinction matters and is enforced by convention:
-
-| Concept | Lives where | Lifetime |
-|---|---|---|
-| **Tracker todos** | The agent's tracker issue body | Persistent across runs; checked off as work completes |
-| **Agent outputs** | Separate GitHub issues (gap-issues, debt-issues, etc.) | Each output is its own issue, runs through the per-ticket pipeline |
-
-When a tracker investigation results in filing an output issue, the
-tracker entry is checked off and annotated with the output issue
-number:
-
-```markdown
-- [x] GAP-AC-a3f2c1 — PRD #51 AC pagination gap → filed as #82
-```
-
-This gives a one-click trail from the agent's internal task to the
-work it produced.
+When the section's owning agent applied the change, the actor is
+omitted (the `Last updated by` footer at the bottom of the block
+already names the writing agent).
 
 ---
 
@@ -466,10 +445,10 @@ work it produced.
 The old `.claude/agents/agent-todo-standard.md` is superseded by this
 document. The previous line-oriented format
 (`[X] - Raised: MM/DD/YY | ... | Completed: MM/DD/YY`) is replaced by
-standard markdown task lists in tracker-issue bodies. The change
-unifies the format across feature issues, PRs, and agent trackers, and
-makes the worklog visible in the GitHub UI rather than buried in a
-file.
+standard markdown task lists with ISO 8601 timestamps, in the body of
+the relevant issue or PR. The change unifies the format across all
+todos, makes them visible in the GitHub UI, and removes the parallel
+file-based state.
 
 ---
 
