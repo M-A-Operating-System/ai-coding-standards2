@@ -1,0 +1,18 @@
+{
+  "$schema": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
+  "pipeline": [
+
+    {
+      "agent": "01_product_docs/issue-classifier",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "event": "issue.opened"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "description": "Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment."
+    }
+
+  ]
+}
