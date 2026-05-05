@@ -58,25 +58,25 @@ without touching surrounding content.
 <!-- ai-agile/todos/build-plan/v1 START -->
 ### Build plan
 
-- [x] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z)
-- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z)
-- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z)
+- [x] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z by task-decomposer, done 2026-05-05T09:11Z by coder)
+- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z by task-decomposer)
+- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z by task-decomposer)
 
 <!-- ai-agile/todos/build-plan/v1 END -->
 
 <!-- ai-agile/todos/acceptance-criteria/v1 START -->
 ### Acceptance criteria
 
-- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z)
-- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z)
-- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z)
+- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z by prd-writer)
+- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z by prd-writer)
+- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z by prd-writer)
 
 <!-- ai-agile/todos/acceptance-criteria/v1 END -->
 
 <!-- ai-agile/todos/open-questions/v1 START -->
 ### Open questions
 
-- [ ] Q-ais-v1-iss-42-architect-001 — schema choice (raised 2026-05-04T14:23Z, asked of: engineer)
+- [ ] Q-ais-v1-iss-42-architect-001 — schema choice (raised 2026-05-04T14:23Z by orchestrator, asked of: engineer)
 
 <!-- ai-agile/todos/open-questions/v1 END -->
 
@@ -116,24 +116,25 @@ authoritative:
 | `- [ ]` | Pending |
 | `- [x]` | Done |
 
-Every entry is annotated with timestamps for raised, done, blocked,
-or skipped events. The full annotation grammar is defined in
-"Timestamp format" below.
+Every entry carries the timestamp and actor for each state change.
+The full annotation grammar is defined in "Timestamp and actor format"
+below.
 
 | Annotation | Meaning |
 |---|---|
-| `(raised <ts>)` | Required on every entry; when the task was added |
-| `(done <ts>)` | Added when an item is checked off |
-| `(blocked <ts>: <reason>)` | Cannot proceed; reference a Question Card or `:blocked` agent if applicable |
-| `(skipped <ts>: <reason>)` | Intentionally not done; the writing agent or human takes responsibility |
+| `(raised <ts> by <actor>)` | Required on every entry; when and by whom the task was added |
+| `(done <ts> by <actor>)` | Added when an item is checked off |
+| `(blocked <ts> by <actor>: <reason>)` | Cannot proceed; reference a Question Card or `:blocked` agent if applicable |
+| `(skipped <ts> by <actor>: <reason>)` | Intentionally not done; the actor takes responsibility |
 
-GitHub renders the checkbox regardless of annotation, so the visual
-state stays accurate. Examples:
+Multiple events on the same entry are concatenated with commas in the
+order they occurred. GitHub renders the checkbox regardless of
+annotation, so the visual state stays accurate. Examples:
 
 ```markdown
-- [ ] Wire up middleware (raised 2026-05-04T14:23Z, blocked 2026-05-04T16:02Z: waiting on Q-ais-v1-iss-42-architect-001)
-- [x] Add migration (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z)
-- [ ] ~~Add legacy auth path~~ (raised 2026-05-04T14:23Z, skipped 2026-05-05T08:00Z: ADR-0019 retires legacy auth)
+- [ ] Wire up middleware (raised 2026-05-04T14:23Z by task-decomposer, blocked 2026-05-04T16:02Z by architect: waiting on Q-ais-v1-iss-42-architect-001)
+- [x] Add migration (raised 2026-05-04T14:23Z by task-decomposer, done 2026-05-05T09:11Z by coder)
+- [ ] ~~Add legacy auth path~~ (raised 2026-05-04T14:23Z by task-decomposer, skipped 2026-05-05T08:00Z by @alice: ADR-0019 retires legacy auth)
 ```
 
 ---
@@ -217,18 +218,18 @@ The admin UI mock is in #38.
 <!-- ai-agile/todos/acceptance-criteria/v1 START -->
 ### Acceptance criteria
 
-- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z)
-- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z)
-- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z)
+- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z by prd-writer)
+- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z by prd-writer)
+- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z by prd-writer)
 
 <!-- ai-agile/todos/acceptance-criteria/v1 END -->
 
 <!-- ai-agile/todos/build-plan/v1 START -->
 ### Build plan
 
-- [ ] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z)
-- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z)
-- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z)
+- [ ] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z by task-decomposer)
+- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z by task-decomposer)
+- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z by task-decomposer)
 
 <!-- ai-agile/todos/build-plan/v1 END -->
 
@@ -261,25 +262,25 @@ Implements last-login tracking. Closes #42.
 <!-- ai-agile/todos/build-plan/v1 START -->
 ### Build plan
 
-- [x] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z, done 2026-05-04T15:48Z)
-- [x] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z, done 2026-05-04T16:31Z)
-- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z)
+- [x] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z by task-decomposer, done 2026-05-04T15:48Z by coder)
+- [x] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z by task-decomposer, done 2026-05-04T16:31Z by coder)
+- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z by task-decomposer)
 
 <!-- ai-agile/todos/build-plan/v1 END -->
 
 <!-- ai-agile/todos/standards-remediations/v1 START -->
 ### Standards remediations
 
-- [ ] STD000000007 — activity log entry missing for failed login attempts (raised 2026-05-04T16:38Z)
+- [ ] STD000000007 — activity log entry missing for failed login attempts (raised 2026-05-04T16:38Z by standards-compliance-reviewer)
 
 <!-- ai-agile/todos/standards-remediations/v1 END -->
 
 <!-- ai-agile/todos/test-scenarios/v1 START -->
 ### Test scenarios
 
-- [x] Successful login updates `last_login_at` (raised 2026-05-04T13:02Z, done 2026-05-04T16:40Z)
-- [ ] Failed login does **not** update `last_login_at` (raised 2026-05-04T13:02Z)
-- [ ] Concurrent logins serialise correctly (raised 2026-05-04T13:02Z)
+- [x] Successful login updates `last_login_at` (raised 2026-05-04T13:02Z by test-spec-writer, done 2026-05-04T16:40Z by test-runner)
+- [ ] Failed login does **not** update `last_login_at` (raised 2026-05-04T13:02Z by test-spec-writer)
+- [ ] Concurrent logins serialise correctly (raised 2026-05-04T13:02Z by test-spec-writer)
 
 <!-- ai-agile/todos/test-scenarios/v1 END -->
 
@@ -321,14 +322,18 @@ modifies an issue or PR body (via the orchestrator) and checks:
 1. Markers are paired — every START has a matching END.
 2. Subsections are nested correctly inside the outer block.
 3. Every checkbox follows GitHub's `- [ ]` or `- [x]` syntax.
-4. Every entry has a `(raised <ISO-8601-UTC>)` annotation.
-5. Checked items (`[x]`) have a `done <ISO-8601-UTC>` annotation in
-   addition to `raised`.
+4. Every entry has a `(raised <ISO-8601-UTC> by <actor>)` annotation.
+5. Checked items (`[x]`) have a `done <ISO-8601-UTC> by <actor>`
+   annotation in addition to `raised`.
 6. Blocked / skipped annotations follow the
-   `(blocked <ts>: <reason>)` / `(skipped <ts>: <reason>)` form.
+   `(blocked <ts> by <actor>: <reason>)` /
+   `(skipped <ts> by <actor>: <reason>)` form.
 7. Timestamps parse as ISO 8601 UTC with the trailing `Z`.
-8. The "Last updated" footer is present and parseable.
-9. No agent has written to a subsection it does not own.
+8. Every actor matches one of: a known agent name in
+   `pipeline.json`, a `@github-login` for humans, or the literal
+   `orchestrator`.
+9. The "Last updated" footer is present and parseable.
+10. No agent has written to a subsection it does not own.
 
 Bodies that fail validation cannot be saved. The orchestrator emits a
 `body.validation_failed` audit event and rolls back the write attempt.
@@ -396,28 +401,37 @@ P-11 (resumable by default).
 
 ---
 
-## Timestamp format
+## Timestamp and actor format
 
-Every checklist item carries the timestamp it was raised. Closed and
-annotated items carry the corresponding event timestamp too. This
-makes the body a self-contained audit trail without needing to cross-
-reference the issue's event history.
+Every checklist item carries, for each state change (`raised`, `done`,
+`blocked`, `skipped`), the timestamp the event occurred **and** the
+actor that performed it. This makes the body a self-contained audit
+trail without needing to cross-reference issue history or the audit
+log.
 
 ### Format
 
-Timestamps are appended to the task text in parentheses, in **ISO 8601
-UTC** with minute precision (`YYYY-MM-DDTHH:MMZ`). Seconds are
-omitted to keep the line readable; the audit log holds full precision
-(see [`08-audit-log.md`](08-audit-log.md)).
+Each event is appended to the task text in parentheses as
+`<event> <timestamp> by <actor>`, with multiple events comma-separated:
+
+```
+(raised 2026-05-04T14:23Z by task-decomposer, done 2026-05-05T09:11Z by coder)
+```
 
 | State | Format |
 |---|---|
-| Pending | `- [ ] {task} (raised 2026-05-04T14:23Z)` |
-| Done | `- [x] {task} (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z)` |
-| Blocked | `- [ ] {task} (raised 2026-05-04T14:23Z, blocked 2026-05-04T16:02Z: <reason>)` |
-| Skipped | `- [ ] ~~{task}~~ (raised 2026-05-04T14:23Z, skipped 2026-05-05T08:00Z: <reason>)` |
+| Pending | `- [ ] {task} (raised <ts> by <actor>)` |
+| Done | `- [x] {task} (raised <ts> by <actor>, done <ts> by <actor>)` |
+| Blocked | `- [ ] {task} (raised <ts> by <actor>, blocked <ts> by <actor>: <reason>)` |
+| Skipped | `- [ ] ~~{task}~~ (raised <ts> by <actor>, skipped <ts> by <actor>: <reason>)` |
 
-### Why ISO 8601 UTC
+### Timestamp grammar
+
+ISO 8601 UTC with minute precision: `YYYY-MM-DDTHH:MMZ`. Seconds are
+omitted to keep the line readable; the audit log retains full
+precision (see [`08-audit-log.md`](08-audit-log.md)).
+
+Properties:
 
 - Unambiguous across locales (no `MM/DD` vs `DD/MM` confusion).
 - Lexicographically sortable.
@@ -425,18 +439,39 @@ omitted to keep the line readable; the audit log holds full precision
 - The `Z` suffix makes timezone explicit; agents and humans in
   different timezones see the same value.
 
-### Author identity
+### Actor grammar
 
-If the writer is not the section's owning agent — for example, a human
-ticked the box manually — append the actor after the timestamp:
+The actor is one of:
 
-```markdown
-- [x] Wire up middleware (raised 2026-05-04T14:23Z, done 2026-05-05T09:11Z by @alice)
-```
+| Actor type | Format | Example |
+|---|---|---|
+| Agent | bare agent name (no `@`) matching `pipeline.json` | `task-decomposer`, `coder`, `pr-reviewer` |
+| Human | GitHub login prefixed with `@` | `@alice`, `@bob-eng` |
+| Orchestrator | the literal `orchestrator` (used for orchestrator-driven changes such as Question Card open/close) | `orchestrator` |
 
-When the section's owning agent applied the change, the actor is
-omitted (the `Last updated by` footer at the bottom of the block
-already names the writing agent).
+The leading `@` is the only thing that distinguishes humans from
+agents in the line. CI validation rejects entries where the actor is
+not present or does not match one of the three forms.
+
+### Why every event carries an actor
+
+- **Self-contained line.** A reviewer scanning a closed issue can see
+  who did what without scrolling through the issue history or audit
+  log.
+- **Multi-writer clarity.** The build-plan section is owned by
+  `task-decomposer` on the issue side and `coder` on the PR side. A
+  ticked-off entry shows which one ticked it. A human override shows
+  as `by @alice`, distinct from both.
+- **Audit-log alignment.** Every body change emits an audit event
+  (`body.updated`) that names the actor. The line-level annotation is
+  the human-readable mirror of that machine-readable event.
+
+### Footer
+
+The `_Last updated by <actor> at <timestamp>_` footer at the bottom of
+the todos block names the most recent writer to the block as a whole.
+It is informational; the line-level annotations are the source of
+truth for per-entry history.
 
 ---
 
