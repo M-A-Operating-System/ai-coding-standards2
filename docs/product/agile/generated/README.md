@@ -39,10 +39,8 @@ the regenerated version.
 
 ---
 
-## Status
+## Canonical source
 
-Generators are not yet implemented. Files in this directory will be
-populated as part of the build-out described in
-[`05-pipeline-config.md`](../05-pipeline-config.md). Until then the
-canonical source is `ai-agile/pipeline/pipeline.json` (currently at
-`.claude/pipeline.json`, pending move).
+The machine-readable source is `ai-agile/pipeline/pipeline.json`.
+See [`05-pipeline-config.md`](../05-pipeline-config.md) for the
+schema, change process, and generator invocation details.

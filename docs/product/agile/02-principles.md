@@ -279,8 +279,9 @@ clean.
 
 **Statement.** When an issue is closed, its session moves to a terminal
 state. Subsequent events on the same issue are dropped unless an explicit
-`issue.reopened` event arrives, which begins a new session iteration
-(P-7).
+`issue.reopened` event arrives, which re-enters the per-ticket pipeline from
+`issue-classifier`; the existing `(issue, agent)` sessions resume under the
+same session IDs (P-7).
 
 **Consequences.**
 
@@ -390,7 +391,7 @@ explicit human action.
 
 **Consequences.**
 
-- Eight gates are defined (see [`human-gates.md`](human-gates.md)).
+- Gates are listed in [`human-gates.md`](human-gates.md).
 - Reviewer time is spent reading artefacts, not authoring them.
 - The system never edits human-authored content (issue bodies written by
   the stakeholder, review comments, ADRs after acceptance).

@@ -1,6 +1,6 @@
 # Personas
 
-AI Agile serves four primary personas. Every feature, gate, and artefact is
+AI Agile serves six personas. Every feature, gate, and artefact is
 designed against at least one of them.
 
 ---
@@ -139,10 +139,8 @@ authorisation, RLS, secret handling, PII, and regulatory compliance.
   intersect with security-sensitive paths (a configurable allowlist
   including `auth/**`, RLS policies, `secrets/**`, IAM definitions).
   When flagged, the issue gets a `security-review-required` label.
-- A dedicated **`security-review:approved`** gate (proposed) blocks
-  merge on security-flagged PRs until the security owner approves.
-  The gate is added to [`07-human-gates.md`](07-human-gates.md) when
-  this persona is formalised.
+- A dedicated **`security-review:approved`** gate blocks merge on
+  security-flagged PRs until the security owner approves.
 - The `standards-compliance-reviewer` raises violations against
   `security`-layer standards as issues, with the STD ID and proposed
   fix.
@@ -184,10 +182,8 @@ residency, and the integrity of production data.
   agent.
 - The `architect` is required to flag any data model change as an
   ADR candidate; the `adr-proposer` then drafts the ADR.
-- A dedicated **`data-migration:approved`** gate (proposed) blocks
-  merge on PRs that include migrations until the data owner
-  approves. The gate is added to [`07-human-gates.md`](07-human-gates.md)
-  when this persona is formalised.
+- A dedicated **`data-migration:approved`** gate blocks merge on
+  PRs that include migrations until the data owner approves.
 - The `impact-assessor` reports the data domains touched by a change,
   so the right data owner is auto-tagged for review.
 - Every user-initiated write produces an activity log entry

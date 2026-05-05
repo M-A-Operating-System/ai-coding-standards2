@@ -230,7 +230,7 @@ patterns and tune the system that produced them.
 | Output | Changelog, retrospective, standards proposals | Pipeline metrics, pipeline-graph proposals, prompt tuning, knowledge artefacts |
 | Changes | Standards (`ai-agile/standards/*.json`) | The pipeline itself (`pipeline.json`, agent prompts, schedules) |
 
-**Agents (proposed; added to `pipeline.json` as Phase-8 agents).**
+**Agents.**
 
 - **`metrics-aggregator`** — runs daily. Reads the audit log and
   computes cycle time per phase, gate dwell time per gate, agent
@@ -267,12 +267,12 @@ patterns and tune the system that produced them.
 
 **Human gates.**
 
-- **`pipeline-change:approved`** (proposed) — standards owner
-  approves any change to `pipeline.json` proposed by `pipeline-tuner`.
-- **`prompt-change:approved`** (proposed) — agent owner approves
-  any change to an agent prompt proposed by `prompt-tuner`.
-- **`process-review:approved`** (proposed) — standards owner *and*
-  a principal stakeholder approve any coordinated change proposed by
+- **`pipeline-change:approved`** — standards owner approves any
+  change to `pipeline.json` proposed by `pipeline-tuner`.
+- **`prompt-change:approved`** — agent owner approves any change to
+  an agent prompt proposed by `prompt-tuner`.
+- **`process-review:approved`** — standards owner *and* a principal
+  stakeholder approve any coordinated change proposed by
   `process-reviewer`. The dual approval reflects the cross-cutting
   nature of these changes.
 - Changes from `knowledge-curator` follow normal PR review.
@@ -282,16 +282,11 @@ patterns and tune the system that produced them.
 - Per-ticket retrospectives surface ticket-shaped lessons.
   Cross-ticket meta-analysis surfaces system-shaped lessons. They
   use different inputs and produce different outputs.
-- Changes in Phase 8 affect *all future tickets*, so they need
+- Changes in Phase 8 affect all subsequent tickets, so they need
   higher review bars than per-ticket standards changes.
 - Separating Phase 8 lets us scale the cadence: daily metrics,
   weekly knowledge curation, monthly tuning — without entangling
   with the per-ticket lifecycle.
-
-Phase 8 implementation is deferred until the per-ticket pipeline
-(Phases 1–7) is running steadily and the audit log has accumulated
-enough data to mine. The phase is declared here so the system is
-designed for it from the start.
 
 ---
 
@@ -322,7 +317,7 @@ the difference is their provenance, which is recorded in the issue
 body via a `Gap-source: ai-agile/gap-assessor` trailer for audit
 purposes.
 
-**Agents (proposed; added to `pipeline.json` as Phase-9 agents).**
+**Agents.**
 
 - **`gap-assessor`** — runs weekly. Walks the approved PRDs and
   cross-checks each acceptance criterion against the test suite, the
@@ -341,10 +336,10 @@ purposes.
 
 **Human gates.**
 
-- **`gap-report:approved`** (proposed) — stakeholder *and* standards
-  owner approve which proposed gap-issues actually become issues.
-  Dual approval keeps the queue from being flooded with churn issues
-  that don't reflect real product intent.
+- **`gap-report:approved`** — stakeholder *and* standards owner
+  approve which gap-issues actually become issues. Dual approval keeps
+  the queue from being flooded with churn issues that don't reflect
+  real product intent.
 
 **Why Phase 9 is its own phase.**
 
@@ -356,10 +351,6 @@ purposes.
 - The approver shape is different: gap-issues need product judgement
   (is this still a real gap or has the product moved on?), which is
   the stakeholder's call, not the standards owner's alone.
-
-Phase 9 implementation is deferred until at least one product surface
-has shipped multiple tickets, so there is enough material for drift to
-have accumulated.
 
 ---
 
@@ -392,7 +383,7 @@ remediation. Like gap-issues, they re-enter the per-ticket pipeline at
 `issue-classifier` and carry a `Debt-source: ai-agile/debt-finder`
 trailer.
 
-**Agents (proposed; added to `pipeline.json` as Phase-10 agents).**
+**Agents.**
 
 - **`debt-finder`** — runs weekly. Computes structural metrics
   (module size, cyclomatic complexity, coupling, test coverage on hot
@@ -411,10 +402,10 @@ trailer.
 
 **Human gates.**
 
-- **`debt-report:approved`** (proposed) — engineer (or tech lead)
-  *and* standards owner approve which proposed debt-issues actually
-  become issues. The engineer judges feasibility and priority; the
-  standards owner judges fit with architecture direction.
+- **`debt-report:approved`** — engineer (or tech lead) *and*
+  standards owner approve which debt-issues become issues. The
+  engineer judges feasibility and priority; the standards owner judges
+  fit with architecture direction.
 
 **Why Phase 10 is its own phase.**
 
@@ -427,9 +418,6 @@ trailer.
 - Distinct from Phase 8: Phase 8 changes the *pipeline*; Phase 10
   changes the *product's implementation*. Both are improvements;
   they're different surfaces.
-
-Phase 10 implementation is deferred until the codebase has enough
-mass and history for structural metrics to be meaningful.
 
 ---
 

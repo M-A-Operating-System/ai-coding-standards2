@@ -36,7 +36,7 @@ For each agent, exactly these facts:
 | Field | Required | Meaning |
 |---|---|---|
 | `agent` | yes | Stable agent name; matches `.github/agents/{agent}.md` |
-| `phase` | yes | One of: `product-docs`, `technical-docs`, `testing-spec`, `build-plan`, `execute`, `test`, `evaluate` |
+| `phase` | yes | One of: `product-docs`, `technical-docs`, `testing-spec`, `build-plan`, `execute`, `test`, `evaluate`, `learn`, `gap-assessment`, `tech-debt` |
 | `object` | yes | Array containing `issue`, `pr`, or both |
 | `trigger` | yes | One of: `{event: "..."}`, `{label: "..."}`, `{schedule: "..."}`, optionally with `path_filter` |
 | `dependencies` | yes | Array of agent names that must reach `:complete` before this agent can run |
@@ -63,7 +63,7 @@ The schema enforces:
 - `human_gate_label` is present iff `human_gate_after` is true.
 - The dependency graph is acyclic (validator runs a topological sort).
 - `phase` values are from the closed enum.
-- `trigger` is exactly one of the allowed shapes.
+- One or more trigger shapes may be combined on a single agent; the orchestrator fires when ANY trigger condition is met.
 
 ---
 

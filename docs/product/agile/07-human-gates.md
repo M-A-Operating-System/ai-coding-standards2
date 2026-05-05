@@ -39,6 +39,13 @@ orientation; the generated file is the source of truth (see
 | `pr:approved` | Execute | Engineer | The implementation matches the design and resolves all `required` violations |
 | `coverage:approved` | Test | Engineer | Tests pass and cover every required scenario |
 | `standards-proposal:approved` | Evaluate (weekly) | Standards owner | The proposed change to the standards is sound |
+| `security-review:approved` | Execute | Security owner | Security-flagged PR is safe to merge |
+| `data-migration:approved` | Execute | Data owner | Migration is forward-only, idempotent, and safe for production data |
+| `gap-report:approved` | Gap assessment | Stakeholder + Standards owner | The proposed gap-issues are real gaps worth filing |
+| `debt-report:approved` | Tech debt | Engineer + Standards owner | The proposed debt-issues are worth filing and prioritising |
+| `pipeline-change:approved` | Learn | Standards owner | The proposed change to `pipeline.json` is sound |
+| `prompt-change:approved` | Learn | Agent owner | The proposed agent prompt edit is safe and correct |
+| `process-review:approved` | Learn | Standards owner + Principal stakeholder | The coordinated change proposal is sound and approved at the right level |
 
 ---
 
@@ -178,8 +185,77 @@ or a change to an existing one, in JSON schema format.
 **What you are signing off.** That the proposed standard is sound, the
 rationale is real, and the agent guidance is unambiguous.
 
-**Cost of getting it wrong.** A bad standard ripples into every future
-ticket.
+**Cost of getting it wrong.** A bad standard ripples into every subsequent ticket.
+
+### `security-review:approved`
+
+**Approver.** Security owner.
+
+**Artefact.** The PR diff and the `impact-assessor` security-flag comment listing the sensitive surfaces touched (auth flows, RLS policies, IAM definitions, secrets, PII fields).
+
+**What you are signing off.** That the change is safe from an authentication, authorisation, and data-exposure perspective. Not a full pentest — a focused review of the flagged surface.
+
+**Cost of getting it wrong.** Security vulnerabilities in production. Only required on PRs flagged by `impact-assessor`; non-flagged PRs skip this gate automatically.
+
+### `data-migration:approved`
+
+**Approver.** Data owner.
+
+**Artefact.** The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance.
+
+**What you are signing off.** That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted.
+
+**Cost of getting it wrong.** Data loss or corruption in production. Only required on PRs that include `**/*.sql` files.
+
+### `gap-report:approved`
+
+**Approver.** Stakeholder and standards owner (dual approval).
+
+**Artefact.** The rolled-up gap report from `gap-curator` listing candidate gap-issues grouped by severity.
+
+**What you are signing off.** That the identified gaps are real (not stale requirements the product has intentionally moved away from) and worth filing as tickets.
+
+**Cost of getting it wrong.** Filing phantom issues wastes the per-ticket pipeline on work no one wants.
+
+### `debt-report:approved`
+
+**Approver.** Engineer (or tech lead) and standards owner (dual approval).
+
+**Artefact.** The rolled-up debt report from `debt-curator` listing candidate debt-issues with structural evidence (metrics, ADR age, hot-spot trends).
+
+**What you are signing off.** That the identified debt is real and worth prioritising against the feature backlog.
+
+**Cost of getting it wrong.** Remediating false debt distracts from delivering value.
+
+### `pipeline-change:approved`
+
+**Approver.** Standards owner.
+
+**Artefact.** A PR against `pipeline.json` from `pipeline-tuner`, with evidence from the metrics report.
+
+**What you are signing off.** That the proposed pipeline change — adjusted schedule, added dependency, changed gate — is sound and will not degrade pipeline health.
+
+**Cost of getting it wrong.** A bad pipeline change affects every subsequent ticket.
+
+### `prompt-change:approved`
+
+**Approver.** The agent's designated owner (the person responsible for that agent's quality).
+
+**Artefact.** A PR against `.github/agents/{agent}.md` from `prompt-tuner`, with rejection-rate evidence and diff.
+
+**What you are signing off.** That the proposed prompt edit improves agent quality and does not introduce regression.
+
+**Cost of getting it wrong.** A regressed prompt silently degrades every run of that agent.
+
+### `process-review:approved`
+
+**Approver.** Standards owner and a principal stakeholder (dual approval required).
+
+**Artefact.** A coordinated change proposal from `process-reviewer` spanning the pipeline graph, agent prompts, standards, and docs.
+
+**What you are signing off.** That the system-level diagnosis is correct, the proposed coordinated changes are coherent, and the dual approvers together represent both the technical and product perspectives.
+
+**Cost of getting it wrong.** A bad coordinated change is harder to unwind than a single-component change. The dual approval bar reflects the blast radius.
 
 ---
 
