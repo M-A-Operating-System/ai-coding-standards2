@@ -134,9 +134,28 @@ Two to five stories in the canonical form:
 
 Each story is one user-visible capability. Pick personas from
 [`docs/product/agile/03-personas.md`](docs/product/agile/03-personas.md)
-where they fit; otherwise name a new persona explicitly. Avoid
-"As a system" or "As a developer" — those are implementation, not
-product, and belong in the technical design instead.
+where they fit; otherwise name a new persona explicitly.
+
+**`As the {automated-role}` is a valid persona** for capabilities
+whose primary actor is automation rather than a person — scheduled
+jobs, webhook handlers, audit-log writers, metrics aggregators. See
+the **System actor** persona in `03-personas.md` §7. Such stories
+must still pass the valid-vs-invalid test:
+
+1. The **so that** clause names a real human stakeholder who
+   benefits, even indirectly.
+2. Acceptance criteria are expressible as Gherkin scenarios with an
+   observable Then-clause (a row, an alert, a dashboard number) —
+   not "the code is structured a certain way".
+3. The role is stable automation, not an implementation choice.
+   "As the audit log writer" is fine; "As the database" is not.
+
+`As a developer` stories are still suspect — developers are tool
+users, not product personas. If the work is genuinely a refactor /
+upgrade / internal-API change with no user-observable benefit, it is
+technical-intermediate work the roadmap sequences toward a real
+target-state outcome (per [P-15](../../docs/product/agile/02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)),
+not a feature PRD.
 
 ### Acceptance criteria (Gherkin)
 
@@ -185,16 +204,58 @@ none, write `Standards check: no product-layer violations identified.`
 
 ## Step 6 — Post the PRD and request review
 
+### First check whether a previous PRD comment exists on this issue
+
+The agent must edit-in-place on re-runs (after rejection or block
+resolution) rather than posting a duplicate PRD comment. Look for a
+prior comment with this run's marker:
+
 ```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
+PRIOR_PRD_ID=$(gh issue view $ISSUE_NUMBER --repo $REPO \
+  --json comments \
+  --jq '.comments[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .id' \
+  | head -1)
+```
+
+`PRIOR_PRD_ID` is empty on the first run, populated on re-runs.
+
+### Post or edit the PRD
+
+**First run** (no prior comment):
+
+```bash
+PRD_RESPONSE=$(gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
 {the PRD content from Step 5}
 EOF
-)"
+)")
+# PRD_RESPONSE is the comment URL, e.g.
+#   https://github.com/{owner}/{repo}/issues/42#issuecomment-2147483647
+# Extract the numeric comment ID (last URL segment after '-'):
+PRD_COMMENT_ID="${PRD_RESPONSE##*-}"
+echo "PRD posted as comment $PRD_COMMENT_ID"
 ```
 
-Capture the comment ID from the output — you'll reference it in the
-closing announcement.
+**Re-run** (prior comment exists — edit in place):
+
+```bash
+gh api \
+  --method PATCH \
+  "/repos/${REPO}/issues/comments/${PRIOR_PRD_ID}" \
+  -f body="$(cat <<EOF
+<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
+{the revised PRD content from Step 5}
+
+---
+*Edited $(date -u +%Y-%m-%dT%H:%M:%SZ) in response to reviewer feedback.*
+EOF
+)"
+PRD_COMMENT_ID="$PRIOR_PRD_ID"
+echo "PRD updated in place at comment $PRD_COMMENT_ID"
+```
+
+The numeric comment ID stored in `PRD_COMMENT_ID` is what you reference
+in the closing announcement's `artefacts` field below.
 
 Then post the closing announcement:
 
@@ -209,7 +270,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "review",
   "summary": "PRD posted; requesting stakeholder approval at prd:approved.",
-  "artefacts": ["the PRD comment posted in this run"]
+  "artefacts": ["comment ${PRD_COMMENT_ID}"]
 }
 \`\`\`
 EOF

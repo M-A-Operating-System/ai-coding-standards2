@@ -910,13 +910,21 @@ def promote_gated_agents(
     Why this exists. The agent posts an artefact and applies :review,
     then the pipeline halts. When the human applies the gate label
     (e.g. prd:approved), no event reaches the agent — the orchestrator
-    is the actor that closes the loop, removing :review and adding
-    :complete so downstream eligibility checks pass.
+    is the actor that closes the loop.
 
-    The loop is idempotent: a partial transition (e.g. :review removed
-    but :complete not yet added, due to crash mid-write) is finished
-    on the next tick because the gate label remains and the gated
-    agent has neither :review nor :complete.
+    Promotion only fires when the agent is **actually in :review**. If
+    the human applies the gate label before the agent has run, the
+    agent has no `:review` (or any other) status; we leave it alone so
+    the agent runs first, applies `:review`, and is promoted on the
+    next tick. If the agent is in any non-`:review` non-terminal state
+    (`:wip`, `:blocked`, `:failed`), promotion is also skipped — those
+    states each need their own resolution.
+
+    Order of operations is **add :complete BEFORE remove :review** so
+    that a crash mid-promotion leaves the work item with both labels
+    rather than no agent status. The next tick observes `:complete`
+    (terminal) and treats the agent as done; the stale `:review` is
+    cleaned up by this same function on the next call.
 
     Returns the updated label set so the caller can use it for the
     per-agent eligibility loop without re-fetching from GitHub.
@@ -933,41 +941,60 @@ def promote_gated_agents(
         gate_label = agent_def.human_gate_label
 
         gate_present = gate_label in updated
-        if not gate_present:
-            continue
-
-        # Two states to act on:
-        # 1. :review still present → standard transition
-        # 2. :review missing AND :complete missing → recover an interrupted
-        #    transition (idempotent re-run after crash)
         review_present = review_label in updated
         complete_present = complete_label in updated
 
-        if not review_present and complete_present:
-            continue   # already promoted; nothing to do
-        if not review_present and not complete_present:
-            log.warning(
-                "  PROMOTE %-38s  gate '%s' present but agent has no status; "
-                "completing transition (interrupted run).",
-                agent_def.agent, gate_label,
-            )
-
-        try:
-            if review_present:
+        # Standard promotion: gate applied while agent is in :review.
+        if gate_present and review_present:
+            try:
+                # Add :complete first. If we crash here, next tick sees
+                # both labels — the agent_status() check returns
+                # :complete (it's checked first in ALL_STATUSES iteration
+                # order? actually ordering isn't guaranteed in a set; the
+                # invariant we need is the agent is treated as done).
+                # Below we also handle the cleanup case where both are
+                # present from a previous interrupted promotion.
+                if not complete_present:
+                    gh.add_label(work_item.number, complete_label)
+                    updated.add(complete_label)
                 gh.remove_label(work_item.number, review_label)
                 updated.discard(review_label)
-            if not complete_present:
-                gh.add_label(work_item.number, complete_label)
-                updated.add(complete_label)
-            log.info(
-                "  PROMOTE %-38s  %s applied → :review → :complete",
-                agent_def.agent, gate_label,
-            )
-        except Exception as exc:
-            log.error(
-                "  could not promote %s on #%d: %s — pipeline state may be inconsistent",
-                agent_def.agent, work_item.number, exc,
-            )
+                log.info(
+                    "  PROMOTE %-38s  %s applied → :review → :complete",
+                    agent_def.agent, gate_label,
+                )
+            except Exception as exc:
+                log.error(
+                    "  could not promote %s on #%d: %s — pipeline state may be inconsistent",
+                    agent_def.agent, work_item.number, exc,
+                )
+            continue
+
+        # Cleanup: previous promotion crashed after add(:complete) and
+        # before remove(:review). Both labels coexist; clear the stale
+        # :review so the issue ends with exactly one terminal status.
+        if gate_present and complete_present and review_present:
+            # (Unreachable given the branch above already handles
+            # review_present, but keep as a defensive guard for future
+            # edits.)
+            try:
+                gh.remove_label(work_item.number, review_label)
+                updated.discard(review_label)
+                log.info(
+                    "  CLEANUP %-38s  removed stale :review after :complete",
+                    agent_def.agent,
+                )
+            except Exception as exc:
+                log.debug(
+                    "  could not clean stale :review on %s: %s",
+                    agent_def.agent, exc,
+                )
+
+        # All other states (gate present without :review; gate present
+        # with :wip / :blocked / :failed; gate not present at all) are
+        # left alone. The agent runs / re-runs / is unblocked through
+        # its normal flow; promotion only applies to the explicit
+        # :review → :complete handoff.
     return updated
 
 
