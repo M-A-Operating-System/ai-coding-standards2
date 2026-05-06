@@ -86,8 +86,8 @@ the agent to `:complete`.
 **Approver.** The stakeholder who opened the issue, or whoever they delegate
 to.
 
-**Artefact.** A PRD comment from `01_product_docs/prd-writer` with six
-required sections, in this order:
+**Artefact.** The **issue body itself**, after `01_product_docs/prd-writer`
+has rewritten it. The body holds six required sections, in this order:
 
 | Section | Content | Format |
 |---|---|---|
@@ -105,16 +105,41 @@ form. Each Gherkin scenario in an approved PRD becomes a numbered test
 scenario in Phase 3 (`testing-spec/test-spec-writer`), tying every
 test back to a stakeholder-approved acceptance condition.
 
+**Title format.** When `prd-writer` rewrites the body it also rewrites
+the issue title to:
+
+```
+[CATEGORY] - {module} - {Title}        # with bounded-context module
+[CATEGORY] - {Title}                    # when no clear module
+```
+
+`CATEGORY` is one of `BUG`, `TOIL`, `ENHANCEMENT`, `FEATURE`, `SPIKE`
+(uppercased from the issue-classifier's classification).
+
+**Original preserved.** The stakeholder's original title and body —
+before `prd-writer` rewrote them — are preserved as a one-off snapshot
+comment on the issue with marker
+`<!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->`. The
+snapshot is immutable; even if the PRD is rewritten in subsequent
+runs after rejection, the snapshot stays as it was first captured.
+This preserves the audit trail under the
+[P-10](02-principles.md#p-10--agents-draft-humans-decide) carve-out
+that lets `prd-writer` edit issue title and body.
+
 **What you are signing off.**
 
 - The problem and goal are correct.
-- Each user story names a real persona and a real outcome (no
-  "as a system" / "as a developer" stories — those belong in the
-  technical design).
+- Each user story names a real persona — including the System actor
+  ([`03-personas.md`](03-personas.md) §7) when the primary actor is
+  genuinely automation. `As a developer` stories are still suspect —
+  developers are tool users, not product personas.
 - Each Gherkin scenario is falsifiable and concrete enough to be
   turned into an automated test or a manual reproduction.
 - "Out of scope" actually rules things out (it's not a wishlist).
 - Success metrics are observable from outside the system.
+- The new title categorises the work correctly (BUG vs TOIL vs
+  ENHANCEMENT vs FEATURE vs SPIKE) and names a real bounded context
+  if a module is shown.
 
 Once approved, the PRD is the source of truth for everything
 downstream — design, test spec, build plan, code review.
