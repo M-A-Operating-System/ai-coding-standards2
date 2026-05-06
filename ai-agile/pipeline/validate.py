@@ -26,6 +26,13 @@ except ImportError:
 HERE = Path(__file__).parent
 DEFAULT_PIPELINE = HERE / "pipeline.json"
 DEFAULT_SCHEMA = HERE / "schemas" / "pipeline.schema.json"
+DEFAULT_AGENTS_DIR = HERE.parent.parent / ".github" / "agents"
+
+VALID_MODELS = frozenset({
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+})
 
 
 def _load(path: Path) -> dict:
@@ -117,10 +124,77 @@ def validate_agent_phase_prefix(pipeline: dict) -> list[str]:
     return errors
 
 
+def _parse_frontmatter(text: str) -> dict:
+    """Parse YAML-like frontmatter between --- delimiters (scalars + inline lists)."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    end = None
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            end = i
+            break
+    if end is None:
+        return {}
+    result: dict = {}
+    for line in lines[1:end]:
+        if ":" not in line or line.startswith(" "):
+            continue
+        key, _, raw = line.partition(":")
+        key = key.strip()
+        raw = raw.strip()
+        if not key or not raw or raw == ">":
+            continue
+        if raw.startswith("[") and raw.endswith("]"):
+            result[key] = [x.strip() for x in raw[1:-1].split(",") if x.strip()]
+        else:
+            result[key] = raw
+    return result
+
+
+def validate_agent_files(pipeline: dict, agents_dir: Path) -> list[str]:
+    """For each agent in the pipeline, verify the prompt file exists and
+    declares a valid model in its frontmatter.
+
+    Only runs when agents_dir exists on disk; silently passes when the
+    directory is absent (e.g. consuming repos that haven't synced yet).
+    """
+    if not agents_dir.is_dir():
+        return []
+    errors = []
+    for entry in pipeline["pipeline"]:
+        agent_name = entry["agent"]
+        agent_file = agents_dir / f"{agent_name}.md"
+        if not agent_file.exists():
+            errors.append(
+                f"agent '{agent_name}': prompt file not found at {agent_file.relative_to(agents_dir.parent.parent)}"
+            )
+            continue
+        fm = _parse_frontmatter(agent_file.read_text())
+        model = fm.get("model")
+        if not model:
+            errors.append(
+                f"agent '{agent_name}': missing 'model' field in frontmatter"
+            )
+        elif model not in VALID_MODELS:
+            errors.append(
+                f"agent '{agent_name}': model '{model}' not in approved set "
+                f"({', '.join(sorted(VALID_MODELS))})"
+            )
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate pipeline.json")
     parser.add_argument("--pipeline", type=Path, default=DEFAULT_PIPELINE)
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
+    parser.add_argument(
+        "--agents-dir",
+        type=Path,
+        default=DEFAULT_AGENTS_DIR,
+        help="Directory containing agent prompt files (default: .github/agents/). "
+             "Pass an empty string to skip agent file validation.",
+    )
     args = parser.parse_args()
 
     pipeline = _load(args.pipeline)
@@ -132,6 +206,8 @@ def main() -> int:
     all_errors += validate_agent_phase_prefix(pipeline)
     all_errors += validate_dependency_references(pipeline)
     all_errors += validate_acyclic(pipeline)
+    if args.agents_dir:
+        all_errors += validate_agent_files(pipeline, args.agents_dir)
 
     if all_errors:
         print(f"FAIL: {args.pipeline}", file=sys.stderr)
