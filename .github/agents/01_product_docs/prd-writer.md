@@ -202,62 +202,136 @@ none, write `Standards check: no product-layer violations identified.`
 
 ---
 
-## Step 6 — Post the PRD and request review
+## Step 6 — Snapshot the original, then rewrite title and body
 
-### First check whether a previous PRD comment exists on this issue
+The PRD lives in the **issue body itself**, not in a comment. This
+makes the issue body the live target spec — anyone arriving at the
+issue sees the canonical, current target without scrolling. The
+stakeholder's original title and body are preserved as a one-off
+snapshot comment for the audit trail (per the
+[P-10](../../docs/product/agile/02-principles.md#p-10--agents-draft-humans-decide)
+carve-out).
 
-The agent must edit-in-place on re-runs (after rejection or block
-resolution) rather than posting a duplicate PRD comment. Look for a
-prior comment with this run's marker:
+### Step 6a — Snapshot the original (first run only)
+
+Check whether a snapshot already exists for this issue:
 
 ```bash
-PRIOR_PRD_ID=$(gh issue view $ISSUE_NUMBER --repo $REPO \
+PRIOR_SNAPSHOT_ID=$(gh issue view $ISSUE_NUMBER --repo $REPO \
   --json comments \
-  --jq '.comments[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .id' \
+  --jq '.comments[] | select(.body | contains("ai-agile/snapshot/v1 by 01_product_docs/prd-writer")) | .id' \
   | head -1)
 ```
 
-`PRIOR_PRD_ID` is empty on the first run, populated on re-runs.
-
-### Post or edit the PRD
-
-**First run** (no prior comment):
+If `PRIOR_SNAPSHOT_ID` is empty, capture the original title and body
+verbatim and post the snapshot:
 
 ```bash
-PRD_RESPONSE=$(gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
-{the PRD content from Step 5}
+ORIG_TITLE=$(gh issue view $ISSUE_NUMBER --repo $REPO --json title --jq '.title')
+ORIG_BODY=$(gh issue view $ISSUE_NUMBER --repo $REPO --json body  --jq '.body')
+
+SNAPSHOT_RESPONSE=$(gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
+<!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->
+## Original issue (snapshot before PRD rewrite)
+
+This comment preserves the stakeholder's authored title and body
+before \`prd-writer\` rewrote them to the canonical PRD form. The
+snapshot is immutable — it is the audit-trail counterpart to the
+issue's live target spec (per the P-10 carve-out).
+
+**Original title:** ${ORIG_TITLE}
+
+**Original body:**
+
+${ORIG_BODY}
 EOF
 )")
-# PRD_RESPONSE is the comment URL, e.g.
-#   https://github.com/{owner}/{repo}/issues/42#issuecomment-2147483647
-# Extract the numeric comment ID (last URL segment after '-'):
-PRD_COMMENT_ID="${PRD_RESPONSE##*-}"
-echo "PRD posted as comment $PRD_COMMENT_ID"
+SNAPSHOT_COMMENT_ID="${SNAPSHOT_RESPONSE##*-}"
 ```
 
-**Re-run** (prior comment exists — edit in place):
+If `PRIOR_SNAPSHOT_ID` is non-empty (re-run), this step is a no-op:
 
 ```bash
-gh api \
-  --method PATCH \
-  "/repos/${REPO}/issues/comments/${PRIOR_PRD_ID}" \
-  -f body="$(cat <<EOF
-<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
-{the revised PRD content from Step 5}
-
----
-*Edited $(date -u +%Y-%m-%dT%H:%M:%SZ) in response to reviewer feedback.*
-EOF
-)"
-PRD_COMMENT_ID="$PRIOR_PRD_ID"
-echo "PRD updated in place at comment $PRD_COMMENT_ID"
+SNAPSHOT_COMMENT_ID="$PRIOR_SNAPSHOT_ID"
 ```
 
-The numeric comment ID stored in `PRD_COMMENT_ID` is what you reference
-in the closing announcement's `artefacts` field below.
+The snapshot is **never edited** after creation — even if the PRD is
+rewritten in subsequent runs after rejection, the original
+stakeholder text remains as it was first captured.
 
-Then post the closing announcement:
+### Step 6b — Build the new title
+
+Read the classification from the issue-classifier artefact comment
+(see Step 3) and map to a title prefix:
+
+| Classification | Prefix |
+|---|---|
+| `bug` | `[BUG]` |
+| `toil` | `[TOIL]` |
+| `enhancement` | `[ENHANCEMENT]` |
+| `feature` | `[FEATURE]` |
+| `spike` | `[SPIKE]` |
+
+Determine the **module** from issue body context — best effort. A
+module is a short, stable name for the bounded context the change
+touches (`auth`, `billing`, `checkout`, `pipeline`, `audit-log`,
+`coder`, `prd-writer`, …). Take it from:
+
+1. An explicit `module:` or `area:` line in the issue body, if present.
+2. A clear single subject in the goal you drafted (e.g. the goal is
+   entirely about login → `auth`).
+3. Otherwise — omit. **Don't fabricate** a module to fill the slot.
+
+Compose the new title:
+
+- With module: `[CATEGORY] - {module} - {concise title}`
+- Without module: `[CATEGORY] - {concise title}`
+
+The concise title is the original title's intent stated cleanly — drop
+redundant prefixes ("PRD:", "[Feature request]"), tighten weasel
+words. **Don't make it longer than the original.** Examples:
+
+- Stakeholder title: `"PRD: We need OAuth login on the new auth screen"`
+  → `[FEATURE] - auth - Add OAuth login`
+- Stakeholder title: `"the dashboard is sometimes broken on Safari"`
+  → `[BUG] - dashboard - Dashboard fails to render on Safari`
+- Stakeholder title: `"upgrade jest to v30"`
+  → `[TOIL] - Upgrade jest to v30`
+
+```bash
+NEW_TITLE="[FEATURE] - auth - Add OAuth login"   # the value you compute
+```
+
+### Step 6c — Rewrite the issue title and body
+
+The new body is the PRD content from Step 5, prefixed with the
+artefact marker so downstream agents (architect, test-spec-writer,
+task-decomposer) find it via the same regex they use for any artefact:
+
+```bash
+NEW_BODY=$(cat <<EOF
+<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
+
+{PRD content from Step 5}
+
+---
+*This is the live target spec for this issue. The stakeholder's
+original title and body are in a snapshot comment above (search for
+\`ai-agile/snapshot/v1\`).*
+EOF
+)
+
+gh issue edit $ISSUE_NUMBER --repo $REPO \
+  --title "${NEW_TITLE}" \
+  --body  "${NEW_BODY}"
+```
+
+GitHub retains the full edit history of issue title and body. Every
+re-run (after rejection) overwrites the body with the revised PRD;
+the snapshot from Step 6a remains immutable and is the only
+authoritative copy of the stakeholder's original.
+
+### Step 6d — Closing announcement and set-review
 
 ````bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
@@ -269,8 +343,11 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "review",
-  "summary": "PRD posted; requesting stakeholder approval at prd:approved.",
-  "artefacts": ["comment ${PRD_COMMENT_ID}"]
+  "summary": "PRD written into the issue body; original snapshotted; requesting stakeholder approval at prd:approved.",
+  "artefacts": [
+    "issue ${ISSUE_NUMBER} body (live target spec)",
+    "snapshot comment ${SNAPSHOT_COMMENT_ID}"
+  ]
 }
 \`\`\`
 EOF
@@ -281,7 +358,7 @@ Mark for review:
 
 ```bash
 bash $STATUS_SH set-review 01_product_docs/prd-writer $ISSUE_NUMBER \
-  "PRD posted above. Stakeholder: apply prd:approved to advance the pipeline, or remove the :review label (with feedback in a comment) to reject and re-run."
+  "PRD is now the issue body. The original stakeholder text is in the snapshot comment above. Stakeholder: apply prd:approved to advance the pipeline, or remove the :review label (with feedback) to reject and re-run."
 ```
 
 The orchestrator promotes `01_product_docs/prd-writer:review` to
@@ -363,13 +440,25 @@ bash $STATUS_SH set-blocked 01_product_docs/prd-writer $ISSUE_NUMBER \
 
 ## Behaviour rules
 
-- Do not edit the issue body. The body is the stakeholder's
-  authored content. If something is missing, post a comment naming
-  what to add — let the human edit and re-trigger.
+- **The snapshot is immutable.** Once the original-issue snapshot
+  comment exists (Step 6a), never modify it. It is the only
+  authoritative record of what the stakeholder originally wrote.
+  Re-runs detect the snapshot via its marker and skip the snapshot
+  step.
+- **Rewrite the issue body in place; do not post the PRD as a
+  separate comment.** The body IS the live target spec (see the P-10
+  carve-out in
+  [`02-principles.md`](../../docs/product/agile/02-principles.md#p-10--agents-draft-humans-decide)).
+  Re-runs `gh issue edit --body` again, replacing the previous
+  rewrite. GitHub keeps the full edit history.
+- **Do not mutate the snapshot to inject feedback.** If the
+  stakeholder rejects the PRD with comments, read the comments,
+  rewrite the issue body — the snapshot stays as it was first
+  captured.
 - Do not invent acceptance criteria the stakeholder didn't imply.
   If their problem statement is too vague to draft Gherkin scenarios,
   post a Question Card (per
-  [`docs/product/agile/09-human-interaction.md`](docs/product/agile/09-human-interaction.md))
+  [`docs/product/agile/09-human-interaction.md`](../../docs/product/agile/09-human-interaction.md))
   rather than guessing.
 - Do not mix product requirements with technical design. The PRD is
   about user-observable behaviour and outcomes, not about which
@@ -378,12 +467,9 @@ bash $STATUS_SH set-blocked 01_product_docs/prd-writer $ISSUE_NUMBER \
 - Do not use Gherkin as decoration. Each scenario must be falsifiable
   by an automated test or a manual reproduction. "Given the system
   exists, When a user uses it, Then it works" is not Gherkin.
-- One PRD comment per run. Do not re-post on a re-run after
-  rejection — edit the existing comment in place. On re-runs, first
-  list the issue comments, find the prior PRD artefact marker comment
-  created by this agent, and update that same comment via the GitHub
-  API instead of creating a new one (reviewers' inline feedback links
-  to specific lines and breaks if the comment moves).
+- Don't fabricate a module to fill the title slot. If no clear
+  bounded context emerges from the body or the goal, omit it; the
+  title is `[CATEGORY] - {Title}` without a module segment.
 - When in doubt about size, decompose. The cost of an unnecessary
   decomposition is one extra issue; the cost of a too-big PRD is
   felt across every downstream phase.
