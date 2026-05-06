@@ -7,13 +7,13 @@ any principle is a significant architectural decision and goes through an ADR.
 The principles fall into three groups:
 
 - **Architectural** (P-1 to P-4, P-14) — commitments about how the system is built.
-- **Operational** (P-5 to P-9, P-13) — rules the orchestrator enforces on work.
+- **Operational** (P-5 to P-9, P-13, P-15) — rules the orchestrator enforces on work.
 - **Cultural** (P-10 to P-12) — how the system behaves toward people.
 
-The non-monotonic numbering (P-13 sits with P-5..P-9 operationally,
-P-14 sits with P-1..P-4 architecturally) reflects the order principles
-were ratified, not their grouping. IDs are stable; a retired principle
-keeps its ID and is marked `status: retired`.
+The non-monotonic numbering (P-13/P-15 sit with P-5..P-9
+operationally, P-14 sits with P-1..P-4 architecturally) reflects the
+order principles were ratified, not their grouping. IDs are stable; a
+retired principle keeps its ID and is marked `status: retired`.
 
 ---
 
@@ -388,6 +388,60 @@ short-lived: deleted on merge or close.
 **Tradeoff.** Reviewers see incomplete work in their PR list.
 Mitigated by GitHub's draft filtering (drafts are excluded from
 default review queues) and by the existing `:wip` label discipline.
+
+### P-15 — Product-led: target state in product docs leads code
+
+**Statement.** AI Agile is a product-led agile pipeline. The product,
+not the code, is the source of truth for what should exist. Work
+flows in one direction:
+
+```
+product strategy → product docs → technical spec → code → testable spec
+                   (target)                         (current)
+```
+
+`docs/product/` is the **authoritative target state**. Code is the
+**authoritative current state**. The gap between them is the GitHub
+issue backlog: enhancements (move code toward target) or bugs (code
+drifted from target). **No code change ships unless the change is
+already described in the product docs.**
+
+**Consequences.**
+
+- An issue without a stakeholder-approved PRD does not progress to
+  technical design, test spec, build plan, or `coder`. The lifecycle
+  enforces this automatically — `prd:approved` is an upstream gate
+  for every later phase's dependency check.
+- A PR that lands code with no corresponding target-state entry in
+  `docs/product/` does not merge. `pr-reviewer` rejects it; the work
+  item moves the product docs forward first, then the code.
+- A bug fix that reveals the product docs were under-specified
+  clarifies the product docs first, then corrects the code. The
+  product docs always describe the target the code must conform to.
+- Chores and technical-intermediate work (refactors, infra,
+  upgrades) are still tied to a target-state entry — typically a
+  non-functional requirement or a capability statement in the
+  product docs. "Pure technical preference" is not a valid scope.
+- The roadmap ([`10-roadmap.md`](10-roadmap.md)) sequences how to
+  reach the target state through phases of user-benefitting (or
+  technical-intermediate) outcomes; it never invents new target state
+  the product docs don't already describe.
+
+**Implications for agents.** Every agent's specific prompt is
+constrained by the upstream artefact. `architect` reads the PRD; it
+does not invent product requirements. `task-decomposer` reads the
+design; it does not propose new architecture. `coder` reads the
+build plan; it does not change the design while implementing. If an
+agent finds itself wanting to extend the upstream artefact, that is
+a `:blocked` signal, not a license to proceed — the upstream artefact
+is re-opened (its `*:approved` gate is removed) and the upstream
+agent re-runs with the new context.
+
+**Tradeoff.** Throughput is slower than a "just write the code"
+shop. Acceptable: the cost of code that is well-described in
+target-state docs is enormously lower at maintenance time, when
+new contributors (human or agent) need to understand what the code
+is supposed to do.
 
 ---
 

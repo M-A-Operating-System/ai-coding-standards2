@@ -1,6 +1,8 @@
 # Personas
 
-AI Agile serves six personas. Every feature, gate, and artefact is
+AI Agile serves seven personas — six human and one System actor for
+capabilities whose primary actor is automation. Every feature, gate,
+and artefact is
 designed against at least one of them.
 
 ---
@@ -197,9 +199,80 @@ residency, and the integrity of production data.
 
 ---
 
+## 7. The System actor
+
+**Role.** An automated component that initiates work without a human
+in the loop: a scheduled job, a webhook handler, an autoscaler, an
+audit logger, an integration that reacts to upstream events. Used as
+the user-story subject when the **primary actor of a capability is
+genuinely automation**, not a person.
+
+**Why this persona exists.** Some capabilities the product needs are
+not user-triggered: a nightly metrics aggregator, a webhook that
+ingests upstream changes, a token rotator that runs every 24 hours.
+The user-story format still applies — "as the X, I want to … so that
+…" — but the X is a system role, not a human one. Treating these as
+first-class personas keeps automated capabilities inside the
+product-led pipeline (PRD with Gherkin AC), instead of being
+smuggled into technical design as "implementation detail".
+
+**Examples of valid System actor user stories.**
+
+- *As the **scheduled metrics aggregator**, I want to compute pipeline
+  cycle times nightly, so that the standards owner sees current
+  performance on the dashboard without manual queries.*
+- *As the **upstream-PRD webhook handler**, I want to ingest changes
+  to the source product spec on commit, so that downstream agents
+  always operate on the latest target state.*
+- *As the **audit log writer**, I want to record every status
+  transition with the actor and timestamp, so that compliance
+  reviewers can reconstruct any session.*
+
+**The valid-vs-invalid test.** A System actor story must:
+
+1. Have a **real human stakeholder benefitting** from the outcome —
+   even indirectly. The "so that" clause names that benefit. If you
+   cannot name the human who cares, it is technical preference, not
+   product.
+2. Be expressible as **Gherkin acceptance criteria** with an
+   observable Then-clause (a row appears in a table; an alert fires;
+   a number increases on a dashboard). If the only observable
+   outcome is "the code is structured a certain way", it is technical
+   design, not product.
+3. Name a **stable automated role**, not an implementation choice.
+   "As the audit log writer" is fine. "As the database" is not — that
+   is implementation. "As a developer" is also not — developers are
+   tool users, not product personas.
+
+**What this persona does NOT serve.**
+
+- Refactors, library upgrades, internal API rewrites — these are
+  technical-intermediate work for the roadmap to sequence, not user
+  stories. They are tied to the target-state docs through
+  non-functional requirements (P-15), not through a System actor
+  story.
+- Any story whose acceptance criteria can only be expressed in code
+  terms (e.g. "the function returns a list"). That is a unit test
+  spec, not product behaviour.
+
+**How AI Agile serves them.**
+
+- `prd-writer` accepts `As the {automated-role}` user stories on the
+  same terms as human personas, gated by the valid-vs-invalid test
+  above. The Gherkin acceptance criteria still apply.
+- Downstream agents (`architect`, `task-decomposer`, `coder`) treat
+  System-actor PRDs identically to human-actor PRDs — they implement
+  to the acceptance criteria, regardless of who the primary actor is.
+- The **audit log writer**, **scheduled metrics aggregator**, and
+  similar AI-Agile-internal automated components are themselves
+  modelled as System actors: their capabilities ship through the
+  same pipeline as feature work.
+
+---
+
 ## Cross-cutting needs
 
-All six personas share three needs the system must serve:
+All seven personas share three needs the system must serve:
 
 1. **Auditability.** Every action is on GitHub: a comment, a label, a commit,
    a PR. Nothing happens in a side channel.

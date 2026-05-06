@@ -613,6 +613,13 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
 
 STATUS_SH = SUBMODULE_ROOT / ".github/scripts/status.sh"
 
+# Shared agent context — every agent reads this before starting. It
+# distils the principles, lifecycle, status contract, and "must not"
+# rules from the design docs into a single page agents can ingest at
+# runtime. The orchestrator exports its path so agents reference it
+# without hardcoding the location.
+AI_AGILE_CONTEXT = SUBMODULE_ROOT / "ai-agile" / "AGENTS.md"
+
 # Rate-limit pause marker. When the Claude API returns a 429 / usage-limit
 # error, the orchestrator writes this file with a JSON payload describing
 # how long to back off. Subsequent runs check this file before doing
@@ -708,8 +715,16 @@ def invoke_agent(
     # way the same prompt works whether this repo is checked out at the
     # consuming repo's root or as a submodule under it.
     prompt = (
-        f"You are the {agent_def.agent} agent defined in {agent_file}.\n"
-        f"Follow those instructions exactly.\n\n"
+        f"You are the {agent_def.agent} agent defined in {agent_file}.\n\n"
+        f"## Read this first\n"
+        f"Before doing anything else, read the AI Agile shared agent context:\n"
+        f"  {AI_AGILE_CONTEXT}\n"
+        f"It is also exported as $AI_AGILE_CONTEXT in your environment. It\n"
+        f"defines the rules every agent must follow (status contract,\n"
+        f"marker conventions, what you must not do). Your specific prompt\n"
+        f"below assumes you have read it. If anything in your specific\n"
+        f"prompt contradicts the shared context, the shared context wins.\n\n"
+        f"Then follow the instructions in {agent_file} exactly.\n\n"
         f"## Work item\n"
         f"- Repository: {repo}\n"
         f"- {'Issue' if work_item.kind == 'issue' else 'PR'} number: #{work_item.number}\n"
@@ -788,6 +803,7 @@ def invoke_agent(
         **os.environ,
         "STATUS_SH": str(STATUS_SH),
         "AI_AGILE_ROOT": str(SUBMODULE_ROOT),
+        "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO": repo,
         "WORK_ITEM_KIND": work_item.kind,
         "WORK_ITEM_NUMBER": str(work_item.number),
@@ -876,6 +892,110 @@ def invoke_agent(
             success=False,
             captured_tail="claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code",
         )
+
+
+# ---------------------------------------------------------------------------
+# Gate promotion
+# ---------------------------------------------------------------------------
+
+def promote_gated_agents(
+    labels: set[str],
+    agents: list[AgentDef],
+    work_item: WorkItem,
+    gh: GitHubClient,
+) -> set[str]:
+    """Find every gated agent currently in :review whose gate label is
+    now present, and transition it from :review to :complete.
+
+    Why this exists. The agent posts an artefact and applies :review,
+    then the pipeline halts. When the human applies the gate label
+    (e.g. prd:approved), no event reaches the agent — the orchestrator
+    is the actor that closes the loop.
+
+    Promotion only fires when the agent is **actually in :review**. If
+    the human applies the gate label before the agent has run, the
+    agent has no `:review` (or any other) status; we leave it alone so
+    the agent runs first, applies `:review`, and is promoted on the
+    next tick. If the agent is in any non-`:review` non-terminal state
+    (`:wip`, `:blocked`, `:failed`), promotion is also skipped — those
+    states each need their own resolution.
+
+    Order of operations is **add :complete BEFORE remove :review** so
+    that a crash mid-promotion leaves the work item with both labels
+    rather than no agent status. The next tick observes `:complete`
+    (terminal) and treats the agent as done; the stale `:review` is
+    cleaned up by this same function on the next call.
+
+    Returns the updated label set so the caller can use it for the
+    per-agent eligibility loop without re-fetching from GitHub.
+    """
+    updated = set(labels)
+    for agent_def in agents:
+        if not agent_def.human_gate_after or not agent_def.human_gate_label:
+            continue
+        if work_item.kind not in agent_def.objects:
+            continue
+
+        review_label = agent_def.review_label
+        complete_label = agent_def.complete_label
+        gate_label = agent_def.human_gate_label
+
+        gate_present = gate_label in updated
+        review_present = review_label in updated
+        complete_present = complete_label in updated
+
+        # Standard promotion: gate applied while agent is in :review.
+        if gate_present and review_present:
+            try:
+                # Add :complete first. If we crash here, next tick sees
+                # both labels — the agent_status() check returns
+                # :complete (it's checked first in ALL_STATUSES iteration
+                # order? actually ordering isn't guaranteed in a set; the
+                # invariant we need is the agent is treated as done).
+                # Below we also handle the cleanup case where both are
+                # present from a previous interrupted promotion.
+                if not complete_present:
+                    gh.add_label(work_item.number, complete_label)
+                    updated.add(complete_label)
+                gh.remove_label(work_item.number, review_label)
+                updated.discard(review_label)
+                log.info(
+                    "  PROMOTE %-38s  %s applied → :review → :complete",
+                    agent_def.agent, gate_label,
+                )
+            except Exception as exc:
+                log.error(
+                    "  could not promote %s on #%d: %s — pipeline state may be inconsistent",
+                    agent_def.agent, work_item.number, exc,
+                )
+            continue
+
+        # Cleanup: previous promotion crashed after add(:complete) and
+        # before remove(:review). Both labels coexist; clear the stale
+        # :review so the issue ends with exactly one terminal status.
+        if gate_present and complete_present and review_present:
+            # (Unreachable given the branch above already handles
+            # review_present, but keep as a defensive guard for future
+            # edits.)
+            try:
+                gh.remove_label(work_item.number, review_label)
+                updated.discard(review_label)
+                log.info(
+                    "  CLEANUP %-38s  removed stale :review after :complete",
+                    agent_def.agent,
+                )
+            except Exception as exc:
+                log.debug(
+                    "  could not clean stale :review on %s: %s",
+                    agent_def.agent, exc,
+                )
+
+        # All other states (gate present without :review; gate present
+        # with :wip / :blocked / :failed; gate not present at all) are
+        # left alone. The agent runs / re-runs / is unblocked through
+        # its normal flow; promotion only applies to the explicit
+        # :review → :complete handoff.
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -978,6 +1098,14 @@ def process_work_item(
         work_item.title[:70] + ("…" if len(work_item.title) > 70 else "")
     )
 
+    # Gate promotion runs FIRST every tick. Any gated agent currently in
+    # :review whose gate label is now present is transitioned to
+    # :complete here, so the per-agent eligibility loop below sees a
+    # consistent state.
+    if not dry_run:
+        labels = promote_gated_agents(labels, agents, work_item, gh)
+        work_item.labels = labels
+
     for agent_def in agents:
 
         # Skip if this agent doesn't operate on this kind of work item
@@ -994,6 +1122,16 @@ def process_work_item(
         # Skip if already running
         if current_status == STATUS_IN_PROGRESS:
             log.info("  wait %-40s  [wip]", agent_def.agent)
+            continue
+
+        # Skip if halted pending human action. :review means the agent
+        # finished and is awaiting a gate label (handled by
+        # promote_gated_agents above) or a human reject (label removal).
+        # :blocked means the agent stopped and needs human intervention
+        # before re-running. In both cases re-invoking the agent without
+        # human action would loop indefinitely or duplicate the artefact.
+        if current_status in HALT_STATUSES:
+            log.info("  halt %-40s  [%s]", agent_def.agent, current_status)
             continue
 
         # Check trigger label is present
