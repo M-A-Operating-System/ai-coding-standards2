@@ -661,6 +661,39 @@ RETRY_AFTER_PATTERNS = [
 ]
 
 
+def parse_frontmatter(text: str) -> dict:
+    """Parse YAML-like frontmatter between --- delimiters.
+
+    Handles simple scalars (key: value) and inline lists (key: [a, b, c]).
+    Block scalars (key: >) and indented continuation lines are ignored.
+    Returns {} when no frontmatter is found or the format is unrecognised.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    end = None
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            end = i
+            break
+    if end is None:
+        return {}
+    result: dict = {}
+    for line in lines[1:end]:
+        if ":" not in line or line.startswith(" "):
+            continue  # skip indented continuation lines of block scalars
+        key, _, raw = line.partition(":")
+        key = key.strip()
+        raw = raw.strip()
+        if not key or not raw or raw == ">":
+            continue
+        if raw.startswith("[") and raw.endswith("]"):
+            result[key] = [x.strip() for x in raw[1:-1].split(",") if x.strip()]
+        else:
+            result[key] = raw
+    return result
+
+
 def _captured_tail(lines: list[str], max_lines: int = 50, max_chars: int = 4000) -> str:
     """Return the tail of agent output, capped for inclusion in a comment.
 
@@ -747,40 +780,6 @@ def invoke_agent(
         f"without one of the three terminal calls above."
     )
 
-    cmd = [
-        "claude",
-        "--allowedTools",
-        # Scoped allowlist. Each entry is a glob the bash command must
-        # match. Keeping these narrow blocks the agent from reaching
-        # secrets/settings/branches even if it is prompt-injected.
-        # If a future agent legitimately needs more (e.g. coder needs
-        # `git push`), broaden via the agent's frontmatter rather than
-        # widening the global default.
-        ",".join([
-            f"Bash(bash {STATUS_SH} *)",  # state transitions
-            "Bash(gh issue view *)",       # read issue body / labels
-            "Bash(gh issue comment *)",    # post artefact + announcement comments
-            "Bash(gh issue edit *)",       # apply kind/* and other labels
-            "Bash(gh issue list *)",       # cross-issue reads (impact-assessor etc.)
-            "Bash(gh pr view *)",          # PR-side agents read PR
-            "Bash(gh pr comment *)",       # PR-side agents post comments
-            "Bash(gh pr edit *)",          # PR-side label edits
-            "Bash(gh pr list *)",
-            "Bash(gh pr diff *)",          # pr-reviewer reads the diff
-            "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
-            "Bash(gh api repos/*/pulls/*)",
-            "Bash(date *)",                # ISO-8601 timestamps in announcements
-            "Bash(cat *)",                 # read prompt-side files
-            "Bash(grep *)",
-            "Bash(find *)",
-            "Read",
-            "Glob",
-            "Grep",
-        ]),
-        "--max-turns", "60",
-        "-p", prompt,
-    ]
-
     if dry_run:
         log.info("    [DRY RUN] Would invoke: claude --max-turns 60 -p <prompt>")
         log.info("    [DRY RUN] Agent: %s | Item: %s #%d", agent_def.agent, work_item.kind, work_item.number)
@@ -794,6 +793,59 @@ def invoke_agent(
         )
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
+
+    # Per-agent model and extra tools from frontmatter.
+    # model: overrides the CLI default — lets fast/cheap agents use Haiku,
+    #        heavy-reasoning agents use Opus, without changing pipeline.json.
+    # extra_allowedTools: comma-separated or inline-list of additional Bash(*)
+    #        globs merged with the base allowlist. Use this for agents that
+    #        legitimately need more than read+label access (e.g. coder, doc-updater).
+    frontmatter = parse_frontmatter(agent_file.read_text())
+    agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
+    _extra: object = frontmatter.get("extra_allowedTools", [])
+    extra_tools: list[str] = (
+        [t.strip() for t in _extra.split(",") if t.strip()]
+        if isinstance(_extra, str)
+        else list(_extra)
+    )
+    if agent_model:
+        log.debug("    model: %s (from frontmatter)", agent_model)
+    if extra_tools:
+        log.debug("    extra_allowedTools: %s", extra_tools)
+
+    # Scoped base allowlist. Each entry is a glob the bash command must
+    # match. Keeping these narrow blocks the agent from reaching
+    # secrets/settings/branches even if it is prompt-injected.
+    base_tools = [
+        f"Bash(bash {STATUS_SH} *)",  # state transitions
+        "Bash(gh issue view *)",       # read issue body / labels
+        "Bash(gh issue comment *)",    # post artefact + announcement comments
+        "Bash(gh issue edit *)",       # apply kind/* and other labels
+        "Bash(gh issue list *)",       # cross-issue reads (impact-assessor etc.)
+        "Bash(gh pr view *)",          # PR-side agents read PR
+        "Bash(gh pr comment *)",       # PR-side agents post comments
+        "Bash(gh pr edit *)",          # PR-side label edits
+        "Bash(gh pr list *)",
+        "Bash(gh pr diff *)",          # pr-reviewer reads the diff
+        "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
+        "Bash(gh api repos/*/pulls/*)",
+        "Bash(date *)",                # ISO-8601 timestamps in announcements
+        "Bash(cat *)",                 # read prompt-side files
+        "Bash(grep *)",
+        "Bash(find *)",
+        "Read",
+        "Glob",
+        "Grep",
+    ]
+
+    cmd = [
+        "claude",
+        "--allowedTools", ",".join(base_tools + extra_tools),
+        "--max-turns", "60",
+    ]
+    if agent_model:
+        cmd += ["--model", agent_model]
+    cmd += ["-p", prompt]
 
     # Export resolved paths so the agent prompt's bash snippets work
     # regardless of CWD or where this repo is mounted in the consuming

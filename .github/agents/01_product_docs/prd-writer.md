@@ -127,41 +127,24 @@ implementation terms. Phrase as the change the user will experience.
 
 ### User stories
 
-Two to five stories in the canonical form:
+Stories in the canonical form — one per distinct user-visible capability:
 
 - **As a** {persona}, **I want** {capability}, **so that** {outcome}.
-- **As a** {persona}, **I want** {capability}, **so that** {outcome}.
 
-Each story is one user-visible capability. Pick personas from
-[`docs/product/agile/03-personas.md`](docs/product/agile/03-personas.md)
-where they fit; otherwise name a new persona explicitly.
-
-**`As the {automated-role}` is a valid persona** for capabilities
-whose primary actor is automation rather than a person — scheduled
-jobs, webhook handlers, audit-log writers, metrics aggregators. See
-the **System actor** persona in `03-personas.md` §7. Such stories
-must still pass the valid-vs-invalid test:
-
-1. The **so that** clause names a real human stakeholder who
-   benefits, even indirectly.
-2. Acceptance criteria are expressible as Gherkin scenarios with an
-   observable Then-clause (a row, an alert, a dashboard number) —
-   not "the code is structured a certain way".
-3. The role is stable automation, not an implementation choice.
-   "As the audit log writer" is fine; "As the database" is not.
-
-`As a developer` stories are still suspect — developers are tool
-users, not product personas. If the work is genuinely a refactor /
-upgrade / internal-API change with no user-observable benefit, it is
-technical-intermediate work the roadmap sequences toward a real
-target-state outcome (per [P-15](../../docs/product/agile/02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)),
-not a feature PRD.
+Pick personas from
+[`docs/product/agile/03-personas.md`](docs/product/agile/03-personas.md);
+name a new one explicitly if none fit. Automated roles (e.g. "As the
+audit-log writer") are valid when the **so that** clause names a real
+human beneficiary and the **Then**-clause is observable. "As a
+developer" stories are suspect — if the work has no user-observable
+benefit, it is technical-intermediate work, not a feature PRD.
 
 ### Acceptance criteria (Gherkin)
 
-One scenario per acceptance condition. Use the canonical
-**Given / When / Then** form — these scenarios become the test spec
-in Phase 3, so write them as if a tester will execute them.
+One scenario per distinct acceptance condition. Use canonical
+**Given / When / Then** form; each Then-clause must be falsifiable by
+a tester or automated test. Cover the happy path and any edge cases
+the issue body demands — no more.
 
 #### Scenario: {short imperative name}
 **Given** {precondition stated as a fact about system state}
@@ -173,26 +156,19 @@ in Phase 3, so write them as if a tester will execute them.
 **When** {…}
 **Then** {…}
 
-(Add scenarios for the happy path, every alternative path the user
-will hit, and every error/edge case the issue body or rejection-of-
-input demands. If you cannot express a criterion as Given/When/Then,
-it is probably not yet a real acceptance criterion — refine it.)
-
 ### Out of scope
 
-Bullet list of things explicitly **not** in this issue. The point is
-to prevent scope creep during design and execution. Examples:
+Bullets for any things a reader might assume are included but are
+explicitly not part of this issue. Omit this section if nothing is
+genuinely ambiguous.
 
-- {Capability that a reader might assume is included but isn't}
-- {Adjacent surface that is intentionally untouched}
-- {Performance / accessibility / i18n target that is deferred}
+- {What is excluded and why}
 
 ### Success metrics
 
-Bullet list of how we'll know it's working in production. Each metric
-is observable from outside the system, not "the build passes". Where
-applicable, name the dashboard, log query, or audit-log event the
-metric will be measured against.
+Observable signals — a dashboard, log query, or audit-log event —
+that confirm the feature is working in production. Skip metrics that
+are obvious or already covered by the acceptance criteria.
 ```
 
 After the six sections, append a **Standards check** sub-section
