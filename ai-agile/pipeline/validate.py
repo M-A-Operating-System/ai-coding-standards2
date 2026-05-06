@@ -54,21 +54,24 @@ def validate_dependency_references(pipeline: dict) -> list[str]:
 
 
 def validate_acyclic(pipeline: dict) -> list[str]:
-    """Topological sort; report a cycle if one exists."""
+    """Topological sort (Kahn's algorithm); report a cycle if one exists.
+
+    indegree[n] = number of OPEN dependencies n still has. A node with
+    indegree 0 has no remaining dependencies and is processable. We
+    drain such nodes; each time we drain n, we decrement the indegree
+    of every node that depends on n.
+    """
     graph = {a["agent"]: list(a.get("dependencies", [])) for a in pipeline["pipeline"]}
-    # Kahn's algorithm
-    indegree = {n: 0 for n in graph}
-    for deps in graph.values():
-        for d in deps:
-            if d in indegree:
-                indegree[d] += 1
+    # Count only deps that exist in the graph (unknown deps are caught
+    # by validate_dependency_references, not here).
+    indegree = {n: sum(1 for d in deps if d in graph) for n, deps in graph.items()}
     queue = [n for n, d in indegree.items() if d == 0]
     visited = 0
     while queue:
         n = queue.pop()
         visited += 1
-        for m, deps in graph.items():
-            if n in deps:
+        for m, m_deps in graph.items():
+            if n in m_deps:
                 indegree[m] -= 1
                 if indegree[m] == 0:
                     queue.append(m)

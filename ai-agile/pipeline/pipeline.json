@@ -12,6 +12,19 @@
       "human_gate_after": false,
       "dependencies": [],
       "description": "Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment."
+    },
+
+    {
+      "agent": "01_product_docs/prd-writer",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "01_product_docs/issue-classifier:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "prd:approved",
+      "dependencies": ["01_product_docs/issue-classifier"],
+      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Posts it as an issue comment in user-story + Gherkin format and waits for stakeholder approval at the prd:approved gate. Folds in product-standards-checker (per roadmap MVP merges): inline-flags any product-layer standards violations in the same PRD comment. Set-blocks oversized issues with a decomposition note rather than drafting a sprawling PRD."
     }
 
   ]

@@ -86,12 +86,44 @@ the agent to `:complete`.
 **Approver.** The stakeholder who opened the issue, or whoever they delegate
 to.
 
-**Artefact.** A PRD comment from `prd-writer` covering: problem statement,
-user stories, success metrics, out-of-scope items, acceptance criteria.
+**Artefact.** A PRD comment from `01_product_docs/prd-writer` with six
+required sections, in this order:
 
-**What you are signing off.** That this is the right problem to solve and
-that the acceptance criteria are complete and testable. Once approved, the
-PRD is the source of truth for everything downstream.
+| Section | Content | Format |
+|---|---|---|
+| Problem | What hurts now, who feels it, how often | Prose, one paragraph |
+| Goal | What success looks like, in user-observable terms | Prose, one paragraph |
+| User stories | The features, framed by user role | **User-story format** (`As a … I want … so that …`); 2–5 stories |
+| Acceptance criteria | The conditions that mean "done" | **Gherkin** (`Given … When … Then …`); one scenario per condition; happy path, alternatives, and edge cases |
+| Out of scope | Explicit non-goals to prevent scope creep | Bullet list |
+| Success metrics | How we'll know it's working in production | Bullet list of observable signals |
+
+The user-story / Gherkin combination is the canonical PRD format
+across AI Agile: user stories give the *why* in user-visible language;
+Gherkin scenarios give the *what's done* in falsifiable, executable
+form. Each Gherkin scenario in an approved PRD becomes a numbered test
+scenario in Phase 3 (`testing-spec/test-spec-writer`), tying every
+test back to a stakeholder-approved acceptance condition.
+
+**What you are signing off.**
+
+- The problem and goal are correct.
+- Each user story names a real persona and a real outcome (no
+  "as a system" / "as a developer" stories — those belong in the
+  technical design).
+- Each Gherkin scenario is falsifiable and concrete enough to be
+  turned into an automated test or a manual reproduction.
+- "Out of scope" actually rules things out (it's not a wishlist).
+- Success metrics are observable from outside the system.
+
+Once approved, the PRD is the source of truth for everything
+downstream — design, test spec, build plan, code review.
+
+**Sizing guard.** `prd-writer` will refuse to draft an oversized PRD.
+If the issue describes multiple distinct user outcomes or spans
+multiple bounded contexts, the agent set-blocks with a decomposition
+recommendation rather than producing a sprawling PRD. Decomposing
+early is cheaper than reviewing a too-big PRD.
 
 **Cost of getting it wrong.** The most expensive gate to skim. The PRD
 becomes the input for design, testing, and evaluation. Wrong PRD →

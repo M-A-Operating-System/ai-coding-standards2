@@ -879,6 +879,83 @@ def invoke_agent(
 
 
 # ---------------------------------------------------------------------------
+# Gate promotion
+# ---------------------------------------------------------------------------
+
+def promote_gated_agents(
+    labels: set[str],
+    agents: list[AgentDef],
+    work_item: WorkItem,
+    gh: GitHubClient,
+) -> set[str]:
+    """Find every gated agent currently in :review whose gate label is
+    now present, and transition it from :review to :complete.
+
+    Why this exists. The agent posts an artefact and applies :review,
+    then the pipeline halts. When the human applies the gate label
+    (e.g. prd:approved), no event reaches the agent — the orchestrator
+    is the actor that closes the loop, removing :review and adding
+    :complete so downstream eligibility checks pass.
+
+    The loop is idempotent: a partial transition (e.g. :review removed
+    but :complete not yet added, due to crash mid-write) is finished
+    on the next tick because the gate label remains and the gated
+    agent has neither :review nor :complete.
+
+    Returns the updated label set so the caller can use it for the
+    per-agent eligibility loop without re-fetching from GitHub.
+    """
+    updated = set(labels)
+    for agent_def in agents:
+        if not agent_def.human_gate_after or not agent_def.human_gate_label:
+            continue
+        if work_item.kind not in agent_def.objects:
+            continue
+
+        review_label = agent_def.review_label
+        complete_label = agent_def.complete_label
+        gate_label = agent_def.human_gate_label
+
+        gate_present = gate_label in updated
+        if not gate_present:
+            continue
+
+        # Two states to act on:
+        # 1. :review still present → standard transition
+        # 2. :review missing AND :complete missing → recover an interrupted
+        #    transition (idempotent re-run after crash)
+        review_present = review_label in updated
+        complete_present = complete_label in updated
+
+        if not review_present and complete_present:
+            continue   # already promoted; nothing to do
+        if not review_present and not complete_present:
+            log.warning(
+                "  PROMOTE %-38s  gate '%s' present but agent has no status; "
+                "completing transition (interrupted run).",
+                agent_def.agent, gate_label,
+            )
+
+        try:
+            if review_present:
+                gh.remove_label(work_item.number, review_label)
+                updated.discard(review_label)
+            if not complete_present:
+                gh.add_label(work_item.number, complete_label)
+                updated.add(complete_label)
+            log.info(
+                "  PROMOTE %-38s  %s applied → :review → :complete",
+                agent_def.agent, gate_label,
+            )
+        except Exception as exc:
+            log.error(
+                "  could not promote %s on #%d: %s — pipeline state may be inconsistent",
+                agent_def.agent, work_item.number, exc,
+            )
+    return updated
+
+
+# ---------------------------------------------------------------------------
 # Failure handling
 # ---------------------------------------------------------------------------
 
@@ -978,6 +1055,14 @@ def process_work_item(
         work_item.title[:70] + ("…" if len(work_item.title) > 70 else "")
     )
 
+    # Gate promotion runs FIRST every tick. Any gated agent currently in
+    # :review whose gate label is now present is transitioned to
+    # :complete here, so the per-agent eligibility loop below sees a
+    # consistent state.
+    if not dry_run:
+        labels = promote_gated_agents(labels, agents, work_item, gh)
+        work_item.labels = labels
+
     for agent_def in agents:
 
         # Skip if this agent doesn't operate on this kind of work item
@@ -994,6 +1079,16 @@ def process_work_item(
         # Skip if already running
         if current_status == STATUS_IN_PROGRESS:
             log.info("  wait %-40s  [wip]", agent_def.agent)
+            continue
+
+        # Skip if halted pending human action. :review means the agent
+        # finished and is awaiting a gate label (handled by
+        # promote_gated_agents above) or a human reject (label removal).
+        # :blocked means the agent stopped and needs human intervention
+        # before re-running. In both cases re-invoking the agent without
+        # human action would loop indefinitely or duplicate the artefact.
+        if current_status in HALT_STATUSES:
+            log.info("  halt %-40s  [%s]", agent_def.agent, current_status)
             continue
 
         # Check trigger label is present
