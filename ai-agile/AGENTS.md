@@ -17,28 +17,88 @@ is the **distilled** version every agent reads at runtime.
 
 ## What AI Agile is
 
-A **product-led agile pipeline**: every change to the codebase starts
-as a GitHub issue describing a user-observable outcome and ends as a
-merged PR with humans approving at well-defined gates. Specialised
-agents (you are one) move the issue through the lifecycle, drafting
-artefacts; humans approve. Nothing ships without a human gate.
+A **product-led agile pipeline**. The product, not the code, is the
+source of truth for what should exist.
 
-"Product-led" means the **user outcome drives the work**, not the
-implementation:
+### The flow
 
-- Every issue answers "what changes for the user?" before "how do we
-  build it?".
+```
+product strategy  →  product docs  →  technical spec  →  code  →  testable spec
+                     (target state)   (how to build)    (current   (proves it works)
+                                                         state)
+```
+
+The arrows point left-to-right. **Never right-to-left.** You do not
+let the code shape the product docs; you do not let the build plan
+shape the design; you do not let the technical spec shape the PRD.
+Each phase is constrained by the artefact that precedes it.
+
+### The four artefacts and their roles
+
+| Artefact | What it is | Authority |
+|---|---|---|
+| **Product strategy** ([`docs/product/agile/01-vision.md`](../docs/product/agile/01-vision.md), [`02-principles.md`](../docs/product/agile/02-principles.md), [`03-personas.md`](../docs/product/agile/03-personas.md)) | Why we exist; who we serve; the rules of how we build | Authoritative — sets direction |
+| **Product documentation** (`docs/product/`) | The **target state** we are aiming for, in user-observable terms | **Authoritative TARGET state** |
+| **Roadmap** ([`10-roadmap.md`](../docs/product/agile/10-roadmap.md)) | The plan to reach the target state through phases of user-benefitting (or technical-intermediate) outcomes | Describes realisable outcomes; sequencing only |
+| **Technical specs** (designs, ADRs, test specs) | How the target state will be built | Derived from product docs; never invents new requirements |
+| **Code** | The system as it actually is right now | **Authoritative CURRENT state** |
+
+### The gap is GitHub issues
+
+The gap between **product docs (target)** and **code (current)** is
+the backlog. Every issue is one of:
+
+- An **enhancement** — work to move code closer to the target state.
+- A **bug** — code that has drifted from the target state and must
+  return.
+
+(Chores and refactors are technical-intermediate work the roadmap
+sequences toward a user-benefitting outcome; they are still tied to a
+product-doc target, not orphan technical preference.)
+
+### The hard rule
+
+> **You do not start coding something that is not already fully
+> described in the product docs.**
+
+This is non-negotiable. It applies to every agent in the pipeline:
+
+- An issue without a stakeholder-approved PRD does not get a
+  technical design, a test spec, a build plan, or a coder
+  invocation. The lifecycle gates this automatically — `prd:approved`
+  is upstream of every later phase's dependency check.
+- A PR that lands code with no corresponding entry in `docs/product/`
+  does not merge. The reviewer rejects it; the work item moves the
+  product docs forward first, then the code.
+- If a stakeholder wants something the product docs don't yet
+  describe, the issue moves the **product docs forward first**, then
+  (in a separate or sequenced piece of work) the code.
+- Bugs are special: by definition the code has drifted from the
+  product-docs target. The fix is to correct the code. If the bug
+  reveals that the product docs themselves were under-specified, the
+  fix is *first* to clarify the product docs, *then* to correct the
+  code.
+
+If you find yourself drafting code-shaped work (technical design,
+test spec, build plan, code itself) for an issue whose PRD has not
+been approved, **stop**. The pipeline is out of order. `set-blocked`
+with the reason "PRD not approved; cannot proceed to {your phase}".
+
+### What "product-led" means in practice
+
+- Every issue answers **"what changes for the user?"** before "how do
+  we build it?".
 - The PRD names personas, user stories, and Gherkin acceptance
-  criteria — not API endpoints or table schemas.
-- Technical work that does not serve a user-observable outcome is a
-  chore, not a feature, and is sized differently.
-- "Done" is defined by acceptance criteria the stakeholder approved,
-  not by code being written.
-
-If you find yourself producing implementation detail in a phase that
-should be product-shaped (e.g. an architect proposing a database
-schema before the PRD has been approved), stop. The pipeline is
-out of order.
+  criteria — not API endpoints or table schemas. Implementation
+  detail in a PRD is a smell.
+- Technical work that does not serve a user-observable outcome (or a
+  technical-intermediate state on the roadmap toward one) is a chore,
+  sized and reviewed differently. It still requires a target-state
+  entry in the product docs (e.g. a non-functional requirement or a
+  capability statement).
+- "Done" is defined by acceptance criteria the stakeholder approved
+  in the PRD — not by "code was written" or "tests pass". Code can
+  be perfect against a wrong PRD; that's still wrong.
 
 ---
 
@@ -82,6 +142,7 @@ The full statements and rationale live there.
 | **P-12** Transparent over clever | Post a comment when something halts. Use the named markers. Don't infer state silently. |
 | **P-13** Draft PRs early, one branch per PR | (For Execute-phase agents.) Open the PR on the first commit, not at the end. |
 | **P-14** Deterministic Python orchestrator | The orchestrator decides who runs next. **You do not invoke other agents.** Do your one job and exit. |
+| **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See "What AI Agile is" above. |
 
 ---
 
