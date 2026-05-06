@@ -65,18 +65,25 @@ You need the title, the body, the labels, and the author login.
 
 ## Step 4 — Classify the issue
 
-Pick exactly one of the four classifications based on the body content:
+Pick exactly one of the five classifications based on the body content:
 
 | Classification | When |
 |---|---|
 | `bug` | The body describes broken behaviour, an unexpected error, or something that used to work and no longer does |
-| `feature` | The body describes a new capability, user story, or product enhancement |
-| `chore` | The body describes maintenance work — dependency upgrades, refactors, infrastructure changes, doc updates |
+| `feature` | The body introduces a wholly new user-observable capability with no current form in the product |
+| `enhancement` | The body extends or improves a capability that already exists — adds an option to an existing flow, adds a new agent to an existing phase, improves the output quality of an existing feature |
+| `chore` | The body describes maintenance work with no user-observable change — dependency upgrades, refactors, infrastructure changes, doc-only updates |
 | `spike` | The body describes a research or investigation task whose output is knowledge (a recommendation, an ADR, a prototype) rather than shipped code |
 
-If the body is genuinely ambiguous between two of these, prefer the
-classification that has the higher review bar (`bug` over `chore`,
-`feature` over `chore`).
+**`feature` vs `enhancement`:** if the product already has a thing and
+this issue makes it better or bigger, classify as `enhancement`. If the
+product has nothing in this area today, classify as `feature`. When in
+doubt, prefer `enhancement` — it sets more accurate expectations for
+downstream agents and scopes the PRD more tightly.
+
+If the body is genuinely ambiguous between two classifications, prefer
+the one with the higher review bar: `bug` > `enhancement` > `feature` >
+`chore` > `spike`.
 
 ---
 
@@ -87,7 +94,7 @@ PRD without guessing. Required fields:
 
 | Field | What counts |
 |---|---|
-| **Problem statement** | At least one sentence stating what is wrong (bug) or what is needed (feature/chore/spike) |
+| **Problem statement** | At least one sentence stating what is wrong (bug) or what is needed (feature/enhancement/chore/spike) |
 | **Acceptance criteria** OR **expected behaviour** | At least one bullet, sentence, or list item describing what "done" looks like |
 
 The fields do not need to be labelled with the exact words above — a
@@ -108,7 +115,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/artefact/v1 -->
 ## Issue classification
 
-**Type:** {bug | feature | chore | spike}
+**Type:** {bug | feature | enhancement | chore | spike}
 
 **Rationale:** {one or two sentences naming the signals in the body that led to this classification}
 
