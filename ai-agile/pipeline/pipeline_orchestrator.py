@@ -37,6 +37,7 @@ Requirements:
 """
 
 import argparse
+import base64
 import json
 import logging
 import os
@@ -77,6 +78,11 @@ ALL_STATUSES = {
     STATUS_COMPLETE, STATUS_WIP, STATUS_REVIEW,
     STATUS_BLOCKED, STATUS_FAILED, STATUS_SKIPPED,
 }
+
+AUDIT_LOG_BRANCH = "ai-agile/log"
+# Well-known empty-tree SHA in Git — used to create the orphan audit commit
+# without making an API round-trip to POST /git/trees.
+EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 # Statuses where the orchestrator takes no further action on this agent.
 # review and blocked halt the pipeline but are NOT terminal — a human
@@ -408,6 +414,140 @@ class GitHubClient:
 
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
+
+    def _put(self, path: str, body: dict) -> requests.Response:
+        """Issue a PUT request; returns the raw response so callers can inspect 409."""
+        return self._request("PUT", path, json_body=body)
+
+
+# ---------------------------------------------------------------------------
+# Audit log (ai-agile/log orphan branch)
+# ---------------------------------------------------------------------------
+
+def _make_audit_event(
+    session_id: str,
+    event_type: str,
+    repo: str,
+    work_item: Optional[WorkItem] = None,
+    agent: Optional[str] = None,
+    outcome_status: str = "ok",
+    outcome_detail: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+) -> dict:
+    """Build one audit event per the schema in docs/product/agile/08-audit-log.md."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    obj: Optional[dict] = None
+    if work_item is not None:
+        obj = {"kind": work_item.kind, "id": work_item.number, "repo": repo}
+    return {
+        "ts": ts,
+        "event_type": event_type,
+        "session_id": session_id,
+        "object": obj,
+        "agent": agent,
+        "actor": {"kind": "orchestrator", "id": "github-actions", "human": None},
+        "outcome": {"status": outcome_status, "detail": outcome_detail},
+        "ref": None,
+        "duration_ms": duration_ms,
+    }
+
+
+def _ensure_audit_log_branch(gh: GitHubClient) -> None:
+    """Create the orphan ai-agile/log branch if it does not already exist."""
+    encoded = requests.utils.quote(AUDIT_LOG_BRANCH, safe="")
+    r = gh._request("GET", f"/repos/{gh.repo}/git/refs/heads/{encoded}")
+    if r.status_code == 200:
+        return
+    if r.status_code != 404:
+        r.raise_for_status()
+
+    # Create an orphan commit on the well-known empty tree (no parents).
+    commit = gh._post(f"/repos/{gh.repo}/git/commits", {
+        "message": (
+            "chore: initialise audit log\n\n"
+            "Orphan branch — no shared history with main.\n"
+            "Append-only JSONL event store per docs/product/agile/08-audit-log.md."
+        ),
+        "tree": EMPTY_TREE_SHA,
+        "parents": [],
+    })
+    gh._post(f"/repos/{gh.repo}/git/refs", {
+        "ref": f"refs/heads/{AUDIT_LOG_BRANCH}",
+        "sha": commit["sha"],
+    })
+    log.info("Created orphan audit log branch: %s", AUDIT_LOG_BRANCH)
+
+
+def write_audit_log(gh: GitHubClient, events: list[dict]) -> None:
+    """Append buffered audit events to the ai-agile/log branch.
+
+    Events are grouped by UTC date and appended to events/YYYY/MM/DD.jsonl.
+    On a 409 conflict (concurrent writer), fetches the updated file and
+    re-applies the buffer, retrying up to three times.
+    """
+    if not events:
+        return
+
+    try:
+        _ensure_audit_log_branch(gh)
+    except Exception as exc:
+        log.warning("Could not ensure audit log branch: %s — events dropped", exc)
+        return
+
+    by_date: dict[str, list[dict]] = {}
+    for event in events:
+        date_str = event.get("ts", "")[:10] or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        by_date.setdefault(date_str, []).append(event)
+
+    for date_str, date_events in sorted(by_date.items()):
+        year, month, day = date_str.split("-")
+        path = f"events/{year}/{month}/{day}.jsonl"
+        new_lines = "\n".join(json.dumps(e, separators=(",", ":")) for e in date_events) + "\n"
+
+        for attempt in range(4):
+            try:
+                r = gh._request(
+                    "GET",
+                    f"/repos/{gh.repo}/contents/{path}",
+                    params={"ref": AUDIT_LOG_BRANCH},
+                )
+                if r.status_code == 200:
+                    file_data = r.json()
+                    current_sha: Optional[str] = file_data["sha"]
+                    existing = base64.b64decode(file_data["content"]).decode("utf-8")
+                    full_content = existing + new_lines
+                elif r.status_code == 404:
+                    current_sha = None
+                    full_content = new_lines
+                else:
+                    r.raise_for_status()
+                    break
+
+                put_body: dict = {
+                    "message": f"audit: {len(date_events)} event(s) on {date_str}",
+                    "content": base64.b64encode(full_content.encode()).decode(),
+                    "branch": AUDIT_LOG_BRANCH,
+                }
+                if current_sha:
+                    put_body["sha"] = current_sha
+
+                put_r = gh._put(f"/repos/{gh.repo}/contents/{path}", put_body)
+                if put_r.status_code in (200, 201):
+                    log.info("Audit log: wrote %d event(s) → %s", len(date_events), path)
+                    break
+                elif put_r.status_code == 409:
+                    delay = 2 ** (attempt + 1)
+                    log.warning(
+                        "Audit log write conflict on %s; retrying in %ds (attempt %d/3)",
+                        path, delay, attempt + 1,
+                    )
+                    time.sleep(delay)
+                else:
+                    put_r.raise_for_status()
+                    break
+            except Exception as exc:
+                log.warning("Could not write audit log for %s: %s — events dropped", date_str, exc)
+                break
 
 
 # ---------------------------------------------------------------------------
@@ -955,6 +1095,10 @@ def promote_gated_agents(
     agents: list[AgentDef],
     work_item: WorkItem,
     gh: GitHubClient,
+    *,
+    session_id: str = "",
+    audit_log: Optional[list] = None,
+    repo: str = "",
 ) -> set[str]:
     """Find every gated agent currently in :review whose gate label is
     now present, and transition it from :review to :complete.
@@ -1015,6 +1159,13 @@ def promote_gated_agents(
                     "  PROMOTE %-38s  %s applied → :review → :complete",
                     agent_def.agent, gate_label,
                 )
+                if audit_log is not None and session_id:
+                    audit_log.append(_make_audit_event(
+                        session_id, "gate.approved", repo or gh.repo,
+                        work_item=work_item, agent=agent_def.agent,
+                        outcome_status="complete",
+                        outcome_detail=f"{gate_label} applied by human",
+                    ))
             except Exception as exc:
                 log.error(
                     "  could not promote %s on #%d: %s — pipeline state may be inconsistent",
@@ -1136,6 +1287,9 @@ def process_work_item(
     gh: GitHubClient,
     dry_run: bool,
     repo: str,
+    *,
+    session_id: str = "",
+    audit_log: Optional[list] = None,
 ) -> int:
     """
     Evaluate all agents against a single issue or PR.
@@ -1155,7 +1309,10 @@ def process_work_item(
     # :complete here, so the per-agent eligibility loop below sees a
     # consistent state.
     if not dry_run:
-        labels = promote_gated_agents(labels, agents, work_item, gh)
+        labels = promote_gated_agents(
+            labels, agents, work_item, gh,
+            session_id=session_id, audit_log=audit_log, repo=repo,
+        )
         work_item.labels = labels
 
     for agent_def in agents:
@@ -1207,6 +1364,14 @@ def process_work_item(
         # (non-zero exit) without setting a terminal status itself.
         log.info("  TRIGGER %-38s", agent_def.agent)
 
+        if audit_log is not None and session_id and not dry_run:
+            audit_log.append(_make_audit_event(
+                session_id, "agent.invoked", repo,
+                work_item=work_item, agent=agent_def.agent,
+                outcome_status="started",
+            ))
+        _invoked_at = time.monotonic()
+
         result = invoke_agent(agent_def, work_item, dry_run, repo)
 
         if not dry_run:
@@ -1240,12 +1405,34 @@ def process_work_item(
                     "  FAILED  %-38s  pipeline paused on #%d",
                     agent_def.agent, work_item.number
                 )
+                if audit_log is not None and session_id:
+                    audit_log.append(_make_audit_event(
+                        session_id, "agent.failed", repo,
+                        work_item=work_item, agent=agent_def.agent,
+                        outcome_status="failed",
+                        outcome_detail=f"exit code {result.returncode}",
+                        duration_ms=int((time.monotonic() - _invoked_at) * 1000),
+                    ))
                 break
 
             log.info(
                 "  %-6s  %-38s",
                 (final_status or "?").upper(), agent_def.agent
             )
+
+            if audit_log is not None and session_id and final_status:
+                _et_map = {
+                    STATUS_COMPLETE: "agent.complete",
+                    STATUS_REVIEW: "agent.review",
+                    STATUS_BLOCKED: "agent.blocked",
+                    STATUS_SKIPPED: "agent.skipped",
+                }
+                audit_log.append(_make_audit_event(
+                    session_id, _et_map.get(final_status, "agent.complete"), repo,
+                    work_item=work_item, agent=agent_def.agent,
+                    outcome_status=final_status,
+                    duration_ms=int((time.monotonic() - _invoked_at) * 1000),
+                ))
 
             # If the agent wrote complete and a human gate is configured,
             # post the gate comment so the reviewer knows what to do.
@@ -1371,10 +1558,14 @@ def main() -> None:
     pipeline_map = pipeline_by_name(agents)
     gh = GitHubClient(repo=args.repo, token=token)
 
+    session_id = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    audit_log: list[dict] = []
+
     log.info("Pipeline: %d agents across %d phases",
              len(agents),
              len({a.phase for a in agents}))
     log.info("Repository: %s", args.repo)
+    log.info("Session: %s", session_id)
     if args.dry_run:
         log.info("DRY RUN — no labels will be changed, no agents will be invoked")
 
@@ -1395,9 +1586,19 @@ def main() -> None:
 
     log.info("Work items to evaluate: %d", len(work_items))
 
+    if not args.dry_run:
+        audit_log.append(_make_audit_event(
+            session_id, "system.tick", args.repo,
+            outcome_status="started",
+            outcome_detail=f"evaluating {len(work_items)} work item(s)",
+        ))
+
     total_triggered = 0
     for item in work_items:
-        n = process_work_item(item, agents, pipeline_map, gh, args.dry_run, args.repo)
+        n = process_work_item(
+            item, agents, pipeline_map, gh, args.dry_run, args.repo,
+            session_id=session_id, audit_log=audit_log,
+        )
         total_triggered += n
         if n > 0:
             # Brief pause between agent invocations to avoid rate limits
@@ -1405,6 +1606,14 @@ def main() -> None:
 
     log.info("─" * 60)
     log.info("Complete. Agents triggered this run: %d", total_triggered)
+
+    if not args.dry_run:
+        audit_log.append(_make_audit_event(
+            session_id, "system.tick", args.repo,
+            outcome_status="complete",
+            outcome_detail=f"{total_triggered} agent(s) triggered",
+        ))
+        write_audit_log(gh, audit_log)
 
 
 if __name__ == "__main__":
