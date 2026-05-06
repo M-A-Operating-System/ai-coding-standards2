@@ -459,8 +459,20 @@ advances past a gate without an explicit human action.
 
 - Gates are listed in [`07-human-gates.md`](07-human-gates.md).
 - Reviewer time is spent reading artefacts, not authoring them.
-- The system never edits human-authored content (issue bodies written by
-  the stakeholder, review comments, ADRs after acceptance).
+- The system never edits **review comments** or **ADRs after acceptance**
+  — those remain as authored.
+- **Issue and PR titles and bodies are an exception** to the
+  no-edit rule. After the stakeholder opens an issue, `prd-writer`
+  rewrites the title to the `[CLASSIFICATION] - Module - Title`
+  convention and rewrites the body to be the canonical PRD. The
+  original title and body are preserved in a snapshot comment
+  (marker `ai-agile/snapshot/v1`) for the audit trail. Subsequent
+  agents may further edit the body within their owned subsections
+  (e.g. the todos block per [`13-todos.md`](13-todos.md)). Why this
+  exception exists: the body is the issue's **live target spec**
+  (per [P-15](#p-15--product-led-target-state-in-product-docs-leads-code))
+  — keeping it canonical is the point. The snapshot comment is
+  immutable and is what "human-authored content" maps to.
 
 **Tradeoff.** Throughput is bounded by reviewer availability at gates.
 This is intentional.

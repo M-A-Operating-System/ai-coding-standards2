@@ -29,9 +29,19 @@ Markers used:
 |---|---|
 | Session metadata for an `(object, agent)` pair | `<!-- ai-agile/session/v1 by {agent-name} -->` |
 | A question requiring an answer | `<!-- ai-agile/question/v1 by {agent-name} -->` |
-| An artefact awaiting review (PRD, design, spec) | `<!-- ai-agile/artefact/v1 by {agent-name} -->` |
+| An artefact awaiting review (small/standalone artefact in a comment, e.g. issue-classifier's classification) | `<!-- ai-agile/artefact/v1 by {agent-name} -->` |
 | A claim during mutex acquisition (P-4) | `<!-- ai-agile/claim/v1 by {agent-name} -->` |
 | Opening / closing announcement | `<!-- ai-agile/announcement/v1 by {agent-name} -->` |
+| Pre-edit snapshot of original human-authored content (preserved when an agent rewrites a title or body for canonical-spec purposes) | `<!-- ai-agile/snapshot/v1 by {agent-name} -->` |
+
+**Where artefacts live.** Most artefacts (the classification result,
+test specs, build plans, etc.) live in **comments** with the
+`artefact/v1` marker. The PRD is the exception: it lives in the
+**issue body itself** so the body is the issue's live target spec
+(per [P-15](02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)
+and the P-10 body-edit exception). The original body is preserved
+via the `snapshot/v1` marker in a separate comment for the audit
+trail.
 
 Every marker carries the **actor** as a `by {actor-name}` suffix.
 The actor is the agent's full phase-prefixed name (e.g.

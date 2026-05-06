@@ -69,14 +69,20 @@ Pick exactly one of the four classifications based on the body content:
 
 | Classification | When |
 |---|---|
-| `bug` | The body describes broken behaviour, an unexpected error, or something that used to work and no longer does |
-| `feature` | The body describes a new capability, user story, or product enhancement |
-| `chore` | The body describes maintenance work — dependency upgrades, refactors, infrastructure changes, doc updates |
-| `spike` | The body describes a research or investigation task whose output is knowledge (a recommendation, an ADR, a prototype) rather than shipped code |
+| `BUG` | Broken behaviour or an unexpected error in shipped code; the gap between target spec and current state is a defect. |
+| `ENHANCEMENT` | An improvement to an existing capability — better, faster, more correct, more usable — but the capability already exists in some form. |
+| `FEATURE` | A new capability that does not exist today. The user gains an outcome they cannot achieve at all in the current system. |
+| `TOIL` | Repetitive operational or technical-intermediate work — refactors, dependency upgrades, infrastructure changes, doc updates. Tied to a non-functional requirement or capability statement in the product docs (per P-15), not standalone technical preference. |
 
-If the body is genuinely ambiguous between two of these, prefer the
-classification that has the higher review bar (`bug` over `chore`,
-`feature` over `chore`).
+Pick the classification that **best matches the user-observable outcome**, not the implementation:
+
+- A new endpoint that lets users do something they couldn't before → FEATURE.
+- A new endpoint that replaces an existing one → ENHANCEMENT.
+- Refactoring the data layer with no user-visible change → TOIL.
+- Login screen returns 500 sometimes → BUG.
+
+If the body is genuinely ambiguous between two, prefer the
+classification with the higher review bar (BUG > FEATURE > ENHANCEMENT > TOIL).
 
 ---
 
@@ -105,10 +111,10 @@ complete.
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/artefact/v1 -->
+<!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue classification
 
-**Type:** {bug | feature | chore | spike}
+**Type:** {BUG | ENHANCEMENT | FEATURE | TOIL}
 
 **Rationale:** {one or two sentences naming the signals in the body that led to this classification}
 
@@ -117,12 +123,14 @@ EOF
 )"
 ```
 
-Add the `kind/{classification}` label so downstream agents can trigger
-on it if they need to:
+Add the `kind/{classification-lowercase}` label so downstream agents
+can trigger on it if they need to:
 
 ```bash
-gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "kind/{classification}"
+gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "kind/{classification-lowercase}"
 ```
+
+(e.g. `kind/bug`, `kind/enhancement`, `kind/feature`, `kind/toil`.)
 
 Post the closing announcement:
 

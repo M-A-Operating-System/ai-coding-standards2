@@ -187,7 +187,8 @@ Five marker types, used for these purposes:
 | Marker | Use for |
 |---|---|
 | `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
-| `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
+| `artefact/v1` | A standalone artefact that lives in a comment (e.g. classification result, decomposition recommendation, test spec). The PRD is the exception: it lives in the issue **body**, not a comment, so the body is the live target spec |
+| `snapshot/v1` | Pre-edit snapshot of human-authored content. Posted once before an agent rewrites the issue title or body for canonical-spec purposes (only `prd-writer` does this in MVP). The snapshot comment is **immutable** — it is the audit trail for what the human originally wrote |
 | `question/v1` | A structured question to a human or another role (Question Card schema in `docs/product/agile/09-human-interaction.md` §2) |
 | `claim/v1` | The mutex claim you post during P-4 acquisition |
 | `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
@@ -205,8 +206,15 @@ If they disagree, the JSON wins.
   promotes `:review` → `:complete` after gate approval.
 - **Don't apply `{agent}:failed`.** Reserved for the orchestrator.
 - **Don't invoke other agents.** The orchestrator routes work. P-14.
-- **Don't edit human-authored content** — issue bodies written by
-  the stakeholder, review comments, ADRs after acceptance.
+- **Don't edit review comments or accepted ADRs.** They are
+  authored content and remain as authored.
+- **Issue and PR titles and bodies are the canonical target spec.**
+  `prd-writer` rewrites them to the `[CLASSIFICATION] - Module - Title`
+  convention for titles and to the PRD for bodies; the original is
+  preserved via the `snapshot/v1` comment. Subsequent agents may edit
+  the body within their owned subsections (e.g. the todos block).
+  This is an explicit exception to the "don't edit human content"
+  rule, motivated by P-15 (the body **is** the live target spec).
 - **Don't write to anywhere other than GitHub** — no sidecar files,
   no external DBs, no temp state that survives your run.
 - **Don't use `WebFetch` or `WebSearch`** unless your tool allowlist
