@@ -318,8 +318,11 @@ bash $STATUS_SH set-blocked 01_product_docs/prd-writer $ISSUE_NUMBER \
   by an automated test or a manual reproduction. "Given the system
   exists, When a user uses it, Then it works" is not Gherkin.
 - One PRD comment per run. Do not re-post on a re-run after
-  rejection — edit the existing comment in place (reviewers' inline
-  feedback links to specific lines and breaks if the comment moves).
+  rejection — edit the existing comment in place. On re-runs, first
+  list the issue comments, find the prior PRD artefact marker comment
+  created by this agent, and update that same comment via the GitHub
+  API instead of creating a new one (reviewers' inline feedback links
+  to specific lines and breaks if the comment moves).
 - When in doubt about size, decompose. The cost of an unnecessary
   decomposition is one extra issue; the cost of a too-big PRD is
   felt across every downstream phase.
