@@ -32,6 +32,7 @@ Markers used:
 | An artefact awaiting review (PRD, design, spec) | `<!-- ai-agile/artefact/v1 by {agent-name} -->` |
 | A claim during mutex acquisition (P-4) | `<!-- ai-agile/claim/v1 by {agent-name} -->` |
 | Opening / closing announcement | `<!-- ai-agile/announcement/v1 by {agent-name} -->` |
+| Snapshot of human-authored content before agent rewrite (e.g. issue title/body before `prd-writer` rewrites them per the [P-10](02-principles.md#p-10--agents-draft-humans-decide) carve-out) | `<!-- ai-agile/snapshot/v1 by {agent-name} -->` |
 
 Every marker carries the **actor** as a `by {actor-name}` suffix.
 The actor is the agent's full phase-prefixed name (e.g.

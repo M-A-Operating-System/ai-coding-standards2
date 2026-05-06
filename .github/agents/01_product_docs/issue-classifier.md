@@ -1,11 +1,11 @@
 ---
 name: 01_product_docs/issue-classifier
 description: >
-  Classifies a newly opened issue as bug, feature, chore, or spike, and
-  validates that required fields are present (problem statement,
-  acceptance criteria). Rejects malformed issues with a corrective
-  comment so the stakeholder can fix the issue and re-trigger the
-  pipeline by removing the failed label.
+  Classifies a newly opened issue as bug, toil, enhancement, feature,
+  or spike, and validates that required fields are present (problem
+  statement, acceptance criteria). Rejects malformed issues with a
+  corrective comment so the stakeholder can fix the issue and
+  re-trigger the pipeline by removing the failed label.
 tools: [Bash, Read]
 model: claude-haiku-4-5-20251001
 ---
@@ -67,23 +67,28 @@ You need the title, the body, the labels, and the author login.
 
 Pick exactly one of the five classifications based on the body content:
 
-| Classification | When |
-|---|---|
-| `bug` | The body describes broken behaviour, an unexpected error, or something that used to work and no longer does |
-| `feature` | The body introduces a wholly new user-observable capability with no current form in the product |
-| `enhancement` | The body extends or improves a capability that already exists — adds an option to an existing flow, adds a new agent to an existing phase, improves the output quality of an existing feature |
-| `chore` | The body describes maintenance work with no user-observable change — dependency upgrades, refactors, infrastructure changes, doc-only updates |
-| `spike` | The body describes a research or investigation task whose output is knowledge (a recommendation, an ADR, a prototype) rather than shipped code |
+| Classification | When | Title prefix (used by `prd-writer`) |
+|---|---|---|
+| `bug` | Broken behaviour, an unexpected error, or something that used to work and no longer does. By definition the code has drifted from the product-docs target ([P-15](../../docs/product/agile/02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)). | `[BUG]` |
+| `toil` | Operational / maintenance work that does not change product capability — dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes. Tied to a non-functional requirement in the product docs, not a user-facing feature. | `[TOIL]` |
+| `enhancement` | An improvement to an **existing** capability — making a feature richer, faster, more accessible, or more reliable. The capability exists in production today; the issue moves it closer to the target state. | `[ENHANCEMENT]` |
+| `feature` | A **new** capability the product cannot do today. Adds a fresh user-observable outcome to the target state. | `[FEATURE]` |
+| `spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, a prototype — not shipped code. Time-boxed; the result feeds a later issue that ships the actual change. | `[SPIKE]` |
 
-**`feature` vs `enhancement`:** if the product already has a thing and
-this issue makes it better or bigger, classify as `enhancement`. If the
-product has nothing in this area today, classify as `feature`. When in
-doubt, prefer `enhancement` — it sets more accurate expectations for
-downstream agents and scopes the PRD more tightly.
+The distinction between `feature` and `enhancement` matters because
+they have different review weight: a feature adds new product
+surface (heavier review); an enhancement refines an existing one
+(lighter review against the existing PRD).
 
-If the body is genuinely ambiguous between two classifications, prefer
-the one with the higher review bar: `bug` > `enhancement` > `feature` >
-`chore` > `spike`.
+If the body is genuinely ambiguous between two of these, prefer the
+classification that has the higher review bar:
+
+- `bug` over `toil` (a bug means the product has drifted; a toil is
+  preventative maintenance with no observed regression)
+- `feature` over `enhancement` (if the capability is genuinely new,
+  it deserves a fresh PRD)
+- `enhancement` over `toil` (if the change is user-observable, it is
+  not toil)
 
 ---
 
@@ -94,7 +99,7 @@ PRD without guessing. Required fields:
 
 | Field | What counts |
 |---|---|
-| **Problem statement** | At least one sentence stating what is wrong (bug) or what is needed (feature/enhancement/chore/spike) |
+| **Problem statement** | At least one sentence stating what is wrong (bug) or what is needed (toil/enhancement/feature/spike) |
 | **Acceptance criteria** OR **expected behaviour** | At least one bullet, sentence, or list item describing what "done" looks like |
 
 The fields do not need to be labelled with the exact words above — a
@@ -115,7 +120,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/artefact/v1 -->
 ## Issue classification
 
-**Type:** {bug | feature | enhancement | chore | spike}
+**Type:** {bug | toil | enhancement | feature | spike}
 
 **Rationale:** {one or two sentences naming the signals in the body that led to this classification}
 
