@@ -613,6 +613,13 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
 
 STATUS_SH = SUBMODULE_ROOT / ".github/scripts/status.sh"
 
+# Shared agent context — every agent reads this before starting. It
+# distils the principles, lifecycle, status contract, and "must not"
+# rules from the design docs into a single page agents can ingest at
+# runtime. The orchestrator exports its path so agents reference it
+# without hardcoding the location.
+AI_AGILE_CONTEXT = SUBMODULE_ROOT / "ai-agile" / "AGENTS.md"
+
 # Rate-limit pause marker. When the Claude API returns a 429 / usage-limit
 # error, the orchestrator writes this file with a JSON payload describing
 # how long to back off. Subsequent runs check this file before doing
@@ -708,8 +715,16 @@ def invoke_agent(
     # way the same prompt works whether this repo is checked out at the
     # consuming repo's root or as a submodule under it.
     prompt = (
-        f"You are the {agent_def.agent} agent defined in {agent_file}.\n"
-        f"Follow those instructions exactly.\n\n"
+        f"You are the {agent_def.agent} agent defined in {agent_file}.\n\n"
+        f"## Read this first\n"
+        f"Before doing anything else, read the AI Agile shared agent context:\n"
+        f"  {AI_AGILE_CONTEXT}\n"
+        f"It is also exported as $AI_AGILE_CONTEXT in your environment. It\n"
+        f"defines the rules every agent must follow (status contract,\n"
+        f"marker conventions, what you must not do). Your specific prompt\n"
+        f"below assumes you have read it. If anything in your specific\n"
+        f"prompt contradicts the shared context, the shared context wins.\n\n"
+        f"Then follow the instructions in {agent_file} exactly.\n\n"
         f"## Work item\n"
         f"- Repository: {repo}\n"
         f"- {'Issue' if work_item.kind == 'issue' else 'PR'} number: #{work_item.number}\n"
@@ -788,6 +803,7 @@ def invoke_agent(
         **os.environ,
         "STATUS_SH": str(STATUS_SH),
         "AI_AGILE_ROOT": str(SUBMODULE_ROOT),
+        "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO": repo,
         "WORK_ITEM_KIND": work_item.kind,
         "WORK_ITEM_NUMBER": str(work_item.number),

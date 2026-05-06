@@ -180,6 +180,22 @@ Sonnet; deviations should be deliberate.
 The body of the file is plain Markdown. It must contain the following
 sections, in this order, identified by their headers.
 
+### Shared context (read before drafting your own prompt)
+
+The orchestrator injects an instruction into every agent's invocation
+to read [`ai-agile/AGENTS.md`](../../../ai-agile/AGENTS.md) first.
+That file is the runtime distillation of the design (principles,
+status contract, marker conventions, "what you must not do"). Your
+agent prompt does **not** need to repeat any of it — assume the agent
+has read it.
+
+When you write your prompt, focus on what is **specific to this
+agent's job**: its inputs, the work it does, the artefact it
+produces, and the rules that apply just to it. Don't restate the
+status contract, the marker format, the "don't apply gate labels"
+rule, etc. — those are in `AGENTS.md` and adding them to the prompt
+risks drift.
+
 ### Required sections
 
 | Section | Header | Purpose |
