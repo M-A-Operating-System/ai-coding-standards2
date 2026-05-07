@@ -1,0 +1,6 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local Claude Code settings (developer-specific)
+.claude/settings.local.json
