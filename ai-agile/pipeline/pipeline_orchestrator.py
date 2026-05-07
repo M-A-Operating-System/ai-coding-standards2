@@ -471,11 +471,17 @@ def _ensure_audit_log_branch(gh: GitHubClient) -> None:
         "tree": EMPTY_TREE_SHA,
         "parents": [],
     })
-    gh._post(f"/repos/{gh.repo}/git/refs", {
-        "ref": f"refs/heads/{AUDIT_LOG_BRANCH}",
-        "sha": commit["sha"],
-    })
-    log.info("Created orphan audit log branch: %s", AUDIT_LOG_BRANCH)
+    try:
+        gh._post(f"/repos/{gh.repo}/git/refs", {
+            "ref": f"refs/heads/{AUDIT_LOG_BRANCH}",
+            "sha": commit["sha"],
+        })
+        log.info("Created orphan audit log branch: %s", AUDIT_LOG_BRANCH)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 422:
+            log.debug("Audit log branch already exists (concurrent bootstrap); proceeding.")
+        else:
+            raise
 
 
 def write_audit_log(gh: GitHubClient, events: list[dict]) -> None:
@@ -504,7 +510,8 @@ def write_audit_log(gh: GitHubClient, events: list[dict]) -> None:
         path = f"events/{year}/{month}/{day}.jsonl"
         new_lines = "\n".join(json.dumps(e, separators=(",", ":")) for e in date_events) + "\n"
 
-        for attempt in range(4):
+        _AUDIT_MAX_ATTEMPTS = 4
+        for attempt in range(_AUDIT_MAX_ATTEMPTS):
             try:
                 r = gh._request(
                     "GET",
@@ -536,12 +543,21 @@ def write_audit_log(gh: GitHubClient, events: list[dict]) -> None:
                     log.info("Audit log: wrote %d event(s) → %s", len(date_events), path)
                     break
                 elif put_r.status_code == 409:
-                    delay = 2 ** (attempt + 1)
-                    log.warning(
-                        "Audit log write conflict on %s; retrying in %ds (attempt %d/3)",
-                        path, delay, attempt + 1,
-                    )
-                    time.sleep(delay)
+                    if attempt < _AUDIT_MAX_ATTEMPTS - 1:
+                        delay = 2 ** (attempt + 1)
+                        log.warning(
+                            "Audit log write conflict on %s; retrying in %ds"
+                            " (attempt %d/%d)",
+                            path, delay, attempt + 1, _AUDIT_MAX_ATTEMPTS,
+                        )
+                        time.sleep(delay)
+                    else:
+                        log.warning(
+                            "Audit log write conflict on %s; giving up after %d attempts"
+                            " — events dropped",
+                            path, _AUDIT_MAX_ATTEMPTS,
+                        )
+                        break
                 else:
                     put_r.raise_for_status()
                     break
@@ -939,7 +955,7 @@ def invoke_agent(
         f"Agent: {agent_def.agent}\n"
         f"{kind_label}: #{work_item.number} in {repo}\n"
         f"URL: {work_item.url}\n\n"
-        f"Env vars: $STATUS_SH $REPO ${num_var} $AI_AGILE_ROOT\n\n"
+        f"Env vars: $STATUS_SH $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT\n\n"
         f"Call set-complete, set-review, or set-blocked before exiting."
     )
 
