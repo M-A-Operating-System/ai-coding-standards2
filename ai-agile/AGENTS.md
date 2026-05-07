@@ -135,7 +135,7 @@ The full statements and rationale live there.
 | **P-2** One source per concern | Standards live in JSON, the pipeline lives in `pipeline.json`. Don't duplicate facts; reference them by ID. |
 | **P-4** `:wip` is the mutex | If `{your-agent}:wip` is already on the work item when you start, another runner has it — abort. |
 | **P-5** One shippable unit, one PR | Don't open multiple PRs for one issue. Don't conflate two issues into one PR. |
-| **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. For `per_issue` agents it is `ais-v1-{agent}-issue-{number}`; for `global` agents it is `ais-v1-{agent}`. The orchestrator passes it as `--session-id` — you don't compute it. Use `$SESSION_ID` in announcements and Question Cards. |
+| **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. For `per_issue` agents it is `ais-v1-{safe_agent}-issue-{number}`; for `global` agents it is `ais-v1-{safe_agent}`. The orchestrator passes it as `--session-id` — you don't compute it. Use `$SESSION_ID` in announcements and Question Cards. |
 | **P-9** Cross-issue parallel, intra-issue serial | You are not racing other agents on the same issue. You may be racing your siblings on other issues — assume nothing about their state. |
 | **P-10** Agents draft, humans decide | Never approve a gate. Never apply a `*:approved` label. Humans do that; the orchestrator promotes you afterward. |
 | **P-11** Resumable by default | Be idempotent. If you re-run after rejection, edit your previous comment in place — don't post duplicates. |
