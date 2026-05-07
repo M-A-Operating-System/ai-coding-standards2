@@ -133,6 +133,7 @@ class AgentDef:
     human_gate_label: Optional[str]
     description: str
     session_scope: str = "per_issue"   # "per_issue" | "global"
+    session_id_pattern: Optional[str] = None  # None → use built-in default for scope
 
     @property
     def complete_label(self) -> str:
@@ -209,6 +210,7 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             human_gate_label=entry.get("human_gate_label"),
             description=entry["description"],
             session_scope=entry.get("session", {}).get("scope", "per_issue"),
+            session_id_pattern=entry.get("session", {}).get("id_pattern"),
         ))
     return agents
 
@@ -962,12 +964,31 @@ def invoke_agent(
         f"Call set-complete, set-review, or set-blocked before exiting."
     )
 
-    # Build the claude session ID from the agent's configured scope.
-    # "per_issue" — unique session per work item, so each issue gets fresh context.
-    # "global"    — one persistent session for all invocations of this agent,
-    #               letting it accumulate context across issues (e.g. doc reviewers).
+    # Build the claude session ID.
+    # The orchestrator exposes a fixed set of tokens (see docs/product/agile/05-pipeline-config.md
+    # §Session ID tokens) that can be embedded in a pipeline.json id_pattern.
+    # When no id_pattern is set the scope determines the built-in default.
+    owner, _, repo_name = repo.partition("/")
     safe_agent = re.sub(r"[^a-z0-9-]", "-", agent_def.agent.lower()).strip("-")
-    if agent_def.session_scope == "global":
+    safe_phase = re.sub(r"[^a-z0-9-]", "-", agent_def.phase.lower()).strip("-")
+    session_tokens: dict[str, str] = {
+        "agent":     agent_def.agent,
+        "safe_agent": safe_agent,
+        "phase":     agent_def.phase,
+        "safe_phase": safe_phase,
+        "number":    str(work_item.number),
+        "kind":      work_item.kind,
+        "owner":     owner,
+        "repo_name": repo_name,
+        "repo":      repo,
+    }
+    if agent_def.session_id_pattern:
+        try:
+            agent_session_id = agent_def.session_id_pattern.format(**session_tokens)
+        except KeyError as exc:
+            log.warning("Unknown token %s in session id_pattern for %s; using default", exc, agent_def.agent)
+            agent_session_id = f"ais-v1-{safe_agent}-issue-{work_item.number}"
+    elif agent_def.session_scope == "global":
         agent_session_id = f"ais-v1-{safe_agent}"
     else:
         agent_session_id = f"ais-v1-{safe_agent}-issue-{work_item.number}"

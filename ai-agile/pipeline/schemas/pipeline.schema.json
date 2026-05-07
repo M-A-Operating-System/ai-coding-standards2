@@ -85,7 +85,11 @@
             "scope": {
               "type": "string",
               "enum": ["per_issue", "global"],
-              "description": "per_issue — unique session per work item; ID: ais-v1-{agent}-issue-{number}. global — one persistent session for all invocations of this agent; ID: ais-v1-{agent}. Use global for agents that benefit from accumulated context across issues (e.g. doc reviewers)."
+              "description": "per_issue — unique session per work item; default ID: ais-v1-{safe_agent}-issue-{number}. global — one persistent session for all invocations of this agent; default ID: ais-v1-{safe_agent}. Use global for agents that benefit from accumulated context across issues (e.g. doc reviewers)."
+            },
+            "id_pattern": {
+              "type": "string",
+              "description": "Optional Python str.format() pattern for the session ID. Available tokens: {agent}, {safe_agent}, {phase}, {safe_phase}, {number}, {kind}, {owner}, {repo_name}, {repo}. When omitted the built-in default for the chosen scope is used. See docs/product/agile/05-pipeline-config.md §Session ID tokens."
             }
           }
         },
