@@ -10,6 +10,7 @@ description: >
   PRD comment. Waits for the prd:approved gate.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
+max_turns: 25
 ---
 
 # 01_product_docs/prd-writer
