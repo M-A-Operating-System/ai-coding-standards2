@@ -7,7 +7,7 @@ description: >
   corrective comment so the stakeholder can fix the issue and
   re-trigger the pipeline by removing the failed label.
 tools: [Bash, Read]
-model: claude-haiku-4-5-20251001
+model: claude-sonnet-4-6
 max_turns: 8
 ---
 
@@ -40,7 +40,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-01_product_docs/issue-classifier",
+  "session_id": "${SESSION_ID}",
   "agent": "01_product_docs/issue-classifier",
   "phase": "start",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -144,7 +144,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-01_product_docs/issue-classifier",
+  "session_id": "${SESSION_ID}",
   "agent": "01_product_docs/issue-classifier",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -196,7 +196,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-01_product_docs/issue-classifier",
+  "session_id": "${SESSION_ID}",
   "agent": "01_product_docs/issue-classifier",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",

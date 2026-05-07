@@ -135,7 +135,7 @@ The full statements and rationale live there.
 | **P-2** One source per concern | Standards live in JSON, the pipeline lives in `pipeline.json`. Don't duplicate facts; reference them by ID. |
 | **P-4** `:wip` is the mutex | If `{your-agent}:wip` is already on the work item when you start, another runner has it — abort. |
 | **P-5** One shippable unit, one PR | Don't open multiple PRs for one issue. Don't conflate two issues into one PR. |
-| **P-7** One session per (object, agent) | Your session ID is `ais-v1-{kind}-{id}-{your-agent}`. Stable across re-runs. Use it in announcements and Question Cards. |
+| **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. For `per_issue` agents it is `ais-v1-{agent}-issue-{number}`; for `global` agents it is `ais-v1-{agent}`. The orchestrator passes it as `--session-id` — you don't compute it. Use `$SESSION_ID` in announcements and Question Cards. |
 | **P-9** Cross-issue parallel, intra-issue serial | You are not racing other agents on the same issue. You may be racing your siblings on other issues — assume nothing about their state. |
 | **P-10** Agents draft, humans decide | Never approve a gate. Never apply a `*:approved` label. Humans do that; the orchestrator promotes you afterward. |
 | **P-11** Resumable by default | Be idempotent. If you re-run after rejection, edit your previous comment in place — don't post duplicates. |
@@ -239,6 +239,21 @@ Environment variables the orchestrator exports for you:
 | `PR_NUMBER` | Set when the work item is a PR |
 | `WORK_ITEM_KIND` | `issue` or `pr` |
 | `WORK_ITEM_NUMBER` | Numeric ID, regardless of kind |
+| `SESSION_ID` | The claude CLI session ID this invocation was started with. Use it in `session_id` fields of announcement/artefact JSON so runs are traceable. |
+| `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
+
+### Session scopes
+
+Every agent run is started by the orchestrator with `claude --session-id $SESSION_ID`.
+The scope controls whether that ID is stable across issues or unique per issue:
+
+| Scope | Session ID format | When to use |
+|---|---|---|
+| `per_issue` | `ais-v1-{agent}-issue-{number}` | Agents that work on one issue at a time and need no memory of other issues. Default for most agents. |
+| `global` | `ais-v1-{agent}` | Agents that benefit from accumulated context across all issues — e.g. doc reviewers that build up knowledge of the full `docs/product/` tree. |
+
+The scope for each agent is configured in `ai-agile/pipeline/pipeline.json` under
+`"session": {"scope": "..."}`. The default when omitted is `per_issue`.
 
 ---
 

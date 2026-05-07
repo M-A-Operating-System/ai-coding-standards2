@@ -132,6 +132,7 @@ class AgentDef:
     human_gate_after: bool
     human_gate_label: Optional[str]
     description: str
+    session_scope: str = "per_issue"   # "per_issue" | "global"
 
     @property
     def complete_label(self) -> str:
@@ -207,6 +208,7 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             human_gate_after=entry.get("human_gate_after", False),
             human_gate_label=entry.get("human_gate_label"),
             description=entry["description"],
+            session_scope=entry.get("session", {}).get("scope", "per_issue"),
         ))
     return agents
 
@@ -955,18 +957,30 @@ def invoke_agent(
         f"Agent: {agent_def.agent}\n"
         f"{kind_label}: #{work_item.number} in {repo}\n"
         f"URL: {work_item.url}\n\n"
-        f"Env vars: $STATUS_SH $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT\n\n"
+        f"Env vars: $STATUS_SH $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT "
+        f"$SESSION_ID $SESSION_SCOPE\n\n"
         f"Call set-complete, set-review, or set-blocked before exiting."
     )
 
+    # Build the claude session ID from the agent's configured scope.
+    # "per_issue" — unique session per work item, so each issue gets fresh context.
+    # "global"    — one persistent session for all invocations of this agent,
+    #               letting it accumulate context across issues (e.g. doc reviewers).
+    safe_agent = re.sub(r"[^a-z0-9-]", "-", agent_def.agent.lower()).strip("-")
+    if agent_def.session_scope == "global":
+        agent_session_id = f"ais-v1-{safe_agent}"
+    else:
+        agent_session_id = f"ais-v1-{safe_agent}-issue-{work_item.number}"
+
     if dry_run:
         log.info(
-            "    [DRY RUN] %s | model: %s | max_turns: %d | prompt: %d chars",
-            agent_def.agent, agent_model or "default", max_turns, len(prompt),
+            "    [DRY RUN] %s | model: %s | max_turns: %d | session: %s | prompt: %d chars",
+            agent_def.agent, agent_model or "default", max_turns, agent_session_id, len(prompt),
         )
         return AgentRunResult(success=True)
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
+    log.info("    session: %s (scope=%s)", agent_session_id, agent_def.session_scope)
     if agent_model:
         log.debug("    model: %s", agent_model)
     if extra_tools:
@@ -1002,6 +1016,7 @@ def invoke_agent(
         "claude",
         "--allowedTools", ",".join(base_tools + extra_tools),
         "--max-turns", str(max_turns),
+        "--session-id", agent_session_id,
     ]
     if agent_model:
         cmd += ["--model", agent_model]
@@ -1019,6 +1034,8 @@ def invoke_agent(
         "REPO": repo,
         "WORK_ITEM_KIND": work_item.kind,
         "WORK_ITEM_NUMBER": str(work_item.number),
+        "SESSION_ID": agent_session_id,
+        "SESSION_SCOPE": agent_def.session_scope,
     }
     if work_item.kind == "issue":
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
