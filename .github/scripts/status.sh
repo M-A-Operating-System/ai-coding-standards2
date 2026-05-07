@@ -249,19 +249,96 @@ status_bootstrap_all() {
   fi
 
   local agents
-  agents=$(python3 -c "
+  # Pass the path as argv[1] — never interpolate it into Python source code.
+  agents=$(python3 - "$pipeline" <<'PYEOF'
 import json, sys
-with open('$pipeline') as f:
+with open(sys.argv[1]) as f:
     data = json.load(f)
 for a in data['pipeline']:
     print(a['agent'])
-")
+PYEOF
+)
 
   echo "Bootstrapping labels for all pipeline agents in $repo"
   while IFS= read -r agent; do
     status_bootstrap_agent "$agent" "$repo"
   done <<< "$agents"
   echo "All agents bootstrapped."
+}
+
+# Prune: delete repo labels that match the {agent}:{status} pattern but whose
+# agent is no longer in pipeline.json.  Safe to run after renaming or removing
+# agents — it never touches labels that aren't pipeline-style labels.
+status_prune() {
+  # Usage: status_prune [pipeline.json path] [--dry-run]
+  # Flags may appear in any order; --dry-run is not positional.
+  local pipeline="" dry_run=""
+  local positional=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) dry_run="yes"; shift ;;
+      *) positional+=("$1"); shift ;;
+    esac
+  done
+
+  pipeline="${positional[0]:-$(dirname "$0")/../../ai-agile/pipeline/pipeline.json}"
+  local repo="${positional[1]:-$(_repo)}"
+
+  if ! command -v python3 &>/dev/null; then
+    echo "ERROR: python3 required for status_prune" >&2
+    exit 1
+  fi
+
+  # Build the set of valid labels from the current pipeline.json.
+  # Pass the path as argv[1] — never interpolate it into Python source code.
+  local valid_labels
+  valid_labels=$(python3 - "$pipeline" <<'PYEOF'
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+statuses = ['wip', 'complete', 'review', 'blocked', 'failed', 'skipped']
+for step in data['pipeline']:
+    agent = step['agent']
+    for s in statuses:
+        print(f'{agent}:{s}')
+PYEOF
+)
+
+  # Fetch all repo labels whose names end in a known status suffix
+  local all_labels
+  all_labels=$(gh label list --repo "$repo" --json name --limit 500 -q '.[].name' 2>/dev/null \
+    | grep -E ':(wip|complete|review|blocked|failed|skipped)$' || true)
+
+  if [ -z "$all_labels" ]; then
+    echo "No pipeline-style labels found in $repo — nothing to prune."
+    return 0
+  fi
+
+  [ -n "$dry_run" ] && echo "(dry run — no labels will be deleted)"
+
+  echo "Scanning pipeline labels in $repo..."
+  local pruned=0
+  while IFS= read -r label; do
+    if ! echo "$valid_labels" | grep -qxF "$label"; then
+      if [ -n "$dry_run" ]; then
+        echo "  WOULD DELETE  $label"
+      else
+        echo "  DELETE  $label"
+        gh label delete "$label" --repo "$repo" --yes 2>/dev/null \
+          || echo "  (skipped — label may be in use or already gone: $label)"
+      fi
+      pruned=$((pruned + 1))
+    fi
+  done <<< "$all_labels"
+
+  if [ "$pruned" -eq 0 ]; then
+    echo "All pipeline labels are up to date — nothing to prune."
+  else
+    local verb="Pruned"
+    [ -n "$dry_run" ] && verb="Would prune"
+    echo "$verb $pruned stale label(s)."
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -286,6 +363,7 @@ Commands:
   show         <number>                           Show all agent statuses on an item
   bootstrap    <agent>                            Create all status labels for one agent
   bootstrap-all [pipeline.json]                   Create all labels for all pipeline agents
+  prune        [pipeline.json] [--dry-run]        Delete labels for agents removed from the pipeline
 
 Options:
   --repo OWNER/REPO    GitHub repository (default: $GITHUB_REPOSITORY or gh default)
@@ -307,6 +385,8 @@ Examples:
   status.sh set-skipped  adr-proposer 42 "No ADR-worthy decisions identified"
   status.sh show         42
   status.sh bootstrap-all
+  status.sh prune
+  status.sh prune ai-agile/pipeline/pipeline.json --dry-run
 USAGE
 }
 
@@ -333,7 +413,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     set-skipped)  status_set_skipped  "${2:?agent required}" "${3:?number required}" "${4:-}" ;;
     show)         status_show         "${2:?number required}" ;;
     bootstrap)    status_bootstrap_agent "${2:?agent required}" ;;
-    bootstrap-all) status_bootstrap_all "${2:-}" ;;
+    bootstrap-all) status_bootstrap_all "${@:2}" ;;
+    prune)        status_prune "${@:2}" ;;
     help|--help|-h) _usage ;;
     *) echo "Unknown command: $cmd"; echo ""; _usage; exit 1 ;;
   esac

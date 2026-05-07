@@ -125,6 +125,23 @@ jobs:
           python ai-coding-standards2/ai-agile/pipeline/pipeline_orchestrator.py \\
             --repo "$GITHUB_REPOSITORY" \\
             ${{ steps.args.outputs.args }}
+
+  bootstrap-labels:
+    name: Bootstrap pipeline labels
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Bootstrap labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \\
+            ai-coding-standards2/ai-agile/pipeline/pipeline.json
 """
 
 
@@ -249,6 +266,22 @@ def install_orchestrator_workflow(
     return write_file(dst, ORCHESTRATOR_WORKFLOW_TEMPLATE, force, dry_run)
 
 
+def install_label_cleanup_workflow(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> bool:
+    """Copy label-cleanup.yml into the consuming repo with paths rewritten."""
+    src = SUBMODULE_ROOT / ".github" / "workflows" / "label-cleanup.yml"
+    dst = consuming_root / ".github" / "workflows" / "label-cleanup.yml"
+    if not src.exists():
+        print(f"  SKIP   label-cleanup workflow  ({src} missing)")
+        return False
+    print(f"  Label-cleanup workflow: → {dst}")
+    content = rewrite_paths(src.read_text())
+    return write_file(dst, content, force, dry_run)
+
+
 def install_local_settings(
     consuming_root: Path,
     force: bool,
@@ -278,19 +311,24 @@ def print_followup(consuming_root: Path) -> None:
     print()
     print("Done. Next steps:")
     print()
-    print(f"  1. Add ANTHROPIC_API_KEY to your repo secrets:")
-    print(f"     Settings → Secrets and variables → Actions → New repository secret")
+    print(f"  1. Add secrets to your repo (Settings → Secrets → Actions):")
+    print(f"       ANTHROPIC_API_KEY  — your Anthropic API key")
+    print(f"       AI_AGILE_BOT_TOKEN — a GitHub PAT for the bot account")
     print()
-    print(f"  2. Bootstrap the {{agent}}:{{status}} labels in this repo:")
-    print(
-        f"     bash {SUBMODULE_NAME}/.github/scripts/status.sh bootstrap-all "
-        f"{SUBMODULE_NAME}/ai-agile/pipeline/pipeline.json"
-    )
-    print()
-    print(f"  3. Commit the new files:")
-    rel = lambda p: p.relative_to(consuming_root)
-    print(f"     git add .github/workflows/orchestrator.yml .claude/")
+    print(f"  2. Commit the new files:")
+    print(f"     git add .github/workflows/orchestrator.yml \\")
+    print(f"             .github/workflows/label-cleanup.yml \\")
+    print(f"             .claude/")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
+    print()
+    print(f"  3. Bootstrap the {{agent}}:{{status}} labels:")
+    print(f"     Trigger the orchestrator workflow manually once from")
+    print(f"     Actions → AI Agile orchestrator → Run workflow.")
+    print(f"     The bootstrap-labels job runs automatically on workflow_dispatch")
+    print(f"     and creates all required labels in one step.")
+    print()
+    print(f"     (Or run locally: bash {SUBMODULE_NAME}/.github/scripts/status.sh")
+    print(f"      bootstrap-all {SUBMODULE_NAME}/ai-agile/pipeline/pipeline.json)")
     print()
     print(f"  4. Open a test issue with a problem statement and acceptance criteria.")
     print(f"     The orchestrator workflow fires on issue-opened; expect")
@@ -326,6 +364,7 @@ def main() -> int:
     print()
 
     install_orchestrator_workflow(consuming_root, args.force, args.dry_run)
+    install_label_cleanup_workflow(consuming_root, args.force, args.dry_run)
     install_slash_commands(consuming_root, args.force, args.dry_run)
     install_local_settings(consuming_root, args.force, args.dry_run)
 

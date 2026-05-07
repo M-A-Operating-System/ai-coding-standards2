@@ -76,6 +76,23 @@
           "type": "string",
           "description": "Required when human_gate_after is true."
         },
+        "session": {
+          "type": "object",
+          "description": "Session management configuration for this agent. Controls whether the claude CLI is invoked with a per-issue session ID or a single shared session ID across all issues.",
+          "additionalProperties": false,
+          "required": ["scope"],
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": ["per_issue", "global"],
+              "description": "per_issue — unique session per work item; default ID: ais-v1-{safe_agent}-issue-{number}. global — one persistent session for all invocations of this agent; default ID: ais-v1-{safe_agent}. Use global for agents that benefit from accumulated context across issues (e.g. doc reviewers)."
+            },
+            "id_pattern": {
+              "type": "string",
+              "description": "Optional token pattern for the session ID. Available tokens: {agent}, {safe_agent}, {phase}, {safe_phase}, {number}, {kind}, {owner}, {repo_name}, {safe_repo}. Only bare {identifier} placeholders are allowed — attribute/index access is rejected. When omitted the built-in default for the chosen scope is used. See docs/product/agile/05-pipeline-config.md §Session ID tokens."
+            }
+          }
+        },
         "description": {
           "type": "string",
           "minLength": 1

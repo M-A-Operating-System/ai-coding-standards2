@@ -43,6 +43,7 @@ For each agent, exactly these facts:
 | `human_gate_after` | yes | Boolean — is there a human gate after this agent? |
 | `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are NOT phase-prefixed — they are short and stable (e.g. `prd:approved`, `pr:approved`). |
 | `description` | yes | One-sentence statement of what the agent owns |
+| `session` | no | Session management config (see [§ Session management](#session-management) below) |
 
 Anything else about an agent — its prompt, its tools, its model — lives
 in `.github/agents/{phase}/{short-name}.md`, not in `pipeline.json`.
@@ -138,6 +139,109 @@ Removing an agent is rare. The process:
 The audit log branch retains the agent's history. The label set on
 closed issues retains the agent's `:complete` markers. Nothing is
 rewritten.
+
+---
+
+## Session management
+
+Each agent in `pipeline.json` may carry an optional `session` object that
+controls how the orchestrator assigns a `--session-id` when it invokes the
+`claude` CLI.
+
+```json
+"session": {
+  "scope": "per_issue",
+  "id_pattern": "ais-v1-{safe_agent}-issue-{number}"
+}
+```
+
+### Fields
+
+| Field | Required | Default | Meaning |
+|---|---|---|---|
+| `scope` | yes | — | `per_issue` — a distinct session for each work item. `global` — one persistent session shared across every invocation of this agent. |
+| `id_pattern` | no | Built-in default for `scope` (see below) | A Python `str.format()` pattern built from the tokens listed in [§ Session ID tokens](#session-id-tokens). |
+
+### Built-in defaults
+
+When `id_pattern` is omitted the orchestrator derives the ID from the scope:
+
+| Scope | Default session ID |
+|---|---|
+| `per_issue` | `ais-v1-{safe_agent}-issue-{number}` |
+| `global` | `ais-v1-{safe_agent}` |
+
+### When to use `global`
+
+Use `global` for agents that accumulate useful context across issues — for
+example, a doc-reviewer that builds up an internal model of the full
+`docs/product/` tree. Those agents should be **idempotent** (P-11): they
+start each run by re-reading the relevant source, using the session only to
+carry learned heuristics, not as the source of truth.
+
+### Session ID tokens
+
+The following tokens are available in `id_pattern`. They are substituted by
+the orchestrator before the `claude` CLI is invoked. The same values are
+exported as `SESSION_ID` and `SESSION_SCOPE` environment variables so agent
+prompt code can reference them in announcement JSON.
+
+| Token | Type | Example value | Source |
+|---|---|---|---|
+| `{agent}` | string | `01_product_docs/prd-writer` | Full agent name from `pipeline.json` |
+| `{safe_agent}` | string | `01-product-docs-prd-writer` | `{agent}` with every non-`[a-z0-9]` char replaced by `-` |
+| `{phase}` | string | `01_product_docs` | Phase field from `pipeline.json` |
+| `{safe_phase}` | string | `01-product-docs` | `{phase}` normalised the same way as `{safe_agent}` |
+| `{number}` | integer | `42` | Work item number (issue or PR) |
+| `{kind}` | string | `issue` or `pr` | Work item type |
+| `{owner}` | string | `m-a-operating-system` | GitHub organisation or user name |
+| `{repo_name}` | string | `ai-coding-standards2` | Repository name without owner |
+| `{safe_repo}` | string | `m-a-operating-system-ai-coding-standards2` | Full `owner/repo` with every non-`[a-z0-9]` char replaced by `-` |
+
+> **Note:** `{repo}` (with the `/`) is not a token. It contains a slash which is
+> invalid in a session ID. Use `{safe_repo}` for a normalised form, or compose
+> `{owner}` and `{repo_name}` separately.
+>
+> Only bare `{identifier}` placeholders are accepted. Patterns containing
+> attribute access (`{x.y}`) or index access (`{x[y]}`) are rejected at
+> runtime and will fall back to the scope default.
+
+### Examples
+
+```json
+// Per-issue, default pattern (no id_pattern needed)
+"session": { "scope": "per_issue" }
+// → ais-v1-01-product-docs-prd-writer-issue-42
+
+// Global doc-reviewer session shared across all issues (no per-issue token)
+"session": { "scope": "global" }
+// → ais-v1-01-product-docs-prd-docs-updater
+
+// Custom: namespace by repo in a multi-repo setup
+"session": {
+  "scope": "per_issue",
+  "id_pattern": "ais-v1-{safe_agent}-{repo_name}-issue-{number}"
+}
+// → ais-v1-01-product-docs-prd-writer-ai-coding-standards2-issue-42
+
+// Custom: one shared session per phase across all issues
+"session": {
+  "scope": "global",
+  "id_pattern": "ais-v1-{safe_phase}"
+}
+// → ais-v1-01-product-docs
+```
+
+### Constraints
+
+- Session IDs must match `[a-z0-9][a-z0-9-]*[a-z0-9]`. The orchestrator
+  sanitises the rendered value (replacing invalid chars with `-`) and logs
+  a warning if it had to, so custom literal strings in `id_pattern` are
+  your responsibility. Prefer the `{safe_*}` tokens for user-controlled names.
+- `{title}` is deliberately **not** a token. Issue titles are
+  human-authored, may contain special characters, and change over time —
+  all three properties make them unsafe for session ID construction.
+- `{url}` is also excluded — it contains slashes and percent-encoded chars.
 
 ---
 

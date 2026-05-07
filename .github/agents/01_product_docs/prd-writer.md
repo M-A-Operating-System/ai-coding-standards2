@@ -42,7 +42,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 01_product_docs/prd-writer -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-01_product_docs/prd-writer",
+  "session_id": "${SESSION_ID}",
   "agent": "01_product_docs/prd-writer",
   "phase": "start",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -315,7 +315,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 01_product_docs/prd-writer -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-01_product_docs/prd-writer",
+  "session_id": "${SESSION_ID}",
   "agent": "01_product_docs/prd-writer",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -393,7 +393,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 01_product_docs/prd-writer -->
 \`\`\`json
 {
-  "session_id": "ais-v1-iss-${ISSUE_NUMBER}-01_product_docs/prd-writer",
+  "session_id": "${SESSION_ID}",
   "agent": "01_product_docs/prd-writer",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",

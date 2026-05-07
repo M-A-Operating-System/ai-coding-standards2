@@ -132,6 +132,8 @@ class AgentDef:
     human_gate_after: bool
     human_gate_label: Optional[str]
     description: str
+    session_scope: str = "per_issue"   # "per_issue" | "global"
+    session_id_pattern: Optional[str] = None  # None → use built-in default for scope
 
     @property
     def complete_label(self) -> str:
@@ -207,6 +209,8 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             human_gate_after=entry.get("human_gate_after", False),
             human_gate_label=entry.get("human_gate_label"),
             description=entry["description"],
+            session_scope=entry.get("session", {}).get("scope", "per_issue"),
+            session_id_pattern=entry.get("session", {}).get("id_pattern"),
         ))
     return agents
 
@@ -955,18 +959,93 @@ def invoke_agent(
         f"Agent: {agent_def.agent}\n"
         f"{kind_label}: #{work_item.number} in {repo}\n"
         f"URL: {work_item.url}\n\n"
-        f"Env vars: $STATUS_SH $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT\n\n"
+        f"Env vars: $STATUS_SH $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT "
+        f"$SESSION_ID $SESSION_SCOPE\n\n"
         f"Call set-complete, set-review, or set-blocked before exiting."
     )
 
+    # Build the claude session ID.
+    # The orchestrator exposes a fixed set of tokens (see docs/product/agile/05-pipeline-config.md
+    # §Session ID tokens) that can be embedded in a pipeline.json id_pattern.
+    # When no id_pattern is set the scope determines the built-in default.
+    owner, _, repo_name = repo.partition("/")
+    safe_agent = re.sub(r"[^a-z0-9-]", "-", agent_def.agent.lower()).strip("-")
+    safe_phase = re.sub(r"[^a-z0-9-]", "-", agent_def.phase.lower()).strip("-")
+    safe_repo  = re.sub(r"[^a-z0-9-]", "-", repo.lower()).strip("-")
+    session_tokens: dict[str, str] = {
+        "agent":      agent_def.agent,
+        "safe_agent": safe_agent,
+        "phase":      agent_def.phase,
+        "safe_phase": safe_phase,
+        "number":     str(work_item.number),
+        "kind":       work_item.kind,
+        "owner":      owner,
+        "repo_name":  repo_name,
+        "safe_repo":  safe_repo,
+        # NOTE: {repo} is intentionally omitted — it contains a '/' which is
+        # invalid in a session ID. Use {owner}, {repo_name}, or {safe_repo}.
+    }
+
+    def _scope_default() -> str:
+        if agent_def.session_scope == "global":
+            return f"ais-v1-{safe_agent}"
+        return f"ais-v1-{safe_agent}-issue-{work_item.number}"
+
+    def _render_pattern(pattern: str) -> str:
+        """Substitute {token} placeholders safely.
+
+        Only bare {identifier} forms are allowed. Patterns containing
+        attribute access ({x.y}) or index access ({x[y]}) are rejected
+        to prevent callers from extracting internal object attributes via
+        Python's str.format() mini-language.
+        """
+        if re.search(r"\{[^}]*[.\[]", pattern):
+            raise ValueError(
+                f"id_pattern for {agent_def.agent!r} contains unsafe "
+                f"attribute or index access: {pattern!r}"
+            )
+        # Substitute only known bare tokens; raise KeyError for unknown ones.
+        _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+        def _replace(m: re.Match) -> str:
+            key = m.group(1)
+            if key not in session_tokens:
+                raise KeyError(key)
+            return session_tokens[key]
+        return _tok_re.sub(_replace, pattern)
+
+    if agent_def.session_id_pattern:
+        try:
+            agent_session_id = _render_pattern(agent_def.session_id_pattern)
+        except (KeyError, ValueError) as exc:
+            log.warning(
+                "Bad id_pattern for %s (%s); falling back to scope default",
+                agent_def.agent, exc,
+            )
+            agent_session_id = _scope_default()
+    else:
+        agent_session_id = _scope_default()
+
+    # Sanitise: session IDs must match [a-z0-9][a-z0-9-]*[a-z0-9].
+    # If the rendered ID contains invalid characters (e.g. from a custom
+    # literal in id_pattern) normalise rather than fail hard.
+    _sid_re = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    if not _sid_re.match(agent_session_id):
+        sanitised = re.sub(r"[^a-z0-9-]", "-", agent_session_id.lower()).strip("-")
+        log.warning(
+            "Session ID %r for %s contains invalid chars; sanitised to %r",
+            agent_session_id, agent_def.agent, sanitised,
+        )
+        agent_session_id = sanitised
+
     if dry_run:
         log.info(
-            "    [DRY RUN] %s | model: %s | max_turns: %d | prompt: %d chars",
-            agent_def.agent, agent_model or "default", max_turns, len(prompt),
+            "    [DRY RUN] %s | model: %s | max_turns: %d | session: %s | prompt: %d chars",
+            agent_def.agent, agent_model or "default", max_turns, agent_session_id, len(prompt),
         )
         return AgentRunResult(success=True)
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
+    log.info("    session: %s (scope=%s)", agent_session_id, agent_def.session_scope)
     if agent_model:
         log.debug("    model: %s", agent_model)
     if extra_tools:
@@ -1002,6 +1081,7 @@ def invoke_agent(
         "claude",
         "--allowedTools", ",".join(base_tools + extra_tools),
         "--max-turns", str(max_turns),
+        "--session-id", agent_session_id,
     ]
     if agent_model:
         cmd += ["--model", agent_model]
@@ -1019,6 +1099,8 @@ def invoke_agent(
         "REPO": repo,
         "WORK_ITEM_KIND": work_item.kind,
         "WORK_ITEM_NUMBER": str(work_item.number),
+        "SESSION_ID": agent_session_id,
+        "SESSION_SCOPE": agent_def.session_scope,
     }
     if work_item.kind == "issue":
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
