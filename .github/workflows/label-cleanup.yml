@@ -1,0 +1,39 @@
+name: Label cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — show what would be deleted without deleting'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  prune-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Prune stale pipeline labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          ARGS=(ai-agile/pipeline/pipeline.json)
+          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS+=(--dry-run)
+          bash .github/scripts/status.sh prune "${ARGS[@]}"
+
+      - name: Bootstrap correct labels
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          bash .github/scripts/status.sh bootstrap-all \
+            ai-agile/pipeline/pipeline.json

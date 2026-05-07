@@ -1,0 +1,46 @@
+{
+  "$schema": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
+  "pipeline": [
+
+    {
+      "agent": "01_product_docs/issue-classifier",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "event": "issue.opened"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "session": { "scope": "per_issue" },
+      "description": "Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment."
+    },
+
+    {
+      "agent": "01_product_docs/prd-writer",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "01_product_docs/issue-classifier:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "prd:approved",
+      "dependencies": ["01_product_docs/issue-classifier"],
+      "session": { "scope": "per_issue" },
+      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Posts it as an issue comment in user-story + Gherkin format and waits for stakeholder approval at the prd:approved gate. Folds in product-standards-checker (per roadmap MVP merges): inline-flags any product-layer standards violations in the same PRD comment. Set-blocks oversized issues with a decomposition note rather than drafting a sprawling PRD."
+    },
+
+    {
+      "agent": "01_product_docs/prd-docs-updater",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "01_product_docs/prd-writer:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["01_product_docs/prd-writer"],
+      "session": { "scope": "global" },
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating to reflect new or changed user-observable behaviour, creates a branch, commits the changes, opens a PR ready for human review, and links it on the issue. Completes immediately so the pipeline can advance; doc review runs in parallel. If no updates are needed, posts a confirmation comment."
+    }
+
+  ]
+}
