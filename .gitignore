@@ -19,3 +19,6 @@ venv/
 # Written when an Anthropic rate limit is hit; consumed on subsequent
 # ticks to back off. Should never be committed.
 .pipeline-pause
+
+# Local Claude Code settings (developer-specific)
+.claude/settings.local.json
