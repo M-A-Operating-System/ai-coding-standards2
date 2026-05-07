@@ -7,7 +7,7 @@ description: >
   corrective comment so the stakeholder can fix the issue and
   re-trigger the pipeline by removing the failed label.
 tools: [Bash, Read]
-model: claude-sonnet-4-6
+model: claude-haiku-4-5-20251001
 max_turns: 8
 ---
 
