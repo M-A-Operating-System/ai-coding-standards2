@@ -249,11 +249,13 @@ The scope controls whether that ID is stable across issues or unique per issue:
 
 | Scope | Session ID format | When to use |
 |---|---|---|
-| `per_issue` | `ais-v1-{agent}-issue-{number}` | Agents that work on one issue at a time and need no memory of other issues. Default for most agents. |
-| `global` | `ais-v1-{agent}` | Agents that benefit from accumulated context across all issues — e.g. doc reviewers that build up knowledge of the full `docs/product/` tree. |
+| `per_issue` | `ais-v1-{safe_agent}-issue-{number}` | Agents that work on one issue at a time and need no memory of other issues. Default for most agents. |
+| `global` | `ais-v1-{safe_agent}` | Agents that benefit from accumulated context across all issues — e.g. doc reviewers that build up knowledge of the full `docs/product/` tree. |
 
 The scope for each agent is configured in `ai-agile/pipeline/pipeline.json` under
 `"session": {"scope": "..."}`. The default when omitted is `per_issue`.
+Custom session ID patterns can be set via `"session": {"scope": "...", "id_pattern": "..."}`;
+see `docs/product/agile/05-pipeline-config.md §Session ID tokens` for available tokens.
 
 ---
 

@@ -9,6 +9,7 @@ on:
         default: true
 
 permissions:
+  contents: read
   issues: write
 
 jobs:
@@ -24,11 +25,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          DRY=""
-          [ "${{ github.event.inputs.dry_run }}" = "true" ] && DRY="--dry-run"
-          bash .github/scripts/status.sh prune \
-            ai-agile/pipeline/pipeline.json \
-            $DRY
+          ARGS=(ai-agile/pipeline/pipeline.json)
+          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS+=(--dry-run)
+          bash .github/scripts/status.sh prune "${ARGS[@]}"
 
       - name: Bootstrap correct labels
         if: ${{ github.event.inputs.dry_run != 'true' }}

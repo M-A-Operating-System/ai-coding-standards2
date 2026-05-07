@@ -249,13 +249,15 @@ status_bootstrap_all() {
   fi
 
   local agents
-  agents=$(python3 -c "
+  # Pass the path as argv[1] — never interpolate it into Python source code.
+  agents=$(python3 - "$pipeline" <<'PYEOF'
 import json, sys
-with open('$pipeline') as f:
+with open(sys.argv[1]) as f:
     data = json.load(f)
 for a in data['pipeline']:
     print(a['agent'])
-")
+PYEOF
+)
 
   echo "Bootstrapping labels for all pipeline agents in $repo"
   while IFS= read -r agent; do
@@ -268,28 +270,40 @@ for a in data['pipeline']:
 # agent is no longer in pipeline.json.  Safe to run after renaming or removing
 # agents — it never touches labels that aren't pipeline-style labels.
 status_prune() {
-  # Usage: status_prune [pipeline.json path] [repo] [--dry-run]
-  local pipeline="${1:-$(dirname "$0")/../../ai-agile/pipeline/pipeline.json}"
-  local repo="${2:-$(_repo)}"
-  local dry_run="${3:-}"
+  # Usage: status_prune [pipeline.json path] [--dry-run]
+  # Flags may appear in any order; --dry-run is not positional.
+  local pipeline="" dry_run=""
+  local positional=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) dry_run="yes"; shift ;;
+      *) positional+=("$1"); shift ;;
+    esac
+  done
+
+  pipeline="${positional[0]:-$(dirname "$0")/../../ai-agile/pipeline/pipeline.json}"
+  local repo="${positional[1]:-$(_repo)}"
 
   if ! command -v python3 &>/dev/null; then
     echo "ERROR: python3 required for status_prune" >&2
     exit 1
   fi
 
-  # Build the set of valid labels from the current pipeline.json
+  # Build the set of valid labels from the current pipeline.json.
+  # Pass the path as argv[1] — never interpolate it into Python source code.
   local valid_labels
-  valid_labels=$(python3 -c "
-import json
-with open('$pipeline') as f:
+  valid_labels=$(python3 - "$pipeline" <<'PYEOF'
+import json, sys
+with open(sys.argv[1]) as f:
     data = json.load(f)
 statuses = ['wip', 'complete', 'review', 'blocked', 'failed', 'skipped']
 for step in data['pipeline']:
     agent = step['agent']
     for s in statuses:
         print(f'{agent}:{s}')
-")
+PYEOF
+)
 
   # Fetch all repo labels whose names end in a known status suffix
   local all_labels
@@ -399,8 +413,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     set-skipped)  status_set_skipped  "${2:?agent required}" "${3:?number required}" "${4:-}" ;;
     show)         status_show         "${2:?number required}" ;;
     bootstrap)    status_bootstrap_agent "${2:?agent required}" ;;
-    bootstrap-all) status_bootstrap_all "${2:-}" ;;
-    prune)        status_prune "${2:-}" "${3:-}" "${4:-}" ;;
+    bootstrap-all) status_bootstrap_all "${@:2}" ;;
+    prune)        status_prune "${@:2}" ;;
     help|--help|-h) _usage ;;
     *) echo "Unknown command: $cmd"; echo ""; _usage; exit 1 ;;
   esac

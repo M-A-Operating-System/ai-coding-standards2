@@ -971,27 +971,71 @@ def invoke_agent(
     owner, _, repo_name = repo.partition("/")
     safe_agent = re.sub(r"[^a-z0-9-]", "-", agent_def.agent.lower()).strip("-")
     safe_phase = re.sub(r"[^a-z0-9-]", "-", agent_def.phase.lower()).strip("-")
+    safe_repo  = re.sub(r"[^a-z0-9-]", "-", repo.lower()).strip("-")
     session_tokens: dict[str, str] = {
-        "agent":     agent_def.agent,
+        "agent":      agent_def.agent,
         "safe_agent": safe_agent,
-        "phase":     agent_def.phase,
+        "phase":      agent_def.phase,
         "safe_phase": safe_phase,
-        "number":    str(work_item.number),
-        "kind":      work_item.kind,
-        "owner":     owner,
-        "repo_name": repo_name,
-        "repo":      repo,
+        "number":     str(work_item.number),
+        "kind":       work_item.kind,
+        "owner":      owner,
+        "repo_name":  repo_name,
+        "safe_repo":  safe_repo,
+        # NOTE: {repo} is intentionally omitted — it contains a '/' which is
+        # invalid in a session ID. Use {owner}, {repo_name}, or {safe_repo}.
     }
+
+    def _scope_default() -> str:
+        if agent_def.session_scope == "global":
+            return f"ais-v1-{safe_agent}"
+        return f"ais-v1-{safe_agent}-issue-{work_item.number}"
+
+    def _render_pattern(pattern: str) -> str:
+        """Substitute {token} placeholders safely.
+
+        Only bare {identifier} forms are allowed. Patterns containing
+        attribute access ({x.y}) or index access ({x[y]}) are rejected
+        to prevent callers from extracting internal object attributes via
+        Python's str.format() mini-language.
+        """
+        if re.search(r"\{[^}]*[.\[]", pattern):
+            raise ValueError(
+                f"id_pattern for {agent_def.agent!r} contains unsafe "
+                f"attribute or index access: {pattern!r}"
+            )
+        # Substitute only known bare tokens; raise KeyError for unknown ones.
+        _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+        def _replace(m: re.Match) -> str:
+            key = m.group(1)
+            if key not in session_tokens:
+                raise KeyError(key)
+            return session_tokens[key]
+        return _tok_re.sub(_replace, pattern)
+
     if agent_def.session_id_pattern:
         try:
-            agent_session_id = agent_def.session_id_pattern.format(**session_tokens)
-        except KeyError as exc:
-            log.warning("Unknown token %s in session id_pattern for %s; using default", exc, agent_def.agent)
-            agent_session_id = f"ais-v1-{safe_agent}-issue-{work_item.number}"
-    elif agent_def.session_scope == "global":
-        agent_session_id = f"ais-v1-{safe_agent}"
+            agent_session_id = _render_pattern(agent_def.session_id_pattern)
+        except (KeyError, ValueError) as exc:
+            log.warning(
+                "Bad id_pattern for %s (%s); falling back to scope default",
+                agent_def.agent, exc,
+            )
+            agent_session_id = _scope_default()
     else:
-        agent_session_id = f"ais-v1-{safe_agent}-issue-{work_item.number}"
+        agent_session_id = _scope_default()
+
+    # Sanitise: session IDs must match [a-z0-9][a-z0-9-]*[a-z0-9].
+    # If the rendered ID contains invalid characters (e.g. from a custom
+    # literal in id_pattern) normalise rather than fail hard.
+    _sid_re = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    if not _sid_re.match(agent_session_id):
+        sanitised = re.sub(r"[^a-z0-9-]", "-", agent_session_id.lower()).strip("-")
+        log.warning(
+            "Session ID %r for %s contains invalid chars; sanitised to %r",
+            agent_session_id, agent_def.agent, sanitised,
+        )
+        agent_session_id = sanitised
 
     if dry_run:
         log.info(

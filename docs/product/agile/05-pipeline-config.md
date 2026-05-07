@@ -194,9 +194,17 @@ prompt code can reference them in announcement JSON.
 | `{safe_phase}` | string | `01-product-docs` | `{phase}` normalised the same way as `{safe_agent}` |
 | `{number}` | integer | `42` | Work item number (issue or PR) |
 | `{kind}` | string | `issue` or `pr` | Work item type |
-| `{owner}` | string | `m-a-operating-system` | GitHub organisation or user from `REPO` |
-| `{repo_name}` | string | `ai-coding-standards2` | Repository name (without owner) |
-| `{repo}` | string | `m-a-operating-system/ai-coding-standards2` | Full `owner/repo` |
+| `{owner}` | string | `m-a-operating-system` | GitHub organisation or user name |
+| `{repo_name}` | string | `ai-coding-standards2` | Repository name without owner |
+| `{safe_repo}` | string | `m-a-operating-system-ai-coding-standards2` | Full `owner/repo` with every non-`[a-z0-9]` char replaced by `-` |
+
+> **Note:** `{repo}` (with the `/`) is not a token. It contains a slash which is
+> invalid in a session ID. Use `{safe_repo}` for a normalised form, or compose
+> `{owner}` and `{repo_name}` separately.
+>
+> Only bare `{identifier}` placeholders are accepted. Patterns containing
+> attribute access (`{x.y}`) or index access (`{x[y]}`) are rejected at
+> runtime and will fall back to the scope default.
 
 ### Examples
 
@@ -205,36 +213,35 @@ prompt code can reference them in announcement JSON.
 "session": { "scope": "per_issue" }
 // → ais-v1-01-product-docs-prd-writer-issue-42
 
-// Global doc-reviewer session shared across all issues
+// Global doc-reviewer session shared across all issues (no per-issue token)
 "session": { "scope": "global" }
 // → ais-v1-01-product-docs-prd-docs-updater
 
-// Custom: scope to repo + issue (useful in multi-repo setups)
+// Custom: namespace by repo in a multi-repo setup
 "session": {
   "scope": "per_issue",
   "id_pattern": "ais-v1-{safe_agent}-{repo_name}-issue-{number}"
 }
 // → ais-v1-01-product-docs-prd-writer-ai-coding-standards2-issue-42
 
-// Custom: scope to phase only (all agents in a phase share context)
+// Custom: one shared session per phase across all issues
 "session": {
   "scope": "global",
-  "id_pattern": "ais-v1-{safe_phase}-{kind}-{number}"
+  "id_pattern": "ais-v1-{safe_phase}"
 }
-// → ais-v1-01-product-docs-issue-42
+// → ais-v1-01-product-docs
 ```
 
 ### Constraints
 
-- Session IDs are passed verbatim to `claude --session-id`. Keep them
-  lowercase and use only `[a-z0-9-]` characters; the `{safe_agent}` and
-  `{safe_phase}` tokens are already normalised, but custom literal strings
-  in the pattern are your responsibility.
+- Session IDs must match `[a-z0-9][a-z0-9-]*[a-z0-9]`. The orchestrator
+  sanitises the rendered value (replacing invalid chars with `-`) and logs
+  a warning if it had to, so custom literal strings in `id_pattern` are
+  your responsibility. Prefer the `{safe_*}` tokens for user-controlled names.
 - `{title}` is deliberately **not** a token. Issue titles are
   human-authored, may contain special characters, and change over time —
   all three properties make them unsafe for session ID construction.
-- `{url}` is also excluded for the same reasons (contains slashes and
-  percent-encoded chars).
+- `{url}` is also excluded — it contains slashes and percent-encoded chars.
 
 ---
 
