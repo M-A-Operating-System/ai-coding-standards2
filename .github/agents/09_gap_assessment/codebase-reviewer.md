@@ -351,3 +351,21 @@ AI_AGILE_STATUS: complete
   invocations, helping you notice cross-file patterns and avoid re-reviewing
   unchanged files on re-runs.
 - **Do not call `status.sh`.** Signal outcome via `AI_AGILE_STATUS:` only.
+
+---
+
+## Operational note — bootstrapping the trigger label
+
+This agent is triggered by the label `codebase-review:requested`. That label
+is **not** created by `status.sh bootstrap-all` (which only creates
+`{agent}:{status}` labels for agents declared in `pipeline.json`). You must
+create it manually the first time:
+
+```bash
+gh label create "codebase-review:requested" \
+  --repo "$REPO" \
+  --color "FBCA04" \
+  --description "Request a three-persona codebase review"
+```
+
+Once created, apply it to any issue to trigger this agent.

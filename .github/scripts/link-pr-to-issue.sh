@@ -2,7 +2,7 @@
 # link-pr-to-issue.sh
 #
 # Discovers PRs opened by agents for the current issue and applies
-# source-issue:{N} and source-agent:{name} labels to each one.
+# source-issue:{N} labels to each one.
 #
 # Convention: agent branches are named with "issue-{N}" somewhere in the
 # branch name (e.g. docs/issue-42-prd-update, feat/issue-42-add-auth).
@@ -47,6 +47,7 @@ LINKED_PRS=$(
   gh pr list \
     --repo "${REPO}" \
     --state open \
+    --limit 200 \
     --json number,headRefName \
   | jq -r \
     --argjson n "${ISSUE_NUMBER}" \

@@ -125,15 +125,16 @@ for each work item (issue or PR):
 
         ← step is eligible
         acquire_mutex(work_item, agent_def)
+        # Pre-invocation ceremony — same for both step types
+        apply {agent}:wip
+        post opening announcement comment
         if agent_def.type == "script":
-            # Orchestrator owns :wip for scripts (scripts don't call status.sh)
-            apply {agent}:wip
             success = invoke_script(work_item, agent_def)
-            parse AI_AGILE_STATUS: sentinel from stdout
-            apply matching label; remove :wip
         else:
             success = invoke_agent(work_item, agent_def)
-            labels = refresh_labels(work_item)    ← agent applied its own labels
+        parse AI_AGILE_STATUS: sentinel from stdout (last 5 lines)
+        apply matching terminal label; remove :wip
+        post closing announcement comment
         handle_outcome(work_item, agent_def, success, labels)
 
         if agent_outcome in {review, blocked, failed}:
@@ -273,9 +274,9 @@ Key differences from agent steps:
 
 | | Agent step | Script step |
 |---|---|---|
-| `:wip` ownership | Agent calls `status.sh set-wip` | Orchestrator applies `:wip` before invoking |
-| Status signalling | Agent calls `status.sh set-complete` etc. | Script prints `AI_AGILE_STATUS: complete` to stdout |
-| Label write | Agent → GitHub API via `status.sh` | Orchestrator reads sentinel → applies label |
+| `:wip` ownership | Orchestrator applies `:wip` before invoking | Orchestrator applies `:wip` before invoking |
+| Status signalling | Agent emits `AI_AGILE_STATUS:` to stdout | Script emits `AI_AGILE_STATUS:` to stdout |
+| Label write | Orchestrator reads sentinel → applies label | Orchestrator reads sentinel → applies label |
 | Rate limiting | Anthropic API calls possible | No Anthropic API; rate limiting not applicable |
 | Timeout | 1800 s (30 min) | 300 s (5 min) |
 
@@ -303,12 +304,16 @@ If the script exits non-zero without a sentinel, the orchestrator applies
 After the subprocess exits, the orchestrator handles the outcome differently
 depending on the step type:
 
-**Agent steps** — the agent applied its own labels via `status.sh`:
+**Agent steps** — the orchestrator reads the sentinel and applies the label:
 ```
-refresh labels from GitHub API
+parse AI_AGILE_STATUS: from last 5 lines of stdout
 
-if agent exited non-zero AND no terminal label present:
-    apply {agent}:failed
+if sentinel found:
+    remove :wip, apply matching label ({agent}:complete / :review / :blocked)
+elif agent exited zero (no sentinel):
+    remove :wip, apply :complete   ← backward-compat default
+else (exited non-zero, no sentinel):
+    remove :wip, apply :failed
     post recovery comment
     emit agent.failed (mode=agent) to audit log
     break item loop

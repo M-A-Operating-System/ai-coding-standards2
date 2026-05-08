@@ -4,6 +4,19 @@
 
   "statuses": [
     {
+      "status": "requested",
+      "label_suffix": "requested",
+      "colour": "FBCA04",
+      "colour_name": "amber",
+      "meaning": "A human (or upstream automation) has explicitly requested this agent to run on this item. The orchestrator will pick it up on its next tick, apply :wip, remove :requested, and invoke the agent. Useful as a manual ad-hoc trigger for agents that are not in the standard dependency chain.",
+      "set_by": "human",
+      "cleared_by": "orchestrator",
+      "blocks_pipeline": false,
+      "terminal": false,
+      "human_action_required": false,
+      "orchestrator_behaviour": "Treat as an eligible trigger regardless of the agent's configured trigger conditions. Apply :wip and invoke the agent."
+    },
+    {
       "status": "wip",
       "label_suffix": "wip",
       "colour": "E4E669",
@@ -88,6 +101,7 @@
 
   "label_format": "{agent-name}:{status}",
   "label_format_examples": [
+    "09_gap_assessment/codebase-reviewer:requested",
     "prd-writer:wip",
     "prd-writer:complete",
     "prd-writer:review",
@@ -99,13 +113,14 @@
   "status_transitions": {
     "description": "Valid transitions from each status. The orchestrator enforces these — it will not apply a transition that is not listed here.",
     "transitions": {
-      "none":     ["wip"],
-      "wip":      ["complete", "review", "blocked", "failed"],
-      "review":   ["wip"],
-      "blocked":  ["wip"],
-      "failed":   ["wip", "skipped"],
-      "complete": [],
-      "skipped":  []
+      "none":      ["wip", "requested"],
+      "requested": ["wip"],
+      "wip":       ["complete", "review", "blocked", "failed"],
+      "review":    ["wip"],
+      "blocked":   ["wip"],
+      "failed":    ["wip", "skipped"],
+      "complete":  [],
+      "skipped":   []
     }
   }
 }

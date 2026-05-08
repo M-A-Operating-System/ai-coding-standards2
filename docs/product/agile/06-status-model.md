@@ -14,10 +14,11 @@ the model in product terms.
 
 ---
 
-## The six statuses
+## The seven statuses
 
 | Status | Colour | Meaning | Set by | Cleared by |
 |---|---|---|---|---|
+| `requested` | Amber | A human has explicitly requested this agent to run | Human | Orchestrator (replaced by `:wip` on invocation) |
 | `wip` | Yellow | Agent is actively running | Orchestrator | Orchestrator (replaced by outcome) |
 | `complete` | Green | Agent finished successfully | Agent (non-gated) **or** Orchestrator (gated, on gate-label) | Never |
 | `review` | Purple | Agent has finished and is requesting human review | Agent | Orchestrator (on gate-label) **or** Human (rejects by removing) |
@@ -29,26 +30,27 @@ The label format is `{agent}:{status}`, where `{agent}` is the
 phase-prefixed agent name (see
 [`12-agent-spec.md`](12-agent-spec.md#naming-convention)). Examples:
 `product-docs/prd-writer:wip`, `technical-docs/architect:review`,
-`execute/coder:failed`, `technical-docs/adr-proposer:skipped`.
+`execute/coder:failed`, `technical-docs/adr-proposer:skipped`,
+`09_gap_assessment/codebase-reviewer:requested`.
 
 ---
 
 ## Status transitions
 
 ```
-                  ┌──► complete (terminal — non-gated agent)
-                  │
-                  │       ┌──► (human applies gate label)
-                  │       │       └──► orchestrator: review→complete (terminal)
-none ──► wip ─────┼──► review ──┤
-                  │             │
-                  │             └──► (human removes :review without gate)
-                  │                     └──► wip ──► …
-                  │
-                  ├──► blocked ──► (human removes) ──► wip ──► …
-                  │
-                  └──► failed ──┬──► (human removes) ──► wip
-                                └──► skipped (terminal)
+                       ┌──► complete (terminal — non-gated agent)
+                       │
+                       │       ┌──► (human applies gate label)
+                       │       │       └──► orchestrator: review→complete (terminal)
+none ──► wip ──────────┼──► review ──┤
+  │                    │             │
+  └──► requested ──┐   │             └──► (human removes :review without gate)
+                   │   │                     └──► wip ──► …
+                   ↓   │
+                  wip   ├──► blocked ──► (human removes) ──► wip ──► …
+                        │
+                        └──► failed ──┬──► (human removes) ──► wip
+                                      └──► skipped (terminal)
 ```
 
 - An agent can only transition out of `wip`.
@@ -83,12 +85,13 @@ The cost is some label noise on long-lived issues, which is acceptable.
 
 | Status | Who applies | When |
 |---|---|---|
-| `wip` | Orchestrator (via the agent's `set-wip` call) | Immediately on agent start |
-| `complete` (non-gated agent) | Agent (via `set-complete`) | At successful end of a non-gated agent's run |
+| `requested` | Human | When a human wants to trigger an agent ad-hoc, outside the normal dependency chain |
+| `wip` | Orchestrator | At the start of agent invocation (replaces `:requested` if present) |
+| `complete` (non-gated agent) | Orchestrator (on sentinel) | When the agent emits `AI_AGILE_STATUS: complete` |
 | `complete` (gated agent) | Orchestrator | When the human applies the matching gate label, promoting the agent from `:review` to `:complete` |
-| `review` | Agent (via `set-review`) | When the agent has produced an artefact requiring approval |
-| `blocked` | Agent (via `set-blocked`) | When the agent encounters something it cannot resolve |
-| `failed` | Orchestrator | When the agent exits non-zero without a terminal status |
+| `review` | Orchestrator (on sentinel) | When the agent emits `AI_AGILE_STATUS: review` |
+| `blocked` | Orchestrator (on sentinel) | When the agent emits `AI_AGILE_STATUS: blocked` |
+| `failed` | Orchestrator | When the agent exits non-zero without a terminal sentinel |
 | `skipped` | Human | When a human decides this agent is not applicable |
 
 Agents never apply labels directly — they always go through `status.sh`.
