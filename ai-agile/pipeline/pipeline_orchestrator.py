@@ -71,6 +71,7 @@ STATUS_REVIEW      = "review"
 STATUS_BLOCKED     = "blocked"
 STATUS_FAILED      = "failed"
 STATUS_SKIPPED     = "skipped"
+STATUS_REQUESTED   = "requested"
 
 # Alias kept for internal use
 STATUS_IN_PROGRESS = STATUS_WIP
@@ -78,6 +79,7 @@ STATUS_IN_PROGRESS = STATUS_WIP
 ALL_STATUSES = {
     STATUS_COMPLETE, STATUS_WIP, STATUS_REVIEW,
     STATUS_BLOCKED, STATUS_FAILED, STATUS_SKIPPED,
+    STATUS_REQUESTED,
 }
 
 AUDIT_LOG_BRANCH = "ai-agile/log"
@@ -1088,6 +1090,9 @@ def invoke_script(
                 sys.stderr.write(line)
                 if len(captured_lines) < MAX_SCRIPT_CAPTURED_LINES:
                     captured_lines.append(line)
+                # Deadline is checked at line boundaries; a script that holds
+                # stdout open without emitting a newline can run slightly over
+                # SCRIPT_TIMEOUT_SECONDS before the raise fires.
                 if time.monotonic() > deadline:
                     raise subprocess.TimeoutExpired(["bash", str(script_file)], SCRIPT_TIMEOUT_SECONDS)
             proc.wait(timeout=10)
@@ -1113,6 +1118,10 @@ def invoke_script(
     except FileNotFoundError:
         log.error("    'bash' not found — cannot run script step")
         return AgentRunResult(success=False, captured_tail="bash not found in PATH.")
+    finally:
+        # Guard against unexpected exceptions leaving a zombie subprocess.
+        if proc is not None:
+            _terminate_subprocess(proc)
 
 
 
@@ -1682,8 +1691,13 @@ def process_work_item(
             log.info("  halt %-40s  [%s]", agent_def.agent, current_status)
             continue
 
-        # Check trigger label is present
-        if not trigger_label_present(labels, agent_def):
+        # :requested is a manual override — bypass the configured trigger
+        # check so humans can ad-hoc invoke any agent regardless of its
+        # pipeline.json trigger conditions.
+        _manual_trigger = (current_status == STATUS_REQUESTED)
+
+        # Check trigger label is present (skipped for :requested overrides)
+        if not _manual_trigger and not trigger_label_present(labels, agent_def):
             log.debug(
                 "  skip %-40s  [trigger not met: %s]",
                 agent_def.agent,
@@ -1704,6 +1718,17 @@ def process_work_item(
         log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
 
         if not dry_run:
+            # Remove :requested before applying :wip so the work item never
+            # has two status labels simultaneously.
+            if _manual_trigger:
+                try:
+                    gh.remove_label(work_item.number, agent_def.status_label(STATUS_REQUESTED))
+                    labels.discard(agent_def.status_label(STATUS_REQUESTED))
+                except Exception as exc:
+                    log.debug(
+                        "  could not remove :requested for %s on #%d: %s",
+                        agent_def.agent, work_item.number, exc,
+                    )
             try:
                 gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 labels.add(agent_def.status_label(STATUS_WIP))

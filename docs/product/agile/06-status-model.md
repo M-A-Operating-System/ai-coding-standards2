@@ -94,39 +94,32 @@ The cost is some label noise on long-lived issues, which is acceptable.
 | `failed` | Orchestrator | When the agent exits non-zero without a terminal sentinel |
 | `skipped` | Human | When a human decides this agent is not applicable |
 
-Agents never apply labels directly — they always go through `status.sh`.
-Humans never apply `{agent}:complete` directly either — they apply the
-gate label and the orchestrator promotes the agent. This keeps the
-transition logic in one place and ensures every status change is
-consistent and auditable.
+The orchestrator is the **only writer** for all status label transitions.
+Agents never apply labels directly — they emit `AI_AGILE_STATUS:`
+sentinels to stdout and the orchestrator reads the sentinel and applies
+the matching label. Humans never apply `{agent}:complete` directly
+either — they apply the gate label and the orchestrator promotes the
+agent. This keeps the transition logic in one place and ensures every
+status change is consistent and auditable.
 
-### Why `status.sh` (bash) and not direct `gh` calls
+### Why the orchestrator owns all transitions
 
-A reasonable question: agents are already invoking `gh` for issue
-comments and label edits; why not have them call `gh issue edit
---add-label` for status transitions too?
+A status transition is **not a single API call** — it is a small
+protocol that must hold several invariants:
 
-Because a status transition is **not a single API call** — it is a
-small protocol that must hold several invariants:
-
-| Invariant | Why it matters | What `status.sh` does |
+| Invariant | Why it matters | How the orchestrator enforces it |
 |---|---|---|
-| Exactly one status label per agent at any time | Two coexisting statuses (`:wip` + `:complete`) are ambiguous and can mis-route the orchestrator | `set-X` removes **all** other `{agent}:*` status labels before adding the new one |
-| Labels exist with the right colour and description | Manually-created labels drift across repos; reviewers can't tell statuses apart at a glance | `set-X` creates the label with the colour from `statuses.json` if it does not yet exist |
-| Recovery comments are posted on `:review`, `:blocked`, `:failed` | Humans must know what to do when the pipeline halts; relying on every agent prompt to remember is fragile | `set-review` / `set-blocked` / `set-failed` post the standard recovery comment with consistent wording |
-| The format `{agent}:{status}` is canonical | Any drift breaks the orchestrator's label parsing | `status.sh` builds the label name; agents pass agent + status as args |
+| Exactly one status label per agent at any time | Two coexisting statuses (`:wip` + `:complete`) are ambiguous and can mis-route the orchestrator | `_apply_terminal_status` removes **all** non-terminal status labels before adding the new one |
+| Labels exist with the right colour and description | Manually-created labels drift across repos; reviewers can't tell statuses apart at a glance | The orchestrator reads colours from `statuses.json` and creates labels if they do not yet exist |
+| Recovery comments are posted on `:review`, `:blocked`, `:failed` | Humans must know what to do when the pipeline halts; relying on every agent prompt to remember is fragile | The orchestrator posts the standard recovery comment with consistent wording on every halt |
+| The format `{agent}:{status}` is canonical | Any drift breaks the orchestrator's label parsing | The orchestrator constructs label names via `AgentDef.status_label()` — no agent prompt can misformat them |
 
-Putting this protocol in one bash helper means every agent prompt
-collapses to a single line per transition (`bash $STATUS_SH set-wip
-{agent} {number}`) and the invariants are enforced once, in code we
-can test and version-pin. Agents calling `gh issue edit` directly
-would have to re-implement the protocol inline — which means it
-would drift across the 22 agent prompts.
-
-`status.sh` is itself thin: it shells out to `gh label create`, `gh
-api`, and `gh issue edit` under the hood. It is not an alternative to
-`gh`; it is a typed wrapper that holds the state-machine invariants
-the design depends on.
+Centralising these invariants in the orchestrator means every agent
+prompt collapses to emitting a single line (`AI_AGILE_STATUS: complete`)
+and the protocol is enforced once, in Python we can test and version-pin.
+Agents writing labels directly via `gh issue edit` would have to
+re-implement the protocol inline — which would drift across the 22+ agent
+prompts over time.
 
 ---
 

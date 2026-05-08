@@ -41,12 +41,13 @@ fi
 
 echo "Scanning for PRs linked to issue #${ISSUE_NUMBER} in ${REPO}..."
 
-# Find all open PRs whose head branch contains "issue-{N}" (with a word
-# boundary after the number so issue-42 doesn't match issue-421).
+# Find all PRs (open, merged, or closed) whose head branch contains
+# "issue-{N}" (with a word boundary so issue-42 doesn't match issue-421).
+# --state all ensures merged PRs are also labelled for post-merge traceability.
 LINKED_PRS=$(
   gh pr list \
     --repo "${REPO}" \
-    --state open \
+    --state all \
     --limit 200 \
     --json number,headRefName \
   | jq -r \

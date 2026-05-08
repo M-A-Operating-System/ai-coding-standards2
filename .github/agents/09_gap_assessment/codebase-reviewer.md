@@ -30,19 +30,6 @@ more severe finding wins and gets a `[DP+SA]` tag.
 
 ## Before you start
 
-**Concurrent-run guard (P-4 mutex).** Check whether another instance of
-this agent is already running on this issue before proceeding:
-
-```bash
-CURRENT_LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo "$REPO" \
-  --json labels --jq '.labels[].name')
-if echo "${CURRENT_LABELS}" | grep -q "09_gap_assessment/codebase-reviewer:wip"; then
-  echo "Another codebase-reviewer run is already in progress on issue #${ISSUE_NUMBER}. Exiting."
-  echo "AI_AGILE_STATUS: complete"
-  exit 0
-fi
-```
-
 **Re-run guard.** Check whether a "Technical Review" issue already exists
 from today:
 
