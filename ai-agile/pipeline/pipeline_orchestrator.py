@@ -138,7 +138,6 @@ class AgentDef:
     max_retries: int = 0               # how many times to re-invoke after :failed before giving up
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
-    max_retries: int = 0  # auto-retry on crash (no sentinel), 0 = no retry
 
     @property
     def complete_label(self) -> str:
@@ -219,7 +218,6 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             max_retries=int(entry.get("max_retries", 0)),
             session_scope=entry.get("session", {}).get("scope", "per_issue"),
             session_id_pattern=entry.get("session", {}).get("id_pattern"),
-            max_retries=int(entry.get("max_retries", 0)),
         ))
     return agents
 
