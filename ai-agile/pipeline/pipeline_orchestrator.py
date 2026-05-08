@@ -1070,9 +1070,10 @@ def invoke_agent(
         f"Env vars: $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT "
         f"$SESSION_ID $SESSION_SCOPE\n\n"
         f"Print exactly one of these as the last line before exiting:\n"
-        f"  AI_AGILE_STATUS: complete\n"
-        f"  AI_AGILE_STATUS: review \"short message\"\n"
-        f"  AI_AGILE_STATUS: blocked \"reason\"\n"
+        f"AI_AGILE_STATUS: complete\n"
+        f"AI_AGILE_STATUS: review \"short message\"\n"
+        f"AI_AGILE_STATUS: blocked \"reason\"\n"
+        f"(No leading spaces — the orchestrator's regex matches only at line start.)\n"
         f"The orchestrator reads this sentinel, applies the label, and posts the closing announcement."
     )
 
