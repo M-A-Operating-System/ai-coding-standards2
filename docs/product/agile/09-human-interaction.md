@@ -58,7 +58,7 @@ If they disagree, the JSON wins.
 
 | Type | Example | Marker | Resolution |
 |---|---|---|---|
-| **Artefact for review** | "Here is the PRD." | `artefact/v1` | Human applies the gate label (e.g., `prd:approved`) or removes `:review` to reject |
+| **Artefact for review** | "Here is the PRD." | `artefact/v1` | Human applies the gate label (e.g., `01_product_docs/prd-writer:approved`) or removes `:review` to reject |
 | **Question** | "Should we extend `users` or create a new table?" | `question/v1` | Human answers via the Question Card protocol (Section 2) |
 | **Status report** | "I am blocked because…" | `question/v1` of type `clarification` | Human resolves the cause, then removes `:blocked` |
 
@@ -69,7 +69,7 @@ Nothing to learn beyond ordinary GitHub usage:
 
 | Action | What it means |
 |---|---|
-| **Apply a gate label** (e.g., `prd:approved`) | Approve at this gate. The orchestrator then removes the agent's `:review` label and applies `:complete`. Humans never apply `{agent}:complete` directly. |
+| **Apply a gate label** (e.g., `01_product_docs/prd-writer:approved`) | Approve at this gate. The orchestrator then removes the agent's `:review` label and applies `:complete`. Humans never apply `{agent}:complete` directly. |
 | **Remove a `:review` label without a gate label** | Reject; the agent re-runs and reads feedback comments |
 | **Remove a `:blocked` label** | Unblock (after fixing the cause); the agent re-runs |
 | **Apply a `:skipped` label** | Take responsibility for bypassing this agent ([Status model](06-status-model.md)) |
@@ -304,7 +304,7 @@ they have their own mechanisms:
 
 | Concept | Mechanism |
 |---|---|
-| Approval at a known gate (PRD, design, spec, etc.) | Gate label (e.g., `prd:approved`) — see [`07-human-gates.md`](07-human-gates.md) |
+| Approval at a known gate (PRD, design, spec, etc.) | Gate label (e.g., `01_product_docs/prd-writer:approved`) — see [`07-human-gates.md`](07-human-gates.md) |
 | Status of an agent on an object | `{agent}:{status}` label — see [`06-status-model.md`](06-status-model.md) |
 | Lock on an `(object, agent)` pair | `:wip` label + claim comment — see [P-4](02-principles.md#p-4--wip-is-the-mutex) |
 | Cross-issue dependency | GitHub `blocked-by` issue link — see [P-9](02-principles.md#p-9--cross-issue-parallel-intra-issue-serial) |

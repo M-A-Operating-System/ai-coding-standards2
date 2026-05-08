@@ -65,7 +65,7 @@ This is non-negotiable. It applies to every agent in the pipeline:
 
 - An issue without a stakeholder-approved PRD does not get a
   technical design, a test spec, a build plan, or a coder
-  invocation. The lifecycle gates this automatically — `prd:approved`
+  invocation. The lifecycle gates this automatically — `01_product_docs/prd-writer:approved`
   is upstream of every later phase's dependency check.
 - A PR that lands code with no corresponding entry in `docs/product/`
   does not merge. The reviewer rejects it; the work item moves the
@@ -148,28 +148,33 @@ The full statements and rationale live there.
 
 ## The status contract
 
-Every agent run must terminate with **exactly one** of three calls:
+Every agent run must terminate with **exactly one** of three sentinel
+lines printed to stdout:
 
-```bash
-bash $STATUS_SH set-complete {agent} {number}              # non-gated agents only
-bash $STATUS_SH set-review   {agent} {number} "{message}"  # gated agents
-bash $STATUS_SH set-blocked  {agent} {number} "{reason}"   # cannot proceed without human help
+```
+AI_AGILE_STATUS: complete
+AI_AGILE_STATUS: review "short message for stakeholder"
+AI_AGILE_STATUS: blocked "reason you could not proceed"
 ```
 
-You **must not** call `set-failed`. The orchestrator applies `:failed`
-if you exit non-zero without one of the three calls above. If you find
-yourself wanting to "mark failed", you almost certainly want
-`set-blocked` with a reason — `:failed` is for crashes the agent
-itself cannot describe.
+The orchestrator reads this sentinel, applies the matching label (and
+clears `:wip`), and posts the closing announcement. You do not call
+`status.sh` for ceremony — the orchestrator owns all label transitions.
+
+You **must not** emit `AI_AGILE_STATUS: failed`. The orchestrator
+applies `:failed` if you exit non-zero without a sentinel (or after all
+configured retries are exhausted). If you find yourself wanting to
+"mark failed", emit `AI_AGILE_STATUS: blocked` instead — `:failed` is
+for crashes the agent cannot describe.
 
 For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 `human_gate_label`):
 
-- Call `set-review` after posting your artefact.
-- Do **not** call `set-complete` directly. The orchestrator promotes
-  `:review` to `:complete` automatically when the human applies the
-  gate label. If you bypass `:review` and apply `:complete` yourself,
-  you have skipped the gate — that is a P-10 violation.
+- Emit `AI_AGILE_STATUS: review "message"` after posting your artefact.
+- Do **not** emit `AI_AGILE_STATUS: complete` directly. The orchestrator
+  promotes `:review` to `:complete` automatically when the human applies
+  the gate label. If you bypass `:review`, you have skipped the gate —
+  that is a P-10 violation.
 
 ---
 
@@ -201,9 +206,13 @@ If they disagree, the JSON wins.
 
 - **Don't apply `*:approved` gate labels.** That's the human's signal
   to advance the pipeline. P-10.
-- **Don't apply `{agent}:complete` for gated work.** The orchestrator
-  promotes `:review` → `:complete` after gate approval.
-- **Don't apply `{agent}:failed`.** Reserved for the orchestrator.
+- **Don't emit `AI_AGILE_STATUS: complete` for gated work.** The
+  orchestrator promotes `:review` → `:complete` after gate approval.
+- **Don't emit `AI_AGILE_STATUS: failed`.** The orchestrator applies
+  `:failed` when you crash without a sentinel — you cannot self-report failure.
+- **Don't call `status.sh` for ceremony.** set-wip, announcements, and
+  label transitions are owned by the orchestrator. Use the `AI_AGILE_STATUS:`
+  sentinel only.
 - **Don't invoke other agents.** The orchestrator routes work. P-14.
 - **Don't edit human-authored content** — issue bodies written by
   the stakeholder, review comments, ADRs after acceptance.
@@ -221,8 +230,8 @@ If they disagree, the JSON wins.
 
 | Input | Where |
 |---|---|
-| Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json body,title,labels` |
-| Upstream agent's artefact | Comments on the same issue tagged with `<!-- ai-agile/artefact/v1 by {upstream-agent} -->` |
+| Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author` |
+| Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
 | Standards | JSON under `ai-agile/standards/*.json` (see `docs/product/agile/05-pipeline-config.md`) |
 | Pipeline graph | Don't read it. The orchestrator routes work; you focus on your task. |
 | Prior runs of yourself | Edit-in-place: re-runs find the prior comment, edit it (P-11). Don't post duplicates. |
@@ -231,7 +240,6 @@ Environment variables the orchestrator exports for you:
 
 | Variable | Meaning |
 |---|---|
-| `STATUS_SH` | Absolute path to status.sh — use `bash $STATUS_SH …` |
 | `AI_AGILE_ROOT` | Absolute path to the AI Agile submodule root |
 | `AI_AGILE_CONTEXT` | Absolute path to **this file** |
 | `REPO` | `owner/repo` of the consuming repository |

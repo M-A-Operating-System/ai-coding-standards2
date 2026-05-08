@@ -45,7 +45,7 @@ For each step, exactly these facts are declared:
 | `trigger` | yes | One of: `{event: "..."}`, `{label: "..."}`, `{schedule: "..."}`, optionally with `path_filter` |
 | `dependencies` | yes | Array of step names that must reach `:complete` before this step can run |
 | `human_gate_after` | yes | Boolean — is there a human gate after this step? |
-| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are stable identifiers (e.g. `01_product_docs/prd-writer:approved`). |
+| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are stable identifiers — they may be agent-scoped (e.g. `01_product_docs/prd-writer:approved`) or short-form (e.g. `pr:approved`). |
 | `max_retries` | no | How many times the orchestrator re-invokes this step after a `:failed` outcome before giving up (default: 0 — no retries). |
 | `description` | yes | One-sentence statement of what the step owns |
 | `session` | no | Session management config (agent steps only — see [§ Session management](#session-management) below). Ignored for script steps. |

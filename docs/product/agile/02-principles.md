@@ -410,7 +410,7 @@ already described in the product docs.**
 
 - An issue without a stakeholder-approved PRD does not progress to
   technical design, test spec, build plan, or `coder`. The lifecycle
-  enforces this automatically — `prd:approved` is an upstream gate
+  enforces this automatically — `01_product_docs/prd-writer:approved` is an upstream gate
   for every later phase's dependency check.
 - A PR that lands code with no corresponding target-state entry in
   `docs/product/` does not merge. `pr-reviewer` rejects it; the work
@@ -451,7 +451,7 @@ is supposed to do.
 
 **Statement.** Agents produce artefacts. Humans approve at named
 gates. Approval is **applying** the gate label (e.g.,
-`prd:approved`); rejection is **removing** the agent's `:review`
+`01_product_docs/prd-writer:approved`); rejection is **removing** the agent's `:review`
 label (the agent re-runs and reads the feedback comments). No work
 advances past a gate without an explicit human action.
 

@@ -168,7 +168,7 @@ phases run, but with fewer named agents.
 | T+0 | Issue | Stakeholder | Opens issue | — |
 | T+2m | Issue | `product-docs/issue-classifier` | Validates required fields | `product-docs/issue-classifier:complete` |
 | T+5m | Issue | `product-docs/prd-writer` | Posts PRD | `product-docs/prd-writer:review` |
-| T+1h | Issue | Stakeholder | Approves PRD | `prd:approved` |
+| T+1h | Issue | Stakeholder | Approves PRD | `01_product_docs/prd-writer:approved` |
 | T+10m | Issue | `product-docs/product-standards-checker`, `product-docs/impact-assessor`, `product-docs/dependency-resolver` | Run in sequence | `product-docs/dependency-resolver:complete` |
 | T+5m | Issue | `product-docs/ticket-sizer` | Posts size | `product-docs/ticket-sizer:review` |
 | T+30m | Issue | Engineer | Approves size | `size:approved` |

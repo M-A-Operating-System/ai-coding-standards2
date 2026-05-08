@@ -30,7 +30,7 @@ orientation; the generated file is the source of truth (see
 
 | Gate label | Phase | Approver | What they are signing off |
 |---|---|---|---|
-| `prd:approved` | Product docs | Stakeholder | The PRD captures the right problem and acceptance criteria |
+| `01_product_docs/prd-writer:approved` | Product docs | Stakeholder | The PRD captures the right problem and acceptance criteria |
 | `size:approved` | Product docs | Engineer | The ticket is the right size for one cycle, or has been broken up |
 | `super-issue:approved` | Product docs | Engineer | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it |
 | `design:approved` | Technical docs | Engineer | The technical design is right and complete |
@@ -60,7 +60,7 @@ orientation; the generated file is the source of truth (see
 4. The pipeline halts for this issue. The orchestrator skips it on every
    subsequent run, except to watch for the gate label.
 5. The human reads the artefact. They have three options:
-   - **Approve as-is.** Apply the gate label (e.g., `prd:approved`). The
+   - **Approve as-is.** Apply the gate label (e.g., `01_product_docs/prd-writer:approved`). The
      orchestrator detects the gate, removes `{agent}:review`, applies
      `{agent}:complete`, emits `gate.approved` and `agent.complete` to
      the audit log, and re-evaluates downstream eligibility on its next
@@ -81,7 +81,7 @@ the agent to `:complete`.
 
 ## Gate-by-gate description
 
-### `prd:approved`
+### `01_product_docs/prd-writer:approved`
 
 **Approver.** The stakeholder who opened the issue, or whoever they delegate
 to.
@@ -330,7 +330,7 @@ To keep gate cost low, humans should not:
 - Manually advance past `:blocked` or `:failed` without resolving the
   underlying issue. Removing those labels signals "I have fixed the cause."
 - Sign off without reading. The audit trail records who approved.
-- Apply gate labels prematurely. Approving `prd:approved` before reading the
+- Apply gate labels prematurely. Approving `01_product_docs/prd-writer:approved` before reading the
   PRD wastes the rest of the pipeline.
 
 If the system is too noisy at any gate, that is a signal to refine the

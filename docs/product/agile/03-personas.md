@@ -25,7 +25,7 @@ opens an issue describing a desired change.
   `issue-classifier` rejects malformed issues with a corrective comment.
 - The `prd-writer` produces a structured PRD as an issue comment within
   minutes.
-- They review and approve the PRD by **applying** the `prd:approved`
+- They review and approve the PRD by **applying** the `01_product_docs/prd-writer:approved`
   gate label. To request changes, they comment with feedback and
   remove the `prd-writer:review` label — the agent re-runs.
 - After that, the system runs without their involvement until the work is
