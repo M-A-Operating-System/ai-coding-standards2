@@ -239,13 +239,17 @@ Environment variables the orchestrator exports for you:
 | `PR_NUMBER` | Set when the work item is a PR |
 | `WORK_ITEM_KIND` | `issue` or `pr` |
 | `WORK_ITEM_NUMBER` | Numeric ID, regardless of kind |
-| `SESSION_ID` | The claude CLI session ID this invocation was started with. Use it in `session_id` fields of announcement/artefact JSON so runs are traceable. |
+| `SESSION_ID` | The human-readable session key for this invocation (e.g. `ais-v1-01-product-docs-prd-writer-issue-42`). Use it in `session_id` fields of announcement/artefact JSON so runs are traceable. |
 | `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
 
 ### Session scopes
 
-Every agent run is started by the orchestrator with `claude --session-id $SESSION_ID`.
-The scope controls whether that ID is stable across issues or unique per issue:
+Every agent run is started by the orchestrator with `claude --session-id <uuid>`.
+The `--session-id` value is a deterministic UUID v5 derived from `SESSION_ID` — the
+two values look different but map 1-to-1. Always use `$SESSION_ID` (the human-readable
+form) in your JSON output; the UUID is an internal CLI requirement only.
+
+The scope controls whether `SESSION_ID` is stable across issues or unique per issue:
 
 | Scope | Session ID format | When to use |
 |---|---|---|

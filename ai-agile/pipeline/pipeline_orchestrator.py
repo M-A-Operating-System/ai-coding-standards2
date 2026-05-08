@@ -793,6 +793,10 @@ PAUSE_MARKER_PATH = SUBMODULE_ROOT / ".pipeline-pause"
 # The claude CLI requires a valid UUID for --session-id; we derive one
 # deterministically from our human-readable session key so the same
 # (agent, scope, work-item) triple always maps to the same UUID across runs.
+#
+# WARNING: do not change this value once deployed. Changing it would silently
+# assign a different UUID to every existing live session, breaking session
+# continuity for in-flight agents. Treat it as append-only infrastructure.
 _SESSION_NAMESPACE = uuid.UUID("a15a91e5-a191-5001-b001-000000000001")
 
 # Default pause duration if the API response does not name one. Five
@@ -1044,6 +1048,14 @@ def invoke_agent(
         )
         agent_session_id = sanitised
 
+    if dry_run:
+        log.info(
+            "    [DRY RUN] %s | model: %s | max_turns: %d | session: %s (uuid: %s) | prompt: %d chars",
+            agent_def.agent, agent_model or "default", max_turns,
+            agent_session_id, uuid.uuid5(_SESSION_NAMESPACE, agent_session_id), len(prompt),
+        )
+        return AgentRunResult(success=True)
+
     # The claude CLI requires a valid UUID for --session-id.
     # Derive one deterministically from our human-readable key via UUID v5 so
     # the same (agent, scope, work-item) triple maps to the same UUID on every
@@ -1051,15 +1063,8 @@ def invoke_agent(
     # in announcement JSON.
     agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, agent_session_id))
 
-    if dry_run:
-        log.info(
-            "    [DRY RUN] %s | model: %s | max_turns: %d | session: %s | prompt: %d chars",
-            agent_def.agent, agent_model or "default", max_turns, agent_session_id, len(prompt),
-        )
-        return AgentRunResult(success=True)
-
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
-    log.info("    session: %s → uuid %s (scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
+    log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
     if agent_model:
         log.debug("    model: %s", agent_model)
     if extra_tools:
