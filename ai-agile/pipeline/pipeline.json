@@ -53,8 +53,7 @@
       },
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-docs-updater"],
-      "session": { "scope": "per_issue" },
-      "description": "Scripted step: discovers PRs opened by agents for this issue (by branch naming convention issue-{N}) and applies source-issue:{N} and source-agent labels to each. Deterministic; does not invoke Claude CLI."
+      "description": "Scripted step: discovers PRs opened by agents for this issue (by branch naming convention issue-{N}) and applies source-issue:{N} labels to each. Deterministic; does not invoke Claude CLI."
     },
 
     {

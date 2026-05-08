@@ -135,6 +135,7 @@ class AgentDef:
     description: str
     step_type: str = "agent"           # "agent" | "script"
     script_path: Optional[str] = None  # repo-relative path to script when step_type == "script"
+    max_retries: int = 0               # how many times to re-invoke after :failed before giving up
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
 
@@ -214,6 +215,7 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             description=entry["description"],
             step_type=entry.get("type", "agent"),
             script_path=entry.get("script"),
+            max_retries=int(entry.get("max_retries", 0)),
             session_scope=entry.get("session", {}).get("scope", "per_issue"),
             session_id_pattern=entry.get("session", {}).get("id_pattern"),
         ))
@@ -934,14 +936,19 @@ def _apply_terminal_status(
     work_item: WorkItem,
     status: str,
 ) -> None:
-    """Remove :wip and apply a terminal status label for the given agent."""
-    try:
-        gh.remove_label(work_item.number, agent_def.in_progress_label)
-    except Exception as exc:
-        log.debug(
-            "could not remove :wip for %s on #%d: %s",
-            agent_def.agent, work_item.number, exc,
-        )
+    """Clear all non-terminal status labels and apply the given terminal status.
+
+    Mirrors _apply_failed's cleanup so the work item always ends with exactly
+    one status label regardless of which non-terminal state the step left behind.
+    """
+    for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED):
+        try:
+            gh.remove_label(work_item.number, agent_def.status_label(stale))
+        except Exception as exc:
+            log.debug(
+                "could not remove :%s for %s on #%d: %s",
+                stale, agent_def.agent, work_item.number, exc,
+            )
     gh.add_label(work_item.number, agent_def.status_label(status))
 
 
@@ -1001,6 +1008,11 @@ def invoke_script(
         "REPO":             repo,
         "WORK_ITEM_KIND":   work_item.kind,
         "WORK_ITEM_NUMBER": str(work_item.number),
+        # SESSION_ID / SESSION_SCOPE are not meaningful for script steps (no
+        # Claude CLI session), but are exported so scripts can reference them
+        # in announcement output without having to special-case the env.
+        "SESSION_ID":       f"script-{agent_def.agent}-{work_item.number}",
+        "SESSION_SCOPE":    "per_issue",
     }
     if work_item.kind == "issue":
         agent_env["ISSUE_NUMBER"] = str(work_item.number)

@@ -7,9 +7,8 @@ description: >
   issue containing all findings with AI-actionable remediation
   instructions. Triggered by the codebase-review:requested label on any
   issue. Cross-references docs/product/ only to understand original intent
-  when code is ambiguous. Use /simplify to reduce complex code sections
-  before deep analysis.
-tools: [Bash, Read, Grep, Skill]
+  when code is ambiguous.
+tools: [Bash, Read, Grep]
 model: claude-opus-4-7
 max_turns: 80
 extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh issue create *), Bash(gh issue comment *), Bash(gh issue view *)]
@@ -31,8 +30,21 @@ more severe finding wins and gets a `[DP+SA]` tag.
 
 ## Before you start
 
-Check whether a "Technical Review" issue already exists from today (re-run
-guard):
+**Concurrent-run guard (P-4 mutex).** Check whether another instance of
+this agent is already running on this issue before proceeding:
+
+```bash
+CURRENT_LABELS=$(gh issue view "${ISSUE_NUMBER}" --repo "$REPO" \
+  --json labels --jq '.labels[].name')
+if echo "${CURRENT_LABELS}" | grep -q "09_gap_assessment/codebase-reviewer:wip"; then
+  echo "Another codebase-reviewer run is already in progress on issue #${ISSUE_NUMBER}. Exiting."
+  echo "AI_AGILE_STATUS: complete"
+  exit 0
+fi
+```
+
+**Re-run guard.** Check whether a "Technical Review" issue already exists
+from today:
 
 ```bash
 TODAY=$(date -u +%Y-%m-%d)
@@ -77,15 +89,8 @@ git log --oneline -30
 ```
 
 Read each source file using the `Read` tool. For dense or deeply nested
-files, invoke the `/simplify` skill first to get a reduced structural view
-before detailed analysis:
-
-```
-/simplify <file content or excerpt>
-```
-
-Use `/simplify` whenever a file or function is long enough that its overall
-structure obscures what it actually does.
+files, use `Grep` to extract function/class signatures and call sites first
+to build a structural map before reading full file contents.
 
 ---
 
@@ -128,7 +133,7 @@ starting at 001).
 ways an attacker could read data they shouldn't, write data they shouldn't,
 or cause unintended execution.
 
-Re-read every source file (or use `/simplify` for structure first). Check:
+Re-read every source file (or use `Grep` for structure first). Check:
 
 ### SA checklist
 
@@ -333,9 +338,9 @@ AI_AGILE_STATUS: complete
 - **Every finding must be AI-actionable.** Vague findings like "improve
   error handling" are not acceptable. Name the function, the line, and the
   exact change.
-- **Use `/simplify` for complex code.** When a file or function is long or
-  deeply nested, invoke `/simplify` to get a reduced structural view before
-  analysing it. This helps you see the real control flow without noise.
+- **Use `Grep` for structural orientation.** When a file or function is long
+  or deeply nested, grep for function/class definitions first to build a
+  structural map before reading full file contents.
 - **Deduplication is mandatory.** Do not list the same file:line flaw under
   two personas. Merge and tag.
 - **No sentinel injection risk.** Do not echo untrusted content (issue

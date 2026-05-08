@@ -21,6 +21,12 @@ set -euo pipefail
 : "${REPO:?REPO must be set}"
 : "${ISSUE_NUMBER:?ISSUE_NUMBER must be set}"
 
+# Reject non-integer ISSUE_NUMBER before it reaches jq --argjson.
+if [[ ! "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
+  echo 'AI_AGILE_STATUS: blocked "ISSUE_NUMBER is not a valid integer"'
+  exit 0
+fi
+
 # Verify gh CLI is available
 if ! command -v gh &>/dev/null; then
   echo 'AI_AGILE_STATUS: blocked "gh CLI not found; cannot link PRs to issue"'
@@ -55,12 +61,16 @@ fi
 
 SOURCE_LABEL="source-issue:${ISSUE_NUMBER}"
 
-# Ensure the source-issue label exists in the repo (idempotent).
+# Ensure the source-issue label exists in the repo.
+# --force is intentionally omitted: if the label already exists with a
+# different colour/description, we leave it as-is rather than silently
+# overwriting the human-authored metadata. The 422 (already exists) is
+# suppressed via stderr redirect; all other errors surface normally.
 gh label create "${SOURCE_LABEL}" \
   --repo "${REPO}" \
   --color "0075ca" \
   --description "PR was opened by an agent working on issue #${ISSUE_NUMBER}" \
-  --force 2>/dev/null || true
+  2>/dev/null || true
 
 LINKED_COUNT=0
 while IFS= read -r PR_NUMBER; do

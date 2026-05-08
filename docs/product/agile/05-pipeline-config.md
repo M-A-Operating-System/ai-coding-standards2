@@ -85,6 +85,11 @@ echo "AI_AGILE_STATUS: complete"           # normal completion
 echo 'AI_AGILE_STATUS: blocked "reason"'   # human input needed
 ```
 
+**Important:** The orchestrator only searches the **last 5 lines** of stdout
+for the sentinel. This prevents issue-body content echoed earlier in the run
+from spoofing the sentinel. Always emit `AI_AGILE_STATUS:` as one of the
+final lines of your script.
+
 If the script exits non-zero without emitting a sentinel, the orchestrator
 applies `:failed` exactly as it does for a crashed agent.
 
