@@ -21,46 +21,16 @@ already there to reflect new or changed user-observable behaviour.
 
 ---
 
-## Step 1 — Apply wip
+## Step 1 — Read the PRD and existing docs
+
+Read the approved PRD from the issue body:
 
 ```bash
-bash $STATUS_SH set-wip 01_product_docs/prd-docs-updater $ISSUE_NUMBER
+gh issue view $ISSUE_NUMBER --repo $REPO --json title,body
 ```
 
----
-
-## Step 2 — Opening announcement
-
-```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 01_product_docs/prd-docs-updater -->
-\`\`\`json
-{
-  "session_id": "${SESSION_ID}",
-  "agent": "01_product_docs/prd-docs-updater",
-  "phase": "start",
-  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "intent": "Cross-check the approved PRD against docs/product/ and open a PR if updates are needed.",
-  "inputs_read": ["issue body", "prd-writer artefact comment", "docs/product/ files"]
-}
-\`\`\`
-EOF
-)"
-```
-
----
-
-## Step 3 — Read the PRD and existing docs
-
-Read the approved PRD from the issue:
-
-```bash
-gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,comments
-```
-
-Find the comment with marker
-`<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->` — that is
-the PRD.
+The PRD is in the issue body (marked with
+`<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->`).
 
 Read the existing product documentation using the `Read` tool on each
 file found by:
@@ -69,12 +39,12 @@ file found by:
 find docs/product -name "*.md" | sort
 ```
 
-If `docs/product/` does not exist, skip to **Step 7 — No update path**
+If `docs/product/` does not exist, skip to **Step 5 — No update path**
 and note the directory is absent.
 
 ---
 
-## Step 4 — Assess whether docs need updating
+## Step 2 — Assess whether docs need updating
 
 Compare the PRD against every relevant section of the existing docs.
 A doc update is needed when:
@@ -96,11 +66,11 @@ A doc update is **not** needed when:
 - The PRD is fixing a bug: the target state is already documented; the
   code was wrong, not the docs.
 
-If no updates are needed, go to **Step 7 — No update path**.
+If no updates are needed, go to **Step 5 — No update path**.
 
 ---
 
-## Step 5 — Create branch and update docs
+## Step 3 — Create branch and update docs
 
 First check for an existing re-run branch:
 
@@ -143,7 +113,7 @@ git push origin "$BRANCH"
 
 ---
 
-## Step 6 — Create draft PR then mark ready for review
+## Step 4 — Create draft PR then mark ready for review
 
 Check whether a PR for this branch already exists (re-run guard):
 
@@ -189,11 +159,7 @@ Mark the PR ready for review:
 gh pr ready "$PR_NUMBER" --repo "$REPO"
 ```
 
----
-
-## Step 7 — Comment on the issue
-
-**If a PR was opened:**
+Comment on the issue:
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
@@ -208,7 +174,15 @@ EOF
 )"
 ```
 
-**If no updates were needed:**
+Then emit:
+
+```
+AI_AGILE_STATUS: complete
+```
+
+---
+
+## Step 5 — No update path
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
@@ -216,57 +190,36 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 ## Product docs check — no updates required
 
 Reviewed \`docs/product/\` against the approved PRD. {One sentence
-explaining which files were checked and why no changes are needed —
-e.g. "The behaviour described in the PRD is already accurately covered
-in docs/product/features/pipeline.md §3; no new personas or terms were
-introduced."}
+explaining which files were checked and why no changes are needed.}
 EOF
 )"
 ```
 
----
+Then emit:
 
-## Step 8 — Closing announcement and complete
-
-```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 01_product_docs/prd-docs-updater -->
-\`\`\`json
-{
-  "session_id": "${SESSION_ID}",
-  "agent": "01_product_docs/prd-docs-updater",
-  "phase": "end",
-  "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "outcome": "complete",
-  "summary": "{PR #N opened for doc review | No doc updates required}",
-  "artefacts": ["{PR #N | no-op comment}"]
-}
-\`\`\`
-EOF
-)"
-
-bash $STATUS_SH set-complete 01_product_docs/prd-docs-updater $ISSUE_NUMBER
+```
+AI_AGILE_STATUS: complete
 ```
 
 ---
 
 ## Behaviour rules
 
-- Do not edit the issue body or the PRD comment — they are
-  human-approved artefacts.
+- Do not edit the issue body or the PRD — they are human-approved artefacts.
 - Keep doc edits minimal. Do not reformat, reorder, or restructure
   sections unrelated to this issue.
 - One PR per issue. On a re-run, push additional commits to the same
   branch rather than creating a duplicate PR (the re-run guard in
-  Step 6 handles this).
+  Step 4 handles this).
 - Never update `docs/product/agile/` pipeline system files
   (`01-vision.md` through `13-todos.md`) on the basis of a consuming-
-  repo feature PRD. Those files describe the AI Agile pipeline itself;
-  feature PRDs from consuming repos do not change them.
+  repo feature PRD. Those files describe the AI Agile pipeline itself.
 - Only push to `main` as the PR base unless the repo's default branch
   is something else (check with `gh repo view --json defaultBranchRef`).
-- If `docs/product/` does not exist in the repo, post a comment noting
-  the directory is absent and set-complete without changes.
+- If `docs/product/` does not exist, post a comment noting the
+  directory is absent and emit `AI_AGILE_STATUS: complete`.
 - `set-blocked` only when a genuine ambiguity makes it impossible to
   determine whether docs need updating. For small judgment calls, write
   the conservative update.
+- Do not call `status.sh` — the orchestrator handles all label
+  transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.

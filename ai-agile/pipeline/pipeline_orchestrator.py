@@ -135,6 +135,7 @@ class AgentDef:
     description: str
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
+    max_retries: int = 0  # auto-retry on crash (no sentinel), 0 = no retry
 
     @property
     def complete_label(self) -> str:
@@ -212,6 +213,7 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             description=entry["description"],
             session_scope=entry.get("session", {}).get("scope", "per_issue"),
             session_id_pattern=entry.get("session", {}).get("id_pattern"),
+            max_retries=int(entry.get("max_retries", 0)),
         ))
     return agents
 
@@ -897,6 +899,104 @@ def _captured_tail(lines: list[str], max_lines: int = 50, max_chars: int = 4000)
     return text
 
 
+# Sentinel emitted by agents as the last line of stdout to signal outcome.
+# Format:  AI_AGILE_STATUS: complete
+#          AI_AGILE_STATUS: review "short message"
+#          AI_AGILE_STATUS: blocked "reason"
+_SENTINEL_RE = re.compile(
+    r"^AI_AGILE_STATUS:\s+(complete|review|blocked)(?:\s+\"([^\"]*)\")?",
+    re.MULTILINE,
+)
+
+
+def _parse_agent_sentinel(captured_tail: str) -> tuple[Optional[str], str]:
+    """Scan the last 5 lines of captured output for the agent status sentinel.
+
+    Only the tail is searched — the sentinel must be the final meaningful
+    output. Restricting the search window prevents crafted issue body
+    content (reflected in stdout when the agent reads the issue) from
+    being mistaken for a legitimate sentinel.
+
+    Returns (status, message) where status is one of complete/review/blocked,
+    or (None, "") if no sentinel is found.
+    """
+    last_lines = "\n".join(captured_tail.splitlines()[-5:]) if captured_tail else ""
+    matches = list(_SENTINEL_RE.finditer(last_lines))
+    if not matches:
+        return None, ""
+    m = matches[-1]
+    return m.group(1), (m.group(2) or "")
+
+
+def _build_opening_announcement(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    session_id: str,
+) -> str:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = {
+        "session_id": session_id,
+        "agent": agent_def.agent,
+        "phase": "start",
+        "started_at": now,
+        "intent": agent_def.description[:120],
+    }
+    return (
+        f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
+        f"```json\n"
+        f"{json.dumps(payload, indent=2)}\n"
+        f"```"
+    )
+
+
+def _build_closing_announcement(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    session_id: str,
+    outcome: str,
+    summary: str,
+) -> str:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = {
+        "session_id": session_id,
+        "agent": agent_def.agent,
+        "phase": "end",
+        "ended_at": now,
+        "outcome": outcome,
+        "summary": summary,
+    }
+    return (
+        f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
+        f"```json\n"
+        f"{json.dumps(payload, indent=2)}\n"
+        f"```"
+    )
+
+
+def _apply_terminal_status(
+    gh: "GitHubClient",
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    status: str,
+) -> None:
+    """Remove :wip and apply the terminal label derived from the agent sentinel."""
+    try:
+        gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
+    except Exception as exc:
+        log.debug(
+            "  could not remove :wip for %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
+    label = agent_def.status_label(status)
+    try:
+        gh.add_label(work_item.number, label)
+    except Exception as exc:
+        log.error(
+            "  could not apply %s on #%d: %s",
+            label, work_item.number, exc,
+        )
+
+
 def invoke_agent(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -906,17 +1006,18 @@ def invoke_agent(
     """
     Invoke the agent via claude CLI.
 
-    Agents use status.sh for label transitions so they behave identically
-    whether called manually or by this orchestrator:
+    Agents signal their outcome by emitting a sentinel line to stdout:
 
-      bash .github/scripts/status.sh set-wip      <agent> <number>
-      bash .github/scripts/status.sh set-complete  <agent> <number>
-      bash .github/scripts/status.sh set-review    <agent> <number> [message]
-      bash .github/scripts/status.sh set-blocked   <agent> <number> <reason>
+      AI_AGILE_STATUS: complete
+      AI_AGILE_STATUS: review "short message for stakeholder"
+      AI_AGILE_STATUS: blocked "reason the agent could not proceed"
 
-    Agents must NOT call set-failed; the orchestrator applies :failed if
-    the subprocess exits non-zero without one of the three terminal calls
-    above. set-failed is reserved for the orchestrator.
+    The orchestrator parses the sentinel, applies the matching label, and
+    posts the closing announcement. Agents must NOT call status.sh for
+    ceremony — set-wip, opening/closing announcements, and final label
+    transitions are all handled here. set-failed is applied by the
+    orchestrator when the agent exits non-zero without a sentinel after
+    all retries are exhausted.
 
     Returns an AgentRunResult with success/returncode/captured_tail and
     a rate_limited flag (set when a pause was written). Caller MUST NOT
@@ -924,10 +1025,6 @@ def invoke_agent(
     run.
     """
     agent_file = SUBMODULE_ROOT / ".github/agents" / f"{agent_def.agent}.md"
-
-    if not STATUS_SH.exists():
-        log.error("status.sh not found at %s", STATUS_SH)
-        return AgentRunResult(success=False, captured_tail=f"status.sh not found at {STATUS_SH}")
 
     if not agent_file.exists():
         log.warning("    Agent file not found: %s — skipping", agent_file)
@@ -970,9 +1067,14 @@ def invoke_agent(
         f"Agent: {agent_def.agent}\n"
         f"{kind_label}: #{work_item.number} in {repo}\n"
         f"URL: {work_item.url}\n\n"
-        f"Env vars: $STATUS_SH $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT "
+        f"Env vars: $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT "
         f"$SESSION_ID $SESSION_SCOPE\n\n"
-        f"Call set-complete, set-review, or set-blocked before exiting."
+        f"Print exactly one of these as the last line before exiting:\n"
+        f"AI_AGILE_STATUS: complete\n"
+        f"AI_AGILE_STATUS: review \"short message\"\n"
+        f"AI_AGILE_STATUS: blocked \"reason\"\n"
+        f"(No leading spaces — the orchestrator's regex matches only at line start.)\n"
+        f"The orchestrator reads this sentinel, applies the label, and posts the closing announcement."
     )
 
     # Build the claude session ID.
@@ -1075,10 +1177,9 @@ def invoke_agent(
     # match. Keeping these narrow blocks the agent from reaching
     # secrets/settings/branches even if it is prompt-injected.
     base_tools = [
-        f"Bash(bash {STATUS_SH} *)",  # state transitions
         "Bash(gh issue view *)",       # read issue body / labels
-        "Bash(gh issue comment *)",    # post artefact + announcement comments
-        "Bash(gh issue edit *)",       # apply kind/* and other labels
+        "Bash(gh issue comment *)",    # post artefact comments
+        "Bash(gh issue edit *)",       # apply classification/* and other labels
         "Bash(gh issue list *)",       # cross-issue reads (impact-assessor etc.)
         "Bash(gh pr view *)",          # PR-side agents read PR
         "Bash(gh pr comment *)",       # PR-side agents post comments
@@ -1087,7 +1188,6 @@ def invoke_agent(
         "Bash(gh pr diff *)",          # pr-reviewer reads the diff
         "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
         "Bash(gh api repos/*/pulls/*)",
-        "Bash(date *)",                # ISO-8601 timestamps in announcements
         "Bash(cat *)",                 # read prompt-side files
         "Bash(grep *)",
         "Bash(find *)",
@@ -1112,7 +1212,6 @@ def invoke_agent(
     # work item's kind, so the agent's prompt cannot get them confused.
     agent_env = {
         **os.environ,
-        "STATUS_SH": str(STATUS_SH),
         "AI_AGILE_ROOT": str(SUBMODULE_ROOT),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO": repo,
@@ -1226,7 +1325,7 @@ def promote_gated_agents(
 
     Why this exists. The agent posts an artefact and applies :review,
     then the pipeline halts. When the human applies the gate label
-    (e.g. prd:approved), no event reaches the agent — the orchestrator
+    (e.g. 01_product_docs/prd-writer:approved), no event reaches the agent — the orchestrator
     is the actor that closes the loop.
 
     Promotion only fires when the agent is **actually in :review**. If
@@ -1479,11 +1578,33 @@ def process_work_item(
             continue
 
         # All conditions met — trigger this agent.
-        # The agent itself calls status.sh set-wip at start and
-        # set-complete / set-review / set-blocked on exit.
-        # The orchestrator only applies set-failed if the agent crashes
-        # (non-zero exit) without setting a terminal status itself.
+        # Pre-invocation ceremony: apply :wip and post the opening
+        # announcement so the timeline shows the agent is active before
+        # the claude subprocess starts. Ceremony moved here from agent
+        # prompts (issue #24) so all agents are consistent and prompts
+        # stay focused on task logic.
         log.info("  TRIGGER %-38s", agent_def.agent)
+
+        if not dry_run:
+            try:
+                gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
+                labels.add(agent_def.status_label(STATUS_WIP))
+                work_item.labels = labels
+            except Exception as exc:
+                log.error(
+                    "  could not apply :wip for %s on #%d: %s",
+                    agent_def.agent, work_item.number, exc,
+                )
+            try:
+                gh.post_comment(
+                    work_item.number,
+                    _build_opening_announcement(agent_def, work_item, session_id),
+                )
+            except Exception as exc:
+                log.warning(
+                    "  could not post opening announcement for %s on #%d: %s",
+                    agent_def.agent, work_item.number, exc,
+                )
 
         if audit_log is not None and session_id and not dry_run:
             audit_log.append(_make_audit_event(
@@ -1493,48 +1614,98 @@ def process_work_item(
             ))
         _invoked_at = time.monotonic()
 
+        # Retry loop: re-invoke on crash (no sentinel) up to max_retries times
+        # with exponential backoff. Rate-limit events break immediately.
+        _attempt = 0
         result = invoke_agent(agent_def, work_item, dry_run, repo)
+        sentinel_status: Optional[str] = None
+        sentinel_message: str = ""
+
+        while not dry_run:
+            if result.rate_limited:
+                break
+            sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
+            if sentinel_status or result.success or _attempt >= agent_def.max_retries:
+                break
+            _attempt += 1
+            _backoff = 5 * (2 ** (_attempt - 1))
+            log.info(
+                "  RETRY   %d/%d %-38s  (exit %d; sleeping %ds)",
+                _attempt, agent_def.max_retries,
+                agent_def.agent, result.returncode or -1, _backoff,
+            )
+            time.sleep(_backoff)
+            result = invoke_agent(agent_def, work_item, dry_run, repo)
+            if result.rate_limited:
+                break
 
         if not dry_run:
-            # Rate-limit short-circuit: invoke_agent already wrote the
-            # pause marker. Do NOT mark :failed — the agent never got a
-            # fair run. The next scheduled tick (after the pause
-            # expires) will retry.
+            # Finalise sentinel after retry loop (parse the last result)
+            if not result.rate_limited:
+                sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
+
+            # Rate-limit short-circuit: the pause marker was written.
+            # Do NOT mark :failed — the agent never got a fair run.
+            # The next scheduled tick (after the pause expires) will retry.
             if result.rate_limited:
                 paused, _reason, until = is_pipeline_paused()
                 log.warning(
                     "  PAUSED  %-38s  rate-limited; resuming after %s",
                     agent_def.agent, until.isoformat() if until else "?"
                 )
+                # Remove :wip so the next tick sees a clean state
+                try:
+                    gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
+                except Exception:
+                    pass
                 break
 
-            # Refresh labels — the agent may have applied wip, complete,
-            # review, or blocked via status.sh during its run.
-            labels = gh.get_issue_labels(work_item.number)
-            work_item.labels = labels
-            final_status = agent_status(labels, agent_def.agent)
-
-            if not result.success and final_status not in (
-                STATUS_COMPLETE, STATUS_REVIEW, STATUS_BLOCKED, STATUS_SKIPPED
-            ):
-                # Agent crashed without cleanly setting a status. Mirror
-                # status.sh's behaviour: clear any non-terminal status
-                # the agent may have left behind (e.g. :wip), then apply
-                # :failed so exactly one status label remains.
+            if sentinel_status:
+                # Agent explicitly signaled an outcome via sentinel.
+                final_status = sentinel_status
+                _apply_terminal_status(gh, agent_def, work_item, sentinel_status)
+            elif result.success:
+                # Exit 0 without sentinel — treat as complete (fallback for
+                # agents that haven't adopted the sentinel protocol yet).
+                final_status = STATUS_COMPLETE
+                _apply_terminal_status(gh, agent_def, work_item, STATUS_COMPLETE)
+                sentinel_message = "completed (no sentinel; inferred from exit 0)"
+            else:
+                # Non-zero exit, no sentinel, retries exhausted — apply :failed.
                 _apply_failed(gh, agent_def, work_item, result)
+                final_status = STATUS_FAILED
                 log.error(
-                    "  FAILED  %-38s  pipeline paused on #%d",
-                    agent_def.agent, work_item.number
+                    "  FAILED  %-38s  after %d attempt(s) on #%d",
+                    agent_def.agent, _attempt + 1, work_item.number
                 )
                 if audit_log is not None and session_id:
                     audit_log.append(_make_audit_event(
                         session_id, "agent.failed", repo,
                         work_item=work_item, agent=agent_def.agent,
                         outcome_status="failed",
-                        outcome_detail=f"exit code {result.returncode}",
+                        outcome_detail=f"exit code {result.returncode} after {_attempt + 1} attempt(s)",
                         duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                     ))
                 break
+
+            # Post closing announcement for non-failure outcomes.
+            try:
+                gh.post_comment(
+                    work_item.number,
+                    _build_closing_announcement(
+                        agent_def, work_item, session_id,
+                        final_status, sentinel_message,
+                    ),
+                )
+            except Exception as exc:
+                log.warning(
+                    "  could not post closing announcement for %s on #%d: %s",
+                    agent_def.agent, work_item.number, exc,
+                )
+
+            # Refresh label set from GitHub after our writes.
+            labels = gh.get_issue_labels(work_item.number)
+            work_item.labels = labels
 
             log.info(
                 "  %-6s  %-38s",
@@ -1555,8 +1726,8 @@ def process_work_item(
                     duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                 ))
 
-            # If the agent wrote complete and a human gate is configured,
-            # post the gate comment so the reviewer knows what to do.
+            # If complete and a human gate is configured, post the gate
+            # comment so the reviewer knows what to do.
             if final_status == STATUS_COMPLETE and agent_def.human_gate_after and agent_def.human_gate_label:
                 gh.post_comment(
                     work_item.number,

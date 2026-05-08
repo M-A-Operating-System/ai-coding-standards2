@@ -1,6 +1,6 @@
 # Approve PRD
 
-Apply the `prd:approved` gate label to an issue, advancing the pipeline from
+Apply the `01_product_docs/prd-writer:approved` gate label to an issue, advancing the pipeline from
 `01_product_docs/prd-writer:review` to `01_product_docs/prd-writer:complete`.
 
 Run this after reviewing the PRD in the issue body and deciding it is
@@ -36,12 +36,12 @@ Examples:
 
 4. Apply the gate label:
    ```bash
-   gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "prd:approved"
+   gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "01_product_docs/prd-writer:approved"
    ```
 
 5. Confirm:
    ```
-   ✅ Applied `prd:approved` to issue #42.
+   ✅ Applied `01_product_docs/prd-writer:approved` to issue #42.
    The orchestrator will promote prd-writer to :complete on the next tick
    and trigger the next pipeline phase.
    ```

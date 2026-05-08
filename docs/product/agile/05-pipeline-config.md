@@ -41,7 +41,7 @@ For each agent, exactly these facts:
 | `trigger` | yes | One of: `{event: "..."}`, `{label: "..."}`, `{schedule: "..."}`, optionally with `path_filter` |
 | `dependencies` | yes | Array of agent names (in the same `{phase}/{short-name}` format) that must reach `:complete` before this agent can run |
 | `human_gate_after` | yes | Boolean — is there a human gate after this agent? |
-| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are NOT phase-prefixed — they are short and stable (e.g. `prd:approved`, `pr:approved`). |
+| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are stable identifiers — they may be agent-scoped (e.g. `01_product_docs/prd-writer:approved`) or short-form (e.g. `pr:approved`). |
 | `description` | yes | One-sentence statement of what the agent owns |
 | `session` | no | Session management config (see [§ Session management](#session-management) below) |
 

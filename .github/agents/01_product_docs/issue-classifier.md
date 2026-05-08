@@ -25,36 +25,7 @@ decompose. You just classify and validate.
 
 ---
 
-## Step 1 — Apply wip
-
-```bash
-bash $STATUS_SH set-wip 01_product_docs/issue-classifier $ISSUE_NUMBER
-```
-
----
-
-## Step 2 — Opening announcement
-
-```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 -->
-\`\`\`json
-{
-  "session_id": "${SESSION_ID}",
-  "agent": "01_product_docs/issue-classifier",
-  "phase": "start",
-  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "intent": "Classify the issue and validate required fields.",
-  "inputs_read": ["issue body", "issue title"]
-}
-\`\`\`
-EOF
-)"
-```
-
----
-
-## Step 3 — Read the issue
+## Step 1 — Read the issue
 
 ```bash
 gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author
@@ -64,7 +35,7 @@ You need the title, the body, the labels, and the author login.
 
 ---
 
-## Step 4 — Classify the issue
+## Step 2 — Classify the issue
 
 Pick exactly one of the five classifications based on the body content:
 
@@ -93,7 +64,7 @@ classification that has the higher review bar:
 
 ---
 
-## Step 5 — Validate required fields
+## Step 3 — Validate required fields
 
 A well-formed issue must contain enough for `prd-writer` to draft a
 PRD without guessing. Required fields:
@@ -106,19 +77,18 @@ PRD without guessing. Required fields:
 The fields do not need to be labelled with the exact words above — a
 plain-English description that conveys the same information is fine.
 
-If both are present, proceed to Step 6 (success path).
-If either is missing, proceed to Step 7 (rejection path).
+If both are present, proceed to Step 4 (success path).
+If either is missing, proceed to Step 5 (rejection path).
 
 ---
 
-## Step 6 — Success path
+## Step 4 — Success path
 
-Post the classification result as an issue comment, then mark
-complete.
+Post the classification result as an issue comment, then signal completion.
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/artefact/v1 -->
+<!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue classification
 
 **Type:** {bug | toil | enhancement | feature | spike}
@@ -130,49 +100,29 @@ EOF
 )"
 ```
 
-Add the `kind/{classification}` label so downstream agents can trigger
-on it if they need to:
+Add the `classification: {classification}` label so downstream agents
+can filter on type if needed:
 
 ```bash
-gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "kind/{classification}"
+gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "classification: {classification}"
 ```
 
-Post the closing announcement:
+Then emit the sentinel:
 
-```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 -->
-\`\`\`json
-{
-  "session_id": "${SESSION_ID}",
-  "agent": "01_product_docs/issue-classifier",
-  "phase": "end",
-  "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "outcome": "complete",
-  "summary": "Classified as {classification}. Required fields present.",
-  "artefacts": ["the classification comment posted in this run"]
-}
-\`\`\`
-EOF
-)"
 ```
-
-Finally, mark complete:
-
-```bash
-bash $STATUS_SH set-complete 01_product_docs/issue-classifier $ISSUE_NUMBER
+AI_AGILE_STATUS: complete
 ```
 
 ---
 
-## Step 7 — Rejection path (missing required fields)
+## Step 5 — Rejection path (missing required fields)
 
 Post a corrective comment naming exactly which fields are missing and
-what would be acceptable, then mark blocked.
+what would be acceptable, then signal blocked.
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/artefact/v1 -->
+<!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue cannot be classified — missing required fields
 
 This issue is missing the following required field(s):
@@ -189,31 +139,10 @@ EOF
 )"
 ```
 
-Closing announcement:
+Then emit the sentinel:
 
-```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 -->
-\`\`\`json
-{
-  "session_id": "${SESSION_ID}",
-  "agent": "01_product_docs/issue-classifier",
-  "phase": "end",
-  "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "outcome": "blocked",
-  "summary": "Required fields missing; corrective comment posted.",
-  "artefacts": ["the corrective comment posted in this run"]
-}
-\`\`\`
-EOF
-)"
 ```
-
-Mark blocked:
-
-```bash
-bash $STATUS_SH set-blocked 01_product_docs/issue-classifier $ISSUE_NUMBER \
-  "Required fields missing — see corrective comment above."
+AI_AGILE_STATUS: blocked "Required fields missing — see corrective comment."
 ```
 
 ---
@@ -228,9 +157,10 @@ bash $STATUS_SH set-blocked 01_product_docs/issue-classifier $ISSUE_NUMBER \
   wrong. Classify from the body content.
 - Do not run on PRs. Your `object` declares `["issue"]`; the
   orchestrator should never invoke you on a PR. If somehow invoked on
-  a PR, set-blocked with reason "01_product_docs/issue-classifier does not
-  operate on PRs."
+  a PR, emit: `AI_AGILE_STATUS: blocked "issue-classifier does not operate on PRs."`
 - Choose `claude-haiku` for the model — classification is a
   bounded, fast task. Reasoning power is not the bottleneck.
 - One artefact comment per run. Do not re-post the classification on
-  re-runs; the `set-wip` and announcements provide the audit trail.
+  re-runs; the orchestrator's opening/closing announcements provide the audit trail.
+- Do not call `status.sh` — the orchestrator handles all label
+  transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
