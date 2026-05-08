@@ -45,6 +45,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -788,6 +789,12 @@ AI_AGILE_CONTEXT = SUBMODULE_ROOT / "ai-agile" / "AGENTS.md"
 # workflow_dispatch with --clear-pause) resumes work.
 PAUSE_MARKER_PATH = SUBMODULE_ROOT / ".pipeline-pause"
 
+# Fixed UUID v5 namespace for deterministic session ID generation.
+# The claude CLI requires a valid UUID for --session-id; we derive one
+# deterministically from our human-readable session key so the same
+# (agent, scope, work-item) triple always maps to the same UUID across runs.
+_SESSION_NAMESPACE = uuid.UUID("a15a91e5-a191-5001-b001-000000000001")
+
 # Default pause duration if the API response does not name one. Five
 # minutes is short enough that a transient burst recovers quickly; long
 # enough that we don't hammer the API after a real per-minute exhaust.
@@ -1037,6 +1044,13 @@ def invoke_agent(
         )
         agent_session_id = sanitised
 
+    # The claude CLI requires a valid UUID for --session-id.
+    # Derive one deterministically from our human-readable key via UUID v5 so
+    # the same (agent, scope, work-item) triple maps to the same UUID on every
+    # re-run. The human-readable key is kept in SESSION_ID for agents to use
+    # in announcement JSON.
+    agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, agent_session_id))
+
     if dry_run:
         log.info(
             "    [DRY RUN] %s | model: %s | max_turns: %d | session: %s | prompt: %d chars",
@@ -1045,7 +1059,7 @@ def invoke_agent(
         return AgentRunResult(success=True)
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
-    log.info("    session: %s (scope=%s)", agent_session_id, agent_def.session_scope)
+    log.info("    session: %s → uuid %s (scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
     if agent_model:
         log.debug("    model: %s", agent_model)
     if extra_tools:
@@ -1081,7 +1095,7 @@ def invoke_agent(
         "claude",
         "--allowedTools", ",".join(base_tools + extra_tools),
         "--max-turns", str(max_turns),
-        "--session-id", agent_session_id,
+        "--session-id", agent_session_uuid,
     ]
     if agent_model:
         cmd += ["--model", agent_model]
