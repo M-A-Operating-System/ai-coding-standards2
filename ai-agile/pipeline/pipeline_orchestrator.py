@@ -910,12 +910,18 @@ _SENTINEL_RE = re.compile(
 
 
 def _parse_agent_sentinel(captured_tail: str) -> tuple[Optional[str], str]:
-    """Scan captured output for the last agent status sentinel.
+    """Scan the last 5 lines of captured output for the agent status sentinel.
+
+    Only the tail is searched — the sentinel must be the final meaningful
+    output. Restricting the search window prevents crafted issue body
+    content (reflected in stdout when the agent reads the issue) from
+    being mistaken for a legitimate sentinel.
 
     Returns (status, message) where status is one of complete/review/blocked,
     or (None, "") if no sentinel is found.
     """
-    matches = list(_SENTINEL_RE.finditer(captured_tail))
+    last_lines = "\n".join(captured_tail.splitlines()[-5:]) if captured_tail else ""
+    matches = list(_SENTINEL_RE.finditer(last_lines))
     if not matches:
         return None, ""
     m = matches[-1]
@@ -928,16 +934,17 @@ def _build_opening_announcement(
     session_id: str,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = {
+        "session_id": session_id,
+        "agent": agent_def.agent,
+        "phase": "start",
+        "started_at": now,
+        "intent": agent_def.description[:120],
+    }
     return (
         f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
         f"```json\n"
-        f"{{\n"
-        f'  "session_id": "{session_id}",\n'
-        f'  "agent": "{agent_def.agent}",\n'
-        f'  "phase": "start",\n'
-        f'  "started_at": "{now}",\n'
-        f'  "intent": "{agent_def.description[:120]}"\n'
-        f"}}\n"
+        f"{json.dumps(payload, indent=2)}\n"
         f"```"
     )
 
@@ -950,18 +957,18 @@ def _build_closing_announcement(
     summary: str,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    safe_summary = summary.replace('"', '\\"')
+    payload = {
+        "session_id": session_id,
+        "agent": agent_def.agent,
+        "phase": "end",
+        "ended_at": now,
+        "outcome": outcome,
+        "summary": summary,
+    }
     return (
         f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
         f"```json\n"
-        f"{{\n"
-        f'  "session_id": "{session_id}",\n'
-        f'  "agent": "{agent_def.agent}",\n'
-        f'  "phase": "end",\n'
-        f'  "ended_at": "{now}",\n'
-        f'  "outcome": "{outcome}",\n'
-        f'  "summary": "{safe_summary}"\n'
-        f"}}\n"
+        f"{json.dumps(payload, indent=2)}\n"
         f"```"
     )
 
@@ -975,8 +982,11 @@ def _apply_terminal_status(
     """Remove :wip and apply the terminal label derived from the agent sentinel."""
     try:
         gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug(
+            "  could not remove :wip for %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
     label = agent_def.status_label(status)
     try:
         gh.add_label(work_item.number, label)
