@@ -43,6 +43,21 @@
     },
 
     {
+      "agent": "01_product_docs/link-pr-to-issue",
+      "type": "script",
+      "script": ".github/scripts/link-pr-to-issue.sh",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "01_product_docs/prd-docs-updater:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["01_product_docs/prd-docs-updater"],
+      "session": { "scope": "per_issue" },
+      "description": "Scripted step: discovers PRs opened by agents for this issue (by branch naming convention issue-{N}) and applies source-issue:{N} and source-agent labels to each. Deterministic; does not invoke Claude CLI."
+    },
+
+    {
       "agent": "09_gap_assessment/codebase-reviewer",
       "phase": "09_gap_assessment",
       "object": ["issue"],

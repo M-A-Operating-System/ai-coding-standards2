@@ -93,6 +93,23 @@
             }
           }
         },
+        "type": {
+          "type": "string",
+          "enum": ["agent", "script"],
+          "default": "agent",
+          "description": "Invocation mode. 'agent' (default) invokes Claude CLI with the matching .github/agents/{phase}/{name}.md prompt. 'script' runs the file at the 'script' path directly via bash with the standard environment variables."
+        },
+        "script": {
+          "type": "string",
+          "description": "Repo-relative path to the shell script to execute. Required when type is 'script'; ignored otherwise."
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0,
+          "description": "How many times the orchestrator will re-invoke this step after a :failed outcome before giving up. 0 means no retries (fail immediately)."
+        },
         "description": {
           "type": "string",
           "minLength": 1
@@ -102,6 +119,10 @@
         {
           "if": { "properties": { "human_gate_after": { "const": true } } },
           "then": { "required": ["human_gate_label"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "script" } } },
+          "then": { "required": ["script"] }
         }
       ]
     }

@@ -133,6 +133,8 @@ class AgentDef:
     human_gate_after: bool
     human_gate_label: Optional[str]
     description: str
+    step_type: str = "agent"           # "agent" | "script"
+    script_path: Optional[str] = None  # repo-relative path to script when step_type == "script"
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
 
@@ -210,6 +212,8 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             human_gate_after=entry.get("human_gate_after", False),
             human_gate_label=entry.get("human_gate_label"),
             description=entry["description"],
+            step_type=entry.get("type", "agent"),
+            script_path=entry.get("script"),
             session_scope=entry.get("session", {}).get("scope", "per_issue"),
             session_id_pattern=entry.get("session", {}).get("id_pattern"),
         ))
@@ -897,6 +901,158 @@ def _captured_tail(lines: list[str], max_lines: int = 50, max_chars: int = 4000)
     return text
 
 
+# ---------------------------------------------------------------------------
+# Sentinel parsing and status application (shared by agent and script paths)
+# ---------------------------------------------------------------------------
+
+# Matches the AI_AGILE_STATUS: sentinel that agents and scripts emit.
+# Only the last 5 lines of output are searched to prevent crafted content
+# in an issue body (echoed earlier in the run) from spoofing the sentinel.
+_SENTINEL_RE = re.compile(
+    r"^AI_AGILE_STATUS:\s+(complete|review|blocked)(?:\s+\"([^\"]*)\")?",
+    re.MULTILINE,
+)
+
+
+def _parse_agent_sentinel(captured_tail: str) -> tuple[Optional[str], str]:
+    """Search the last 5 lines of captured output for an AI_AGILE_STATUS sentinel.
+
+    Returns (status, message). status is one of complete/review/blocked,
+    or None when no sentinel is found. Only the last 5 lines are searched
+    so that issue-body content echoed earlier in the run cannot spoof the result.
+    """
+    last_lines = "\n".join(captured_tail.splitlines()[-5:])
+    m = _SENTINEL_RE.search(last_lines)
+    if m:
+        return m.group(1), (m.group(2) or "")
+    return None, ""
+
+
+def _apply_terminal_status(
+    gh: GitHubClient,
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    status: str,
+) -> None:
+    """Remove :wip and apply a terminal status label for the given agent."""
+    try:
+        gh.remove_label(work_item.number, agent_def.in_progress_label)
+    except Exception as exc:
+        log.debug(
+            "could not remove :wip for %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
+    gh.add_label(work_item.number, agent_def.status_label(status))
+
+
+# ---------------------------------------------------------------------------
+# Script invocation (type: script pipeline steps)
+# ---------------------------------------------------------------------------
+
+# Maximum wall-clock time for a single script invocation.
+SCRIPT_TIMEOUT_SECONDS = 300
+
+
+def invoke_script(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    dry_run: bool,
+    repo: str,
+) -> AgentRunResult:
+    """Invoke a script-type pipeline step directly via bash.
+
+    The script receives the same environment variables as an agent
+    ($REPO, $ISSUE_NUMBER / $PR_NUMBER, $WORK_ITEM_KIND, etc.) and must
+    emit AI_AGILE_STATUS: complete|review|blocked as the last output line.
+    The orchestrator reads the sentinel and applies the matching label.
+
+    No Claude CLI is invoked. Rate-limit detection is not applicable.
+    """
+    if not agent_def.script_path:
+        log.warning("    Script step %s has no script path — skipping", agent_def.agent)
+        return AgentRunResult(
+            success=False,
+            captured_tail=f"pipeline.json entry '{agent_def.agent}' has type:script but no script field.",
+        )
+
+    script_file = SUBMODULE_ROOT / agent_def.script_path
+    if not script_file.exists():
+        log.warning("    Script not found: %s — skipping", script_file)
+        return AgentRunResult(
+            success=False,
+            captured_tail=f"Script not found at {script_file}.",
+        )
+
+    if dry_run:
+        log.info(
+            "    [DRY RUN] script: %s | script_file: %s",
+            agent_def.agent, script_file,
+        )
+        return AgentRunResult(success=True)
+
+    log.info("    Invoking script: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
+    log.debug("    script_file: %s", script_file)
+
+    agent_env = {
+        **os.environ,
+        "STATUS_SH":        str(STATUS_SH),
+        "AI_AGILE_ROOT":    str(SUBMODULE_ROOT),
+        "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
+        "REPO":             repo,
+        "WORK_ITEM_KIND":   work_item.kind,
+        "WORK_ITEM_NUMBER": str(work_item.number),
+    }
+    if work_item.kind == "issue":
+        agent_env["ISSUE_NUMBER"] = str(work_item.number)
+    else:
+        agent_env["PR_NUMBER"] = str(work_item.number)
+
+    MAX_SCRIPT_CAPTURED_LINES = 500
+    captured_lines: list[str] = []
+
+    proc: subprocess.Popen | None = None
+    try:
+        proc = subprocess.Popen(
+            ["bash", str(script_file)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=agent_env,
+        )
+        deadline = time.monotonic() + SCRIPT_TIMEOUT_SECONDS
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                sys.stderr.write(line)
+                if len(captured_lines) < MAX_SCRIPT_CAPTURED_LINES:
+                    captured_lines.append(line)
+                if time.monotonic() > deadline:
+                    raise subprocess.TimeoutExpired(["bash", str(script_file)], SCRIPT_TIMEOUT_SECONDS)
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            log.error("    Script %s timed out on #%d", agent_def.agent, work_item.number)
+            _terminate_subprocess(proc)
+            return AgentRunResult(
+                success=False,
+                returncode=proc.returncode,
+                captured_tail=(
+                    f"Script timed out after {SCRIPT_TIMEOUT_SECONDS}s.\n\n"
+                    f"Last output:\n{_captured_tail(captured_lines)}"
+                ),
+            )
+
+        success = proc.returncode == 0
+        return AgentRunResult(
+            success=success,
+            returncode=proc.returncode,
+            captured_tail=_captured_tail(captured_lines),
+        )
+
+    except FileNotFoundError:
+        log.error("    'bash' not found — cannot run script step")
+        return AgentRunResult(success=False, captured_tail="bash not found in PATH.")
+
+
 def invoke_agent(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -1478,28 +1634,30 @@ def process_work_item(
             log.debug("  skip %-40s  [dependencies unmet]", agent_def.agent)
             continue
 
-        # All conditions met — trigger this agent.
-        # The agent itself calls status.sh set-wip at start and
-        # set-complete / set-review / set-blocked on exit.
-        # The orchestrator only applies set-failed if the agent crashes
-        # (non-zero exit) without setting a terminal status itself.
-        log.info("  TRIGGER %-38s", agent_def.agent)
+        # All conditions met — dispatch to the correct invocation mode.
+        log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
 
         if audit_log is not None and session_id and not dry_run:
             audit_log.append(_make_audit_event(
                 session_id, "agent.invoked", repo,
                 work_item=work_item, agent=agent_def.agent,
                 outcome_status="started",
+                outcome_detail=f"mode={agent_def.step_type}",
             ))
         _invoked_at = time.monotonic()
 
-        result = invoke_agent(agent_def, work_item, dry_run, repo)
+        if agent_def.step_type == "script":
+            # Orchestrator owns :wip for scripts (scripts don't call status.sh).
+            if not dry_run:
+                gh.add_label(work_item.number, agent_def.in_progress_label)
+            result = invoke_script(agent_def, work_item, dry_run, repo)
+        else:
+            # Agent applies its own :wip via status.sh at startup.
+            result = invoke_agent(agent_def, work_item, dry_run, repo)
 
         if not dry_run:
-            # Rate-limit short-circuit: invoke_agent already wrote the
-            # pause marker. Do NOT mark :failed — the agent never got a
-            # fair run. The next scheduled tick (after the pause
-            # expires) will retry.
+            # Rate-limit short-circuit: only agents can be rate-limited.
+            # Scripts run locally and never touch the Anthropic API.
             if result.rate_limited:
                 paused, _reason, until = is_pipeline_paused()
                 log.warning(
@@ -1508,55 +1666,82 @@ def process_work_item(
                 )
                 break
 
-            # Refresh labels — the agent may have applied wip, complete,
-            # review, or blocked via status.sh during its run.
+            if agent_def.step_type == "script":
+                # Scripts emit AI_AGILE_STATUS: to stdout; the orchestrator
+                # reads the sentinel and applies the corresponding label.
+                sentinel_status, _ = _parse_agent_sentinel(result.captured_tail)
+                if sentinel_status:
+                    _apply_terminal_status(gh, agent_def, work_item, sentinel_status)
+                    final_status = sentinel_status
+                elif not result.success:
+                    _apply_failed(gh, agent_def, work_item, result)
+                    log.error(
+                        "  FAILED  %-38s  pipeline halted on #%d",
+                        agent_def.agent, work_item.number,
+                    )
+                    if audit_log is not None and session_id:
+                        audit_log.append(_make_audit_event(
+                            session_id, "agent.failed", repo,
+                            work_item=work_item, agent=agent_def.agent,
+                            outcome_status="failed",
+                            outcome_detail=f"exit code {result.returncode} mode=script",
+                            duration_ms=int((time.monotonic() - _invoked_at) * 1000),
+                        ))
+                    break
+                else:
+                    # Exited 0 without sentinel — treat as complete.
+                    _apply_terminal_status(gh, agent_def, work_item, STATUS_COMPLETE)
+                    final_status = STATUS_COMPLETE
+            else:
+                # Agents apply labels themselves via status.sh; read them back.
+                labels = gh.get_issue_labels(work_item.number)
+                work_item.labels = labels
+                final_status = agent_status(labels, agent_def.agent)
+
+                if not result.success and final_status not in (
+                    STATUS_COMPLETE, STATUS_REVIEW, STATUS_BLOCKED, STATUS_SKIPPED
+                ):
+                    _apply_failed(gh, agent_def, work_item, result)
+                    log.error(
+                        "  FAILED  %-38s  pipeline paused on #%d",
+                        agent_def.agent, work_item.number,
+                    )
+                    if audit_log is not None and session_id:
+                        audit_log.append(_make_audit_event(
+                            session_id, "agent.failed", repo,
+                            work_item=work_item, agent=agent_def.agent,
+                            outcome_status="failed",
+                            outcome_detail=f"exit code {result.returncode} mode=agent",
+                            duration_ms=int((time.monotonic() - _invoked_at) * 1000),
+                        ))
+                    break
+
+            # Refresh labels so the rest of the loop sees consistent state.
             labels = gh.get_issue_labels(work_item.number)
             work_item.labels = labels
-            final_status = agent_status(labels, agent_def.agent)
-
-            if not result.success and final_status not in (
-                STATUS_COMPLETE, STATUS_REVIEW, STATUS_BLOCKED, STATUS_SKIPPED
-            ):
-                # Agent crashed without cleanly setting a status. Mirror
-                # status.sh's behaviour: clear any non-terminal status
-                # the agent may have left behind (e.g. :wip), then apply
-                # :failed so exactly one status label remains.
-                _apply_failed(gh, agent_def, work_item, result)
-                log.error(
-                    "  FAILED  %-38s  pipeline paused on #%d",
-                    agent_def.agent, work_item.number
-                )
-                if audit_log is not None and session_id:
-                    audit_log.append(_make_audit_event(
-                        session_id, "agent.failed", repo,
-                        work_item=work_item, agent=agent_def.agent,
-                        outcome_status="failed",
-                        outcome_detail=f"exit code {result.returncode}",
-                        duration_ms=int((time.monotonic() - _invoked_at) * 1000),
-                    ))
-                break
 
             log.info(
                 "  %-6s  %-38s",
-                (final_status or "?").upper(), agent_def.agent
+                (final_status or "?").upper(), agent_def.agent,
             )
 
             if audit_log is not None and session_id and final_status:
                 _et_map = {
                     STATUS_COMPLETE: "agent.complete",
-                    STATUS_REVIEW: "agent.review",
-                    STATUS_BLOCKED: "agent.blocked",
-                    STATUS_SKIPPED: "agent.skipped",
+                    STATUS_REVIEW:   "agent.review",
+                    STATUS_BLOCKED:  "agent.blocked",
+                    STATUS_SKIPPED:  "agent.skipped",
                 }
                 audit_log.append(_make_audit_event(
                     session_id, _et_map.get(final_status, "agent.complete"), repo,
                     work_item=work_item, agent=agent_def.agent,
                     outcome_status=final_status,
+                    outcome_detail=f"mode={agent_def.step_type}",
                     duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                 ))
 
-            # If the agent wrote complete and a human gate is configured,
-            # post the gate comment so the reviewer knows what to do.
+            # If the step completed and a human gate is configured, post
+            # the gate comment so the reviewer knows what to do.
             if final_status == STATUS_COMPLETE and agent_def.human_gate_after and agent_def.human_gate_label:
                 gh.post_comment(
                     work_item.number,
@@ -1567,11 +1752,11 @@ def process_work_item(
                 )
                 log.info(
                     "  GATE    %-38s  waiting for: %s",
-                    agent_def.agent, agent_def.human_gate_label
+                    agent_def.agent, agent_def.human_gate_label,
                 )
 
-            # Halt if the agent blocked or requested review — do not
-            # attempt to trigger further agents on this item this run.
+            # Halt if blocked or awaiting review — do not trigger further
+            # steps on this item this run.
             if final_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
                 break
 
