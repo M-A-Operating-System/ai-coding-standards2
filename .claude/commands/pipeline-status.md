@@ -50,7 +50,7 @@ Examples:
    Phase             Agent                                  Status     Action needed
    ─────────────────────────────────────────────────────────────────────────────────
    01_product_docs   01_product_docs/issue-classifier       ✅ done
-   01_product_docs   01_product_docs/prd-writer             🔍 review  Apply `prd:approved` to advance
+   01_product_docs   01_product_docs/prd-writer             🔍 review  Apply `01_product_docs/prd-writer:approved` to advance
    01_product_docs   01_product_docs/prd-docs-updater       ⏳ pending
    ```
 
@@ -65,7 +65,7 @@ Examples:
 
 7. After the table, if any agent is in `review`, list the exact label to apply:
    ```
-   To advance: apply label `prd:approved` on issue #42
+   To advance: apply label `01_product_docs/prd-writer:approved` on issue #42
    ```
 
 8. If any agent is `blocked` or `failed`, give the recovery command:

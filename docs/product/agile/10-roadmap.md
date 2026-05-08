@@ -57,7 +57,7 @@ an adjacent agent without losing the separation of concerns that matters.
 | `dependency-planner` + `task-decomposer` → `task-decomposer` | Single agent posts the child task list and the dependency order in one comment | `plan:approved` |
 | `coverage-enforcer` → `test-runner` | Single agent posts test results and coverage delta in one comment | `coverage:approved` |
 | `adr-proposer` → `architect` | ADR logic runs as the last step of the architect's work | No separate gate |
-| `product-standards-checker` → `prd-writer` | Standards check runs inline; violations appear in the PRD comment | `prd:approved` |
+| `product-standards-checker` → `prd-writer` | Standards check runs inline; violations appear in the PRD comment | `01_product_docs/prd-writer:approved` |
 
 ### Detail
 
@@ -80,7 +80,7 @@ is no separate `adr-proposer:review` gate.
 
 **`prd-writer` runs `product-standards-checker` inline.** Violations of
 product-layer standards are noted directly in the PRD comment and must be
-resolved before the stakeholder applies `prd:approved`. The checker does not
+resolved before the stakeholder applies `01_product_docs/prd-writer:approved`. The checker does not
 post a separate comment or require a separate label.
 
 ---
@@ -104,7 +104,7 @@ merged in), `ticket-sizer`, `architect` (with `adr-proposer` merged in),
 `task-decomposer` (with `dependency-planner` merged in), `coder`,
 `standards-compliance-reviewer`, `pr-reviewer`.
 
-**Gates.** `prd:approved`, `size:approved`, `design:approved`, `plan:approved`,
+**Gates.** `01_product_docs/prd-writer:approved`, `size:approved`, `design:approved`, `plan:approved`,
 `pr:approved`.
 
 **Goal.** A ticket can flow from a GitHub issue to a merged PR with a human

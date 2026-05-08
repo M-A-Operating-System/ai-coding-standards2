@@ -95,7 +95,7 @@ without parsing or rewriting the others.
 | Subsection marker | On issue body | On PR body | Owner |
 |---|---|---|---|
 | `ai-agile/todos/build-plan/v1` | yes | yes (mirrored from issue) | `task-decomposer` (issue), `coder` (PR — updates as commits land) |
-| `ai-agile/todos/acceptance-criteria/v1` | yes | no | `prd-writer` (populates after `prd:approved`) |
+| `ai-agile/todos/acceptance-criteria/v1` | yes | no | `prd-writer` (populates after `01_product_docs/prd-writer:approved`) |
 | `ai-agile/todos/open-questions/v1` | yes | yes | Orchestrator (updated when Question Cards open / answer / withdraw) |
 | `ai-agile/todos/standards-remediations/v1` | no | yes | `standards-compliance-reviewer` |
 | `ai-agile/todos/test-scenarios/v1` | no | yes | `test-spec-writer` (populates), `test-runner` (ticks off as scenarios pass) |

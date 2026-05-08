@@ -285,7 +285,7 @@ if final_status in {blocked, failed}:
 
 ## Gate promotion
 
-When a human applies a gate label (e.g., `prd:approved`), the orchestrator
+When a human applies a gate label (e.g., `01_product_docs/prd-writer:approved`), the orchestrator
 must transition the gated agent from `:review` to `:complete`. This is a
 separate concern from agent invocation and runs on every tick regardless of
 whether an agent was invoked.

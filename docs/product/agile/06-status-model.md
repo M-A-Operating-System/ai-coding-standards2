@@ -202,11 +202,11 @@ orchestrator:  re-evaluates eligibility
 
 - **Single writer.** All transitions out of `:review` go through one
   code path. Easier to audit, easier to test, no race between a human
-  applying `prd:approved` and a stale agent webhook setting
+  applying `01_product_docs/prd-writer:approved` and a stale agent webhook setting
   `product-docs/prd-writer:complete`.
 - **Atomic from the dependency-graph point of view.** The downstream
   agent's eligibility check is one query: "is
-  `product-docs/prd-writer:complete` present and `prd:approved`
+  `product-docs/prd-writer:complete` present and `01_product_docs/prd-writer:approved`
   present?" The orchestrator guarantees these two labels appear
   together or not at all.
 - **Humans do less.** Approving a gate is one click (apply label).
