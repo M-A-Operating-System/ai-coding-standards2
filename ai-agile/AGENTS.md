@@ -240,7 +240,7 @@ Environment variables the orchestrator exports for you:
 | `WORK_ITEM_KIND` | `issue` or `pr` |
 | `WORK_ITEM_NUMBER` | Numeric ID, regardless of kind |
 | `SESSION_ID` | The human-readable session key for this invocation (e.g. `ais-v1-01-product-docs-prd-writer-issue-42`). Use it in `session_id` fields of announcement/artefact JSON so runs are traceable. |
-| `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
+| `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` (as a UUID v5 derived from `SESSION_ID`) to the claude CLI. |
 
 ### Session scopes
 

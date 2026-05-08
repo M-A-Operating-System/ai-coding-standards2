@@ -1052,7 +1052,7 @@ def invoke_agent(
         log.info(
             "    [DRY RUN] %s | model: %s | max_turns: %d | session: %s (uuid: %s) | prompt: %d chars",
             agent_def.agent, agent_model or "default", max_turns,
-            agent_session_id, uuid.uuid5(_SESSION_NAMESPACE, agent_session_id), len(prompt),
+            agent_session_id, str(uuid.uuid5(_SESSION_NAMESPACE, agent_session_id)), len(prompt),
         )
         return AgentRunResult(success=True)
 
