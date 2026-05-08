@@ -1,5 +1,11 @@
 # Agent Specification
 
+> **Scope: AI agent steps only.** This document covers pipeline steps with
+> `"type": "agent"` (Claude CLI invocations). For `"type": "script"` steps,
+> see [`05-pipeline-config.md § Script steps`](05-pipeline-config.md#script-steps).
+> Script steps do not use prompt files, `status.sh`, or the tool allowlist —
+> they emit an `AI_AGILE_STATUS:` sentinel to stdout instead.
+
 Every agent has exactly one prompt file at `.github/agents/{agent-name}.md`.
 This document defines the required shape of that file: the YAML frontmatter
 schema, the required body sections, the tool allowlist policy, and the
@@ -271,6 +277,11 @@ They should be specific, testable, and few (3–10 bullets is typical).
 ---
 
 ## Status transition contract
+
+**This contract applies to AI agent steps only.** Script steps (`type:
+"script"`) signal status by printing `AI_AGILE_STATUS:` to stdout; the
+orchestrator reads the sentinel and applies the label. See
+[`05-pipeline-config.md § Script steps`](05-pipeline-config.md#script-steps).
 
 Every agent run must either:
 

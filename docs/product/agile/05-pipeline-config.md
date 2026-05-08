@@ -31,23 +31,78 @@ JSON is the only format.
 
 ## What the file declares
 
-For each agent, exactly these facts:
+Each entry in `pipeline.json` represents one pipeline step. A step is either
+an AI agent (invokes Claude CLI) or a script (runs a bash script directly).
+For each step, exactly these facts are declared:
 
 | Field | Required | Meaning |
 |---|---|---|
-| `agent` | yes | Stable agent name in the form `{phase}/{short-name}` (e.g. `product-docs/prd-writer`); matches `.github/agents/{phase}/{short-name}.md` and the `name:` field in that prompt. See [`12-agent-spec.md`](12-agent-spec.md#naming-convention). |
-| `phase` | yes | One of: `product-docs`, `technical-docs`, `testing-spec`, `build-plan`, `execute`, `test`, `evaluate`, `learn`, `gap-assessment`, `tech-debt`. Must equal the prefix in `agent`. |
+| `agent` | yes | Stable step name in the form `{phase}/{short-name}` (e.g. `01_product_docs/prd-writer`); matches `.github/agents/{phase}/{short-name}.md` for agent steps, or the logical name for script steps. See [`12-agent-spec.md`](12-agent-spec.md#naming-convention). |
+| `type` | no | Invocation mode: `"agent"` (default) — invokes Claude CLI with the matching `.github/agents/` prompt; `"script"` — runs the file at `script` directly via bash. Existing entries with no `type` field are treated as `"agent"`. |
+| `script` | conditional | Repo-relative path to the bash script to execute. Required when `type: "script"`; ignored otherwise. The script receives the same environment variables as agents and must emit an `AI_AGILE_STATUS:` sentinel to stdout (see [§ Script steps](#script-steps)). |
+| `phase` | yes | One of the ten phase identifiers. Must equal the prefix in `agent`. |
 | `object` | yes | Array containing `issue`, `pr`, or both |
 | `trigger` | yes | One of: `{event: "..."}`, `{label: "..."}`, `{schedule: "..."}`, optionally with `path_filter` |
-| `dependencies` | yes | Array of agent names (in the same `{phase}/{short-name}` format) that must reach `:complete` before this agent can run |
-| `human_gate_after` | yes | Boolean — is there a human gate after this agent? |
-| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are NOT phase-prefixed — they are short and stable (e.g. `prd:approved`, `pr:approved`). |
-| `description` | yes | One-sentence statement of what the agent owns |
-| `session` | no | Session management config (see [§ Session management](#session-management) below) |
+| `dependencies` | yes | Array of step names that must reach `:complete` before this step can run |
+| `human_gate_after` | yes | Boolean — is there a human gate after this step? |
+| `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are stable identifiers (e.g. `01_product_docs/prd-writer:approved`). |
+| `max_retries` | no | How many times the orchestrator re-invokes this step after a `:failed` outcome before giving up (default: 0 — no retries). |
+| `description` | yes | One-sentence statement of what the step owns |
+| `session` | no | Session management config (agent steps only — see [§ Session management](#session-management) below). Ignored for script steps. |
 
-Anything else about an agent — its prompt, its tools, its model — lives
+Anything else about an agent step — its prompt, its tools, its model — lives
 in `.github/agents/{phase}/{short-name}.md`, not in `pipeline.json`.
 The pipeline file describes the *graph*, not the *behaviour*.
+
+---
+
+## Script steps
+
+A pipeline step with `"type": "script"` runs a bash script directly, without
+invoking Claude CLI. Use script steps for deterministic tasks that need no
+reasoning — linking PRs to issues, applying labels, posting templated
+comments.
+
+### How script steps work
+
+1. The orchestrator applies `{step}:wip` before the script runs (unlike agent
+   steps, where the agent applies `:wip` itself via `status.sh`).
+2. The script is invoked with `bash {script_path}` and receives the same
+   environment variables as agents: `$REPO`, `$ISSUE_NUMBER` (or
+   `$PR_NUMBER`), `$WORK_ITEM_KIND`, `$WORK_ITEM_NUMBER`, `$AI_AGILE_ROOT`,
+   `$GITHUB_TOKEN`.
+3. The script must print an `AI_AGILE_STATUS:` sentinel as its last output
+   line. The orchestrator reads the sentinel and applies the matching label,
+   then removes `:wip`.
+4. Script steps are subject to a 5-minute wall-clock timeout (configurable).
+5. Rate-limit detection and pausing does not apply to script steps (they do
+   not call the Anthropic API).
+
+### Sentinel convention for scripts
+
+```bash
+echo "AI_AGILE_STATUS: complete"           # normal completion
+echo 'AI_AGILE_STATUS: blocked "reason"'   # human input needed
+```
+
+If the script exits non-zero without emitting a sentinel, the orchestrator
+applies `:failed` exactly as it does for a crashed agent.
+
+### Example entry
+
+```json
+{
+  "agent": "01_product_docs/link-pr-to-issue",
+  "type": "script",
+  "script": ".github/scripts/link-pr-to-issue.sh",
+  "phase": "01_product_docs",
+  "object": ["issue"],
+  "trigger": { "label": "01_product_docs/prd-docs-updater:complete" },
+  "human_gate_after": false,
+  "dependencies": ["01_product_docs/prd-docs-updater"],
+  "description": "Finds PRs created for this issue and applies source-issue:{N} labels."
+}
+```
 
 ---
 
@@ -109,7 +164,7 @@ process:
 
 ---
 
-## Adding a new agent
+## Adding a new agent step
 
 1. Add an entry to `pipeline.json` (the graph). Validate.
 2. Add a prompt at `.github/agents/{agent}.md` (the behaviour).
@@ -121,6 +176,17 @@ process:
 The order matters: the graph entry comes first because the orchestrator
 will not invoke an agent that isn't declared in `pipeline.json`, even if
 the prompt file exists.
+
+## Adding a new script step
+
+1. Add an entry to `pipeline.json` with `"type": "script"` and a `"script"` path.
+2. Write the script at the declared path. It must be executable and emit an
+   `AI_AGILE_STATUS:` sentinel (see [§ Script steps](#script-steps)).
+3. Regenerate docs.
+4. Bootstrap labels: `bash .github/scripts/status.sh bootstrap {step-name}`.
+5. Open a PR with both. Standards owner approves.
+
+No `.github/agents/` prompt file is needed for script steps.
 
 ---
 
