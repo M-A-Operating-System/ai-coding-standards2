@@ -992,8 +992,10 @@ def _apply_terminal_status(
 
     Mirrors _apply_failed's cleanup so the work item always ends with exactly
     one status label regardless of which non-terminal state the step left behind.
+    Includes STATUS_REQUESTED so a failed :requested-removal earlier in the
+    invocation path cannot leave a stale :requested alongside the terminal label.
     """
-    for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED):
+    for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED, STATUS_REQUESTED):
         try:
             gh.remove_label(work_item.number, agent_def.status_label(stale))
         except Exception as exc:
@@ -1001,7 +1003,20 @@ def _apply_terminal_status(
                 "could not remove :%s for %s on #%d: %s",
                 stale, agent_def.agent, work_item.number, exc,
             )
-    gh.add_label(work_item.number, agent_def.status_label(status))
+    try:
+        gh.add_label(work_item.number, agent_def.status_label(status))
+    except Exception as exc:
+        log.error(
+            "could not apply :%s for %s on #%d: %s — re-applying :wip to restore a recoverable state",
+            status, agent_def.agent, work_item.number, exc,
+        )
+        try:
+            gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
+        except Exception as inner:
+            log.error(
+                "could not re-apply :wip for %s on #%d: %s — item has no status label",
+                agent_def.agent, work_item.number, inner,
+            )
 
 
 # ---------------------------------------------------------------------------
