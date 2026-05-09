@@ -27,7 +27,7 @@ The orchestrator owns exactly these responsibilities:
 
 It owns none of these:
 
-- Agent behaviour (prompts, tools, model — those live in `.github/agents/{agent}.md`)
+- Agent behaviour (prompts, tools, model — those live in `.claude/agents/{agent}.md`)
 - Standards checking (the `standards-compliance-reviewer` agent does this)
 - Pipeline graph definition (`pipeline.json` is the source of truth; the orchestrator reads it)
 
@@ -68,7 +68,7 @@ The GitHub Actions workflows that invoke it live at:
 | `GITHUB_TOKEN` | Actions secret | Authenticates all GitHub API calls; must have `issues:write` and `pull-requests:write` |
 | `ANTHROPIC_API_KEY` | Actions secret | Passed through to the Claude CLI when invoking agents |
 | `GITHUB_REPOSITORY` | Actions env | `owner/repo` string; used in all API paths |
-| Agent prompt files | `.github/agents/{agent}.md` | Passed by path reference to the Claude CLI; the orchestrator does not read their content |
+| Agent prompt files | `.claude/agents/{agent}.md` | Passed by path reference to the Claude CLI; the orchestrator does not read their content |
 
 The orchestrator holds no persistent state between runs. Everything it needs
 is reconstructed from GitHub labels at the start of each run. This is the
@@ -242,7 +242,7 @@ claude \
 The system prompt injected by the orchestrator provides:
 
 - The agent's name and the path to its prompt file
-  (`.github/agents/{agent}.md`)
+  (`.claude/agents/{agent}.md`)
 - The work item type, number, title, and URL
 - The set of `status.sh` commands the agent uses for label
   transitions: `set-wip`, `set-complete`, `set-review`, `set-blocked`.

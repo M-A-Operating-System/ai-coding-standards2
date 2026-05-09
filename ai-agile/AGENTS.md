@@ -316,7 +316,7 @@ layout (now archived on the `legacy` branch). Differences from legacy:
 
 - **Product-led framing** is named explicitly as the system's identity.
 - **Agent names** use the phase-prefixed form (`{phase}/{short-name}`),
-  matching the directory layout under `.github/agents/`.
+  matching the directory layout under `.claude/agents/`.
 - **Status helpers** are referenced as `$STATUS_SH` (orchestrator-
   exported), not the literal `.github/scripts/status.sh` path. Works
   identically whether this repo is checked out at the consuming

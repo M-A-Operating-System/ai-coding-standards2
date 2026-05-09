@@ -153,7 +153,7 @@ jobs:
 PATH_REWRITES = [
     # Bare ".github/scripts/status.sh" → "ai-coding-standards2/.github/scripts/status.sh"
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
-    (rf"(?<!{SUBMODULE_NAME}/)\.\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
+    (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
     # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
     (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
     # Bare "ai-agile/pipeline/..." → "ai-coding-standards2/ai-agile/pipeline/..."
@@ -288,8 +288,8 @@ def install_local_settings(
     dry_run: bool,
 ) -> bool:
     """Write a .claude/settings.local.json with AI_AGILE_ROOT set so a
-    developer running the orchestrator manually from the consuming repo
-    picks up the right paths. The .local.json file is per-developer and not committed."""
+    developer running the orchestrator manually picks up the right
+    paths. The .local.json file is per-developer and not committed."""
     dst = consuming_root / ".claude" / "settings.local.json"
     payload = {
         "env": {

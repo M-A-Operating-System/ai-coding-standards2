@@ -152,7 +152,7 @@ of two roots:
 
 | Variable | Default | Used for |
 |---|---|---|
-| `AI_AGILE_ROOT` env var | The directory three levels above `pipeline_orchestrator.py` (i.e. the repo root containing `.github/` and `ai-agile/`) | Locating `status.sh` and agent prompt files |
+| `AI_AGILE_ROOT` env var | The directory three levels above `pipeline_orchestrator.py` (i.e. the repo root containing `.github/` and `ai-agile/`) | Locating `status.sh` and agent prompts |
 | `--pipeline PATH` arg | `<this_dir>/pipeline.json` | The pipeline graph |
 
 When this repo is checked out **at the consuming repo's root**
@@ -240,20 +240,21 @@ workflow nor any slash command changed, no re-run is required.
 │   ├── 01-vision.md ... 13-todos.md
 │   └── 10-roadmap.md                        # MVP scope and rollout phases
 ├── .github/
-│   ├── agents/                              # agent prompts, one subdir per phase
-│   │   ├── 01_product_docs/
-│   │   │   └── issue-classifier.md
-│   │   ├── 02_technical_docs/               # added in future Phase 1 slices
-│   │   ├── 03_testing_spec/
-│   │   ├── 04_build_plan/
-│   │   ├── 05_execute/
-│   │   ├── 06_test/
-│   │   ├── 07_evaluate/
-│   │   └── _templates/agent-template.md     # template for new agents
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # this repo's own CI (does not run from a consuming repo)
 │       ├── orchestrator.yml
 │       └── validate-pipeline.yml
+├── .claude/
+│   └── agents/                              # agent prompts, one subdir per phase
+│       ├── 01_product_docs/
+│       │   └── issue-classifier.md
+│       ├── 02_technical_docs/               # added in future Phase 1 slices
+│       ├── 03_testing_spec/
+│       ├── 04_build_plan/
+│       ├── 05_execute/
+│       ├── 06_test/
+│       ├── 07_evaluate/
+│       └── _templates/agent-template.md     # template for new agents
 └── ai-agile/
     └── pipeline/
         ├── pipeline.json                    # the agent dependency graph (source of truth)

@@ -253,7 +253,7 @@ patterns and tune the system that produced them.
 - **`prompt-tuner`** — runs monthly. For each agent, examines
   rejection rates and the diff between the agent's first draft and
   the human-approved version. Drafts targeted edits to the agent's
-  prompt at `.github/agents/{agent}.md` as PRs.
+  prompt at `.claude/agents/{agent}.md` as PRs.
 - **`knowledge-curator`** — runs weekly. Identifies tickets whose
   outcomes contain reusable patterns (a recurring incident shape, a
   novel architecture choice, a useful test pattern) and drafts

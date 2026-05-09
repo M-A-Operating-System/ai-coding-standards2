@@ -6,7 +6,7 @@
 > Script steps do not use prompt files, `status.sh`, or the tool allowlist —
 > they emit an `AI_AGILE_STATUS:` sentinel to stdout instead.
 
-Every agent has exactly one prompt file at `.github/agents/{agent-name}.md`.
+Every agent has exactly one prompt file at `.claude/agents/{agent-name}.md`.
 This document defines the required shape of that file: the YAML frontmatter
 schema, the required body sections, the tool allowlist policy, and the
 status-transition contract.
@@ -17,7 +17,7 @@ orchestrator will not invoke an agent that is not declared in
 `pipeline.json` even if a prompt file exists). The prompt file lands
 in the same PR and must conform to this spec; CI validates the
 frontmatter and the required body markers on every PR that touches
-`.github/agents/` and refuses to merge until both halves are in
+`.claude/agents/` and refuses to merge until both halves are in
 place.
 
 ---
@@ -68,11 +68,11 @@ move phases after launch.
 ## File location
 
 ```
-.github/agents/{phase}/{short-name}.md
+.claude/agents/{phase}/{short-name}.md
 ```
 
 So `product-docs/issue-classifier` lives at
-`.github/agents/product-docs/issue-classifier.md`.
+`.claude/agents/product-docs/issue-classifier.md`.
 
 - The directory **is** the phase prefix; the orchestrator computes the
   file path by treating the agent name's `/` as a directory separator.
@@ -80,7 +80,7 @@ So `product-docs/issue-classifier` lives at
   the `agent` field in `pipeline.json`.
 
 A copy-paste starting point lives at
-[`.github/agents/_templates/agent-template.md`](../../../.github/agents/_templates/agent-template.md).
+[`.claude/agents/_templates/agent-template.md`](../../../.claude/agents/_templates/agent-template.md).
 
 ---
 
@@ -103,7 +103,7 @@ model: claude-sonnet-4-6
 
 | Field | Required | Type | Constraints |
 |---|---|---|---|
-| `name` | yes | string | Format `{phase}/{short-name}`; matches the file's path under `.github/agents/`; matches `pipeline.json` `agent` field; lowercase-hyphenated short-name |
+| `name` | yes | string | Format `{phase}/{short-name}`; matches the file's path under `.claude/agents/`; matches `pipeline.json` `agent` field; lowercase-hyphenated short-name |
 | `description` | yes | string | One paragraph; ≤ 500 characters; states what the agent does |
 | `tools` | yes | array of strings | Subset of the allowable-tools matrix below |
 | `model` | yes | string | One of: `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
@@ -298,13 +298,13 @@ that transition is owned by the orchestrator (see
 
 ## CI validation
 
-Every PR that touches `.github/agents/*.md` runs
+Every PR that touches `.claude/agents/*.md` runs
 `ai-agile/pipeline/validate_agent_prompts.py`, which checks:
 
 1. **Frontmatter parses** as YAML.
 2. **Required fields** are present: `name`, `description`, `tools`,
    `model`.
-3. **`name` matches the path under `.github/agents/`** (`name: product-docs/prd-writer` ↔ `.github/agents/product-docs/prd-writer.md`).
+3. **`name` matches the path under `.claude/agents/`** (`name: product-docs/prd-writer` ↔ `.claude/agents/product-docs/prd-writer.md`).
 4. **`name` exists** in `pipeline.json` as a declared agent.
 5. **`tools` array** is a subset of the allowable-tools matrix.
 6. **`model`** is one of the three allowed model IDs.
@@ -324,8 +324,8 @@ PRs that fail validation cannot merge.
 ## Adding a new agent — checklist
 
 1. Copy
-   `.github/agents/_templates/agent-template.md` to
-   `.github/agents/{new-agent}.md`.
+   `.claude/agents/_templates/agent-template.md` to
+   `.claude/agents/{new-agent}.md`.
 2. Fill in the frontmatter: `name`, `description`, `tools`, `model`.
 3. Replace the role statement, work steps, and behaviour rules.
 4. Add the agent's entry to `ai-agile/pipeline/pipeline.json`

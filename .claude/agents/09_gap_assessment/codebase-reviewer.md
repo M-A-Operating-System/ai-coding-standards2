@@ -11,7 +11,7 @@ description: >
 tools: [Bash, Read, Grep]
 model: claude-opus-4-7
 max_turns: 80
-extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh issue create *), Bash(gh issue comment *), Bash(gh issue view *), Bash(gh issue list *)]
+extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh issue create *), Bash(gh issue comment *), Bash(gh issue view *)]
 ---
 
 # 09_gap_assessment/codebase-reviewer
