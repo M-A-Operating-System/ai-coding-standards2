@@ -913,7 +913,7 @@ def _captured_tail(lines: list[str], max_lines: int = 50, max_chars: int = 4000)
 # Only the last 5 lines of output are searched to prevent crafted content
 # in an issue body (echoed earlier in the run) from spoofing the sentinel.
 _SENTINEL_RE = re.compile(
-    r"^AI_AGILE_STATUS:\s+(complete|review|blocked)(?:\s+\"([^\"]*)\")?)",
+    r"^AI_AGILE_STATUS:\s+(complete|review|blocked)(?:\s+\"([^\"]*)\")?",
     re.MULTILINE,
 )
 
