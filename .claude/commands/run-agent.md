@@ -27,8 +27,8 @@ Examples:
    ```
 
    Locate the agent file — try in order:
-   - `.github/agents/{agent-name}.md` (standalone)
-   - `ai-coding-standards2/.github/agents/{agent-name}.md` (submodule)
+   - `.claude/agents/{agent-name}.md` (standalone)
+   - `ai-coding-standards2/.claude/agents/{agent-name}.md` (submodule)
 
    Locate status.sh — try in order:
    - `.github/scripts/status.sh` (standalone)
@@ -36,7 +36,7 @@ Examples:
 
    If the agent file is not found, list available agents:
    ```bash
-   find .github/agents ai-coding-standards2/.github/agents \
+   find .claude/agents ai-coding-standards2/.claude/agents \
      -name "*.md" 2>/dev/null | sort
    ```
    Then stop.
