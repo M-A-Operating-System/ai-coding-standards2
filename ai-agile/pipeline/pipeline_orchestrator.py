@@ -913,7 +913,7 @@ def _captured_tail(lines: list[str], max_lines: int = 50, max_chars: int = 4000)
 # Only the last 5 lines of output are searched to prevent crafted content
 # in an issue body (echoed earlier in the run) from spoofing the sentinel.
 _SENTINEL_RE = re.compile(
-    r"^AI_AGILE_STATUS:\s+(complete|review|blocked)(?:\s+\"([^\"]*)\")?",
+    r"^AI_AGILE_STATUS:\s+(complete|review|blocked)(?:\s+\"([^\"]*)\")?)",
     re.MULTILINE,
 )
 
@@ -1167,7 +1167,7 @@ def invoke_agent(
     apply :failed when rate_limited is True — the agent never got a fair
     run.
     """
-    agent_file = SUBMODULE_ROOT / ".github/agents" / f"{agent_def.agent}.md"
+    agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
 
     if not agent_file.exists():
         log.warning("    Agent file not found: %s — skipping", agent_file)
