@@ -303,7 +303,7 @@ rationale is real, and the agent guidance is unambiguous.
 
 **Approver.** The agent's designated owner (the person responsible for that agent's quality).
 
-**Artefact.** A PR against `.github/agents/{agent}.md` from `prompt-tuner`, with rejection-rate evidence and diff.
+**Artefact.** A PR against `.claude/agents/{agent}.md` from `prompt-tuner`, with rejection-rate evidence and diff.
 
 **What you are signing off.** That the proposed prompt edit improves agent quality and does not introduce regression.
 

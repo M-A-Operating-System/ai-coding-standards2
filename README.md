@@ -9,7 +9,7 @@ project repos that consume it. The submodule provides:
 
 - The pipeline graph (`ai-agile/pipeline/pipeline.json`)
 - The orchestrator (`ai-agile/pipeline/pipeline_orchestrator.py`)
-- The agent prompts (`.github/agents/{agent}.md`)
+- The agent prompts (`.claude/agents/{agent}.md`)
 - The `status.sh` label-transition helper (`.github/scripts/status.sh`)
 - The validators (`ai-agile/pipeline/validate.py` and friends)
 
@@ -176,7 +176,7 @@ identically in both layouts.
 
 Out of MVP scope. Today every agent prompt lives in the submodule.
 Once the submodule is stable, the design supports the consuming repo
-adding its own agents at `<consuming-repo>/.github/agents/{agent}.md`,
+adding its own agents at `<consuming-repo>/.claude/agents/{agent}.md`,
 which override (or extend) the submodule's set. This requires a small
 orchestrator change to consult two agent directories. Track this in
 the roadmap.
@@ -205,7 +205,7 @@ in production unless you want every change auto-applied.
 After a submodule bump, **most things just work** because the
 orchestrator reads them straight from the submodule:
 
-- Agent prompts (`.github/agents/{phase}/*.md`) — read via `AI_AGILE_ROOT`
+- Agent prompts (`.claude/agents/{phase}/*.md`) — read via `AI_AGILE_ROOT`
 - `pipeline.json`, `status.sh`, validators — read via `AI_AGILE_ROOT`
 - Schema and CI checks — referenced by their submodule paths
 
@@ -240,20 +240,21 @@ workflow nor any slash command changed, no re-run is required.
 │   ├── 01-vision.md ... 13-todos.md
 │   └── 10-roadmap.md                        # MVP scope and rollout phases
 ├── .github/
-│   ├── agents/                              # agent prompts, one subdir per phase
-│   │   ├── 01_product_docs/
-│   │   │   └── issue-classifier.md
-│   │   ├── 02_technical_docs/               # added in future Phase 1 slices
-│   │   ├── 03_testing_spec/
-│   │   ├── 04_build_plan/
-│   │   ├── 05_execute/
-│   │   ├── 06_test/
-│   │   ├── 07_evaluate/
-│   │   └── _templates/agent-template.md     # template for new agents
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # this repo's own CI (does not run from a consuming repo)
 │       ├── orchestrator.yml
 │       └── validate-pipeline.yml
+├── .claude/
+│   └── agents/                              # agent prompts, one subdir per phase
+│       ├── 01_product_docs/
+│       │   └── issue-classifier.md
+│       ├── 02_technical_docs/               # added in future Phase 1 slices
+│       ├── 03_testing_spec/
+│       ├── 04_build_plan/
+│       ├── 05_execute/
+│       ├── 06_test/
+│       ├── 07_evaluate/
+│       └── _templates/agent-template.md     # template for new agents
 └── ai-agile/
     └── pipeline/
         ├── pipeline.json                    # the agent dependency graph (source of truth)

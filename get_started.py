@@ -154,8 +154,8 @@ PATH_REWRITES = [
     # Bare ".github/scripts/status.sh" → "ai-coding-standards2/.github/scripts/status.sh"
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
     (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
-    # Bare ".github/agents/..." → "ai-coding-standards2/.github/agents/..."
-    (rf"(?<!{SUBMODULE_NAME}/)\.github/agents/", f"{SUBMODULE_NAME}/.github/agents/"),
+    # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
+    (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
     # Bare "ai-agile/pipeline/..." → "ai-coding-standards2/ai-agile/pipeline/..."
     (r"\bai-agile/pipeline/", f"{SUBMODULE_NAME}/ai-agile/pipeline/"),
     # Bare ".claude/agent-todo-standard.md" was retired (see 13-todos.md);

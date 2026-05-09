@@ -37,8 +37,8 @@ For each step, exactly these facts are declared:
 
 | Field | Required | Meaning |
 |---|---|---|
-| `agent` | yes | Stable step name in the form `{phase}/{short-name}` (e.g. `01_product_docs/prd-writer`); matches `.github/agents/{phase}/{short-name}.md` for agent steps, or the logical name for script steps. See [`12-agent-spec.md`](12-agent-spec.md#naming-convention). |
-| `type` | no | Invocation mode: `"agent"` (default) — invokes Claude CLI with the matching `.github/agents/` prompt; `"script"` — runs the file at `script` directly via bash. Existing entries with no `type` field are treated as `"agent"`. |
+| `agent` | yes | Stable step name in the form `{phase}/{short-name}` (e.g. `01_product_docs/prd-writer`); matches `.claude/agents/{phase}/{short-name}.md` for agent steps, or the logical name for script steps. See [`12-agent-spec.md`](12-agent-spec.md#naming-convention). |
+| `type` | no | Invocation mode: `"agent"` (default) — invokes Claude CLI with the matching `.claude/agents/` prompt; `"script"` — runs the file at `script` directly via bash. Existing entries with no `type` field are treated as `"agent"`. |
 | `script` | conditional | Repo-relative path to the bash script to execute. Required when `type: "script"`; ignored otherwise. The script receives the same environment variables as agents and must emit an `AI_AGILE_STATUS:` sentinel to stdout (see [§ Script steps](#script-steps)). |
 | `phase` | yes | One of the ten phase identifiers. Must equal the prefix in `agent`. |
 | `object` | yes | Array containing `issue`, `pr`, or both |
@@ -51,7 +51,7 @@ For each step, exactly these facts are declared:
 | `session` | no | Session management config (agent steps only — see [§ Session management](#session-management) below). Ignored for script steps. |
 
 Anything else about an agent step — its prompt, its tools, its model — lives
-in `.github/agents/{phase}/{short-name}.md`, not in `pipeline.json`.
+in `.claude/agents/{phase}/{short-name}.md`, not in `pipeline.json`.
 The pipeline file describes the *graph*, not the *behaviour*.
 
 ---
@@ -172,7 +172,7 @@ process:
 ## Adding a new agent step
 
 1. Add an entry to `pipeline.json` (the graph). Validate.
-2. Add a prompt at `.github/agents/{agent}.md` (the behaviour).
+2. Add a prompt at `.claude/agents/{agent}.md` (the behaviour).
 3. Regenerate docs.
 4. Bootstrap labels:
    `bash .github/scripts/status.sh bootstrap {agent}`.
@@ -191,7 +191,7 @@ the prompt file exists.
 4. Bootstrap labels: `bash .github/scripts/status.sh bootstrap {step-name}`.
 5. Open a PR with both. Standards owner approves.
 
-No `.github/agents/` prompt file is needed for script steps.
+No `.claude/agents/` prompt file is needed for script steps.
 
 ---
 
@@ -204,7 +204,7 @@ Removing an agent is rare. The process:
 2. Remove the entry from `pipeline.json`.
 3. Update any agent that listed it as a dependency.
 4. Regenerate docs.
-5. Move the prompt to `.github/agents/parking_lot/`.
+5. Move the prompt to `.claude/agents/parking_lot/`.
 6. Standards owner approves.
 
 The audit log branch retains the agent's history. The label set on

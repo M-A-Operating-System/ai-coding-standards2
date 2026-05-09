@@ -31,7 +31,7 @@
         "agent": {
           "type": "string",
           "pattern": "^(01_product_docs|02_technical_docs|03_testing_spec|04_build_plan|05_execute|06_test|07_evaluate|08_learn|09_gap_assessment|10_tech_debt)/[a-z][a-z0-9-]*[a-z0-9]$",
-          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .github/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix is numeric-prefixed (e.g. 01_product_docs) so the directory tree sorts in lifecycle order. The phase prefix must equal the phase field. See docs/product/agile/12-agent-spec.md."
+          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .claude/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix is numeric-prefixed (e.g. 01_product_docs) so the directory tree sorts in lifecycle order. The phase prefix must equal the phase field. See docs/product/agile/12-agent-spec.md."
         },
         "phase": {
           "type": "string",
@@ -97,7 +97,7 @@
           "type": "string",
           "enum": ["agent", "script"],
           "default": "agent",
-          "description": "Invocation mode. 'agent' (default) invokes Claude CLI with the matching .github/agents/{phase}/{name}.md prompt. 'script' runs the file at the 'script' path directly via bash with the standard environment variables."
+          "description": "Invocation mode. 'agent' (default) invokes Claude CLI with the matching .claude/agents/{phase}/{name}.md prompt. 'script' runs the file at the 'script' path directly via bash with the standard environment variables."
         },
         "script": {
           "type": "string",

@@ -26,7 +26,7 @@ except ImportError:
 HERE = Path(__file__).parent
 DEFAULT_PIPELINE = HERE / "pipeline.json"
 DEFAULT_SCHEMA = HERE / "schemas" / "pipeline.schema.json"
-DEFAULT_AGENTS_DIR = HERE.parent.parent / ".github" / "agents"
+DEFAULT_AGENTS_DIR = HERE.parent.parent / ".claude" / "agents"
 
 VALID_MODELS = frozenset({
     "claude-opus-4-7",
@@ -195,7 +195,7 @@ def main() -> int:
         "--agents-dir",
         type=Path,
         default=DEFAULT_AGENTS_DIR,
-        help="Directory containing agent prompt files (default: .github/agents/). "
+        help="Directory containing agent prompt files (default: .claude/agents/). "
              "Pass an empty string to skip agent file validation.",
     )
     args = parser.parse_args()
