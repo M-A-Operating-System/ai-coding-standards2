@@ -9,7 +9,7 @@ project repos that consume it. The submodule provides:
 
 - The pipeline graph (`ai-agile/pipeline/pipeline.json`)
 - The orchestrator (`ai-agile/pipeline/pipeline_orchestrator.py`)
-- The agent prompts (`.github/agents/{agent}.md`)
+- The agent prompts (`.claude/agents/{agent}.md`)
 - The `status.sh` label-transition helper (`.github/scripts/status.sh`)
 - The validators (`ai-agile/pipeline/validate.py` and friends)
 
@@ -152,7 +152,7 @@ of two roots:
 
 | Variable | Default | Used for |
 |---|---|---|
-| `AI_AGILE_ROOT` env var | The directory three levels above `pipeline_orchestrator.py` (i.e. the repo root containing `.github/` and `ai-agile/`) | Locating `status.sh` and agent prompts |
+| `AI_AGILE_ROOT` env var | The directory three levels above `pipeline_orchestrator.py` (i.e. the repo root containing `.github/` and `ai-agile/`) | Locating `status.sh` and agent prompt files |
 | `--pipeline PATH` arg | `<this_dir>/pipeline.json` | The pipeline graph |
 
 When this repo is checked out **at the consuming repo's root**
@@ -176,7 +176,7 @@ identically in both layouts.
 
 Out of MVP scope. Today every agent prompt lives in the submodule.
 Once the submodule is stable, the design supports the consuming repo
-adding its own agents at `<consuming-repo>/.github/agents/{agent}.md`,
+adding its own agents at `<consuming-repo>/.claude/agents/{agent}.md`,
 which override (or extend) the submodule's set. This requires a small
 orchestrator change to consult two agent directories. Track this in
 the roadmap.
@@ -205,7 +205,7 @@ in production unless you want every change auto-applied.
 After a submodule bump, **most things just work** because the
 orchestrator reads them straight from the submodule:
 
-- Agent prompts (`.github/agents/{phase}/*.md`) — read via `AI_AGILE_ROOT`
+- Agent prompts (`.claude/agents/{phase}/*.md`) — read via `AI_AGILE_ROOT`
 - `pipeline.json`, `status.sh`, validators — read via `AI_AGILE_ROOT`
 - Schema and CI checks — referenced by their submodule paths
 
