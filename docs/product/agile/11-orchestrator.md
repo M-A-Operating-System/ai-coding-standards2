@@ -123,10 +123,18 @@ for each work item (issue or PR):
         if not dependencies_complete(labels, agent_def):
             skip                          ← upstream agents / gates not yet done
 
-        ← agent is eligible
+        ← step is eligible
         acquire_mutex(work_item, agent_def)
-        success = invoke_agent(work_item, agent_def)
-        labels = refresh_labels(work_item)    ← re-read after agent run
+        # Pre-invocation ceremony — same for both step types
+        apply {agent}:wip
+        post opening announcement comment
+        if agent_def.type == "script":
+            success = invoke_script(work_item, agent_def)
+        else:
+            success = invoke_agent(work_item, agent_def)
+        parse AI_AGILE_STATUS: sentinel from stdout (last 5 lines)
+        apply matching terminal label; remove :wip
+        post closing announcement comment
         handle_outcome(work_item, agent_def, success, labels)
 
         if agent_outcome in {review, blocked, failed}:
@@ -215,9 +223,14 @@ comment, emit `agent.failed` to the audit log.
 
 ---
 
-## Agent invocation
+## Step invocation
 
-Once the mutex is held, the orchestrator invokes the agent as a subprocess:
+The orchestrator supports two invocation modes, selected by the `"type"` field
+in `pipeline.json` (default: `"agent"`).
+
+### Agent steps (`type: "agent"`)
+
+The orchestrator invokes the Claude CLI as a subprocess:
 
 ```bash
 claude \
@@ -236,8 +249,6 @@ The system prompt injected by the orchestrator provides:
   `set-failed` is **not** in the agent's allowlist — only the
   orchestrator applies `:failed`, when the agent exits non-zero
   without one of the three terminal calls above.
-- The constraint: "call exactly one terminal status command
-  (set-complete, set-review, or set-blocked) before exiting"
 
 Agents use `status.sh` for every label write. They never call the GitHub
 API directly for status transitions. This keeps the transition logic in one
@@ -247,32 +258,91 @@ The Claude CLI subprocess inherits `GITHUB_TOKEN` and `ANTHROPIC_API_KEY`
 from the orchestrator's environment. Per-agent tool restrictions are
 enforced via `--allowedTools`.
 
-**Timeout.** Each agent has a `max_wall_seconds` field in `pipeline.json`
-(default 1800 / 30 minutes). `subprocess.run` enforces this via its
-`timeout` parameter. On timeout, the orchestrator applies `:failed` and
-posts a recovery comment.
+**Timeout.** Default 1800 seconds (30 minutes). On timeout, the orchestrator
+applies `:failed` and posts a recovery comment.
+
+### Script steps (`type: "script"`)
+
+The orchestrator invokes a bash script directly, without the Claude CLI. Use
+script steps for deterministic tasks that need no reasoning.
+
+```bash
+bash .github/scripts/{script-name}.sh
+```
+
+Key differences from agent steps:
+
+| | Agent step | Script step |
+|---|---|---|
+| `:wip` ownership | Orchestrator applies `:wip` before invoking | Orchestrator applies `:wip` before invoking |
+| Status signalling | Agent emits `AI_AGILE_STATUS:` to stdout | Script emits `AI_AGILE_STATUS:` to stdout |
+| Label write | Orchestrator reads sentinel → applies label | Orchestrator reads sentinel → applies label |
+| Rate limiting | Anthropic API calls possible | No Anthropic API; rate limiting not applicable |
+| Timeout | 1800 s (30 min) | 300 s (5 min) |
+
+The script receives the same environment variables as agents: `$REPO`,
+`$ISSUE_NUMBER` (or `$PR_NUMBER`), `$WORK_ITEM_KIND`, `$WORK_ITEM_NUMBER`,
+`$AI_AGILE_ROOT`, `$GITHUB_TOKEN`.
+
+**Sentinel parsing.** The orchestrator searches only the last 5 lines of the
+script's stdout for the sentinel, preventing crafted content in an issue body
+(echoed earlier) from spoofing the signal:
+
+```
+AI_AGILE_STATUS: complete
+AI_AGILE_STATUS: review "short message"
+AI_AGILE_STATUS: blocked "reason"
+```
+
+If the script exits non-zero without a sentinel, the orchestrator applies
+`:failed` identically to a crashed agent.
 
 ---
 
 ## Post-run handling
 
-After the agent subprocess exits, the orchestrator:
+After the subprocess exits, the orchestrator handles the outcome differently
+depending on the step type:
 
+**Agent steps** — the orchestrator reads the sentinel and applies the label:
+```
+parse AI_AGILE_STATUS: from last 5 lines of stdout
+
+if sentinel found:
+    remove :wip, apply matching label ({agent}:complete / :review / :blocked)
+elif agent exited zero (no sentinel):
+    remove :wip, apply :complete   ← backward-compat default
+else (exited non-zero, no sentinel):
+    remove :wip, apply :failed
+    post recovery comment
+    emit agent.failed (mode=agent) to audit log
+    break item loop
+```
+
+**Script steps** — the orchestrator reads the sentinel and applies the label:
+```
+parse AI_AGILE_STATUS: from last 5 lines of stdout
+
+if sentinel found:
+    remove :wip, apply matching label ({agent}:complete / :review / :blocked)
+elif script exited non-zero (no sentinel):
+    remove :wip, apply :failed
+    post recovery comment
+    emit agent.failed (mode=script) to audit log
+    break item loop
+else (exited 0, no sentinel):
+    remove :wip, apply :complete   ← backward-compat default
+```
+
+**Common path** (both step types, after labels are resolved):
 ```
 refresh labels from GitHub API
 
-if agent exited non-zero AND no terminal status set:
-    apply {agent}:failed
-    post recovery comment (what to remove, what to skip)
-    emit agent.failed to audit log
-    break item loop (halt further agents on this item)
-
-if final_status == complete AND agent has human_gate_after:
+if final_status == complete AND step has human_gate_after:
     post gate prompt comment: "Apply {gate_label} to advance"
     emit agent.complete to audit log
 
 if final_status == review:
-    # pipeline halted; gate promotion watches for the gate label
     emit agent.review to audit log
     break item loop
 
@@ -340,7 +410,10 @@ not write to it. Events emitted by the orchestrator:
 
 Each event carries: `session_id`, `event`, `actor.kind` (human or agent),
 `actor.login`, `object.kind`, `object.number`, `agent`, `timestamp`,
-and `outcome.detail` (bounded length, redacted of secrets).
+and `outcome.detail` (bounded length, redacted of secrets). For
+`agent.invoked` and terminal events, `outcome.detail` includes
+`mode=agent` or `mode=script` so operators can confirm which invocation
+mode ran for any given step.
 
 ---
 

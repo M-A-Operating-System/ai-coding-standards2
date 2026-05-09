@@ -163,6 +163,9 @@ def validate_agent_files(pipeline: dict, agents_dir: Path) -> list[str]:
         return []
     errors = []
     for entry in pipeline["pipeline"]:
+        # Script steps run a bash script directly — no agent prompt file.
+        if entry.get("type") == "script":
+            continue
         agent_name = entry["agent"]
         agent_file = agents_dir / f"{agent_name}.md"
         if not agent_file.exists():

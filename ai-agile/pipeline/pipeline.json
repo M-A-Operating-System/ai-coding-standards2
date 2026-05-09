@@ -43,6 +43,34 @@
       "max_retries": 2,
       "session": { "scope": "global" },
       "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating to reflect new or changed user-observable behaviour, creates a branch, commits the changes, opens a PR ready for human review, and links it on the issue. Completes immediately so the pipeline can advance; doc review runs in parallel. If no updates are needed, posts a confirmation comment."
+    },
+
+    {
+      "agent": "01_product_docs/link-pr-to-issue",
+      "type": "script",
+      "script": ".github/scripts/link-pr-to-issue.sh",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "01_product_docs/prd-docs-updater:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["01_product_docs/prd-docs-updater"],
+      "description": "Scripted step: discovers PRs opened by agents for this issue (by branch naming convention issue-{N}) and applies source-issue:{N} labels to each. Deterministic; does not invoke Claude CLI."
+    },
+
+    {
+      "agent": "09_gap_assessment/codebase-reviewer",
+      "phase": "09_gap_assessment",
+      "object": ["issue"],
+      "trigger": {
+        "label": "codebase-review:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "global" },
+      "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-review:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
     }
 
   ]
