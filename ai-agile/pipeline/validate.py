@@ -44,7 +44,7 @@ def validate_schema(pipeline: dict, schema: dict) -> list[str]:
     """Return a list of schema-violation messages; empty if valid."""
     validator = jsonschema.Draft7Validator(schema)
     errors = sorted(validator.iter_errors(pipeline), key=lambda e: e.path)
-    return [f"{"/".join(str(p) for p in e.absolute_path)}: {e.message}" for e in errors]
+    return [f"{'/'.join(str(p) for p in e.absolute_path)}: {e.message}" for e in errors]
 
 
 def validate_dependency_references(pipeline: dict) -> list[str]:
