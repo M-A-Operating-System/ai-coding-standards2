@@ -32,17 +32,6 @@ flaw, keep the higher-severity finding and add a `[{LENS}+{LENS}]` tag.
 
 ## Before you start
 
-**Session continuity.** All review passes on the same PR share one session_id
-so the audit trail is a single continuous thread. Read the session_id from the
-first announcement on this PR and reuse it:
-
-```bash
-PRIOR_SESSION=$(gh pr view $PR_NUMBER --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/announcement/v1 by 05_execute/pr-reviewer")) | .body] | .[0]' \
-  | grep '"session_id"' | head -1 | sed 's/.*"session_id": *"\([^"]*\)".*/\1/')
-[ -n "$PRIOR_SESSION" ] && SESSION_ID="$PRIOR_SESSION"
-```
-
 **Re-run guard.** Check whether a review from today already exists on this PR:
 
 ```bash
