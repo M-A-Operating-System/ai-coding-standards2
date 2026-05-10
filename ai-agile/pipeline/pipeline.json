@@ -60,6 +60,20 @@
     },
 
     {
+      "agent": "05_execute/coder",
+      "phase": "05_execute",
+      "object": ["issue"],
+      "trigger": {
+        "label": "build:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Creates a branch, opens a draft PR on the first commit, writes code with guard clauses and explicit error handling, commits per sub-issue, then marks the PR ready for review and applies pr-review:requested."
+    },
+
+    {
       "agent": "05_execute/pr-reviewer",
       "phase": "05_execute",
       "object": ["pr"],
