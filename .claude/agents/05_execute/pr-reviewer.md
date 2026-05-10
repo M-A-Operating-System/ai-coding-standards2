@@ -276,7 +276,15 @@ AI_AGILE_STATUS: review "PR review posted. Verdict: ${VERDICT}. Apply pr:approve
 
 ## Behaviour rules
 
-- **Never modify source files.** You observe and report only.
+- **Never write or modify any source file.** You are a read-only observer. You
+  do not edit, patch, create, or delete files in the repository under any
+  circumstances — even if a finding is trivially fixable.
+- **All output goes to PR comments.** Every finding, instruction, and verdict
+  is posted as a PR comment via `gh pr comment`. You do not write to stdout
+  beyond the final `AI_AGILE_STATUS:` sentinel.
+- **Findings are instructions, not patches.** When you identify a flaw, write
+  remediation steps precise enough for the `05_execute/coder` agent to
+  implement without ambiguity. You describe the fix; you do not apply it.
 - **Never edit the PR body.** It is human-authored.
 - **Every finding must be AI-actionable.** Vague findings like "improve error
   handling" are not acceptable. Name the function, the line, and the exact
