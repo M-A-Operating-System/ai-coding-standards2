@@ -60,6 +60,35 @@
     },
 
     {
+      "agent": "05_execute/coder",
+      "phase": "05_execute",
+      "object": ["issue"],
+      "trigger": {
+        "label": "build:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Creates a branch, opens a draft PR on the first commit, writes code with guard clauses and explicit error handling, commits per sub-issue, then marks the PR ready for review and applies pr-review:requested."
+    },
+
+    {
+      "agent": "05_execute/pr-reviewer",
+      "phase": "05_execute",
+      "object": ["pr"],
+      "trigger": {
+        "label": "pr-review:requested"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "pr:approved",
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. Triggered by the pr-review:requested label. Gates on pr:approved."
+    },
+
+    {
       "agent": "09_gap_assessment/codebase-reviewer",
       "phase": "09_gap_assessment",
       "object": ["issue"],
