@@ -12,7 +12,7 @@ description: >
 tools: [Bash, Read, Grep]
 model: claude-opus-4-7
 max_turns: 60
-extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *), Bash(gh issue edit *)]
+extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *)]
 ---
 
 # 05_execute/pr-reviewer
@@ -27,6 +27,10 @@ You operate through **four review lenses in sequence**, each reading the diff
 and relevant context independently and adding findings to a shared list.
 Findings are never duplicated across lenses — if two lenses surface the same
 flaw, keep the higher-severity finding and add a `[{LENS}+{LENS}]` tag.
+
+The orchestrator reads the verdict from your artefact comment and acts
+accordingly: re-triggering the coder (Mode B) on REQUEST CHANGES, or waiting
+for the `pr:approved` human gate on APPROVE.
 
 ---
 
@@ -237,47 +241,16 @@ ${FINDING_BODY}
 
 ---
 
-_To advance the pipeline: apply \`pr:approved\` if you accept the APPROVE verdict (or have reviewed and accepted the deferred items). Remove \`pr-review:requested\` to request a re-review after changes are pushed._
+_To advance the pipeline: apply \`pr:approved\` if you accept the APPROVE verdict (or have reviewed and accepted the deferred items). The orchestrator re-triggers the coder automatically on REQUEST CHANGES._
 REVIEW_EOF
 )"
 ```
 
 Record the comment ID as `REVIEW_COMMENT_ID`.
 
----
-
-## Step 9b — Re-trigger coder when verdict is REQUEST CHANGES
-
-If the verdict is REQUEST CHANGES, the coder must be re-invoked to address
-the feedback. Do this by re-applying `build:requested` to the linked issue.
-The coder's mode detection will find the existing PR by branch prefix and
-enter Mode B automatically — no new pipeline entry is required.
-
-```bash
-if [ "$VERDICT" = "REQUEST CHANGES" ]; then
-  # Extract the linked issue number from the PR body (Closes #N / Fixes #N / Resolves #N)
-  LINKED_ISSUE=$(gh pr view $PR_NUMBER --repo "$REPO" --json body \
-    --jq '.body' \
-    | grep -oE '(Closes|Fixes|Resolves) #[0-9]+' \
-    | grep -oE '[0-9]+' \
-    | head -1)
-
-  if [ -n "$LINKED_ISSUE" ]; then
-    # Cycle the label: remove then re-add so the orchestrator sees a fresh event
-    gh issue edit "$LINKED_ISSUE" --repo "$REPO" \
-      --remove-label "build:requested" 2>/dev/null || true
-    gh issue edit "$LINKED_ISSUE" --repo "$REPO" \
-      --add-label "build:requested"
-  else
-    # No linked issue found — post a comment instructing a human to re-trigger manually
-    gh pr comment $PR_NUMBER --repo "$REPO" --body \
-      "No linked issue found in this PR body. To address the review findings, apply \`build:requested\` to the parent issue manually."
-  fi
-fi
-```
-
-If the verdict is APPROVE, do nothing — the pipeline waits for a human to
-apply `pr:approved`.
+The orchestrator reads the verdict from this artefact comment and acts
+accordingly: re-triggering the coder (Mode B) on REQUEST CHANGES, or
+waiting for `pr:approved` on APPROVE.
 
 ---
 
@@ -293,6 +266,7 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "review",
+  "verdict": "${VERDICT}",
   "summary": "PR review complete. Verdict: ${VERDICT}. ${N_CRITICAL} Critical, ${N_HIGH} High, ${N_MEDIUM} Medium findings.",
   "artefacts": ["pr-comment ${REVIEW_COMMENT_ID}"]
 }
@@ -304,7 +278,7 @@ EOF
 Then emit the sentinel:
 
 ```
-AI_AGILE_STATUS: review "PR review posted. Verdict: ${VERDICT}. Apply pr:approved to advance."
+AI_AGILE_STATUS: review "Verdict: ${VERDICT}. Orchestrator acts on verdict."
 ```
 
 ---
@@ -321,6 +295,7 @@ AI_AGILE_STATUS: review "PR review posted. Verdict: ${VERDICT}. Apply pr:approve
   remediation steps precise enough for the `05_execute/coder` agent to
   implement without ambiguity. You describe the fix; you do not apply it.
 - **Never edit the PR body.** It is human-authored.
+- **Never apply or remove labels.** The orchestrator owns the label lifecycle.
 - **Every finding must be AI-actionable.** Vague findings like "improve error
   handling" are not acceptable. Name the function, the line, and the exact
   change needed.
