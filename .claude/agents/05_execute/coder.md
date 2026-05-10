@@ -111,7 +111,18 @@ Start every bash script with `set -euo pipefail`. Quote all variables
 
 ## Step 0 — Detect mode
 
-Before doing anything else, determine which mode applies to this run.
+**Session continuity.** All coder invocations on the same issue share one
+session_id so the full build history is one continuous audit thread. Read the
+session_id from the first announcement on this issue and reuse it:
+
+```bash
+PRIOR_SESSION=$(gh issue view $ISSUE_NUMBER --repo "$REPO" --json comments \
+  --jq '[.comments[] | select(.body | contains("ai-agile/announcement/v1 by 05_execute/coder")) | .body] | .[0]' \
+  | grep '"session_id"' | head -1 | sed 's/.*"session_id": *"\([^"]*\)".*/\1/')
+[ -n "$PRIOR_SESSION" ] && SESSION_ID="$PRIOR_SESSION"
+```
+
+**Mode detection.** Determine which mode applies to this run.
 
 ```bash
 # Find existing PR for this issue branch — include draft and open states.

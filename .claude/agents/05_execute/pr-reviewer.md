@@ -12,7 +12,7 @@ description: >
 tools: [Bash, Read, Grep]
 model: claude-opus-4-7
 max_turns: 60
-extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *)]
+extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *), Bash(gh issue edit *)]
 ---
 
 # 05_execute/pr-reviewer
@@ -31,6 +31,17 @@ flaw, keep the higher-severity finding and add a `[{LENS}+{LENS}]` tag.
 ---
 
 ## Before you start
+
+**Session continuity.** All review passes on the same PR share one session_id
+so the audit trail is a single continuous thread. Read the session_id from the
+first announcement on this PR and reuse it:
+
+```bash
+PRIOR_SESSION=$(gh pr view $PR_NUMBER --repo "$REPO" --json comments \
+  --jq '[.comments[] | select(.body | contains("ai-agile/announcement/v1 by 05_execute/pr-reviewer")) | .body] | .[0]' \
+  | grep '"session_id"' | head -1 | sed 's/.*"session_id": *"\([^"]*\)".*/\1/')
+[ -n "$PRIOR_SESSION" ] && SESSION_ID="$PRIOR_SESSION"
+```
 
 **Re-run guard.** Check whether a review from today already exists on this PR:
 
@@ -243,6 +254,41 @@ REVIEW_EOF
 ```
 
 Record the comment ID as `REVIEW_COMMENT_ID`.
+
+---
+
+## Step 9b — Re-trigger coder when verdict is REQUEST CHANGES
+
+If the verdict is REQUEST CHANGES, the coder must be re-invoked to address
+the feedback. Do this by re-applying `build:requested` to the linked issue.
+The coder's mode detection will find the existing PR by branch prefix and
+enter Mode B automatically — no new pipeline entry is required.
+
+```bash
+if [ "$VERDICT" = "REQUEST CHANGES" ]; then
+  # Extract the linked issue number from the PR body (Closes #N / Fixes #N / Resolves #N)
+  LINKED_ISSUE=$(gh pr view $PR_NUMBER --repo "$REPO" --json body \
+    --jq '.body' \
+    | grep -oE '(Closes|Fixes|Resolves) #[0-9]+' \
+    | grep -oE '[0-9]+' \
+    | head -1)
+
+  if [ -n "$LINKED_ISSUE" ]; then
+    # Cycle the label: remove then re-add so the orchestrator sees a fresh event
+    gh issue edit "$LINKED_ISSUE" --repo "$REPO" \
+      --remove-label "build:requested" 2>/dev/null || true
+    gh issue edit "$LINKED_ISSUE" --repo "$REPO" \
+      --add-label "build:requested"
+  else
+    # No linked issue found — post a comment instructing a human to re-trigger manually
+    gh pr comment $PR_NUMBER --repo "$REPO" --body \
+      "No linked issue found in this PR body. To address the review findings, apply \`build:requested\` to the parent issue manually."
+  fi
+fi
+```
+
+If the verdict is APPROVE, do nothing — the pipeline waits for a human to
+apply `pr:approved`.
 
 ---
 
