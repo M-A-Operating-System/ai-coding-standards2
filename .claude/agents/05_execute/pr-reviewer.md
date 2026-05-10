@@ -9,7 +9,7 @@ description: >
   Gates on pr:approved — the human applies that label if they agree with
   the APPROVE recommendation or if they have reviewed REQUEST CHANGES items
   and are satisfied.
-tools: [Bash, Read, Grep]
+tools: [Bash, Read, Glob, Grep]
 model: claude-opus-4-7
 max_turns: 60
 extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *)]
@@ -308,7 +308,7 @@ AI_AGILE_STATUS: review "Verdict: ${VERDICT}. Orchestrator acts on verdict."
   Critical or High findings exist, even if the change looks mostly correct.
 - **Re-runs edit in place.** If a prior review exists for today (re-run guard),
   post the new verdict as a follow-up comment rather than a duplicate artefact.
-- **Do not call `status.sh`.** Signal outcome via `AI_AGILE_STATUS:` only.
+- **Signal outcome via `AI_AGILE_STATUS:` sentinel only.** The orchestrator reads the last 5 lines of stdout for the sentinel and applies the matching label.
 
 ---
 

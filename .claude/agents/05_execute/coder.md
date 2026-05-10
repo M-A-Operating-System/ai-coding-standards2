@@ -269,12 +269,18 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "mode": "initial-build",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "complete",
-  "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Awaiting orchestrator commit and PR."
+  "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Orchestrator will commit files, create branch issue-${ISSUE_NUMBER}-{slug}, push, and open a draft PR."
 }
 \`\`\`
 EOF
 )"
 ```
+
+After you emit the sentinel, the orchestrator (not you) will:
+1. `git add -A && git commit` all changed files
+2. Create branch `issue-{N}-{slug}`, push it
+3. Open a draft PR linking to this issue
+4. Apply `pr-review:requested` to the new PR
 
 ```
 AI_AGILE_STATUS: complete
@@ -403,12 +409,17 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "mode": "address-feedback",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "complete",
-  "summary": "Addressed review feedback on PR #${PR_NUMBER}. Awaiting orchestrator commit and push."
+  "summary": "Addressed review feedback on PR #${PR_NUMBER}. Orchestrator will commit and push to the existing branch."
 }
 \`\`\`
 EOF
 )"
 ```
+
+After you emit the sentinel, the orchestrator (not you) will:
+1. `git add -A && git commit` all changed files
+2. `git push origin {existing-branch}`
+3. Re-apply `pr-review:requested` to the PR
 
 ```
 AI_AGILE_STATUS: complete

@@ -70,7 +70,12 @@
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Creates a branch, opens a draft PR on the first commit, writes code with guard clauses and explicit error handling, commits per sub-issue, then marks the PR ready for review and applies pr-review:requested."
+      "git_ops": {
+        "commit_after": true,
+        "branch_prefix": "issue-",
+        "pr_lifecycle": true
+      },
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — the orchestrator owns all git operations (branch creation, commit, push) and the PR lifecycle (create draft PR, apply pr-review:requested on success)."
     },
 
     {
