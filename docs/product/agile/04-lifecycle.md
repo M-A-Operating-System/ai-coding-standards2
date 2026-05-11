@@ -61,6 +61,22 @@ different cadences, different review bars, and different consumers:
 
 ---
 
+## Issue classification taxonomy
+
+Every issue entering the pipeline is classified by `issue-classifier` as exactly one of five types. The classification is recorded both in an artefact comment on the issue and as a `classification: {type}` label applied automatically at classification time. Five `classification:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface.
+
+| Classification | Label | Definition | Qualifying criterion |
+|---|---|---|---|
+| `bug` | `classification: bug` | Broken behaviour — something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target ([P-15](02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)); the fix is to correct the code, not the docs. |
+| `enhancement` | `classification: enhancement` | An improvement to an **existing** capability — making a feature richer, faster, more accessible, or more reliable. | The capability exists in production today; the issue moves it closer to the target state but does not add a new user-observable outcome. |
+| `feature` | `classification: feature` | A **new** capability the product cannot do today. | Adds a fresh user-observable outcome to the target state; deserves a full PRD with new acceptance criteria. |
+| `spike` | `classification: spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, or a prototype — not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
+| `toil` | `classification: toil` | Operational or maintenance work that does not change product capability. | Dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes — tied to a non-functional requirement in the product docs, not a user-facing feature. |
+
+When two classifications are plausible, prefer the one with the higher review bar: `bug` over `toil`; `feature` over `enhancement`; `enhancement` over `toil`. The distinction between `feature` and `enhancement` matters because a feature adds new product surface (heavier review); an enhancement refines an existing one (lighter review against the existing PRD).
+
+---
+
 ## How the pipeline advances
 
 A single, deterministic, Python-based orchestrator has the sole
