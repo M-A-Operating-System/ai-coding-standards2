@@ -136,7 +136,7 @@ for each work item (issue or PR):
             success = invoke_script(work_item, agent_def)
         else:
             success = invoke_agent(work_item, agent_def)
-        parse AI_AGILE_STATUS: sentinel from stdout (last 5 lines)
+        parse outcome sentinel from stdout  ← JSON <!ai-agent...!> for agent steps; AI_AGILE_STATUS: for script steps
         if sentinel == complete AND agent_def.git_ops.commit_after:
             run_git_ops(work_item, agent_def)   ← see "Code commit and PR lifecycle"
         apply matching terminal label; remove :wip
@@ -240,7 +240,7 @@ The orchestrator invokes the Claude CLI as a subprocess:
 
 ```bash
 claude \
-  --allowedTools "Bash(git *),Bash(gh *),Bash(bash .github/scripts/status.sh *),Read,Glob,Grep" \
+  --allowedTools "Bash(git *),Bash(gh *),Read,Glob,Grep" \
   --max-turns 60 \
   -p "<system prompt>"
 ```
@@ -250,15 +250,14 @@ The system prompt injected by the orchestrator provides:
 - The agent's name and the path to its prompt file
   (`.claude/agents/{agent}.md`)
 - The work item type, number, title, and URL
-- The set of `status.sh` commands the agent uses for label
-  transitions: `set-wip`, `set-complete`, `set-review`, `set-blocked`.
-  `set-failed` is **not** in the agent's allowlist — only the
-  orchestrator applies `:failed`, when the agent exits non-zero
-  without one of the three terminal calls above.
+- The environment variables `$AGENT_SESSION_ID` and `$AGENT_COMMIT_SHA`
+  so the agent can embed them in its outcome sentinel without extra tool
+  calls.
 
-Agents use `status.sh` for every label write. They never call the GitHub
-API directly for status transitions. This keeps the transition logic in one
-auditable place.
+Agents signal their outcome by emitting a JSON sentinel as their final text
+output — not via a tool call or shell command. The orchestrator scans the
+captured stdout for the sentinel and applies the matching label. Agents
+never write GitHub labels directly.
 
 The Claude CLI subprocess inherits `GITHUB_TOKEN` and `ANTHROPIC_API_KEY`
 from the orchestrator's environment. Per-agent tool restrictions are
@@ -281,7 +280,7 @@ Key differences from agent steps:
 | | Agent step | Script step |
 |---|---|---|
 | `:wip` ownership | Orchestrator applies `:wip` before invoking | Orchestrator applies `:wip` before invoking |
-| Status signalling | Agent emits `AI_AGILE_STATUS:` to stdout | Script emits `AI_AGILE_STATUS:` to stdout |
+| Status signalling | Agent emits JSON `<!ai-agent...!>` sentinel as final text | Script emits `AI_AGILE_STATUS:` to stdout |
 | Label write | Orchestrator reads sentinel → applies label | Orchestrator reads sentinel → applies label |
 | Rate limiting | Anthropic API calls possible | No Anthropic API; rate limiting not applicable |
 | Timeout | 1800 s (30 min) | 300 s (5 min) |
@@ -310,11 +309,12 @@ If the script exits non-zero without a sentinel, the orchestrator applies
 After the subprocess exits, the orchestrator handles the outcome differently
 depending on the step type:
 
-**Agent steps** — the orchestrator reads the sentinel and applies the label:
+**Agent steps** — the orchestrator scans the captured output for the JSON sentinel:
 ```
-parse AI_AGILE_STATUS: from last 5 lines of stdout
+OUTCOME_SENTINEL = re.compile(r'<!ai-agent\s+(\{[^}]+\})\s*!>', re.DOTALL)
+parse sentinel by scanning from tail of captured output
 
-if sentinel found:
+if sentinel found and outcome in {complete, review, blocked}:
     remove :wip, apply matching label ({agent}:complete / :review / :blocked)
 elif agent exited zero (no sentinel):
     remove :wip, apply :complete   ← backward-compat default
@@ -425,6 +425,8 @@ coder can read its own context without git or gh calls:
 | `$PR_NUMBER` | Mode B only | The existing PR number; absent in Mode A |
 | `$SESSION_ID` | Both modes | Stable ID for this issue's pipeline session |
 | `$REPO` | Both modes | `owner/repo` string |
+| `$AGENT_SESSION_ID` | Both modes | Human-readable session key (e.g. `ais-v1-issue-42-execute-coder`); embed in the outcome sentinel |
+| `$AGENT_COMMIT_SHA` | Both modes | HEAD commit SHA at invocation time; embed in the outcome sentinel |
 
 The presence of `$PR_NUMBER` is the Mode A / Mode B switch — agents check
 `if [ -n "${PR_NUMBER:-}" ]` at the start of their run.
