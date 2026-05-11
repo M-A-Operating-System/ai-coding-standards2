@@ -20,9 +20,9 @@ the model in product terms.
 |---|---|---|---|---|
 | `requested` | Amber | A human has explicitly requested this agent to run | Human | Orchestrator (replaced by `:wip` on invocation) |
 | `wip` | Yellow | Agent is actively running | Orchestrator | Orchestrator (replaced by outcome) |
-| `complete` | Green | Agent finished successfully | Agent (non-gated) **or** Orchestrator (gated, on gate-label) | Never |
-| `review` | Purple | Agent has finished and is requesting human review | Agent | Orchestrator (on gate-label) **or** Human (rejects by removing) |
-| `blocked` | Red-orange | Agent cannot proceed without human help | Agent | Human (after fixing the cause) |
+| `complete` | Green | Agent finished successfully | Agent (non-gated) **or** Orchestrator (gated, on gate-label) | Never (except when a human applies `{agent}:redo`) |
+| `review` | Purple | Agent has finished and is requesting human review | Agent | Orchestrator (on gate-label) **or** Human (rejects by removing) **or** Human (applies `:redo`) |
+| `blocked` | Red-orange | Agent cannot proceed without human help | Agent | Human (after fixing the cause) **or** Human (applies `:redo`) |
 | `failed` | Red | Agent crashed with a technical error | Orchestrator | Human (after debugging) |
 | `skipped` | Light blue | Agent was intentionally bypassed | Human | Never |
 
@@ -38,7 +38,7 @@ phase-prefixed agent name (see
 ## Status transitions
 
 ```
-                       ┌──► complete (terminal — non-gated agent)
+                       ┌──► complete ──► (human applies :redo) ──► wip ──► …
                        │
                        │       ┌──► (human applies gate label)
                        │       │       └──► orchestrator: review→complete (terminal)
@@ -48,20 +48,24 @@ none ──► wip ──────────┼──► review ──┤
                    │   │                     └──► wip ──► …
                    ↓   │
                   wip   ├──► blocked ──► (human removes) ──► wip ──► …
+                        │       └──► (human applies :redo) ──► wip ──► …
                         │
                         └──► failed ──┬──► (human removes) ──► wip
                                       └──► skipped (terminal)
 ```
 
 - An agent can only transition out of `wip`.
-- `complete` and `skipped` are terminal — once applied, they are never
-  removed. `complete` says "the agent succeeded." `skipped` says "we have
+- `complete` and `skipped` are terminal once applied. `skipped` is never
+  removed. `complete` is never removed except by a human applying
+  `{agent}:redo` to request a deliberate re-run (see [**Redo**](#redo)
+  below). `complete` says "the agent succeeded." `skipped` says "we have
   decided this agent is not applicable."
 - `review`, `blocked`, and `failed` all halt the pipeline. They are not
   terminal — `:blocked` and `:failed` are resolved by the human removing
   the label; `:review` is resolved either by the orchestrator (when the
   human applies a gate label, see below) or by the human removing the
-  label to reject and re-run the agent.
+  label to reject and re-run the agent. Both `:review` and `:blocked` may
+  also be reset by applying `{agent}:redo`.
 
 ---
 
@@ -93,6 +97,7 @@ The cost is some label noise on long-lived issues, which is acceptable.
 | `blocked` | Orchestrator (on sentinel) | When the agent emits `AI_AGILE_STATUS: blocked` |
 | `failed` | Orchestrator | When the agent exits non-zero without a terminal sentinel |
 | `skipped` | Human | When a human decides this agent is not applicable |
+| `redo` | Human | When a human wants to re-run a named agent with new context (see [**Redo**](#redo)) |
 
 The orchestrator is the **only writer** for all status label transitions.
 Agents never apply labels directly — they emit `AI_AGILE_STATUS:`
@@ -221,6 +226,42 @@ orchestrator promotes, both are present, the dependency is satisfied,
 and the next agent becomes eligible. A gate label without `:complete`
 (or vice versa) is a transient state the orchestrator resolves on its
 next tick — downstream agents do not run on it.
+
+---
+
+## Redo
+
+A human can request that a named agent re-run — even after it has reached
+a terminal or halted state — by applying a `{agent}:redo` label (e.g.,
+`prd-writer:redo`). This is the mechanism for incorporating new context
+(additional comments, corrected requirements) without needing to understand
+or manually manipulate other pipeline labels.
+
+**What happens when the orchestrator detects `{agent}:redo`:**
+
+1. If the agent is currently `:wip` (already running), the `:redo` label
+   stays on the issue. The next orchestrator tick after the run completes
+   processes the redo.
+2. Otherwise (`:complete`, `:review`, or `:blocked`), the orchestrator:
+   - Removes the current status label.
+   - Removes the `:redo` label.
+   - Applies `:wip`.
+   - Re-invokes the agent.
+   - Emits a `redo.requested` event to the audit log.
+
+**Constraints:**
+
+- `:redo` is processed within one orchestrator tick (15-minute max SLA
+  under the scheduled reconciler).
+- `:redo` does **not** cascade — downstream agents are not automatically
+  re-run; the reviewer applies `:redo` to each agent individually.
+- `:redo` does **not** apply to `:failed` agents — the existing recovery
+  path (removing the `:failed` label) continues to handle failure
+  scenarios.
+- `:redo` does **not** apply to `:skipped` agents — skipped is a
+  deliberate human bypass that is not re-triggerable.
+- Re-run agents read all comments including those posted after their
+  previous run (P-11: agents read GitHub state fresh on every invocation).
 
 ---
 

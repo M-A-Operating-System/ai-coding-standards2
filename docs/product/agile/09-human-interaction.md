@@ -72,6 +72,7 @@ Nothing to learn beyond ordinary GitHub usage:
 | **Apply a gate label** (e.g., `01_product_docs/prd-writer:approved`) | Approve at this gate. The orchestrator then removes the agent's `:review` label and applies `:complete`. Humans never apply `{agent}:complete` directly. |
 | **Remove a `:review` label without a gate label** | Reject; the agent re-runs and reads feedback comments |
 | **Remove a `:blocked` label** | Unblock (after fixing the cause); the agent re-runs |
+| **Apply an `{agent}:redo` label** (e.g., `prd-writer:redo`) | Request a deliberate re-run of the named agent with new context. The orchestrator strips the agent's current status label (`:complete`, `:review`, or `:blocked`), applies `:wip`, re-invokes the agent, and removes the `:redo` label — all within one orchestrator tick. The re-run agent reads all comments, including those added after its previous run. See [Status model — Redo](06-status-model.md#redo). |
 | **Apply a `:skipped` label** | Take responsibility for bypassing this agent ([Status model](06-status-model.md)) |
 | **Inline comment on a PR diff or artefact line** | Targeted feedback on a specific line; the agent reads inline comments on its next run |
 | **Edit the agent's comment in place** | Correct a draft; the edit is in the issue's history |
@@ -309,6 +310,7 @@ they have their own mechanisms:
 | Lock on an `(object, agent)` pair | `:wip` label + claim comment — see [P-4](02-principles.md#p-4--wip-is-the-mutex) |
 | Cross-issue dependency | GitHub `blocked-by` issue link — see [P-9](02-principles.md#p-9--cross-issue-parallel-intra-issue-serial) |
 | Standards violation | Issue raised by `standards-compliance-reviewer` |
+| Re-run request | `{agent}:redo` label — see [Status model — Redo](06-status-model.md#redo) |
 
 A Question Card is for **structured asks that don't fit any of the
 above**. If a new ask comes up frequently and would map cleanly to a

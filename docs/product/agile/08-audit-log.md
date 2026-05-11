@@ -96,7 +96,12 @@ orchestrator:
 | Agent | `agent.invoked`, `agent.complete`, `agent.review`, `agent.blocked`, `agent.failed`, `agent.skipped` |
 | Lock | `lock.acquired`, `lock.released`, `lock.reclaimed_stale` |
 | Gate | `gate.requested`, `gate.approved`, `gate.rejected` |
+| Redo | `redo.requested` |
 | System | `system.tick`, `system.malformed_event`, `system.config_reloaded` |
+
+`redo.requested` is emitted when the orchestrator detects a `{agent}:redo`
+label on a work item and begins the re-run sequence. The event carries the
+agent name, the prior status that was stripped, and the issue or PR number.
 
 What is *not* logged:
 

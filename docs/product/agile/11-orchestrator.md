@@ -6,8 +6,8 @@ decides which agent runs next. No LLM is in this path — every decision is
 deterministic Python (P-14).
 
 This document covers: inputs, outputs, decision logic, the mutex protocol,
-gate label handling, failure recovery, and the GitHub Actions workflows that
-host it.
+gate label handling, redo handling, failure recovery, and the GitHub Actions
+workflows that host it.
 
 ---
 
@@ -23,6 +23,7 @@ The orchestrator owns exactly these responsibilities:
 | Mutex management | Acquire and release the `:wip` label lock per (object, agent) |
 | Agent invocation | Spawn the agent subprocess; set `:failed` if it crashes without a terminal status |
 | Gate promotion | When a human applies a gate label, remove `:review` and apply `:complete` |
+| Redo processing | When a human applies `{agent}:redo`, strip the prior status and re-invoke the agent |
 | Audit log emission | Append one JSONL event per transition to the `ai-agile/log` branch |
 
 It owns none of these:
@@ -84,6 +85,7 @@ default).
 | `{agent}:wip` label applied | GitHub REST API | At start of mutex acquisition |
 | `{agent}:failed` label applied | GitHub REST API | When agent exits non-zero without a terminal status |
 | `{agent}:review` → `{agent}:complete` transition | GitHub REST API | When human applies the gate label (gate promotion) |
+| `{agent}:redo` processed | GitHub REST API | When human applies `{agent}:redo`; prior status stripped, `:wip` applied, `:redo` removed |
 | Gate prompt comment | GitHub Issues API | After a non-gated agent completes and the next step requires a gate label |
 | `:failed` recovery comment | GitHub Issues API | When an agent crashes; names the label to remove and the label to skip |
 | Audit log JSONL event | Append to `ai-agile/log` branch | Once per status transition, agent run, or gate approval |
@@ -101,6 +103,12 @@ On every invocation, the orchestrator runs the same loop:
 ```
 for each work item (issue or PR):
     labels = read_labels(work_item)
+
+    # Redo check — runs before the main eligibility loop
+    for each agent_def in pipeline.json:
+        if {agent}:redo ∈ labels:
+            process_redo(work_item, agent_def, labels)
+            # process_redo: see "Redo handling" section below
 
     for each agent_def in pipeline.json (in declaration order):
         if work_item.kind not in agent_def.object:
@@ -480,6 +488,54 @@ AND {agent}:complete ∉ labels:
 
 ---
 
+## Redo handling
+
+When a human applies `{agent}:redo` to a work item, they are requesting a
+deliberate re-run of the named agent with new context (additional comments,
+corrected requirements). The orchestrator processes this before the main
+eligibility loop on each tick.
+
+```
+for each agent_def in pipeline.json:
+    if {agent}:redo ∉ labels:
+        continue
+
+    current_status = current_status(labels, agent_def.agent)
+
+    if current_status == wip:
+        # Agent is actively running; defer — leave :redo in place
+        # The next tick after the run completes will process it
+        continue
+
+    if current_status == failed:
+        # :redo does not apply to :failed; the existing recovery path
+        # (human removes the :failed label) handles failure scenarios
+        continue
+
+    if current_status == skipped:
+        # :redo does not apply to :skipped (intentional bypass)
+        continue
+
+    # current_status is complete, review, or blocked
+    emit redo.requested to audit log
+    remove {agent}:{current_status}   ← strip prior status
+    remove {agent}:redo               ← acknowledge the request
+    acquire_mutex(work_item, agent_def)
+    apply {agent}:wip
+    invoke agent (reads GitHub state fresh, including all new comments)
+```
+
+**SLA.** The `:redo` label is removed within one orchestrator tick (15-minute
+max under the scheduled reconciler) after it was applied, confirming the
+request was received and processed.
+
+**No cascading.** The redo mechanism re-runs only the named agent. Downstream
+agents that may depend on the re-run agent's output are not automatically
+re-triggered — the reviewer applies `:redo` to each agent they want re-run
+individually.
+
+---
+
 ## Audit log emission
 
 Every status transition emits one event to the `ai-agile/log` orphan
@@ -498,6 +554,7 @@ not write to it. Events emitted by the orchestrator:
 | `agent.failed` | Agent crashed or timed out; `:failed` applied |
 | `gate.approved` | Human applied the gate label; gate promotion about to run |
 | `lock.reclaimed` | Stale `:wip` was force-reclaimed |
+| `redo.requested` | Human applied `{agent}:redo`; prior status stripped and re-run queued |
 
 Each event carries: `session_id`, `event`, `actor.kind` (human or agent),
 `actor.login`, `object.kind`, `object.number`, `agent`, `timestamp`,
@@ -671,6 +728,7 @@ hours (06:00–20:00 UTC). It is the backstop for:
 - Gate promotions that missed their label event (rare but possible on
   flaky webhook delivery)
 - Partial-state recovery (interrupted `:review` → `:complete` transitions)
+- Redo processing deferred while the agent was `:wip` (picked up on next tick)
 
 ```yaml
 name: Orchestrator — Scheduled reconciler
