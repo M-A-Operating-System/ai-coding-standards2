@@ -87,6 +87,10 @@ default).
 | Gate prompt comment | GitHub Issues API | After a non-gated agent completes and the next step requires a gate label |
 | `:failed` recovery comment | GitHub Issues API | When an agent crashes; names the label to remove and the label to skip |
 | Audit log JSONL event | Append to `ai-agile/log` branch | Once per status transition, agent run, or gate approval |
+| Git commit | `git commit` subprocess | After a code-writing agent completes (`git_ops.commit_after: true`) |
+| Branch creation + push | `git` subprocess | After a code-writing agent's first run (`git_ops.pr_lifecycle: true`, Mode A) |
+| Draft PR creation | GitHub REST API | After the first successful code commit on a new branch (Mode A) |
+| PR push (existing branch) | `git` subprocess | After a code-writing agent's feedback-address run (Mode B) |
 
 ---
 
@@ -133,6 +137,8 @@ for each work item (issue or PR):
         else:
             success = invoke_agent(work_item, agent_def)
         parse AI_AGILE_STATUS: sentinel from stdout (last 5 lines)
+        if sentinel == complete AND agent_def.git_ops.commit_after:
+            run_git_ops(work_item, agent_def)   ← see "Code commit and PR lifecycle"
         apply matching terminal label; remove :wip
         post closing announcement comment
         handle_outcome(work_item, agent_def, success, labels)
@@ -350,6 +356,91 @@ if final_status in {blocked, failed}:
     emit agent.blocked / agent.failed to audit log
     break item loop
 ```
+
+---
+
+## Code commit and PR lifecycle
+
+Some agents write files but cannot run git or create PRs — by design. The
+orchestrator performs all git operations on their behalf immediately after a
+successful completion sentinel, before applying the terminal label. The
+pipeline.json `git_ops` object per agent controls this behaviour:
+
+```json
+"git_ops": {
+  "commit_after": true,   ← commit all changed files after this agent completes
+  "branch_prefix": "issue-",  ← branch name = {prefix}{issue_number}
+  "pr_lifecycle": true    ← create/update the PR as appropriate
+}
+```
+
+If `git_ops` is absent or `commit_after` is `false`, no git operations run.
+
+### Mode A — Initial build (no PR exists)
+
+After the coder signals `AI_AGILE_STATUS: complete` on the first invocation:
+
+```
+1. Detect mode: no existing PR for branch issue-{N}
+2. Create branch:  git checkout -b issue-{N}-{slug}
+3. Stage all:      git add -A
+4. Commit:         git commit -m "Implement issue #{N}: {title}"
+5. Push:           git push -u origin issue-{N}-{slug}
+6. Create draft PR:
+     title: "{issue title}"
+     body:  "Closes #{N}\n\n{coder closing announcement summary}"
+     draft: true
+7. Apply label pr-review:requested to the new PR
+```
+
+The branch name uses the issue number plus a URL-safe slug of the title:
+`issue-42-add-user-auth`. If a branch with the same prefix already exists
+(e.g., from a previous failed attempt), the orchestrator reuses it rather
+than creating a second branch.
+
+### Mode B — Address feedback (PR already exists)
+
+After the coder signals `AI_AGILE_STATUS: complete` on a subsequent
+invocation (triggered by `build:requested` being re-applied to the issue
+when a reviewer requests changes):
+
+```
+1. Detect mode: PR exists; $PR_NUMBER is set
+2. Stage all:   git add -A
+3. Commit:      git commit -m "Address review feedback on PR #{PR_NUMBER}"
+4. Push:        git push origin {existing-branch}
+5. Re-apply:    pr-review:requested label on the PR (removed by re-trigger)
+```
+
+No new PR or new branch is created in Mode B.
+
+### Environment variables injected before coder invocation
+
+The orchestrator sets these in the agent subprocess environment so the
+coder can read its own context without git or gh calls:
+
+| Variable | Set in | Value |
+|---|---|---|
+| `$ISSUE_NUMBER` | Both modes | The issue number being implemented |
+| `$PR_NUMBER` | Mode B only | The existing PR number; absent in Mode A |
+| `$SESSION_ID` | Both modes | Stable ID for this issue's pipeline session |
+| `$REPO` | Both modes | `owner/repo` string |
+
+The presence of `$PR_NUMBER` is the Mode A / Mode B switch — agents check
+`if [ -n "${PR_NUMBER:-}" ]` at the start of their run.
+
+### Failure handling
+
+If any git operation fails (e.g., merge conflict, push rejected):
+
+1. The orchestrator does **not** apply `:complete`.
+2. It applies `{agent}:failed` and posts a recovery comment explaining
+   which git step failed and the error output.
+3. A human resolves the conflict and removes the `:failed` label to
+   allow retry.
+
+The coder's file changes remain on disk in the Actions runner workspace
+for inspection, but are not committed to any branch.
 
 ---
 
