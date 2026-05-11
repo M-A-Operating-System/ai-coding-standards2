@@ -96,18 +96,34 @@
       "terminal": true,
       "human_action_required": false,
       "orchestrator_behaviour": "Treat as a satisfied dependency. Do not trigger this agent."
+    },
+
+    {
+      "status": "approved",
+      "label_suffix": "approved",
+      "colour": "0075CA",
+      "colour_name": "blue",
+      "meaning": "A human has reviewed and approved the agent's output at a configured human gate. Applied by a human to advance the pipeline past the gate. Only meaningful on agents that declare human_gate_label in pipeline.json.",
+      "set_by": "human",
+      "cleared_by": "never",
+      "blocks_pipeline": false,
+      "terminal": true,
+      "human_action_required": false,
+      "orchestrator_behaviour": "Treat as a satisfied human gate. Allow downstream agents whose trigger depends on this label to proceed."
     }
   ],
 
   "label_format": "{agent-name}:{status}",
   "label_format_examples": [
     "09_gap_assessment/codebase-reviewer:requested",
-    "prd-writer:wip",
-    "prd-writer:complete",
-    "prd-writer:review",
-    "architect:blocked",
-    "coder:failed",
-    "test-coverage-auditor:skipped"
+    "05_execute/coder:requested",
+    "01_product_docs/prd-writer:approved",
+    "01_product_docs/prd-writer:wip",
+    "01_product_docs/prd-writer:complete",
+    "01_product_docs/prd-writer:review",
+    "05_execute/coder:blocked",
+    "05_execute/coder:failed",
+    "09_gap_assessment/codebase-reviewer:skipped"
   ],
 
   "status_transitions": {
@@ -119,7 +135,8 @@
       "review":    ["wip"],
       "blocked":   ["wip"],
       "failed":    ["wip", "skipped"],
-      "complete":  [],
+      "complete":  ["approved"],
+      "approved":  [],
       "skipped":   []
     }
   }
