@@ -40,3 +40,10 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           bash .github/scripts/status.sh bootstrap-triggers
+
+      - name: Migrate non-conforming labels to {agent}:{status} convention
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python .github/scripts/migrate_labels.py
