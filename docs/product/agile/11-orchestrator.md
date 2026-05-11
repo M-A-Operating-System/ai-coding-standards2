@@ -54,6 +54,8 @@ The GitHub Actions workflows that invoke it live at:
   orchestrator-pr.yml          ← fires on PR lifecycle events
   orchestrator-schedule.yml    ← fires every 15 minutes
   orchestrator-dispatch.yml    ← manual trigger (debug / single-item)
+  pipeline-emergency-stop.yml  ← operator-initiated emergency stop
+  pipeline-restart.yml         ← operator-initiated pipeline restart
 ```
 
 ---
@@ -498,6 +500,7 @@ not write to it. Events emitted by the orchestrator:
 | `agent.failed` | Agent crashed or timed out; `:failed` applied |
 | `gate.approved` | Human applied the gate label; gate promotion about to run |
 | `lock.reclaimed` | Stale `:wip` was force-reclaimed |
+| `system.emergency_stop` | Orchestrator detected the `.pipeline-stop` marker on startup and exited without invoking agents |
 
 Each event carries: `session_id`, `event`, `actor.kind` (human or agent),
 `actor.login`, `object.kind`, `object.number`, `agent`, `timestamp`,
@@ -511,7 +514,8 @@ mode ran for any given step.
 ## GitHub Actions workflows
 
 The orchestrator is hosted entirely in GitHub Actions. There are four
-workflows with distinct triggers; they all call the same Python script.
+regular orchestrator workflows plus two operator-control workflows, all
+with distinct triggers.
 
 ### Overview
 
@@ -521,8 +525,10 @@ workflows with distinct triggers; they all call the same Python script.
 | `orchestrator-pr.yml` | `pull_request: [opened, synchronize, ready_for_review, closed]` | PR number | Advance PR-side agents on PR lifecycle events |
 | `orchestrator-schedule.yml` | `schedule: */15 6-20 * * 1-5` | _(none — scans all)_ | Backstop reconciler — catches anything the event triggers missed |
 | `orchestrator-dispatch.yml` | `workflow_dispatch` | Optional (default: all) | Manual trigger for debugging, dry-run, or single-item reprocessing |
+| `pipeline-emergency-stop.yml` | `workflow_dispatch` | n/a — pipeline-wide | Emergency stop — cancel all in-progress orchestrator runs and write `.pipeline-stop` marker |
+| `pipeline-restart.yml` | `workflow_dispatch` | n/a — pipeline-wide | Pipeline restart — clear `.pipeline-stop` marker and optionally trigger a fresh orchestrator run |
 
-All four share the same job definition; the only differences are the
+All four orchestrator workflows share the same job definition; the only differences are the
 trigger block and the `--issue` argument construction.
 
 ---
@@ -789,6 +795,83 @@ jobs:
 
 ---
 
+## Emergency stop
+
+Operators can halt all pipeline activity immediately from the GitHub
+Actions UI without editing files or removing labels manually.
+
+### Stop marker
+
+The orchestrator checks for a `.pipeline-stop` marker file at the
+submodule root **before** doing any other work (including the pause
+marker check). The marker format is:
+
+```json
+{
+  "stopped_at": "2026-05-06T21:00:00Z",
+  "reason": "bad prompt deployed to prd-writer",
+  "stopped_by": "github-actions"
+}
+```
+
+Unlike `.pipeline-pause` (which auto-expires), the stop marker is
+**permanent until explicitly cleared** by the `pipeline-restart` workflow
+or the `--clear-stop` CLI flag. The orchestrator never auto-removes it.
+
+### Behaviour when the stop marker is present
+
+On every run — scheduled tick, label event, PR event — the orchestrator:
+
+1. Detects the `.pipeline-stop` marker (checked before the pause marker).
+2. Logs the stop reason.
+3. Emits a `system.emergency_stop` audit event.
+4. Exits cleanly without invoking any agents and without applying
+   `:failed` to any work item.
+
+### `pipeline-emergency-stop.yml`
+
+Manually triggered from the GitHub Actions UI. Inputs:
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `reason` | string | required | Recorded in the marker and shown in the log |
+| `cancel_runs` | boolean | `true` | Whether to cancel in-flight orchestrator runs via `gh run cancel` |
+
+On execution:
+1. Cancels all currently-running orchestrator workflow runs (if
+   `cancel_runs` is true).
+2. Writes the `.pipeline-stop` marker with the supplied reason and
+   current timestamp.
+3. Outputs a summary of how many runs were cancelled.
+
+### `pipeline-restart.yml`
+
+Manually triggered from the GitHub Actions UI. Inputs:
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `trigger_run` | boolean | `true` | Whether to immediately dispatch a fresh orchestrator run after clearing the marker |
+
+On execution:
+1. Deletes the `.pipeline-stop` marker file.
+2. Optionally dispatches a fresh orchestrator run (if `trigger_run` is
+   true).
+3. The next scheduled or event-triggered run proceeds normally.
+
+### Manual override
+
+Operators can also clear the stop marker from the command line without
+running the restart workflow:
+
+```bash
+python ai-agile/pipeline/pipeline_orchestrator.py --clear-stop
+```
+
+This deletes the marker file and exits. The next scheduled or
+event-driven tick proceeds as normal.
+
+---
+
 ## CLI reference
 
 ```
@@ -805,6 +888,8 @@ Options:
   --clear-pause         Clear the rate-limit pause marker if set, then exit
                         (manual override for operators; see "Anthropic API"
                         in Rate limit handling)
+  --clear-stop          Clear the emergency stop marker if set, then exit
+                        (manual override for operators; see "Emergency stop")
   --pipeline PATH       Path to pipeline.json (default: ai-agile/pipeline/pipeline.json)
   --verbose, -v         Debug-level output
 ```
