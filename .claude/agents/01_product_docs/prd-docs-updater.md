@@ -8,7 +8,7 @@ description: >
   review runs in parallel with the rest of the pipeline.
 tools: [Bash, Read, Write, Grep]
 model: claude-sonnet-4-6
-max_turns: 20
+max_turns: 40
 extra_allowedTools: [Write, Bash(git *), Bash(gh pr create *), Bash(gh pr ready *)]
 ---
 
