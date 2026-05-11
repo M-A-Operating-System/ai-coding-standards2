@@ -172,58 +172,55 @@ higher-value at the routing layer than flexibility. Decisions that
 require judgment belong to humans (at gates) or to specific agents
 (within their own scope) — not to the routing layer.
 
-### P-16 — Orchestrator owns all git write operations
+### P-16 — Agents own branch commits; orchestrator owns the PR lifecycle
 
-**Statement.** Agents are readers and file-writers. The orchestrator is
-the sole actor that creates branches, stages changes, commits, pushes,
-and opens or manages PRs. No agent may execute git write commands
-(`git commit`, `git push`, `git checkout -b`, `git reset`, `git merge`)
-or PR lifecycle commands (`gh pr create`, `gh pr edit`, `gh pr merge`,
-`gh pr ready`).
+**Statement.** Agents write files and commit those changes to their working
+branch. The orchestrator opens, manages, and closes PRs. Neither actor may
+do the other's job.
 
-Agents that produce file output signal completion via the `AI_AGILE_STATUS:`
-sentinel. The orchestrator reads the sentinel, performs all git operations
-declared in `pipeline.json` under `git_ops`, and then applies the terminal label.
-
-**Allowed agent git access.** Read-only operations only:
-
-| Allowed | Purpose |
+| Responsibility | Owner |
 |---|---|
-| `git diff`, `git log`, `git show` | Inspect working tree and history |
-| `git status`, `git ls-remote` | Inspect current and remote state |
-| `git fetch`, `git rev-parse` | Read remote refs without writing |
+| Write files, `git add`, `git commit`, `git push` to branch | Agent |
+| Create branch (`git checkout -b`) | Agent |
+| `gh pr create`, `gh pr ready`, `gh pr merge`, `gh pr edit` | Orchestrator |
+| Apply `:wip`, `:complete`, `:review`, `:failed` labels | Orchestrator |
+| Audit log writes | Orchestrator |
 
-**How agents declare git output.** Each agent that produces file output
-declares a `git_ops` block in its `pipeline.json` entry:
+**Destructive git commands are forbidden for all actors in agent prompts.**
+No agent allowlist may include `git reset`, `git push --force`,
+`git branch -D`, or any other command that rewrites or deletes history.
+These are operator-only actions taken outside the pipeline.
 
-```json
-"git_ops": {
-  "commit_after": true,
-  "branch_prefix": "issue-",
-  "pr_lifecycle": true
-}
-```
+**Allowed agent git operations** (branch-scoped, non-destructive):
 
-The orchestrator performs branch creation, commit, push, and PR creation
-after a successful sentinel, with no agent involvement.
+| Command | Purpose |
+|---|---|
+| `git checkout -b`, `git checkout`, `git fetch` | Branch management |
+| `git add`, `git commit`, `git push` | Record work |
+| `git config user.*` | Set commit identity |
+| `git ls-remote`, `git diff`, `git log`, `git show`, `git status`, `git rev-parse` | Read state |
+
+**Why this split.** Agents have context about what changed and why — they
+write the commit message and choose what to stage. The orchestrator has
+context about the PR object, the issue it closes, the gate it belongs to,
+and the label sequence — it is the right actor to create and advance the
+PR. Mixing these responsibilities into either actor creates either an agent
+that knows too much about pipeline mechanics or an orchestrator that has to
+infer commit intent from file diffs.
 
 **Consequences.**
 
-- Agent tool allowlists never include `Bash(git commit *)`,
-  `Bash(git push *)`, `Bash(git checkout -b *)`, or
-  `Bash(gh pr create/edit/merge *)`. CI validation enforces this.
-- All commits are authored by the orchestrator under a single, auditable
-  identity — not scattered across agent subprocesses with varying
-  credentials.
-- Agents cannot corrupt the repository via a destructive git command,
-  regardless of prompt injection or model error.
-- Adding a new file-producing agent requires only a `git_ops` entry in
-  `pipeline.json`, not a git permissions audit of the agent prompt.
+- Agent `extra_allowedTools` lists specific git subcommands, never the
+  bare `Bash(git *)` glob. CI validation rejects the bare glob.
+- The orchestrator never commits code or doc files; agents never create
+  or close PRs.
+- A new file-producing agent is self-contained: it manages its own branch
+  and signals complete. The orchestrator opens the PR when it sees the
+  sentinel and the branch exists.
 
-**Tradeoff.** The orchestrator must know each agent's output shape (which
-files to stage, what commit message format to use). Expressed as `git_ops`
-configuration rather than code, so new agents opt in without orchestrator
-code changes.
+**Tradeoff.** Agents must be granted write access to the repository
+(push to their branch). This is narrower than full repo write — the branch
+prefix convention and a branch protection rule on `main` provide the guard.
 
 ---
 
