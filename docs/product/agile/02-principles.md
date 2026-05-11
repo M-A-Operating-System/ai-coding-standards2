@@ -6,7 +6,7 @@ any principle is a significant architectural decision and goes through an ADR.
 
 The principles fall into three groups:
 
-- **Architectural** (P-1 to P-4, P-14) — commitments about how the system is built.
+- **Architectural** (P-1 to P-4, P-14, P-16) — commitments about how the system is built.
 - **Operational** (P-5 to P-9, P-13, P-15) — rules the orchestrator enforces on work.
 - **Cultural** (P-10 to P-12) — how the system behaves toward people.
 
@@ -171,6 +171,59 @@ this trade because predictability, testability, and trust are
 higher-value at the routing layer than flexibility. Decisions that
 require judgment belong to humans (at gates) or to specific agents
 (within their own scope) — not to the routing layer.
+
+### P-16 — Orchestrator owns all git write operations
+
+**Statement.** Agents are readers and file-writers. The orchestrator is
+the sole actor that creates branches, stages changes, commits, pushes,
+and opens or manages PRs. No agent may execute git write commands
+(`git commit`, `git push`, `git checkout -b`, `git reset`, `git merge`)
+or PR lifecycle commands (`gh pr create`, `gh pr edit`, `gh pr merge`,
+`gh pr ready`).
+
+Agents that produce file output signal completion via the `AI_AGILE_STATUS:`
+sentinel. The orchestrator reads the sentinel, performs all git operations
+declared in `pipeline.json` under `git_ops`, and then applies the terminal label.
+
+**Allowed agent git access.** Read-only operations only:
+
+| Allowed | Purpose |
+|---|---|
+| `git diff`, `git log`, `git show` | Inspect working tree and history |
+| `git status`, `git ls-remote` | Inspect current and remote state |
+| `git fetch`, `git rev-parse` | Read remote refs without writing |
+
+**How agents declare git output.** Each agent that produces file output
+declares a `git_ops` block in its `pipeline.json` entry:
+
+```json
+"git_ops": {
+  "commit_after": true,
+  "branch_prefix": "issue-",
+  "pr_lifecycle": true
+}
+```
+
+The orchestrator performs branch creation, commit, push, and PR creation
+after a successful sentinel, with no agent involvement.
+
+**Consequences.**
+
+- Agent tool allowlists never include `Bash(git commit *)`,
+  `Bash(git push *)`, `Bash(git checkout -b *)`, or
+  `Bash(gh pr create/edit/merge *)`. CI validation enforces this.
+- All commits are authored by the orchestrator under a single, auditable
+  identity — not scattered across agent subprocesses with varying
+  credentials.
+- Agents cannot corrupt the repository via a destructive git command,
+  regardless of prompt injection or model error.
+- Adding a new file-producing agent requires only a `git_ops` entry in
+  `pipeline.json`, not a git permissions audit of the agent prompt.
+
+**Tradeoff.** The orchestrator must know each agent's output shape (which
+files to stage, what commit message format to use). Expressed as `git_ops`
+configuration rather than code, so new agents opt in without orchestrator
+code changes.
 
 ---
 
