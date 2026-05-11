@@ -97,7 +97,7 @@ _remove_all_statuses() {
     # Direct removal via issues API (more reliable)
     gh api \
       --method DELETE \
-      "/repos/${repo}/issues/${number}/labels/$(python3 -c "import urllib.parse; print(urllib.parse.quote('${lbl}', safe=''))")" \
+      "/repos/${repo}/issues/${number}/labels/$(python3 -c "import urllib.parse; print(urllib.parse.quote('${lbl}', safe=''))")"\
       2>/dev/null || true
   done
 }
@@ -266,6 +266,61 @@ PYEOF
   echo "All agents bootstrapped."
 }
 
+# Bootstrap: create trigger and human-gate labels derived from pipeline.json.
+# Reads every trigger.label and human_gate_label in the pipeline config and
+# creates the corresponding repo label, colouring it from statuses.json.
+# Only creates labels not already covered by bootstrap-all.
+status_bootstrap_trigger_labels() {
+  local repo="${1:-$(_repo)}"
+  local pipeline="${2:-$(dirname "$0")/../../ai-agile/pipeline/pipeline.json}"
+  local statuses="${3:-$(dirname "$0")/../../ai-agile/pipeline/statuses.json}"
+
+  if ! command -v python3 &>/dev/null; then
+    echo "ERROR: python3 required for status_bootstrap_trigger_labels" >&2
+    exit 1
+  fi
+
+  # Extract label\tcolour\tdescription lines from the config files.
+  # Pass paths as argv — never interpolate into Python source.
+  local label_lines
+  label_lines=$(python3 - "$pipeline" "$statuses" <<'PYEOF'
+import json, sys
+
+with open(sys.argv[1]) as f:
+    pipeline = json.load(f)
+with open(sys.argv[2]) as f:
+    statuses_data = json.load(f)
+
+colour_map = {s["status"]: s["colour"] for s in statuses_data["statuses"]}
+
+seen = set()
+for step in pipeline["pipeline"]:
+    agent = step["agent"]
+    trigger = step.get("trigger", {})
+    if "label" in trigger:
+        label = trigger["label"]
+        suffix = label.rsplit(":", 1)[-1] if ":" in label else ""
+        colour = colour_map.get(suffix, "FBCA04")
+        if label not in seen:
+            print(f"{label}\t{colour}\tInvoke {agent}")
+            seen.add(label)
+    gate = step.get("human_gate_label")
+    if gate and gate not in seen:
+        suffix = gate.rsplit(":", 1)[-1] if ":" in gate else ""
+        colour = colour_map.get(suffix, "0075CA")
+        print(f"{gate}\t{colour}\tApprove {agent} output to advance pipeline")
+        seen.add(gate)
+PYEOF
+)
+
+  echo "Bootstrapping trigger and human-gate labels in $repo"
+  while IFS=$'\t' read -r label colour description; do
+    [ -z "$label" ] && continue
+    _ensure_label "$repo" "$label" "$colour" "$description"
+  done <<< "$label_lines"
+  echo "Trigger and human-gate labels bootstrapped."
+}
+
 # Prune: delete repo labels that match the {agent}:{status} pattern but whose
 # agent is no longer in pipeline.json.  Safe to run after renaming or removing
 # agents — it never touches labels that aren't pipeline-style labels.
@@ -363,6 +418,7 @@ Commands:
   show         <number>                           Show all agent statuses on an item
   bootstrap    <agent>                            Create all status labels for one agent
   bootstrap-all [pipeline.json]                   Create all labels for all pipeline agents
+  bootstrap-triggers                              Create trigger and human-gate labels derived from pipeline.json
   prune        [pipeline.json] [--dry-run]        Delete labels for agents removed from the pipeline
 
 Options:
@@ -375,18 +431,17 @@ Status colour reference:
   blocked   #E99695  red-orange  — needs human intervention
   failed    #B60205  red         — technical error
   skipped   #BFD4F2  light-blue  — bypassed by human
+  requested #FBCA04  amber       — human-requested invocation
+  approved  #0075CA  blue        — human gate satisfied
 
 Examples:
-  status.sh set-wip      prd-writer 42
-  status.sh set-review   prd-writer 42 "PRD draft posted above for review"
-  status.sh set-blocked  architect  42 "The data model in the PRD conflicts with STD000000003 — need clarification on whether the legacy_integrations table is in scope"
-  status.sh set-complete coder      42
-  status.sh set-failed   test-runner 42 "pytest exited with code 1 — see Actions run #1234"
-  status.sh set-skipped  adr-proposer 42 "No ADR-worthy decisions identified"
+  status.sh set-wip      01_product_docs/prd-writer 42
+  status.sh set-review   01_product_docs/prd-writer 42 "PRD draft posted above for review"
+  status.sh set-complete 05_execute/coder 42
   status.sh show         42
   status.sh bootstrap-all
+  status.sh bootstrap-triggers
   status.sh prune
-  status.sh prune ai-agile/pipeline/pipeline.json --dry-run
 USAGE
 }
 
@@ -412,9 +467,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     set-failed)   status_set_failed   "${2:?agent required}" "${3:?number required}" "${4:-}" ;;
     set-skipped)  status_set_skipped  "${2:?agent required}" "${3:?number required}" "${4:-}" ;;
     show)         status_show         "${2:?number required}" ;;
-    bootstrap)    status_bootstrap_agent "${2:?agent required}" ;;
-    bootstrap-all) status_bootstrap_all "${@:2}" ;;
-    prune)        status_prune "${@:2}" ;;
+    bootstrap)          status_bootstrap_agent "${2:?agent required}" ;;
+    bootstrap-all)      status_bootstrap_all "${@:2}" ;;
+    bootstrap-triggers) status_bootstrap_trigger_labels "${2:-}" ;;
+    prune)              status_prune "${@:2}" ;;
     help|--help|-h) _usage ;;
     *) echo "Unknown command: $cmd"; echo ""; _usage; exit 1 ;;
   esac

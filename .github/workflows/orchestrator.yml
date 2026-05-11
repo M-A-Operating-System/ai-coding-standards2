@@ -28,20 +28,6 @@ permissions:
   pull-requests: write
 
 jobs:
-  bootstrap-labels:
-    name: Bootstrap pipeline labels
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Bootstrap labels
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          bash .github/scripts/status.sh bootstrap-all \
-            ai-agile/pipeline/pipeline.json
-
   orchestrate:
     name: Evaluate pipeline state
     runs-on: ubuntu-latest

@@ -64,7 +64,7 @@
       "phase": "05_execute",
       "object": ["issue"],
       "trigger": {
-        "label": "build:requested"
+        "label": "05_execute/coder:requested"
       },
       "human_gate_after": false,
       "dependencies": [],
@@ -75,7 +75,7 @@
         "branch_prefix": "issue-",
         "pr_lifecycle": true
       },
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — the orchestrator owns all git operations (branch creation, commit, push) and the PR lifecycle (create draft PR, apply pr-review:requested on success)."
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — the orchestrator owns all git operations (branch creation, commit, push) and the PR lifecycle (create draft PR, apply 05_execute/pr-reviewer:requested on success)."
     },
 
     {
@@ -83,14 +83,14 @@
       "phase": "05_execute",
       "object": ["pr"],
       "trigger": {
-        "label": "pr-review:requested"
+        "label": "05_execute/pr-reviewer:requested"
       },
       "human_gate_after": true,
-      "human_gate_label": "pr:approved",
+      "human_gate_label": "05_execute/pr-reviewer:approved",
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. Triggered by the pr-review:requested label. Gates on pr:approved."
+      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. Triggered by 05_execute/pr-reviewer:requested. Gates on 05_execute/pr-reviewer:approved."
     },
 
     {
@@ -98,13 +98,13 @@
       "phase": "09_gap_assessment",
       "object": ["issue"],
       "trigger": {
-        "label": "codebase-review:requested"
+        "label": "09_gap_assessment/codebase-reviewer:requested"
       },
       "human_gate_after": false,
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "global" },
-      "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-review:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
+      "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the 09_gap_assessment/codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
     }
 
   ]
