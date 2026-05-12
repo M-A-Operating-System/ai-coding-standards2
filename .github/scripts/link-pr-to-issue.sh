@@ -81,31 +81,15 @@ while IFS= read -r PR_NUMBER; do
   echo "  Linking PR #${PR_NUMBER} → issue #${ISSUE_NUMBER}"
 
   # Apply source-issue:{N} label to the PR.
+  # The orchestrator already wrote "Closes #{N}" to the PR body at creation
+  # time (pr_lifecycle: true), which is what creates GitHub's Development
+  # sidebar link. This script only applies the label for filtering purposes.
   gh pr edit "${PR_NUMBER}" \
     --repo "${REPO}" \
     --add-label "${SOURCE_LABEL}" 2>/dev/null || {
     echo "  Warning: could not apply ${SOURCE_LABEL} to PR #${PR_NUMBER} — continuing"
     continue
   }
-
-  # Ensure the PR body contains a closing keyword so GitHub creates the
-  # proper Development sidebar link on the issue (a bare label or text mention
-  # does not create this link — only closing keywords in the PR body do).
-  CURRENT_BODY=$(gh pr view "${PR_NUMBER}" --repo "${REPO}" --json body -q '.body // ""')
-  CLOSING_PATTERN="(Closes|Fixes|Resolves)[[:space:]]+#${ISSUE_NUMBER}([^0-9]|$)"
-  if ! echo "${CURRENT_BODY}" | grep -qiE "${CLOSING_PATTERN}"; then
-    NEW_BODY="Closes #${ISSUE_NUMBER}
-
-${CURRENT_BODY}"
-    gh pr edit "${PR_NUMBER}" \
-      --repo "${REPO}" \
-      --body "${NEW_BODY}" 2>/dev/null || {
-      echo "  Warning: could not update body of PR #${PR_NUMBER} — label applied but Development sidebar link may be missing"
-    }
-    echo "  Added 'Closes #${ISSUE_NUMBER}' to PR #${PR_NUMBER} body (Development sidebar link)"
-  else
-    echo "  PR #${PR_NUMBER} body already contains a closing keyword for #${ISSUE_NUMBER}"
-  fi
 
   LINKED_COUNT=$(( LINKED_COUNT + 1 ))
 done <<< "${LINKED_PRS}"
