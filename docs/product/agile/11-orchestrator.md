@@ -87,10 +87,8 @@ default).
 | Gate prompt comment | GitHub Issues API | After a non-gated agent completes and the next step requires a gate label |
 | `:failed` recovery comment | GitHub Issues API | When an agent crashes; names the label to remove and the label to skip |
 | Audit log JSONL event | Append to `ai-agile/log` branch | Once per status transition, agent run, or gate approval |
-| Git commit | `git commit` subprocess | After a code-writing agent completes (`git_ops.commit_after: true`) |
-| Branch creation + push | `git` subprocess | After a code-writing agent's first run (`git_ops.pr_lifecycle: true`, Mode A) |
-| Draft PR creation | GitHub REST API | After the first successful code commit on a new branch (Mode A) |
-| PR push (existing branch) | `git` subprocess | After a code-writing agent's feedback-address run (Mode B) |
+| Git commit + push | `git` subprocess | After an agent signals `complete` (`git_ops.commit_after: true`) |
+| PR push (existing branch, Mode B) | `git` subprocess | After a code-writing agent addresses review feedback |
 
 ---
 
@@ -129,16 +127,18 @@ for each work item (issue or PR):
 
         ← step is eligible
         acquire_mutex(work_item, agent_def)
-        # Pre-invocation ceremony — same for both step types
+        # Pre-invocation ceremony
         apply {agent}:wip
         post opening announcement comment
+        # invoke — script steps handle their own git/PR operations
         if agent_def.type == "script":
             success = invoke_script(work_item, agent_def)
         else:
             success = invoke_agent(work_item, agent_def)
         parse AI_AGILE_STATUS: sentinel from stdout (last 5 lines)
+        # Post-completion git operations for agent steps
         if sentinel == complete AND agent_def.git_ops.commit_after:
-            run_git_ops(work_item, agent_def)   ← see "Code commit and PR lifecycle"
+            commit_and_push(work_item, agent_def)   ← see "Code commit and PR lifecycle"
         apply matching terminal label; remove :wip
         post closing announcement comment
         handle_outcome(work_item, agent_def, success, labels)
@@ -344,17 +344,34 @@ else (exited 0, no sentinel):
 ```
 refresh labels from GitHub API
 
-if final_status == complete AND step has human_gate_after:
-    post gate prompt comment: "Apply {gate_label} to advance"
+if final_status == complete:
     emit agent.complete to audit log
+    # complete + human_gate_after does NOT post a gate prompt — the agent
+    # chose complete meaning "automated path, no human needed this cycle"
 
-if final_status == review:
+if final_status == review AND step has human_gate_after:
+    post gate prompt comment: "Apply {gate_label} to advance"
     emit agent.review to audit log
-    break item loop
+    break item loop   ← halt until human applies gate
+
+if final_status == review AND NOT step has human_gate_after:
+    emit agent.review to audit log
+    break item loop   ← halted (unusual; treat like blocked)
 
 if final_status in {blocked, failed}:
     emit agent.blocked / agent.failed to audit log
     break item loop
+```
+
+**Gate promotion** (separate pass, runs every tick):
+```
+for each agent_def with human_gate_after=true:
+    if {agent}:review ∈ labels AND agent_def.human_gate_label ∈ labels:
+        remove {agent}:review
+        apply {agent}:complete
+        if agent_def.git_ops.mark_ready_on_complete:
+            mark_pr_ready(work_item)    ← fires HERE, on gate promotion
+        emit gate.approved + agent.complete to audit log
 ```
 
 ---
@@ -362,57 +379,61 @@ if final_status in {blocked, failed}:
 ## Code commit and PR lifecycle
 
 Some agents write files but cannot run git or create PRs — by design. The
-orchestrator performs all git operations on their behalf immediately after a
-successful completion sentinel, before applying the terminal label. The
-pipeline.json `git_ops` object per agent controls this behaviour:
+orchestrator commits and pushes their file changes after they signal
+`complete`. Branch creation and PR opening are handled by the dedicated
+`create-pr` script step, not by individual agents. The `git_ops` object
+controls the post-completion commit behaviour:
 
 ```json
 "git_ops": {
-  "commit_after": true,   ← commit all changed files after this agent completes
-  "branch_prefix": "issue-",  ← branch name = {prefix}{issue_number}
-  "pr_lifecycle": true    ← create/update the PR as appropriate
+  "commit_after": true,      ← stage + commit + push after agent signals complete
+  "branch_prefix": "issue-"  ← branch name = {prefix}{issue_number}
 }
 ```
 
 If `git_ops` is absent or `commit_after` is `false`, no git operations run.
 
-### Mode A — Initial build (no PR exists)
+### Branch and PR creation — `create-pr` script step
 
-After the coder signals `AI_AGILE_STATUS: complete` on the first invocation:
+The `create-pr` pipeline step (`.github/scripts/create-pr.sh`) runs as a
+dedicated script after the PRD is approved, before any docs or code agent
+runs. It:
 
-```
-1. Detect mode: no existing PR for branch issue-{N}
-2. Create branch:  git checkout -b issue-{N}-{slug}
-3. Stage all:      git add -A
-4. Commit:         git commit -m "Implement issue #{N}: {title}"
-5. Push:           git push -u origin issue-{N}-{slug}
-6. Create draft PR:
-     title: "{issue title}"
-     body:  "Closes #{N}\n\n{coder closing announcement summary}"
-     draft: true
-7. Apply label pr-review:requested to the new PR
-```
+1. Creates branch `issue-{N}` from the default branch HEAD (if absent)
+2. Opens a draft PR: title `issue-{N}: {title[:60]}`, body `Closes #{N}`
+3. Calls `link-pr-to-issue.sh` to apply the `source-issue:{N}` label
 
-The branch name uses the issue number plus a URL-safe slug of the title:
-`issue-42-add-user-auth`. If a branch with the same prefix already exists
-(e.g., from a previous failed attempt), the orchestrator reuses it rather
-than creating a second branch.
+Both the branch and the PR exist before `prd-docs-updater` is invoked, so
+all subsequent agent commits accumulate in the already-open PR.
 
-### Mode B — Address feedback (PR already exists)
+### Mode — Agent commit (PR already exists)
 
-After the coder signals `AI_AGILE_STATUS: complete` on a subsequent
-invocation (triggered by `build:requested` being re-applied to the issue
-when a reviewer requests changes):
+After any `commit_after: true` agent signals `AI_AGILE_STATUS: complete`,
+the orchestrator commits the agent's file changes to the existing branch:
 
 ```
-1. Detect mode: PR exists; $PR_NUMBER is set
-2. Stage all:   git add -A
+1. Stage all:   git add -A
+2. Guard:       git diff --cached --quiet → no staged changes → skip commit + push
+3. Commit:      git commit -m "issue-{N}: {agent summary}"
+4. Push:        git push origin issue-{N}
+```
+
+Step 2 prevents a `:failed` status when an agent (e.g. `prd-docs-updater`)
+finds nothing to change and writes no files — `git commit` exits non-zero on
+an empty staging area without the guard.
+
+### Mode B — Address review feedback (coder re-invocation)
+
+After the coder is re-triggered to address reviewer feedback:
+
+```
+1. Stage all:   git add -A
+2. Guard:       git diff --cached --quiet → no staged changes → skip commit + push
 3. Commit:      git commit -m "Address review feedback on PR #{PR_NUMBER}"
-4. Push:        git push origin {existing-branch}
-5. Re-apply:    pr-review:requested label on the PR (removed by re-trigger)
+4. Push:        git push origin issue-{N}
 ```
 
-No new PR or new branch is created in Mode B.
+No new PR or new branch is created for re-invocations.
 
 ### Environment variables injected before coder invocation
 

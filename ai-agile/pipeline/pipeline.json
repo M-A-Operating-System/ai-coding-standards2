@@ -32,7 +32,9 @@
     },
 
     {
-      "agent": "01_product_docs/prd-docs-updater",
+      "agent": "01_product_docs/create-pr",
+      "type": "script",
+      "script": ".github/scripts/create-pr.sh",
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
@@ -40,28 +42,26 @@
       },
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-writer"],
+      "description": "Scripted step: creates the shared issue branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Applies source-issue:{N} label via link-pr-to-issue.sh. All subsequent agent commits (docs, code) accumulate in this PR. Idempotent — exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI."
+    },
+
+    {
+      "agent": "01_product_docs/prd-docs-updater",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "01_product_docs/create-pr:complete"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "01_product_docs/prd-docs-updater:approved",
+      "dependencies": ["01_product_docs/create-pr"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
       "git_ops": {
         "commit_after": true,
-        "branch_prefix": "docs/issue-",
-        "pr_lifecycle": true
+        "branch_prefix": "issue-"
       },
-      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes — the orchestrator owns all git operations (branch creation, commit, push) and opens a draft PR before the agent starts; the PR stays as a draft until the feature is ready to ship. Completes immediately so the pipeline can advance; doc review runs in parallel. If no updates are needed, posts a confirmation comment."
-    },
-
-    {
-      "agent": "01_product_docs/link-pr-to-issue",
-      "type": "script",
-      "script": ".github/scripts/link-pr-to-issue.sh",
-      "phase": "01_product_docs",
-      "object": ["issue"],
-      "trigger": {
-        "label": "01_product_docs/prd-docs-updater:complete"
-      },
-      "human_gate_after": false,
-      "dependencies": ["01_product_docs/prd-docs-updater"],
-      "description": "Scripted step: discovers PRs opened by agents for this issue (by branch naming convention issue-{N}) and applies source-issue:{N} labels to each. Deterministic; does not invoke Claude CLI."
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes to the shared issue branch — the draft PR was already opened by the create-pr step, so commits accumulate there. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts."
     },
 
     {
@@ -69,19 +69,17 @@
       "phase": "05_execute",
       "object": ["issue"],
       "trigger": {
-        "label": "05_execute/coder:requested"
+        "label": "01_product_docs/prd-docs-updater:complete"
       },
       "human_gate_after": false,
-      "dependencies": [],
+      "dependencies": ["01_product_docs/prd-docs-updater"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "git_ops": {
         "commit_after": true,
-        "branch_prefix": "issue-",
-        "pr_lifecycle": true,
-        "mark_ready_on_complete": true
+        "branch_prefix": "issue-"
       },
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — the orchestrator owns all git operations (branch creation, commit, push) and the PR lifecycle (create draft PR, apply 05_execute/pr-reviewer:requested on success)."
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — commits to the shared issue branch. The draft PR was opened by the create-pr step and stays as draft until pr-reviewer promotes it to ready on APPROVE. Triggered automatically when the docs-update gate is approved."
     },
 
     {
@@ -96,7 +94,11 @@
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. Triggered by 05_execute/pr-reviewer:requested. Gates on 05_execute/pr-reviewer:approved."
+      "git_ops": {
+        "commit_after": false,
+        "mark_ready_on_complete": true
+      },
+      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge. Triggered by 05_execute/pr-reviewer:requested. Gates on 05_execute/pr-reviewer:approved."
     },
 
     {
