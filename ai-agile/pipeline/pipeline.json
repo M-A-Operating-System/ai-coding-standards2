@@ -32,7 +32,9 @@
     },
 
     {
-      "agent": "01_product_docs/prd-docs-updater",
+      "agent": "01_product_docs/create-pr",
+      "type": "script",
+      "script": ".github/scripts/create-pr.sh",
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
@@ -40,14 +42,25 @@
       },
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-writer"],
+      "description": "Scripted step: creates the shared issue branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Applies source-issue:{N} label via link-pr-to-issue.sh. All subsequent agent commits (docs, code) accumulate in this PR. Idempotent — exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI."
+    },
+
+    {
+      "agent": "01_product_docs/prd-docs-updater",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "01_product_docs/create-pr:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["01_product_docs/create-pr"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
       "git_ops": {
         "commit_after": true,
-        "branch_prefix": "issue-",
-        "pr_lifecycle": true
+        "branch_prefix": "issue-"
       },
-      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes to the shared issue branch — the orchestrator opens the draft PR before this agent starts so all subsequent agent commits (docs, code) accumulate in one PR. The PR stays as a draft until pr-reviewer approves. If no updates are needed, posts a confirmation comment."
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes to the shared issue branch — the draft PR was already opened by the create-pr step, so commits accumulate there. The PR stays as a draft until pr-reviewer approves. If no updates are needed, posts a confirmation comment."
     },
 
     {
@@ -63,10 +76,9 @@
       "session": { "scope": "per_issue" },
       "git_ops": {
         "commit_after": true,
-        "branch_prefix": "issue-",
-        "pr_lifecycle": true
+        "branch_prefix": "issue-"
       },
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — commits to the shared issue branch. The PR was opened by prd-docs-updater and stays as draft; pr-reviewer promotes it to ready on APPROVE."
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — commits to the shared issue branch. The draft PR was opened by the create-pr step and stays as draft until pr-reviewer promotes it to ready on APPROVE."
     },
 
     {
