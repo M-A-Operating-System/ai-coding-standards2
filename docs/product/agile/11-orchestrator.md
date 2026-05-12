@@ -346,17 +346,34 @@ else (exited 0, no sentinel):
 ```
 refresh labels from GitHub API
 
-if final_status == complete AND step has human_gate_after:
-    post gate prompt comment: "Apply {gate_label} to advance"
+if final_status == complete:
     emit agent.complete to audit log
+    # complete + human_gate_after does NOT post a gate prompt — the agent
+    # chose complete meaning "automated path, no human needed this cycle"
 
-if final_status == review:
+if final_status == review AND step has human_gate_after:
+    post gate prompt comment: "Apply {gate_label} to advance"
     emit agent.review to audit log
-    break item loop
+    break item loop   ← halt until human applies gate
+
+if final_status == review AND NOT step has human_gate_after:
+    emit agent.review to audit log
+    break item loop   ← halted (unusual; treat like blocked)
 
 if final_status in {blocked, failed}:
     emit agent.blocked / agent.failed to audit log
     break item loop
+```
+
+**Gate promotion** (separate pass, runs every tick):
+```
+for each agent_def with human_gate_after=true:
+    if {agent}:review ∈ labels AND agent_def.human_gate_label ∈ labels:
+        remove {agent}:review
+        apply {agent}:complete
+        if agent_def.git_ops.mark_ready_on_complete:
+            mark_pr_ready(work_item)    ← fires HERE, on gate promotion
+        emit gate.approved + agent.complete to audit log
 ```
 
 ---
@@ -397,19 +414,25 @@ After any `commit_after: true` agent signals `AI_AGILE_STATUS: complete`,
 the orchestrator commits the agent's file changes to the existing branch:
 
 ```
-1. Stage all:  git add -A
-2. Commit:     git commit -m "issue-{N}: {agent summary}"
-3. Push:       git push origin issue-{N}
+1. Stage all:   git add -A
+2. Guard:       git diff --cached --quiet → no staged changes → skip commit + push
+3. Commit:      git commit -m "issue-{N}: {agent summary}"
+4. Push:        git push origin issue-{N}
 ```
+
+Step 2 prevents a `:failed` status when an agent (e.g. `prd-docs-updater`)
+finds nothing to change and writes no files — `git commit` exits non-zero on
+an empty staging area without the guard.
 
 ### Mode B — Address review feedback (coder re-invocation)
 
 After the coder is re-triggered to address reviewer feedback:
 
 ```
-1. Stage all:  git add -A
-2. Commit:     git commit -m "Address review feedback on PR #{PR_NUMBER}"
-3. Push:       git push origin issue-{N}
+1. Stage all:   git add -A
+2. Guard:       git diff --cached --quiet → no staged changes → skip commit + push
+3. Commit:      git commit -m "Address review feedback on PR #{PR_NUMBER}"
+4. Push:        git push origin issue-{N}
 ```
 
 No new PR or new branch is created for re-invocations.

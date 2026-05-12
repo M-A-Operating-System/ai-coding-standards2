@@ -50,11 +50,13 @@ DEFAULT_BRANCH=$(
 ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json title -q '.title')
 PR_TITLE="issue-${ISSUE_NUMBER}: ${ISSUE_TITLE:0:60}"
 
-# Create the branch from the current HEAD if it doesn't exist on the remote.
+# Create the branch from the default branch HEAD if it doesn't exist on the remote.
 if ! git ls-remote --exit-code --heads origin "${BRANCH}" &>/dev/null; then
+  git fetch origin "${DEFAULT_BRANCH}"
+  git checkout "${DEFAULT_BRANCH}"
   git checkout -b "${BRANCH}"
   git push -u origin "${BRANCH}"
-  echo "Created branch ${BRANCH}."
+  echo "Created branch ${BRANCH} from ${DEFAULT_BRANCH}."
 else
   echo "Branch ${BRANCH} already exists on remote."
 fi
