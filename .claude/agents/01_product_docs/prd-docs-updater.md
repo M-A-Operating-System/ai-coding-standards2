@@ -8,8 +8,9 @@ description: >
   review runs in parallel with the rest of the pipeline.
 tools: [Bash, Read, Write, Grep]
 model: claude-sonnet-4-6
+# 40 turns observed ~25-35 on a typical run; 40 gives ~25% headroom over the DEFAULT_MAX_TURNS=30 global default
 max_turns: 40
-extra_allowedTools: [Write, Bash(git *), Bash(gh pr create *), Bash(gh pr ready *)]
+extra_allowedTools: [Write, Bash(git ls-remote *), Bash(git fetch *), Bash(git checkout *), Bash(git config *), Bash(git add *), Bash(git commit *), Bash(git push *), Bash(gh pr create *), Bash(gh pr ready *), Bash(gh pr list *), Bash(gh issue view *), Bash(gh issue comment *), Bash(gh repo view *), Bash(find docs/product *)]
 ---
 
 # 01_product_docs/prd-docs-updater
