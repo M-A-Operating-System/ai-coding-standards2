@@ -3,8 +3,8 @@
 > **Scope: AI agent steps only.** This document covers pipeline steps with
 > `"type": "agent"` (Claude CLI invocations). For `"type": "script"` steps,
 > see [`05-pipeline-config.md § Script steps`](05-pipeline-config.md#script-steps).
-> Script steps do not use prompt files, `status.sh`, or the tool allowlist —
-> they emit an `AI_AGILE_STATUS:` sentinel to stdout instead.
+> Script steps do not use prompt files, the tool allowlist, or the JSON sentinel —
+> they emit a plain `AI_AGILE_STATUS:` line to stdout instead.
 
 Every agent has exactly one prompt file at `.claude/agents/{agent-name}.md`.
 This document defines the required shape of that file: the YAML frontmatter
@@ -123,7 +123,7 @@ reads it to construct the CLI flag.
 
 | Tool | What it does | Default policy |
 |---|---|---|
-| `Bash` | Runs shell commands (gh CLI, git, status.sh, test runners) | Most agents need this |
+| `Bash` | Runs shell commands (gh CLI, git, test runners) | Most agents need this |
 | `Read` | Reads files | Almost every agent needs this |
 | `Glob` | Pattern-based file lookup | Reviewers, validators |
 | `Grep` | Content search | Reviewers, validators, decomposers |
@@ -207,69 +207,62 @@ risks drift.
 | Section | Header | Purpose |
 |---|---|---|
 | 1. Role statement | First paragraph(s) under `# {agent-name}` | Plain-English description of what the agent owns |
-| 2. Step 1 — Apply wip | `## Step 1 — Apply wip` | The `set-wip` call |
-| 3. Step 2 — Opening announcement | `## Step 2 — Opening announcement` | Post the `<!-- ai-agile/announcement/v1 by {agent-name} -->` start comment ([`09-human-interaction.md`](09-human-interaction.md) §3) |
-| 4. Read-input steps | `## Step 3 — Read inputs` (and further steps as needed) | Gather context from issue/PR body, comments, files |
-| 5. Work steps | `## Step N — {action}` | The actual work — drafting, validating, editing |
-| 6. Closing announcement | `## Step N+1 — Closing announcement` | Post the closing `<!-- ai-agile/announcement/v1 by {agent-name} -->` comment |
-| 7. Terminal status step | `## Step N+2 — Act on findings` | Branches: `set-complete`, `set-review`, or `set-blocked` |
-| 8. Behaviour rules | `## Behaviour rules` | Bullet list of constraints; what the agent must / must not do |
+| 2. Read-input steps | `## Step 1 — Read inputs` (and further steps as needed) | Gather context from issue/PR body, comments, files |
+| 3. Work steps | `## Step N — {action}` | The actual work — drafting, validating, editing |
+| 4. Terminal sentinel | `## Step N+1 — Signal outcome` | Emit the JSON outcome sentinel as the agent's final text |
+| 5. Behaviour rules | `## Behaviour rules` | Bullet list of constraints; what the agent must / must not do |
 
 ### Section detail
 
 **1. Role statement.** Two or three sentences. What the agent does, when
 it runs (in terms of phase or trigger), and what artefact it produces.
 
-**2. Step 1 — Apply wip.** Always exactly:
-
-```bash
-bash .github/scripts/status.sh set-wip {agent-name} $ISSUE_NUMBER
-```
-
-(For PR-side agents, use `$PR_NUMBER`.)
-
-**3. Step 2 — Opening announcement.** A single `gh issue comment` (or
-`gh pr comment`) call posting the JSON announcement with `phase: start`
-per the schema in
-[`09-human-interaction.md`](09-human-interaction.md) §3.
-
-**4. Read-input steps.** Read the issue body, prior agent comments, and
+**2. Read-input steps.** Read the issue body, prior agent comments, and
 any files needed. Use `gh issue view`, `gh pr view`, `cat`, `grep`,
 `find`. The agent must operate from what it reads at runtime — it does
 not assume any state from prior runs.
 
-**5. Work steps.** The agent's actual job. One step per logical action.
+**3. Work steps.** The agent's actual job. One step per logical action.
 Each step should produce something — a draft section of an artefact, a
 validation finding, a check result. Avoid step soup; keep steps coarse.
 
-**6. Closing announcement.** A single `gh issue comment` (or
-`gh pr comment`) call posting the JSON announcement with `phase: end`,
-`outcome` matching the terminal status, and `artefacts` listing the
-comments / files / PRs produced this run.
+**4. Terminal sentinel.** The final step instructs the agent to emit its
+outcome as a JSON sentinel in its last text response — no tool call, no
+bash command. The sentinel is the agent's only status signal; the
+orchestrator reads it and applies the matching label.
 
-**7. Terminal status step.** Branches based on outcome. Exactly one of
-the three terminal calls must be reached:
+```
+End your run by outputting — as plain text, not a bash command — exactly one
+sentinel block with no surrounding prose:
 
-```bash
-# Success path — work is done and either complete or awaiting gate
-bash .github/scripts/status.sh set-complete {agent} $ISSUE_NUMBER  # non-gated agents
-bash .github/scripts/status.sh set-review   {agent} $ISSUE_NUMBER "<message>"  # gated agents
+<!ai-agent {"agent":"{agent-name}","session":"$AGENT_SESSION_ID","outcome":"complete","commit":"$AGENT_COMMIT_SHA"}!>
 
-# Help-needed path — agent cannot finish without human input
-bash .github/scripts/status.sh set-blocked  {agent} $ISSUE_NUMBER "<reason>"
+Substitute $AGENT_SESSION_ID and $AGENT_COMMIT_SHA from your environment.
+For `review` or `blocked`, add a "message" field explaining why.
 ```
 
-The orchestrator applies `:failed` if the agent exits without one of
-these calls. Agents must not call `set-failed` themselves.
+The sentinel fields are:
 
-**8. Behaviour rules.** A bullet list. Hard constraints the LLM must
+| Field | Required | Value |
+|---|---|---|
+| `agent` | yes | Full agent name, matching `pipeline.json` `agent` field |
+| `session` | yes | Value of `$AGENT_SESSION_ID` — stable across re-runs of the same issue |
+| `outcome` | yes | One of `complete`, `review`, `blocked` |
+| `commit` | yes | Value of `$AGENT_COMMIT_SHA` — ties the run to the exact agent prompt version |
+| `message` | no | Human-readable reason; required when `outcome` is `review` or `blocked` |
+
+The orchestrator injects `$AGENT_SESSION_ID` and `$AGENT_COMMIT_SHA` into
+the agent environment before invocation — agents do not compute these
+themselves.
+
+**5. Behaviour rules.** A bullet list. Hard constraints the LLM must
 follow. Examples:
 
 - "Do not edit the issue body — it is human-authored."
 - "Post one comment per run, not many."
 - "Reference STD IDs by their stable identifier, never inline the
   standard text."
-- "If the input is ambiguous, set-blocked rather than guessing."
+- "If the input is ambiguous, emit outcome `blocked` rather than guessing."
 
 Behaviour rules are the last line of defence against agent misbehaviour.
 They should be specific, testable, and few (3–10 bullets is typical).
@@ -285,14 +278,21 @@ orchestrator reads the sentinel and applies the label. See
 
 Every agent run must either:
 
-- Terminate with exactly one of `set-complete`, `set-review`, or
-  `set-blocked` — the agent's responsibility — **or**
+- Emit exactly one JSON outcome sentinel as its final text output — the
+  orchestrator scans the captured output for this sentinel and applies the
+  matching label (`complete`, `review`, or `blocked`) — **or**
 - Crash, in which case the orchestrator applies `:failed`.
 
-There is no fourth path. Agents that exit without a terminal status are
-treated as failed. Agents must not apply `:complete` for gated work —
-that transition is owned by the orchestrator (see
+There is no fourth path. Agents that exit without a sentinel are treated as
+failed (or as complete if they exit zero, for backward compatibility). Agents
+must not apply `:complete` for gated work — that transition is owned by the
+orchestrator (see
 [`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition)).
+
+Agents must not emit `outcome: failed` — only the orchestrator applies
+`:failed`, when the agent exits non-zero without a sentinel. If an agent
+wants to halt with detail, it emits `outcome: blocked` with a `message`
+explaining why.
 
 ---
 
@@ -308,12 +308,10 @@ Every PR that touches `.claude/agents/*.md` runs
 4. **`name` exists** in `pipeline.json` as a declared agent.
 5. **`tools` array** is a subset of the allowable-tools matrix.
 6. **`model`** is one of the three allowed model IDs.
-7. **Required body sections** exist (`# {agent-name}`,
-   `## Step 1 — Apply wip`, opening + closing announcement steps,
-   `## Behaviour rules`).
-8. **Status calls** appear at least once each: `set-wip` is called, and
-   at least one of `set-complete`, `set-review`, or `set-blocked` is
-   called.
+7. **Required body sections** exist (`# {agent-name}`, read-input steps,
+   work steps, terminal sentinel step, `## Behaviour rules`).
+8. **Outcome sentinel** instruction is present: the file contains
+   `<!ai-agent` referencing the agent name in the terminal step.
 9. **No forbidden tools.** `WebFetch` and `WebSearch` block the PR
    unless an exception ADR is referenced in the frontmatter.
 
@@ -328,14 +326,15 @@ PRs that fail validation cannot merge.
    `.claude/agents/{new-agent}.md`.
 2. Fill in the frontmatter: `name`, `description`, `tools`, `model`.
 3. Replace the role statement, work steps, and behaviour rules.
-4. Add the agent's entry to `ai-agile/pipeline/pipeline.json`
+4. Add the terminal sentinel step with the correct agent name.
+5. Add the agent's entry to `ai-agile/pipeline/pipeline.json`
    (graph entry first, per [`05-pipeline-config.md`](05-pipeline-config.md)).
-5. Run `python ai-agile/pipeline/validate_agent_prompts.py` locally.
-6. Run `python ai-agile/pipeline/generators/generate_docs.py` to
+6. Run `python ai-agile/pipeline/validate_agent_prompts.py` locally.
+7. Run `python ai-agile/pipeline/generators/generate_docs.py` to
    refresh the generated agent catalogue.
-7. Bootstrap the agent's labels:
+8. Bootstrap the agent's labels:
    `bash .github/scripts/status.sh bootstrap {new-agent}`.
-8. Open a PR with all changes. Standards owner approves.
+9. Open a PR with all changes. Standards owner approves.
 
 ---
 
@@ -346,9 +345,10 @@ PRs that fail validation cannot merge.
   structure.
 - **Predictability for the orchestrator.** It knows how to invoke any
   agent based on the frontmatter alone — no per-agent special-casing.
-- **Auditability.** The opening and closing announcements, plus the
-  required terminal status call, mean every run produces a parseable
-  trail without depending on the LLM remembering to log.
-- **Safety.** The tool allowlist plus the no-`:failed`-from-agent rule
-  bound what an agent can do and what it can claim about its own
+- **Auditability.** The opening and closing announcements (posted by the
+  orchestrator), plus the required terminal sentinel, mean every run
+  produces a parseable trail without depending on the LLM remembering to
+  log.
+- **Safety.** The tool allowlist plus the no-`outcome: failed`-from-agent
+  rule bound what an agent can do and what it can claim about its own
   outcome.
