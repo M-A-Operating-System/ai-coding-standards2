@@ -126,7 +126,11 @@
             },
             "pr_lifecycle": {
               "type": "boolean",
-              "description": "When true the orchestrator opens a draft PR on the first commit and marks it ready when the agent signals completion."
+              "description": "When true the orchestrator opens a draft PR before invoking the agent (on the branch identified by branch_prefix)."
+            },
+            "mark_ready_on_complete": {
+              "type": "boolean",
+              "description": "When true the orchestrator marks the draft PR ready for review after the agent signals completion. Requires pr_lifecycle: true. Omit (or set false) when the PR should stay as a draft until a later pipeline stage."
             }
           }
         },
