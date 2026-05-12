@@ -1,98 +1,47 @@
 #!/usr/bin/env bash
 # link-pr-to-issue.sh
 #
-# Discovers PRs opened by agents for the current issue and applies
-# source-issue:{N} labels to each one.
+# Applies a source-issue:{N} label to a specific PR immediately after the
+# orchestrator creates it. Called inline by the orchestrator as part of the
+# pr_lifecycle: true PR creation flow — not a standalone pipeline step.
 #
-# Convention: agent branches are named with "issue-{N}" somewhere in the
-# branch name (e.g. docs/issue-42-prd-update, feat/issue-42-add-auth).
+# The orchestrator already wrote "Closes #{N}" to the PR body at creation
+# time, which is what creates GitHub's Development sidebar link on the issue.
+# This script only applies the source-issue label for label-based filtering.
 #
 # Environment (set by orchestrator):
 #   REPO            — owner/repo
-#   ISSUE_NUMBER    — the issue being processed
-#
-# Exit behaviour:
-#   Prints AI_AGILE_STATUS: complete on success (even if no PRs found).
-#   Prints AI_AGILE_STATUS: blocked "reason" if a required tool is missing.
-#   Exits non-zero without a sentinel only on unexpected errors (→ :failed).
+#   ISSUE_NUMBER    — the issue the PR was opened for
+#   PR_NUMBER       — the PR that was just created
 
 set -euo pipefail
 
 : "${REPO:?REPO must be set}"
 : "${ISSUE_NUMBER:?ISSUE_NUMBER must be set}"
+: "${PR_NUMBER:?PR_NUMBER must be set}"
 
-# Reject non-integer ISSUE_NUMBER before it reaches jq --argjson.
 if [[ ! "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
-  echo 'AI_AGILE_STATUS: blocked "ISSUE_NUMBER is not a valid integer"'
-  exit 0
+  echo "ERROR: ISSUE_NUMBER is not a valid integer: ${ISSUE_NUMBER}" >&2
+  exit 1
 fi
 
-# Verify gh CLI is available
-if ! command -v gh &>/dev/null; then
-  echo 'AI_AGILE_STATUS: blocked "gh CLI not found; cannot link PRs to issue"'
-  exit 0
-fi
-
-# Verify jq is available
-if ! command -v jq &>/dev/null; then
-  echo 'AI_AGILE_STATUS: blocked "jq not found; cannot parse PR list"'
-  exit 0
-fi
-
-echo "Scanning for PRs linked to issue #${ISSUE_NUMBER} in ${REPO}..."
-
-# Find all PRs (open, merged, or closed) whose head branch contains
-# "issue-{N}" (with a word boundary so issue-42 doesn't match issue-421).
-# --state all ensures merged PRs are also labelled for post-merge traceability.
-LINKED_PRS=$(
-  gh pr list \
-    --repo "${REPO}" \
-    --state all \
-    --limit 200 \
-    --json number,headRefName \
-  | jq -r \
-    --argjson n "${ISSUE_NUMBER}" \
-    '.[] | select(.headRefName | test("issue-" + ($n|tostring) + "([^0-9]|$)")) | .number'
-)
-
-if [[ -z "${LINKED_PRS}" ]]; then
-  echo "No PRs with branches matching issue-${ISSUE_NUMBER} found; nothing to link."
-  echo "AI_AGILE_STATUS: complete"
-  exit 0
+if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: PR_NUMBER is not a valid integer: ${PR_NUMBER}" >&2
+  exit 1
 fi
 
 SOURCE_LABEL="source-issue:${ISSUE_NUMBER}"
 
-# Ensure the source-issue label exists in the repo.
-# --force is intentionally omitted: if the label already exists with a
-# different colour/description, we leave it as-is rather than silently
-# overwriting the human-authored metadata. The 422 (already exists) is
-# suppressed via stderr redirect; all other errors surface normally.
+# Ensure the label exists in the repo (422 = already exists; suppress).
 gh label create "${SOURCE_LABEL}" \
   --repo "${REPO}" \
   --color "0075ca" \
   --description "PR was opened by an agent working on issue #${ISSUE_NUMBER}" \
   2>/dev/null || true
 
-LINKED_COUNT=0
-while IFS= read -r PR_NUMBER; do
-  [[ -z "${PR_NUMBER}" ]] && continue
+# Apply the label to the PR.
+gh pr edit "${PR_NUMBER}" \
+  --repo "${REPO}" \
+  --add-label "${SOURCE_LABEL}"
 
-  echo "  Linking PR #${PR_NUMBER} → issue #${ISSUE_NUMBER}"
-
-  # Apply source-issue:{N} label to the PR.
-  # The orchestrator already wrote "Closes #{N}" to the PR body at creation
-  # time (pr_lifecycle: true), which is what creates GitHub's Development
-  # sidebar link. This script only applies the label for filtering purposes.
-  gh pr edit "${PR_NUMBER}" \
-    --repo "${REPO}" \
-    --add-label "${SOURCE_LABEL}" 2>/dev/null || {
-    echo "  Warning: could not apply ${SOURCE_LABEL} to PR #${PR_NUMBER} — continuing"
-    continue
-  }
-
-  LINKED_COUNT=$(( LINKED_COUNT + 1 ))
-done <<< "${LINKED_PRS}"
-
-echo "Linked ${LINKED_COUNT} PR(s) to issue #${ISSUE_NUMBER}."
-echo "AI_AGILE_STATUS: complete"
+echo "Applied ${SOURCE_LABEL} to PR #${PR_NUMBER}."
