@@ -139,8 +139,6 @@ for each work item (issue or PR):
         # Post-completion git operations for agent steps
         if sentinel == complete AND agent_def.git_ops.commit_after:
             commit_and_push(work_item, agent_def)   ← see "Code commit and PR lifecycle"
-        if sentinel == complete AND agent_def.git_ops.mark_ready_on_complete:
-            mark_pr_ready(work_item)
         apply matching terminal label; remove :wip
         post closing announcement comment
         handle_outcome(work_item, agent_def, success, labels)

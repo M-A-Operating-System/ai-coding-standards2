@@ -2,8 +2,9 @@
 # link-pr-to-issue.sh
 #
 # Applies a source-issue:{N} label to a specific PR immediately after the
-# orchestrator creates it. Called inline by the orchestrator as part of the
-# pr_lifecycle: true PR creation flow — not a standalone pipeline step.
+# orchestrator creates it. Called inline by create-pr.sh only.
+#
+# NOT a pipeline step — does not emit AI_AGILE_STATUS:.
 #
 # The orchestrator already wrote "Closes #{N}" to the PR body at creation
 # time, which is what creates GitHub's Development sidebar link on the issue.
