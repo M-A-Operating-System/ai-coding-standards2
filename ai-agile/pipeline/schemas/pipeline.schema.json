@@ -110,6 +110,30 @@
           "default": 0,
           "description": "How many times the orchestrator will re-invoke this step after a :failed outcome before giving up. 0 means no retries (fail immediately)."
         },
+        "git_ops": {
+          "type": "object",
+          "description": "Declares that this agent produces file output the orchestrator should commit, push, and optionally open a PR for. Absent means the agent does not produce file output.",
+          "additionalProperties": false,
+          "required": ["commit_after"],
+          "properties": {
+            "commit_after": {
+              "type": "boolean",
+              "description": "When true the orchestrator stages all changes and creates a commit after the agent exits successfully."
+            },
+            "branch_prefix": {
+              "type": "string",
+              "description": "Prefix for the branch the orchestrator creates before invoking the agent. Final branch name: {branch_prefix}{issue_number}."
+            },
+            "pr_lifecycle": {
+              "type": "boolean",
+              "description": "When true the orchestrator opens a draft PR before invoking the agent (on the branch identified by branch_prefix)."
+            },
+            "mark_ready_on_complete": {
+              "type": "boolean",
+              "description": "When true the orchestrator marks the draft PR ready for review after the agent signals completion. Requires pr_lifecycle: true. Omit (or set false) when the PR should stay as a draft until a later pipeline stage."
+            }
+          }
+        },
         "description": {
           "type": "string",
           "minLength": 1

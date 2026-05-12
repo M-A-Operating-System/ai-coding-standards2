@@ -17,48 +17,15 @@ it produces. Keep to two or three sentences. Reference the relevant
 sections of the design docs (`docs/product/agile/`) when behaviour
 depends on a documented protocol.
 
----
-
-## Step 1 — Apply wip
-
-```bash
-bash .github/scripts/status.sh set-wip agent-name $ISSUE_NUMBER
-```
-
-For PR-side agents, replace `$ISSUE_NUMBER` with `$PR_NUMBER` and use
-the corresponding PR commands throughout.
+The orchestrator applies `:wip`, posts the opening announcement, and
+provides `$ISSUE_NUMBER`, `$REPO`, `$AGENT_SESSION_ID`, and
+`$AGENT_COMMIT_SHA` before invoking this agent. After the agent exits,
+the orchestrator reads the `AI_AGILE_STATUS:` sentinel from stdout,
+applies the outcome label, and posts the closing announcement.
 
 ---
 
-## Step 2 — Opening announcement
-
-Post the structured opening announcement so the timeline records that
-this run started, what its intent was, and what inputs it read. The
-schema is defined in `docs/product/agile/09-human-interaction.md` §3.
-
-````bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
-<!-- ai-agile/announcement/v1 by {phase}/agent-name -->
-```json
-{
-  "session_id": "ais-v1-iss-$ISSUE_NUMBER-agent-name",
-  "agent": "agent-name",
-  "phase": "start",
-  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "intent": "Replace with one-sentence statement of what this run will do.",
-  "inputs_read": ["issue body"]
-}
-```
-EOF
-)"
-````
-
-Update `inputs_read` after the next step to reflect what was actually
-read (issue body, comment IDs, files, PRs).
-
----
-
-## Step 3 — Read inputs
+## Step 1 — Read inputs
 
 Gather the context the agent needs. Operate from what is read at runtime;
 do not assume state from prior runs.
@@ -79,7 +46,7 @@ Replace the examples above with the actual reads this agent needs.
 
 ---
 
-## Step 4 — Do the work
+## Step 2 — Do the work
 
 Replace this section with the agent's actual work. One step per logical
 action — drafting a section, validating a rule, checking a constraint.
@@ -105,66 +72,26 @@ Question Card schema (see `docs/product/agile/09-human-interaction.md`
 
 ---
 
-## Step 5 — Closing announcement
+## Step 3 — Signal outcome
 
-Post the closing announcement immediately before the terminal status
-call. The orchestrator emits `agent.complete` / `agent.review` /
-`agent.blocked` to the audit log on this comment.
+End your run by outputting — as plain text, not a bash command — exactly
+one sentinel line as your final text response:
 
-````bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<'EOF'
-<!-- ai-agile/announcement/v1 by {phase}/agent-name -->
-```json
-{
-  "session_id": "ais-v1-iss-$ISSUE_NUMBER-agent-name",
-  "agent": "agent-name",
-  "phase": "end",
-  "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "outcome": "complete",
-  "summary": "Replace with one-sentence statement of what this run produced.",
-  "artefacts": ["comment {comment-id}"]
-}
 ```
-EOF
-)"
-````
-
-Set `outcome` to match the terminal status: `complete`, `review`, or
-`blocked`.
-
----
-
-## Step 6 — Act on findings
-
-Branch by outcome. Reach exactly one of the three terminal calls below.
-The orchestrator applies `:failed` if the agent exits without one.
-
-**Path A — success, no human gate (non-gated agents only):**
-
-```bash
-bash .github/scripts/status.sh set-complete agent-name $ISSUE_NUMBER
+AI_AGILE_STATUS: complete
 ```
 
-**Path B — work done, awaiting human gate (gated agents only):**
+Valid values: `complete`, `review`, `blocked`.
 
-```bash
-bash .github/scripts/status.sh set-review agent-name $ISSUE_NUMBER \
-  "Artefact posted above. Apply {gate-label} to advance the pipeline."
-```
+- Use `complete` when the work is done and no human gate is needed.
+- Use `review` when you have produced an artefact that needs human
+  approval before the pipeline advances (gated agents only).
+- Use `blocked` when you cannot proceed without human input — ambiguous
+  requirements, missing data, or a decision that exceeds your authority.
+  Always post a comment explaining the blocker before emitting this.
 
-The orchestrator promotes `:review` → `:complete` when the human applies
-the gate label. Do not apply `:complete` directly for gated work — see
-`docs/product/agile/06-status-model.md`.
-
-**Path C — cannot finish without human help:**
-
-```bash
-bash .github/scripts/status.sh set-blocked agent-name $ISSUE_NUMBER \
-  "Specific reason — what is missing, what decision is needed."
-```
-
-Use `set-blocked` when the agent has hit a real obstacle. Do not use it
-as a shortcut for ambiguity that the agent could resolve.
+The orchestrator applies the corresponding label and posts the closing
+announcement. Do not call `status.sh` — it is no longer used by agents.
 
 ---
 
@@ -177,7 +104,10 @@ as a shortcut for ambiguity that the agent could resolve.
   - "Post one artefact comment per run, not many."
   - "Reference STD IDs by their stable identifier; do not inline the
     standard text."
-  - "If the input is ambiguous, `set-blocked` rather than guessing."
+  - "If the input is ambiguous, emit `AI_AGILE_STATUS: blocked` rather
+    than guessing."
   - "Do not invoke other agents; the orchestrator handles routing."
+  - "Do not call `status.sh` — signal outcome via `AI_AGILE_STATUS:`
+    sentinel only."
 - Avoid vague rules like "be concise" or "be helpful" — they do not
   constrain anything.

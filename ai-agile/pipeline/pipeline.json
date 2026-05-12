@@ -41,8 +41,13 @@
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-writer"],
       "max_retries": 2,
-      "session": { "scope": "global" },
-      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating to reflect new or changed user-observable behaviour, creates a branch, commits the changes, opens a PR ready for human review, and links it on the issue. Completes immediately so the pipeline can advance; doc review runs in parallel. If no updates are needed, posts a confirmation comment."
+      "session": { "scope": "per_issue" },
+      "git_ops": {
+        "commit_after": true,
+        "branch_prefix": "docs/issue-",
+        "pr_lifecycle": true
+      },
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes — the orchestrator owns all git operations (branch creation, commit, push) and opens a draft PR before the agent starts; the PR stays as a draft until the feature is ready to ship. Completes immediately so the pipeline can advance; doc review runs in parallel. If no updates are needed, posts a confirmation comment."
     },
 
     {
@@ -73,7 +78,8 @@
       "git_ops": {
         "commit_after": true,
         "branch_prefix": "issue-",
-        "pr_lifecycle": true
+        "pr_lifecycle": true,
+        "mark_ready_on_complete": true
       },
       "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — the orchestrator owns all git operations (branch creation, commit, push) and the PR lifecycle (create draft PR, apply 05_execute/pr-reviewer:requested on success)."
     },
