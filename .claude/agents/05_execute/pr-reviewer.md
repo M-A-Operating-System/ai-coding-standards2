@@ -5,10 +5,9 @@ description: >
   posts a structured review covering correctness, design alignment,
   standards compliance, test coverage, and security. Concludes with an
   explicit APPROVE or REQUEST CHANGES recommendation and a prioritised
-  action list. Triggered by the pr-review:requested label on any PR.
-  Gates on pr:approved — the human applies that label if they agree with
-  the APPROVE recommendation or if they have reviewed REQUEST CHANGES items
-  and are satisfied.
+  action list. Triggered by the pr-reviewer:requested label on any PR.
+  On APPROVE (complete), the orchestrator marks the draft PR ready for
+  review. Gates on pr-reviewer:approved.
 tools: [Bash, Read, Glob, Grep]
 model: claude-opus-4-7
 max_turns: 60

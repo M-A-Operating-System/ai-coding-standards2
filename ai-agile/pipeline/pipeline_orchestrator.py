@@ -140,6 +140,7 @@ class AgentDef:
     max_retries: int = 0               # how many times to re-invoke after :failed before giving up
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
+    mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
 
     @property
     def label_key(self) -> str:
@@ -225,6 +226,7 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             max_retries=int(entry.get("max_retries", 0)),
             session_scope=entry.get("session", {}).get("scope", "per_issue"),
             session_id_pattern=entry.get("session", {}).get("id_pattern"),
+            mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
         ))
     return agents
 
@@ -432,6 +434,12 @@ class GitHubClient:
 
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
+
+    def mark_pr_ready(self, pr_number: int) -> None:
+        """Convert a draft PR to ready-for-review. No-op if already ready."""
+        r = self._request("PATCH", f"/repos/{self.repo}/pulls/{pr_number}",
+                          json_body={"draft": False})
+        r.raise_for_status()
 
     def _put(self, path: str, body: dict) -> requests.Response:
         """Issue a PUT request; returns the raw response so callers can inspect 409."""
@@ -1895,6 +1903,26 @@ def process_work_item(
                     outcome_detail=f"mode={agent_def.step_type}",
                     duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                 ))
+
+            # Mark the PR ready-for-review if the agent declares it (P-16).
+            if final_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
+                if work_item.kind == "pr":
+                    try:
+                        gh.mark_pr_ready(work_item.number)
+                        log.info(
+                            "  READY   %-38s  marked #%d ready for review",
+                            agent_def.agent, work_item.number,
+                        )
+                    except Exception as exc:
+                        log.warning(
+                            "  could not mark PR #%d ready after %s: %s",
+                            work_item.number, agent_def.agent, exc,
+                        )
+                else:
+                    log.warning(
+                        "  mark_ready_on_complete set on %s but work item #%d is not a PR — skipped",
+                        agent_def.agent, work_item.number,
+                    )
 
             # If the step completed and a human gate is configured, post
             # the gate comment so the reviewer knows what to do.

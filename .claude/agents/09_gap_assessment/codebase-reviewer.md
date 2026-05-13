@@ -5,7 +5,7 @@ description: >
   technical personas — Defensive Programmer, Security Analyst, and
   Quality Assurance — then creates a "Technical Review - {date}" GitHub
   issue containing all findings with AI-actionable remediation
-  instructions. Triggered by the codebase-review:requested label on any
+  instructions. Triggered by the codebase-reviewer:requested label on any
   issue. Cross-references docs/product/ only to understand original intent
   when code is ambiguous.
 tools: [Bash, Read, Grep]
