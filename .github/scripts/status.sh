@@ -227,7 +227,8 @@ status_show() {
 status_bootstrap_agent() {
   # Usage: status_bootstrap_agent <agent> [repo]
   local agent="$1" repo="${2:-$(_repo)}"
-  echo "Bootstrapping labels for agent: $agent in $repo"
+  local short="${agent##*/}"
+  echo "Bootstrapping labels for agent: $agent (labels: ${short}:*) in $repo"
   for status in "${ALL_STATUSES[@]}"; do
     local label colour description
     label=$(_label_name "$agent" "$status")
