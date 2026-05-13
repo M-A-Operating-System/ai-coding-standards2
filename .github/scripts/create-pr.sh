@@ -11,8 +11,8 @@
 #   REPO            — owner/repo
 #   ISSUE_NUMBER    — the issue being processed
 #   GITHUB_TOKEN    — token with repo write access (used for all git/gh calls)
-#   PIPELINE_PAT    — optional PAT used only for gh pr create when org policy
-#                     blocks GITHUB_TOKEN from creating pull requests
+#   AI_AGILE_BOT_TOKEN — optional PAT used only for gh pr create when org policy
+#                        blocks GITHUB_TOKEN from creating pull requests
 
 set -euo pipefail
 
@@ -64,9 +64,9 @@ else
 fi
 
 # Open the draft PR. gh pr create outputs the PR URL; extract the number from it.
-# Use PIPELINE_PAT when available — org policy may block GITHUB_TOKEN from creating PRs.
+# Use AI_AGILE_BOT_TOKEN when available — org policy may block GITHUB_TOKEN from creating PRs.
 PR_URL=$(
-  GH_TOKEN="${PIPELINE_PAT:-${GH_TOKEN:-${GITHUB_TOKEN}}}" gh pr create \
+  GH_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN}}}" gh pr create \
     --repo "${REPO}" \
     --title "${PR_TITLE}" \
     --body "Closes #${ISSUE_NUMBER}" \
