@@ -112,13 +112,18 @@ human removes the offending label. There is no separate "retry" button.
 Every transition emits one event to the audit log branch
 (see [`08-audit-log.md`](08-audit-log.md)).
 
-In the **Execute** phase the `coder` opens a draft PR on its first
-commit, not after the work is complete. PR-side agent sessions
-(`standards-compliance-reviewer`, `migration-validator`,
-`pr-reviewer`) start running as soon as the draft exists and continue
-as new commits land. The coder marks the PR ready-for-review only when
-all child tasks are done; this triggers the `pr-reviewer` gate flow.
-See [P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr).
+In the **Execute** phase the `create-pr` script step opens a draft PR
+immediately after PRD approval, establishing the branch and PR that all
+subsequent agent commits accumulate into. Agents (`prd-docs-updater`,
+`coder`) commit code and doc changes directly to that branch — reading
+issues and PRs is allowed, but only the orchestrator may create or
+advance the PR. When `pr-reviewer` completes with APPROVE, the
+orchestrator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`).
+The linked issue closes automatically on merge via the "Closes #{N}"
+trailer in the PR body; the branch is deleted automatically by GitHub's
+"auto-delete head branches" repo setting.
+See [P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr)
+and [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle).
 
 ---
 
@@ -195,10 +200,10 @@ phases run, but with fewer named agents.
 | T+30m | Issue | Engineer | Approves test spec | `test-spec:approved` |
 | T+10m | Issue | `build-plan/task-decomposer`, `build-plan/dependency-planner` | Decompose and order child tasks | `build-plan/dependency-planner:review` |
 | T+15m | Issue | Engineer | Approves plan | `plan:approved` |
-| T+5m | Issue → PR | `execute/coder` | Opens draft PR on first commit | (event) `pr.draft_opened` |
+| T+5m | Issue → PR | `product-docs/create-pr` (script) | Opens draft PR; writes "Closes #{N}" | (event) `pr.draft_opened` |
 | T+30m | PR | `execute/coder` | Commits per child task; CI runs from commit 1 | (event) `pr.draft_synchronized` |
-| T+5m | PR | `execute/coder` | Marks PR ready-for-review | (event) `pr.draft_ready` |
 | T+10m | PR | `execute/standards-compliance-reviewer`, `execute/pr-reviewer` | Review against design and standards | `execute/pr-reviewer:review` |
+| T+5m | PR | Orchestrator | Marks PR ready-for-review on pr-reviewer complete | (event) `pr.draft_ready` |
 | T+1h | PR | Engineer | Approves PR | `pr:approved` |
 | T+10m | PR | `test/test-writer`, `test/test-runner`, `test/coverage-enforcer` | Write tests, run suite, enforce coverage | `test/coverage-enforcer:review` |
 | T+15m | PR | Engineer | Approves coverage; PR merges | `coverage:approved` + (event) `pr.merged` |

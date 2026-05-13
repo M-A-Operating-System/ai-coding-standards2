@@ -213,6 +213,60 @@ rewritten.
 
 ---
 
+## git_ops — Orchestrator PR lifecycle
+
+Certain pipeline steps require the orchestrator to take a PR lifecycle
+action on completion. This is declared in the optional `git_ops` object
+on the step entry in `pipeline.json`.
+
+### Principle
+
+Agents own git commits (write files, `git add`, `git commit`, `git push`
+to their branch). The orchestrator owns the PR object (create, ready,
+merge). Agents may read issues and PRs freely; they must not call
+`gh pr create`, `gh pr ready`, or `gh pr merge`. See
+[P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle).
+
+### Automatic issue close and branch delete
+
+These two lifecycle events are GitHub-native and require no pipeline code:
+
+- **Issue auto-close:** The `create-pr` script writes "Closes #{N}" in
+  the PR body. GitHub automatically closes the linked issue when the PR
+  merges.
+- **Branch auto-delete:** The GitHub repo setting **"Automatically delete
+  head branches"** must be enabled. When a PR merges, GitHub deletes the
+  feature branch automatically. This is a required repository configuration.
+
+### `git_ops` field reference
+
+```json
+"git_ops": {
+  "mark_ready_on_complete": true
+}
+```
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `mark_ready_on_complete` | boolean | `false` | When `true`, the orchestrator calls `gh pr ready {number}` immediately after the agent (or script) signals `:complete`. Use for review agents that approve work — the draft PR is promoted to ready so human reviewers can merge. |
+
+Only `mark_ready_on_complete` is an orchestrator-enforced field. All other
+git behaviour (branch prefix, commit strategy) is agent-internal and should
+not be declared in `pipeline.json`.
+
+### When to set `mark_ready_on_complete`
+
+Set it on an agent that acts as the final automated review gate before
+human merge approval. In the current pipeline that is `pr-reviewer`: when
+it completes with APPROVE, the draft PR should be visible in GitHub's
+review queue.
+
+Do not set it on code-writing agents (`coder`, `prd-docs-updater`) — those
+agents commit to the branch, but the PR should stay draft until the review
+agent has run.
+
+---
+
 ## Session management
 
 Each agent in `pipeline.json` may carry an optional `session` object that
