@@ -436,7 +436,7 @@ class GitHubClient:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
 
     def mark_pr_ready(self, pr_number: int) -> None:
-        """Convert a draft PR to ready-for-review. No-op if already ready."""
+        """Convert a draft PR to ready-for-review. Safe to call if already ready (GitHub returns 200)."""
         r = self._request("PATCH", f"/repos/{self.repo}/pulls/{pr_number}",
                           json_body={"draft": False})
         r.raise_for_status()
