@@ -261,7 +261,7 @@ FINDINGS_EOF
 REVIEW_ISSUE=$(gh issue create \
   --repo "$REPO" \
   --title "Technical Review - ${TODAY}" \
-  --label "09_gap_assessment/codebase-reviewer:complete" \
+  --label "codebase-reviewer:complete" \
   --body "$(cat <<EOF
 ## Technical Review — ${TODAY}
 
@@ -343,13 +343,13 @@ AI_AGILE_STATUS: complete
 
 ## Operational note — bootstrapping the trigger label
 
-This agent is triggered by the label `codebase-review:requested`. That label
+This agent is triggered by the label `codebase-reviewer:requested`. That label
 is **not** created by `status.sh bootstrap-all` (which only creates
 `{agent}:{status}` labels for agents declared in `pipeline.json`). You must
 create it manually the first time:
 
 ```bash
-gh label create "codebase-review:requested" \
+gh label create "codebase-reviewer:requested" \
   --repo "$REPO" \
   --color "FBCA04" \
   --description "Request a three-persona codebase review"
