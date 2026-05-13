@@ -355,7 +355,7 @@ with open(sys.argv[1]) as f:
     data = json.load(f)
 statuses = ['wip', 'complete', 'review', 'blocked', 'failed', 'skipped']
 for step in data['pipeline']:
-    agent = step['agent']
+    agent = step['agent'].rsplit('/', 1)[-1]  # strip phase prefix
     for s in statuses:
         print(f'{agent}:{s}')
 PYEOF
