@@ -70,7 +70,8 @@ _repo() {
 
 _label_name() {
   local agent="$1" status="$2"
-  echo "${agent}:${status}"
+  # Strip phase prefix (e.g. "01_product_docs/prd-writer" → "prd-writer")
+  echo "${agent##*/}:${status}"
 }
 
 _ensure_label() {
@@ -354,7 +355,7 @@ with open(sys.argv[1]) as f:
     data = json.load(f)
 statuses = ['wip', 'complete', 'review', 'blocked', 'failed', 'skipped']
 for step in data['pipeline']:
-    agent = step['agent']
+    agent = step['agent'].rsplit('/', 1)[-1]  # strip phase prefix
     for s in statuses:
         print(f'{agent}:{s}')
 PYEOF
