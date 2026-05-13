@@ -63,18 +63,22 @@ else
   echo "Branch ${BRANCH} already exists on remote."
 fi
 
-# Open the draft PR. gh pr create outputs the PR URL; extract the number from it.
-# Use AI_AGILE_BOT_TOKEN when available — org policy may block GITHUB_TOKEN from creating PRs.
-PR_URL=$(
-  GH_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN}}}" gh pr create \
-    --repo "${REPO}" \
-    --title "${PR_TITLE}" \
-    --body "Closes #${ISSUE_NUMBER}" \
-    --draft \
-    --head "${BRANCH}" \
-    --base "${DEFAULT_BRANCH}"
+# Open the draft PR via the REST API. Use AI_AGILE_BOT_TOKEN when available —
+# org policy may block GITHUB_TOKEN from creating PRs. REST avoids the GraphQL
+# "Could not resolve to a Repository" error that gh pr create can trigger.
+_PR_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN}}}"
+PR_NUMBER=$(
+  GH_TOKEN="${_PR_TOKEN}" gh api \
+    --method POST \
+    "/repos/${REPO}/pulls" \
+    -f "title=${PR_TITLE}" \
+    -f "body=Closes #${ISSUE_NUMBER}" \
+    -f "head=${BRANCH}" \
+    -f "base=${DEFAULT_BRANCH}" \
+    -F "draft=true" \
+    --jq ".number"
 )
-PR_NUMBER="${PR_URL##*/}"
+PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
 
 echo "Opened draft PR #${PR_NUMBER} for issue #${ISSUE_NUMBER} on branch ${BRANCH}."
 
