@@ -20,9 +20,9 @@ the model in product terms.
 |---|---|---|---|---|
 | `requested` | Amber | A human has explicitly requested this agent to run | Human | Orchestrator (replaced by `:wip` on invocation) |
 | `wip` | Yellow | Agent is actively running | Orchestrator | Orchestrator (replaced by outcome) |
-| `complete` | Green | Agent finished successfully | Agent (non-gated) **or** Orchestrator (gated, on gate-label) | Never |
-| `review` | Purple | Agent has finished and is requesting human review | Agent | Orchestrator (on gate-label) **or** Human (rejects by removing) |
-| `blocked` | Red-orange | Agent cannot proceed without human help | Agent | Human (after fixing the cause) |
+| `complete` | Green | Agent finished successfully | Orchestrator (on sentinel or gate-label) | Never |
+| `review` | Purple | Agent has finished and is requesting human review | Orchestrator (on sentinel) | Orchestrator (on gate-label) **or** Human (rejects by removing) |
+| `blocked` | Red-orange | Agent cannot proceed without human help | Orchestrator (on sentinel) | Human (after fixing the cause) |
 | `failed` | Red | Agent crashed with a technical error | Orchestrator | Human (after debugging) |
 | `skipped` | Light blue | Agent was intentionally bypassed | Human | Never |
 
@@ -87,20 +87,19 @@ The cost is some label noise on long-lived issues, which is acceptable.
 |---|---|---|
 | `requested` | Human | When a human wants to trigger an agent ad-hoc, outside the normal dependency chain |
 | `wip` | Orchestrator | At the start of agent invocation (replaces `:requested` if present) |
-| `complete` (non-gated agent) | Orchestrator (on sentinel) | When the agent emits `AI_AGILE_STATUS: complete` |
+| `complete` (non-gated agent) | Orchestrator (on sentinel) | When the agent emits an outcome sentinel with `"outcome": "complete"` |
 | `complete` (gated agent) | Orchestrator | When the human applies the matching gate label, promoting the agent from `:review` to `:complete` |
-| `review` | Orchestrator (on sentinel) | When the agent emits `AI_AGILE_STATUS: review` |
-| `blocked` | Orchestrator (on sentinel) | When the agent emits `AI_AGILE_STATUS: blocked` |
+| `review` | Orchestrator (on sentinel) | When the agent emits an outcome sentinel with `"outcome": "review"` |
+| `blocked` | Orchestrator (on sentinel) | When the agent emits an outcome sentinel with `"outcome": "blocked"` |
 | `failed` | Orchestrator | When the agent exits non-zero without a terminal sentinel |
 | `skipped` | Human | When a human decides this agent is not applicable |
 
 The orchestrator is the **only writer** for all status label transitions.
-Agents never apply labels directly — they emit `AI_AGILE_STATUS:`
-sentinels to stdout and the orchestrator reads the sentinel and applies
-the matching label. Humans never apply `{agent}:complete` directly
-either — they apply the gate label and the orchestrator promotes the
-agent. This keeps the transition logic in one place and ensures every
-status change is consistent and auditable.
+Agents never apply labels directly — they emit an outcome sentinel and the
+orchestrator reads the sentinel and applies the matching label. Humans never
+apply `{agent}:complete` directly either — they apply the gate label and the
+orchestrator promotes the agent. This keeps the transition logic in one place
+and ensures every status change is consistent and auditable.
 
 ### Why the orchestrator owns all transitions
 
@@ -115,11 +114,10 @@ protocol that must hold several invariants:
 | The format `{agent}:{status}` is canonical | Any drift breaks the orchestrator's label parsing | The orchestrator constructs label names via `AgentDef.status_label()` — no agent prompt can misformat them |
 
 Centralising these invariants in the orchestrator means every agent
-prompt collapses to emitting a single line (`AI_AGILE_STATUS: complete`)
-and the protocol is enforced once, in Python we can test and version-pin.
-Agents writing labels directly via `gh issue edit` would have to
-re-implement the protocol inline — which would drift across the 22+ agent
-prompts over time.
+prompt collapses to emitting a single outcome sentinel and the protocol
+is enforced once, in Python we can test and version-pin. Agents writing
+labels directly via `gh issue edit` would have to re-implement the protocol
+inline — which would drift across the 22+ agent prompts over time.
 
 ---
 
@@ -162,21 +160,23 @@ human gate) and **non-gated** (no gate). They reach `:complete` by
 different paths.
 
 **Non-gated agents** (e.g., `issue-classifier`, `dependency-resolver`,
-`release-noter`) finish their work and call `set-complete` themselves.
-Done.
+`release-noter`) finish their work and emit `"outcome": "complete"` in their
+sentinel. The orchestrator reads the sentinel and applies `:complete`. Done.
 
 **Gated agents** (e.g., `prd-writer`, `architect`, `test-spec-writer`,
-`pr-reviewer`) finish their work, post the artefact, and call
-`set-review`. They never call `set-complete` themselves. The transition
-from `:review` to `:complete` is the orchestrator's job, triggered by
-the human applying the gate label.
+`pr-reviewer`) finish their work, post the artefact, and emit
+`"outcome": "review"` in their sentinel. They never emit `"outcome":
+"complete"` themselves. The transition from `:review` to `:complete` is the
+orchestrator's job, triggered by the human applying the gate label.
 
 **Lifecycle of a gated agent.**
 
 ```
-agent:         set-wip               → {agent}:wip
+orchestrator:  applies {agent}:wip
+orchestrator:  posts opening announcement
 agent:         posts artefact comment
-agent:         set-review            → {agent}:review (replaces :wip)
+agent:         emits outcome sentinel {"outcome": "review", ...}
+orchestrator:  reads sentinel, removes :wip, applies {agent}:review
 
 — pipeline halts; human reads artefact —
 
