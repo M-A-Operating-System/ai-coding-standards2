@@ -132,9 +132,9 @@ This issue is missing the following required field(s):
 To unblock the pipeline:
 
 1. Edit the issue body to add the missing field(s).
-2. Remove the \`01_product_docs/issue-classifier:blocked\` label.
+2. Remove the \`issue-classifier:blocked\` label.
 
-The pipeline will re-run \`01_product_docs/issue-classifier\` automatically.
+The pipeline will re-run \`issue-classifier\` automatically.
 EOF
 )"
 ```

@@ -70,7 +70,8 @@ _repo() {
 
 _label_name() {
   local agent="$1" status="$2"
-  echo "${agent}:${status}"
+  # Strip phase prefix (e.g. "01_product_docs/prd-writer" → "prd-writer")
+  echo "${agent##*/}:${status}"
 }
 
 _ensure_label() {

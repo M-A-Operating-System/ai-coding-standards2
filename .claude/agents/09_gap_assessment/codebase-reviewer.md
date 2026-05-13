@@ -261,7 +261,7 @@ FINDINGS_EOF
 REVIEW_ISSUE=$(gh issue create \
   --repo "$REPO" \
   --title "Technical Review - ${TODAY}" \
-  --label "09_gap_assessment/codebase-reviewer:complete" \
+  --label "codebase-reviewer:complete" \
   --body "$(cat <<EOF
 ## Technical Review — ${TODAY}
 

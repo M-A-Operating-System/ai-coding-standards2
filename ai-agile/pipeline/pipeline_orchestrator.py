@@ -142,27 +142,32 @@ class AgentDef:
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
 
     @property
+    def label_key(self) -> str:
+        """Short name used in GitHub labels — strips the phase/ prefix."""
+        return self.agent.rsplit("/", 1)[-1]
+
+    @property
     def complete_label(self) -> str:
-        return f"{self.agent}:{STATUS_COMPLETE}"
+        return f"{self.label_key}:{STATUS_COMPLETE}"
 
     @property
     def in_progress_label(self) -> str:
-        return f"{self.agent}:{STATUS_IN_PROGRESS}"
+        return f"{self.label_key}:{STATUS_IN_PROGRESS}"
 
     @property
     def failed_label(self) -> str:
-        return f"{self.agent}:{STATUS_FAILED}"
+        return f"{self.label_key}:{STATUS_FAILED}"
 
     @property
     def review_label(self) -> str:
-        return f"{self.agent}:{STATUS_REVIEW}"
+        return f"{self.label_key}:{STATUS_REVIEW}"
 
     @property
     def blocked_label(self) -> str:
-        return f"{self.agent}:{STATUS_BLOCKED}"
+        return f"{self.label_key}:{STATUS_BLOCKED}"
 
     def status_label(self, status: str) -> str:
-        return f"{self.agent}:{status}"
+        return f"{self.label_key}:{status}"
 
 
 @dataclass
@@ -752,7 +757,7 @@ def dependencies_complete(
             log.warning("Unknown dependency: %s (required by %s)", dep_name, agent_def.agent)
             return False
 
-        if f"{dep_name}:{STATUS_COMPLETE}" not in labels:
+        if dep.complete_label not in labels:
             return False
 
         if dep.human_gate_after and dep.human_gate_label:
@@ -1684,7 +1689,7 @@ def process_work_item(
         if work_item.kind not in agent_def.objects:
             continue
 
-        current_status = agent_status(labels, agent_def.agent)
+        current_status = agent_status(labels, agent_def.label_key)
 
         # Skip if already terminal
         if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED):
