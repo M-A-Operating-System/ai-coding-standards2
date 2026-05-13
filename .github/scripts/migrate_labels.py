@@ -30,7 +30,6 @@ _AGENTS = [
     "01_product_docs/prd-writer",
     "01_product_docs/create-pr",
     "01_product_docs/prd-docs-updater",
-    "01_product_docs/link-pr-to-issue",
     "05_execute/coder",
     "05_execute/pr-reviewer",
     "09_gap_assessment/codebase-reviewer",
@@ -82,7 +81,11 @@ _STATUS_COLOURS = {
 }
 
 LABEL_SPECS: dict[str, tuple[str, str]] = {}
+_seen_specs: set[str] = set()
 for _old, _new in LABEL_MIGRATIONS.items():
+    if _new in _seen_specs:
+        continue
+    _seen_specs.add(_new)
     _suffix = _new.rsplit(":", 1)[-1]
     _colour = _STATUS_COLOURS.get(_suffix, "FBCA04")
     _agent_short = _new.rsplit(":", 1)[0]
@@ -115,8 +118,9 @@ def _api(method, path, body=None):
         body_text = exc.read().decode()
         if exc.code in (404, 422):
             return None
-        print(f"  HTTP {exc.code} {method} {path}: {body_text}", file=sys.stderr)
-        return None
+        raise RuntimeError(
+            f"GitHub API error {exc.code} {method} {path}: {body_text}"
+        ) from exc
 
 
 def list_labels(repo):
