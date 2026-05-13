@@ -61,18 +61,17 @@ else
   echo "Branch ${BRANCH} already exists on remote."
 fi
 
-# Open the draft PR.
-PR_NUMBER=$(
+# Open the draft PR. gh pr create outputs the PR URL; extract the number from it.
+PR_URL=$(
   gh pr create \
     --repo "${REPO}" \
     --title "${PR_TITLE}" \
     --body "Closes #${ISSUE_NUMBER}" \
     --draft \
     --head "${BRANCH}" \
-    --base "${DEFAULT_BRANCH}" \
-    --json number \
-    -q '.number'
+    --base "${DEFAULT_BRANCH}"
 )
+PR_NUMBER="${PR_URL##*/}"
 
 echo "Opened draft PR #${PR_NUMBER} for issue #${ISSUE_NUMBER} on branch ${BRANCH}."
 
