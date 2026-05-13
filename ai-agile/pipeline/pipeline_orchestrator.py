@@ -142,27 +142,32 @@ class AgentDef:
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
 
     @property
+    def label_key(self) -> str:
+        """Short name used in GitHub labels — strips the phase/ prefix."""
+        return self.agent.rsplit("/", 1)[-1]
+
+    @property
     def complete_label(self) -> str:
-        return f"{self.agent}:{STATUS_COMPLETE}"
+        return f"{self.label_key}:{STATUS_COMPLETE}"
 
     @property
     def in_progress_label(self) -> str:
-        return f"{self.agent}:{STATUS_IN_PROGRESS}"
+        return f"{self.label_key}:{STATUS_IN_PROGRESS}"
 
     @property
     def failed_label(self) -> str:
-        return f"{self.agent}:{STATUS_FAILED}"
+        return f"{self.label_key}:{STATUS_FAILED}"
 
     @property
     def review_label(self) -> str:
-        return f"{self.agent}:{STATUS_REVIEW}"
+        return f"{self.label_key}:{STATUS_REVIEW}"
 
     @property
     def blocked_label(self) -> str:
-        return f"{self.agent}:{STATUS_BLOCKED}"
+        return f"{self.label_key}:{STATUS_BLOCKED}"
 
     def status_label(self, status: str) -> str:
-        return f"{self.agent}:{status}"
+        return f"{self.label_key}:{status}"
 
 
 @dataclass
@@ -752,7 +757,7 @@ def dependencies_complete(
             log.warning("Unknown dependency: %s (required by %s)", dep_name, agent_def.agent)
             return False
 
-        if f"{dep_name}:{STATUS_COMPLETE}" not in labels:
+        if dep.complete_label not in labels:
             return False
 
         if dep.human_gate_after and dep.human_gate_label:
@@ -1255,7 +1260,7 @@ def invoke_agent(
         to prevent callers from extracting internal object attributes via
         Python's str.format() mini-language.
         """
-        if re.search(r"\{[^}]*[.\[]", pattern):
+        if re.search(r"\{[^}]*[.[]", pattern):
             raise ValueError(
                 f"id_pattern for {agent_def.agent!r} contains unsafe "
                 f"attribute or index access: {pattern!r}"
@@ -1468,7 +1473,7 @@ def promote_gated_agents(
 
     Why this exists. The agent posts an artefact and applies :review,
     then the pipeline halts. When the human applies the gate label
-    (e.g. 01_product_docs/prd-writer:approved), no event reaches the agent — the orchestrator
+    (e.g. prd-writer:approved), no event reaches the agent — the orchestrator
     is the actor that closes the loop.
 
     Promotion only fires when the agent is **actually in :review**. If
@@ -1684,7 +1689,7 @@ def process_work_item(
         if work_item.kind not in agent_def.objects:
             continue
 
-        current_status = agent_status(labels, agent_def.agent)
+        current_status = agent_status(labels, agent_def.label_key)
 
         # Skip if already terminal
         if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED):
