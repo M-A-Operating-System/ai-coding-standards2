@@ -21,14 +21,14 @@
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
-        "label": "01_product_docs/issue-classifier:complete"
+        "label": "issue-classifier:complete"
       },
       "human_gate_after": true,
-      "human_gate_label": "01_product_docs/prd-writer:approved",
+      "human_gate_label": "prd-writer:approved",
       "dependencies": ["01_product_docs/issue-classifier"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
-      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the 01_product_docs/prd-writer:approved gate. Set-blocks oversized issues with a decomposition note rather than drafting a sprawling PRD."
+      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Set-blocks oversized issues with a decomposition note rather than drafting a sprawling PRD."
     },
 
     {
@@ -38,7 +38,7 @@
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
-        "label": "01_product_docs/prd-writer:complete"
+        "label": "prd-writer:complete"
       },
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-writer"],
@@ -50,10 +50,10 @@
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
-        "label": "01_product_docs/create-pr:complete"
+        "label": "create-pr:complete"
       },
       "human_gate_after": true,
-      "human_gate_label": "01_product_docs/prd-docs-updater:approved",
+      "human_gate_label": "prd-docs-updater:approved",
       "dependencies": ["01_product_docs/create-pr"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
@@ -69,7 +69,7 @@
       "phase": "05_execute",
       "object": ["issue"],
       "trigger": {
-        "label": "01_product_docs/prd-docs-updater:complete"
+        "label": "prd-docs-updater:complete"
       },
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-docs-updater"],
@@ -87,10 +87,10 @@
       "phase": "05_execute",
       "object": ["pr"],
       "trigger": {
-        "label": "05_execute/pr-reviewer:requested"
+        "label": "pr-reviewer:requested"
       },
       "human_gate_after": true,
-      "human_gate_label": "05_execute/pr-reviewer:approved",
+      "human_gate_label": "pr-reviewer:approved",
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
@@ -98,7 +98,7 @@
         "commit_after": false,
         "mark_ready_on_complete": true
       },
-      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge. Triggered by 05_execute/pr-reviewer:requested. Gates on 05_execute/pr-reviewer:approved."
+      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge. Triggered by pr-reviewer:requested. Gates on pr-reviewer:approved."
     },
 
     {
@@ -106,13 +106,13 @@
       "phase": "09_gap_assessment",
       "object": ["issue"],
       "trigger": {
-        "label": "09_gap_assessment/codebase-reviewer:requested"
+        "label": "codebase-reviewer:requested"
       },
       "human_gate_after": false,
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "global" },
-      "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the 09_gap_assessment/codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
+      "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
     }
 
   ]

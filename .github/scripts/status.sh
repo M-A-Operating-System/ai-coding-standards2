@@ -70,7 +70,8 @@ _repo() {
 
 _label_name() {
   local agent="$1" status="$2"
-  echo "${agent}:${status}"
+  # Strip phase prefix (e.g. "01_product_docs/prd-writer" → "prd-writer")
+  echo "${agent##*/}:${status}"
 }
 
 _ensure_label() {
@@ -226,7 +227,8 @@ status_show() {
 status_bootstrap_agent() {
   # Usage: status_bootstrap_agent <agent> [repo]
   local agent="$1" repo="${2:-$(_repo)}"
-  echo "Bootstrapping labels for agent: $agent in $repo"
+  local short="${agent##*/}"
+  echo "Bootstrapping labels for agent: $agent (labels: ${short}:*) in $repo"
   for status in "${ALL_STATUSES[@]}"; do
     local label colour description
     label=$(_label_name "$agent" "$status")
@@ -354,7 +356,7 @@ with open(sys.argv[1]) as f:
     data = json.load(f)
 statuses = ['wip', 'complete', 'review', 'blocked', 'failed', 'skipped']
 for step in data['pipeline']:
-    agent = step['agent']
+    agent = step['agent'].rsplit('/', 1)[-1]  # strip phase prefix
     for s in statuses:
         print(f'{agent}:{s}')
 PYEOF

@@ -3,7 +3,7 @@ name: 01_product_docs/prd-writer
 description: >
   Drafts a Product Requirements Document for an issue that has passed
   classification. Rewrites the issue body with the PRD in user-story
-  and Gherkin format. Waits for the 01_product_docs/prd-writer:approved gate.
+  and Gherkin format. Waits for the prd-writer:approved gate.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 15
@@ -209,11 +209,11 @@ gh issue edit $ISSUE_NUMBER --repo $REPO \
 Emit the sentinel:
 
 ```
-AI_AGILE_STATUS: review "PRD written into issue body; awaiting 01_product_docs/prd-writer:approved."
+AI_AGILE_STATUS: review "PRD written into issue body; awaiting prd-writer:approved."
 ```
 
 The orchestrator applies `:review`, posts the closing announcement, and
-prompts the stakeholder to apply `01_product_docs/prd-writer:approved`.
+prompts the stakeholder to apply `prd-writer:approved`.
 
 ---
 
@@ -241,7 +241,7 @@ Each child should have one user goal, touch one bounded context, and
 produce a PRD with 3–7 Gherkin scenarios.
 
 **To proceed:** Open the suggested smaller issues (or narrow this one
-to a single child's scope) and remove the \`01_product_docs/prd-writer:blocked\`
+to a single child's scope) and remove the \`prd-writer:blocked\`
 label to re-run.
 EOF
 )"
