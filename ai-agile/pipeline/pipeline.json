@@ -57,11 +57,7 @@
       "dependencies": ["01_product_docs/create-pr"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
-      "git_ops": {
-        "commit_after": true,
-        "branch_prefix": "issue-"
-      },
-      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes to the shared issue branch — the draft PR was already opened by the create-pr step, so commits accumulate there. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts."
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, commits the changes directly to the shared issue branch (issue-{N}) — the draft PR was already opened by create-pr, so commits accumulate there. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts. Git commits are agent-owned; PR lifecycle (draft/ready) is orchestrator-owned."
     },
 
     {
@@ -75,11 +71,7 @@
       "dependencies": ["01_product_docs/prd-docs-updater"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "git_ops": {
-        "commit_after": true,
-        "branch_prefix": "issue-"
-      },
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes files only — commits to the shared issue branch. The draft PR was opened by the create-pr step and stays as draft until pr-reviewer promotes it to ready on APPROVE. Triggered automatically when the docs-update gate is approved."
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Commits code directly to the shared issue branch (issue-{N}) — the draft PR was opened by create-pr and stays draft until pr-reviewer completes. Agents may commit to the PR branch and read issues/PRs freely; only the orchestrator may create, draft, or mark PRs ready for review."
     },
 
     {
@@ -95,10 +87,9 @@
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "git_ops": {
-        "commit_after": false,
         "mark_ready_on_complete": true
       },
-      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge. Triggered by pr-reviewer:requested. Gates on pr-reviewer:approved."
+      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge — the reviewer agent never touches PR state directly. Triggered by pr-reviewer:requested. Gates on pr-reviewer:approved."
     },
 
     {

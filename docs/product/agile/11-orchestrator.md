@@ -23,6 +23,7 @@ The orchestrator owns exactly these responsibilities:
 | Mutex management | Acquire and release the `:wip` label lock per (object, agent) |
 | Agent invocation | Spawn the agent subprocess; set `:failed` if it crashes without a terminal status |
 | Gate promotion | When a human applies a gate label, remove `:review` and apply `:complete` |
+| PR ready-for-review | Call `gh pr ready` when an agent with `git_ops.mark_ready_on_complete: true` completes — agents never do this themselves |
 | Audit log emission | Append one JSONL event per transition to the `ai-agile/log` branch |
 
 It owns none of these:
@@ -30,6 +31,7 @@ It owns none of these:
 - Agent behaviour (prompts, tools, model — those live in `.claude/agents/{agent}.md`)
 - Standards checking (the `standards-compliance-reviewer` agent does this)
 - Pipeline graph definition (`pipeline.json` is the source of truth; the orchestrator reads it)
+- Git commits or pushes to feature branches (agent-owned; see [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle))
 
 ---
 

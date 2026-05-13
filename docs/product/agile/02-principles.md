@@ -182,9 +182,13 @@ do the other's job.
 |---|---|
 | Write files, `git add`, `git commit`, `git push` to branch | Agent |
 | Create branch (`git checkout -b`) | Agent |
+| Read issues/PRs: `gh issue view`, `gh pr view`, `gh pr diff` | Agent |
+| Post artefact comments: `gh issue comment`, `gh pr comment` | Agent |
 | `gh pr create`, `gh pr ready`, `gh pr merge`, `gh pr edit` | Orchestrator |
 | Apply `:wip`, `:complete`, `:review`, `:failed` labels | Orchestrator |
 | Audit log writes | Orchestrator |
+| Issue auto-close on merge | GitHub (via "Closes #N" trailer in PR body) |
+| Branch auto-delete on merge | GitHub (repo setting: auto-delete head branches) |
 
 **Destructive git commands are forbidden for all actors in agent prompts.**
 No agent allowlist may include `git reset`, `git push --force`,
@@ -199,6 +203,8 @@ These are operator-only actions taken outside the pipeline.
 | `git add`, `git commit`, `git push` | Record work |
 | `git config user.*` | Set commit identity |
 | `git ls-remote`, `git diff`, `git log`, `git show`, `git status`, `git rev-parse` | Read state |
+| `gh issue view`, `gh pr view`, `gh pr diff` | Read issue/PR content |
+| `gh issue comment`, `gh pr comment` | Post artefact comments |
 
 **Why this split.** Agents have context about what changed and why — they
 write the commit message and choose what to stage. The orchestrator has
@@ -393,10 +399,10 @@ overlaps visible early so non-overlapping work continues unblocked.
 
 ### P-13 — Draft PRs early; one branch per PR
 
-**Statement.** The `coder` opens a draft PR on the first commit pushed
-to a feature branch, not after the work is complete. Every PR has
-exactly one branch; every branch produces exactly one PR. Branches are
-short-lived: deleted on merge or close.
+**Statement.** The `create-pr` script step opens a draft PR immediately
+after PRD approval, before any agent writes code. Every PR has exactly
+one branch; every branch produces exactly one PR. Branches are
+short-lived: deleted automatically on merge or close.
 
 **Why draft-early.**
 
@@ -422,18 +428,21 @@ short-lived: deleted on merge or close.
 
 **Consequences.**
 
-- `coder` flow: create branch → first commit → open draft PR →
-  continue committing per child task. The `pr.draft_opened` event
-  fires once, early.
+- `create-pr` opens the draft PR once; all subsequent agent commits
+  (`prd-docs-updater`, `coder`) accumulate on the same branch. The
+  `pr.draft_opened` event fires once, early.
 - A second attempt at the same shippable unit (after a
   closed-without-merge) creates a *new* branch with a new name; the
   old branch is preserved for the audit trail.
-- GitHub setting: auto-delete branches on merge.
+- GitHub setting: **auto-delete head branches on merge** must be
+  enabled — this is a required repo configuration, not an agent action.
 - Force-push within a PR's branch (rebase, fixup) is allowed; pushing
   a different branch's history into the PR's branch is not.
-- The `pr.draft_ready` transition is a separate event signalling
-  "the coder believes this is done"; it triggers `pr-reviewer` and
-  the human gate flow.
+- The `pr.draft_ready` transition is triggered by the **orchestrator**
+  when `pr-reviewer` signals complete and `git_ops.mark_ready_on_complete`
+  is set — not by the coder or any agent. Agents never call `gh pr ready`.
+- The linked issue closes automatically on PR merge via the
+  "Closes #{N}" trailer that `create-pr` writes into the PR body.
 
 **Tradeoff.** Reviewers see incomplete work in their PR list.
 Mitigated by GitHub's draft filtering (drafts are excluded from
