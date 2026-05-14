@@ -49,17 +49,28 @@ DEFAULT_BRANCH=$(
 )
 echo "DEBUG: DEFAULT_BRANCH='${DEFAULT_BRANCH}' BRANCH='${BRANCH}'"
 
+# PR token setup.
+_PR_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN}}}"
+_TOKEN_SOURCE="${AI_AGILE_BOT_TOKEN:+AI_AGILE_BOT_TOKEN}"
+_TOKEN_SOURCE="${_TOKEN_SOURCE:-${GH_TOKEN:+GH_TOKEN}}"
+_TOKEN_SOURCE="${_TOKEN_SOURCE:-GITHUB_TOKEN}"
+
+_TOKEN_USER=$(GH_TOKEN="${_PR_TOKEN}" gh api "/user" --jq '.login' 2>/dev/null || echo "unknown")
+echo "PR token source: ${_TOKEN_SOURCE}, authenticated as: ${_TOKEN_USER}"
+
 # Get issue title for the PR title.
 ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json title -q '.title')
 PR_TITLE="issue-${ISSUE_NUMBER}: ${ISSUE_TITLE:0:60}"
+
+# Git identity for commits.
+git config user.email "github-actions[bot]@users.noreply.github.com"
+git config user.name "github-actions[bot]"
 
 # Create the branch from the default branch HEAD if it doesn't exist on the remote.
 if ! git ls-remote --exit-code --heads origin "${BRANCH}" &>/dev/null; then
   git fetch origin "${DEFAULT_BRANCH}"
   git checkout "${DEFAULT_BRANCH}"
   git checkout -b "${BRANCH}"
-  git config user.email "github-actions[bot]@users.noreply.github.com"
-  git config user.name "github-actions[bot]"
   git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
   git push -u origin "${BRANCH}"
   echo "Created branch ${BRANCH} from ${DEFAULT_BRANCH} with placeholder commit."
@@ -67,42 +78,29 @@ else
   echo "Branch ${BRANCH} already exists on remote."
 fi
 
-# Ensure the branch has ≥1 commit ahead of base — GitHub rejects PR creation
-# (HTTP 422) when head and base point to the same commit.
-echo "DEBUG: fetching origin/${DEFAULT_BRANCH} and origin/${BRANCH} for rev-list..."
-git fetch origin "${DEFAULT_BRANCH}" 2>&1 || echo "WARN: fetch of ${DEFAULT_BRANCH} failed"
-git fetch origin "${BRANCH}" 2>&1 || echo "WARN: fetch of ${BRANCH} failed"
-AHEAD=$(git rev-list --count "origin/${DEFAULT_BRANCH}..origin/${BRANCH}" 2>/dev/null || echo "error")
-echo "DEBUG: commits origin/${DEFAULT_BRANCH}..origin/${BRANCH} = ${AHEAD}"
+# Use the GitHub API compare endpoint to check how many unique commits the branch
+# has — this is the same check GitHub runs before allowing PR creation.
+# Local git rev-list can disagree (stale tracking refs, absorbed merge commits).
+AHEAD_BY=$(
+  GH_TOKEN="${_PR_TOKEN}" gh api \
+    "/repos/${REPO}/compare/${DEFAULT_BRANCH}...${BRANCH}" \
+    --jq '.ahead_by' 2>/dev/null || echo 0
+)
+echo "DEBUG: GitHub compare: ${BRANCH} is ${AHEAD_BY} commit(s) ahead of ${DEFAULT_BRANCH}"
 
-if [[ "${AHEAD}" == "error" || "${AHEAD}" -eq 0 ]]; then
-  echo "Branch has 0 (or unknown) commits ahead — adding placeholder commit..."
-  git config user.email "github-actions[bot]@users.noreply.github.com"
-  git config user.name "github-actions[bot]"
-  git checkout "${BRANCH}" 2>/dev/null || git checkout -b "${BRANCH}" "origin/${BRANCH}"
+if [[ "${AHEAD_BY}" -eq 0 ]]; then
+  echo "GitHub sees no unique commits on ${BRANCH} — resetting to ${DEFAULT_BRANCH} and adding placeholder..."
+  git fetch origin "${DEFAULT_BRANCH}"
+  git checkout -B "${BRANCH}" "origin/${DEFAULT_BRANCH}"
   git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
-  git push origin "${BRANCH}"
-  echo "Added placeholder commit to ${BRANCH}."
-else
-  echo "Branch has ${AHEAD} commit(s) ahead of ${DEFAULT_BRANCH} — no placeholder needed."
+  git push -f origin "${BRANCH}"
+  echo "Reset ${BRANCH} to ${DEFAULT_BRANCH} and pushed placeholder commit."
 fi
 
-# Open the draft PR via the REST API. Use AI_AGILE_BOT_TOKEN when available —
-# org policy may block GITHUB_TOKEN from creating PRs. REST avoids the GraphQL
-# "Could not resolve to a Repository" error that gh pr create can trigger.
-_PR_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN}}}"
-_TOKEN_SOURCE="${AI_AGILE_BOT_TOKEN:+AI_AGILE_BOT_TOKEN}"
-_TOKEN_SOURCE="${_TOKEN_SOURCE:-${GH_TOKEN:+GH_TOKEN}}"
-_TOKEN_SOURCE="${_TOKEN_SOURCE:-GITHUB_TOKEN}"
-
-# Pre-flight: log which user the token authenticates as, then verify repo access.
-_TOKEN_USER=$(GH_TOKEN="${_PR_TOKEN}" gh api "/user" --jq '.login' 2>/dev/null || echo "unknown")
-echo "PR token source: ${_TOKEN_SOURCE}, authenticated as: ${_TOKEN_USER}"
-
+# Pre-flight: verify the token can access this repo.
 REPO_CHECK_ERR=$(GH_TOKEN="${_PR_TOKEN}" gh api "/repos/${REPO}" --jq '.full_name' 2>&1 >/dev/null) || {
   echo "ERROR: Token (${_TOKEN_SOURCE}, user=${_TOKEN_USER}) cannot access repo ${REPO}." >&2
   echo "       API error: ${REPO_CHECK_ERR}" >&2
-  echo "       Ensure the token owner is an org member with write access to this repo." >&2
   exit 1
 }
 
@@ -118,7 +116,7 @@ PR_JSON=$(
     -f "base=${DEFAULT_BRANCH}" \
     -F "draft=true" 2>&1
 ) || {
-  echo "ERROR: PR creation failed (422 details): ${PR_JSON}" >&2
+  echo "ERROR: PR creation failed. Response: ${PR_JSON}" >&2
   exit 1
 }
 
