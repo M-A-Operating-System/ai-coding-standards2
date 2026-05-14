@@ -67,6 +67,21 @@ fi
 # org policy may block GITHUB_TOKEN from creating PRs. REST avoids the GraphQL
 # "Could not resolve to a Repository" error that gh pr create can trigger.
 _PR_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN}}}"
+_TOKEN_SOURCE="${AI_AGILE_BOT_TOKEN:+AI_AGILE_BOT_TOKEN}"
+_TOKEN_SOURCE="${_TOKEN_SOURCE:-${GH_TOKEN:+GH_TOKEN}}"
+_TOKEN_SOURCE="${_TOKEN_SOURCE:-GITHUB_TOKEN}"
+
+# Pre-flight: log which user the token authenticates as, then verify repo access.
+_TOKEN_USER=$(GH_TOKEN="${_PR_TOKEN}" gh api "/user" --jq '.login' 2>/dev/null || echo "unknown")
+echo "PR token source: ${_TOKEN_SOURCE}, authenticated as: ${_TOKEN_USER}"
+
+REPO_CHECK_ERR=$(GH_TOKEN="${_PR_TOKEN}" gh api "/repos/${REPO}" --jq '.full_name' 2>&1 >/dev/null) || {
+  echo "ERROR: Token (${_TOKEN_SOURCE}, user=${_TOKEN_USER}) cannot access repo ${REPO}." >&2
+  echo "       API error: ${REPO_CHECK_ERR}" >&2
+  echo "       Ensure the token owner is an org member with write access to this repo." >&2
+  exit 1
+}
+
 PR_NUMBER=$(
   GH_TOKEN="${_PR_TOKEN}" gh api \
     --method POST \
