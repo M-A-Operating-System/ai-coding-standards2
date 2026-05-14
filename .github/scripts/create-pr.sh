@@ -47,6 +47,7 @@ DEFAULT_BRANCH=$(
   gh repo view "${REPO}" --json defaultBranchRef -q '.defaultBranchRef.name' \
   2>/dev/null || echo "main"
 )
+echo "DEBUG: DEFAULT_BRANCH='${DEFAULT_BRANCH}' BRANCH='${BRANCH}'"
 
 # Get issue title for the PR title.
 ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json title -q '.title')
@@ -57,21 +58,33 @@ if ! git ls-remote --exit-code --heads origin "${BRANCH}" &>/dev/null; then
   git fetch origin "${DEFAULT_BRANCH}"
   git checkout "${DEFAULT_BRANCH}"
   git checkout -b "${BRANCH}"
+  git config user.email "github-actions[bot]@users.noreply.github.com"
+  git config user.name "github-actions[bot]"
   git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
   git push -u origin "${BRANCH}"
-  echo "Created branch ${BRANCH} from ${DEFAULT_BRANCH}."
+  echo "Created branch ${BRANCH} from ${DEFAULT_BRANCH} with placeholder commit."
 else
   echo "Branch ${BRANCH} already exists on remote."
 fi
 
 # Ensure the branch has ≥1 commit ahead of base — GitHub rejects PR creation
 # (HTTP 422) when head and base point to the same commit.
-git fetch origin "${BRANCH}" 2>/dev/null || true
-if [[ "$(git rev-list --count "origin/${DEFAULT_BRANCH}..origin/${BRANCH}" 2>/dev/null || echo 0)" -eq 0 ]]; then
+echo "DEBUG: fetching origin/${DEFAULT_BRANCH} and origin/${BRANCH} for rev-list..."
+git fetch origin "${DEFAULT_BRANCH}" 2>&1 || echo "WARN: fetch of ${DEFAULT_BRANCH} failed"
+git fetch origin "${BRANCH}" 2>&1 || echo "WARN: fetch of ${BRANCH} failed"
+AHEAD=$(git rev-list --count "origin/${DEFAULT_BRANCH}..origin/${BRANCH}" 2>/dev/null || echo "error")
+echo "DEBUG: commits origin/${DEFAULT_BRANCH}..origin/${BRANCH} = ${AHEAD}"
+
+if [[ "${AHEAD}" == "error" || "${AHEAD}" -eq 0 ]]; then
+  echo "Branch has 0 (or unknown) commits ahead — adding placeholder commit..."
+  git config user.email "github-actions[bot]@users.noreply.github.com"
+  git config user.name "github-actions[bot]"
   git checkout "${BRANCH}" 2>/dev/null || git checkout -b "${BRANCH}" "origin/${BRANCH}"
   git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
   git push origin "${BRANCH}"
-  echo "Added placeholder commit to ${BRANCH} (branch had no commits ahead of ${DEFAULT_BRANCH})."
+  echo "Added placeholder commit to ${BRANCH}."
+else
+  echo "Branch has ${AHEAD} commit(s) ahead of ${DEFAULT_BRANCH} — no placeholder needed."
 fi
 
 # Open the draft PR via the REST API. Use AI_AGILE_BOT_TOKEN when available —
@@ -93,7 +106,9 @@ REPO_CHECK_ERR=$(GH_TOKEN="${_PR_TOKEN}" gh api "/repos/${REPO}" --jq '.full_nam
   exit 1
 }
 
-PR_NUMBER=$(
+echo "DEBUG: PR params: head='${BRANCH}' base='${DEFAULT_BRANCH}' title='${PR_TITLE}'"
+
+PR_JSON=$(
   GH_TOKEN="${_PR_TOKEN}" gh api \
     --method POST \
     "/repos/${REPO}/pulls" \
@@ -101,9 +116,16 @@ PR_NUMBER=$(
     -f "body=Closes #${ISSUE_NUMBER}" \
     -f "head=${BRANCH}" \
     -f "base=${DEFAULT_BRANCH}" \
-    -F "draft=true" \
-    --jq ".number"
-)
+    -F "draft=true" 2>&1
+) || {
+  echo "ERROR: PR creation failed (422 details): ${PR_JSON}" >&2
+  exit 1
+}
+
+PR_NUMBER=$(echo "${PR_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['number'])" 2>/dev/null) || {
+  echo "ERROR: Could not parse PR number from response: ${PR_JSON}" >&2
+  exit 1
+}
 PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
 
 echo "Opened draft PR #${PR_NUMBER} for issue #${ISSUE_NUMBER} on branch ${BRANCH}."
