@@ -71,14 +71,16 @@ _TOKEN_SOURCE="${AI_AGILE_BOT_TOKEN:+AI_AGILE_BOT_TOKEN}"
 _TOKEN_SOURCE="${_TOKEN_SOURCE:-${GH_TOKEN:+GH_TOKEN}}"
 _TOKEN_SOURCE="${_TOKEN_SOURCE:-GITHUB_TOKEN}"
 
-# Pre-flight: verify the token can access this repo before attempting PR creation.
-if ! GH_TOKEN="${_PR_TOKEN}" gh api "/repos/${REPO}" --jq '.full_name' &>/dev/null; then
-  echo "ERROR: Token (${_TOKEN_SOURCE}) cannot access repo ${REPO}." >&2
-  echo "       For AI_AGILE_BOT_TOKEN: use a Classic PAT with 'repo' scope" >&2
-  echo "       from a user with write access to this repo, and ensure the" >&2
-  echo "       org has not blocked this PAT via a PAT approval policy." >&2
+# Pre-flight: log which user the token authenticates as, then verify repo access.
+_TOKEN_USER=$(GH_TOKEN="${_PR_TOKEN}" gh api "/user" --jq '.login' 2>/dev/null || echo "unknown")
+echo "PR token source: ${_TOKEN_SOURCE}, authenticated as: ${_TOKEN_USER}"
+
+REPO_CHECK_ERR=$(GH_TOKEN="${_PR_TOKEN}" gh api "/repos/${REPO}" --jq '.full_name' 2>&1 >/dev/null) || {
+  echo "ERROR: Token (${_TOKEN_SOURCE}, user=${_TOKEN_USER}) cannot access repo ${REPO}." >&2
+  echo "       API error: ${REPO_CHECK_ERR}" >&2
+  echo "       Ensure the token owner is an org member with write access to this repo." >&2
   exit 1
-fi
+}
 
 PR_NUMBER=$(
   GH_TOKEN="${_PR_TOKEN}" gh api \
