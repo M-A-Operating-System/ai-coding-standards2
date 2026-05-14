@@ -21,6 +21,7 @@ human-readable views are generated from machine-readable sources.
 | `pipeline.mmd` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_pipeline_mermaid.py` |
 | `pipeline-issue.mmd` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_pipeline_mermaid.py` |
 | `pipeline-pr.mmd` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_pipeline_mermaid.py` |
+| `phases/{phase}.mmd` (one per phase) | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_phase_mermaid.py` |
 
 ---
 
@@ -31,6 +32,7 @@ From the repo root:
 ```bash
 python ai-agile/pipeline/generators/generate_docs.py
 python ai-agile/pipeline/generators/generate_pipeline_mermaid.py
+python ai-agile/pipeline/generators/generate_phase_mermaid.py
 ```
 
 Generators are idempotent — running them twice produces byte-identical
