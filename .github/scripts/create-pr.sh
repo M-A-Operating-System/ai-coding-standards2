@@ -57,10 +57,21 @@ if ! git ls-remote --exit-code --heads origin "${BRANCH}" &>/dev/null; then
   git fetch origin "${DEFAULT_BRANCH}"
   git checkout "${DEFAULT_BRANCH}"
   git checkout -b "${BRANCH}"
+  git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
   git push -u origin "${BRANCH}"
   echo "Created branch ${BRANCH} from ${DEFAULT_BRANCH}."
 else
   echo "Branch ${BRANCH} already exists on remote."
+fi
+
+# Ensure the branch has ≥1 commit ahead of base — GitHub rejects PR creation
+# (HTTP 422) when head and base point to the same commit.
+git fetch origin "${BRANCH}" 2>/dev/null || true
+if [[ "$(git rev-list --count "origin/${DEFAULT_BRANCH}..origin/${BRANCH}" 2>/dev/null || echo 0)" -eq 0 ]]; then
+  git checkout "${BRANCH}" 2>/dev/null || git checkout -b "${BRANCH}" "origin/${BRANCH}"
+  git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
+  git push origin "${BRANCH}"
+  echo "Added placeholder commit to ${BRANCH} (branch had no commits ahead of ${DEFAULT_BRANCH})."
 fi
 
 # Open the draft PR via the REST API. Use AI_AGILE_BOT_TOKEN when available —
