@@ -32,8 +32,8 @@ slash:
 ```
 
 Examples: `01_product_docs/issue-classifier`, `02_technical_docs/architect`,
-`05_execute/coder`, `evaluate/retrospective-writer`,
-`learn/metrics-aggregator`.
+`05_execute/coder`, `07_evaluate/retrospective-writer`,
+`08_learn/metrics-aggregator`.
 
 The phase prefix is one of the ten phase identifiers defined in
 [`04-lifecycle.md`](04-lifecycle.md):
@@ -140,15 +140,15 @@ is the policy; any deviation requires an ADR.
 | Agent type | Example agents | Tools |
 |---|---|---|
 | **Classifier / sizer** | `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer` | `[Bash, Read]` |
-| **Document drafter** | `01_product_docs/prd-writer`, `02_technical_docs/architect`, `testing-spec/test-spec-writer`, `evaluate/retrospective-writer`, `evaluate/release-noter` | `[Bash, Read, Grep]` |
-| **Validator / reviewer** | `05_execute/standards-compliance-reviewer`, `05_execute/migration-validator`, `05_execute/pr-reviewer`, `testing-spec/test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
-| **Decomposer / planner** | `build-plan/task-decomposer`, `01_product_docs/dependency-resolver`, `01_product_docs/impact-assessor` | `[Bash, Read, Glob, Grep]` |
+| **Document drafter** | `01_product_docs/prd-writer`, `02_technical_docs/architect`, `03_testing_spec/test-spec-writer`, `07_evaluate/retrospective-writer`, `07_evaluate/release-noter` | `[Bash, Read, Grep]` |
+| **Validator / reviewer** | `05_execute/standards-compliance-reviewer`, `05_execute/migration-validator`, `05_execute/pr-reviewer`, `03_testing_spec/test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
+| **Decomposer / planner** | `04_build_plan/task-decomposer`, `01_product_docs/dependency-resolver`, `01_product_docs/impact-assessor` | `[Bash, Read, Glob, Grep]` |
 | **ADR proposer** | `02_technical_docs/adr-proposer` (folded into `02_technical_docs/architect` per roadmap) | `[Bash, Read]` |
 | **Coder** | `05_execute/coder` | `[Bash, Read, Edit, Write, Glob, Grep]` |
-| **Test writer / runner** | `test/test-writer`, `test/test-runner` | `[Bash, Read, Edit, Write, Glob, Grep]` |
-| **Standards evolver** | `evaluate/standards-evolver` | `[Bash, Read, Glob, Grep, Edit]` |
-| **Phase 8/9/10 meta-agents** | `learn/metrics-aggregator`, `09_gap_assessment/gap-assessor`, `10_tech_debt/debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
-| **Phase 8 prompt mutator** | `learn/prompt-tuner` | `[Bash, Read, Edit]` (edits agent prompt files only) |
+| **Test writer / runner** | `06_test/test-writer`, `06_test/test-runner` | `[Bash, Read, Edit, Write, Glob, Grep]` |
+| **Standards evolver** | `07_evaluate/standards-evolver` | `[Bash, Read, Glob, Grep, Edit]` |
+| **Phase 8/9/10 meta-agents** | `08_learn/metrics-aggregator`, `09_gap_assessment/gap-assessor`, `10_tech_debt/debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
+| **Phase 8 prompt mutator** | `08_learn/prompt-tuner` | `[Bash, Read, Edit]` (edits agent prompt files only) |
 
 ### Security note on WebFetch and WebSearch
 
@@ -170,9 +170,9 @@ inclusion documented as an exception ADR.
 
 | Model | When to use |
 |---|---|
-| `claude-opus-4-7` | Hardest reasoning: `02_technical_docs/architect`, `05_execute/pr-reviewer`, `learn/process-reviewer`, `evaluate/standards-evolver` |
+| `claude-opus-4-7` | Hardest reasoning: `02_technical_docs/architect`, `05_execute/pr-reviewer`, `08_learn/process-reviewer`, `07_evaluate/standards-evolver` |
 | `claude-sonnet-4-6` | Default for most agents — drafters, decomposers, validators |
-| `claude-haiku-4-5` | Fast, cheap, deterministic: `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer`, `evaluate/release-noter`, `learn/metrics-aggregator` |
+| `claude-haiku-4-5` | Fast, cheap, deterministic: `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer`, `07_evaluate/release-noter`, `08_learn/metrics-aggregator` |
 
 Choosing a more expensive model than necessary wastes budget without
 improving outcomes. Choosing a cheaper model than necessary produces
@@ -268,7 +268,7 @@ follow. Examples:
 - "Post one comment per run, not many."
 - "Reference STD IDs by their stable identifier, never inline the
   standard text."
-- "If the input is ambiguous, set-blocked rather than guessing."
+- "If the input is ambiguous, emit `AI_AGILE_STATUS: blocked \"reason\"` rather than guessing."
 
 Behaviour rules are the last line of defence against agent misbehaviour.
 They should be specific, testable, and few (3–10 bullets is typical).

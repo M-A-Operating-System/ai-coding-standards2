@@ -242,10 +242,12 @@ The orchestrator invokes the Claude CLI as a subprocess:
 
 ```bash
 claude \
-  --allowedTools "Bash(git *),Bash(gh *),Bash(bash .github/scripts/status.sh *),Read,Glob,Grep" \
+  --allowedTools "Bash(gh issue view *),Bash(gh issue comment *),Bash(gh issue edit *),Bash(gh issue list *),Bash(gh pr view *),Bash(gh pr comment *),Bash(gh pr edit *),Bash(gh pr list *),Bash(gh pr diff *),Bash(gh api repos/*/issues/*),Bash(gh api repos/*/pulls/*),Bash(cat *),Bash(grep *),Bash(find *),Read,Glob,Grep" \
   --max-turns 60 \
   -p "<system prompt>"
 ```
+
+The tools listed above are the base allowlist applied to every agent. Per-agent tools are added via the `extra_allowedTools` frontmatter field in the agent's `.claude/agents/` prompt file.
 
 The system prompt injected by the orchestrator provides:
 
