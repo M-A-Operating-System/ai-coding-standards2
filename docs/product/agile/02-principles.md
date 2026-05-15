@@ -172,16 +172,20 @@ higher-value at the routing layer than flexibility. Decisions that
 require judgment belong to humans (at gates) or to specific agents
 (within their own scope) — not to the routing layer.
 
-### P-16 — Agents own branch commits; orchestrator owns the PR lifecycle
+### P-16 — Git commit ownership: two modes
 
-**Statement.** Agents write files and commit those changes to their working
-branch. The orchestrator opens, manages, and closes PRs. Neither actor may
-do the other's job.
+**Statement.** The pipeline uses two git-commit modes depending on how
+complex an agent's output is. In both modes the orchestrator owns the PR
+lifecycle (create, ready, merge). Agents never create or close PRs.
+
+#### Mode 1 — Agent-driven commits (`coder` and similar)
+
+Agents that need to run tests, iterate, or make incremental decisions own
+their own git operations. They commit and push directly to the issue branch.
 
 | Responsibility | Owner |
 |---|---|
 | Write files, `git add`, `git commit`, `git push` to branch | Agent |
-| Create branch (`git checkout -b`) | Agent |
 | Read issues/PRs: `gh issue view`, `gh pr view`, `gh pr diff` | Agent |
 | Post artefact comments: `gh issue comment`, `gh pr comment` | Agent |
 | `gh pr create`, `gh pr ready`, `gh pr merge`, `gh pr edit` | Orchestrator |
@@ -190,10 +194,8 @@ do the other's job.
 | Issue auto-close on merge | GitHub (via "Closes #N" trailer in PR body) |
 | Branch auto-delete on merge | GitHub (repo setting: auto-delete head branches) |
 
-**Destructive git commands are forbidden for all actors in agent prompts.**
-No agent allowlist may include `git reset`, `git push --force`,
-`git branch -D`, or any other command that rewrites or deletes history.
-These are operator-only actions taken outside the pipeline.
+Agent `extra_allowedTools` lists specific git subcommands, never the bare
+`Bash(git *)` glob.
 
 **Allowed agent git operations** (branch-scoped, non-destructive):
 
@@ -203,30 +205,23 @@ These are operator-only actions taken outside the pipeline.
 | `git add`, `git commit`, `git push` | Record work |
 | `git config user.*` | Set commit identity |
 | `git ls-remote`, `git diff`, `git log`, `git show`, `git status`, `git rev-parse` | Read state |
-| `gh issue view`, `gh pr view`, `gh pr diff` | Read issue/PR content |
-| `gh issue comment`, `gh pr comment` | Post artefact comments |
 
-**Why this split.** Agents have context about what changed and why — they
-write the commit message and choose what to stage. The orchestrator has
-context about the PR object, the issue it closes, the gate it belongs to,
-and the label sequence — it is the right actor to create and advance the
-PR. Mixing these responsibilities into either actor creates either an agent
-that knows too much about pipeline mechanics or an orchestrator that has to
-infer commit intent from file diffs.
+#### Mode 2 — Orchestrator-driven commits (`commit_after: true` agents)
 
-**Consequences.**
+Agents that only write files (no iterative test/fix loop) use the `Write`
+tool and signal complete. The orchestrator then runs `git add -A`,
+guards against an empty staging area, commits, and pushes to `issue-{N}`.
+The agent needs no git credentials and cannot accidentally push to the
+wrong branch. Declare this mode in `pipeline.json`:
 
-- Agent `extra_allowedTools` lists specific git subcommands, never the
-  bare `Bash(git *)` glob. CI validation rejects the bare glob.
-- The orchestrator never commits code or doc files; agents never create
-  or close PRs.
-- A new file-producing agent is self-contained: it manages its own branch
-  and signals complete. The orchestrator opens the PR when it sees the
-  sentinel and the branch exists.
+```json
+"git_ops": { "commit_after": true }
+```
 
-**Tradeoff.** Agents must be granted write access to the repository
-(push to their branch). This is narrower than full repo write — the branch
-prefix convention and a branch protection rule on `main` provide the guard.
+**Destructive git commands are forbidden for all actors in agent prompts**
+in both modes. No agent allowlist may include `git reset`, `git push --force`,
+`git branch -D`, or any other command that rewrites or deletes history.
+These are operator-only actions taken outside the pipeline.
 
 ---
 

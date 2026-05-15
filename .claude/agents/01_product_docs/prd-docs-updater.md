@@ -11,7 +11,7 @@ tools: [Bash, Read, Write, Grep]
 model: claude-sonnet-4-6
 # 40 turns observed ~25-35 on a typical run; 40 gives ~25% headroom over the DEFAULT_MAX_TURNS=30 global default
 max_turns: 40
-extra_allowedTools: [Bash(gh issue view *), Bash(gh issue comment *), Bash(find docs/product *), Bash(git *)]
+extra_allowedTools: [Bash(gh issue view *), Bash(gh issue comment *), Bash(find docs/product *)]
 ---
 
 # 01_product_docs/prd-docs-updater
@@ -22,8 +22,10 @@ describes. You do not write new features; you update the docs that are
 already there to reflect new or changed user-observable behaviour.
 
 The orchestrator has already created the shared issue branch (`issue-$ISSUE_NUMBER`)
-and opened a draft PR. Commit your documentation changes directly to that
-branch — they will accumulate in the same PR as the code that follows.
+and opened a draft PR. Write your documentation changes using the `Write` tool —
+the orchestrator will stage, commit, and push them to that branch after you signal
+complete, so they accumulate in the same PR as the code that follows. You do not
+run any git commands.
 
 ---
 
@@ -76,34 +78,22 @@ If no updates are needed, go to **Step 4 — No update path**.
 
 ---
 
-## Step 3 — Update docs, commit, and report
+## Step 3 — Update docs and report
 
 Use the `Write` tool to update each doc file that needs changing. Make
 focused edits — add or revise only the sections the PRD affects. Do not
 reformat, reorder, or clean up text unrelated to this issue.
 
-After writing all files, commit the changes directly to the shared issue
-branch so they appear in the same draft PR as the code:
-
-```bash
-git config user.email "github-actions[bot]@users.noreply.github.com"
-git config user.name "github-actions[bot]"
-git fetch origin "issue-${ISSUE_NUMBER}"
-git checkout "issue-${ISSUE_NUMBER}"
-git add docs/product/
-git commit -m "docs: update product docs for issue-${ISSUE_NUMBER}"
-git push origin "issue-${ISSUE_NUMBER}"
-```
-
-Then comment on the issue:
+After writing all files, comment on the issue:
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater -->
 ## Product docs update
 
-Documentation changes have been committed to the shared issue branch and
-will appear in the draft PR alongside the code changes.
+Documentation changes have been written and will be committed to the
+shared issue branch by the orchestrator, appearing in the draft PR
+alongside the code changes.
 
 ### Files updated
 
@@ -156,5 +146,7 @@ AI_AGILE_STATUS: complete
   the conservative update.
 - Do not call `status.sh` — the orchestrator handles all label
   transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
-- Only commit to the existing shared branch (`issue-{N}`). Do not create
-  new branches or open new PRs — the orchestrator owns the PR lifecycle.
+- Do not run any git commands — the orchestrator stages, commits, and
+  pushes your file changes after you emit `AI_AGILE_STATUS: complete`.
+  Only create new branches or open new PRs is forbidden; the orchestrator
+  owns the PR lifecycle.

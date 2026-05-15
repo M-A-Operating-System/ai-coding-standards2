@@ -141,6 +141,7 @@ class AgentDef:
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
     mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
+    commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
 
     @property
     def label_key(self) -> str:
@@ -227,6 +228,7 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             session_scope=entry.get("session", {}).get("scope", "per_issue"),
             session_id_pattern=entry.get("session", {}).get("id_pattern"),
             mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
+            commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
         ))
     return agents
 
@@ -1655,6 +1657,92 @@ def _apply_failed(
 
 
 # ---------------------------------------------------------------------------
+# Orchestrator-driven git commit (commit_after: true agents)
+# ---------------------------------------------------------------------------
+
+def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
+    """Stage, commit, and push any file changes left by a commit_after agent.
+
+    The agent wrote files using its Write tool; the orchestrator now commits
+    them to the shared issue branch so the agent never needs git credentials.
+
+    Returns True on success (including the no-changes case), False if any
+    git operation fails. On False the caller should mark the step :failed.
+    """
+    import subprocess as _sp
+
+    branch = f"issue-{work_item.number}"
+
+    try:
+        # Check working tree for any changes (untracked or modified).
+        dirty = _sp.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        if not dirty:
+            log.info(
+                "  commit_after: no working-tree changes — skipping commit for %s on #%d",
+                agent_def.agent, work_item.number,
+            )
+            return True
+
+        log.info(
+            "  commit_after: staging changes for %s on #%d → branch %s",
+            agent_def.agent, work_item.number, branch,
+        )
+
+        _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+        _sp.run(["git", "config", "user.name",  "github-actions[bot]"], check=True)
+
+        # Stash all working-tree changes (staged + unstaged + untracked),
+        # switch to the issue branch, pop the stash, then commit and push.
+        current = _sp.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        _sp.run(["git", "stash", "push", "--include-untracked", "-m",
+                 f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
+
+        try:
+            _sp.run(["git", "fetch", "origin", branch], check=True)
+            _sp.run(["git", "checkout", branch], check=True)
+            _sp.run(["git", "stash", "pop"], check=True)
+
+            _sp.run(["git", "add", "-A"], check=True)
+
+            # Guard: nothing staged → skip (agent found nothing to update).
+            staged = _sp.run(["git", "diff", "--cached", "--quiet"])
+            if staged.returncode == 0:
+                log.info(
+                    "  commit_after: stash popped but staging area empty — skipping commit for %s",
+                    agent_def.agent,
+                )
+                return True
+
+            msg = f"docs: {agent_def.label_key} updates for issue #{work_item.number}"
+            _sp.run(["git", "commit", "-m", msg], check=True)
+            _sp.run(["git", "push", "origin", branch], check=True)
+            log.info("  commit_after: pushed commit to %s", branch)
+            return True
+
+        finally:
+            # Always return to the original branch so the orchestrator's
+            # subsequent git operations (if any) run in the expected state.
+            try:
+                _sp.run(["git", "checkout", current], check=False)
+            except Exception:
+                pass
+
+    except _sp.CalledProcessError as exc:
+        log.error(
+            "  commit_after: git operation failed for %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Core orchestration logic
 # ---------------------------------------------------------------------------
 
@@ -1841,13 +1929,9 @@ def process_work_item(
                 break
 
             if sentinel_status:
-                # Step explicitly signalled an outcome via sentinel.
                 final_status = sentinel_status
-                _apply_terminal_status(gh, agent_def, work_item, sentinel_status)
             elif result.success:
-                # Exit 0 without sentinel — treat as complete.
                 final_status = STATUS_COMPLETE
-                _apply_terminal_status(gh, agent_def, work_item, STATUS_COMPLETE)
                 sentinel_message = "completed (no sentinel; inferred from exit 0)"
             else:
                 # Non-zero exit, no sentinel (retries exhausted for agents) — :failed.
@@ -1866,6 +1950,21 @@ def process_work_item(
                         duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                     ))
                 break
+
+            # commit_after: stage + commit + push the agent's file changes to
+            # the issue branch before marking :complete. If git ops fail, the
+            # step is marked :failed instead so the next run retries cleanly.
+            if final_status == STATUS_COMPLETE and agent_def.commit_after:
+                if not _run_commit_after(agent_def, work_item):
+                    _apply_failed(gh, agent_def, work_item, result)
+                    final_status = STATUS_FAILED
+                    log.error(
+                        "  FAILED  %-38s  commit_after git ops failed on #%d",
+                        agent_def.agent, work_item.number,
+                    )
+                    break
+
+            _apply_terminal_status(gh, agent_def, work_item, final_status)
 
             # Post closing announcement for non-failure outcomes.
             try:
