@@ -134,6 +134,15 @@
             }
           }
         },
+        "exclude_classifications": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["bug", "toil", "enhancement", "feature", "spike"]
+          },
+          "description": "Skip this agent when the issue classification matches any value in this list. Classification is read from a 'classification: {type}' label or a '[TYPE]' title prefix applied by issue-classifier."
+        },
         "description": {
           "type": "string",
           "minLength": 1

@@ -96,6 +96,7 @@
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "git_ops": {
+        "commit_after": false,
         "mark_ready_on_complete": true
       },
       "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge — the reviewer agent never touches PR state directly. Triggered by pr-reviewer:requested. Gates on pr-reviewer:approved."
