@@ -413,6 +413,23 @@ runs. It:
 Both the branch and the PR exist before `prd-docs-updater` is invoked, so
 all subsequent agent commits accumulate in the already-open PR.
 
+### Pre-agent branch checkout (commit_after agents only)
+
+For agents with `commit_after: true` working on an issue, the orchestrator
+checks out the issue branch **before** invoking the agent so it sees the
+accumulated state (docs from `prd-docs-updater`, code from a prior coder run,
+etc.). This is a read-only pre-condition — the agent writes into the working
+tree and the orchestrator commits those changes afterwards.
+
+**Agent definition snapshot**: the orchestrator reads the agent's `.md` file
+(frontmatter for `extra_allowedTools`, `model`, `max_turns`; body for the
+prompt) **before** the branch checkout. This snapshot is passed into the agent
+invocation unchanged. As a result, agent definitions always reflect the
+**orchestrator's branch** (typically `main`), not whatever version of the file
+happens to be on the issue branch. This means a fix to an agent file merged to
+`main` takes effect on the next invocation even if the issue branch predates
+the fix.
+
 ### Mode — Agent commit (PR already exists)
 
 After any `commit_after: true` agent signals `AI_AGILE_STATUS: complete`,
