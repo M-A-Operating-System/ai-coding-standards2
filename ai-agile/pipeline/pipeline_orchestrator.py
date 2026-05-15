@@ -1158,6 +1158,7 @@ def invoke_agent(
     work_item: WorkItem,
     dry_run: bool,
     repo: str,
+    attempt: int = 0,
 ) -> AgentRunResult:
     """
     Invoke the agent via claude CLI.
@@ -1315,11 +1316,12 @@ def invoke_agent(
         return AgentRunResult(success=True)
 
     # The claude CLI requires a valid UUID for --session-id.
-    # Derive one deterministically from our human-readable key via UUID v5 so
-    # the same (agent, scope, work-item) triple maps to the same UUID on every
-    # re-run. The human-readable key is kept in SESSION_ID for agents to use
-    # in announcement JSON.
-    agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, agent_session_id))
+    # Derive one deterministically from our human-readable key via UUID v5.
+    # On retries (attempt > 0) we append "-r{attempt}" to the seed so each
+    # retry gets a fresh UUID — avoids "Session ID already in use" when a
+    # previous run's session was not cleaned up (e.g. CI job killed mid-run).
+    session_uuid_seed = agent_session_id if attempt == 0 else f"{agent_session_id}-r{attempt}"
+    agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, session_uuid_seed))
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
@@ -1798,7 +1800,7 @@ def process_work_item(
         else:
             # Retry loop: re-invoke on crash (no sentinel) up to max_retries
             # times with exponential backoff. Rate-limit events break immediately.
-            result = invoke_agent(agent_def, work_item, dry_run, repo)
+            result = invoke_agent(agent_def, work_item, dry_run, repo, attempt=0)
 
             while not dry_run:
                 if result.rate_limited:
@@ -1814,7 +1816,7 @@ def process_work_item(
                     agent_def.agent, result.returncode or -1, _backoff,
                 )
                 time.sleep(_backoff)
-                result = invoke_agent(agent_def, work_item, dry_run, repo)
+                result = invoke_agent(agent_def, work_item, dry_run, repo, attempt=_attempt)
                 if result.rate_limited:
                     break
 
