@@ -9,7 +9,7 @@ description: >
   issue. Cross-references docs/product/ only to understand original intent
   when code is ambiguous.
 tools: [Bash, Read, Grep]
-model: claude-opus-4-7
+model: claude-sonnet-4-6
 max_turns: 80
 extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh issue create *), Bash(gh issue comment *), Bash(gh issue view *)]
 ---

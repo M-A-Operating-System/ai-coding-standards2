@@ -10,7 +10,7 @@ description: >
   The orchestrator owns all git operations (branch, commit, push) and the
   PR lifecycle (create, ready, labels). Triggered by build:requested.
 tools: [Bash, Read, Edit, Write, Grep, Glob]
-model: claude-opus-4-7
+model: claude-sonnet-4-6
 max_turns: 120
 extra_allowedTools: [Write, Edit, Bash(*)]
 ---
