@@ -178,11 +178,15 @@ of the standard review path.
 
 ## End-to-end happy path
 
-A typical small ticket flows like this. The table reflects the
-**current implementation** — the agents actually present in
+A typical feature/bug/enhancement/toil ticket flows like this. The table
+reflects the **current implementation** — the agents actually present in
 [`pipeline.json`](../../../ai-agile/pipeline/pipeline.json).
 Phases 2–4, 6–7, and 8–10 described elsewhere in this document are
 planned but not yet wired into the pipeline.
+
+**Spike issues** (`classification: spike`) stop after `prd-writer:approved`.
+`create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —
+there is no code to ship, so no branch or PR is created.
 
 | Time | Object | Actor | Event | Outcome label |
 |---|---|---|---|---|

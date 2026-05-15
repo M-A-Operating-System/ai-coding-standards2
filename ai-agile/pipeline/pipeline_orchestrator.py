@@ -142,6 +142,7 @@ class AgentDef:
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
     mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
     commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
+    exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
 
     @property
     def label_key(self) -> str:
@@ -229,6 +230,7 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             session_id_pattern=entry.get("session", {}).get("id_pattern"),
             mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
             commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
+            exclude_classifications=list(entry.get("exclude_classifications", [])),
         ))
     return agents
 
@@ -789,6 +791,33 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     # Event and schedule triggers are handled externally (GitHub Actions).
     # When running interactively, treat them as always-eligible.
     return True
+
+
+_CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike"}
+
+def get_work_item_classification(work_item: WorkItem) -> Optional[str]:
+    """
+    Return the issue classification (bug/toil/enhancement/feature/spike), or
+    None if not determinable.
+
+    Detection order:
+      1. A 'classification: {type}' label applied by issue-classifier.
+      2. A '[TYPE]' title prefix (e.g. '[SPIKE] - ...') as a fallback when
+         the label could not be created (e.g. label not pre-created in repo).
+    """
+    for label in work_item.labels:
+        if label.startswith("classification: "):
+            cls = label.split(": ", 1)[1].strip().lower()
+            if cls in _CLASSIFICATION_TYPES:
+                return cls
+
+    m = re.match(r"^\[([A-Z]+)\]", work_item.title)
+    if m:
+        cls = m.group(1).lower()
+        if cls in _CLASSIFICATION_TYPES:
+            return cls
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1809,6 +1838,16 @@ def process_work_item(
         # Skip if this agent doesn't operate on this kind of work item
         if work_item.kind not in agent_def.objects:
             continue
+
+        # Skip if the issue classification is excluded for this agent
+        if agent_def.exclude_classifications and work_item.kind == "issue":
+            _classification = get_work_item_classification(work_item)
+            if _classification and _classification in agent_def.exclude_classifications:
+                log.debug(
+                    "  skip %-40s  [classification '%s' excluded]",
+                    agent_def.agent, _classification,
+                )
+                continue
 
         current_status = agent_status(labels, agent_def.label_key)
 
