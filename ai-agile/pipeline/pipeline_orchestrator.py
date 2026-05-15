@@ -1248,6 +1248,7 @@ def invoke_agent(
     dry_run: bool,
     repo: str,
     attempt: int = 0,
+    agent_text_override: Optional[str] = None,
 ) -> AgentRunResult:
     """
     Invoke the agent via claude CLI.
@@ -1272,15 +1273,20 @@ def invoke_agent(
     """
     agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
 
-    if not agent_file.exists():
+    if agent_text_override is not None:
+        # Caller pre-read the file before a branch checkout; use that snapshot
+        # so the agent definition always reflects the orchestrator's branch,
+        # not whatever happens to be checked out at invocation time.
+        agent_text = agent_text_override
+    elif not agent_file.exists():
         log.warning("    Agent file not found: %s — skipping", agent_file)
         return AgentRunResult(
             success=False,
             captured_tail=f"Agent prompt file not found at {agent_file}.",
         )
+    else:
+        agent_text = agent_file.read_text()
 
-    # Read the agent file once for frontmatter + body.
-    agent_text = agent_file.read_text()
     frontmatter = parse_frontmatter(agent_text)
     agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
     _extra: object = frontmatter.get("extra_allowedTools", [])
@@ -1942,6 +1948,15 @@ def process_work_item(
             ))
         _invoked_at = time.monotonic()
 
+        # Snapshot the agent file now, before any branch checkout below.
+        # invoke_agent reads extra_allowedTools and the prompt body from this
+        # snapshot so agent definitions always reflect the orchestrator's branch
+        # rather than whatever is checked out on the issue branch.
+        _agent_file_path = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
+        _agent_text_snapshot: Optional[str] = (
+            _agent_file_path.read_text() if _agent_file_path.exists() else None
+        )
+
         # For commit_after agents working on an issue, check out the issue
         # branch before invoking the agent so it reads accumulated state
         # (e.g. docs committed by prd-docs-updater, code from a prior coder
@@ -1978,7 +1993,10 @@ def process_work_item(
         else:
             # Retry loop: re-invoke on crash (no sentinel) up to max_retries
             # times with exponential backoff. Rate-limit events break immediately.
-            result = invoke_agent(agent_def, work_item, dry_run, repo, attempt=0)
+            result = invoke_agent(
+                agent_def, work_item, dry_run, repo, attempt=0,
+                agent_text_override=_agent_text_snapshot,
+            )
 
             while not dry_run:
                 if result.rate_limited:
@@ -1994,7 +2012,10 @@ def process_work_item(
                     agent_def.agent, result.returncode or -1, _backoff,
                 )
                 time.sleep(_backoff)
-                result = invoke_agent(agent_def, work_item, dry_run, repo, attempt=_attempt)
+                result = invoke_agent(
+                    agent_def, work_item, dry_run, repo, attempt=_attempt,
+                    agent_text_override=_agent_text_snapshot,
+                )
                 if result.rate_limited:
                     break
 
