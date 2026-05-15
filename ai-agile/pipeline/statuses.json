@@ -48,8 +48,8 @@
       "colour": "D4C5F9",
       "colour_name": "purple",
       "meaning": "Agent has completed its automated work and is explicitly requesting formal human review and approval before the pipeline advances. Used when the agent produces an artefact (PRD, design doc, test spec, build plan) that must be read and signed off by a person. Distinct from human_gate_label in pipeline.json — this is raised by the agent itself, not pre-configured.",
-      "set_by": "agent",
-      "cleared_by": "human",
+      "set_by": "orchestrator",
+      "cleared_by": "orchestrator (on gate-label application) or human (removes label to reject)",
       "blocks_pipeline": true,
       "terminal": false,
       "human_action_required": true,
@@ -62,7 +62,7 @@
       "colour": "E99695",
       "colour_name": "red-orange",
       "meaning": "Agent cannot proceed without human intervention. Applied when the agent encounters something it cannot resolve autonomously: ambiguous or contradictory requirements, missing data, a hard dependency that is unresolved, or a decision that exceeds its authority. The agent must post a comment explaining exactly what is blocking it and what information or decision is needed.",
-      "set_by": "agent",
+      "set_by": "orchestrator",
       "cleared_by": "human",
       "blocks_pipeline": true,
       "terminal": false,
@@ -115,15 +115,15 @@
 
   "label_format": "{agent-name}:{status}",
   "label_format_examples": [
-    "09_gap_assessment/codebase-reviewer:requested",
-    "05_execute/coder:requested",
-    "01_product_docs/prd-writer:approved",
-    "01_product_docs/prd-writer:wip",
-    "01_product_docs/prd-writer:complete",
-    "01_product_docs/prd-writer:review",
-    "05_execute/coder:blocked",
-    "05_execute/coder:failed",
-    "09_gap_assessment/codebase-reviewer:skipped"
+    "codebase-reviewer:requested",
+    "coder:requested",
+    "prd-writer:approved",
+    "prd-writer:wip",
+    "prd-writer:complete",
+    "prd-writer:review",
+    "coder:blocked",
+    "coder:failed",
+    "codebase-reviewer:skipped"
   ],
 
   "status_transitions": {

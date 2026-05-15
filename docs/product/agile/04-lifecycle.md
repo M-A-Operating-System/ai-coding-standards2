@@ -187,29 +187,30 @@ phases run, but with fewer named agents.
 | Time | Object | Agent | Event | Outcome label |
 |---|---|---|---|---|
 | T+0 | Issue | Stakeholder | Opens issue | — |
-| T+2m | Issue | `product-docs/issue-classifier` | Validates required fields | `product-docs/issue-classifier:complete` |
-| T+5m | Issue | `product-docs/prd-writer` | Posts PRD | `product-docs/prd-writer:review` |
-| T+1h | Issue | Stakeholder | Approves PRD | `01_product_docs/prd-writer:approved` |
-| T+10m | Issue | `product-docs/product-standards-checker`, `product-docs/impact-assessor`, `product-docs/dependency-resolver` | Run in sequence | `product-docs/dependency-resolver:complete` |
-| T+5m | Issue | `product-docs/ticket-sizer` | Posts size | `product-docs/ticket-sizer:review` |
+| T+2m | Issue | `product-docs/issue-classifier` | Validates required fields | `issue-classifier:complete` |
+| T+5m | Issue | `product-docs/prd-writer` | Posts PRD | `prd-writer:review` |
+| T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` |
+| T+10m | Issue | `product-docs/product-standards-checker`, `product-docs/impact-assessor`, `product-docs/dependency-resolver` | Run in sequence | `dependency-resolver:complete` |
+| T+5m | Issue | `product-docs/ticket-sizer` | Posts size | `ticket-sizer:review` |
 | T+30m | Issue | Engineer | Approves size | `size:approved` |
-| T+15m | Issue | `technical-docs/architect` | Posts technical design | `technical-docs/architect:review` |
+| T+15m | Issue | `technical-docs/architect` | Posts technical design | `architect:review` |
 | T+1h | Issue | Engineer | Approves design | `design:approved` |
-| T+5m | Issue | `technical-docs/adr-proposer` | Runs (no ADRs needed) | `technical-docs/adr-proposer:complete` |
-| T+10m | Issue | `testing-spec/test-spec-writer`, `testing-spec/test-coverage-auditor` | Generate spec and audit coverage | `testing-spec/test-coverage-auditor:review` |
+| T+5m | Issue | `technical-docs/adr-proposer` | Runs (no ADRs needed) | `adr-proposer:complete` |
+| T+10m | Issue | `testing-spec/test-spec-writer`, `testing-spec/test-coverage-auditor` | Generate spec and audit coverage | `test-coverage-auditor:review` |
 | T+30m | Issue | Engineer | Approves test spec | `test-spec:approved` |
-| T+10m | Issue | `build-plan/task-decomposer`, `build-plan/dependency-planner` | Decompose and order child tasks | `build-plan/dependency-planner:review` |
+| T+10m | Issue | `build-plan/task-decomposer`, `build-plan/dependency-planner` | Decompose and order child tasks | `dependency-planner:review` |
 | T+15m | Issue | Engineer | Approves plan | `plan:approved` |
-| T+5m | Issue → PR | `product-docs/create-pr` (script) | Opens draft PR; writes "Closes #{N}" | (event) `pr.draft_opened` |
-| T+30m | PR | `execute/coder` | Commits per child task; CI runs from commit 1 | (event) `pr.draft_synchronized` |
-| T+10m | PR | `execute/standards-compliance-reviewer`, `execute/pr-reviewer` | Review against design and standards | `execute/pr-reviewer:review` |
+| T+5m | Issue → PR | `product-docs/create-pr` (script) | Opens draft PR; writes "Closes #{N}" | `create-pr:complete` |
+| T+15m | PR | `execute/prd-docs-updater` | Updates product-docs to reflect implementation plan | `prd-docs-updater:complete` |
+| T+30m | Issue | `execute/coder` | Commits per child task; CI runs from commit 1 | (event) `pr.draft_synchronized` |
+| T+10m | PR | `execute/standards-compliance-reviewer`, `execute/pr-reviewer` | Review against design and standards | `pr-reviewer:review` |
 | T+5m | PR | Orchestrator | Marks PR ready-for-review on pr-reviewer complete | (event) `pr.draft_ready` |
 | T+1h | PR | Engineer | Approves PR | `pr:approved` |
-| T+10m | PR | `test/test-writer`, `test/test-runner`, `test/coverage-enforcer` | Write tests, run suite, enforce coverage | `test/coverage-enforcer:review` |
+| T+10m | PR | `test/test-writer`, `test/test-runner`, `test/coverage-enforcer` | Write tests, run suite, enforce coverage | `coverage-enforcer:review` |
 | T+15m | PR | Engineer | Approves coverage; PR merges | `coverage:approved` + (event) `pr.merged` |
-| T+5m | Issue | `evaluate/release-noter` | Opens changelog PR, closes child issues | `evaluate/release-noter:complete` |
-| T+5m | Issue | `evaluate/retrospective-writer` | Posts retrospective | `evaluate/retrospective-writer:complete` |
-| Weekly | Issue (all) | `evaluate/standards-evolver` | Reviews retrospectives, drafts proposals | `evaluate/standards-evolver:review` |
+| T+5m | Issue | `evaluate/release-noter` | Opens changelog PR, closes child issues | `release-noter:complete` |
+| T+5m | Issue | `evaluate/retrospective-writer` | Posts retrospective | `retrospective-writer:complete` |
+| Weekly | Issue (all) | `evaluate/standards-evolver` | Reviews retrospectives, drafts proposals | `standards-evolver:review` |
 
 The **Agent** column shows the actor for that step. Lower-case
 slash-separated names (e.g. `product-docs/prd-writer`) are agents

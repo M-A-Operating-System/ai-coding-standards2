@@ -65,8 +65,7 @@ comments.
 
 ### How script steps work
 
-1. The orchestrator applies `{step}:wip` before the script runs (unlike agent
-   steps, where the agent applies `:wip` itself via `status.sh`).
+1. The orchestrator applies `{step}:wip` before invoking both agent and script steps. Agents never call `status.sh` for `:wip`.
 2. The script is invoked with `bash {script_path}` and receives the same
    environment variables as agents: `$REPO`, `$ISSUE_NUMBER` (or
    `$PR_NUMBER`), `$WORK_ITEM_KIND`, `$WORK_ITEM_NUMBER`, `$AI_AGILE_ROOT`,
@@ -246,12 +245,12 @@ These two lifecycle events are GitHub-native and require no pipeline code:
 }
 ```
 
-| Field | Type | Default | Meaning |
+| Field | Type | Default | Description |
 |---|---|---|---|
-| `mark_ready_on_complete` | boolean | `false` | When `true`, the orchestrator calls `gh pr ready {number}` immediately after the agent (or script) signals `:complete`. Use for review agents that approve work — the draft PR is promoted to ready so human reviewers can merge. |
+| `commit_after` | boolean | `false` | When `true`, after the agent signals `:complete`, the orchestrator stashes working-tree changes, checks out branch `issue-{N}`, pops the stash, commits all staged changes (`"docs: {agent} updates for issue #{N}"`), and pushes. Use for agents that write files via the `Write` tool and cannot run git. |
+| `mark_ready_on_complete` | boolean | `false` | When `true`, marks the PR ready for review after `:complete`. |
 
-Only `mark_ready_on_complete` is an orchestrator-enforced field. All other
-git behaviour (branch prefix, commit strategy) is agent-internal and should
+All other git behaviour (branch prefix, commit strategy) is agent-internal and should
 not be declared in `pipeline.json`.
 
 ### When to set `mark_ready_on_complete`
@@ -367,6 +366,8 @@ prompt code can reference them in announcement JSON.
   human-authored, may contain special characters, and change over time —
   all three properties make them unsafe for session ID construction.
 - `{url}` is also excluded — it contains slashes and percent-encoded chars.
+
+> **Retry suffix.** On retry attempts (controlled by `max_retries` in `pipeline.json`), the orchestrator appends `-r{attempt}` to the session ID seed before deriving the UUID (e.g. `ais-v1-prd-writer-issue-42-r1`). This gives each retry a distinct UUID, preventing "Session ID already in use" errors when a previous CI job was killed mid-run.
 
 ---
 

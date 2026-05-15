@@ -48,14 +48,11 @@ ai-agile/pipeline/
     generate_pipeline_mermaid.py
 ```
 
-The GitHub Actions workflows that invoke it live at:
+The GitHub Actions workflow that invokes it lives at:
 
 ```
 .github/workflows/
-  orchestrator-label.yml       ← fires on label add/remove
-  orchestrator-pr.yml          ← fires on PR lifecycle events
-  orchestrator-schedule.yml    ← fires every 15 minutes
-  orchestrator-dispatch.yml    ← manual trigger (debug / single-item)
+  orchestrator.yml    ← single workflow handling all triggers
 ```
 
 ---
@@ -150,9 +147,12 @@ for each work item (issue or PR):
 ```
 
 The loop is **deterministic**: given identical inputs (labels + `pipeline.json`)
-it always produces the same decision. There is no randomness, no LLM call,
-no retry logic inside the loop. The only external writes are the mutex label
-and the audit log event.
+it always produces the same decision. There is no randomness, no LLM call.
+The only external writes are the mutex label and the audit log event.
+
+Agent steps are re-invoked up to `max_retries` times (configured per agent in
+`pipeline.json`) with exponential backoff (5 s, 10 s, 20 s…) when the agent
+exits non-zero without a sentinel. Script steps are not retried.
 
 ---
 
@@ -350,6 +350,8 @@ if final_status == complete:
     emit agent.complete to audit log
     # complete + human_gate_after does NOT post a gate prompt — the agent
     # chose complete meaning "automated path, no human needed this cycle"
+    if git_ops.mark_ready_on_complete == true AND work_item is a PR:
+        call `gh pr ready {number}`
 
 if final_status == review AND step has human_gate_after:
     post gate prompt comment: "Apply {gate_label} to advance"
@@ -371,8 +373,6 @@ for each agent_def with human_gate_after=true:
     if {agent}:review ∈ labels AND agent_def.human_gate_label ∈ labels:
         remove {agent}:review
         apply {agent}:complete
-        if agent_def.git_ops.mark_ready_on_complete:
-            mark_pr_ready(work_item)    ← fires HERE, on gate promotion
         emit gate.approved + agent.complete to audit log
 ```
 
@@ -388,10 +388,12 @@ controls the post-completion commit behaviour:
 
 ```json
 "git_ops": {
-  "commit_after": true,      ← stage + commit + push after agent signals complete
-  "branch_prefix": "issue-"  ← branch name = {prefix}{issue_number}
+  "commit_after": true      ← stage + commit + push after agent signals complete
 }
 ```
+
+Note: the branch name is fixed as `issue-{N}` — this is hardcoded in the
+orchestrator and is not configurable via `git_ops`.
 
 If `git_ops` is absent or `commit_after` is `false`, no git operations run.
 
@@ -414,28 +416,35 @@ After any `commit_after: true` agent signals `AI_AGILE_STATUS: complete`,
 the orchestrator commits the agent's file changes to the existing branch:
 
 ```
-1. Stage all:   git add -A
-2. Guard:       git diff --cached --quiet → no staged changes → skip commit + push
-3. Commit:      git commit -m "issue-{N}: {agent summary}"
-4. Push:        git push origin issue-{N}
+1. Check:    git status --porcelain → if empty, skip (no working-tree changes)
+2. Config:   git config user.email / user.name
+3. Stash:    git stash push --include-untracked  (saves agent's file changes)
+4. Fetch:    git fetch origin issue-{N}
+5. Checkout: git checkout issue-{N}
+6. Pop:      git stash pop  (applies agent changes onto issue-{N})
+7. Stage:    git add -A
+8. Guard:    git diff --cached --quiet → if empty, skip commit
+9. Commit:   git commit -m "docs: {label_key} updates for issue #{N}"
+10. Push:    git push origin issue-{N}
+11. Restore: git checkout {original_branch}  (always, in a finally block)
 ```
 
-Step 2 prevents a `:failed` status when an agent (e.g. `prd-docs-updater`)
-finds nothing to change and writes no files — `git commit` exits non-zero on
-an empty staging area without the guard.
+Step 1 prevents unnecessary stash/checkout work when an agent writes no
+files. Step 8 guards against committing an empty staging area after a pop
+that produced no diff. The `finally` block in step 11 ensures the runner
+workspace is always restored to the original branch regardless of failures.
 
 ### Mode B — Address review feedback (coder re-invocation)
 
-After the coder is re-triggered to address reviewer feedback:
+After the coder is re-triggered to address reviewer feedback, the coder
+commits its own changes directly — it has git write access via its
+`extra_allowedTools` in the agent's `.claude/agents/` prompt file. The
+orchestrator does **not** run a `commit_after` step for the coder; there
+is no `commit_after: true` in the coder's pipeline definition.
 
-```
-1. Stage all:   git add -A
-2. Guard:       git diff --cached --quiet → no staged changes → skip commit + push
-3. Commit:      git commit -m "Address review feedback on PR #{PR_NUMBER}"
-4. Push:        git push origin issue-{N}
-```
-
-No new PR or new branch is created for re-invocations.
+The coder is responsible for staging, committing, and pushing to the
+existing `issue-{N}` branch as part of its own agent run. No new PR or
+new branch is created for re-invocations.
 
 ### Environment variables injected before coder invocation
 
@@ -533,224 +542,30 @@ mode ran for any given step.
 
 ## GitHub Actions workflows
 
-The orchestrator is hosted entirely in GitHub Actions. There are four
-workflows with distinct triggers; they all call the same Python script.
+The orchestrator is hosted entirely in GitHub Actions. A single workflow
+file handles all triggers by combining them under one `on:` block.
 
-### Overview
+### `orchestrator.yml`
 
-| Workflow file | Trigger | `--issue` arg | Purpose |
-|---|---|---|---|
-| `orchestrator-label.yml` | `issues: [labeled, unlabeled]`  `pull_request: [labeled, unlabeled]` | Event item number | Primary advance trigger — fires immediately when a label changes |
-| `orchestrator-pr.yml` | `pull_request: [opened, synchronize, ready_for_review, closed]` | PR number | Advance PR-side agents on PR lifecycle events |
-| `orchestrator-schedule.yml` | `schedule: */15 6-20 * * 1-5` | _(none — scans all)_ | Backstop reconciler — catches anything the event triggers missed |
-| `orchestrator-dispatch.yml` | `workflow_dispatch` | Optional (default: all) | Manual trigger for debugging, dry-run, or single-item reprocessing |
+`.github/workflows/orchestrator.yml` handles all four trigger categories:
 
-All four share the same job definition; the only differences are the
-trigger block and the `--issue` argument construction.
-
----
-
-### `orchestrator-label.yml`
-
-Fires immediately when any label is added or removed on an issue or PR.
-This is the primary pipeline-advance trigger for the per-ticket flow.
+| Trigger | Events | Purpose |
+|---|---|---|
+| `issues` | `opened`, `reopened`, `labeled`, `unlabeled` | Primary advance trigger for issue-side agents |
+| `pull_request` | `opened`, `reopened`, `synchronize`, `ready_for_review`, `labeled`, `unlabeled`, `closed` | Advance PR-side agents on PR lifecycle events |
+| `schedule` | `*/15 6-20 * * 1-5` | Backstop reconciler — catches webhook drops, stale locks, partial-state recovery |
+| `workflow_dispatch` | _(manual)_ | Debugging, dry-run, or single-item reprocessing |
 
 ```yaml
-name: Orchestrator — Label event
+name: Orchestrator
 
 on:
   issues:
-    types: [labeled, unlabeled]
+    types: [opened, reopened, labeled, unlabeled]
   pull_request:
-    types: [labeled, unlabeled]
-
-permissions:
-  contents: write          # audit log branch appends
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: orchestrator-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: false  # never cancel a running orchestrator for the same item
-
-jobs:
-  orchestrate:
-    name: Evaluate pipeline state
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0    # needed for audit log branch operations
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - run: pip install requests
-
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Run orchestrator
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          python ai-agile/pipeline/pipeline_orchestrator.py \
-            --repo "$GITHUB_REPOSITORY" \
-            --issue ${{ github.event.issue.number || github.event.pull_request.number }}
-```
-
-**Why `cancel-in-progress: false`.** Two label events can fire within
-seconds (e.g., human applies gate label; orchestrator immediately promotes
-the agent and applies `:complete`, firing a second event). Cancelling the
-second run would skip the promotion step. The concurrency key serialises
-runs for the same work item; it never cancels a run already in progress.
-
----
-
-### `orchestrator-pr.yml`
-
-Fires on PR lifecycle events that are not label changes: opened (draft PR
-opened by `coder`), synchronize (new commits), ready_for_review, and
-closed (for audit log purposes).
-
-```yaml
-name: Orchestrator — PR lifecycle event
-
-on:
-  pull_request:
-    types: [opened, synchronize, ready_for_review, closed]
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: orchestrator-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
-
-jobs:
-  orchestrate:
-    name: Evaluate pipeline state on PR event
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - run: pip install requests
-
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Map PR event to trigger name
-        id: event
-        run: |
-          case "${{ github.event.action }}" in
-            opened)          echo "trigger=pr.draft_opened" >> $GITHUB_OUTPUT ;;
-            synchronize)     echo "trigger=pr.draft_synchronized" >> $GITHUB_OUTPUT ;;
-            ready_for_review) echo "trigger=pr.draft_ready" >> $GITHUB_OUTPUT ;;
-            closed)          echo "trigger=pr.closed" >> $GITHUB_OUTPUT ;;
-          esac
-
-      - name: Run orchestrator
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PIPELINE_TRIGGER: ${{ steps.event.outputs.trigger }}
-        run: |
-          python ai-agile/pipeline/pipeline_orchestrator.py \
-            --repo "$GITHUB_REPOSITORY" \
-            --issue ${{ github.event.pull_request.number }} \
-            --trigger "$PIPELINE_TRIGGER"
-```
-
-The `--trigger` argument passes the semantic event name into the
-orchestrator so it can evaluate trigger conditions of the form
-`{event: "pr.draft_opened"}` against the actual event rather than always
-treating event triggers as satisfied.
-
----
-
-### `orchestrator-schedule.yml`
-
-The scheduled reconciler. Runs every 15 minutes on weekdays during working
-hours (06:00–20:00 UTC). It is the backstop for:
-
-- Webhook drops (GitHub guarantees at-least-once delivery, not exactly-once)
-- Stale lock reclaim (`:wip` labels that have exceeded `max_wall_seconds`)
-- Gate promotions that missed their label event (rare but possible on
-  flaky webhook delivery)
-- Partial-state recovery (interrupted `:review` → `:complete` transitions)
-
-```yaml
-name: Orchestrator — Scheduled reconciler
-
-on:
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
   schedule:
     - cron: '*/15 6-20 * * 1-5'   # every 15 min, Mon–Fri, 06:00–20:00 UTC
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-
-jobs:
-  reconcile:
-    name: Reconcile all open work items
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - run: pip install requests
-
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Run orchestrator (full scan)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          python ai-agile/pipeline/pipeline_orchestrator.py \
-            --repo "$GITHUB_REPOSITORY" \
-            --reconcile    # scan all open items; also run stale-lock reclaim
-```
-
-The `--reconcile` flag enables stale-lock reclaim (normally off on
-single-item runs to avoid touching items the current event didn't touch).
-
----
-
-### `orchestrator-dispatch.yml`
-
-Manual trigger for debugging and operational intervention.
-
-```yaml
-name: Orchestrator — Manual dispatch
-
-on:
   workflow_dispatch:
     inputs:
       issue_number:
@@ -766,20 +581,22 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: write          # audit log branch appends
   issues: write
   pull-requests: write
 
+concurrency:
+  group: orchestrator-${{ github.event.issue.number || github.event.pull_request.number || 'schedule' }}
+  cancel-in-progress: false  # never cancel a running orchestrator for the same item
+
 jobs:
-  dispatch:
-    name: Manual orchestrator run
+  orchestrate:
+    name: Evaluate pipeline state
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -795,6 +612,8 @@ jobs:
         run: |
           ARGS=""
           [ -n "${{ github.event.inputs.issue_number }}" ] && ARGS="$ARGS --issue ${{ github.event.inputs.issue_number }}"
+          [ -n "${{ github.event.issue.number }}" ] && ARGS="$ARGS --issue ${{ github.event.issue.number }}"
+          [ -n "${{ github.event.pull_request.number }}" ] && ARGS="$ARGS --issue ${{ github.event.pull_request.number }}"
           [ "${{ github.event.inputs.dry_run }}" = "true" ]  && ARGS="$ARGS --dry-run"
           [ "${{ github.event.inputs.verbose }}" = "true" ]  && ARGS="$ARGS --verbose"
           echo "args=$ARGS" >> "$GITHUB_OUTPUT"
@@ -810,6 +629,20 @@ jobs:
             ${{ steps.args.outputs.args }}
 ```
 
+**Why `cancel-in-progress: false`.** Two label events can fire within
+seconds (e.g., human applies gate label; orchestrator immediately promotes
+the agent and applies `:complete`, firing a second event). Cancelling the
+second run would skip the promotion step. The concurrency key serialises
+runs for the same work item; it never cancels a run already in progress.
+
+**Scheduled reconciler.** The schedule trigger is the backstop for:
+
+- Webhook drops (GitHub guarantees at-least-once delivery, not exactly-once)
+- Stale lock reclaim (`:wip` labels that have exceeded `max_wall_seconds`)
+- Gate promotions that missed their label event (rare but possible on
+  flaky webhook delivery)
+- Partial-state recovery (interrupted `:review` → `:complete` transitions)
+
 ---
 
 ## CLI reference
@@ -822,13 +655,11 @@ Options:
   --issue N             Process only issue/PR number N (default: all open items)
   --kind {issue,pr}     With --issue, declares whether the number is an issue or PR
                         (orchestrator probes the API if omitted)
-  --trigger EVENT       Semantic event name, e.g. pr.draft_opened (default: none)
-  --reconcile           Run stale-lock reclaim pass in addition to eligibility check
   --dry-run             Log decisions without invoking agents or changing labels
+  --pipeline PATH       Path to pipeline.json (default: ai-agile/pipeline/pipeline.json)
   --clear-pause         Clear the rate-limit pause marker if set, then exit
                         (manual override for operators; see "Anthropic API"
                         in Rate limit handling)
-  --pipeline PATH       Path to pipeline.json (default: ai-agile/pipeline/pipeline.json)
   --verbose, -v         Debug-level output
 ```
 

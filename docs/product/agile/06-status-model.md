@@ -14,24 +14,25 @@ the model in product terms.
 
 ---
 
-## The seven statuses
+## The eight statuses
 
 | Status | Colour | Meaning | Set by | Cleared by |
 |---|---|---|---|---|
 | `requested` | Amber | A human has explicitly requested this agent to run | Human | Orchestrator (replaced by `:wip` on invocation) |
 | `wip` | Yellow | Agent is actively running | Orchestrator | Orchestrator (replaced by outcome) |
 | `complete` | Green | Agent finished successfully | Orchestrator (on sentinel or gate-label) | Never |
+| `approved` | Blue | Human has approved the agent's output at a configured human gate | Human | Never |
 | `review` | Purple | Agent has finished and is requesting human review | Orchestrator (on sentinel) | Orchestrator (on gate-label) **or** Human (rejects by removing) |
 | `blocked` | Red-orange | Agent cannot proceed without human help | Orchestrator (on sentinel) | Human (after fixing the cause) |
 | `failed` | Red | Agent crashed with a technical error | Orchestrator | Human (after debugging) |
 | `skipped` | Light blue | Agent was intentionally bypassed | Human | Never |
 
 The label format is `{agent}:{status}`, where `{agent}` is the
-phase-prefixed agent name (see
+short agent name (see
 [`12-agent-spec.md`](12-agent-spec.md#naming-convention)). Examples:
-`product-docs/prd-writer:wip`, `technical-docs/architect:review`,
-`execute/coder:failed`, `technical-docs/adr-proposer:skipped`,
-`09_gap_assessment/codebase-reviewer:requested`.
+`prd-writer:wip`, `architect:review`,
+`coder:failed`, `adr-proposer:skipped`,
+`codebase-reviewer:requested`.
 
 ---
 
@@ -198,11 +199,11 @@ orchestrator:  re-evaluates eligibility
 
 - **Single writer.** All transitions out of `:review` go through one
   code path. Easier to audit, easier to test, no race between a human
-  applying `01_product_docs/prd-writer:approved` and a stale agent webhook setting
-  `product-docs/prd-writer:complete`.
+  applying `prd-writer:approved` and a stale agent webhook setting
+  `prd-writer:complete`.
 - **Atomic from the dependency-graph point of view.** The downstream
   agent's eligibility check is one query: "is
-  `product-docs/prd-writer:complete` present and `01_product_docs/prd-writer:approved`
+  `prd-writer:complete` present and `prd-writer:approved`
   present?" The orchestrator guarantees these two labels appear
   together or not at all.
 - **Humans do less.** Approving a gate is one click (apply label).
@@ -232,10 +233,10 @@ that."
 
 Common skip cases:
 
-- **`technical-docs/adr-proposer:skipped`** — no architectural decisions in this ticket.
-- **`execute/migration-validator:skipped`** — no SQL changes (often automatic by
+- **`adr-proposer:skipped`** — no architectural decisions in this ticket.
+- **`migration-validator:skipped`** — no SQL changes (often automatic by
   path filter, but can be manual).
-- **`product-docs/product-standards-checker:skipped`** — pure technical chore with no
+- **`product-standards-checker:skipped`** — pure technical chore with no
   product surface.
 
 Skipping is treated as equivalent to `complete` for downstream

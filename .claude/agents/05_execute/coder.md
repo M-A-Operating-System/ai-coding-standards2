@@ -24,8 +24,9 @@ and the defensive programming principles in this prompt.
 You may be invoked **multiple times** for the same issue:
 
 - **Mode A — Initial build:** No prior review exists. Write the code for all
-  sub-issues. The orchestrator commits all changes, creates the branch, and
-  opens the draft PR.
+  sub-issues. Branch `issue-{N}` and its draft PR already exist (created by
+  the `create-pr` script step before this agent runs). The orchestrator
+  commits and pushes all changes to that branch.
 - **Mode B — Address feedback:** The orchestrator has placed you on the
   existing branch and set `$PR_NUMBER`. Read review comments, fix the code,
   post a response. The orchestrator commits and pushes.
@@ -269,7 +270,7 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "mode": "initial-build",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "complete",
-  "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Orchestrator will commit files, create branch issue-${ISSUE_NUMBER}-{slug}, push, and open a draft PR."
+  "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Orchestrator will commit and push to the existing issue-${ISSUE_NUMBER} branch."
 }
 \`\`\`
 EOF
@@ -278,9 +279,7 @@ EOF
 
 After you emit the sentinel, the orchestrator (not you) will:
 1. `git add -A && git commit` all changed files
-2. Create branch `issue-{N}-{slug}`, push it
-3. Open a draft PR linking to this issue
-4. Apply `pr-review:requested` to the new PR
+2. `git push origin issue-${ISSUE_NUMBER}` to the existing branch
 
 ```
 AI_AGILE_STATUS: complete
@@ -419,7 +418,7 @@ EOF
 After you emit the sentinel, the orchestrator (not you) will:
 1. `git add -A && git commit` all changed files
 2. `git push origin {existing-branch}`
-3. Re-apply `pr-review:requested` to the PR
+3. Re-apply `pr-reviewer:requested` to the PR
 
 ```
 AI_AGILE_STATUS: complete

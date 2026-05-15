@@ -31,8 +31,8 @@ slash:
 {phase}/{short-name}
 ```
 
-Examples: `product-docs/issue-classifier`, `technical-docs/architect`,
-`execute/coder`, `evaluate/retrospective-writer`,
+Examples: `01_product_docs/issue-classifier`, `02_technical_docs/architect`,
+`05_execute/coder`, `evaluate/retrospective-writer`,
 `learn/metrics-aggregator`.
 
 The phase prefix is one of the ten phase identifiers defined in
@@ -40,21 +40,21 @@ The phase prefix is one of the ten phase identifiers defined in
 
 | Per-ticket | Continuous |
 |---|---|
-| `product-docs` | `learn` |
-| `technical-docs` | `gap-assessment` |
-| `testing-spec` | `tech-debt` |
-| `build-plan` | |
-| `execute` | |
-| `test` | |
-| `evaluate` | |
+| `01_product_docs` | `08_learn` |
+| `02_technical_docs` | `09_gap_assessment` |
+| `03_testing_spec` | `10_tech_debt` |
+| `04_build_plan` | |
+| `05_execute` | |
+| `06_test` | |
+| `07_evaluate` | |
 
 The short-name is lowercase-hyphenated with no spaces or underscores.
 
 **Why prefix.** A glance at any label, comment, or audit-log line
 reveals which phase the agent belongs to without consulting
 `pipeline.json`. It also prevents future name collisions across phases
-(e.g. a hypothetical `execute/dependency-resolver` could coexist with
-`product-docs/dependency-resolver` if the design ever requires it).
+(e.g. a hypothetical `05_execute/dependency-resolver` could coexist with
+`01_product_docs/dependency-resolver` if the design ever requires it).
 
 **Constraint.** An agent's phase prefix is part of its identity. If
 its phase changes, the agent is treated as renamed: a new entry
@@ -71,8 +71,8 @@ move phases after launch.
 .claude/agents/{phase}/{short-name}.md
 ```
 
-So `product-docs/issue-classifier` lives at
-`.claude/agents/product-docs/issue-classifier.md`.
+So `01_product_docs/issue-classifier` lives at
+`.claude/agents/01_product_docs/issue-classifier.md`.
 
 - The directory **is** the phase prefix; the orchestrator computes the
   file path by treating the agent name's `/` as a directory separator.
@@ -90,7 +90,7 @@ The file begins with a YAML block delimited by `---`:
 
 ```yaml
 ---
-name: product-docs/agent-name
+name: 01_product_docs/agent-name
 description: >
   One paragraph stating what the agent does and when it runs. Surfaces
   in agent listings and the generated agents.md catalogue.
@@ -103,7 +103,7 @@ model: claude-sonnet-4-6
 
 | Field | Required | Type | Constraints |
 |---|---|---|---|
-| `name` | yes | string | Format `{phase}/{short-name}`; matches the file's path under `.claude/agents/`; matches `pipeline.json` `agent` field; lowercase-hyphenated short-name |
+| `name` | yes | string | Format `{phase}/{short-name}` where phase uses numeric-prefix form (e.g. `01_product_docs`); matches the file's path under `.claude/agents/`; matches `pipeline.json` `agent` field; lowercase-hyphenated short-name |
 | `description` | yes | string | One paragraph; ≤ 500 characters; states what the agent does |
 | `tools` | yes | array of strings | Subset of the allowable-tools matrix below |
 | `model` | yes | string | One of: `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
@@ -123,7 +123,7 @@ reads it to construct the CLI flag.
 
 | Tool | What it does | Default policy |
 |---|---|---|
-| `Bash` | Runs shell commands (gh CLI, git, status.sh, test runners) | Most agents need this |
+| `Bash` | Runs shell commands (gh CLI, git, test runners) | Most agents need this |
 | `Read` | Reads files | Almost every agent needs this |
 | `Glob` | Pattern-based file lookup | Reviewers, validators |
 | `Grep` | Content search | Reviewers, validators, decomposers |
@@ -139,15 +139,15 @@ is the policy; any deviation requires an ADR.
 
 | Agent type | Example agents | Tools |
 |---|---|---|
-| **Classifier / sizer** | `product-docs/issue-classifier`, `product-docs/ticket-sizer` | `[Bash, Read]` |
-| **Document drafter** | `product-docs/prd-writer`, `technical-docs/architect`, `testing-spec/test-spec-writer`, `evaluate/retrospective-writer`, `evaluate/release-noter` | `[Bash, Read, Grep]` |
-| **Validator / reviewer** | `execute/standards-compliance-reviewer`, `execute/migration-validator`, `execute/pr-reviewer`, `testing-spec/test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
-| **Decomposer / planner** | `build-plan/task-decomposer`, `product-docs/dependency-resolver`, `product-docs/impact-assessor` | `[Bash, Read, Glob, Grep]` |
-| **ADR proposer** | `technical-docs/adr-proposer` (folded into `technical-docs/architect` per roadmap) | `[Bash, Read]` |
-| **Coder** | `execute/coder` | `[Bash, Read, Edit, Write, Glob, Grep]` |
+| **Classifier / sizer** | `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer` | `[Bash, Read]` |
+| **Document drafter** | `01_product_docs/prd-writer`, `02_technical_docs/architect`, `testing-spec/test-spec-writer`, `evaluate/retrospective-writer`, `evaluate/release-noter` | `[Bash, Read, Grep]` |
+| **Validator / reviewer** | `05_execute/standards-compliance-reviewer`, `05_execute/migration-validator`, `05_execute/pr-reviewer`, `testing-spec/test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
+| **Decomposer / planner** | `build-plan/task-decomposer`, `01_product_docs/dependency-resolver`, `01_product_docs/impact-assessor` | `[Bash, Read, Glob, Grep]` |
+| **ADR proposer** | `02_technical_docs/adr-proposer` (folded into `02_technical_docs/architect` per roadmap) | `[Bash, Read]` |
+| **Coder** | `05_execute/coder` | `[Bash, Read, Edit, Write, Glob, Grep]` |
 | **Test writer / runner** | `test/test-writer`, `test/test-runner` | `[Bash, Read, Edit, Write, Glob, Grep]` |
 | **Standards evolver** | `evaluate/standards-evolver` | `[Bash, Read, Glob, Grep, Edit]` |
-| **Phase 8/9/10 meta-agents** | `learn/metrics-aggregator`, `gap-assessment/gap-assessor`, `tech-debt/debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
+| **Phase 8/9/10 meta-agents** | `learn/metrics-aggregator`, `09_gap_assessment/gap-assessor`, `10_tech_debt/debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
 | **Phase 8 prompt mutator** | `learn/prompt-tuner` | `[Bash, Read, Edit]` (edits agent prompt files only) |
 
 ### Security note on WebFetch and WebSearch
@@ -170,9 +170,9 @@ inclusion documented as an exception ADR.
 
 | Model | When to use |
 |---|---|
-| `claude-opus-4-7` | Hardest reasoning: `technical-docs/architect`, `execute/pr-reviewer`, `learn/process-reviewer`, `evaluate/standards-evolver` |
+| `claude-opus-4-7` | Hardest reasoning: `02_technical_docs/architect`, `05_execute/pr-reviewer`, `learn/process-reviewer`, `evaluate/standards-evolver` |
 | `claude-sonnet-4-6` | Default for most agents — drafters, decomposers, validators |
-| `claude-haiku-4-5` | Fast, cheap, deterministic: `product-docs/issue-classifier`, `product-docs/ticket-sizer`, `evaluate/release-noter`, `learn/metrics-aggregator` |
+| `claude-haiku-4-5` | Fast, cheap, deterministic: `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer`, `evaluate/release-noter`, `learn/metrics-aggregator` |
 
 Choosing a more expensive model than necessary wastes budget without
 improving outcomes. Choosing a cheaper model than necessary produces
@@ -207,62 +207,61 @@ risks drift.
 | Section | Header | Purpose |
 |---|---|---|
 | 1. Role statement | First paragraph(s) under `# {agent-name}` | Plain-English description of what the agent owns |
-| 2. Step 1 — Apply wip | `## Step 1 — Apply wip` | The `set-wip` call |
-| 3. Step 2 — Opening announcement | `## Step 2 — Opening announcement` | Post the `<!-- ai-agile/announcement/v1 by {agent-name} -->` start comment ([`09-human-interaction.md`](09-human-interaction.md) §3) |
-| 4. Read-input steps | `## Step 3 — Read inputs` (and further steps as needed) | Gather context from issue/PR body, comments, files |
-| 5. Work steps | `## Step N — {action}` | The actual work — drafting, validating, editing |
-| 6. Closing announcement | `## Step N+1 — Closing announcement` | Post the closing `<!-- ai-agile/announcement/v1 by {agent-name} -->` comment |
-| 7. Terminal status step | `## Step N+2 — Act on findings` | Branches: `set-complete`, `set-review`, or `set-blocked` |
-| 8. Behaviour rules | `## Behaviour rules` | Bullet list of constraints; what the agent must / must not do |
+| 2. Step 1 — Opening announcement | `## Step 1 — Opening announcement` | Post the `<!-- ai-agile/announcement/v1 by {agent-name} -->` start comment ([`09-human-interaction.md`](09-human-interaction.md) §3) |
+| 3. Read-input steps | `## Step 2 — Read inputs` (and further steps as needed) | Gather context from issue/PR body, comments, files |
+| 4. Work steps | `## Step N — {action}` | The actual work — drafting, validating, editing |
+| 5. Closing announcement | `## Step N+1 — Closing announcement` | Post the closing `<!-- ai-agile/announcement/v1 by {agent-name} -->` comment |
+| 6. Terminal status step | `## Step N+2 — Emit sentinel` | Print the terminal `AI_AGILE_STATUS:` sentinel line as the final stdout output |
+| 7. Behaviour rules | `## Behaviour rules` | Bullet list of constraints; what the agent must / must not do |
 
 ### Section detail
 
 **1. Role statement.** Two or three sentences. What the agent does, when
 it runs (in terms of phase or trigger), and what artefact it produces.
 
-**2. Step 1 — Apply wip.** Always exactly:
-
-```bash
-bash .github/scripts/status.sh set-wip {agent-name} $ISSUE_NUMBER
-```
-
-(For PR-side agents, use `$PR_NUMBER`.)
-
-**3. Step 2 — Opening announcement.** A single `gh issue comment` (or
+**2. Step 1 — Opening announcement.** A single `gh issue comment` (or
 `gh pr comment`) call posting the JSON announcement with `phase: start`
 per the schema in
 [`09-human-interaction.md`](09-human-interaction.md) §3.
 
-**4. Read-input steps.** Read the issue body, prior agent comments, and
+The orchestrator applies `:wip` before invoking the agent — the agent
+does not do this.
+
+**3. Read-input steps.** Read the issue body, prior agent comments, and
 any files needed. Use `gh issue view`, `gh pr view`, `cat`, `grep`,
 `find`. The agent must operate from what it reads at runtime — it does
 not assume any state from prior runs.
 
-**5. Work steps.** The agent's actual job. One step per logical action.
+**4. Work steps.** The agent's actual job. One step per logical action.
 Each step should produce something — a draft section of an artefact, a
 validation finding, a check result. Avoid step soup; keep steps coarse.
 
-**6. Closing announcement.** A single `gh issue comment` (or
+**5. Closing announcement.** A single `gh issue comment` (or
 `gh pr comment`) call posting the JSON announcement with `phase: end`,
 `outcome` matching the terminal status, and `artefacts` listing the
 comments / files / PRs produced this run.
 
-**7. Terminal status step.** Branches based on outcome. Exactly one of
-the three terminal calls must be reached:
+**6. Terminal status step.** After the closing announcement, print
+exactly one sentinel line as the **final stdout output**. The
+orchestrator reads this line and applies the appropriate label:
 
-```bash
-# Success path — work is done and either complete or awaiting gate
-bash .github/scripts/status.sh set-complete {agent} $ISSUE_NUMBER  # non-gated agents
-bash .github/scripts/status.sh set-review   {agent} $ISSUE_NUMBER "<message>"  # gated agents
-
-# Help-needed path — agent cannot finish without human input
-bash .github/scripts/status.sh set-blocked  {agent} $ISSUE_NUMBER "<reason>"
+```
+AI_AGILE_STATUS: complete
+AI_AGILE_STATUS: review "short message"
+AI_AGILE_STATUS: blocked "reason"
 ```
 
-The orchestrator applies `:failed` if the agent exits without one of
-these calls. Agents must not call `set-failed` themselves.
+`complete` — work is done, no gate required.
+`review "msg"` — work is done and awaiting a human gate; `msg` is a
+short description shown in the label or log.
+`blocked "reason"` — the agent cannot continue without human input;
+`reason` describes what is needed.
 
-**8. Behaviour rules.** A bullet list. Hard constraints the LLM must
+The orchestrator applies `:failed` if the agent exits without one of
+these sentinels. Agents must not call `set-failed` themselves. Never
+call `status.sh` — the orchestrator owns all label transitions.
+
+**7. Behaviour rules.** A bullet list. Hard constraints the LLM must
 follow. Examples:
 
 - "Do not edit the issue body — it is human-authored."
@@ -283,16 +282,30 @@ They should be specific, testable, and few (3–10 bullets is typical).
 orchestrator reads the sentinel and applies the label. See
 [`05-pipeline-config.md § Script steps`](05-pipeline-config.md#script-steps).
 
+Agent steps use the same sentinel mechanism: the agent prints one of
+the following as its **final stdout line**, and the orchestrator reads
+it and applies the label:
+
+```
+AI_AGILE_STATUS: complete
+AI_AGILE_STATUS: review "short message"
+AI_AGILE_STATUS: blocked "reason"
+```
+
 Every agent run must either:
 
-- Terminate with exactly one of `set-complete`, `set-review`, or
-  `set-blocked` — the agent's responsibility — **or**
+- Print exactly one of the three sentinels above as its final stdout
+  line — the agent's responsibility — **or**
 - Crash, in which case the orchestrator applies `:failed`.
 
-There is no fourth path. Agents that exit without a terminal status are
-treated as failed. Agents must not apply `:complete` for gated work —
-that transition is owned by the orchestrator (see
+There is no fourth path. Agents that exit without a terminal sentinel
+are treated as failed. Agents must not apply `:complete` for gated work
+— that transition is owned by the orchestrator (see
 [`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition)).
+
+**Never call `status.sh`.** The orchestrator owns all label transitions.
+The `:wip` label is applied by the orchestrator before invoking the
+agent; agents do not set it themselves.
 
 ---
 
@@ -304,16 +317,16 @@ Every PR that touches `.claude/agents/*.md` runs
 1. **Frontmatter parses** as YAML.
 2. **Required fields** are present: `name`, `description`, `tools`,
    `model`.
-3. **`name` matches the path under `.claude/agents/`** (`name: product-docs/prd-writer` ↔ `.claude/agents/product-docs/prd-writer.md`).
+3. **`name` matches the path under `.claude/agents/`** (`name: 01_product_docs/prd-writer` ↔ `.claude/agents/01_product_docs/prd-writer.md`).
 4. **`name` exists** in `pipeline.json` as a declared agent.
 5. **`tools` array** is a subset of the allowable-tools matrix.
 6. **`model`** is one of the three allowed model IDs.
 7. **Required body sections** exist (`# {agent-name}`,
-   `## Step 1 — Apply wip`, opening + closing announcement steps,
-   `## Behaviour rules`).
-8. **Status calls** appear at least once each: `set-wip` is called, and
-   at least one of `set-complete`, `set-review`, or `set-blocked` is
-   called.
+   opening + closing announcement steps, `## Behaviour rules`).
+8. **Terminal sentinel** is present: the agent's final stdout line must
+   be one of `AI_AGILE_STATUS: complete`, `AI_AGILE_STATUS: review "msg"`,
+   or `AI_AGILE_STATUS: blocked "reason"`. `status.sh` must not be
+   called anywhere in the prompt.
 9. **No forbidden tools.** `WebFetch` and `WebSearch` block the PR
    unless an exception ADR is referenced in the frontmatter.
 
