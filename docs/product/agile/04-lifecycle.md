@@ -101,9 +101,11 @@ For each work item it:
    required human gate label is present.
 3. If yes, acquires the `:wip` mutex (see [P-4](02-principles.md#p-4--wip-is-the-mutex))
    and invokes the agent.
-4. The agent does its work and applies exactly one terminal status
-   (`:complete`, `:review`, or `:blocked`) via `status.sh`.
-5. If the agent crashed without setting a status, the orchestrator
+4. The agent does its work and emits exactly one terminal status as the
+   last line of its stdout: `AI_AGILE_STATUS: complete`,
+   `AI_AGILE_STATUS: review`, or `AI_AGILE_STATUS: blocked`. The
+   orchestrator reads the sentinel and applies the matching label.
+5. If the agent crashes without emitting a sentinel, the orchestrator
    applies `:failed` and posts a comment.
 
 A halted pipeline (`review`, `blocked`, `failed`) resumes the moment a
@@ -115,9 +117,10 @@ Every transition emits one event to the audit log branch
 In the **Execute** phase the `create-pr` script step opens a draft PR
 immediately after PRD approval, establishing the branch and PR that all
 subsequent agent commits accumulate into. Agents (`prd-docs-updater`,
-`coder`) commit code and doc changes directly to that branch — reading
-issues and PRs is allowed, but only the orchestrator may create or
-advance the PR. When `pr-reviewer` completes with APPROVE, the
+`coder`) write files during their run; the orchestrator commits and
+pushes those changes to the branch after the agent signals `complete`
+(`git_ops.commit_after: true`). Reading issues and PRs is allowed,
+but only the orchestrator may create, commit to, or advance the PR. When `pr-reviewer` completes with APPROVE, the
 orchestrator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`).
 The linked issue closes automatically on merge via the "Closes #{N}"
 trailer in the PR body; the branch is deleted automatically by GitHub's
@@ -129,104 +132,84 @@ and [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-th
 
 ## Forks in the path
 
-Two cases interrupt the linear flow:
+> **Note:** The forks described below are planned design — none are
+> currently implemented in `pipeline.json`. The current pipeline runs
+> linearly through `issue-classifier → prd-writer → create-pr →
+> prd-docs-updater → coder → pr-reviewer`.
 
-### The ticket is too big
+### The ticket is too big _(planned)_
 
-If `ticket-sizer` returns `XL`, the **`issue-decomposer`** agent runs.
-It drafts a roadmap of proposed child issues — each a smaller business
-outcome — and posts the roadmap as a comment on the parent. A human
-approves the decomposition by applying `decomposition:approved`. On
-approval, the agent auto-creates the child issues and links them back
-to the parent. Each child re-enters the pipeline at `issue-classifier`
-and runs through its own full lifecycle. The parent waits and closes
-when all children close, with a roll-up retrospective.
+If a future `ticket-sizer` agent returns `XL`, an **`issue-decomposer`**
+agent would run. It would draft a roadmap of proposed child issues —
+each a smaller business outcome — and post the roadmap as a comment on
+the parent. A human would approve the decomposition by applying
+`decomposition:approved`. On approval, the agent would auto-create
+the child issues and link them back to the parent. Each child
+re-enters the pipeline at `issue-classifier` and runs through its own
+full lifecycle. The parent waits and closes when all children close,
+with a roll-up retrospective.
 
-This matters most when an issue represents a high-level product
-outcome (e.g. "self-service onboarding") that needs to be broken into
-a roadmap of smaller business outcomes (email verification, profile
-setup, walkthrough), each itself a feature.
+Distinct from a future `task-decomposer` (Phase 4): `task-decomposer`
+would break a *sized* feature into implementation tasks (one file, one
+concern) that all ship in one PR. `issue-decomposer` would run *before*
+sizing clears, breaking a too-large issue into smaller business-outcome
+issues, each with its own PR.
 
-Distinct from `task-decomposer` (Phase 4): `task-decomposer` breaks a
-*sized* feature into implementation tasks (one file, one concern)
-that all ship in one PR. `issue-decomposer` runs *before* sizing
-clears, breaking a too-large issue into smaller business-outcome
-issues, each of which gets its own PR.
+### Many small tickets in a window _(planned)_
 
-### Many small tickets in a window
-
-If `ticket-sizer` returns `S` and the issue is the Nth small bug or
-chore in a configured window, the orchestrator suggests grouping under
-a super-issue before sizing completes. On approval the super-issue
-becomes the shippable unit
+If a future `ticket-sizer` returns `S` and the issue is the Nth small
+bug or chore in a configured window, the orchestrator would suggest
+grouping under a super-issue before sizing completes. On approval the
+super-issue becomes the shippable unit
 (see [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)): it runs
 through the full pipeline as a single unit, the grouped children pause
 their own pipelines and attach, and one PR closes the super-issue and
 all its children on merge. See
 [P-6](02-principles.md#p-6--group-small-work-under-a-super-issue).
 
-### SQL changes
+### SQL changes _(planned)_
 
-When the `coder` opens a PR that touches `**/*.sql`, the
-`migration-validator` runs in addition to the standard reviewers. Merge
-is blocked on naming, RLS, and type violations regardless of the standard
-review path.
+When the `coder` opens a PR that touches `**/*.sql`, a future
+`migration-validator` would run in addition to the standard reviewers.
+Merge would be blocked on naming, RLS, and type violations regardless
+of the standard review path.
 
 ---
 
 ## End-to-end happy path
 
-A typical small ticket flows like this. The table below reflects the
-**full design** with all 22 agents present. The MVP rollout (per
-[`10-roadmap.md`](10-roadmap.md)) merges some adjacent agents
-(`adr-proposer` into `architect`, `dependency-planner` into
-`task-decomposer`, `coverage-enforcer` into `test-runner`,
-`product-standards-checker` into `prd-writer`); in MVP the same
-phases run, but with fewer named agents.
+A typical small ticket flows like this. The table reflects the
+**current implementation** — the agents actually present in
+[`pipeline.json`](../../../ai-agile/pipeline/pipeline.json).
+Phases 2–4, 6–7, and 8–10 described elsewhere in this document are
+planned but not yet wired into the pipeline.
 
-| Time | Object | Agent | Event | Outcome label |
+| Time | Object | Actor | Event | Outcome label |
 |---|---|---|---|---|
 | T+0 | Issue | Stakeholder | Opens issue | — |
-| T+2m | Issue | `product-docs/issue-classifier` | Validates required fields | `issue-classifier:complete` |
-| T+5m | Issue | `product-docs/prd-writer` | Posts PRD | `prd-writer:review` |
-| T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` |
-| T+10m | Issue | `product-docs/product-standards-checker`, `product-docs/impact-assessor`, `product-docs/dependency-resolver` | Run in sequence | `dependency-resolver:complete` |
-| T+5m | Issue | `product-docs/ticket-sizer` | Posts size | `ticket-sizer:review` |
-| T+30m | Issue | Engineer | Approves size | `size:approved` |
-| T+15m | Issue | `technical-docs/architect` | Posts technical design | `architect:review` |
-| T+1h | Issue | Engineer | Approves design | `design:approved` |
-| T+5m | Issue | `technical-docs/adr-proposer` | Runs (no ADRs needed) | `adr-proposer:complete` |
-| T+10m | Issue | `testing-spec/test-spec-writer`, `testing-spec/test-coverage-auditor` | Generate spec and audit coverage | `test-coverage-auditor:review` |
-| T+30m | Issue | Engineer | Approves test spec | `test-spec:approved` |
-| T+10m | Issue | `build-plan/task-decomposer`, `build-plan/dependency-planner` | Decompose and order child tasks | `dependency-planner:review` |
-| T+15m | Issue | Engineer | Approves plan | `plan:approved` |
-| T+5m | Issue → PR | `product-docs/create-pr` (script) | Opens draft PR; writes "Closes #{N}" | `create-pr:complete` |
-| T+15m | PR | `execute/prd-docs-updater` | Updates product-docs to reflect implementation plan | `prd-docs-updater:complete` |
-| T+30m | Issue | `execute/coder` | Commits per child task; CI runs from commit 1 | (event) `pr.draft_synchronized` |
-| T+10m | PR | `execute/standards-compliance-reviewer`, `execute/pr-reviewer` | Review against design and standards | `pr-reviewer:review` |
-| T+5m | PR | Orchestrator | Marks PR ready-for-review on pr-reviewer complete | (event) `pr.draft_ready` |
-| T+1h | PR | Engineer | Approves PR | `pr:approved` |
-| T+10m | PR | `test/test-writer`, `test/test-runner`, `test/coverage-enforcer` | Write tests, run suite, enforce coverage | `coverage-enforcer:review` |
-| T+15m | PR | Engineer | Approves coverage; PR merges | `coverage:approved` + (event) `pr.merged` |
-| T+5m | Issue | `evaluate/release-noter` | Opens changelog PR, closes child issues | `release-noter:complete` |
-| T+5m | Issue | `evaluate/retrospective-writer` | Posts retrospective | `retrospective-writer:complete` |
-| Weekly | Issue (all) | `evaluate/standards-evolver` | Reviews retrospectives, drafts proposals | `standards-evolver:review` |
+| T+2m | Issue | `01_product_docs/issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` |
+| T+5m | Issue | `01_product_docs/prd-writer` | Drafts PRD; rewrites issue body in user-story + Gherkin format | `prd-writer:review` |
+| T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` → `prd-writer:complete` |
+| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Creates `issue-{N}` branch; opens draft PR with "Closes #{N}" | `create-pr:complete` |
+| T+5m | PR | `01_product_docs/prd-docs-updater` | Cross-checks PRD against product docs; commits any updates | `prd-docs-updater:review` |
+| T+30m | PR | Stakeholder | Approves doc updates | `prd-docs-updater:approved` → `prd-docs-updater:complete` |
+| T+30m | Issue | `05_execute/coder` | Implements issue and sub-issues; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
+| T+10m | PR | `05_execute/pr-reviewer` | Reviews PR diff against spec; posts structured review | `pr-reviewer:review` |
+| T+30m | PR | Engineer | Approves review | `pr-reviewer:approved` → orchestrator marks PR ready |
+| — | PR | Engineer | Reviews and merges PR | `pr.merged` → issue auto-closes |
 
-The **Agent** column shows the actor for that step. Lower-case
-slash-separated names (e.g. `product-docs/prd-writer`) are agents
-from [`pipeline.json`](../../../ai-agile/pipeline/pipeline.json),
+The **Actor** column shows who performs each step — agent names
 formatted as `{phase}/{short-name}` (see
 [`12-agent-spec.md`](12-agent-spec.md#naming-convention));
-capitalised names (e.g. Stakeholder, Engineer) are human personas
-from [`03-personas.md`](03-personas.md).
+capitalised names (Stakeholder, Engineer) are human personas from
+[`03-personas.md`](03-personas.md).
 
-The **Outcome label** column shows the label applied to the object at
-the end of that step. `agent:complete` and `agent:review` are agent
-status labels (see [`06-status-model.md`](06-status-model.md)); the
-plain `*:approved` labels are human gates (see
-[`07-human-gates.md`](07-human-gates.md)). Rows marked **(event)** are
-GitHub-driven state changes that emit audit-log events but do not
-themselves apply a status label.
+The **Outcome label** column shows the label applied at the end of
+the step. `agent:complete` and `agent:review` are agent status labels
+(see [`06-status-model.md`](06-status-model.md)); the `*:approved`
+labels are human gates (see [`07-human-gates.md`](07-human-gates.md)).
+Rows marked _(orchestrator …)_ are git operations run directly by the
+orchestrator, not label transitions.
 
 Total wall-clock human time: minutes. Total elapsed time: hours.
 
