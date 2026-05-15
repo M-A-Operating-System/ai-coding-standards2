@@ -965,6 +965,8 @@ def _build_opening_announcement(
         "started_at": now,
         "intent": agent_def.description[:120],
     }
+    if work_item.kind == "issue":
+        payload["branch"] = f"issue-{work_item.number}"
     return (
         f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
         f"```json\n"
@@ -989,6 +991,8 @@ def _build_closing_announcement(
         "outcome": outcome,
         "summary": summary,
     }
+    if work_item.kind == "issue":
+        payload["branch"] = f"issue-{work_item.number}"
     return (
         f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
         f"```json\n"
@@ -1590,6 +1594,8 @@ def _apply_failed(
     agent_def: AgentDef,
     work_item: WorkItem,
     result: AgentRunResult,
+    *,
+    reason: str = "",
 ) -> None:
     """Apply :failed for an agent, clear any other non-terminal status it
     left behind, and post a diagnostic comment that includes the tail
@@ -1598,6 +1604,12 @@ def _apply_failed(
     Each step is wrapped in its own try/except so a partial failure
     (e.g. comment post fails after label was applied) is logged but
     never silently masks the :failed signal.
+
+    Args:
+        reason: Optional human-readable cause override. When set it replaces
+            the generic "exited non-zero" footer in the failure comment so
+            readers know whether the failure was in the agent subprocess or
+            in a post-run orchestrator operation (e.g. commit_after git ops).
     """
     # Clear any non-terminal status the agent may have left behind so
     # the work item has exactly one status label after this. We only
@@ -1627,6 +1639,12 @@ def _apply_failed(
     # crash the orchestrator — the :failed label above is what gates
     # the pipeline.
     detail = result.captured_tail or "(no captured output)"
+    footer = (
+        reason
+        if reason
+        else "_Posted by the orchestrator after the agent subprocess exited non-zero "
+             "without one of the three terminal status calls (set-complete / set-review / set-blocked)._"
+    )
     body_parts = [
         f"### `{agent_def.agent}` exited with an error",
         "",
@@ -1642,8 +1660,7 @@ def _apply_failed(
         f"- Fix the underlying error, then **remove** the `{agent_def.failed_label}` label to retry, or",
         f"- Apply the `{agent_def.status_label(STATUS_SKIPPED)}` label to bypass this agent on this item.",
         "",
-        "_Posted by the orchestrator after the agent subprocess exited non-zero "
-        "without one of the three terminal status calls (set-complete / set-review / set-blocked)._",
+        footer,
     ]
     body = "\n".join(body_parts)
     try:
@@ -1706,7 +1723,11 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
 
         try:
             _sp.run(["git", "fetch", "origin", branch], check=True)
-            _sp.run(["git", "checkout", branch], check=True)
+            # Reset local branch to exactly match remote so that git push is
+            # always a fast-forward. Without this, a stale local branch (e.g.
+            # one that pre-dates commits from an earlier agent like prd-docs-
+            # updater) causes a rejected non-fast-forward push.
+            _sp.run(["git", "checkout", "-B", branch, f"origin/{branch}"], check=True)
             _sp.run(["git", "stash", "pop"], check=True)
 
             _sp.run(["git", "add", "-A"], check=True)
@@ -1962,7 +1983,16 @@ def process_work_item(
             # step is marked :failed instead so the next run retries cleanly.
             if final_status == STATUS_COMPLETE and agent_def.commit_after:
                 if not _run_commit_after(agent_def, work_item):
-                    _apply_failed(gh, agent_def, work_item, result)
+                    _apply_failed(
+                        gh, agent_def, work_item, result,
+                        reason=(
+                            "_The agent completed successfully (exit 0, sentinel present) but the "
+                            "orchestrator's post-run `commit_after` git operations failed — "
+                            "stash, checkout, commit, or push to the issue branch. "
+                            "Check the orchestrator CI log for the specific git error. "
+                            "Remove the failed label to retry._"
+                        ),
+                    )
                     final_status = STATUS_FAILED
                     log.error(
                         "  FAILED  %-38s  commit_after git ops failed on #%d",

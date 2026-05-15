@@ -204,6 +204,7 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "agent": "05_execute/coder",
   "phase": "start",
   "mode": "initial-build",
+  "branch": "issue-${ISSUE_NUMBER}",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "intent": "Implement issue #${ISSUE_NUMBER} and its sub-issues.",
   "inputs_read": ["issue body", "tech-spec docs", "sub-issues"]
@@ -268,6 +269,7 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "agent": "05_execute/coder",
   "phase": "end",
   "mode": "initial-build",
+  "branch": "issue-${ISSUE_NUMBER}",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "complete",
   "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Orchestrator will commit and push to the existing issue-${ISSUE_NUMBER} branch."
