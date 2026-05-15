@@ -1159,6 +1159,60 @@ def invoke_script(
 
 
 
+def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: str) -> str:
+    """Return the human-readable session ID the orchestrator will pass to the agent.
+
+    Deterministic for a given (agent, work_item, repo) triple so the same
+    session ID is reused across separate orchestrator invocations for the same
+    work item (providing Claude-level conversation continuity). Retries within
+    a single invocation append a '-r{N}' suffix via the caller.
+    """
+    owner, _, repo_name = repo.partition("/")
+    safe_agent = re.sub(r"[^a-z0-9-]", "-", agent_def.agent.lower()).strip("-")
+    safe_phase  = re.sub(r"[^a-z0-9-]", "-", agent_def.phase.lower()).strip("-")
+    safe_repo   = re.sub(r"[^a-z0-9-]", "-", repo.lower()).strip("-")
+
+    session_tokens: dict[str, str] = {
+        "agent":      agent_def.agent,
+        "safe_agent": safe_agent,
+        "phase":      agent_def.phase,
+        "safe_phase": safe_phase,
+        "number":     str(work_item.number),
+        "kind":       work_item.kind,
+        "owner":      owner,
+        "repo_name":  repo_name,
+        "safe_repo":  safe_repo,
+    }
+
+    def _scope_default() -> str:
+        if agent_def.session_scope == "global":
+            return f"ais-v1-{safe_agent}"
+        return f"ais-v1-{safe_agent}-issue-{work_item.number}"
+
+    if agent_def.session_id_pattern:
+        _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+        try:
+            if re.search(r"\{[^}]*[.[]", agent_def.session_id_pattern):
+                raise ValueError("unsafe attribute/index access in id_pattern")
+            sid = _tok_re.sub(
+                lambda m: session_tokens[m.group(1)],
+                agent_def.session_id_pattern,
+            )
+        except (KeyError, ValueError) as exc:
+            log.warning("Bad id_pattern for %s (%s); using scope default", agent_def.agent, exc)
+            sid = _scope_default()
+    else:
+        sid = _scope_default()
+
+    _sid_re = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    if not _sid_re.match(sid):
+        sanitised = re.sub(r"[^a-z0-9-]", "-", sid.lower()).strip("-")
+        log.warning("Session ID %r for %s contains invalid chars; sanitised to %r",
+                    sid, agent_def.agent, sanitised)
+        sid = sanitised
+    return sid
+
+
 def invoke_agent(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -1240,78 +1294,9 @@ def invoke_agent(
         f"The orchestrator reads this sentinel, applies the label, and posts the closing announcement."
     )
 
-    # Build the claude session ID.
-    # The orchestrator exposes a fixed set of tokens (see docs/product/agile/05-pipeline-config.md
-    # §Session ID tokens) that can be embedded in a pipeline.json id_pattern.
-    # When no id_pattern is set the scope determines the built-in default.
-    owner, _, repo_name = repo.partition("/")
-    safe_agent = re.sub(r"[^a-z0-9-]", "-", agent_def.agent.lower()).strip("-")
-    safe_phase = re.sub(r"[^a-z0-9-]", "-", agent_def.phase.lower()).strip("-")
-    safe_repo  = re.sub(r"[^a-z0-9-]", "-", repo.lower()).strip("-")
-    session_tokens: dict[str, str] = {
-        "agent":      agent_def.agent,
-        "safe_agent": safe_agent,
-        "phase":      agent_def.phase,
-        "safe_phase": safe_phase,
-        "number":     str(work_item.number),
-        "kind":       work_item.kind,
-        "owner":      owner,
-        "repo_name":  repo_name,
-        "safe_repo":  safe_repo,
-        # NOTE: {repo} is intentionally omitted — it contains a '/' which is
-        # invalid in a session ID. Use {owner}, {repo_name}, or {safe_repo}.
-    }
-
-    def _scope_default() -> str:
-        if agent_def.session_scope == "global":
-            return f"ais-v1-{safe_agent}"
-        return f"ais-v1-{safe_agent}-issue-{work_item.number}"
-
-    def _render_pattern(pattern: str) -> str:
-        """Substitute {token} placeholders safely.
-
-        Only bare {identifier} forms are allowed. Patterns containing
-        attribute access ({x.y}) or index access ({x[y]}) are rejected
-        to prevent callers from extracting internal object attributes via
-        Python's str.format() mini-language.
-        """
-        if re.search(r"\{[^}]*[.[]", pattern):
-            raise ValueError(
-                f"id_pattern for {agent_def.agent!r} contains unsafe "
-                f"attribute or index access: {pattern!r}"
-            )
-        # Substitute only known bare tokens; raise KeyError for unknown ones.
-        _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
-        def _replace(m: re.Match) -> str:
-            key = m.group(1)
-            if key not in session_tokens:
-                raise KeyError(key)
-            return session_tokens[key]
-        return _tok_re.sub(_replace, pattern)
-
-    if agent_def.session_id_pattern:
-        try:
-            agent_session_id = _render_pattern(agent_def.session_id_pattern)
-        except (KeyError, ValueError) as exc:
-            log.warning(
-                "Bad id_pattern for %s (%s); falling back to scope default",
-                agent_def.agent, exc,
-            )
-            agent_session_id = _scope_default()
-    else:
-        agent_session_id = _scope_default()
-
-    # Sanitise: session IDs must match [a-z0-9][a-z0-9-]*[a-z0-9].
-    # If the rendered ID contains invalid characters (e.g. from a custom
-    # literal in id_pattern) normalise rather than fail hard.
-    _sid_re = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
-    if not _sid_re.match(agent_session_id):
-        sanitised = re.sub(r"[^a-z0-9-]", "-", agent_session_id.lower()).strip("-")
-        log.warning(
-            "Session ID %r for %s contains invalid chars; sanitised to %r",
-            agent_session_id, agent_def.agent, sanitised,
-        )
-        agent_session_id = sanitised
+    # Build the claude session ID using the shared helper so the value is
+    # identical to what the orchestrator advertises in the opening announcement.
+    agent_session_id = _compute_agent_session_id(agent_def, work_item, repo)
 
     if dry_run:
         log.info(
@@ -1773,6 +1758,17 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
 # Core orchestration logic
 # ---------------------------------------------------------------------------
 
+def _restore_pre_agent_branch(branch: str) -> None:
+    """Restore the git branch saved before a pre-agent checkout, if any."""
+    if not branch:
+        return
+    try:
+        import subprocess as _sp3
+        _sp3.run(["git", "checkout", branch], check=False, capture_output=True)
+    except Exception:
+        pass
+
+
 def process_work_item(
     work_item: WorkItem,
     agents: list[AgentDef],
@@ -1884,9 +1880,13 @@ def process_work_item(
                     agent_def.agent, work_item.number, exc,
                 )
             try:
+                # Use the agent's own deterministic session ID (not the
+                # orchestrator's timestamped ID) so the announcement matches
+                # what the agent prints in its own start comment.
+                _agent_sid = _compute_agent_session_id(agent_def, work_item, repo)
                 gh.post_comment(
                     work_item.number,
-                    _build_opening_announcement(agent_def, work_item, session_id),
+                    _build_opening_announcement(agent_def, work_item, _agent_sid),
                 )
             except Exception as exc:
                 log.warning(
@@ -1902,6 +1902,30 @@ def process_work_item(
                 outcome_detail=f"mode={agent_def.step_type}",
             ))
         _invoked_at = time.monotonic()
+
+        # For commit_after agents working on an issue, check out the issue
+        # branch before invoking the agent so it reads accumulated state
+        # (e.g. docs committed by prd-docs-updater, code from a prior coder
+        # run). The branch is restored after the agent completes via the
+        # try/finally below. _run_commit_after handles the actual commit/push.
+        _pre_agent_branch: str = ""
+        if not dry_run and agent_def.commit_after and work_item.kind == "issue":
+            import subprocess as _sp2
+            try:
+                _pre_agent_branch = _sp2.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    capture_output=True, text=True, check=True,
+                ).stdout.strip()
+                _issue_branch = f"issue-{work_item.number}"
+                _sp2.run(["git", "fetch", "origin", _issue_branch], check=True)
+                _sp2.run(["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"], check=True)
+                log.info("  pre-agent: checked out %s for %s", _issue_branch, agent_def.agent)
+            except Exception as _pre_exc:
+                log.warning(
+                    "  pre-agent branch checkout failed for %s: %s — running on current branch",
+                    agent_def.agent, _pre_exc,
+                )
+                _pre_agent_branch = ""  # don't attempt restoration if checkout failed
 
         sentinel_status: Optional[str] = None
         sentinel_message: str = ""
@@ -1953,6 +1977,7 @@ def process_work_item(
                     gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 except Exception:
                     pass
+                _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
             if sentinel_status:
@@ -1976,6 +2001,7 @@ def process_work_item(
                         outcome_detail=f"exit code {result.returncode} after {_attempt + 1} attempt(s) mode={agent_def.step_type}",
                         duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                     ))
+                _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
             # commit_after: stage + commit + push the agent's file changes to
@@ -1998,6 +2024,7 @@ def process_work_item(
                         "  FAILED  %-38s  commit_after git ops failed on #%d",
                         agent_def.agent, work_item.number,
                     )
+                    _restore_pre_agent_branch(_pre_agent_branch)
                     break
 
             _apply_terminal_status(gh, agent_def, work_item, final_status)
@@ -2079,8 +2106,10 @@ def process_work_item(
             # Halt if blocked or awaiting review — do not trigger further
             # steps on this item this run.
             if final_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
+                _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
+        _restore_pre_agent_branch(_pre_agent_branch)
         triggered += 1
 
     return triggered
