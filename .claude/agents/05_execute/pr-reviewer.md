@@ -9,7 +9,7 @@ description: >
   On APPROVE (complete), the orchestrator marks the draft PR ready for
   review. Gates on pr-reviewer:approved.
 tools: [Bash, Read, Glob, Grep]
-model: claude-opus-4-7
+model: claude-sonnet-4-6
 max_turns: 60
 extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *)]
 ---
