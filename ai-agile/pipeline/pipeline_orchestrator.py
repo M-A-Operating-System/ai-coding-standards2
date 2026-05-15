@@ -1720,7 +1720,13 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                 )
                 return True
 
-            msg = f"docs: {agent_def.label_key} updates for issue #{work_item.number}"
+            _phase_prefix = {
+                "01_product_docs": "docs",
+                "02_technical_docs": "docs",
+                "05_execute": "feat",
+                "10_tech_debt": "refactor",
+            }.get(agent_def.phase, "chore")
+            msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
             _sp.run(["git", "commit", "-m", msg], check=True)
             _sp.run(["git", "push", "origin", branch], check=True)
             log.info("  commit_after: pushed commit to %s", branch)

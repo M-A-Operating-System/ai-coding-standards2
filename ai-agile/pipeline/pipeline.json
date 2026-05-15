@@ -74,7 +74,10 @@
       "dependencies": ["01_product_docs/prd-docs-updater"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Commits code directly to the shared issue branch (issue-{N}) — the draft PR was opened by create-pr and stays draft until pr-reviewer completes. Agents may commit to the PR branch and read issues/PRs freely; only the orchestrator may create, draft, or mark PRs ready for review."
+      "git_ops": {
+        "commit_after": true
+      },
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator stages, commits, and pushes all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes."
     },
 
     {

@@ -12,7 +12,7 @@ description: >
 tools: [Bash, Read, Edit, Write, Grep, Glob]
 model: claude-opus-4-7
 max_turns: 120
-extra_allowedTools: [Bash(find *), Bash(git diff *), Bash(git log *), Bash(git show *), Bash(gh issue view *), Bash(gh issue list *), Bash(gh issue comment *), Bash(gh pr view *), Bash(gh pr comment *)]
+extra_allowedTools: [Write, Edit, Bash(*)]
 ---
 
 # 05_execute/coder
