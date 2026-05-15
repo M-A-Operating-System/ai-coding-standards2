@@ -42,7 +42,8 @@
       },
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-writer"],
-      "description": "Scripted step: creates the shared issue branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Applies source-issue:{N} label via link-pr-to-issue.sh. All subsequent agent commits (docs, code) accumulate in this PR. Idempotent — exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI."
+      "exclude_classifications": ["spike"],
+      "description": "Scripted step: creates the shared issue branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Applies source-issue:{N} label via link-pr-to-issue.sh. All subsequent agent commits (docs, code) accumulate in this PR. Idempotent — exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues — spikes produce no code to ship."
     },
 
     {
@@ -60,7 +61,8 @@
       "git_ops": {
         "commit_after": true
       },
-      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes using its Write tool and emits complete — the orchestrator then stages, commits, and pushes those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts."
+      "exclude_classifications": ["spike"],
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes using its Write tool and emits complete — the orchestrator then stages, commits, and pushes those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts. Skipped for spike issues."
     },
 
     {
@@ -77,7 +79,8 @@
       "git_ops": {
         "commit_after": true
       },
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator stages, commits, and pushes all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes."
+      "exclude_classifications": ["spike"],
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator stages, commits, and pushes all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues — spikes produce research findings, not code."
     },
 
     {
@@ -93,6 +96,7 @@
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "git_ops": {
+        "commit_after": false,
         "mark_ready_on_complete": true
       },
       "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge — the reviewer agent never touches PR state directly. Triggered by pr-reviewer:requested. Gates on pr-reviewer:approved."

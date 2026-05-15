@@ -24,6 +24,7 @@ The orchestrator owns exactly these responsibilities:
 | Agent invocation | Spawn the agent subprocess; set `:failed` if it crashes without a terminal status |
 | Gate promotion | When a human applies a gate label, remove `:review` and apply `:complete` |
 | PR ready-for-review | Call `gh pr ready` when an agent with `git_ops.mark_ready_on_complete: true` completes — agents never do this themselves |
+| Git commit + push | Stage, commit, and push agent file changes to `issue-{N}` after any `commit_after: true` agent signals `complete` |
 | Audit log emission | Append one JSONL event per transition to the `ai-agile/log` branch |
 
 It owns none of these:
@@ -31,7 +32,6 @@ It owns none of these:
 - Agent behaviour (prompts, tools, model — those live in `.claude/agents/{agent}.md`)
 - Standards checking (the `standards-compliance-reviewer` agent does this)
 - Pipeline graph definition (`pipeline.json` is the source of truth; the orchestrator reads it)
-- Git commits or pushes to feature branches (agent-owned; see [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle))
 
 ---
 
@@ -254,14 +254,15 @@ The system prompt injected by the orchestrator provides:
 - The agent's name and the path to its prompt file
   (`.claude/agents/{agent}.md`)
 - The work item type, number, title, and URL
-- The set of `status.sh` commands the agent uses for label
-  transitions: `set-wip`, `set-complete`, `set-review`, `set-blocked`.
-  `set-failed` is **not** in the agent's allowlist — only the
-  orchestrator applies `:failed`, when the agent exits non-zero
-  without one of the three terminal calls above.
+- The sentinel format agents use to signal their terminal state:
+  `AI_AGILE_STATUS: complete`, `AI_AGILE_STATUS: review`, or
+  `AI_AGILE_STATUS: blocked`, emitted as the last line of stdout.
+  `:failed` is **not** a sentinel — the orchestrator applies `:failed`
+  when the agent exits non-zero without one of the three sentinel values.
 
-Agents use `status.sh` for every label write. They never call the GitHub
-API directly for status transitions. This keeps the transition logic in one
+Agents signal status via stdout sentinel only. They never call the GitHub
+API directly for label writes. The orchestrator reads the sentinel and
+applies the matching label — keeping the transition logic in one
 auditable place.
 
 The Claude CLI subprocess inherits `GITHUB_TOKEN` and `ANTHROPIC_API_KEY`
@@ -422,13 +423,15 @@ the orchestrator commits the agent's file changes to the existing branch:
 2. Config:   git config user.email / user.name
 3. Stash:    git stash push --include-untracked  (saves agent's file changes)
 4. Fetch:    git fetch origin issue-{N}
-5. Checkout: git checkout issue-{N}
+5. Checkout: git checkout -B issue-{N} origin/issue-{N}  (reset to remote tip)
 6. Pop:      git stash pop  (applies agent changes onto issue-{N})
 7. Stage:    git add -A
 8. Guard:    git diff --cached --quiet → if empty, skip commit
-9. Commit:   git commit -m "docs: {label_key} updates for issue #{N}"
+9. Commit:   git commit -m "{phase_prefix}: {label_key} changes for issue #{N}"
+             (phase_prefix: "docs" for 01/02 phases, "feat" for 05_execute,
+              "refactor" for 10_tech_debt, "chore" otherwise)
 10. Push:    git push origin issue-{N}
-11. Restore: git checkout {original_branch}  (always, in a finally block)
+11. Restore: git checkout {original_branch}  (called at all exit points)
 ```
 
 Step 1 prevents unnecessary stash/checkout work when an agent writes no
@@ -438,15 +441,13 @@ workspace is always restored to the original branch regardless of failures.
 
 ### Mode B — Address review feedback (coder re-invocation)
 
-After the coder is re-triggered to address reviewer feedback, the coder
-commits its own changes directly — it has git write access via its
-`extra_allowedTools` in the agent's `.claude/agents/` prompt file. The
-orchestrator does **not** run a `commit_after` step for the coder; there
-is no `commit_after: true` in the coder's pipeline definition.
-
-The coder is responsible for staging, committing, and pushing to the
-existing `issue-{N}` branch as part of its own agent run. No new PR or
-new branch is created for re-invocations.
+After the coder is re-triggered to address reviewer feedback, the same
+`commit_after: true` path used for Mode A applies. The coder writes
+files; the orchestrator stages, commits, and pushes those changes to
+the existing `issue-{N}` branch after the agent signals `complete`. No
+new PR or new branch is created for re-invocations. The orchestrator
+then re-applies `pr-reviewer:requested` to the PR to trigger another
+review cycle.
 
 ### Environment variables injected before coder invocation
 
@@ -526,10 +527,10 @@ not write to it. Events emitted by the orchestrator:
 | Event type | Emitted when |
 |---|---|
 | `agent.invoked` | Orchestrator acquired mutex and launched the subprocess |
-| `agent.complete` | Agent called `set-complete` or gate promotion completed |
-| `agent.review` | Agent called `set-review` |
-| `agent.blocked` | Agent called `set-blocked` |
-| `agent.failed` | Agent crashed or timed out; `:failed` applied |
+| `agent.complete` | Agent emitted `AI_AGILE_STATUS: complete` or gate promotion completed |
+| `agent.review` | Agent emitted `AI_AGILE_STATUS: review` |
+| `agent.blocked` | Agent emitted `AI_AGILE_STATUS: blocked` |
+| `agent.failed` | Agent crashed or timed out without a sentinel; `:failed` applied |
 | `gate.approved` | Human applied the gate label; gate promotion about to run |
 | `lock.reclaimed` | Stale `:wip` was force-reclaimed |
 
