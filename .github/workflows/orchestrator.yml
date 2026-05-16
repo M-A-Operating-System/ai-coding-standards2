@@ -27,6 +27,13 @@ permissions:
   issues: write
   pull-requests: write
 
+# Only one orchestrator run at a time. A second trigger queues and runs
+# after the first completes — prevents two runs from both seeing an agent
+# as not-:wip and invoking it concurrently.
+concurrency:
+  group: pipeline-orchestrator
+  cancel-in-progress: false
+
 jobs:
   orchestrate:
     name: Evaluate pipeline state
