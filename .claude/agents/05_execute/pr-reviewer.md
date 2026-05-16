@@ -43,6 +43,26 @@ PRIOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
 
 If `$PRIOR` is set, head the artefact comment `## PR Review (Re-run)`.
 
+Post the opening announcement:
+
+```bash
+gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+<!-- ai-agile/announcement/v1 by 05_execute/pr-reviewer -->
+\`\`\`json
+{
+  "session_id": "$SESSION_ID",
+  "agent": "05_execute/pr-reviewer",
+  "phase": "start",
+  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "issue": $ISSUE_NUMBER,
+  "pr": $PR_NUMBER,
+  "branch": "issue-$ISSUE_NUMBER"
+}
+\`\`\`
+EOF
+)"
+```
+
 ---
 
 ## Step 1 — Read the PR
@@ -223,6 +243,9 @@ gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
   "agent": "05_execute/pr-reviewer",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "issue": $ISSUE_NUMBER,
+  "pr": $PR_NUMBER,
+  "branch": "issue-$ISSUE_NUMBER",
   "verdict": "$VERDICT",
   "summary": "$N_CRITICAL Critical · $N_HIGH High · $N_MEDIUM Medium"
 }
