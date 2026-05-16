@@ -1770,27 +1770,25 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
             _sp.run(["git", "commit", "-m", msg], check=True)
 
-            # GITHUB_TOKEN cannot push to .github/workflows/ — use the bot
-            # PAT (AI_AGILE_BOT_TOKEN) which carries the `workflow` scope.
+            # GITHUB_TOKEN cannot push to .github/workflows/ — use the bot PAT
+            # (AI_AGILE_BOT_TOKEN) which carries the `workflow` scope.
+            # actions/checkout injects GITHUB_TOKEN via http.extraheader; we must
+            # replace that entry (not add to it) so the bot token wins the push.
             _bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
             if _bot_token:
-                _remote_match = re.search(
-                    r"https://(?:[^@]+@)?github\.com/(.+?)(?:\.git)?$",
-                    _sp.run(["git", "remote", "get-url", "origin"],
-                            capture_output=True, text=True, check=True).stdout.strip(),
+                _sp.run(
+                    ["git", "config", "--unset-all",
+                     "http.https://github.com/.extraheader"],
+                    check=False,  # key may not exist in all environments
                 )
-                _push_url = (
-                    f"https://x-access-token:{_bot_token}@github.com/"
-                    f"{_remote_match.group(1)}.git"
-                    if _remote_match else None
+                _sp.run(
+                    ["git", "config",
+                     "http.https://github.com/.extraheader",
+                     f"AUTHORIZATION: bearer {_bot_token}"],
+                    check=True,
                 )
-            else:
-                _push_url = None
 
-            if _push_url:
-                _sp.run(["git", "push", _push_url, branch], check=True)
-            else:
-                _sp.run(["git", "push", "origin", branch], check=True)
+            _sp.run(["git", "push", "origin", branch], check=True)
             log.info("  commit_after: pushed commit to %s", branch)
             return True
 
