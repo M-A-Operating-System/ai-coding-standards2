@@ -170,8 +170,20 @@
               "minimum": 1,
               "maximum": 10,
               "description": "Maximum number of retry cycles. After this many REQUEST CHANGES verdicts, the orchestrator escalates to human sign-off."
+            },
+            "also_clear": {
+              "type": "array",
+              "description": "Additional agent names whose :complete label is also cleared when the review loop fires, so intermediate steps re-run on the next cycle (e.g. ci-gate between coder and pr-reviewer).",
+              "items": { "type": "string" },
+              "uniqueItems": true
             }
           }
+        },
+        "script_timeout_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 7200,
+          "description": "Override the default script timeout (seconds) for script-type steps that need longer polling windows (e.g. ci-gate)."
         },
         "description": {
           "type": "string",

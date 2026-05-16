@@ -143,7 +143,8 @@ class AgentDef:
     mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
     commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
-    review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int} — auto-retry target on :review
+    review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
+    script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
 
     @property
     def label_key(self) -> str:
@@ -238,6 +239,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
             commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
             exclude_classifications=list(entry.get("exclude_classifications", [])),
             review_loop=entry.get("review_loop"),
+            script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
         ))
 
     _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
@@ -880,12 +882,32 @@ def _handle_review_loop(
             "could not remove %s on #%d: %s", target_def.complete_label, work_item.number, exc
         )
 
+    # Clear any intermediate steps that must re-run (e.g. ci-gate between coder and pr-reviewer)
+    also_cleared: list[str] = []
+    for also_name in loop.get("also_clear", []):
+        also_def = pipeline_map.get(also_name)
+        if also_def is None:
+            log.warning("review_loop also_clear '%s' not found in pipeline — skipping", also_name)
+            continue
+        try:
+            gh.remove_label(work_item.number, also_def.complete_label)
+            labels.discard(also_def.complete_label)
+            also_cleared.append(also_name)
+        except Exception as exc:
+            log.warning(
+                "could not remove %s on #%d: %s", also_def.complete_label, work_item.number, exc
+            )
+
+    also_suffix = (
+        f" (also cleared: {', '.join(f'`{n}`' for n in also_cleared)})" if also_cleared else ""
+    )
     try:
         gh.post_comment(
             work_item.number,
             (
                 f"**Review cycle {next_cycle}/{max_cycles - 1}:** "
                 f"`{agent_def.agent}` requested changes — re-invoking `{re_invoke_name}`."
+                f"{also_suffix}"
             ),
         )
     except Exception as exc:
@@ -1287,7 +1309,7 @@ def invoke_script(
             text=True,
             env=agent_env,
         )
-        deadline = time.monotonic() + SCRIPT_TIMEOUT_SECONDS
+        deadline = time.monotonic() + agent_def.script_timeout_seconds
         try:
             assert proc.stdout is not None
             for line in proc.stdout:
