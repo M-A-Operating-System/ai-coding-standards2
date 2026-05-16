@@ -1694,6 +1694,50 @@ def _apply_failed(
 
 
 # ---------------------------------------------------------------------------
+# Git authentication setup
+# ---------------------------------------------------------------------------
+
+def _configure_git_auth() -> None:
+    """Switch all git operations to AI_AGILE_BOT_TOKEN for the lifetime of
+    this process.
+
+    actions/checkout configures GITHUB_TOKEN via http.extraheader, which lacks
+    the `workflow` scope needed to push .github/workflows/ files. The bot PAT
+    has both `repo` and `workflow` scope. We embed it in the remote URL and
+    remove the competing GITHUB_TOKEN extraheader so every fetch, checkout, and
+    push in this process uses the same credential.
+    """
+    import subprocess as _sg
+    bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
+    if not bot_token:
+        return
+
+    try:
+        orig_url = _sg.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        # Strip any existing embedded credentials, then insert the bot token.
+        clean_url = re.sub(r"https://[^@]+@", "https://", orig_url)
+        bot_url = clean_url.replace(
+            "https://github.com",
+            f"https://x-access-token:{bot_token}@github.com",
+            1,
+        )
+        _sg.run(["git", "remote", "set-url", "origin", bot_url], check=True)
+
+        # Remove the GITHUB_TOKEN extraheader that actions/checkout injected.
+        _sg.run(
+            ["git", "config", "--unset-all", "http.https://github.com/.extraheader"],
+            check=False,  # key may not exist outside CI
+        )
+        log.info("git auth: configured origin to use AI_AGILE_BOT_TOKEN")
+    except Exception as exc:
+        log.warning("git auth: could not configure bot token — %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator-driven git commit (commit_after: true agents)
 # ---------------------------------------------------------------------------
 
@@ -1769,36 +1813,6 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             }.get(agent_def.phase, "chore")
             msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
             _sp.run(["git", "commit", "-m", msg], check=True)
-
-            # GITHUB_TOKEN cannot push to .github/workflows/ — use the bot PAT
-            # (AI_AGILE_BOT_TOKEN) which carries the `workflow` scope.
-            # Strategy: embed bot token in the remote URL, then unset the
-            # GITHUB_TOKEN extraheader that actions/checkout injected.
-            # Setting extraheader via `git config` has URL-subsection parsing
-            # issues on the CLI; changing the remote URL is unambiguous.
-            _bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
-            if _bot_token:
-                _orig_url = _sp.run(
-                    ["git", "remote", "get-url", "origin"],
-                    capture_output=True, text=True, check=True,
-                ).stdout.strip()
-                # Strip any existing embedded credentials then insert bot token.
-                _clean_url = re.sub(r"https://[^@]+@", "https://", _orig_url)
-                _bot_url = _clean_url.replace(
-                    "https://github.com",
-                    f"https://x-access-token:{_bot_token}@github.com",
-                    1,
-                )
-                _sp.run(["git", "remote", "set-url", "origin", _bot_url], check=True)
-                # Remove the GITHUB_TOKEN extraheader so only the URL
-                # credential is sent (two competing Authorization headers
-                # causes GitHub to use GITHUB_TOKEN, blocking workflow pushes).
-                _sp.run(
-                    ["git", "config", "--unset-all",
-                     "http.https://github.com/.extraheader"],
-                    check=False,
-                )
-
             _sp.run(["git", "push", "origin", branch], check=True)
             log.info("  commit_after: pushed commit to %s", branch)
             return True
@@ -2299,6 +2313,10 @@ def main() -> None:
                 "No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`"
             )
             sys.exit(1)
+
+    # Configure all git operations to use AI_AGILE_BOT_TOKEN so fetch,
+    # checkout, and push all share the same credential (which has workflow scope).
+    _configure_git_auth()
 
     agents = load_pipeline(args.pipeline)
     pipeline_map = pipeline_by_name(agents)
