@@ -6,7 +6,7 @@ description: >
   and Gherkin format. Waits for the prd-writer:approved gate.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
-max_turns: 15
+max_turns: 30
 ---
 
 # 01_product_docs/prd-writer
