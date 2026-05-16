@@ -134,7 +134,7 @@ for each work item (issue or PR):
             success = invoke_script(work_item, agent_def)
         else:
             success = invoke_agent(work_item, agent_def)
-        parse AI_AGILE_STATUS: sentinel from stdout (last 5 lines)
+        parse AI_AGILE_STATUS: sentinel from stream-json event stream
         # Post-completion git operations for agent steps
         if sentinel == complete AND agent_def.git_ops.commit_after:
             commit_and_push(work_item, agent_def)   ← see "Code commit and PR lifecycle"
@@ -243,6 +243,7 @@ The orchestrator invokes the Claude CLI as a subprocess:
 ```bash
 claude \
   --allowedTools "Bash(gh issue view *),Bash(gh issue comment *),Bash(gh issue edit *),Bash(gh issue list *),Bash(gh pr view *),Bash(gh pr comment *),Bash(gh pr edit *),Bash(gh pr list *),Bash(gh pr diff *),Bash(gh api repos/*/issues/*),Bash(gh api repos/*/pulls/*),Bash(cat *),Bash(grep *),Bash(find *),Read,Glob,Grep" \
+  --output-format stream-json \
   --max-turns 60 \
   -p "<system prompt>"
 ```
@@ -317,7 +318,8 @@ depending on the step type:
 
 **Agent steps** — the orchestrator reads the sentinel and applies the label:
 ```
-parse AI_AGILE_STATUS: from last 5 lines of stdout
+parse AI_AGILE_STATUS: from stream-json event stream text events
+extract token usage (input_tokens, output_tokens) from stream-json result event
 
 if sentinel found:
     remove :wip, apply matching label ({agent}:complete / :review / :blocked)
@@ -757,7 +759,7 @@ window naturally clear and lets the next tick resume with no
 intervention.
 
 **Detection.** After every agent subprocess exits non-zero, the
-orchestrator scans the captured stdout/stderr for indicators:
+orchestrator scans the captured stream-json event text for indicators:
 
 | Pattern | Source |
 |---|---|
@@ -768,9 +770,14 @@ orchestrator scans the captured stdout/stderr for indicators:
 | `too many requests` | HTTP status text |
 | `overloaded_error` | Anthropic SDK error class for capacity overload |
 
+Because the CLI output is consumed as a stream of newline-delimited JSON
+events, the orchestrator extracts text content from `assistant` message
+events before applying these patterns. Error events in the stream are
+also checked directly for `error.type` values matching the above list.
+
 If any indicator matches, the orchestrator parses an optional
 `retry-after`, `retry after Ns`, or `wait N seconds` value from the
-same output. If found, the value is honoured (capped at 1 hour). If
+same content. If found, the value is honoured (capped at 1 hour). If
 not found, a default of 5 minutes is used.
 
 **Pause mechanism.** The orchestrator writes a JSON pause marker to
