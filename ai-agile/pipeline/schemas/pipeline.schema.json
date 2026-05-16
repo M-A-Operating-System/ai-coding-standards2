@@ -155,6 +155,24 @@
           },
           "description": "Skip this agent when the issue classification matches any value in this list. Classification is read from a 'classification: {type}' label or a '[TYPE]' title prefix applied by issue-classifier."
         },
+        "review_loop": {
+          "type": "object",
+          "description": "Automatic retry loop: when this agent emits :review, the orchestrator re-invokes a target agent (up to max_cycles times) before escalating to human sign-off. Only applies to agents that emit :review.",
+          "additionalProperties": false,
+          "required": ["re_invoke", "max_cycles"],
+          "properties": {
+            "re_invoke": {
+              "type": "string",
+              "description": "The agent to re-invoke when this agent requests changes. Must be an earlier stage in the pipeline (e.g. coder for pr-reviewer)."
+            },
+            "max_cycles": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Maximum number of retry cycles. After this many REQUEST CHANGES verdicts, the orchestrator escalates to human sign-off."
+            }
+          }
+        },
         "description": {
           "type": "string",
           "minLength": 1

@@ -93,13 +93,16 @@
       "trigger": {
         "label": "coder:complete"
       },
-      "human_gate_after": true,
-      "human_gate_label": "pr-reviewer:approved",
+      "human_gate_after": false,
       "dependencies": ["05_execute/coder"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "exclude_classifications": ["spike"],
-      "description": "Reviews the draft PR for this issue after the coder completes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. On APPROVE the agent marks the PR ready for human review. On REQUEST CHANGES the pipeline waits for the human gate before the coder is re-invoked. Gates on pr-reviewer:approved."
+      "review_loop": {
+        "re_invoke": "05_execute/coder",
+        "max_cycles": 3
+      },
+      "description": "Reviews the draft PR for this issue after the coder completes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. On APPROVE emits complete and the PR is marked ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (up to 3 cycles); only after 3 failed cycles is human sign-off required."
     },
 
     {
