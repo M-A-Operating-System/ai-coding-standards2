@@ -1665,8 +1665,13 @@ def _apply_failed(
         else "_Posted by the orchestrator after the agent subprocess exited non-zero "
              "without one of the three terminal status calls (set-complete / set-review / set-blocked)._"
     )
+    heading = (
+        f"### `{agent_def.agent}` completed — post-run step failed"
+        if reason
+        else f"### `{agent_def.agent}` exited with an error"
+    )
     body_parts = [
-        f"### `{agent_def.agent}` exited with an error",
+        heading,
         "",
         f"Return code: `{result.returncode if result.returncode is not None else 'unknown'}`",
         "",
