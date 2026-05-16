@@ -208,7 +208,12 @@ class AgentRunResult:
 # Pipeline loader
 # ---------------------------------------------------------------------------
 
-def load_pipeline(path: Path) -> list[AgentDef]:
+def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
+    """Parse pipeline.json once and return (agents, default_extra_tools).
+
+    default_extra_tools comes from defaults.extra_allowedTools and is
+    prepended to every agent's own extra_allowedTools at invocation time.
+    """
     with open(path) as f:
         raw = json.load(f)
 
@@ -232,21 +237,15 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
             exclude_classifications=list(entry.get("exclude_classifications", [])),
         ))
-    return agents
 
+    _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
+    default_extra_tools: list[str] = (
+        [t.strip() for t in _raw_defaults.split(",") if t.strip()]
+        if isinstance(_raw_defaults, str)
+        else list(_raw_defaults)
+    )
 
-def load_pipeline_defaults(path: Path) -> list[str]:
-    """Return the defaults.extra_allowedTools list from pipeline.json.
-
-    These tools are prepended to every agent's own extra_allowedTools so
-    commonly needed tools (Write, Edit) don't have to be declared per-agent.
-    """
-    with open(path) as f:
-        raw = json.load(f)
-    extra = raw.get("defaults", {}).get("extra_allowedTools", [])
-    if isinstance(extra, str):
-        return [t.strip() for t in extra.split(",") if t.strip()]
-    return list(extra)
+    return agents, default_extra_tools
 
 
 def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
@@ -1310,8 +1309,8 @@ def invoke_agent(
         if isinstance(_extra, str)
         else list(_extra)
     )
-    # Prepend pipeline-level defaults so per-agent list can extend or rely on them.
-    extra_tools = list(default_extra_tools or []) + _agent_extra
+    # Merge defaults (first) with agent-specific tools; deduplicate preserving order.
+    extra_tools = list(dict.fromkeys(list(default_extra_tools or []) + _agent_extra))
     try:
         max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))
     except (ValueError, TypeError):
@@ -2368,9 +2367,8 @@ def main() -> None:
     # operations use a consistent credential with contents:write scope.
     _configure_git_auth()
 
-    agents = load_pipeline(args.pipeline)
+    agents, default_extra_tools = load_pipeline(args.pipeline)
     pipeline_map = pipeline_by_name(agents)
-    default_extra_tools = load_pipeline_defaults(args.pipeline)
     gh = GitHubClient(repo=args.repo, token=token)
 
     session_id = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
