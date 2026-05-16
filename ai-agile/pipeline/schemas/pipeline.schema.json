@@ -8,6 +8,18 @@
   "additionalProperties": true,
   "properties": {
     "$schema": { "type": "string" },
+    "defaults": {
+      "type": "object",
+      "description": "Pipeline-level defaults merged into every agent invocation.",
+      "additionalProperties": false,
+      "properties": {
+        "extra_allowedTools": {
+          "type": "array",
+          "description": "Tools prepended to every agent's extra_allowedTools. Agents can extend this list in their own frontmatter.",
+          "items": { "type": "string" }
+        }
+      }
+    },
     "pipeline": {
       "type": "array",
       "minItems": 1,

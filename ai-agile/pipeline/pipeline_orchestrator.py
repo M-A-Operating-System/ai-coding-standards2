@@ -235,6 +235,20 @@ def load_pipeline(path: Path) -> list[AgentDef]:
     return agents
 
 
+def load_pipeline_defaults(path: Path) -> list[str]:
+    """Return the defaults.extra_allowedTools list from pipeline.json.
+
+    These tools are prepended to every agent's own extra_allowedTools so
+    commonly needed tools (Write, Edit) don't have to be declared per-agent.
+    """
+    with open(path) as f:
+        raw = json.load(f)
+    extra = raw.get("defaults", {}).get("extra_allowedTools", [])
+    if isinstance(extra, str):
+        return [t.strip() for t in extra.split(",") if t.strip()]
+    return list(extra)
+
+
 def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
     return {a.agent: a for a in agents}
 
@@ -1249,6 +1263,7 @@ def invoke_agent(
     repo: str,
     attempt: int = 0,
     agent_text_override: Optional[str] = None,
+    default_extra_tools: Optional[list[str]] = None,
 ) -> AgentRunResult:
     """
     Invoke the agent via claude CLI.
@@ -1290,11 +1305,13 @@ def invoke_agent(
     frontmatter = parse_frontmatter(agent_text)
     agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
     _extra: object = frontmatter.get("extra_allowedTools", [])
-    extra_tools: list[str] = (
+    _agent_extra: list[str] = (
         [t.strip() for t in _extra.split(",") if t.strip()]
         if isinstance(_extra, str)
         else list(_extra)
     )
+    # Prepend pipeline-level defaults so per-agent list can extend or rely on them.
+    extra_tools = list(default_extra_tools or []) + _agent_extra
     try:
         max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))
     except (ValueError, TypeError):
@@ -1888,6 +1905,7 @@ def process_work_item(
     *,
     session_id: str = "",
     audit_log: Optional[list] = None,
+    default_extra_tools: Optional[list[str]] = None,
 ) -> int:
     """
     Evaluate all agents against a single issue or PR.
@@ -2070,6 +2088,7 @@ def process_work_item(
             result = invoke_agent(
                 agent_def, work_item, dry_run, repo, attempt=0,
                 agent_text_override=_agent_text_snapshot,
+                default_extra_tools=default_extra_tools,
             )
 
             while not dry_run:
@@ -2089,6 +2108,7 @@ def process_work_item(
                 result = invoke_agent(
                     agent_def, work_item, dry_run, repo, attempt=_attempt,
                     agent_text_override=_agent_text_snapshot,
+                    default_extra_tools=default_extra_tools,
                 )
                 if result.rate_limited:
                     break
@@ -2350,6 +2370,7 @@ def main() -> None:
 
     agents = load_pipeline(args.pipeline)
     pipeline_map = pipeline_by_name(agents)
+    default_extra_tools = load_pipeline_defaults(args.pipeline)
     gh = GitHubClient(repo=args.repo, token=token)
 
     session_id = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
@@ -2358,6 +2379,8 @@ def main() -> None:
     log.info("Pipeline: %d agents across %d phases",
              len(agents),
              len({a.phase for a in agents}))
+    if default_extra_tools:
+        log.debug("Pipeline defaults: extra_allowedTools=%s", default_extra_tools)
     log.info("Repository: %s", args.repo)
     log.info("Session: %s", session_id)
     if args.dry_run:
@@ -2392,6 +2415,7 @@ def main() -> None:
         n = process_work_item(
             item, agents, pipeline_map, gh, args.dry_run, args.repo,
             session_id=session_id, audit_log=audit_log,
+            default_extra_tools=default_extra_tools,
         )
         total_triggered += n
         if n > 0:
