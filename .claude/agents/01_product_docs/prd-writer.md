@@ -21,22 +21,29 @@ decomposition before a PRD is written.
 
 ---
 
-## Step 1 — Read the issue and classification
+## Step 1 — Fetch all issue data in two calls
 
-Fetch issue metadata:
+**Call 1 — basic metadata** (title, body, labels, author — reused in Step 4):
 
 ```bash
 gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author
 ```
 
-Fetch the classifier artefact to get the classification type:
+**Call 2 — comments** (extract classifier artefact and check for prior snapshot
+in a single pass, so no further comment fetches are needed):
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo $REPO \
-  --json comments \
-  --jq '.comments[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/issue-classifier")) | .body' \
-  | head -1
+COMMENTS=$(gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments')
+CLASSIFIER=$(echo "$COMMENTS" | jq -r '
+  .[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/issue-classifier"))
+  | .body' | tail -1)
+SNAPSHOT_ID=$(echo "$COMMENTS" | jq -r '
+  .[] | select(.body | contains("ai-agile/snapshot/v1 by 01_product_docs/prd-writer"))
+  | .id' | head -1)
 ```
+
+`$CLASSIFIER` gives you the classification verdict for Step 3a.
+`$SNAPSHOT_ID` is non-empty when a snapshot already exists (used in Step 4a to skip re-posting).
 
 If any product-layer standards exist in `ai-agile/standards/`, read
 them so you can flag inline violations in the PRD:
@@ -170,21 +177,10 @@ original title and body are preserved as a one-off snapshot comment.
 
 ### Step 4a — Snapshot (first run only)
 
-Check whether a snapshot already exists:
+Use `$SNAPSHOT_ID` from Step 1. If it is empty, post the snapshot using
+the title and body already captured in Step 1 (no additional API calls needed):
 
 ```bash
-PRIOR_SNAPSHOT_ID=$(gh issue view $ISSUE_NUMBER --repo $REPO \
-  --json comments \
-  --jq '.comments[] | select(.body | contains("ai-agile/snapshot/v1 by 01_product_docs/prd-writer")) | .id' \
-  | head -1)
-```
-
-If `PRIOR_SNAPSHOT_ID` is empty, post the snapshot:
-
-```bash
-ORIG_TITLE=$(gh issue view $ISSUE_NUMBER --repo $REPO --json title --jq '.title')
-ORIG_BODY=$(gh issue view $ISSUE_NUMBER --repo $REPO --json body  --jq '.body')
-
 gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->
 ## Original issue (snapshot before PRD rewrite)
@@ -198,8 +194,8 @@ EOF
 )"
 ```
 
-If `PRIOR_SNAPSHOT_ID` is non-empty (re-run), skip this step — the
-snapshot is immutable and must never be edited.
+If `$SNAPSHOT_ID` is non-empty (re-run), skip this step — the snapshot
+is immutable and must never be edited.
 
 ### Step 4b — Build the new title
 
