@@ -89,20 +89,17 @@
     {
       "agent": "05_execute/pr-reviewer",
       "phase": "05_execute",
-      "object": ["pr"],
+      "object": ["issue"],
       "trigger": {
-        "label": "pr-reviewer:requested"
+        "label": "coder:complete"
       },
       "human_gate_after": true,
       "human_gate_label": "pr-reviewer:approved",
-      "dependencies": [],
+      "dependencies": ["05_execute/coder"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "git_ops": {
-        "commit_after": false,
-        "mark_ready_on_complete": true
-      },
-      "description": "Ad-hoc PR reviewer. Reads the PR diff and linked issue spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Concludes with an explicit APPROVE or REQUEST CHANGES recommendation. On APPROVE (complete), the orchestrator marks the draft PR ready for merge — the reviewer agent never touches PR state directly. Triggered by pr-reviewer:requested. Gates on pr-reviewer:approved."
+      "exclude_classifications": ["spike"],
+      "description": "Reviews the draft PR for this issue after the coder completes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. On APPROVE the agent marks the PR ready for human review. On REQUEST CHANGES the pipeline waits for the human gate before the coder is re-invoked. Gates on pr-reviewer:approved."
     },
 
     {

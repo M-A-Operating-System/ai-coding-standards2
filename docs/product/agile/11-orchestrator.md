@@ -200,28 +200,32 @@ was bypassed and downstream work may proceed.
 ## Mutex acquisition (P-4)
 
 The `:wip` label is the lock for an `(object, agent)` pair. Acquisition
-follows a claim+verify protocol to prevent double-triggering in
-multi-runner deployments:
+uses the in-memory label snapshot combined with the GitHub Actions
+concurrency group to ensure at-most-one invocation:
 
 ```
-1. Read current labels.
-2. If any {agent}:{status} label is present → abort (another runner got there).
-3. Apply {agent}:wip.
-4. Post a claim comment:
-   <!-- ai-agile/claim/v1 -->
-   {"runner": "{runner_id}", "agent": "{agent}", "item": {number}, "at": "{iso8601}"}
-5. Wait 2 seconds (GitHub comment list consistency window).
-6. Re-read claim comments on the work item.
-7. Find the claim with the lowest GitHub comment ID — that is the winner.
-8. If our comment ID is not the lowest:
-   → remove {agent}:wip, delete our claim comment, abort.
-9. If our comment ID is the lowest → we hold the lock; proceed.
+1. At run start, read ALL labels for the work item from GitHub into an
+   in-memory set (one API call per item, not per agent).
+2. For each agent in declaration order:
+   a. Check the in-memory set: if any {agent}:{status} label is present
+      → skip (already running or terminal).
+   b. Apply {agent}:wip via GitHub API.
+   c. Immediately add {agent}:wip to the in-memory set.
+      (So the next agent in the same run sees the updated state without
+       a round-trip to GitHub.)
+   d. Invoke the agent subprocess.
+   e. On completion, apply the terminal label and remove {agent}:wip from
+      GitHub API and from the in-memory set.
 ```
 
-The 2-second wait in step 5 is the documented lower bound for GitHub's
-comment list eventual consistency. The claim comment is deleted at the end
-of the agent run (winning claim) or immediately on loss (step 8). This
-keeps the issue comment history clean.
+**Why this is safe.** A single GitHub Actions concurrency group
+(`pipeline-orchestrator`) serialises all orchestrator runs. GitHub
+queues a second triggered run rather than starting it in parallel.
+The second run, when it eventually starts, reads the current settled
+label state and sees the `:wip` label from the first run — so it
+correctly skips the already-running agent. See
+[Race condition and concurrency management](#race-condition-and-concurrency-management)
+below for the full analysis.
 
 **Stale lock reclaim.** A `:wip` label older than the configured agent
 timeout (default 30 minutes, set per agent in `pipeline.json` via
@@ -605,9 +609,12 @@ permissions:
   issues: write
   pull-requests: write
 
+# Single global group — all orchestrator runs are serialised.
+# A second trigger queues behind the running instance rather than
+# starting in parallel, so the second run always reads settled label state.
 concurrency:
-  group: orchestrator-${{ github.event.issue.number || github.event.pull_request.number || 'schedule' }}
-  cancel-in-progress: false  # never cancel a running orchestrator for the same item
+  group: pipeline-orchestrator
+  cancel-in-progress: false
 
 jobs:
   orchestrate:
@@ -631,11 +638,14 @@ jobs:
         id: args
         run: |
           ARGS=""
-          [ -n "${{ github.event.inputs.issue_number }}" ] && ARGS="$ARGS --issue ${{ github.event.inputs.issue_number }}"
-          [ -n "${{ github.event.issue.number }}" ] && ARGS="$ARGS --issue ${{ github.event.issue.number }}"
-          [ -n "${{ github.event.pull_request.number }}" ] && ARGS="$ARGS --issue ${{ github.event.pull_request.number }}"
-          [ "${{ github.event.inputs.dry_run }}" = "true" ]  && ARGS="$ARGS --dry-run"
-          [ "${{ github.event.inputs.verbose }}" = "true" ]  && ARGS="$ARGS --verbose"
+          if [ -n "${{ github.event.inputs.issue_number }}" ]; then
+            ARGS="$ARGS --issue ${{ github.event.inputs.issue_number }}"
+          elif [ "${{ github.event_name }}" = "issues" ]; then
+            ARGS="$ARGS --issue ${{ github.event.issue.number }} --kind issue"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            ARGS="$ARGS --issue ${{ github.event.pull_request.number }} --kind pr"
+          fi
+          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
           echo "args=$ARGS" >> "$GITHUB_OUTPUT"
 
       - name: Run orchestrator
@@ -643,17 +653,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TRACE: "1"
         run: |
           python ai-agile/pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
+            --verbose \
             ${{ steps.args.outputs.args }}
 ```
 
 **Why `cancel-in-progress: false`.** Two label events can fire within
 seconds (e.g., human applies gate label; orchestrator immediately promotes
 the agent and applies `:complete`, firing a second event). Cancelling the
-second run would skip the promotion step. The concurrency key serialises
-runs for the same work item; it never cancels a run already in progress.
+second run would skip the promotion step. The global concurrency key
+serialises all orchestrator runs; it never cancels a run already in progress.
 
 **Scheduled reconciler.** The schedule trigger is the backstop for:
 
@@ -699,23 +712,106 @@ Options:
 
 ## Concurrency model
 
-**Cross-issue parallelism.** Different work items have independent concurrency
-groups in GitHub Actions. Two issues can advance simultaneously with no
-coordination required. The mutex (`:wip`) is per `(object, agent)`, not
-global.
+**Cross-issue parallelism.** The global `pipeline-orchestrator` concurrency
+group serialises all orchestrator runs globally. Two issues therefore cannot
+advance simultaneously — each run processes all eligible work items in
+sequence and then exits, letting the next queued run start. This is the
+intentional trade-off for correctness: the alternative (per-item concurrency
+groups) recreated the race condition described below.
 
-**Intra-item serialisation.** Each workflow run uses a concurrency group
-keyed to the work item number with `cancel-in-progress: false`. GitHub
-Actions queues subsequent runs rather than dropping them. This means if a
-label event fires while a previous run is still processing the same item,
-the second run waits and then re-evaluates from the current label state
-(which will already reflect the first run's outcome). There is no
-double-triggering.
+**Intra-item serialisation.** Because the concurrency group is global, if a
+label event fires while a previous run is still executing, GitHub queues the
+new run rather than starting it in parallel. The queued run starts only after
+the first completes; by then labels reflect the settled state of the first
+run, so the second run correctly skips already-`:wip` agents.
 
-**Multi-runner safety.** If two orchestrator processes do somehow start
-for the same `(item, agent)` simultaneously (e.g., two scheduled ticks
-overlap), the claim+verify mutex protocol (step 4–9 above) ensures only one
-proceeds. The loser aborts cleanly.
+**Scheduled reconciler as backstop.** GitHub Actions keeps at most one pending
+run per concurrency group. If two label events fire in rapid succession while
+a run is active, GitHub keeps the second event's run queued and discards any
+further queued runs. The 15-minute cron ensures that a discarded event does
+not cause a work item to stall indefinitely — the next scheduled tick
+re-evaluates all open items and advances any that became eligible.
+
+---
+
+## Race condition and concurrency management
+
+### What the race condition was
+
+Before a global concurrency group was added, multiple orchestrator runs could
+execute in parallel. The sequence that caused duplicate agent invocations:
+
+```
+t=0s   Run A starts. Reads labels: no :wip on coder. Coder is eligible.
+t=1s   Run A calls gh label add {coder}:wip on GitHub.
+t=2s   Applying :wip triggers issues.labeled → GitHub starts Run B.
+t=3s   Run A invokes the coder subprocess. Coder begins a 30-minute run.
+t=4s   Run B starts. Reads labels from GitHub. The :wip write from t=1s
+        has not yet propagated to the API response (GitHub label writes
+        have eventual consistency of a few seconds in practice).
+t=5s   Run B sees no :wip. Coder is eligible. Run B also invokes coder.
+        ↳ Two coder subprocesses now running for the same issue.
+```
+
+The result was duplicate "opening announcement" comments on the issue and
+two agents writing to the same working tree concurrently.
+
+### Why it only surfaced with the coder
+
+Short agents (issue-classifier, prd-writer) complete in 2–5 minutes. By the
+time any label event they fire produces a new orchestrator run, the original
+run has already written the `:complete` label and exited. The second run sees
+a terminal label and skips. The race window is too small to hit in practice.
+
+The coder runs for 20–40 minutes. During that window many label events fire
+(`:wip` apply, human gate labels, PR events). Without the concurrency group,
+each event started a new parallel run. Because the `:wip` write that gated
+the previous check had been applied seconds earlier, GitHub's eventual
+consistency window meant some of those parallel runs did not see it yet —
+and double-triggered the agent.
+
+### The fix
+
+```yaml
+# .github/workflows/orchestrator.yml
+concurrency:
+  group: pipeline-orchestrator
+  cancel-in-progress: false
+```
+
+This single change serialises all orchestrator runs at the GitHub Actions
+scheduler level, before any Python code runs. The `:wip` check in the
+decision loop is now a fast-path skip (already settled from the prior run)
+rather than a race-condition guard.
+
+`cancel-in-progress: false` is essential: cancelling the queued run would
+drop label events that need processing (gate promotions, PR synchronise
+events). Queuing is correct; cancellation is not.
+
+### Trade-off: global serialisation vs. per-item groups
+
+| Approach | Throughput | Correctness |
+|---|---|---|
+| No concurrency group | Issues advance in parallel | Race condition — duplicate agent invocations |
+| Per-item group (`orchestrator-{N}`) | Issues advance in parallel | Still racy: `:wip` apply fires `labeled` event → new run for item N starts before `:wip` propagates |
+| Global group (`pipeline-orchestrator`) | Issues advance sequentially | Correct — settled label state guaranteed |
+
+Per-item groups do not eliminate the race because the `:wip` write on item N
+fires an `issues.labeled` event for item N, which matches the per-item
+concurrency key and queues a new run for item N. That queued run starts
+within seconds of `:wip` being applied — inside the propagation window.
+
+The global group prevents this because there is at most one queued run
+globally; by the time it starts, all prior writes are settled.
+
+### In-memory label snapshot
+
+Within a single orchestrator run, labels are read once per work item and
+held in memory. When the orchestrator writes a label (`:wip`, terminal label)
+it updates the in-memory set immediately, without a GitHub round-trip. This
+prevents reading stale state between agents on the same item within the same
+run. The snapshot is reset at the start of each new run — no state crosses
+the process boundary.
 
 ---
 
