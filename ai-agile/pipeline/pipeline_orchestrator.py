@@ -1772,20 +1772,31 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
 
             # GITHUB_TOKEN cannot push to .github/workflows/ — use the bot PAT
             # (AI_AGILE_BOT_TOKEN) which carries the `workflow` scope.
-            # actions/checkout injects GITHUB_TOKEN via http.extraheader; we must
-            # replace that entry (not add to it) so the bot token wins the push.
+            # Strategy: embed bot token in the remote URL, then unset the
+            # GITHUB_TOKEN extraheader that actions/checkout injected.
+            # Setting extraheader via `git config` has URL-subsection parsing
+            # issues on the CLI; changing the remote URL is unambiguous.
             _bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
             if _bot_token:
+                _orig_url = _sp.run(
+                    ["git", "remote", "get-url", "origin"],
+                    capture_output=True, text=True, check=True,
+                ).stdout.strip()
+                # Strip any existing embedded credentials then insert bot token.
+                _clean_url = re.sub(r"https://[^@]+@", "https://", _orig_url)
+                _bot_url = _clean_url.replace(
+                    "https://github.com",
+                    f"https://x-access-token:{_bot_token}@github.com",
+                    1,
+                )
+                _sp.run(["git", "remote", "set-url", "origin", _bot_url], check=True)
+                # Remove the GITHUB_TOKEN extraheader so only the URL
+                # credential is sent (two competing Authorization headers
+                # causes GitHub to use GITHUB_TOKEN, blocking workflow pushes).
                 _sp.run(
                     ["git", "config", "--unset-all",
                      "http.https://github.com/.extraheader"],
-                    check=False,  # key may not exist in all environments
-                )
-                _sp.run(
-                    ["git", "config",
-                     "http.https://github.com/.extraheader",
-                     f"AUTHORIZATION: bearer {_bot_token}"],
-                    check=True,
+                    check=False,
                 )
 
             _sp.run(["git", "push", "origin", branch], check=True)
