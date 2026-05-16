@@ -460,6 +460,15 @@ class GitHubClient:
                           json_body={"draft": False})
         r.raise_for_status()
 
+    def find_pr_by_branch(self, branch: str) -> Optional[int]:
+        """Return the number of the first open PR whose head is *branch*, or None."""
+        owner = self.repo.split("/")[0]
+        data = self._get(
+            f"/repos/{self.repo}/pulls",
+            params={"head": f"{owner}:{branch}", "state": "open", "per_page": 1},
+        )
+        return data[0]["number"] if data else None
+
     def _put(self, path: str, body: dict) -> requests.Response:
         """Issue a PUT request; returns the raw response so callers can inspect 409."""
         return self._request("PUT", path, json_body=body)
@@ -2343,20 +2352,35 @@ def process_work_item(
             # Mark the PR ready-for-review if the agent declares it (P-16).
             if final_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
                 if work_item.kind == "pr":
+                    _ready_pr_number = work_item.number
+                elif work_item.kind == "issue":
+                    # For issue-scoped agents, look up the PR on the issue branch.
                     try:
-                        gh.mark_pr_ready(work_item.number)
+                        _ready_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+                    except Exception as exc:
+                        log.warning(
+                            "  could not look up PR for issue #%d: %s",
+                            work_item.number, exc,
+                        )
+                        _ready_pr_number = None
+                else:
+                    _ready_pr_number = None
+
+                if _ready_pr_number:
+                    try:
+                        gh.mark_pr_ready(_ready_pr_number)
                         log.info(
-                            "  READY   %-38s  marked #%d ready for review",
-                            agent_def.agent, work_item.number,
+                            "  READY   %-38s  marked PR #%d ready for review",
+                            agent_def.agent, _ready_pr_number,
                         )
                     except Exception as exc:
                         log.warning(
                             "  could not mark PR #%d ready after %s: %s",
-                            work_item.number, agent_def.agent, exc,
+                            _ready_pr_number, agent_def.agent, exc,
                         )
-                else:
+                elif agent_def.mark_ready_on_complete:
                     log.warning(
-                        "  mark_ready_on_complete set on %s but work item #%d is not a PR — skipped",
+                        "  mark_ready_on_complete set on %s but no PR found for #%d — skipped",
                         agent_def.agent, work_item.number,
                     )
 

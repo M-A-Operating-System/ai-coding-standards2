@@ -102,7 +102,11 @@
         "re_invoke": "05_execute/coder",
         "max_cycles": 3
       },
-      "description": "Reviews the draft PR for this issue after the coder completes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. On APPROVE emits complete and the PR is marked ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (up to 3 cycles); only after 3 failed cycles is human sign-off required."
+      "git_ops": {
+        "commit_after": false,
+        "mark_ready_on_complete": true
+      },
+      "description": "Reviews the draft PR for this issue after the coder completes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. On APPROVE emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (up to 3 cycles); only after 3 failed cycles is human sign-off required."
     },
 
     {
