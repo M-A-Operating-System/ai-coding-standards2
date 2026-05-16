@@ -87,6 +87,21 @@
     },
 
     {
+      "agent": "05_execute/start-review",
+      "type": "script",
+      "script": ".github/scripts/start-review.sh",
+      "phase": "05_execute",
+      "object": ["issue"],
+      "trigger": {
+        "label": "coder:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["05_execute/coder"],
+      "exclude_classifications": ["spike"],
+      "description": "Scripted step: after the coder agent completes, finds the open draft PR for this issue (branch issue-{N}) and applies pr-reviewer:requested to trigger the automated code review cycle. Idempotent — adding an existing label is a no-op. Skipped for spike issues."
+    },
+
+    {
       "agent": "05_execute/pr-reviewer",
       "phase": "05_execute",
       "object": ["pr"],
