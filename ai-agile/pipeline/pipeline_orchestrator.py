@@ -191,17 +191,24 @@ class AgentRunResult:
 
     success      — True if the agent subprocess exited 0.
     returncode   — The subprocess return code (None if not run).
-    captured_tail — The last several lines of subprocess output, capped
-                    so it can fit in a GitHub comment. Empty when the
-                    agent didn't run (dry-run, missing prompt file).
+    captured_tail — The tail of the agent's text output (extracted from the
+                    stream-json event stream), capped so it can fit in a
+                    GitHub comment. Empty when the agent didn't run
+                    (dry-run, missing prompt file).
     rate_limited — True if the failure was an Anthropic rate-limit
                     error and the orchestrator wrote the pause marker.
                     Caller should NOT apply :failed in this case.
+    input_tokens  — Total input tokens for the run, extracted from the
+                    stream-json result event. None if unavailable.
+    output_tokens — Total output tokens for the run, extracted from the
+                    stream-json result event. None if unavailable.
     """
     success: bool
     returncode: Optional[int] = None
     captured_tail: str = ""
     rate_limited: bool = False
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -981,6 +988,66 @@ def _parse_agent_sentinel(captured_tail: str) -> tuple[Optional[str], str]:
     return m.group(1), (m.group(2) or "")
 
 
+def _extract_text_from_stream_event(event: dict) -> str:
+    """Extract human-readable text from a stream-json CLI event.
+
+    Handles two event types that carry agent text output:
+    - "assistant": collects text from all text-type content blocks.
+    - "result": returns the result field (the agent's final text output).
+
+    Returns "" for all other event types (system, user, etc.).
+    """
+    if not isinstance(event, dict):
+        return ""
+    event_type = event.get("type", "")
+
+    if event_type == "assistant":
+        message = event.get("message")
+        if not isinstance(message, dict):
+            return ""
+        content = message.get("content")
+        if not isinstance(content, list):
+            return ""
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        return "\n".join(parts)
+
+    if event_type == "result":
+        result_text = event.get("result", "")
+        return result_text if isinstance(result_text, str) else ""
+
+    return ""
+
+
+def _extract_usage_from_result_event(event: dict) -> tuple[Optional[int], Optional[int]]:
+    """Extract (input_tokens, output_tokens) from a stream-json result event.
+
+    Returns (None, None) if the event is not a result event, if usage data
+    is absent, or if any token count is not a valid non-negative integer.
+    """
+    if not isinstance(event, dict) or event.get("type") != "result":
+        return None, None
+    usage = event.get("usage")
+    if not isinstance(usage, dict):
+        return None, None
+    try:
+        raw_input = usage.get("input_tokens")
+        raw_output = usage.get("output_tokens")
+        input_tok = int(raw_input) if raw_input is not None else None
+        output_tok = int(raw_output) if raw_output is not None else None
+        if input_tok is not None and input_tok < 0:
+            raise ValueError("negative input_tokens")
+        if output_tok is not None and output_tok < 0:
+            raise ValueError("negative output_tokens")
+    except (ValueError, TypeError):
+        return None, None
+    return input_tok, output_tok
+
+
 def _build_opening_announcement(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -1383,6 +1450,7 @@ def invoke_agent(
     cmd = [
         "claude",
         "--allowedTools", ",".join(base_tools + extra_tools),
+        "--output-format", "stream-json",
         "--max-turns", str(max_turns),
         "--session-id", agent_session_uuid,
     ]
@@ -1409,13 +1477,16 @@ def invoke_agent(
     else:
         agent_env["PR_NUMBER"] = str(work_item.number)
 
-    # Capture output so we can detect Anthropic rate-limit errors after
-    # the run. Stream it to our stderr line-by-line so logs remain
-    # readable in real time, but keep a bounded copy for inspection.
-    # Cap retained lines so a chatty agent cannot exhaust runner memory.
+    # Capture the stream-json output line-by-line. Each line is a JSON event;
+    # we parse it immediately to extract agent text (for sentinel/rate-limit
+    # detection) and token usage (from the result event). We also retain the
+    # raw lines (capped) so the tail can appear in diagnostic comments.
     MAX_CAPTURED_LINES = 5000
     AGENT_TIMEOUT_SECONDS = 1800
-    captured_lines: list[str] = []
+    captured_lines: list[str] = []       # raw NDJSON lines (for diagnostics)
+    agent_text_parts: list[str] = []     # text extracted from JSON events
+    result_input_tokens: Optional[int] = None
+    result_output_tokens: Optional[int] = None
 
     proc: subprocess.Popen | None = None
     try:
@@ -1435,27 +1506,52 @@ def invoke_agent(
                 sys.stderr.write(line)
                 if len(captured_lines) < MAX_CAPTURED_LINES:
                     captured_lines.append(line)
+                stripped = line.strip()
+                if stripped:
+                    try:
+                        event = json.loads(stripped)
+                        text = _extract_text_from_stream_event(event)
+                        if text:
+                            agent_text_parts.append(text)
+                        inp, out = _extract_usage_from_result_event(event)
+                        if inp is not None:
+                            result_input_tokens = inp
+                        if out is not None:
+                            result_output_tokens = out
+                    except json.JSONDecodeError:
+                        # Non-JSON line from the CLI (startup messages, etc.);
+                        # include as plain text so diagnostics remain readable.
+                        agent_text_parts.append(line.rstrip("\n"))
                 if time.monotonic() > deadline:
                     raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             log.error("    Agent %s timed out on #%d", agent_def.agent, work_item.number)
             _terminate_subprocess(proc)
+            agent_text = "\n".join(agent_text_parts)
+            agent_tail = _captured_tail([l + "\n" for l in agent_text.splitlines()])
             return AgentRunResult(
                 success=False,
                 returncode=proc.returncode,
                 captured_tail=(
                     f"Agent timed out after {AGENT_TIMEOUT_SECONDS}s.\n\n"
-                    f"Last output:\n{_captured_tail(captured_lines)}"
+                    f"Last output:\n{agent_tail}"
                 ),
+                input_tokens=result_input_tokens,
+                output_tokens=result_output_tokens,
             )
+
+        # Build the agent's text output for sentinel and rate-limit detection.
+        # Text is accumulated from assistant message events (incremental) and
+        # the result event (final); the sentinel appears at the end of this text.
+        agent_text = "\n".join(agent_text_parts)
+        agent_tail = _captured_tail([l + "\n" for l in agent_text.splitlines()])
 
         # On non-zero exit, check whether the cause was a rate-limit
         # error from the Anthropic API. If so, pause the pipeline so
         # subsequent runs back off rather than burning more requests.
         if proc.returncode != 0:
-            captured = "".join(captured_lines)
-            is_limited, retry_after = detect_rate_limit(captured)
+            is_limited, retry_after = detect_rate_limit(agent_text)
             if is_limited:
                 until = pause_pipeline(
                     retry_after,
@@ -1472,15 +1568,25 @@ def invoke_agent(
                     success=False,
                     returncode=proc.returncode,
                     rate_limited=True,
-                    captured_tail=_captured_tail(captured_lines),
+                    captured_tail=agent_tail,
+                    input_tokens=result_input_tokens,
+                    output_tokens=result_output_tokens,
                 )
             return AgentRunResult(
                 success=False,
                 returncode=proc.returncode,
-                captured_tail=_captured_tail(captured_lines),
+                captured_tail=agent_tail,
+                input_tokens=result_input_tokens,
+                output_tokens=result_output_tokens,
             )
 
-        return AgentRunResult(success=True, returncode=0, captured_tail=_captured_tail(captured_lines))
+        return AgentRunResult(
+            success=True,
+            returncode=0,
+            captured_tail=agent_tail,
+            input_tokens=result_input_tokens,
+            output_tokens=result_output_tokens,
+        )
 
     except FileNotFoundError:
         log.error("    'claude' CLI not found. Install: npm install -g @anthropic-ai/claude-code")
