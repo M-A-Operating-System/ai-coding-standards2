@@ -1,5 +1,8 @@
 {
   "$schema": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
+  "defaults": {
+    "extra_allowedTools": ["Write", "Edit"]
+  },
   "pipeline": [
 
     {

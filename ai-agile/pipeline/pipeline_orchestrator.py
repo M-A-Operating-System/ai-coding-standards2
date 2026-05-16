@@ -208,7 +208,12 @@ class AgentRunResult:
 # Pipeline loader
 # ---------------------------------------------------------------------------
 
-def load_pipeline(path: Path) -> list[AgentDef]:
+def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
+    """Parse pipeline.json once and return (agents, default_extra_tools).
+
+    default_extra_tools comes from defaults.extra_allowedTools and is
+    prepended to every agent's own extra_allowedTools at invocation time.
+    """
     with open(path) as f:
         raw = json.load(f)
 
@@ -232,7 +237,15 @@ def load_pipeline(path: Path) -> list[AgentDef]:
             commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
             exclude_classifications=list(entry.get("exclude_classifications", [])),
         ))
-    return agents
+
+    _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
+    default_extra_tools: list[str] = (
+        [t.strip() for t in _raw_defaults.split(",") if t.strip()]
+        if isinstance(_raw_defaults, str)
+        else list(_raw_defaults)
+    )
+
+    return agents, default_extra_tools
 
 
 def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
@@ -1249,6 +1262,7 @@ def invoke_agent(
     repo: str,
     attempt: int = 0,
     agent_text_override: Optional[str] = None,
+    default_extra_tools: Optional[list[str]] = None,
 ) -> AgentRunResult:
     """
     Invoke the agent via claude CLI.
@@ -1290,11 +1304,13 @@ def invoke_agent(
     frontmatter = parse_frontmatter(agent_text)
     agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
     _extra: object = frontmatter.get("extra_allowedTools", [])
-    extra_tools: list[str] = (
+    _agent_extra: list[str] = (
         [t.strip() for t in _extra.split(",") if t.strip()]
         if isinstance(_extra, str)
         else list(_extra)
     )
+    # Merge defaults (first) with agent-specific tools; deduplicate preserving order.
+    extra_tools = list(dict.fromkeys(list(default_extra_tools or []) + _agent_extra))
     try:
         max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))
     except (ValueError, TypeError):
@@ -1888,6 +1904,7 @@ def process_work_item(
     *,
     session_id: str = "",
     audit_log: Optional[list] = None,
+    default_extra_tools: Optional[list[str]] = None,
 ) -> int:
     """
     Evaluate all agents against a single issue or PR.
@@ -2070,6 +2087,7 @@ def process_work_item(
             result = invoke_agent(
                 agent_def, work_item, dry_run, repo, attempt=0,
                 agent_text_override=_agent_text_snapshot,
+                default_extra_tools=default_extra_tools,
             )
 
             while not dry_run:
@@ -2089,6 +2107,7 @@ def process_work_item(
                 result = invoke_agent(
                     agent_def, work_item, dry_run, repo, attempt=_attempt,
                     agent_text_override=_agent_text_snapshot,
+                    default_extra_tools=default_extra_tools,
                 )
                 if result.rate_limited:
                     break
@@ -2348,7 +2367,7 @@ def main() -> None:
     # operations use a consistent credential with contents:write scope.
     _configure_git_auth()
 
-    agents = load_pipeline(args.pipeline)
+    agents, default_extra_tools = load_pipeline(args.pipeline)
     pipeline_map = pipeline_by_name(agents)
     gh = GitHubClient(repo=args.repo, token=token)
 
@@ -2358,6 +2377,8 @@ def main() -> None:
     log.info("Pipeline: %d agents across %d phases",
              len(agents),
              len({a.phase for a in agents}))
+    if default_extra_tools:
+        log.debug("Pipeline defaults: extra_allowedTools=%s", default_extra_tools)
     log.info("Repository: %s", args.repo)
     log.info("Session: %s", session_id)
     if args.dry_run:
@@ -2392,6 +2413,7 @@ def main() -> None:
         n = process_work_item(
             item, agents, pipeline_map, gh, args.dry_run, args.repo,
             session_id=session_id, audit_log=audit_log,
+            default_extra_tools=default_extra_tools,
         )
         total_triggered += n
         if n > 0:

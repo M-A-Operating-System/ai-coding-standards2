@@ -12,7 +12,7 @@ description: >
 tools: [Bash, Read, Edit, Write, Grep, Glob]
 model: claude-sonnet-4-6
 max_turns: 120
-extra_allowedTools: [Write, Edit, Bash(*)]
+extra_allowedTools: [Bash(*)]
 ---
 
 # 05_execute/coder
