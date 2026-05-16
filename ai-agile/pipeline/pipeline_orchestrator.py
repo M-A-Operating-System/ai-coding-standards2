@@ -1665,8 +1665,13 @@ def _apply_failed(
         else "_Posted by the orchestrator after the agent subprocess exited non-zero "
              "without one of the three terminal status calls (set-complete / set-review / set-blocked)._"
     )
+    heading = (
+        f"### `{agent_def.agent}` completed — post-run step failed"
+        if reason
+        else f"### `{agent_def.agent}` exited with an error"
+    )
     body_parts = [
-        f"### `{agent_def.agent}` exited with an error",
+        heading,
         "",
         f"Return code: `{result.returncode if result.returncode is not None else 'unknown'}`",
         "",
@@ -1698,18 +1703,22 @@ def _apply_failed(
 # ---------------------------------------------------------------------------
 
 def _configure_git_auth() -> None:
-    """Switch all git operations to AI_AGILE_BOT_TOKEN for the lifetime of
-    this process.
+    """Ensure all git operations use GITHUB_TOKEN for the lifetime of this process.
 
-    actions/checkout configures GITHUB_TOKEN via http.extraheader, which lacks
-    the `workflow` scope needed to push .github/workflows/ files. The bot PAT
-    has both `repo` and `workflow` scope. We embed it in the remote URL and
-    remove the competing GITHUB_TOKEN extraheader so every fetch, checkout, and
-    push in this process uses the same credential.
+    actions/checkout injects GITHUB_TOKEN via http.extraheader. We also embed
+    the token directly in the remote URL so git has a consistent credential
+    regardless of whether the extraheader is present. This gives the orchestrator
+    `contents: write` access (push to any non-workflow branch).
+
+    NOTE: GITHUB_TOKEN cannot push to .github/workflows/ files — that requires
+    a classic PAT with `repo` + `workflow` scopes set as AI_AGILE_BOT_TOKEN.
+    Until AI_AGILE_BOT_TOKEN has repo scope, coder-generated workflow files
+    must be committed manually or via the GitHub web UI.
     """
     import subprocess as _sg
-    bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
-    if not bot_token:
+    github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not github_token:
+        log.warning("git auth: no GITHUB_TOKEN found — git push may fail")
         return
 
     try:
@@ -1718,23 +1727,30 @@ def _configure_git_auth() -> None:
             capture_output=True, text=True, check=True,
         ).stdout.strip()
 
-        # Strip any existing embedded credentials, then insert the bot token.
+        # Strip any existing embedded credentials, then insert GITHUB_TOKEN.
         clean_url = re.sub(r"https://[^@]+@", "https://", orig_url)
-        bot_url = clean_url.replace(
+        auth_url = clean_url.replace(
             "https://github.com",
-            f"https://x-access-token:{bot_token}@github.com",
+            f"https://x-access-token:{github_token}@github.com",
             1,
         )
-        _sg.run(["git", "remote", "set-url", "origin", bot_url], check=True)
+        _sg.run(["git", "remote", "set-url", "origin", auth_url], check=True)
+        log.info("git auth: configured origin to use GITHUB_TOKEN (contents:write scope)")
 
-        # Remove the GITHUB_TOKEN extraheader that actions/checkout injected.
-        _sg.run(
-            ["git", "config", "--unset-all", "http.https://github.com/.extraheader"],
-            check=False,  # key may not exist outside CI
-        )
-        log.info("git auth: configured origin to use AI_AGILE_BOT_TOKEN")
+        bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
+        if not bot_token:
+            log.warning(
+                "git auth: AI_AGILE_BOT_TOKEN is not set — "
+                "coder-generated .github/workflows/ files cannot be pushed automatically. "
+                "Update AI_AGILE_BOT_TOKEN to a classic PAT with repo+workflow scopes."
+            )
+        else:
+            log.debug(
+                "git auth: AI_AGILE_BOT_TOKEN is present but currently only used for "
+                "API calls (issues/PRs). repo+workflow scope needed for workflow file pushes."
+            )
     except Exception as exc:
-        log.warning("git auth: could not configure bot token — %s", exc)
+        log.warning("git auth: could not configure GITHUB_TOKEN — %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1795,6 +1811,20 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             _sp.run(["git", "stash", "pop"], check=True)
 
             _sp.run(["git", "add", "-A"], check=True)
+
+            # Warn if agent wrote workflow files — GITHUB_TOKEN cannot push them.
+            # A classic PAT with repo+workflow scope in AI_AGILE_BOT_TOKEN is required.
+            workflow_files = _sp.run(
+                ["git", "diff", "--cached", "--name-only", "--", ".github/workflows/"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if workflow_files:
+                log.warning(
+                    "  commit_after: agent wrote .github/workflows/ files: %s — "
+                    "GITHUB_TOKEN cannot push workflow files. Push will likely fail with 403. "
+                    "Fix: update AI_AGILE_BOT_TOKEN to a classic PAT with repo+workflow scopes.",
+                    workflow_files.replace("\n", ", "),
+                )
 
             # Guard: nothing staged → skip (agent found nothing to update).
             staged = _sp.run(["git", "diff", "--cached", "--quiet"])
@@ -2314,8 +2344,8 @@ def main() -> None:
             )
             sys.exit(1)
 
-    # Configure all git operations to use AI_AGILE_BOT_TOKEN so fetch,
-    # checkout, and push all share the same credential (which has workflow scope).
+    # Embed GITHUB_TOKEN in the remote URL so all git fetch/checkout/push
+    # operations use a consistent credential with contents:write scope.
     _configure_git_auth()
 
     agents = load_pipeline(args.pipeline)
