@@ -223,7 +223,7 @@ gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<REVIEW_EOF
 $FINDING_BODY
 
 ---
-_Apply \`pr-reviewer:approved\` to advance the pipeline._
+_On APPROVE: PR is marked ready for human review. On REQUEST CHANGES: the orchestrator will automatically re-invoke the coder (up to 3 cycles). After 3 cycles without agreement, human sign-off is required._
 REVIEW_EOF
 )"
 
@@ -252,7 +252,9 @@ gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
 \`\`\`
 EOF
 )"
-echo "AI_AGILE_STATUS: review \"Verdict: $VERDICT.\""
+[[ "$VERDICT" == "APPROVE" ]] \
+  && echo "AI_AGILE_STATUS: complete" \
+  || echo "AI_AGILE_STATUS: review \"Verdict: $VERDICT.\""
 ```
 
 ---

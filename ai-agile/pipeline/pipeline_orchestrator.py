@@ -143,6 +143,7 @@ class AgentDef:
     mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
     commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
+    review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int} — auto-retry target on :review
 
     @property
     def label_key(self) -> str:
@@ -236,6 +237,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
             mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
             commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
             exclude_classifications=list(entry.get("exclude_classifications", [])),
+            review_loop=entry.get("review_loop"),
         ))
 
     _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
@@ -764,6 +766,123 @@ def agent_status(labels: set[str], agent: str) -> Optional[str]:
         if f"{agent}:{status}" in labels:
             return status
     return None
+
+
+def _get_review_cycle(labels: set[str]) -> int:
+    """Return the current review-loop cycle count from review-cycle:N labels."""
+    for label in labels:
+        if label.startswith("review-cycle:"):
+            try:
+                return int(label.split(":")[-1])
+            except ValueError:
+                pass
+    return 0
+
+
+def _handle_review_loop(
+    gh: "GitHubClient",
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    labels: set[str],
+    pipeline_map: dict[str, "AgentDef"],
+) -> set[str]:
+    """Called when a review-loop agent completes with :review status.
+
+    If cycles < max_cycles: clears the reviewer's :review and the target
+    agent's :complete, increments the review-cycle counter, and posts a
+    comment so the next orchestrator tick re-invokes the target.
+
+    If cycles >= max_cycles: leaves :review in place and posts a human-
+    escalation comment explaining that the loop has reached its limit.
+
+    Returns the updated in-memory label set.
+    """
+    loop = agent_def.review_loop or {}
+    re_invoke_name = loop.get("re_invoke", "")
+    max_cycles = int(loop.get("max_cycles", 3))
+
+    target_def = pipeline_map.get(re_invoke_name)
+    if target_def is None:
+        log.error(
+            "review_loop re_invoke '%s' not found in pipeline — leaving :review",
+            re_invoke_name,
+        )
+        return labels
+
+    current_cycle = _get_review_cycle(labels)
+    next_cycle = current_cycle + 1
+
+    if next_cycle >= max_cycles:
+        log.info(
+            "  LOOP    %-38s  %d/%d cycles — escalating to human",
+            agent_def.agent, next_cycle, max_cycles,
+        )
+        try:
+            gh.post_comment(
+                work_item.number,
+                (
+                    f"**Review loop reached {next_cycle} cycle(s) — human review required.**\n\n"
+                    f"`{agent_def.agent}` has requested changes {next_cycle} time(s) and "
+                    f"`{re_invoke_name}` has not reached an APPROVE.\n\n"
+                    f"Please review the open findings, apply any fixes manually, then remove "
+                    f"the `{agent_def.review_label}` label to re-trigger the review."
+                ),
+            )
+        except Exception as exc:
+            log.warning("could not post loop-escalation comment on #%d: %s", work_item.number, exc)
+        return labels  # leave :review intact — human must act
+
+    log.info(
+        "  LOOP    %-38s  cycle %d/%d — re-invoking %s",
+        agent_def.agent, next_cycle, max_cycles, re_invoke_name,
+    )
+
+    # Rotate the cycle counter label
+    if current_cycle > 0:
+        old = f"review-cycle:{current_cycle}"
+        try:
+            gh.remove_label(work_item.number, old)
+            labels.discard(old)
+        except Exception as exc:
+            log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
+
+    new_cycle_label = f"review-cycle:{next_cycle}"
+    try:
+        gh.add_label(work_item.number, new_cycle_label)
+        labels.add(new_cycle_label)
+    except Exception as exc:
+        log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
+
+    # Clear reviewer's :review so the pipeline is no longer halted
+    try:
+        gh.remove_label(work_item.number, agent_def.review_label)
+        labels.discard(agent_def.review_label)
+    except Exception as exc:
+        log.warning(
+            "could not remove %s on #%d: %s", agent_def.review_label, work_item.number, exc
+        )
+
+    # Clear target's :complete so it can be re-triggered
+    try:
+        gh.remove_label(work_item.number, target_def.complete_label)
+        labels.discard(target_def.complete_label)
+    except Exception as exc:
+        log.warning(
+            "could not remove %s on #%d: %s", target_def.complete_label, work_item.number, exc
+        )
+
+    try:
+        gh.post_comment(
+            work_item.number,
+            (
+                f"**Review cycle {next_cycle}/{max_cycles - 1}:** "
+                f"`{agent_def.agent}` requested changes — re-invoking `{re_invoke_name}`."
+            ),
+        )
+    except Exception as exc:
+        log.warning("could not post loop comment on #%d: %s", work_item.number, exc)
+
+    return labels
 
 
 def dependencies_complete(
@@ -2259,6 +2378,13 @@ def process_work_item(
             # Halt if blocked or awaiting review — do not trigger further
             # steps on this item this run.
             if final_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
+                # review_loop: automatically re-invoke the target agent rather
+                # than waiting for human sign-off, until max_cycles is reached.
+                if final_status == STATUS_REVIEW and agent_def.review_loop:
+                    labels = _handle_review_loop(
+                        gh, agent_def, work_item, labels, pipeline_map
+                    )
+                    work_item.labels = labels
                 _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
