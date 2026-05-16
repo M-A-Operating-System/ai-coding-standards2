@@ -172,24 +172,22 @@ original title and body are preserved as a one-off snapshot comment.
 
 ### Step 4a — Snapshot (first run only)
 
-Check whether a snapshot already exists:
+Check whether a snapshot exists and post it if not — all in one shell block
+so no state crosses tool-call boundaries:
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo $REPO \
+SNAPSHOT_ID=$(gh issue view $ISSUE_NUMBER --repo $REPO \
   --json comments \
   --jq '.comments[]
         | select(.body | contains("ai-agile/snapshot/v1 by 01_product_docs/prd-writer"))
         | .id' \
-  | head -1
-```
+  | head -1)
 
-If the result is empty, fetch the original title and body then post the snapshot:
+if [ -z "$SNAPSHOT_ID" ]; then
+  ORIG_TITLE=$(gh issue view $ISSUE_NUMBER --repo $REPO --json title --jq '.title')
+  ORIG_BODY=$(gh issue view $ISSUE_NUMBER --repo $REPO --json body  --jq '.body')
 
-```bash
-ORIG_TITLE=$(gh issue view $ISSUE_NUMBER --repo $REPO --json title --jq '.title')
-ORIG_BODY=$(gh issue view $ISSUE_NUMBER --repo $REPO --json body  --jq '.body')
-
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
+  gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->
 ## Original issue (snapshot before PRD rewrite)
 
@@ -199,11 +197,10 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 
 ${ORIG_BODY}
 EOF
-)"
+  )"
+fi
+# If SNAPSHOT_ID is non-empty this block is a no-op — snapshot is immutable.
 ```
-
-If the result is non-empty (re-run), skip this step — the snapshot is
-immutable and must never be edited.
 
 ### Step 4b — Build the new title
 
