@@ -38,31 +38,44 @@ post_comment() {
     gh pr comment "$pr_number" --repo "$REPO" --body "$body"
 }
 
-# ── build exclusion filter from orchestrator job names ────────────────────────
+# ── build exclusion filter for orchestrator check runs ───────────────────────
 #
-# The orchestrator workflow creates check runs for every job it contains.
-# Those runs must not be counted as "external CI" — they are the pipeline
-# itself. Two runs can be live at once:
+# Any check run whose name matches an orchestrator job is excluded from the
+# poll — this covers the current run, any queued run waiting behind it, and
+# any run that completed between the push and now.  Exclusion is by job name
+# because names are stable across all runs of the same workflow.
 #
-#   - the current run (running ci-gate right now)
-#   - a queued run triggered by the push that also raised pull_request:synchronize
-#
-# Excluding by job name covers both, since queued runs have the same names.
+# Primary source: CI_GATE_EXCLUDE_JOB_NAMES (newline-separated list set in
+# the workflow env — explicit and reliable).  Supplemented by a live query of
+# the current run's job names so the filter stays correct even if the workflow
+# gains new jobs without updating the env var.
 
-KEEP_FILTER='true'
-if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
-    mapfile -t OWN_JOB_NAMES < <(
-        gh api "/repos/${REPO}/actions/runs/${GITHUB_RUN_ID}/jobs" \
-            --jq '.jobs[].name' 2>/dev/null || true
-    )
-    if [[ ${#OWN_JOB_NAMES[@]} -gt 0 ]]; then
-        KEEP_FILTER=""
-        for name in "${OWN_JOB_NAMES[@]}"; do
-            escaped="$(printf '%s' "$name" | jq -Rs .)"
-            KEEP_FILTER="${KEEP_FILTER:+${KEEP_FILTER} and }.name != ${escaped}"
-        done
-    fi
+declare -A seen_names=()
+KEEP_FILTER=""
+
+# 1. Explicit list from workflow env (most reliable — no API call required)
+if [[ -n "${CI_GATE_EXCLUDE_JOB_NAMES:-}" ]]; then
+    while IFS= read -r name; do
+        [[ -z "$name" || -v "seen_names[$name]" ]] && continue
+        seen_names["$name"]=1
+        escaped="$(printf '%s' "$name" | jq -Rs .)"
+        KEEP_FILTER="${KEEP_FILTER:+${KEEP_FILTER} and }.name != ${escaped}"
+    done <<<"$CI_GATE_EXCLUDE_JOB_NAMES"
 fi
+
+# 2. Live query — picks up any jobs not yet listed in CI_GATE_EXCLUDE_JOB_NAMES
+if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
+    while IFS= read -r name; do
+        [[ -z "$name" || -v "seen_names[$name]" ]] && continue
+        seen_names["$name"]=1
+        escaped="$(printf '%s' "$name" | jq -Rs .)"
+        KEEP_FILTER="${KEEP_FILTER:+${KEEP_FILTER} and }.name != ${escaped}"
+    done < <(gh api "/repos/${REPO}/actions/runs/${GITHUB_RUN_ID}/jobs" \
+        --jq '.jobs[].name' 2>/dev/null || true)
+fi
+
+# If neither source produced any names, keep all (fail-open — better than deadlock)
+[[ -z "$KEEP_FILTER" ]] && KEEP_FILTER='true'
 
 # ── locate PR ────────────────────────────────────────────────────────────────
 

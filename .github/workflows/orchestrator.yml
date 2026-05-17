@@ -82,6 +82,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           GIT_TRACE: "1"
+          # ci-gate uses this to exclude all orchestrator check runs from its poll.
+          # List every job display name in this workflow (newline-separated).
+          # The live-query fallback in ci-gate.sh keeps this in sync automatically,
+          # but having it here avoids the extra API call and works even if the query fails.
+          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
         run: |
           python ai-agile/pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
