@@ -120,6 +120,9 @@ def load_statuses() -> list[dict]:
 STATUSES     = load_statuses()
 LABEL_COLOURS = {s["status"]: s["colour"] for s in STATUSES}
 
+# Maximum wall-clock time for a single script invocation.
+SCRIPT_TIMEOUT_SECONDS = 300
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -1233,10 +1236,6 @@ def _apply_terminal_status(
 # ---------------------------------------------------------------------------
 # Script invocation (type: script pipeline steps)
 # ---------------------------------------------------------------------------
-
-# Maximum wall-clock time for a single script invocation.
-SCRIPT_TIMEOUT_SECONDS = 300
-
 
 def invoke_script(
     agent_def: AgentDef,
