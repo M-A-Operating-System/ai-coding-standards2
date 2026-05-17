@@ -278,25 +278,21 @@ open a follow-up issue and link it in a PR comment instead.
 
 ---
 
-### B3 — Re-read the technical spec, standards, and ADRs
+### B3 — Verify feedback against spec and standards
 
-Re-read `docs/tech-spec/` and the original PRD to verify the feedback aligns
-with the spec. If a reviewer requests something that contradicts the PRD or
-tech spec, do not implement it — post a comment explaining the conflict and
-emit `AI_AGILE_STATUS: blocked`.
+The PRD, tech-spec, JSON standards, and ADRs you read in Mode A are already
+in this session's context. Do not re-read them. Refer to that context now to
+decide whether each piece of feedback is valid:
 
-Also re-read the machine-readable standards and ADRs. A reviewer finding may
-already be authorised by an ADR — if so, do not implement the conflicting
-change; cite the ADR ID in your B6 response explaining why.
+- If a reviewer requests something that contradicts the PRD or tech-spec,
+  do not implement it — post a comment explaining the conflict and emit
+  `AI_AGILE_STATUS: blocked`.
+- If a reviewer requests something that contradicts an ADR, do not implement
+  it — cite the ADR ID in your B6 response explaining why.
 
-```bash
-find docs/tech-spec -name "*.md" 2>/dev/null | sort
-
-find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null \
-  | sort | while IFS= read -r f; do echo "=== $f ==="; cat "$f"; done
-cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null \
-  || echo "(no adrs.json — no active ADRs)"
-```
+Only re-read a file if you have a specific reason to believe it changed
+between your Mode A run and now (e.g. another PR merged a standards update
+that the reviewer is referencing).
 
 ---
 
