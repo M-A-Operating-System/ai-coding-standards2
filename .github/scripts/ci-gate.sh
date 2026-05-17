@@ -8,7 +8,8 @@ set -euo pipefail
 
 BRANCH="issue-${ISSUE_NUMBER}"
 POLL_INTERVAL="${CI_GATE_POLL_INTERVAL:-30}"
-TIMEOUT="${CI_GATE_TIMEOUT:-840}"   # 14 minutes — leaves 1 min headroom in a 15-min job
+TIMEOUT="${CI_GATE_TIMEOUT:-840}"          # 14 minutes — leaves 1 min headroom
+NO_CHECKS_GRACE="${CI_GATE_NO_CHECKS_GRACE:-4}"  # polls before assuming no CI exists
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,14 +25,12 @@ find_pr() {
 }
 
 get_check_runs() {
-    local sha="$1" own_suite="$2"
-    # Exclude the orchestrator's own check suite so ci-gate does not watch itself.
-    # The API returns check_suite as a nested object; the id lives at .check_suite.id
-    local suite_filter='true'
-    [[ -n "$own_suite" ]] && suite_filter="(.check_suite.id // 0) != ${own_suite}"
+    # Returns check run objects after removing any orchestrator-owned runs.
+    # $1 = commit SHA   $2 = jq boolean expression that selects runs to KEEP
+    local sha="$1" keep_filter="$2"
     gh api "/repos/${REPO}/commits/${sha}/check-runs" \
         --paginate \
-        --jq ".check_runs[] | select(${suite_filter}) | {name: .name, status: .status, conclusion: .conclusion}"
+        --jq ".check_runs[] | select(${keep_filter}) | {name: .name, status: .status, conclusion: .conclusion}"
 }
 
 post_comment() {
@@ -39,12 +38,30 @@ post_comment() {
     gh pr comment "$pr_number" --repo "$REPO" --body "$body"
 }
 
-# ── resolve orchestrator's own check suite (GitHub Actions only) ─────────────
+# ── build exclusion filter from orchestrator job names ────────────────────────
+#
+# The orchestrator workflow creates check runs for every job it contains.
+# Those runs must not be counted as "external CI" — they are the pipeline
+# itself. Two runs can be live at once:
+#
+#   - the current run (running ci-gate right now)
+#   - a queued run triggered by the push that also raised pull_request:synchronize
+#
+# Excluding by job name covers both, since queued runs have the same names.
 
-OWN_SUITE_ID=""
+KEEP_FILTER='true'
 if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
-    OWN_SUITE_ID="$(gh api "/repos/${REPO}/actions/runs/${GITHUB_RUN_ID}" \
-        --jq '.check_suite_id // empty' 2>/dev/null || true)"
+    mapfile -t OWN_JOB_NAMES < <(
+        gh api "/repos/${REPO}/actions/runs/${GITHUB_RUN_ID}/jobs" \
+            --jq '.jobs[].name' 2>/dev/null || true
+    )
+    if [[ ${#OWN_JOB_NAMES[@]} -gt 0 ]]; then
+        KEEP_FILTER=""
+        for name in "${OWN_JOB_NAMES[@]}"; do
+            escaped="$(printf '%s' "$name" | jq -Rs .)"
+            KEEP_FILTER="${KEEP_FILTER:+${KEEP_FILTER} and }.name != ${escaped}"
+        done
+    fi
 fi
 
 # ── locate PR ────────────────────────────────────────────────────────────────
@@ -63,15 +80,12 @@ HEAD_SHA="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.head
 # ── poll loop ────────────────────────────────────────────────────────────────
 
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
-# Grace periods: how many consecutive empty polls before we conclude no
-# external CI is configured for this repo. Default: 4 × 30s = 2 minutes.
-NO_CHECKS_GRACE="${CI_GATE_NO_CHECKS_GRACE:-4}"
 empty_polls=0
 
 while true; do
     NOW=$(date +%s)
     if (( NOW >= DEADLINE )); then
-        STILL_RUNNING_JSON="$(get_check_runs "$HEAD_SHA" "$OWN_SUITE_ID" 2>/dev/null \
+        STILL_RUNNING_JSON="$(get_check_runs "$HEAD_SHA" "$KEEP_FILTER" 2>/dev/null \
             | jq -rs '[.[] | select(.status != "completed") | {name: .name, status: .status}]' \
             || echo '[]')"
 
@@ -94,14 +108,14 @@ EOF
         exit 0
     fi
 
-    # Fetch current check-run state (excluding the orchestrator's own suite)
-    CHECK_JSON="$(get_check_runs "$HEAD_SHA" "$OWN_SUITE_ID" 2>/dev/null || true)"
+    # Fetch current check-run state (orchestrator jobs excluded)
+    CHECK_JSON="$(get_check_runs "$HEAD_SHA" "$KEEP_FILTER" 2>/dev/null || true)"
 
     if [[ -z "$CHECK_JSON" ]]; then
         (( empty_polls++ )) || true
         if (( empty_polls >= NO_CHECKS_GRACE )); then
-            # No external checks have registered after the grace period —
-            # this repo has no CI configured for this branch; pass through.
+            # No external checks registered after the grace period —
+            # no CI is configured for this branch; pass through.
             post_comment "$PR_NUMBER" "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
 \`\`\`json
@@ -124,7 +138,7 @@ EOF
         continue
     fi
 
-    # Reset counter once checks appear
+    # Checks have appeared — reset the no-checks counter
     empty_polls=0
 
     TOTAL=$(  jq -s 'length'                                           <<<"$CHECK_JSON")
