@@ -66,19 +66,23 @@ DEADLINE=$(( $(date +%s) + TIMEOUT ))
 while true; do
     NOW=$(date +%s)
     if (( NOW >= DEADLINE )); then
-        # List which checks are still running so the timeout comment is actionable
-        STILL_RUNNING="$(get_check_runs "$HEAD_SHA" "$OWN_SUITE_ID" 2>/dev/null \
-            | jq -rs '[.[] | select(.status != "completed") | "| \(.name) | \(.status) |"] | join("\n")' \
-            || true)"
-        [[ -z "$STILL_RUNNING" ]] && STILL_RUNNING="_(none found — checks may not have started)_"
+        STILL_RUNNING_JSON="$(get_check_runs "$HEAD_SHA" "$OWN_SUITE_ID" 2>/dev/null \
+            | jq -rs '[.[] | select(.status != "completed") | {name: .name, status: .status}]' \
+            || echo '[]')"
 
         post_comment "$PR_NUMBER" "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
-**CI gate: timeout** — the following checks did not complete within ${TIMEOUT}s. Human intervention required.
-
-| Check | Status |
-|---|---|
-${STILL_RUNNING}
+\`\`\`json
+{
+  "agent": "05_execute/ci-gate",
+  "outcome": "blocked",
+  "pr": ${PR_NUMBER},
+  "sha": "${HEAD_SHA}",
+  "reason": "timeout",
+  "timeout_seconds": ${TIMEOUT},
+  "still_running": ${STILL_RUNNING_JSON}
+}
+\`\`\`
 EOF
 )"
         echo "AI_AGILE_STATUS: blocked \"CI checks did not complete within ${TIMEOUT}s.\""
@@ -107,28 +111,40 @@ EOF
         continue
     fi
 
-    # All checks completed — build summary table
-    SUMMARY="$(jq -rs '
-        ["| Check | Conclusion |", "|---|---|"] +
-        [.[] | "| \(.name) | \(.conclusion) |"] |
-        join("\n")
-    ' <<<"$CHECK_JSON")"
+    # All checks completed — build JSON summary array
+    CHECKS_JSON="$(jq -rs '[.[] | {name: .name, conclusion: .conclusion}]' <<<"$CHECK_JSON")"
 
     if (( FAILED > 0 )); then
         post_comment "$PR_NUMBER" "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
-**CI gate: ${FAILED} check(s) failed** — re-invoking coder to address failures.
-
-${SUMMARY}
+\`\`\`json
+{
+  "agent": "05_execute/ci-gate",
+  "outcome": "review",
+  "pr": ${PR_NUMBER},
+  "sha": "${HEAD_SHA}",
+  "checks_total": ${TOTAL},
+  "checks_failed": ${FAILED},
+  "checks": ${CHECKS_JSON}
+}
+\`\`\`
 EOF
 )"
         echo "AI_AGILE_STATUS: review \"${FAILED} CI check(s) failed on PR #${PR_NUMBER}.\""
     else
         post_comment "$PR_NUMBER" "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
-**CI gate: all ${TOTAL} check(s) passed.**
-
-${SUMMARY}
+\`\`\`json
+{
+  "agent": "05_execute/ci-gate",
+  "outcome": "complete",
+  "pr": ${PR_NUMBER},
+  "sha": "${HEAD_SHA}",
+  "checks_total": ${TOTAL},
+  "checks_failed": 0,
+  "checks": ${CHECKS_JSON}
+}
+\`\`\`
 EOF
 )"
         echo "AI_AGILE_STATUS: complete"
