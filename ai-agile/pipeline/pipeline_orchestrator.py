@@ -1875,10 +1875,9 @@ def _configure_git_auth() -> None:
     regardless of whether the extraheader is present. This gives the orchestrator
     `contents: write` access (push to any non-workflow branch).
 
-    NOTE: GITHUB_TOKEN cannot push to .github/workflows/ files — that requires
-    a classic PAT with `repo` + `workflow` scopes set as AI_AGILE_BOT_TOKEN.
-    Until AI_AGILE_BOT_TOKEN has repo scope, coder-generated workflow files
-    must be committed manually or via the GitHub web UI.
+    NOTE: GITHUB_TOKEN cannot push .github/workflows/ files — that requires
+    a classic PAT with `repo` + `workflow` scopes. _run_commit_after detects
+    staged workflow files and switches to AI_AGILE_BOT_TOKEN for that push.
     """
     import subprocess as _sg
     github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
@@ -1910,9 +1909,9 @@ def _configure_git_auth() -> None:
                 "Update AI_AGILE_BOT_TOKEN to a classic PAT with repo+workflow scopes."
             )
         else:
-            log.debug(
-                "git auth: AI_AGILE_BOT_TOKEN is present but currently only used for "
-                "API calls (issues/PRs). repo+workflow scope needed for workflow file pushes."
+            log.info(
+                "git auth: AI_AGILE_BOT_TOKEN is present — "
+                "will be used for pushes that include .github/workflows/ files."
             )
     except Exception as exc:
         log.warning("git auth: could not configure GITHUB_TOKEN — %s", exc)
@@ -1977,19 +1976,29 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
 
             _sp.run(["git", "add", "-A"], check=True)
 
-            # Warn if agent wrote workflow files — GITHUB_TOKEN cannot push them.
-            # A classic PAT with repo+workflow scope in AI_AGILE_BOT_TOKEN is required.
+            # Detect workflow files — GITHUB_TOKEN cannot push them.
+            # If AI_AGILE_BOT_TOKEN is available (classic PAT with repo+workflow
+            # scope), temporarily swap the remote URL to use it for this push.
             workflow_files = _sp.run(
                 ["git", "diff", "--cached", "--name-only", "--", ".github/workflows/"],
                 capture_output=True, text=True, check=True,
             ).stdout.strip()
+            bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
             if workflow_files:
-                log.warning(
-                    "  commit_after: agent wrote .github/workflows/ files: %s — "
-                    "GITHUB_TOKEN cannot push workflow files. Push will likely fail with 403. "
-                    "Fix: update AI_AGILE_BOT_TOKEN to a classic PAT with repo+workflow scopes.",
-                    workflow_files.replace("\n", ", "),
-                )
+                if bot_token:
+                    log.info(
+                        "  commit_after: workflow files staged (%s) — "
+                        "switching remote URL to AI_AGILE_BOT_TOKEN for this push",
+                        workflow_files.replace("\n", ", "),
+                    )
+                else:
+                    log.warning(
+                        "  commit_after: agent wrote .github/workflows/ files: %s — "
+                        "GITHUB_TOKEN cannot push workflow files and AI_AGILE_BOT_TOKEN "
+                        "is not set. Push will fail with 403. Set AI_AGILE_BOT_TOKEN to "
+                        "a classic PAT with repo+workflow scopes.",
+                        workflow_files.replace("\n", ", "),
+                    )
 
             # Guard: nothing staged → skip (agent found nothing to update).
             staged = _sp.run(["git", "diff", "--cached", "--quiet"])
@@ -2008,7 +2017,29 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             }.get(agent_def.phase, "chore")
             msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
             _sp.run(["git", "commit", "-m", msg], check=True)
-            _sp.run(["git", "push", "origin", branch], check=True)
+
+            # Use AI_AGILE_BOT_TOKEN for the push when workflow files are staged,
+            # since GITHUB_TOKEN lacks the workflow scope required by GitHub.
+            push_token = bot_token if (workflow_files and bot_token) else None
+            if push_token:
+                orig_url = _sp.run(
+                    ["git", "remote", "get-url", "origin"],
+                    capture_output=True, text=True, check=True,
+                ).stdout.strip()
+                clean_url = re.sub(r"https://[^@]+@", "https://", orig_url)
+                bot_url = clean_url.replace(
+                    "https://github.com",
+                    f"https://x-access-token:{push_token}@github.com",
+                    1,
+                )
+                _sp.run(["git", "remote", "set-url", "origin", bot_url], check=True)
+                try:
+                    _sp.run(["git", "push", "origin", branch], check=True)
+                finally:
+                    _sp.run(["git", "remote", "set-url", "origin", orig_url], check=False)
+            else:
+                _sp.run(["git", "push", "origin", branch], check=True)
+
             log.info("  commit_after: pushed commit to %s", branch)
             return True
 
