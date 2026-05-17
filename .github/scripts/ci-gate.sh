@@ -24,16 +24,27 @@ find_pr() {
 }
 
 get_check_runs() {
-    local sha="$1"
+    local sha="$1" own_suite="$2"
+    # Exclude the orchestrator's own check suite so ci-gate does not watch itself
+    local suite_filter='true'
+    [[ -n "$own_suite" ]] && suite_filter="(.check_suite_id // 0) != ${own_suite}"
     gh api "/repos/${REPO}/commits/${sha}/check-runs" \
         --paginate \
-        --jq '.check_runs[] | {name: .name, status: .status, conclusion: .conclusion}'
+        --jq ".check_runs[] | select(${suite_filter}) | {name: .name, status: .status, conclusion: .conclusion}"
 }
 
 post_comment() {
     local pr_number="$1" body="$2"
     gh pr comment "$pr_number" --repo "$REPO" --body "$body"
 }
+
+# ── resolve orchestrator's own check suite (GitHub Actions only) ─────────────
+
+OWN_SUITE_ID=""
+if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
+    OWN_SUITE_ID="$(gh api "/repos/${REPO}/actions/runs/${GITHUB_RUN_ID}" \
+        --jq '.check_suite_id // empty' 2>/dev/null || true)"
+fi
 
 # ── locate PR ────────────────────────────────────────────────────────────────
 
@@ -55,17 +66,27 @@ DEADLINE=$(( $(date +%s) + TIMEOUT ))
 while true; do
     NOW=$(date +%s)
     if (( NOW >= DEADLINE )); then
-        post_comment "$PR_NUMBER" "$(cat <<'EOF'
+        # List which checks are still running so the timeout comment is actionable
+        STILL_RUNNING="$(get_check_runs "$HEAD_SHA" "$OWN_SUITE_ID" 2>/dev/null \
+            | jq -rs '[.[] | select(.status != "completed") | "| \(.name) | \(.status) |"] | join("\n")' \
+            || true)"
+        [[ -z "$STILL_RUNNING" ]] && STILL_RUNNING="_(none found — checks may not have started)_"
+
+        post_comment "$PR_NUMBER" "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
-**CI gate: timeout** — checks did not complete within the allotted window. Human intervention required.
+**CI gate: timeout** — the following checks did not complete within ${TIMEOUT}s. Human intervention required.
+
+| Check | Status |
+|---|---|
+${STILL_RUNNING}
 EOF
 )"
         echo "AI_AGILE_STATUS: blocked \"CI checks did not complete within ${TIMEOUT}s.\""
         exit 0
     fi
 
-    # Fetch current check-run state
-    CHECK_JSON="$(get_check_runs "$HEAD_SHA" 2>/dev/null || true)"
+    # Fetch current check-run state (excluding the orchestrator's own suite)
+    CHECK_JSON="$(get_check_runs "$HEAD_SHA" "$OWN_SUITE_ID" 2>/dev/null || true)"
 
     if [[ -z "$CHECK_JSON" ]]; then
         # No checks registered yet — wait
@@ -73,13 +94,13 @@ EOF
         continue
     fi
 
-    TOTAL=$(  jq -s 'length'                                        <<<"$CHECK_JSON")
-    PENDING=$(jq -s '[.[] | select(.status != "completed")] | length' <<<"$CHECK_JSON")
+    TOTAL=$(  jq -s 'length'                                           <<<"$CHECK_JSON")
+    PENDING=$(jq -s '[.[] | select(.status != "completed")] | length'  <<<"$CHECK_JSON")
     FAILED=$( jq -s '[.[] | select(.status == "completed" and
                 (.conclusion == "failure" or
                  .conclusion == "timed_out" or
                  .conclusion == "cancelled" or
-                 .conclusion == "action_required"))] | length' <<<"$CHECK_JSON")
+                 .conclusion == "action_required"))] | length'         <<<"$CHECK_JSON")
 
     if (( PENDING > 0 )); then
         sleep "$POLL_INTERVAL"
