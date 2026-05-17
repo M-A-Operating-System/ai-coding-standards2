@@ -63,6 +63,10 @@ HEAD_SHA="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.head
 # ── poll loop ────────────────────────────────────────────────────────────────
 
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
+# Grace periods: how many consecutive empty polls before we conclude no
+# external CI is configured for this repo. Default: 4 × 30s = 2 minutes.
+NO_CHECKS_GRACE="${CI_GATE_NO_CHECKS_GRACE:-4}"
+empty_polls=0
 
 while true; do
     NOW=$(date +%s)
@@ -94,10 +98,34 @@ EOF
     CHECK_JSON="$(get_check_runs "$HEAD_SHA" "$OWN_SUITE_ID" 2>/dev/null || true)"
 
     if [[ -z "$CHECK_JSON" ]]; then
-        # No checks registered yet — wait
+        (( empty_polls++ )) || true
+        if (( empty_polls >= NO_CHECKS_GRACE )); then
+            # No external checks have registered after the grace period —
+            # this repo has no CI configured for this branch; pass through.
+            post_comment "$PR_NUMBER" "$(cat <<EOF
+<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+\`\`\`json
+{
+  "agent": "05_execute/ci-gate",
+  "outcome": "complete",
+  "pr": ${PR_NUMBER},
+  "sha": "${HEAD_SHA}",
+  "checks_total": 0,
+  "checks_failed": 0,
+  "note": "No external CI checks found after ${NO_CHECKS_GRACE} polls — passing through."
+}
+\`\`\`
+EOF
+)"
+            echo "AI_AGILE_STATUS: complete"
+            exit 0
+        fi
         sleep "$POLL_INTERVAL"
         continue
     fi
+
+    # Reset counter once checks appear
+    empty_polls=0
 
     TOTAL=$(  jq -s 'length'                                           <<<"$CHECK_JSON")
     PENDING=$(jq -s '[.[] | select(.status != "completed")] | length'  <<<"$CHECK_JSON")
