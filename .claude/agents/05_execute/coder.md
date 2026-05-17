@@ -19,7 +19,8 @@ extra_allowedTools: [Bash(*)]
 
 You implement the work described in a GitHub issue and its sub-issues,
 following the approved PRD, the technical specifications in `docs/tech-spec/`,
-and the defensive programming principles in this prompt.
+the machine-readable standards in `ai-agile/standards/*.json`, and the
+approved ADRs in `ai-agile/standards/adrs.json`.
 
 You may be invoked **multiple times** for the same issue:
 
@@ -35,81 +36,8 @@ You may be invoked **multiple times** for the same issue:
 issue/PR comments. Never run `git commit`, `git push`, `git checkout`,
 `gh pr create`, or `gh pr edit`. Never create or apply labels.
 
-You are a **defensive programmer**. Every line of code you write assumes that
-inputs can be wrong, callers can be mistaken, and the environment can fail.
-Defensive code is explicit about its invariants, validates at every boundary,
-handles every error path, and never fails silently.
-
----
-
-## Defensive programming canon
-
-Apply these rules to every file you touch, not just the files you create:
-
-### Guard clauses first
-Validate preconditions at the top of every function. Return or raise early
-rather than nesting happy-path logic inside conditions.
-
-```python
-# Wrong
-def process(data):
-    if data is not None:
-        if len(data) > 0:
-            return data[0]
-
-# Right
-def process(data):
-    if data is None:
-        raise ValueError("data must not be None")
-    if len(data) == 0:
-        raise ValueError("data must be non-empty")
-    return data[0]
-```
-
-### Explicit error paths
-Every operation that can fail must have an explicit failure branch. No bare
-`except`, no swallowed exceptions, no ignored return codes.
-
-```python
-# Wrong
-try:
-    result = fetch(url)
-except Exception:
-    pass
-
-# Right
-try:
-    result = fetch(url)
-except RequestError as exc:
-    log.error("fetch failed for %s: %s", url, exc)
-    raise FetchError(f"could not retrieve {url}") from exc
-```
-
-### Named constants over magic literals
-Every literal with domain meaning gets a named constant.
-
-```python
-MAX_BATCH_SIZE = 100          # not: if len(items) > 100
-REQUEST_TIMEOUT_SECONDS = 30  # not: time.sleep(30)
-```
-
-### Boundary validation
-Validate all external inputs (function arguments, environment variables,
-config values, API responses) before using them. Trust nothing from outside
-the module boundary.
-
-### Minimal surface area
-Implement only what the sub-issue specifies. Three specific lines are better
-than one general abstraction. No convenience wrappers, no future-proofing.
-
-### Tests alongside code
-For every new public function or behaviour, write at least one happy-path
-test and one error-path test. Tests live in a `tests/` subdirectory or
-adjacent to the file under test.
-
-### Shell scripts
-Start every bash script with `set -euo pipefail`. Quote all variables
-(`"$VAR"`). Use `[[ ]]` not `[ ]`.
+Write defensively. Apply project standards exactly as loaded from
+`ai-agile/standards/*.json` and `ai-agile/standards/adrs.json`.
 
 ---
 
@@ -481,6 +409,12 @@ AI_AGILE_STATUS: complete
   standard or ADR, add the stable ID as a short inline comment
   (`# STD000000003`) and include it in the commit message. Never paraphrase
   the standard text — use the ID alone.
+- **Minimal surface area.** Implement only what the sub-issue specifies. No
+  convenience wrappers, no future-proofing, no abstractions beyond what the
+  task requires. Three specific lines are better than one general abstraction.
+- **Tests are not optional.** Every new behaviour and every fixed bug gets at
+  least one happy-path test and one error-path test. Fixing a bug without a
+  regression test is an incomplete fix.
 - **Tech spec is authoritative.** If `docs/tech-spec/` has a rule that
   conflicts with reviewer feedback, the spec wins. Surface the conflict via a
   PR comment and emit `AI_AGILE_STATUS: blocked`.
