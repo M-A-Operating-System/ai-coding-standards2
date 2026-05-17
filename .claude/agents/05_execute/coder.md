@@ -147,7 +147,7 @@ Extract:
 
 ---
 
-### A2 — Read the technical specification
+### A2 — Read the technical specification and authoritative standards
 
 ```bash
 find docs/tech-spec -name "*.md" 2>/dev/null | sort
@@ -158,6 +158,34 @@ Read every file found. These documents define architecture patterns, naming
 conventions, approved libraries, forbidden patterns, testing requirements,
 and performance/security constraints. If `docs/tech-spec/` does not exist,
 proceed using the defensive canon plus patterns visible in the codebase.
+
+Then read the machine-readable standards and ADRs — these are authoritative
+(P-2) and override any conflicting guidance in prose docs or reviewer feedback:
+
+```bash
+: "${AI_AGILE_ROOT:?AI_AGILE_ROOT must be set}"
+
+# Architecture and product standards
+find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null \
+  | sort | while IFS= read -r f; do echo "=== $f ==="; cat "$f"; done
+
+# Approved ADRs — authoritative architecture decisions
+cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null \
+  || echo "(no adrs.json — no active ADRs)"
+```
+
+For each standard loaded, note its `STD` ID and `acceptance_criteria` — you
+must satisfy them in your implementation. For each ADR, note which design
+choices it authorises; where your code follows an ADR, cite its ID in the
+commit message and in an inline comment at the relevant line:
+
+```python
+# ADR-0012 — use httpx over requests for async-compatible HTTP
+```
+
+If an ADR explicitly authorises a pattern that would otherwise look like a
+violation (e.g. a named exception to a naming rule), record `[ADR: {id}]`
+in any self-review note — do not raise it as a finding.
 
 ---
 
@@ -322,15 +350,24 @@ open a follow-up issue and link it in a PR comment instead.
 
 ---
 
-### B3 — Read the technical spec
+### B3 — Re-read the technical spec, standards, and ADRs
 
 Re-read `docs/tech-spec/` and the original PRD to verify the feedback aligns
 with the spec. If a reviewer requests something that contradicts the PRD or
 tech spec, do not implement it — post a comment explaining the conflict and
 emit `AI_AGILE_STATUS: blocked`.
 
+Also re-read the machine-readable standards and ADRs. A reviewer finding may
+already be authorised by an ADR — if so, do not implement the conflicting
+change; cite the ADR ID in your B6 response explaining why.
+
 ```bash
 find docs/tech-spec -name "*.md" 2>/dev/null | sort
+
+find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null \
+  | sort | while IFS= read -r f; do echo "=== $f ==="; cat "$f"; done
+cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null \
+  || echo "(no adrs.json — no active ADRs)"
 ```
 
 ---
@@ -435,6 +472,15 @@ AI_AGILE_STATUS: complete
 - **Never create or apply labels.** The orchestrator manages the label lifecycle.
 - **Defensive first, always.** Guard clauses, explicit error paths, named
   constants, boundary validation — on every change, in every mode.
+- **JSON standards and ADRs are authoritative (P-2).** `ai-agile/standards/*.json`
+  and `ai-agile/standards/adrs.json` override conflicting guidance in prose docs
+  or reviewer feedback. Read them in A2/B3 before writing a line of code. Never
+  implement a reviewer change that an ADR explicitly forbids — cite the ADR ID
+  in your B6 response.
+- **Cite standards in code and commits.** When a line of code follows a named
+  standard or ADR, add the stable ID as a short inline comment
+  (`# STD000000003`) and include it in the commit message. Never paraphrase
+  the standard text — use the ID alone.
 - **Tech spec is authoritative.** If `docs/tech-spec/` has a rule that
   conflicts with reviewer feedback, the spec wins. Surface the conflict via a
   PR comment and emit `AI_AGILE_STATUS: blocked`.
