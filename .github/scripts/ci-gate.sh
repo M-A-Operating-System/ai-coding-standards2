@@ -29,11 +29,21 @@ find_pr() {
 }
 
 get_check_runs_raw() {
-    # Returns ALL check run objects for the SHA (no filtering).
+    # Fetches all check runs for a SHA and emits one JSON object per line.
+    # Returns non-zero if the API call fails so the caller can detect errors.
     local sha="$1"
-    gh api "/repos/${REPO}/commits/${sha}/check-runs" \
-        --paginate \
-        --jq '.check_runs[] | {name: .name, status: .status, conclusion: .conclusion, suite_id: (.check_suite.id // 0)}'
+    local raw
+    raw="$(gh api "/repos/${REPO}/commits/${sha}/check-runs" --paginate 2>&1)" || {
+        log "  API error fetching check-runs: ${raw}"
+        return 1
+    }
+    # Validate the response contains check_runs before processing
+    if ! echo "$raw" | jq -e '.check_runs' >/dev/null 2>&1; then
+        log "  unexpected API response (no check_runs field): $(echo "$raw" | head -c 200)"
+        return 1
+    fi
+    echo "$raw" | jq -r \
+        '.check_runs[] | {name: .name, status: .status, conclusion: .conclusion, suite_id: (.check_suite.id // 0)}'
 }
 
 post_comment() {
@@ -92,6 +102,11 @@ log "PR #${PR_NUMBER}  branch=${BRANCH}"
 # ── get HEAD SHA ─────────────────────────────────────────────────────────────
 
 HEAD_SHA="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')"
+if [[ -z "$HEAD_SHA" ]]; then
+    log "could not resolve HEAD SHA for PR #${PR_NUMBER} — blocking"
+    echo "AI_AGILE_STATUS: blocked \"Could not resolve HEAD SHA for PR #${PR_NUMBER}.\""
+    exit 0
+fi
 log "HEAD SHA=${HEAD_SHA}"
 
 # ── poll loop ────────────────────────────────────────────────────────────────
@@ -103,12 +118,12 @@ cycle=0
 while true; do
     NOW=$(date +%s)
     REMAINING=$(( DEADLINE - NOW ))
-    (( cycle++ )) || true
+    cycle=$(( cycle + 1 ))
 
     if (( NOW >= DEADLINE )); then
         log "TIMEOUT after ${TIMEOUT}s"
         STILL_RUNNING_JSON="$(get_check_runs_raw "$HEAD_SHA" 2>/dev/null \
-            | jq -rs "[.[] | select(.status != \"completed\") | {name: .name, status: .status}]" \
+            | jq -rs '[.[] | select(.status != "completed") | {name: .name, status: .status}]' \
             || echo '[]')"
 
         post_comment "$PR_NUMBER" "$(cat <<EOF
@@ -131,26 +146,37 @@ EOF
     fi
 
     # ── fetch raw check runs and log everything seen ──────────────────────────
-    RAW_JSON="$(get_check_runs_raw "$HEAD_SHA" 2>/dev/null || true)"
-
     log "--- cycle ${cycle} (${REMAINING}s remaining) ---"
+
+    if ! RAW_JSON="$(get_check_runs_raw "$HEAD_SHA")"; then
+        log "  API call failed — skipping cycle"
+        sleep "$POLL_INTERVAL"
+        continue
+    fi
+
     if [[ -z "$RAW_JSON" ]]; then
         log "  raw check runs: (none)"
     else
         while IFS= read -r line; do
             log "  raw: $line"
-        done < <(jq -r '"\(.name) | status=\(.status) | conclusion=\(.conclusion // "-") | suite=\(.suite_id)"' <<<"$RAW_JSON" 2>/dev/null || echo "$RAW_JSON")
+        done < <(jq -r '"\(.name) | status=\(.status) | conclusion=\(.conclusion // "-") | suite=\(.suite_id)"' \
+            <<<"$RAW_JSON" 2>/dev/null || echo "$RAW_JSON")
     fi
 
     # ── apply exclusion filter ────────────────────────────────────────────────
     CHECK_JSON="$(jq -rs "[.[] | select(${KEEP_FILTER})][]" <<<"${RAW_JSON:-[]}" 2>/dev/null || true)"
 
+    raw_count=0
+    [[ -n "$RAW_JSON" ]] && raw_count="$(jq -rs 'length' <<<"$RAW_JSON" 2>/dev/null || echo 0)"
+    kept_count=0
+    [[ -n "$CHECK_JSON" ]] && kept_count="$(jq -s 'length' <<<"$CHECK_JSON" 2>/dev/null || echo 0)"
+
     if [[ -z "$CHECK_JSON" && -n "$RAW_JSON" ]]; then
-        log "  → all ${#RAW_JSON} raw runs excluded by filter (orchestrator-only)"
+        log "  → all ${raw_count} raw run(s) excluded by filter (orchestrator-only)"
     fi
 
     if [[ -z "$CHECK_JSON" ]]; then
-        (( empty_polls++ )) || true
+        empty_polls=$(( empty_polls + 1 ))
         log "  → no external checks visible (empty poll ${empty_polls}/${NO_CHECKS_GRACE})"
         if (( empty_polls >= NO_CHECKS_GRACE )); then
             log "  → grace period exhausted — no CI configured, passing through"
