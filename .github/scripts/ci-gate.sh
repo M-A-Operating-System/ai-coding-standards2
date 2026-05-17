@@ -25,9 +25,10 @@ find_pr() {
 
 get_check_runs() {
     local sha="$1" own_suite="$2"
-    # Exclude the orchestrator's own check suite so ci-gate does not watch itself
+    # Exclude the orchestrator's own check suite so ci-gate does not watch itself.
+    # The API returns check_suite as a nested object; the id lives at .check_suite.id
     local suite_filter='true'
-    [[ -n "$own_suite" ]] && suite_filter="(.check_suite_id // 0) != ${own_suite}"
+    [[ -n "$own_suite" ]] && suite_filter="(.check_suite.id // 0) != ${own_suite}"
     gh api "/repos/${REPO}/commits/${sha}/check-runs" \
         --paginate \
         --jq ".check_runs[] | select(${suite_filter}) | {name: .name, status: .status, conclusion: .conclusion}"
