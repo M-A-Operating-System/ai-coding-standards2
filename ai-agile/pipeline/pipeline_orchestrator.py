@@ -1616,6 +1616,7 @@ def invoke_agent(
         "claude",
         "--allowedTools", ",".join(base_tools + extra_tools),
         "--output-format", "stream-json",
+        "--verbose",                    # required by CLI when --output-format=stream-json
         "--max-turns", str(max_turns),
         "--session-id", agent_session_uuid,
     ]
