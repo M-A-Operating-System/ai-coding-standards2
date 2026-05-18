@@ -31,6 +31,7 @@ _AGENTS = [
     "01_product_docs/create-pr",
     "01_product_docs/prd-docs-updater",
     "05_execute/coder",
+    "05_execute/ci-gate",
     "05_execute/pr-reviewer",
     "09_gap_assessment/codebase-reviewer",
 ]

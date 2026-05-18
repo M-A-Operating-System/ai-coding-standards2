@@ -76,11 +76,12 @@ STATUS_REQUESTED   = "requested"
 # Alias kept for internal use
 STATUS_IN_PROGRESS = STATUS_WIP
 
-ALL_STATUSES = {
-    STATUS_COMPLETE, STATUS_WIP, STATUS_REVIEW,
-    STATUS_BLOCKED, STATUS_FAILED, STATUS_SKIPPED,
-    STATUS_REQUESTED,
-}
+ALL_STATUSES: list[str] = [
+    STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED,   # terminal — highest priority
+    STATUS_REVIEW, STATUS_BLOCKED,                     # halt
+    STATUS_WIP,                                        # running
+    STATUS_REQUESTED,                                  # manual trigger
+]
 
 AUDIT_LOG_BRANCH = "ai-agile/log"
 # Well-known empty-tree SHA in Git — used to create the orphan audit commit
@@ -226,40 +227,44 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     default_extra_tools comes from defaults.extra_allowedTools and is
     prepended to every agent's own extra_allowedTools at invocation time.
     """
-    with open(path) as f:
-        raw = json.load(f)
+    try:
+        with open(path) as f:
+            raw = json.load(f)
 
-    agents = []
-    for entry in raw["pipeline"]:
-        agents.append(AgentDef(
-            agent=entry["agent"],
-            phase=entry["phase"],
-            objects=entry["object"],
-            trigger=entry["trigger"],
-            dependencies=entry.get("dependencies", []),
-            human_gate_after=entry.get("human_gate_after", False),
-            human_gate_label=entry.get("human_gate_label"),
-            description=entry["description"],
-            step_type=entry.get("type", "agent"),
-            script_path=entry.get("script"),
-            max_retries=int(entry.get("max_retries", 0)),
-            session_scope=entry.get("session", {}).get("scope", "per_issue"),
-            session_id_pattern=entry.get("session", {}).get("id_pattern"),
-            mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
-            commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
-            exclude_classifications=list(entry.get("exclude_classifications", [])),
-            review_loop=entry.get("review_loop"),
-            script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
-        ))
+        agents = []
+        for entry in raw["pipeline"]:
+            agents.append(AgentDef(
+                agent=entry["agent"],
+                phase=entry["phase"],
+                objects=entry["object"],
+                trigger=entry["trigger"],
+                dependencies=entry.get("dependencies", []),
+                human_gate_after=entry.get("human_gate_after", False),
+                human_gate_label=entry.get("human_gate_label"),
+                description=entry["description"],
+                step_type=entry.get("type", "agent"),
+                script_path=entry.get("script"),
+                max_retries=int(entry.get("max_retries", 0)),
+                session_scope=entry.get("session", {}).get("scope", "per_issue"),
+                session_id_pattern=entry.get("session", {}).get("id_pattern"),
+                mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
+                commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
+                exclude_classifications=list(entry.get("exclude_classifications", [])),
+                review_loop=entry.get("review_loop"),
+                script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
+            ))
 
-    _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
-    default_extra_tools: list[str] = (
-        [t.strip() for t in _raw_defaults.split(",") if t.strip()]
-        if isinstance(_raw_defaults, str)
-        else list(_raw_defaults)
-    )
+        _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
+        default_extra_tools: list[str] = (
+            [t.strip() for t in _raw_defaults.split(",") if t.strip()]
+            if isinstance(_raw_defaults, str)
+            else list(_raw_defaults)
+        )
 
-    return agents, default_extra_tools
+        return agents, default_extra_tools
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        log.error("pipeline.json is malformed — cannot start: %s", exc)
+        sys.exit(1)
 
 
 def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
@@ -572,7 +577,11 @@ def write_audit_log(gh: GitHubClient, events: list[dict]) -> None:
         by_date.setdefault(date_str, []).append(event)
 
     for date_str, date_events in sorted(by_date.items()):
-        year, month, day = date_str.split("-")
+        parts = date_str.split("-")
+        if len(parts) != 3:
+            log.warning("Skipping audit event with malformed date %r — expected YYYY-MM-DD", date_str)
+            continue
+        year, month, day = parts
         path = f"events/{year}/{month}/{day}.jsonl"
         new_lines = "\n".join(json.dumps(e, separators=(",", ":")) for e in date_events) + "\n"
 
@@ -1377,16 +1386,17 @@ def invoke_script(
         )
         deadline = time.monotonic() + agent_def.script_timeout_seconds
         try:
-            assert proc.stdout is not None
+            if proc.stdout is None:
+                raise RuntimeError("subprocess stdout pipe unexpectedly None")
             for line in proc.stdout:
                 sys.stderr.write(line)
                 if len(captured_lines) < MAX_SCRIPT_CAPTURED_LINES:
                     captured_lines.append(line)
                 # Deadline is checked at line boundaries; a script that holds
                 # stdout open without emitting a newline can run slightly over
-                # SCRIPT_TIMEOUT_SECONDS before the raise fires.
+                # the configured timeout before the raise fires.
                 if time.monotonic() > deadline:
-                    raise subprocess.TimeoutExpired(["bash", str(script_file)], SCRIPT_TIMEOUT_SECONDS)
+                    raise subprocess.TimeoutExpired(["bash", str(script_file)], agent_def.script_timeout_seconds)
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             log.error("    Script %s timed out on #%d", agent_def.agent, work_item.number)
@@ -1395,7 +1405,7 @@ def invoke_script(
                 success=False,
                 returncode=proc.returncode,
                 captured_tail=(
-                    f"Script timed out after {SCRIPT_TIMEOUT_SECONDS}s.\n\n"
+                    f"Script timed out after {agent_def.script_timeout_seconds}s.\n\n"
                     f"Last output:\n{_captured_tail(captured_lines)}"
                 ),
             )
@@ -1664,7 +1674,8 @@ def invoke_agent(
         )
         deadline = time.monotonic() + AGENT_TIMEOUT_SECONDS
         try:
-            assert proc.stdout is not None
+            if proc.stdout is None:
+                raise RuntimeError("subprocess stdout pipe unexpectedly None")
             for line in proc.stdout:
                 # Mirror to our stderr so the subprocess log is visible
                 # in the orchestrator's CI output.
@@ -1905,7 +1916,7 @@ def _apply_failed(
     # Clear any non-terminal status the agent may have left behind so
     # the work item has exactly one status label after this. We only
     # touch this agent's labels — humans manage their own (skipped).
-    for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED):
+    for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED, STATUS_REQUESTED):
         try:
             gh.remove_label(work_item.number, agent_def.status_label(stale))
         except Exception as exc:  # pragma: no cover — best-effort cleanup
@@ -2068,8 +2079,10 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             capture_output=True, text=True, check=True,
         ).stdout.strip()
 
+        stashed = False
         _sp.run(["git", "stash", "push", "--include-untracked", "-m",
                  f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
+        stashed = True
 
         try:
             _sp.run(["git", "fetch", "origin", branch], check=True)
@@ -2156,6 +2169,13 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                 _sp.run(["git", "checkout", current], check=False)
             except Exception:
                 pass
+            # Drop any stash entry that is still on the stack (i.e. if
+            # git stash pop was never reached due to an earlier exception).
+            if stashed:
+                try:
+                    _sp.run(["git", "stash", "drop"], check=False)
+                except Exception:
+                    pass
 
     except _sp.CalledProcessError as exc:
         log.error(
