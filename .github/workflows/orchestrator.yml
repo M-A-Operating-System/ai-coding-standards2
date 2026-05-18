@@ -58,11 +58,15 @@ jobs:
 
       - name: Build orchestrator args
         id: args
+        env:
+          ISSUE_INPUT: ${{ github.event.inputs.issue_number }}
         run: |
           ARGS=""
 
-          if [ -n "${{ github.event.inputs.issue_number }}" ]; then
-            ARGS="$ARGS --issue ${{ github.event.inputs.issue_number }}"
+          [[ "$ISSUE_INPUT" =~ ^[0-9]*$ ]] || { echo "ERROR: issue_number must be a positive integer" >&2; exit 1; }
+
+          if [ -n "$ISSUE_INPUT" ]; then
+            ARGS="$ARGS --issue $ISSUE_INPUT"
           elif [ "${{ github.event_name }}" = "issues" ]; then
             ARGS="$ARGS --issue ${{ github.event.issue.number }} --kind issue"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
