@@ -133,4 +133,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${REPO}" ISSUE_NUMBER="${ISSUE_NUMBER}" PR_NUMBER="${PR_NUMBER}" \
   bash "${SCRIPT_DIR}/link-pr-to-issue.sh"
 
+# Post the PR number and URL as a comment on the issue so stakeholders can
+# navigate directly from the issue to the draft PR without consulting build logs.
+# Only reached on new PR creation — the idempotent early-exit above ensures no
+# duplicate comment is posted when the PR already exists.
+gh issue comment "${ISSUE_NUMBER}" \
+  --repo "${REPO}" \
+  --body "$(cat <<EOF
+<!-- ai-agile/artefact/v1 by 01_product_docs/create-pr -->
+Draft PR opened for this issue: [#${PR_NUMBER}](${PR_URL})
+EOF
+)" || {
+  echo "ERROR: Failed to post PR link comment on issue #${ISSUE_NUMBER}." >&2
+  exit 1
+}
+
+echo "Posted PR link comment on issue #${ISSUE_NUMBER}."
+
 echo "AI_AGILE_STATUS: complete"
