@@ -5,7 +5,7 @@ of the form `{agent-name}:{status}` on the issue or PR. The orchestrator
 reads labels, decides who runs next, and applies status changes via the
 shared script `.github/scripts/status.sh`.
 
-The canonical definition is in `ai-agile/pipeline/statuses.json`
+The canonical definition is in `pipeline/statuses.json`
 (see [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
 Every transition also emits an event to the audit log branch
 (see [`08-audit-log.md`](08-audit-log.md)) so that the cross-session

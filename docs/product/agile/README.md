@@ -32,7 +32,7 @@ evolve them as the system matures.
 ## Generated views
 
 Authoritative facts about the pipeline are declared once in
-`ai-agile/pipeline/pipeline.json` and rendered for human reading at:
+`pipeline/pipeline.json` and rendered for human reading at:
 
 | File | Description |
 |---|---|
@@ -43,7 +43,7 @@ Authoritative facts about the pipeline are declared once in
 | `generated/pipeline-issue.mmd` | Issue subgraph |
 | `generated/pipeline-pr.mmd` | PR subgraph |
 
-These files are produced by `ai-agile/pipeline/generators/` and committed
+These files are produced by `pipeline/generators/` and committed
 in the same PR as any change to the source JSON. They are not
 hand-edited. See [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
 
@@ -54,7 +54,7 @@ hand-edited. See [P-2](02-principles.md#p-2--one-machine-readable-source-per-con
 Every change starts as a GitHub issue. The pipeline orchestrator reads
 status labels on that issue, identifies which agent is eligible to run
 next based on the dependency graph in
-[`ai-agile/pipeline/pipeline.json`](../../../ai-agile/pipeline/pipeline.json),
+[`pipeline/pipeline.json`](../../../pipeline/pipeline.json),
 and invokes it. Each agent produces a single artefact — a PRD, a design,
 a test spec, a PR, a retrospective — and either marks itself complete or
 requests human review. Humans approve at gates by applying or removing

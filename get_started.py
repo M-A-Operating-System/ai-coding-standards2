@@ -122,7 +122,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AI_AGILE_ROOT: ${{ github.workspace }}/ai-coding-standards2
         run: |
-          python ai-coding-standards2/ai-agile/pipeline/pipeline_orchestrator.py \\
+          python ai-coding-standards2/pipeline/pipeline_orchestrator.py \\
             --repo "$GITHUB_REPOSITORY" \\
             ${{ steps.args.outputs.args }}
 
@@ -141,7 +141,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \\
-            ai-coding-standards2/ai-agile/pipeline/pipeline.json
+            ai-coding-standards2/pipeline/pipeline.json
 """
 
 
@@ -156,8 +156,8 @@ PATH_REWRITES = [
     (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
     # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
     (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
-    # Bare "ai-agile/pipeline/..." → "ai-coding-standards2/ai-agile/pipeline/..."
-    (r"\bai-agile/pipeline/", f"{SUBMODULE_NAME}/ai-agile/pipeline/"),
+    # Bare "pipeline/..." → "ai-coding-standards2/pipeline/..."
+    (r"\bpipeline/", f"{SUBMODULE_NAME}/pipeline/"),
     # Bare ".claude/agent-todo-standard.md" was retired (see 13-todos.md);
     # rewrite any lingering reference to point at the new doc.
     (
@@ -328,7 +328,7 @@ def print_followup(consuming_root: Path) -> None:
     print(f"     and creates all required labels in one step.")
     print()
     print(f"     (Or run locally: bash {SUBMODULE_NAME}/.github/scripts/status.sh")
-    print(f"      bootstrap-all {SUBMODULE_NAME}/ai-agile/pipeline/pipeline.json)")
+    print(f"      bootstrap-all {SUBMODULE_NAME}/pipeline/pipeline.json)")
     print()
     print(f"  4. Open a test issue with a problem statement and acceptance criteria.")
     print(f"     The orchestrator workflow fires on issue-opened; expect")

@@ -9,7 +9,7 @@ human gate.
 
 This document describes the phases conceptually. The authoritative list
 of agents per phase, their dependencies, triggers, and gates lives in
-[`ai-agile/pipeline/pipeline.json`](../../../ai-agile/pipeline/pipeline.json)
+[`pipeline/pipeline.json`](../../../pipeline/pipeline.json)
 and is rendered at:
 
 - [`generated/phases.md`](generated/phases.md) — agents per phase
@@ -180,7 +180,7 @@ of the standard review path.
 
 A typical feature/bug/enhancement/toil ticket flows like this. The table
 reflects the **current implementation** — the agents actually present in
-[`pipeline.json`](../../../ai-agile/pipeline/pipeline.json).
+[`pipeline.json`](../../../pipeline/pipeline.json).
 Phases 2–4, 6–7, and 8–10 described elsewhere in this document are
 planned but not yet wired into the pipeline.
 

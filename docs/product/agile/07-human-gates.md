@@ -23,7 +23,7 @@ remains a human responsibility. Agents draft. Humans decide.
 ## The gates
 
 The full, authoritative list of gates is generated from
-[`ai-agile/pipeline/pipeline.json`](../../../ai-agile/pipeline/pipeline.json)
+[`pipeline/pipeline.json`](../../../pipeline/pipeline.json)
 to [`generated/gates.md`](generated/gates.md). The summary below is for
 orientation; the generated file is the source of truth (see
 [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).

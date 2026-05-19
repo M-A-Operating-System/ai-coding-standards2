@@ -7,11 +7,11 @@ through to a merged PR with humans approving at well-defined gates.
 This repo is **designed to be added as a git submodule** to the
 project repos that consume it. The submodule provides:
 
-- The pipeline graph (`ai-agile/pipeline/pipeline.json`)
-- The orchestrator (`ai-agile/pipeline/pipeline_orchestrator.py`)
+- The pipeline graph (`pipeline/pipeline.json`)
+- The orchestrator (`pipeline/pipeline_orchestrator.py`)
 - The agent prompts (`.claude/agents/{agent}.md`)
 - The `status.sh` label-transition helper (`.github/scripts/status.sh`)
-- The validators (`ai-agile/pipeline/validate.py` and friends)
+- The validators (`pipeline/validate.py` and friends)
 
 The consuming repo provides:
 
@@ -60,7 +60,7 @@ Re-run with `--force` to overwrite existing files; with `--dry-run` to preview.
 
 ```bash
 bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \
-     ai-coding-standards2/ai-agile/pipeline/pipeline.json
+     ai-coding-standards2/pipeline/pipeline.json
 ```
 
 This creates every `{agent}:{status}` label and every gate label in

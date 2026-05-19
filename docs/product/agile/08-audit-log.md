@@ -203,7 +203,7 @@ This is a future operation requiring a standards-owner ADR.
 |---|---|---|
 | Live state of one work item | Its issue + linked PRs | P-1 — all on GitHub |
 | Historical timeline of all work | `ai-agile/log` branch | P-3 — append-only, cross-session |
-| Pipeline graph | `ai-agile/pipeline/pipeline.json` | P-2 — single source of truth |
+| Pipeline graph | `pipeline/pipeline.json` | P-2 — single source of truth |
 | Standards | `ai-agile/standards/*.json` | P-2 — single source of truth |
 
 Each has a clear owner and no overlap.
