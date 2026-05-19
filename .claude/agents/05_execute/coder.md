@@ -187,8 +187,26 @@ that apply.
 - Boundary validation on all external inputs
 - Only implement what the sub-issue specifies
 
-**6c — Write tests.** For every new public behaviour: one happy-path test,
-one error-path test. Place in `tests/` adjacent to the code.
+**6c — Write tests.** For every Gherkin scenario in the PRD acceptance
+criteria, write a corresponding test. Minimum per scenario:
+
+- One happy-path test that asserts the exact outcome stated in the `Then` clause
+- One error-path test for every `When` clause that involves a fallible operation
+- One idempotency test for every operation described as "runs again" or "re-run"
+
+Place tests in `tests/` using the naming pattern `test_{module}.{ext}`.
+Do not move on to the next sub-issue until tests for the current one are written.
+
+**6d — Run tests and verify they pass.**
+
+```bash
+# Run the full test suite — fix any failures before proceeding
+pytest tests/ -v 2>&1 || bash tests/*.sh -v 2>&1 || echo "No test runner found — list test files written"
+```
+
+All tests must pass before signalling complete. A test that cannot be run
+(missing runner, missing dependency) is a blocking issue — resolve it or emit
+`AI_AGILE_STATUS: blocked` with the specific obstacle.
 
 Repeat for each sub-issue. The orchestrator will commit all changes when you
 signal completion — you do not need to commit between sub-issues.
@@ -207,10 +225,23 @@ For each changed file, verify:
 - No missing guard clauses on new functions
 - No unhandled exceptions or ignored error codes
 - No magic literals
-- Tests present for every new behaviour
 - No code beyond what the sub-issues required
 
-Fix any violations before proceeding.
+Produce a Gherkin coverage table — one row per PRD acceptance scenario:
+
+| Gherkin scenario | Test file:function | Pass? |
+|---|---|---|
+| {scenario title} | `tests/test_foo.py::test_bar` | ✓ |
+
+Every scenario must have a row. Any row without a test file:function entry is
+a gap — write the missing test before proceeding. Any row marked failing must
+be fixed before proceeding.
+
+Run the full test suite one final time and confirm all pass:
+
+```bash
+pytest tests/ -v 2>&1 || bash tests/*.sh 2>&1
+```
 
 ---
 
@@ -328,7 +359,12 @@ code it refers to. Understand the root cause, not just the surface symptom.
 If the fix reveals a related issue nearby, fix that too.
 
 **5c — Update or add tests.** If the feedback identified a missing test
-or a test that didn't catch a bug, fix or add the test now.
+or a test that didn't catch a bug, fix or add the test now. Re-run the
+full test suite and confirm all tests pass before proceeding.
+
+```bash
+pytest tests/ -v 2>&1 || bash tests/*.sh 2>&1
+```
 
 The orchestrator will commit all changes when you signal completion.
 
@@ -408,17 +444,17 @@ AI_AGILE_STATUS: complete
 - **Minimal surface area.** Implement only what the sub-issue specifies. No
   convenience wrappers, no future-proofing, no abstractions beyond what the
   task requires. Three specific lines are better than one general abstraction.
-- **Tests are not optional.** Every new behaviour and every fixed bug gets at
-  least one happy-path test and one error-path test. Fixing a bug without a
-  regression test is an incomplete fix.
+- **Tests are not optional.** Every PRD Gherkin scenario gets a test. Every
+  new public behaviour gets a happy-path test and an error-path test. Every
+  fixed bug gets a regression test. Every idempotent operation gets an
+  idempotency test. Signalling complete without a passing test suite is
+  a policy violation — the pr-reviewer will REQUEST CHANGES.
 - **Tech spec is authoritative.** If `docs/tech-spec/` has a rule that
   conflicts with reviewer feedback, the spec wins. Surface the conflict via a
   PR comment and emit `AI_AGILE_STATUS: blocked`.
 - **Suggested feedback is not implemented.** Acknowledge it, optionally open
   a follow-up issue, do not add code that wasn't requested by a Required or
   Expected item.
-- **Tests are not optional.** Every new behaviour and every fixed bug gets a
-  test. Fixing a bug without a regression test is an incomplete fix.
 - **If blocked, say exactly why.** Ambiguous spec, contradictory feedback,
   missing required file — emit `AI_AGILE_STATUS: blocked` with the specific
   question. Do not guess and proceed.
