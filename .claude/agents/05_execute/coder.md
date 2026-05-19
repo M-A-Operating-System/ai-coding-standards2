@@ -187,8 +187,23 @@ that apply.
 - Boundary validation on all external inputs
 - Only implement what the sub-issue specifies
 
-**6c — Write tests.** For every new public behaviour: one happy-path test,
-one error-path test. Place in `tests/` adjacent to the code.
+**6c — Write Gherkin-traced tests.** For every Gherkin scenario in the
+approved PRD, write at least one corresponding test. Each test must:
+- Be named after the scenario (e.g. `test_<scenario_slug>`)
+- Cover the happy path (Given/When/Then)
+- Cover at least one error path (invalid input, missing env var, API failure)
+- Cover idempotency where the scenario implies repeated safe execution
+
+Place tests in `tests/` adjacent to the code.
+
+**6d — Run the full test suite.** After implementing each sub-issue, run:
+
+```bash
+python -m pytest tests/ -v 2>&1 | tail -20
+```
+
+If any test fails, fix it before moving to the next sub-issue. Do not signal
+completion with a failing test suite.
 
 Repeat for each sub-issue. The orchestrator will commit all changes when you
 signal completion — you do not need to commit between sub-issues.
@@ -207,10 +222,23 @@ For each changed file, verify:
 - No missing guard clauses on new functions
 - No unhandled exceptions or ignored error codes
 - No magic literals
-- Tests present for every new behaviour
 - No code beyond what the sub-issues required
 
-Fix any violations before proceeding.
+Produce a Gherkin→test coverage table. For every scenario in the approved PRD,
+list the scenario slug and the test(s) that cover it. If any scenario is
+uncovered, write the missing test before proceeding.
+
+| PRD Scenario | Test(s) | Status |
+|---|---|---|
+| {scenario slug} | `tests/test_foo.py::test_{scenario_slug}` | covered |
+
+Run the full test suite one final time:
+
+```bash
+python -m pytest tests/ -v 2>&1 | tail -20
+```
+
+All tests must pass. Fix any failures before signalling complete.
 
 ---
 
@@ -328,7 +356,14 @@ code it refers to. Understand the root cause, not just the surface symptom.
 If the fix reveals a related issue nearby, fix that too.
 
 **5c — Update or add tests.** If the feedback identified a missing test
-or a test that didn't catch a bug, fix or add the test now.
+or a test that didn't catch a bug, fix or add the test now. After all
+fixes are applied, re-run the full test suite:
+
+```bash
+python -m pytest tests/ -v 2>&1 | tail -20
+```
+
+All tests must pass before signalling complete.
 
 The orchestrator will commit all changes when you signal completion.
 
@@ -408,17 +443,16 @@ AI_AGILE_STATUS: complete
 - **Minimal surface area.** Implement only what the sub-issue specifies. No
   convenience wrappers, no future-proofing, no abstractions beyond what the
   task requires. Three specific lines are better than one general abstraction.
-- **Tests are not optional.** Every new behaviour and every fixed bug gets at
-  least one happy-path test and one error-path test. Fixing a bug without a
-  regression test is an incomplete fix.
+- **Tests are not optional.** Every new behaviour gets Gherkin-traced tests
+  (happy path, error path, idempotency). Every fixed bug gets a regression
+  test. The full test suite must pass before signalling complete. Fixing a bug
+  without a regression test is an incomplete fix.
 - **Tech spec is authoritative.** If `docs/tech-spec/` has a rule that
   conflicts with reviewer feedback, the spec wins. Surface the conflict via a
   PR comment and emit `AI_AGILE_STATUS: blocked`.
 - **Suggested feedback is not implemented.** Acknowledge it, optionally open
   a follow-up issue, do not add code that wasn't requested by a Required or
   Expected item.
-- **Tests are not optional.** Every new behaviour and every fixed bug gets a
-  test. Fixing a bug without a regression test is an incomplete fix.
 - **If blocked, say exactly why.** Ambiguous spec, contradictory feedback,
   missing required file — emit `AI_AGILE_STATUS: blocked` with the specific
   question. Do not guess and proceed.

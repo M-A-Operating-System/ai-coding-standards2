@@ -75,6 +75,25 @@ gh pr view "$PR_NUMBER" --repo "$REPO" --json commits \
   --jq '.commits[] | "\(.oid[0:8]) \(.messageHeadline)"'
 ```
 
+Check whether the branch has unresolved merge conflicts against its base:
+
+```bash
+BASE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json baseRefName --jq '.baseRefName')
+git fetch origin "$BASE" "$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')" 2>/dev/null || true
+MERGE_BASE=$(git merge-base "origin/$BASE" FETCH_HEAD 2>/dev/null || true)
+if git merge-tree "$MERGE_BASE" "origin/$BASE" FETCH_HEAD 2>/dev/null \
+     | grep -q "^<<<<<<< "; then
+  CONFLICT_STATUS="CONFLICTS DETECTED — branch cannot merge cleanly into $BASE"
+else
+  CONFLICT_STATUS="clean"
+fi
+echo "Merge status: $CONFLICT_STATUS"
+```
+
+If `$CONFLICT_STATUS` is not `clean`, raise it as a Critical finding
+`SA-001[DP+SA] — Unresolved merge conflicts block clean merge` and set
+`VERDICT=REQUEST CHANGES` immediately (skip remaining review steps).
+
 ---
 
 ## Step 2 — Read the spec
@@ -203,10 +222,9 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ## Step 8 — Verdict
 
-- Critical or High findings → **REQUEST CHANGES**
-- Medium/Low/Informational only → **APPROVE** (note deferred items)
-- No spec + any Medium → treat as High for verdict purposes
-- ADR-covered Informational findings never block APPROVE
+- Any Critical, High, Medium, or Low finding → **REQUEST CHANGES**
+- Informational only (or zero findings) → **APPROVE**
+- ADR-covered findings downgraded to Informational never block APPROVE
 
 ---
 
