@@ -15,13 +15,13 @@ human-readable views are generated from machine-readable sources.
 
 | Generated file | Source | Generator |
 |---|---|---|
-| `agents.md` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_docs.py` |
-| `phases.md` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_docs.py` |
-| `gates.md` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_docs.py` |
-| `pipeline.mmd` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_pipeline_mermaid.py` |
-| `pipeline-issue.mmd` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_pipeline_mermaid.py` |
-| `pipeline-pr.mmd` | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_pipeline_mermaid.py` |
-| `phases/{phase}.mmd` (one per phase) | `ai-agile/pipeline/pipeline.json` | `ai-agile/pipeline/generators/generate_phase_mermaid.py` |
+| `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
+| `phases.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
+| `gates.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
+| `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |
+| `pipeline-issue.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |
+| `pipeline-pr.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |
+| `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
 
 ---
 
@@ -30,9 +30,9 @@ human-readable views are generated from machine-readable sources.
 From the repo root:
 
 ```bash
-python ai-agile/pipeline/generators/generate_docs.py
-python ai-agile/pipeline/generators/generate_pipeline_mermaid.py
-python ai-agile/pipeline/generators/generate_phase_mermaid.py
+python pipeline/generators/generate_docs.py
+python pipeline/generators/generate_pipeline_mermaid.py
+python pipeline/generators/generate_phase_mermaid.py
 ```
 
 Generators are idempotent — running them twice produces byte-identical
@@ -43,6 +43,6 @@ the regenerated version.
 
 ## Canonical source
 
-The machine-readable source is `ai-agile/pipeline/pipeline.json`.
+The machine-readable source is `pipeline/pipeline.json`.
 See [`05-pipeline-config.md`](../05-pipeline-config.md) for the
 schema, change process, and generator invocation details.
