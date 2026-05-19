@@ -4,7 +4,7 @@ validate.py — validate pipeline.json against the schema and check the
 dependency graph is acyclic and references existing agents.
 
 Usage:
-    python ai-agile/pipeline/validate.py [--pipeline PATH]
+    python pipeline/validate.py [--pipeline PATH]
 
 Exits 0 if valid, 1 if not. Prints findings to stderr.
 """
