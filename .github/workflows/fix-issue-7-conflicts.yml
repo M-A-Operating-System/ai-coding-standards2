@@ -21,101 +21,51 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Merge main and resolve conflicts
+      - name: Resolve merge conflicts
         run: |
           git fetch origin main
           git merge origin/main --no-edit || true
 
-          # Resolve docs/product/agile/05-pipeline-config.md
-          # Keep pipeline/ paths from main; add generate_phase_mermaid.py from issue-7
-          python3 - <<'PYEOF'
-import re, pathlib, sys
+          # Take main's version of both files (removes conflict markers)
+          git checkout --theirs \
+            docs/product/agile/05-pipeline-config.md \
+            docs/product/agile/generated/README.md
 
-p = pathlib.Path("docs/product/agile/05-pipeline-config.md")
-text = p.read_text()
-resolved = re.sub(
-    r"<<<<<<< HEAD\n"
-    r"   `python ai-agile/pipeline/generators/generate_docs\.py` and\n"
-    r"   `python ai-agile/pipeline/generators/generate_phase_mermaid\.py`\.\n"
-    r"=======\n"
-    r"   `python pipeline/generators/generate_docs\.py`\.\n"
-    r">>>>>>> origin/main\n",
-    "   `python pipeline/generators/generate_docs.py` and\n"
-    "   `python pipeline/generators/generate_phase_mermaid.py`.\n",
-    text
-)
-if resolved == text:
-    print("WARNING: 05-pipeline-config.md pattern not matched — already clean or conflict text differs", file=sys.stderr)
-p.write_text(resolved)
-PYEOF
+          # 05-pipeline-config.md: add generate_phase_mermaid.py alongside generate_docs.py
+          # main has: `python pipeline/generators/generate_docs.py`.
+          # we want:  `python pipeline/generators/generate_docs.py` and
+          #           `python pipeline/generators/generate_phase_mermaid.py`.
+          sed -i \
+            's|`python pipeline/generators/generate_docs\.py`\.|`python pipeline/generators/generate_docs.py` and\n   `python pipeline/generators/generate_phase_mermaid.py`.|' \
+            docs/product/agile/05-pipeline-config.md
 
-          # Resolve docs/product/agile/generated/README.md (two hunks)
-          python3 - <<'PYEOF'
-import re, pathlib, sys
+          # generated/README.md: add phases/{phase}.mmd row after pipeline-pr.mmd row
+          sed -i \
+            '/pipeline-pr\.mmd.*generate_pipeline_mermaid/a | `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |' \
+            docs/product/agile/generated/README.md
 
-p = pathlib.Path("docs/product/agile/generated/README.md")
-text = p.read_text()
-
-# Hunk 1: table — keep pipeline/ paths from main, add phases/{phase}.mmd row from issue-7
-hunk1_pattern = (
-    r"<<<<<<< HEAD\n"
-    r"(\| `[^\n]+\n){6}"
-    r"\| `phases/\{phase\}\.mmd`[^\n]+\n"
-    r"=======\n"
-    r"(\| `[^\n]+\n){6}"
-    r">>>>>>> origin/main\n"
-)
-hunk1_replacement = (
-    "| `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |\n"
-    "| `phases.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |\n"
-    "| `gates.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |\n"
-    "| `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |\n"
-    "| `pipeline-issue.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |\n"
-    "| `pipeline-pr.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |\n"
-    "| `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |\n"
-)
-resolved, n1 = re.subn(hunk1_pattern, hunk1_replacement, text, count=1)
-if n1 == 0:
-    print("WARNING: README.md hunk 1 pattern not matched — may already be clean", file=sys.stderr)
-text = resolved
-
-# Hunk 2: regenerating commands — keep pipeline/ paths from main, add generate_phase_mermaid.py
-hunk2_pattern = (
-    r"<<<<<<< HEAD\n"
-    r"python ai-agile/pipeline/generators/generate_docs\.py\n"
-    r"python ai-agile/pipeline/generators/generate_pipeline_mermaid\.py\n"
-    r"python ai-agile/pipeline/generators/generate_phase_mermaid\.py\n"
-    r"=======\n"
-    r"python pipeline/generators/generate_docs\.py\n"
-    r"python pipeline/generators/generate_pipeline_mermaid\.py\n"
-    r">>>>>>> origin/main\n"
-)
-hunk2_replacement = (
-    "python pipeline/generators/generate_docs.py\n"
-    "python pipeline/generators/generate_pipeline_mermaid.py\n"
-    "python pipeline/generators/generate_phase_mermaid.py\n"
-)
-resolved, n2 = re.subn(hunk2_pattern, hunk2_replacement, text, count=1)
-if n2 == 0:
-    print("WARNING: README.md hunk 2 pattern not matched — may already be clean", file=sys.stderr)
-p.write_text(resolved)
-PYEOF
+          # generated/README.md: add generate_phase_mermaid.py line after generate_pipeline_mermaid.py
+          sed -i \
+            '/^python pipeline\/generators\/generate_pipeline_mermaid\.py$/a python pipeline/generators/generate_phase_mermaid.py' \
+            docs/product/agile/generated/README.md
 
           # Verify no conflict markers remain
-          if grep -Prn "^<<<<<<< |^=======\$|^>>>>>>> " \
+          if grep -rn "^<<<<<<< \|^=======\|^>>>>>>> " \
                docs/product/agile/05-pipeline-config.md \
-               docs/product/agile/generated/README.md 2>/dev/null; then
+               docs/product/agile/generated/README.md; then
             echo "ERROR: conflict markers still present" >&2
             exit 1
           fi
 
           git add docs/product/agile/05-pipeline-config.md \
                   docs/product/agile/generated/README.md
-          git diff --cached --quiet && echo "Nothing to commit — conflicts already resolved" \
-            || git commit -m "Merge main into issue-7: resolve ai-agile/pipeline → pipeline/ path conflicts
+
+          git diff --cached --quiet \
+            && echo "Nothing to commit — conflicts already resolved" \
+            || git commit -m "Merge main into issue-7: resolve ai-agile/pipeline path conflicts
 
 Keeps pipeline/ paths from main (PR #78 structural refactor) and preserves
-the per-phase mermaid chart additions (generate_phase_mermaid.py) from issue-7."
+the generate_phase_mermaid.py additions from issue-7."
 
       - name: Push
         run: git push origin issue-7
