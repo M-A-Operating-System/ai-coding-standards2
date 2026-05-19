@@ -2,16 +2,20 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 import pytest
 from pipeline_orchestrator import (
     ALL_STATUSES,
     STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED,
     STATUS_REVIEW, STATUS_BLOCKED, STATUS_WIP, STATUS_REQUESTED,
+    PIPELINE_MAX_CONCURRENT,
     agent_status,
     _apply_failed,
-    AgentDef, AgentRunResult,
+    _count_running,
+    AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
+    process_work_item,
 )
 
 
@@ -208,3 +212,384 @@ class TestParseFrontmatter:
         text = "---\n---"
         result = parse_frontmatter(text)
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Concurrency helpers
+# ---------------------------------------------------------------------------
+
+def _make_agent_def_concurrent(name: str, max_concurrent: int = 1) -> AgentDef:
+    """Build a minimal AgentDef with a configurable max_concurrent."""
+    parts = name.split("/")
+    return AgentDef(
+        agent=name,
+        phase=parts[0],
+        objects=["issue"],
+        trigger={"label": f"{parts[-1]}-dep:complete"},
+        dependencies=[],
+        human_gate_after=False,
+        human_gate_label=None,
+        description="test agent",
+        max_concurrent=max_concurrent,
+    )
+
+
+def _make_work_item_with_labels(number: int, labels: set) -> WorkItem:
+    return WorkItem(
+        number=number,
+        kind="issue",
+        title=f"Test issue #{number}",
+        labels=labels,
+        url=f"https://github.com/test/repo/issues/{number}",
+    )
+
+
+def _make_gh_mock() -> MagicMock:
+    gh = MagicMock()
+    gh.add_label = MagicMock()
+    gh.remove_label = MagicMock()
+    gh.post_comment = MagicMock()
+    gh.get_issue_labels = MagicMock(return_value=set())
+    return gh
+
+
+# ---------------------------------------------------------------------------
+# TestCountRunning
+# ---------------------------------------------------------------------------
+
+class TestCountRunning:
+    def test_returns_zero_when_no_wip(self):
+        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
+        work_items = [_make_work_item_with_labels(i, set()) for i in range(3)]
+        counts = _count_running(work_items, agents)
+        assert counts["prd-writer"] == 0
+
+    def test_counts_wip_labels_across_work_items(self):
+        """Prior-tick :wip labels are correctly tallied per agent."""
+        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
+        work_items = [
+            _make_work_item_with_labels(1, {"prd-writer:wip"}),
+            _make_work_item_with_labels(2, {"prd-writer:wip"}),
+            _make_work_item_with_labels(3, {"some-other:complete"}),
+        ]
+        counts = _count_running(work_items, agents)
+        assert counts["prd-writer"] == 2
+
+    def test_counts_are_independent_per_agent(self):
+        agents = [
+            _make_agent_def_concurrent("01_product_docs/prd-writer"),
+            _make_agent_def_concurrent("05_execute/coder"),
+        ]
+        work_items = [
+            _make_work_item_with_labels(1, {"prd-writer:wip"}),
+            _make_work_item_with_labels(2, {"coder:wip"}),
+            _make_work_item_with_labels(3, {"coder:wip"}),
+        ]
+        counts = _count_running(work_items, agents)
+        assert counts["prd-writer"] == 1
+        assert counts["coder"] == 2
+
+    def test_empty_work_items_returns_zeros(self):
+        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
+        counts = _count_running([], agents)
+        assert counts["prd-writer"] == 0
+
+
+# ---------------------------------------------------------------------------
+# TestConcurrencyState
+# ---------------------------------------------------------------------------
+
+class TestConcurrencyState:
+    def test_initial_tick_launch_count_is_zero(self):
+        conc = ConcurrencyState(running_counts={})
+        assert conc.tick_launch_count == 0
+
+    def test_running_counts_initialised_from_dict(self):
+        conc = ConcurrencyState(running_counts={"prd-writer": 2, "coder": 0})
+        assert conc.running_counts["prd-writer"] == 2
+        assert conc.running_counts["coder"] == 0
+
+    def test_increment_updates_both_counters(self):
+        conc = ConcurrencyState(running_counts={"prd-writer": 1})
+        conc.running_counts["prd-writer"] += 1
+        conc.tick_launch_count += 1
+        assert conc.running_counts["prd-writer"] == 2
+        assert conc.tick_launch_count == 1
+
+
+# ---------------------------------------------------------------------------
+# TestDefaultMaxConcurrentIsOne
+# ---------------------------------------------------------------------------
+
+class TestDefaultMaxConcurrentIsOne:
+    """Scenario: Default concurrency of 1 when max_concurrent is absent."""
+
+    def test_agent_def_default_max_concurrent(self):
+        agent = _make_agent_def("05_execute/coder")
+        assert agent.max_concurrent == 1, (
+            "AgentDef.max_concurrent must default to 1 when not specified"
+        )
+
+    def test_load_pipeline_defaults_max_concurrent_to_one(self, tmp_path):
+        """Pipeline entries without max_concurrent field default to 1."""
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "01_product_docs/issue-classifier",
+                "phase": "01_product_docs",
+                "object": ["issue"],
+                "trigger": {"event": "issue.opened"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        agents, _ = load_pipeline(path)
+        assert agents[0].max_concurrent == 1
+
+    def test_load_pipeline_null_max_concurrent_defaults_to_one(self, tmp_path):
+        """max_concurrent: null in pipeline.json defaults to 1."""
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "01_product_docs/issue-classifier",
+                "phase": "01_product_docs",
+                "object": ["issue"],
+                "trigger": {"event": "issue.opened"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+                "max_concurrent": None,
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        agents, _ = load_pipeline(path)
+        assert agents[0].max_concurrent == 1
+
+
+# ---------------------------------------------------------------------------
+# TestPerAgentConcurrencyCeiling
+# ---------------------------------------------------------------------------
+
+class TestPerAgentConcurrencyCeiling:
+    """Scenario: Per-agent concurrency ceiling respected."""
+
+    def _make_eligible_work_item(self, number: int) -> WorkItem:
+        return _make_work_item_with_labels(number, {"issue-classifier:complete"})
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_ceiling_respected_exactly_max_concurrent_launched(self, mock_invoke):
+        """
+        Given max_concurrent: 3 for prd-writer
+        And 5 issues are eligible (no :wip)
+        When process_work_item is called for each
+        Then exactly 3 are launched, 2 remain pending.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=3,
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        work_items = [self._make_eligible_work_item(i) for i in range(1, 6)]
+
+        launched = 0
+        for wi in work_items:
+            gh = _make_gh_mock()
+            n = process_work_item(
+                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+                concurrency=conc,
+            )
+            launched += n
+
+        assert launched == 3, f"Expected exactly 3 launches, got {launched}"
+        assert conc.tick_launch_count == 3
+        assert conc.running_counts["prd-writer"] == 3
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_already_running_instances_count_against_ceiling(self, mock_invoke):
+        """
+        Given max_concurrent: 3
+        And 2 issues already carry prd-writer:wip (prior tick)
+        And 4 additional issues are eligible
+        Then exactly 1 additional instance is launched (2 + 1 = 3 ceiling).
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=3,
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        # 2 already running from prior tick
+        conc = ConcurrencyState(running_counts={"prd-writer": 2})
+        work_items = [self._make_eligible_work_item(i) for i in range(10, 14)]  # 4 eligible
+
+        launched = 0
+        for wi in work_items:
+            gh = _make_gh_mock()
+            n = process_work_item(
+                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+                concurrency=conc,
+            )
+            launched += n
+
+        assert launched == 1, (
+            f"With 2 already running and max_concurrent=3, expected 1 new launch, got {launched}"
+        )
+        assert conc.running_counts["prd-writer"] == 3
+        assert conc.tick_launch_count == 1
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_default_max_concurrent_one_allows_single_launch(self, mock_invoke):
+        """
+        Given an agent with no max_concurrent field (defaults to 1)
+        And 3 issues are eligible
+        Then exactly 1 instance is launched.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            # max_concurrent intentionally omitted — should default to 1
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        work_items = [self._make_eligible_work_item(i) for i in range(1, 4)]
+
+        launched = 0
+        for wi in work_items:
+            gh = _make_gh_mock()
+            n = process_work_item(
+                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+                concurrency=conc,
+            )
+            launched += n
+
+        assert launched == 1, (
+            f"Default max_concurrent=1 should limit to 1 launch; got {launched}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestAggregatePipelineCeiling
+# ---------------------------------------------------------------------------
+
+class TestAggregatePipelineCeiling:
+    """Scenario: Aggregate pipeline ceiling caps total launches per tick."""
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_aggregate_ceiling_caps_total_launches(self, mock_invoke):
+        """
+        Given per-agent max_concurrent values that would permit >20 total launches
+        And the pipeline-level aggregate maximum is PIPELINE_MAX_CONCURRENT (20)
+        When the orchestrator processes all eligible work items
+        Then no more than PIPELINE_MAX_CONCURRENT agents are launched in that tick.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        # One agent type with a high per-agent ceiling — not the limiting factor
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=100,  # per-agent ceiling not the constraint
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+
+        # 25 eligible work items — more than the aggregate ceiling
+        work_items = [
+            _make_work_item_with_labels(i, {"issue-classifier:complete"})
+            for i in range(1, 26)
+        ]
+
+        launched = 0
+        for wi in work_items:
+            if conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+                break
+            gh = _make_gh_mock()
+            n = process_work_item(
+                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+                concurrency=conc,
+            )
+            launched += n
+
+        assert launched == PIPELINE_MAX_CONCURRENT, (
+            f"Expected exactly PIPELINE_MAX_CONCURRENT={PIPELINE_MAX_CONCURRENT} launches, got {launched}"
+        )
+        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT
+
+    def test_pipeline_max_concurrent_constant_value(self):
+        """Pipeline-wide aggregate ceiling is set to 20."""
+        assert PIPELINE_MAX_CONCURRENT == 20, (
+            f"PIPELINE_MAX_CONCURRENT must be 20 per spec, got {PIPELINE_MAX_CONCURRENT}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestOrchestratorNonOverlapping
+# ---------------------------------------------------------------------------
+
+class TestOrchestratorNonOverlapping:
+    """Scenario: Orchestrator runs remain non-overlapping."""
+
+    def test_workflow_defines_pipeline_orchestrator_concurrency_group(self):
+        """
+        Given the GitHub Actions workflow
+        Then it defines concurrency group 'pipeline-orchestrator' with
+        cancel-in-progress: false so new triggers queue rather than
+        cancel the active run.
+        """
+        workflow_path = Path(__file__).parent.parent / ".github/workflows/orchestrator.yml"
+        assert workflow_path.exists(), f"Workflow file not found at {workflow_path}"
+        content = workflow_path.read_text()
+        assert "group: pipeline-orchestrator" in content, (
+            "Workflow must declare concurrency group 'pipeline-orchestrator' "
+            "to serialise orchestrator runs"
+        )
+        assert "cancel-in-progress: false" in content, (
+            "Workflow must set cancel-in-progress: false so a queued run waits "
+            "for the active run to finish rather than being cancelled"
+        )
