@@ -75,6 +75,23 @@ gh pr view "$PR_NUMBER" --repo "$REPO" --json commits \
   --jq '.commits[] | "\(.oid[0:8]) \(.messageHeadline)"'
 ```
 
+Check whether the branch has unresolved merge conflicts against its base
+using the GitHub API (authoritative; no local git operations required):
+
+```bash
+MERGEABLE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json mergeable \
+  --jq '.mergeable')
+# Possible values: MERGEABLE, CONFLICTING, UNKNOWN
+```
+
+If `$MERGEABLE` is `CONFLICTING`, raise it as a Critical finding
+`DP-001[DP+SA] — Unresolved merge conflicts block clean merge` and set
+`VERDICT=REQUEST CHANGES` immediately (skip remaining review steps).
+
+If `$MERGEABLE` is `UNKNOWN` (GitHub is still computing mergeability),
+raise it as a High finding `DP-001[DP+SA] — Merge status unknown; recheck
+before merge` but do not skip remaining review steps.
+
 ---
 
 ## Step 2 — Read the spec
@@ -203,10 +220,9 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ## Step 8 — Verdict
 
-- Critical or High findings → **REQUEST CHANGES**
-- Medium/Low/Informational only → **APPROVE** (note deferred items)
-- No spec + any Medium → treat as High for verdict purposes
-- ADR-covered Informational findings never block APPROVE
+- Any Critical, High, Medium, or Low finding → **REQUEST CHANGES**
+- Informational only (or zero findings) → **APPROVE**
+- ADR-covered findings downgraded to Informational never block APPROVE
 
 ---
 
