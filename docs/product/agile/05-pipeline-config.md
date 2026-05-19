@@ -21,6 +21,7 @@ pipeline/
   generators/
     generate_docs.py                ← produces docs/product/agile/generated/
     generate_pipeline_mermaid.py    ← produces .mmd flowcharts
+    generate_phase_mermaid.py       ← produces per-phase .mmd charts under generated/phases/
 ```
 
 The current `.claude/pipeline.json` is migrated to this location. The
@@ -137,6 +138,7 @@ The schema enforces:
 | `docs/product/agile/generated/pipeline.mmd` | Full mermaid flowchart |
 | `docs/product/agile/generated/pipeline-issue.mmd` | Issue subgraph |
 | `docs/product/agile/generated/pipeline-pr.mmd` | PR subgraph |
+| `docs/product/agile/generated/phases/{phase}.mmd` (one per phase) | Per-phase mermaid flowchart showing only the agents and boundary gates for that phase |
 
 The generator is idempotent: running it twice on the same input produces
 byte-identical output. CI runs the generator and fails the PR if any
@@ -154,7 +156,8 @@ process:
 2. **Validate locally** with `python pipeline/validate.py`
    before pushing.
 3. **Regenerate the docs** with
-   `python pipeline/generators/generate_docs.py`.
+   `python pipeline/generators/generate_docs.py` and
+   `python pipeline/generators/generate_phase_mermaid.py`.
    Commit the regenerated files in the same PR.
 4. **CI validates** the schema, the acyclicity, and the freshness of
    generated files.
