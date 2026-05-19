@@ -54,8 +54,8 @@ hand-edited.
 |---|---|---|
 | Pipeline graph | `pipeline/pipeline.json` | `pipeline.schema.json` |
 | Status definitions | `pipeline/statuses.json` | `statuses.schema.json` |
-| Architecture & product standards | `ai-agile/standards/*.json` | `standards.schema.json` |
-| ADRs | `ai-agile/standards/adrs.json` | `adrs.schema.json` |
+| Architecture & product standards | `standards/*.json` | `standards.schema.json` |
+| ADRs | `standards/adrs.json` | `adrs.schema.json` |
 
 **Consequences.**
 

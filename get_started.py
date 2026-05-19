@@ -57,14 +57,14 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
   schedule:
-    - cron: '*/15 6-20 * * 1-5'
+    - cron: '*/15 6-20 * * 1-5'  # Every 15 min, 06:00–20:00 UTC, weekdays
   workflow_dispatch:
     inputs:
       issue_number:
-        description: 'Issue or PR number (blank = all open items)'
+        description: 'Process a single issue/PR number (leave blank for all)'
         required: false
       dry_run:
-        description: 'Dry run — log decisions without changing labels'
+        description: 'Dry run — show what would trigger without executing'
         type: boolean
         default: false
 
@@ -72,58 +72,73 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  checks: read
 
 concurrency:
-  group: ai-agile-${{ github.event.issue.number || github.event.pull_request.number || 'scheduled' }}
+  group: pipeline-orchestrator
   cancel-in-progress: false
 
 jobs:
   orchestrate:
+    name: Evaluate pipeline state
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - run: pip install requests jsonschema
+      - name: Install dependencies
+        run: pip install requests
 
-      - run: npm install -g @anthropic-ai/claude-code
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
 
       - name: Build orchestrator args
         id: args
+        env:
+          ISSUE_INPUT: ${{ github.event.inputs.issue_number }}
         run: |
           ARGS=""
-          if [ -n "${{ github.event.inputs.issue_number }}" ]; then
-            ARGS="--issue ${{ github.event.inputs.issue_number }}"
+
+          [[ "$ISSUE_INPUT" =~ ^[0-9]*$ ]] || {{ echo "ERROR: issue_number must be a positive integer" >&2; exit 1; }}
+
+          if [ -n "$ISSUE_INPUT" ]; then
+            ARGS="$ARGS --issue $ISSUE_INPUT"
           elif [ "${{ github.event_name }}" = "issues" ]; then
-            ARGS="--issue ${{ github.event.issue.number }} --kind issue"
+            ARGS="$ARGS --issue ${{ github.event.issue.number }} --kind issue"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS="--issue ${{ github.event.pull_request.number }} --kind pr"
+            ARGS="$ARGS --issue ${{ github.event.pull_request.number }} --kind pr"
           fi
-          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
           echo "args=$ARGS" >> "$GITHUB_OUTPUT"
 
       - name: Run orchestrator
         env:
-          # GITHUB_TOKEN is the bot account's PAT (see README §Install).
-          # Using a dedicated bot account (not the workflow's auto-
-          # provisioned ${{ secrets.GITHUB_TOKEN }}) makes every label,
-          # comment, and edit in the issue timeline visibly attributable
-          # to the bot vs a human, and isolates rate-limit quotas from
-          # human contributors.
-          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
+          GIT_TRACE: "1"
           AI_AGILE_ROOT: ${{ github.workspace }}/ai-coding-standards2
+          # ci-gate uses this to exclude orchestrator check runs from its poll.
+          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
         run: |
           python ai-coding-standards2/pipeline/pipeline_orchestrator.py \\
             --repo "$GITHUB_REPOSITORY" \\
+            --verbose \\
             ${{ steps.args.outputs.args }}
 
   bootstrap-labels:
@@ -157,7 +172,8 @@ PATH_REWRITES = [
     # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
     (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
     # Bare "pipeline/..." → "ai-coding-standards2/pipeline/..."
-    (r"\bpipeline/", f"{SUBMODULE_NAME}/pipeline/"),
+    # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
+    (rf"(?<!{SUBMODULE_NAME}/)pipeline/", f"{SUBMODULE_NAME}/pipeline/"),
     # Bare ".claude/agent-todo-standard.md" was retired (see 13-todos.md);
     # rewrite any lingering reference to point at the new doc.
     (
