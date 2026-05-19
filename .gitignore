@@ -22,3 +22,6 @@ venv/
 
 # Local Claude Code settings (developer-specific)
 .claude/settings.local.json
+
+# Claude Code worktrees (ephemeral agent workspaces)
+.claude/worktrees/
