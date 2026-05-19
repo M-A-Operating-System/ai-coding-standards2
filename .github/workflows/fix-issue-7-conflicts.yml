@@ -1,4 +1,4 @@
-name: Fix issue-7 merge conflicts (temp — delete after use)
+name: Fix issue-7 merge conflicts (temp, delete after use)
 
 on:
   push:
