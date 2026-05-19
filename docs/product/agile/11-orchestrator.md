@@ -124,6 +124,12 @@ for each work item (issue or PR):
         if not dependencies_complete(labels, agent_def):
             skip                          ← upstream agents / gates not yet done
 
+        if running_count(agent_def.agent) >= agent_def.max_concurrent:
+            skip                          ← per-agent concurrency ceiling reached
+
+        if tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+            skip                          ← aggregate pipeline ceiling reached for this tick
+
         ← step is eligible
         acquire_mutex(work_item, agent_def)
         # Pre-invocation ceremony
@@ -158,7 +164,7 @@ exits non-zero without a sentinel. Script steps are not retried.
 
 ## Eligibility check
 
-An agent is eligible to run when all four conditions hold simultaneously:
+An agent is eligible to run when all six conditions hold simultaneously:
 
 **1. Object match.**
 The agent's `object` array in `pipeline.json` contains the type of the
@@ -194,6 +200,17 @@ Both conditions must hold. A `dep:complete` without its gate label means the
 human gate has not yet been applied; the dependent agent stays ineligible.
 A `dep:skipped` label is treated as equivalent to `dep:complete` — the agent
 was bypassed and downstream work may proceed.
+
+**5. Per-agent concurrency ceiling not reached.**
+The count of all open issues that currently carry `{agent}:wip` (instances
+running from a prior tick) is less than `agent_def.max_concurrent` (default 1
+when the field is absent). When the ceiling is already reached, all remaining
+eligible issues for that agent are deferred to the next tick.
+
+**6. Aggregate pipeline ceiling not reached.**
+The total number of agent instances launched in the current tick is less than
+the pipeline-wide maximum (initially 20). If this ceiling is reached, all
+remaining eligible work across all agent types is deferred to the next tick.
 
 ---
 
@@ -714,18 +731,27 @@ Options:
 
 ## Concurrency model
 
-**Cross-issue parallelism.** The global `pipeline-orchestrator` concurrency
-group serialises all orchestrator runs globally. Two issues therefore cannot
-advance simultaneously — each run processes all eligible work items in
-sequence and then exits, letting the next queued run start. This is the
-intentional trade-off for correctness: the alternative (per-item concurrency
-groups) recreated the race condition described below.
+**Orchestrator-run serialisation.** The global `pipeline-orchestrator`
+concurrency group serialises all orchestrator *runs* globally — only one
+orchestrator process executes at a time. If a label event fires while a run
+is active, GitHub queues the new run; the queued run starts only after the
+first completes, at which point labels reflect settled state and already-`:wip`
+agents are correctly skipped.
 
-**Intra-item serialisation.** Because the concurrency group is global, if a
-label event fires while a previous run is still executing, GitHub queues the
-new run rather than starting it in parallel. The queued run starts only after
-the first completes; by then labels reflect the settled state of the first
-run, so the second run correctly skips already-`:wip` agents.
+**Per-agent concurrency ceiling.** Within a single orchestrator run, multiple
+agent instances of the same type may be launched for different issues, up to
+the `max_concurrent` value configured in `pipeline.json` (default: 1 when the
+field is absent or null). Before launching an instance, the orchestrator counts
+the number of open issues that currently carry `{agent}:wip` — instances
+running from a prior tick. It starts at most `max_concurrent − running_count`
+additional instances. If the running count already meets or exceeds
+`max_concurrent`, no new instances are launched for that tick; eligible issues
+remain pending until the next tick.
+
+**Aggregate pipeline ceiling.** A pipeline-wide maximum (initially 20) caps
+the total number of agent instances launched across all agent types in a
+single tick, regardless of per-agent `max_concurrent` values. This prevents
+unbounded resource consumption when many agent types each have large backlogs.
 
 **Scheduled reconciler as backstop.** GitHub Actions keeps at most one pending
 run per concurrency group. If two label events fire in rapid succession while
