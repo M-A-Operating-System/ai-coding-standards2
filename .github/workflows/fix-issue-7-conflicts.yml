@@ -1,0 +1,112 @@
+name: Fix issue-7 merge conflicts (temp — delete after use)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix-conflicts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: issue-7
+          fetch-depth: 0
+          token: ${{ secrets.AI_AGILE_BOT_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge main and resolve conflicts
+        run: |
+          git fetch origin main
+          git merge origin/main --no-edit || true
+
+          # Resolve docs/product/agile/05-pipeline-config.md
+          # Keep pipeline/ paths from main; add generate_phase_mermaid.py from issue-7
+          python3 - <<'PYEOF'
+          import re, pathlib
+
+          p = pathlib.Path("docs/product/agile/05-pipeline-config.md")
+          text = p.read_text()
+          text = re.sub(
+              r"<<<<<<< HEAD\n"
+              r"   `python ai-agile/pipeline/generators/generate_docs\.py` and\n"
+              r"   `python ai-agile/pipeline/generators/generate_phase_mermaid\.py`\.\n"
+              r"=======\n"
+              r"   `python pipeline/generators/generate_docs\.py`\.\n"
+              r">>>>>>> origin/main\n",
+              "   `python pipeline/generators/generate_docs.py` and\n"
+              "   `python pipeline/generators/generate_phase_mermaid.py`.\n",
+              text
+          )
+          p.write_text(text)
+          PYEOF
+
+          # Resolve docs/product/agile/generated/README.md (two hunks)
+          python3 - <<'PYEOF'
+          import re, pathlib
+
+          p = pathlib.Path("docs/product/agile/generated/README.md")
+          text = p.read_text()
+
+          # Hunk 1: table — keep pipeline/ paths from main, add phases/{phase}.mmd row from issue-7
+          text = re.sub(
+              r"<<<<<<< HEAD\n"
+              r"(\| `[^\n]+\n){6}"
+              r"\| `phases/\{phase\}\.mmd`[^\n]+\n"
+              r"=======\n"
+              r"(\| `[^\n]+\n){6}"
+              r">>>>>>> origin/main\n",
+              lambda m: (
+                  "| `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |\n"
+                  "| `phases.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |\n"
+                  "| `gates.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |\n"
+                  "| `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |\n"
+                  "| `pipeline-issue.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |\n"
+                  "| `pipeline-pr.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |\n"
+                  "| `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |\n"
+              ),
+              text, count=1
+          )
+
+          # Hunk 2: regenerating commands — keep pipeline/ paths from main, add generate_phase_mermaid.py
+          text = re.sub(
+              r"<<<<<<< HEAD\n"
+              r"python ai-agile/pipeline/generators/generate_docs\.py\n"
+              r"python ai-agile/pipeline/generators/generate_pipeline_mermaid\.py\n"
+              r"python ai-agile/pipeline/generators/generate_phase_mermaid\.py\n"
+              r"=======\n"
+              r"python pipeline/generators/generate_docs\.py\n"
+              r"python pipeline/generators/generate_pipeline_mermaid\.py\n"
+              r">>>>>>> origin/main\n",
+              "python pipeline/generators/generate_docs.py\n"
+              "python pipeline/generators/generate_pipeline_mermaid.py\n"
+              "python pipeline/generators/generate_phase_mermaid.py\n",
+              text
+          )
+
+          p.write_text(text)
+          PYEOF
+
+          # Verify no conflict markers remain
+          if grep -rn "^<<<<<<< \|^=======$\|^>>>>>>> " \
+               docs/product/agile/05-pipeline-config.md \
+               docs/product/agile/generated/README.md; then
+            echo "ERROR: conflict markers still present" >&2
+            exit 1
+          fi
+
+          git add docs/product/agile/05-pipeline-config.md \
+                  docs/product/agile/generated/README.md
+          git commit -m "Merge main into issue-7: resolve ai-agile/pipeline → pipeline/ path conflicts
+
+Keeps pipeline/ paths from main (PR #78 structural refactor) and preserves
+the per-phase mermaid chart additions (generate_phase_mermaid.py) from issue-7."
+
+      - name: Push
+        run: git push origin issue-7
