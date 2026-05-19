@@ -1,7 +1,9 @@
 name: Fix issue-7 merge conflicts (temp — delete after use)
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/fix-issue-7-conflicts.yml']
 
 permissions:
   contents: write
