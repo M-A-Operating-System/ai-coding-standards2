@@ -203,10 +203,9 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ## Step 8 — Verdict
 
-- Critical or High findings → **REQUEST CHANGES**
-- Medium/Low/Informational only → **APPROVE** (note deferred items)
-- No spec + any Medium → treat as High for verdict purposes
-- ADR-covered Informational findings never block APPROVE
+- Any Critical, High, Medium, or Low finding → **REQUEST CHANGES**
+- Informational only (or zero findings) → **APPROVE**
+- ADR-covered findings downgraded to Informational never block APPROVE
 
 ---
 
