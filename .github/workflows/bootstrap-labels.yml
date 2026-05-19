@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'ai-agile/pipeline/pipeline.json'
+      - 'pipeline/pipeline.json'
       - '.github/scripts/status.sh'
 
   # Allow manual trigger (e.g. to create labels on a fresh repo)
@@ -33,7 +33,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           bash .github/scripts/status.sh bootstrap-all \
-            ai-agile/pipeline/pipeline.json
+            pipeline/pipeline.json
 
       - name: Bootstrap trigger and human-gate labels
         env:

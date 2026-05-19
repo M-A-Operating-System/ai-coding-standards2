@@ -97,13 +97,13 @@ TERMINAL_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED}
 STATUSES_JSON = Path(__file__).parent / "statuses.json"
 
 # Submodule root — the directory containing this repo's .github/ and
-# ai-agile/. When installed as a submodule, it is the submodule's root,
+# pipeline/. When installed as a submodule, it is the submodule's root,
 # not the consuming repo's root. Used to locate status.sh and agent
 # prompt files. Override with $AI_AGILE_ROOT for non-standard layouts.
 SUBMODULE_ROOT = (
     Path(os.environ["AI_AGILE_ROOT"]).resolve()
     if os.environ.get("AI_AGILE_ROOT")
-    else Path(__file__).resolve().parent.parent.parent
+    else Path(__file__).resolve().parent.parent
 )
 
 def load_statuses() -> list[dict]:
@@ -1013,7 +1013,7 @@ STATUS_SH = SUBMODULE_ROOT / ".github/scripts/status.sh"
 # rules from the design docs into a single page agents can ingest at
 # runtime. The orchestrator exports its path so agents reference it
 # without hardcoding the location.
-AI_AGILE_CONTEXT = SUBMODULE_ROOT / "ai-agile" / "AGENTS.md"
+AI_AGILE_CONTEXT = SUBMODULE_ROOT / ".claude" / "AGENTS.md"
 
 # Rate-limit pause marker. When the Claude API returns a 429 / usage-limit
 # error, the orchestrator writes this file with a JSON payload describing

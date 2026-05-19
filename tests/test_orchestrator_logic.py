@@ -1,6 +1,6 @@
 """Tests for core pipeline-state logic in pipeline_orchestrator.py."""
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "ai-agile", "pipeline"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 from unittest.mock import MagicMock, call, patch
 import pytest

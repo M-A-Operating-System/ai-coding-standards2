@@ -189,7 +189,7 @@ sections, in this order, identified by their headers.
 ### Shared context (read before drafting your own prompt)
 
 The orchestrator injects an instruction into every agent's invocation
-to read [`ai-agile/AGENTS.md`](../../../ai-agile/AGENTS.md) first.
+to read [`.claude/AGENTS.md`](../../../.claude/AGENTS.md) first.
 That file is the runtime distillation of the design (principles,
 status contract, marker conventions, "what you must not do"). Your
 agent prompt does **not** need to repeat any of it — assume the agent
@@ -312,7 +312,7 @@ agent; agents do not set it themselves.
 ## CI validation
 
 Every PR that touches `.claude/agents/*.md` runs
-`ai-agile/pipeline/validate_agent_prompts.py`, which checks:
+`pipeline/validate_agent_prompts.py`, which checks:
 
 1. **Frontmatter parses** as YAML.
 2. **Required fields** are present: `name`, `description`, `tools`,
@@ -341,10 +341,10 @@ PRs that fail validation cannot merge.
    `.claude/agents/{new-agent}.md`.
 2. Fill in the frontmatter: `name`, `description`, `tools`, `model`.
 3. Replace the role statement, work steps, and behaviour rules.
-4. Add the agent's entry to `ai-agile/pipeline/pipeline.json`
+4. Add the agent's entry to `pipeline/pipeline.json`
    (graph entry first, per [`05-pipeline-config.md`](05-pipeline-config.md)).
-5. Run `python ai-agile/pipeline/validate_agent_prompts.py` locally.
-6. Run `python ai-agile/pipeline/generators/generate_docs.py` to
+5. Run `python pipeline/validate_agent_prompts.py` locally.
+6. Run `python pipeline/generators/generate_docs.py` to
    refresh the generated agent catalogue.
 7. Bootstrap the agent's labels:
    `bash .github/scripts/status.sh bootstrap {new-agent}`.

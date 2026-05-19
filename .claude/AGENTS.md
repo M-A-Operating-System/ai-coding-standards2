@@ -117,7 +117,7 @@ with the reason "PRD not approved; cannot proceed to {your phase}".
    transition automatically only between non-gated steps.
 
 The full graph is in
-[`ai-agile/pipeline/pipeline.json`](pipeline/pipeline.json). The
+[`pipeline/pipeline.json`](pipeline/pipeline.json). The
 orchestrator reads it; you don't. You receive an invocation, do your
 one job, and report status.
 
@@ -232,7 +232,7 @@ If they disagree, the JSON wins.
 |---|---|
 | Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author` |
 | Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
-| Standards | JSON under `ai-agile/standards/*.json` (see `docs/product/agile/05-pipeline-config.md`) |
+| Standards | JSON under `standards/*.json` (see `docs/product/agile/05-pipeline-config.md`) |
 | Pipeline graph | Don't read it. The orchestrator routes work; you focus on your task. |
 | Prior runs of yourself | Edit-in-place: re-runs find the prior comment, edit it (P-11). Don't post duplicates. |
 
@@ -264,7 +264,7 @@ The scope controls whether `SESSION_ID` is stable across issues or unique per is
 | `per_issue` | `ais-v1-{safe_agent}-issue-{number}` | Agents that work on one issue at a time and need no memory of other issues. Default for most agents. |
 | `global` | `ais-v1-{safe_agent}` | Agents that benefit from accumulated context across all issues — e.g. doc reviewers that build up knowledge of the full `docs/product/` tree. |
 
-The scope for each agent is configured in `ai-agile/pipeline/pipeline.json` under
+The scope for each agent is configured in `pipeline/pipeline.json` under
 `"session": {"scope": "..."}`. The default when omitted is `per_issue`.
 Custom session ID patterns can be set via `"session": {"scope": "...", "id_pattern": "..."}`;
 see `docs/product/agile/05-pipeline-config.md §Session ID tokens` for available tokens.
@@ -280,10 +280,10 @@ demands, not all of them on every run:
 | Topic | Location |
 |---|---|
 | The complete design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, todos, roadmap, orchestrator design, agent spec) | [`docs/product/agile/`](../docs/product/agile/README.md) — start with the README |
-| The pipeline graph (who runs after whom, gates, triggers) | [`ai-agile/pipeline/pipeline.json`](pipeline/pipeline.json) — but the orchestrator reads this; you generally shouldn't need to |
-| Status definitions (colours, semantics, transitions) | [`ai-agile/pipeline/statuses.json`](pipeline/statuses.json) |
-| Architecture & product standards (load + apply by `STD` ID) | `ai-agile/standards/*.json` (target state — populated as standards are formalised) |
-| ADRs (architecture decisions of record) | `ai-agile/standards/adrs.json` |
+| The pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — but the orchestrator reads this; you generally shouldn't need to |
+| Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
+| Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` (target state — populated as standards are formalised) |
+| ADRs (architecture decisions of record) | `standards/adrs.json` |
 | Question Card schema (when you need to ask a human something structured) | [`docs/product/agile/09-human-interaction.md`](../docs/product/agile/09-human-interaction.md) §2 |
 | Todos in issue/PR bodies (read protocol, write protocol, marker conventions) | [`docs/product/agile/13-todos.md`](../docs/product/agile/13-todos.md) |
 

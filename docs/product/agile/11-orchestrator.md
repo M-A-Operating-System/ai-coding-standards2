@@ -38,7 +38,7 @@ It owns none of these:
 ## Source location
 
 ```
-ai-agile/pipeline/
+pipeline/
   pipeline_orchestrator.py     ← the orchestrator
   pipeline.json                ← the dependency graph it reads
   schemas/
@@ -658,7 +658,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GIT_TRACE: "1"
         run: |
-          python ai-agile/pipeline/pipeline_orchestrator.py \
+          python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
             --verbose \
             ${{ steps.args.outputs.args }}
@@ -691,7 +691,7 @@ Options:
   --kind {issue,pr}     With --issue, declares whether the number is an issue or PR
                         (orchestrator probes the API if omitted)
   --dry-run             Log decisions without invoking agents or changing labels
-  --pipeline PATH       Path to pipeline.json (default: ai-agile/pipeline/pipeline.json)
+  --pipeline PATH       Path to pipeline.json (default: pipeline/pipeline.json)
   --clear-pause         Clear the rate-limit pause marker if set, then exit
                         (manual override for operators; see "Anthropic API"
                         in Rate limit handling)
@@ -910,7 +910,7 @@ applied) and re-invokes it normally.
 **Manual override.** Operators can clear the pause without waiting:
 
 ```bash
-python ai-agile/pipeline/pipeline_orchestrator.py --clear-pause
+python pipeline/pipeline_orchestrator.py --clear-pause
 ```
 
 This deletes the marker file and exits. The next scheduled or

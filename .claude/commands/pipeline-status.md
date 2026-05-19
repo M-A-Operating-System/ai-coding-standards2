@@ -27,8 +27,8 @@ Examples:
    ```
 
 4. Locate `pipeline.json`. Try in order:
-   - `ai-agile/pipeline/pipeline.json` (standalone)
-   - `ai-coding-standards2/ai-agile/pipeline/pipeline.json` (submodule)
+   - `pipeline/pipeline.json` (standalone)
+   - `ai-coding-standards2/pipeline/pipeline.json` (submodule)
 
    Read it and extract the ordered list of agents with their phase, dependencies,
    and `human_gate_label` (if any).

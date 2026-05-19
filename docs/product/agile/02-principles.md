@@ -52,10 +52,10 @@ hand-edited.
 
 | Concern | File | Schema |
 |---|---|---|
-| Pipeline graph | `ai-agile/pipeline/pipeline.json` | `pipeline.schema.json` |
-| Status definitions | `ai-agile/pipeline/statuses.json` | `statuses.schema.json` |
-| Architecture & product standards | `ai-agile/standards/*.json` | `standards.schema.json` |
-| ADRs | `ai-agile/standards/adrs.json` | `adrs.schema.json` |
+| Pipeline graph | `pipeline/pipeline.json` | `pipeline.schema.json` |
+| Status definitions | `pipeline/statuses.json` | `statuses.schema.json` |
+| Architecture & product standards | `standards/*.json` | `standards.schema.json` |
+| ADRs | `standards/adrs.json` | `adrs.schema.json` |
 
 **Consequences.**
 
@@ -145,7 +145,7 @@ orchestrator.
   (`issue.labeled`, `pr.draft_opened`, `agent.complete`, …).
 - Read pipeline state (labels, session comments, PR metadata).
 - Evaluate the dependency graph in
-  `ai-agile/pipeline/pipeline.json` and decide which agent is
+  `pipeline/pipeline.json` and decide which agent is
   eligible.
 - Acquire and release the `:wip` mutex (P-4).
 - Invoke the agent (and only that — the agent runs its own session).

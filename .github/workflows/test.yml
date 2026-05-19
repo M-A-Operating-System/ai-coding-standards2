@@ -3,11 +3,11 @@ on:
   push:
     branches: [main]
     paths:
-      - 'ai-agile/pipeline/pipeline_orchestrator.py'
+      - 'pipeline/pipeline_orchestrator.py'
       - 'tests/**'
   pull_request:
     paths:
-      - 'ai-agile/pipeline/pipeline_orchestrator.py'
+      - 'pipeline/pipeline_orchestrator.py'
       - 'tests/**'
 permissions:
   contents: read

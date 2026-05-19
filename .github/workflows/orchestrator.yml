@@ -93,7 +93,7 @@ jobs:
           # but having it here avoids the extra API call and works even if the query fails.
           CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
         run: |
-          python ai-agile/pipeline/pipeline_orchestrator.py \
+          python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
             --verbose \
             ${{ steps.args.outputs.args }}

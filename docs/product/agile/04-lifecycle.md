@@ -9,7 +9,7 @@ human gate.
 
 This document describes the phases conceptually. The authoritative list
 of agents per phase, their dependencies, triggers, and gates lives in
-[`ai-agile/pipeline/pipeline.json`](../../../ai-agile/pipeline/pipeline.json)
+[`pipeline/pipeline.json`](../../../pipeline/pipeline.json)
 and is rendered at:
 
 - [`generated/phases.md`](generated/phases.md) — agents per phase
@@ -180,7 +180,7 @@ of the standard review path.
 
 A typical feature/bug/enhancement/toil ticket flows like this. The table
 reflects the **current implementation** — the agents actually present in
-[`pipeline.json`](../../../ai-agile/pipeline/pipeline.json).
+[`pipeline.json`](../../../pipeline/pipeline.json).
 Phases 2–4, 6–7, and 8–10 described elsewhere in this document are
 planned but not yet wired into the pipeline.
 
@@ -245,7 +245,7 @@ patterns and tune the system that produced them.
 | Scope | One ticket | All tickets in a window |
 | Cadence | On PR merge / issue close | Continuous: daily metrics, weekly tuning |
 | Output | Changelog, retrospective, standards proposals | Pipeline metrics, pipeline-graph proposals, prompt tuning, knowledge artefacts |
-| Changes | Standards (`ai-agile/standards/*.json`) | The pipeline itself (`pipeline.json`, agent prompts, schedules) |
+| Changes | Standards (`standards/*.json`) | The pipeline itself (`pipeline.json`, agent prompts, schedules) |
 
 **Agents.**
 
@@ -386,9 +386,9 @@ within standards but obviously wrong at scale.
 - The codebase — module sizes, dependency graphs, test ratios,
   duplication, coupling metrics, hot-spot files (most-changed,
   most-bug-fixed).
-- ADRs (`ai-agile/standards/adrs.json`) — particularly any with
+- ADRs (`standards/adrs.json`) — particularly any with
   `status: accepted` whose context has materially changed.
-- Standards (`ai-agile/standards/*.json`) — to compare actual code
+- Standards (`standards/*.json`) — to compare actual code
   against the declared bar.
 - Closed retrospectives — frequently a phrase like "we'll come back
   to this" is the seed of a debt-issue.

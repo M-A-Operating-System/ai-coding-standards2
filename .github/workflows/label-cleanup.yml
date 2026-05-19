@@ -25,7 +25,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          ARGS=(ai-agile/pipeline/pipeline.json)
+          ARGS=(pipeline/pipeline.json)
           [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS+=(--dry-run)
           bash .github/scripts/status.sh prune "${ARGS[@]}"
 
@@ -36,4 +36,4 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           bash .github/scripts/status.sh bootstrap-all \
-            ai-agile/pipeline/pipeline.json
+            pipeline/pipeline.json

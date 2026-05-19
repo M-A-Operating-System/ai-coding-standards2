@@ -316,7 +316,7 @@ was done. It is never deleted.
 
 ## CI validation
 
-`ai-agile/pipeline/validate_todos_block.py` runs on every PR that
+`pipeline/validate_todos_block.py` runs on every PR that
 modifies an issue or PR body (via the orchestrator) and checks:
 
 1. Markers are paired — every START has a matching END.

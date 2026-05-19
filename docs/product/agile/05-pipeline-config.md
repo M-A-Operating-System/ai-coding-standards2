@@ -1,7 +1,7 @@
 # Pipeline Configuration
 
 The pipeline graph — every agent, every dependency, every gate, every
-trigger — lives in one file: `ai-agile/pipeline/pipeline.json`. This is
+trigger — lives in one file: `pipeline/pipeline.json`. This is
 the single source of truth referenced by [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
 
 Anything human-readable about the pipeline (agent catalogues, phase
@@ -14,7 +14,7 @@ files is not allowed.
 ## File location
 
 ```
-ai-agile/pipeline/
+pipeline/
   pipeline.json                     ← the source of truth
   schemas/
     pipeline.schema.json            ← JSON schema (validation)
@@ -112,7 +112,7 @@ applies `:failed` exactly as it does for a crashed agent.
 
 ## Schema
 
-The schema lives at `ai-agile/pipeline/schemas/pipeline.schema.json` and is
+The schema lives at `pipeline/schemas/pipeline.schema.json` and is
 validated in CI on every PR that touches `pipeline.json`.
 
 The schema enforces:
@@ -151,10 +151,10 @@ process:
 
 1. **Open a PR** that edits `pipeline.json`. Title prefix:
    `[pipeline]`.
-2. **Validate locally** with `python ai-agile/pipeline/validate.py`
+2. **Validate locally** with `python pipeline/validate.py`
    before pushing.
 3. **Regenerate the docs** with
-   `python ai-agile/pipeline/generators/generate_docs.py`.
+   `python pipeline/generators/generate_docs.py`.
    Commit the regenerated files in the same PR.
 4. **CI validates** the schema, the acyclicity, and the freshness of
    generated files.

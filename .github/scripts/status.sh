@@ -13,7 +13,7 @@
 #
 # Requires: gh CLI authenticated, GITHUB_REPOSITORY set or --repo passed.
 #
-# Status reference (canonical source: ai-agile/pipeline/statuses.json)
+# Status reference (canonical source: pipeline/statuses.json)
 # ─────────────────────────────────────────────────────────────────────
 #  wip       Yellow   Agent is actively running. Set by orchestrator.
 #  complete  Green    Agent finished successfully. Set by orchestrator.
@@ -30,7 +30,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 REPO="${GITHUB_REPOSITORY:-}"
-STATUSES_JSON="${STATUSES_JSON:-$(dirname "$0")/../../ai-agile/pipeline/statuses.json}"
+STATUSES_JSON="${STATUSES_JSON:-$(dirname "$0")/../../pipeline/statuses.json}"
 
 # Colour codes — kept in sync with statuses.json
 declare -A STATUS_COLOURS=(
@@ -242,7 +242,7 @@ status_bootstrap_agent() {
 # Bootstrap: create all status label variants for every agent in pipeline.json
 status_bootstrap_all() {
   # Usage: status_bootstrap_all [pipeline.json path] [repo]
-  local pipeline="${1:-$(dirname "$0")/../../ai-agile/pipeline/pipeline.json}"
+  local pipeline="${1:-$(dirname "$0")/../../pipeline/pipeline.json}"
   local repo="${2:-$(_repo)}"
 
   if ! command -v python3 &>/dev/null; then
@@ -274,8 +274,8 @@ PYEOF
 # Only creates labels not already covered by bootstrap-all.
 status_bootstrap_trigger_labels() {
   local repo="${1:-$(_repo)}"
-  local pipeline="${2:-$(dirname "$0")/../../ai-agile/pipeline/pipeline.json}"
-  local statuses="${3:-$(dirname "$0")/../../ai-agile/pipeline/statuses.json}"
+  local pipeline="${2:-$(dirname "$0")/../../pipeline/pipeline.json}"
+  local statuses="${3:-$(dirname "$0")/../../pipeline/statuses.json}"
 
   if ! command -v python3 &>/dev/null; then
     echo "ERROR: python3 required for status_bootstrap_trigger_labels" >&2
@@ -339,7 +339,7 @@ status_prune() {
     esac
   done
 
-  pipeline="${positional[0]:-$(dirname "$0")/../../ai-agile/pipeline/pipeline.json}"
+  pipeline="${positional[0]:-$(dirname "$0")/../../pipeline/pipeline.json}"
   local repo="${positional[1]:-$(_repo)}"
 
   if ! command -v python3 &>/dev/null; then

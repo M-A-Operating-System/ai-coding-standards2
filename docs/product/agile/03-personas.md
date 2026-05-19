@@ -61,7 +61,7 @@ quality of the change.
   `standards-compliance-reviewer` flags violations with proposed
   diffs. The `pr-reviewer` checks scope and alignment with the
   design.
-- Standards are loaded from `ai-agile/standards/*.json` and referenced by
+- Standards are loaded from `standards/*.json` and referenced by
   STD ID in code comments and PR descriptions.
 
 ---
