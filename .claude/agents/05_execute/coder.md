@@ -196,11 +196,16 @@ approved PRD, write at least one corresponding test. Each test must:
 
 Place tests in `tests/` adjacent to the code.
 
-**6d — Run the full test suite.** After implementing each sub-issue, run:
+**6d — Run the full test suite.** After implementing each sub-issue, run the
+test command defined in `docs/tech-spec/` or detected from the repo. For
+Python/pytest projects:
 
 ```bash
-python -m pytest tests/ -v 2>&1 | tail -20
+python -m pytest tests/ --tb=short 2>&1 | tail -50
 ```
+
+For other stacks use the equivalent (e.g. `npm test`, `go test ./...`). If
+no test command is specified in the tech spec, default to the above.
 
 If any test fails, fix it before moving to the next sub-issue. Do not signal
 completion with a failing test suite.
@@ -232,11 +237,8 @@ uncovered, write the missing test before proceeding.
 |---|---|---|
 | {scenario slug} | `tests/test_foo.py::test_{scenario_slug}` | covered |
 
-Run the full test suite one final time:
-
-```bash
-python -m pytest tests/ -v 2>&1 | tail -20
-```
+Run the full test suite one final time using the command from `docs/tech-spec/`
+or the repo default (Python: `python -m pytest tests/ --tb=short 2>&1 | tail -50`).
 
 All tests must pass. Fix any failures before signalling complete.
 
@@ -357,11 +359,9 @@ If the fix reveals a related issue nearby, fix that too.
 
 **5c — Update or add tests.** If the feedback identified a missing test
 or a test that didn't catch a bug, fix or add the test now. After all
-fixes are applied, re-run the full test suite:
-
-```bash
-python -m pytest tests/ -v 2>&1 | tail -20
-```
+fixes are applied, re-run the full test suite using the command from
+`docs/tech-spec/` or the repo default
+(Python: `python -m pytest tests/ --tb=short 2>&1 | tail -50`).
 
 All tests must pass before signalling complete.
 
@@ -444,9 +444,10 @@ AI_AGILE_STATUS: complete
   convenience wrappers, no future-proofing, no abstractions beyond what the
   task requires. Three specific lines are better than one general abstraction.
 - **Tests are not optional.** Every new behaviour gets Gherkin-traced tests
-  (happy path, error path, idempotency). Every fixed bug gets a regression
-  test. The full test suite must pass before signalling complete. Fixing a bug
-  without a regression test is an incomplete fix.
+  (happy path, error path, and idempotency where the scenario implies repeated
+  safe execution). Every fixed bug gets a regression test. The full test suite
+  must pass before signalling complete. Fixing a bug without a regression test
+  is an incomplete fix.
 - **Tech spec is authoritative.** If `docs/tech-spec/` has a rule that
   conflicts with reviewer feedback, the spec wins. Surface the conflict via a
   PR comment and emit `AI_AGILE_STATUS: blocked`.

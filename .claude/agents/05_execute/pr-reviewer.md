@@ -75,24 +75,22 @@ gh pr view "$PR_NUMBER" --repo "$REPO" --json commits \
   --jq '.commits[] | "\(.oid[0:8]) \(.messageHeadline)"'
 ```
 
-Check whether the branch has unresolved merge conflicts against its base:
+Check whether the branch has unresolved merge conflicts against its base
+using the GitHub API (authoritative; no local git operations required):
 
 ```bash
-BASE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json baseRefName --jq '.baseRefName')
-git fetch origin "$BASE" "$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')" 2>/dev/null || true
-MERGE_BASE=$(git merge-base "origin/$BASE" FETCH_HEAD 2>/dev/null || true)
-if git merge-tree "$MERGE_BASE" "origin/$BASE" FETCH_HEAD 2>/dev/null \
-     | grep -q "^<<<<<<< "; then
-  CONFLICT_STATUS="CONFLICTS DETECTED — branch cannot merge cleanly into $BASE"
-else
-  CONFLICT_STATUS="clean"
-fi
-echo "Merge status: $CONFLICT_STATUS"
+MERGEABLE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json mergeable \
+  --jq '.mergeable')
+# Possible values: MERGEABLE, CONFLICTING, UNKNOWN
 ```
 
-If `$CONFLICT_STATUS` is not `clean`, raise it as a Critical finding
-`SA-001[DP+SA] — Unresolved merge conflicts block clean merge` and set
+If `$MERGEABLE` is `CONFLICTING`, raise it as a Critical finding
+`DP-001[DP+SA] — Unresolved merge conflicts block clean merge` and set
 `VERDICT=REQUEST CHANGES` immediately (skip remaining review steps).
+
+If `$MERGEABLE` is `UNKNOWN` (GitHub is still computing mergeability),
+raise it as a High finding `DP-001[DP+SA] — Merge status unknown; recheck
+before merge` but do not skip remaining review steps.
 
 ---
 
