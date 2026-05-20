@@ -1,6 +1,13 @@
 name: Check phase charts
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/pipeline.json"
+      - "docs/product/agile/generated/phases/**"
+      - "pipeline/generators/generate_phase_mermaid.py"
+      - "pipeline/generators/tests/**"
   pull_request:
     paths:
       - "pipeline/pipeline.json"
