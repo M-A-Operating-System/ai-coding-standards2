@@ -567,6 +567,77 @@ class TestAggregatePipelineCeiling:
             f"PIPELINE_MAX_CONCURRENT must be 20 per spec, got {PIPELINE_MAX_CONCURRENT}"
         )
 
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_inner_break_fires_mid_agent_loop_at_aggregate_ceiling(self, mock_invoke):
+        """
+        Given two distinct agent types, both with per-agent max_concurrent=100
+        And ConcurrencyState.tick_launch_count starts at PIPELINE_MAX_CONCURRENT - 1
+        And a single work item is eligible for both agent types
+        When process_work_item is called
+        Then exactly 1 agent is launched (the first in the agents list)
+        And tick_launch_count equals PIPELINE_MAX_CONCURRENT
+        And the second agent type is never invoked — confirming the inner break fired.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_one = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent one",
+            max_concurrent=100,
+        )
+        agent_two = AgentDef(
+            agent="05_execute/coder",
+            phase="05_execute",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent two",
+            max_concurrent=100,
+        )
+        agents = [agent_one, agent_two]
+        pipeline_map = {
+            "01_product_docs/prd-writer": agent_one,
+            "05_execute/coder": agent_two,
+        }
+        # One below the aggregate ceiling — first agent launch will hit it exactly.
+        conc = ConcurrencyState(
+            running_counts={"prd-writer": 0, "coder": 0},
+            tick_launch_count=PIPELINE_MAX_CONCURRENT - 1,
+        )
+        work_item = _make_work_item_with_labels(99, {"issue-classifier:complete"})
+
+        gh = _make_gh_mock()
+        n = process_work_item(
+            work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+            concurrency=conc,
+        )
+
+        assert n == 1, (
+            f"Expected exactly 1 agent launched before inner break; got {n}"
+        )
+        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT, (
+            f"tick_launch_count should equal PIPELINE_MAX_CONCURRENT after first launch; "
+            f"got {conc.tick_launch_count}"
+        )
+        assert mock_invoke.call_count == 1, (
+            f"invoke_agent should be called exactly once (inner break stops second agent); "
+            f"got {mock_invoke.call_count} calls"
+        )
+        # Confirm the launched agent was the first one (prd-writer), not coder.
+        called_agent = mock_invoke.call_args[0][0]
+        assert called_agent.agent == "01_product_docs/prd-writer", (
+            f"Expected prd-writer to be launched first; got {called_agent.agent}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestOrchestratorNonOverlapping

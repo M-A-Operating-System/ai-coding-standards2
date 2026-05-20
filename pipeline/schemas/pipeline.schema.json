@@ -126,7 +126,7 @@
           "type": ["integer", "null"],
           "minimum": 1,
           "default": 1,
-          "description": "Maximum concurrent instances of this agent type across all work items in a single orchestrator tick. The orchestrator counts :wip labels before launching and skips eligible work items once this ceiling is reached. Null or absent means 1 (default). A pipeline-wide aggregate ceiling of 20 applies across all agent types regardless of per-agent values."
+          "description": "Maximum concurrent instances of this agent type across all work items in a single orchestrator tick. The orchestrator counts :wip labels before launching and skips eligible work items once this ceiling is reached. Null or absent means 1 (default). A pipeline-wide aggregate ceiling (see PIPELINE_MAX_CONCURRENT in pipeline_orchestrator.py, currently 20) applies across all agent types regardless of per-agent values."
         },
         "git_ops": {
           "type": "object",
