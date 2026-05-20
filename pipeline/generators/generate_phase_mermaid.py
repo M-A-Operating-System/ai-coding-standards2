@@ -31,11 +31,27 @@ def _gate_node_id(agent_path: str) -> str:
     return f"gate__{_node_id(agent_path)}"
 
 
+def _safe_label(text: str) -> str:
+    """Return a Mermaid-safe label (double quotes break node syntax)."""
+    return text.replace('"', "'")
+
+
 def build_chart(phase: str, all_entries: list[dict]) -> str:
     """Return Mermaid flowchart source for one phase."""
     entries = [e for e in all_entries if e["phase"] == phase]
     all_entry_map = {e["agent"]: e for e in all_entries}
-    phase_agent_set = {e["agent"] for e in entries}
+    phase_entry_map = {e["agent"]: e for e in entries}
+
+    # Guard against node ID collisions (e.g. 'agent-x' and 'agent_x' collide)
+    node_ids = [_node_id(e["agent"]) for e in entries]
+    if len(node_ids) != len(set(node_ids)):
+        seen_ids: set[str] = set()
+        dupes: list[str] = []
+        for nid in node_ids:
+            if nid in seen_ids:
+                dupes.append(nid)
+            seen_ids.add(nid)
+        raise ValueError(f"Node ID collision in phase {phase!r}: {dupes}")
 
     lines: list[str] = ["flowchart TD"]
 
@@ -43,22 +59,22 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
     external_deps: set[str] = set()
     for entry in entries:
         for dep in entry.get("dependencies", []):
-            if dep not in phase_agent_set:
+            if dep not in phase_entry_map:
                 external_deps.add(dep)
 
     for dep in sorted(external_deps):
         dep_entry = all_entry_map.get(dep)
         nid = _node_id(dep)
         if dep_entry and dep_entry.get("human_gate_after"):
-            gate_label = dep_entry.get("human_gate_label", "human-gate")
+            gate_label = _safe_label(dep_entry.get("human_gate_label", "human-gate"))
             lines.append(f'    {nid}(["↓ {gate_label}"])')
         else:
-            lines.append(f'    {nid}(["↓ {_short_name(dep)}"])')
+            lines.append(f'    {nid}(["↓ {_safe_label(_short_name(dep))}"])')
 
     # Agent nodes
     for entry in entries:
         nid = _node_id(entry["agent"])
-        label = _short_name(entry["agent"])
+        label = _safe_label(_short_name(entry["agent"]))
         if entry.get("type") == "script":
             lines.append(f'    {nid}("{label}")')
         else:
@@ -68,7 +84,7 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
     for entry in entries:
         if entry.get("human_gate_after"):
             gid = _gate_node_id(entry["agent"])
-            gate_label = entry.get("human_gate_label", "human-gate")
+            gate_label = _safe_label(entry.get("human_gate_label", "human-gate"))
             lines.append(f'    {gid}{{"{gate_label}"}}')
 
     # Edges: agent → gate
@@ -82,7 +98,7 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
     for entry in entries:
         aid = _node_id(entry["agent"])
         for dep in entry.get("dependencies", []):
-            dep_in_phase = next((e for e in entries if e["agent"] == dep), None)
+            dep_in_phase = phase_entry_map.get(dep)
             if dep_in_phase and dep_in_phase.get("human_gate_after"):
                 lines.append(f"    {_gate_node_id(dep)} --> {aid}")
             else:
@@ -95,7 +111,7 @@ def load_pipeline() -> list[dict]:
     if not PIPELINE_JSON.exists():
         print(f"error: {PIPELINE_JSON} not found", file=sys.stderr)
         sys.exit(1)
-    with PIPELINE_JSON.open() as fh:
+    with PIPELINE_JSON.open(encoding="utf-8") as fh:
         return json.load(fh).get("pipeline", [])
 
 
@@ -120,7 +136,9 @@ def main(argv: list[str] | None = None) -> int:
 
     charts: dict[str, str] = {ph: build_chart(ph, all_entries) for ph in phases}
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if not args.check:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
     expected_files = {OUTPUT_DIR / f"{ph}.mmd" for ph in phases}
     failures: list[str] = []
 
@@ -129,19 +147,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             if not outfile.exists():
                 failures.append(f"missing: {outfile.relative_to(REPO_ROOT)}")
-            elif outfile.read_text() != content:
+            elif outfile.read_text(encoding="utf-8") != content:
                 failures.append(f"stale: {outfile.relative_to(REPO_ROOT)}")
         else:
-            outfile.write_text(content)
+            outfile.write_text(content, encoding="utf-8")
             print(f"wrote {outfile.relative_to(REPO_ROOT)}")
 
-    for existing in sorted(OUTPUT_DIR.glob("*.mmd")):
-        if existing not in expected_files:
-            if args.check:
-                failures.append(f"orphan: {existing.relative_to(REPO_ROOT)}")
-            else:
-                existing.unlink()
-                print(f"removed {existing.relative_to(REPO_ROOT)}")
+    if OUTPUT_DIR.exists():
+        for existing in sorted(OUTPUT_DIR.glob("*.mmd")):
+            if existing not in expected_files:
+                if args.check:
+                    failures.append(f"orphan: {existing.relative_to(REPO_ROOT)}")
+                else:
+                    existing.unlink()
+                    print(f"removed {existing.relative_to(REPO_ROOT)}")
 
     for msg in failures:
         print(f"error: {msg}", file=sys.stderr)
