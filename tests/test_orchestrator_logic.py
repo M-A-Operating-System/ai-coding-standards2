@@ -640,6 +640,66 @@ class TestAggregatePipelineCeiling:
 
 
 # ---------------------------------------------------------------------------
+# TestRateLimitCounterRollback
+# ---------------------------------------------------------------------------
+
+class TestRateLimitCounterRollback:
+    """Regression: rate-limited agent must roll back concurrency counters."""
+
+    @patch("pipeline_orchestrator._restore_pre_agent_branch")
+    @patch("pipeline_orchestrator.is_pipeline_paused")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_rate_limited_agent_rolls_back_concurrency_counts(
+        self, mock_invoke, mock_paused, mock_restore
+    ):
+        """
+        Given a work item eligible for prd-writer (max_concurrent=5)
+        And the current running_counts for prd-writer is 1
+        And tick_launch_count is 3
+        When invoke_agent returns rate_limited=True
+        Then concurrency.running_counts[prd-writer] is rolled back to 1
+        And concurrency.tick_launch_count is rolled back to 3
+        """
+        mock_invoke.return_value = AgentRunResult(success=False, rate_limited=True)
+        mock_paused.return_value = (True, "rate-limit", None)
+        mock_restore.return_value = None
+
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=5,
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ConcurrencyState(
+            running_counts={"prd-writer": 1},
+            tick_launch_count=3,
+        )
+        work_item = _make_work_item_with_labels(42, {"issue-classifier:complete"})
+
+        gh = _make_gh_mock()
+        process_work_item(
+            work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+            concurrency=conc,
+        )
+
+        assert conc.running_counts.get("prd-writer", 0) == 1, (
+            f"running_counts should roll back to 1 after rate-limited abort; "
+            f"got {conc.running_counts.get('prd-writer', 0)}"
+        )
+        assert conc.tick_launch_count == 3, (
+            f"tick_launch_count should roll back to 3 after rate-limited abort; "
+            f"got {conc.tick_launch_count}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # TestOrchestratorNonOverlapping
 # ---------------------------------------------------------------------------
 

@@ -209,7 +209,7 @@ eligible issues for that agent are deferred to the next tick.
 
 **6. Aggregate pipeline ceiling not reached.**
 The total number of agent instances launched in the current tick is less than
-the pipeline-wide maximum (initially 20). If this ceiling is reached, all
+the pipeline-wide maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value). If this ceiling is reached, all
 remaining eligible work across all agent types is deferred to the next tick.
 
 ---
@@ -748,7 +748,7 @@ additional instances. If the running count already meets or exceeds
 `max_concurrent`, no new instances are launched for that tick; eligible issues
 remain pending until the next tick.
 
-**Aggregate pipeline ceiling.** A pipeline-wide maximum (initially 20) caps
+**Aggregate pipeline ceiling.** A pipeline-wide maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value) caps
 the total number of agent instances launched across all agent types in a
 single tick, regardless of per-agent `max_concurrent` values. This prevents
 unbounded resource consumption when many agent types each have large backlogs.

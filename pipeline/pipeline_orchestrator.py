@@ -2502,6 +2502,14 @@ def process_work_item(
                     gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 except Exception:
                     pass
+                # Roll back in-memory concurrency counts: the :wip was removed,
+                # so the slot is free again. Without this the per-agent and
+                # aggregate ceilings would over-count for the rest of the tick.
+                if concurrency is not None:
+                    concurrency.running_counts[agent_def.label_key] = max(
+                        0, concurrency.running_counts.get(agent_def.label_key, 0) - 1
+                    )
+                    concurrency.tick_launch_count = max(0, concurrency.tick_launch_count - 1)
                 _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
