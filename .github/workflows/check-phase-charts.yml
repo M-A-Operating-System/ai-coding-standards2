@@ -1,0 +1,24 @@
+name: Check phase charts
+
+on:
+  pull_request:
+    paths:
+      - "pipeline/pipeline.json"
+      - "docs/product/agile/generated/phases/**"
+      - "pipeline/generators/generate_phase_mermaid.py"
+      - "pipeline/generators/tests/**"
+
+jobs:
+  check-phase-charts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install pytest
+      - name: Run unit tests
+        run: python -m pytest pipeline/generators/tests/ -v
+      - name: Verify phase charts are up to date
+        run: python pipeline/generators/generate_phase_mermaid.py --check
