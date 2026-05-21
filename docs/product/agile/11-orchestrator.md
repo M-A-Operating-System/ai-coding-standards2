@@ -162,6 +162,38 @@ the final state. Script steps are not retried.
 
 ---
 
+## Concurrency control
+
+The orchestrator enforces two concurrency ceilings per tick to prevent
+unbounded resource consumption when many issues become eligible simultaneously.
+
+**Per-agent ceiling (`max_concurrent`).**
+Each agent definition in `pipeline.json` may specify a `max_concurrent`
+integer (default: `1`). Before launching an agent for a work item, the
+orchestrator counts how many work items already carry that agent's `:wip` label
+(from prior ticks still running) plus how many were launched in the current
+tick. If that total meets or exceeds `max_concurrent`, the agent is skipped for
+this tick and deferred to the next one. The work item is not failed — it retains
+its eligibility and will be picked up as soon as a slot opens.
+
+**Aggregate pipeline ceiling (`PIPELINE_MAX_CONCURRENT`).**
+In addition to the per-agent ceiling, the orchestrator enforces an aggregate
+cap of `PIPELINE_MAX_CONCURRENT` (default: `20`) total agent launches across
+all agent types within a single tick. Once this limit is hit, the remaining
+work items in the tick are deferred silently; a log line records the deferral.
+Dry-run mode respects both ceilings to produce an accurate simulation.
+
+**Concurrency state accounting.**
+At the start of each tick the orchestrator initialises a `ConcurrencyState`
+struct from the live label snapshot: `running_counts` maps each agent's
+`label_key` to the number of work items currently carrying its `:wip` label.
+As agents are launched within the tick, counts are incremented. If a launch
+fails (`:wip` application error) or the agent is rate-limited and its `:wip`
+is removed, the counts are decremented to keep the in-memory ceiling accurate
+for the remainder of the tick.
+
+---
+
 ## Eligibility check
 
 An agent is eligible to run when all four conditions hold simultaneously:

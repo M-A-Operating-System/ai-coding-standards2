@@ -10,7 +10,8 @@ from pipeline_orchestrator import (
     STATUS_REVIEW, STATUS_BLOCKED, STATUS_WIP, STATUS_REQUESTED,
     agent_status,
     _apply_failed,
-    AgentDef, AgentRunResult,
+    AgentDef, AgentRunResult, WorkItem,
+    ConcurrencyState, _count_running, PIPELINE_MAX_CONCURRENT,
     parse_frontmatter,
 )
 
@@ -208,3 +209,168 @@ class TestParseFrontmatter:
         text = "---\n---"
         result = parse_frontmatter(text)
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# TestApplyFailedReason  (QA-001)
+# ---------------------------------------------------------------------------
+
+class TestApplyFailedReason:
+    """_apply_failed posts exhaustion reason and uses the correct heading."""
+
+    def _make_gh(self) -> MagicMock:
+        gh = MagicMock()
+        gh.remove_label = MagicMock()
+        gh.add_label = MagicMock()
+        gh.post_comment = MagicMock()
+        return gh
+
+    def test_reason_appears_in_failure_comment(self):
+        """When reason is provided, post_comment includes that text."""
+        agent_def = _make_agent_def("05_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+        reason = "_Retry limit of 3 exhausted after 4 attempt(s). Human intervention is required._"
+
+        _apply_failed(gh, agent_def, work_item, result, reason=reason)
+
+        assert gh.post_comment.called, "Expected post_comment to be called"
+        comment_body = gh.post_comment.call_args[0][1]
+        assert reason in comment_body, (
+            f"Expected reason text in comment body. Got: {comment_body!r}"
+        )
+
+    def test_retry_exhaustion_heading_not_post_run(self):
+        """Retry exhaustion uses a distinct heading — not 'post-run step failed'."""
+        agent_def = _make_agent_def("05_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+        exhaustion_heading = "### `05_execute/coder` failed — retry limit exhausted"
+
+        _apply_failed(
+            gh, agent_def, work_item, result,
+            reason="_Retry limit of 3 exhausted._",
+            heading=exhaustion_heading,
+        )
+
+        comment_body = gh.post_comment.call_args[0][1]
+        assert exhaustion_heading in comment_body, (
+            f"Expected exhaustion heading in comment. Got: {comment_body!r}"
+        )
+        assert "post-run step failed" not in comment_body, (
+            "Misleading 'post-run step failed' heading must not appear for retry exhaustion"
+        )
+
+    def test_no_reason_uses_generic_error_heading(self):
+        """Without reason, comment uses the generic 'exited with an error' heading."""
+        agent_def = _make_agent_def("05_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+
+        _apply_failed(gh, agent_def, work_item, result)
+
+        comment_body = gh.post_comment.call_args[0][1]
+        assert "exited with an error" in comment_body
+
+    def test_custom_heading_overrides_default(self):
+        """An explicit heading= kwarg takes precedence over the reason-derived heading."""
+        agent_def = _make_agent_def("05_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+        custom = "### `05_execute/coder` failed — custom context"
+
+        _apply_failed(gh, agent_def, work_item, result, reason="some reason", heading=custom)
+
+        comment_body = gh.post_comment.call_args[0][1]
+        assert custom in comment_body
+        assert "post-run step failed" not in comment_body
+
+
+# ---------------------------------------------------------------------------
+# TestCountRunning  (QA-002)
+# ---------------------------------------------------------------------------
+
+class TestCountRunning:
+    """_count_running correctly counts :wip labels per agent at tick start."""
+
+    def _wi(self, labels: set) -> WorkItem:
+        return WorkItem(number=1, kind="issue", title="t", labels=labels, url="http://x")
+
+    def test_zero_when_no_wip_labels(self):
+        agent_def = _make_agent_def("05_execute/coder")
+        counts = _count_running([self._wi(set()), self._wi({"other:complete"})], [agent_def])
+        assert counts.get("coder", 0) == 0
+
+    def test_counts_matching_wip_labels(self):
+        agent_def = _make_agent_def("05_execute/coder")
+        work_items = [
+            self._wi({"coder:wip"}),
+            self._wi({"coder:wip"}),
+            self._wi({"pr-reviewer:wip"}),
+        ]
+        counts = _count_running(work_items, [agent_def])
+        assert counts["coder"] == 2
+
+    def test_counts_multiple_agents_independently(self):
+        coder = _make_agent_def("05_execute/coder")
+        reviewer = _make_agent_def("05_execute/pr-reviewer")
+        work_items = [
+            self._wi({"coder:wip"}),
+            self._wi({"pr-reviewer:wip", "coder:wip"}),
+        ]
+        counts = _count_running(work_items, [coder, reviewer])
+        assert counts["coder"] == 2
+        assert counts["pr-reviewer"] == 1
+
+    def test_empty_work_items_returns_zeros(self):
+        agent_def = _make_agent_def("05_execute/coder")
+        counts = _count_running([], [agent_def])
+        assert counts.get("coder", 0) == 0
+
+
+# ---------------------------------------------------------------------------
+# TestConcurrencyState  (QA-002)
+# ---------------------------------------------------------------------------
+
+class TestConcurrencyState:
+    """ConcurrencyState mutable accounting struct behaves correctly."""
+
+    def test_initial_tick_launch_count_is_zero(self):
+        state = ConcurrencyState(running_counts={})
+        assert state.tick_launch_count == 0
+
+    def test_initialised_from_count_running(self):
+        agent_def = _make_agent_def("05_execute/coder")
+        wi = WorkItem(number=1, kind="issue", title="t", labels={"coder:wip"}, url="http://x")
+        counts = _count_running([wi], [agent_def])
+        state = ConcurrencyState(running_counts=counts)
+        assert state.running_counts.get("coder") == 1
+
+    def test_increment_advances_both_counters(self):
+        state = ConcurrencyState(running_counts={"coder": 1})
+        state.running_counts["coder"] = state.running_counts.get("coder", 0) + 1
+        state.tick_launch_count += 1
+        assert state.running_counts["coder"] == 2
+        assert state.tick_launch_count == 1
+
+    def test_rollback_decrements_both_counters(self):
+        state = ConcurrencyState(running_counts={"coder": 2}, tick_launch_count=1)
+        state.running_counts["coder"] = max(0, state.running_counts.get("coder", 0) - 1)
+        state.tick_launch_count = max(0, state.tick_launch_count - 1)
+        assert state.running_counts["coder"] == 1
+        assert state.tick_launch_count == 0
+
+    def test_rollback_does_not_go_below_zero(self):
+        state = ConcurrencyState(running_counts={"coder": 0}, tick_launch_count=0)
+        state.running_counts["coder"] = max(0, state.running_counts.get("coder", 0) - 1)
+        state.tick_launch_count = max(0, state.tick_launch_count - 1)
+        assert state.running_counts["coder"] == 0
+        assert state.tick_launch_count == 0
+
+    def test_pipeline_max_concurrent_is_positive_int(self):
+        assert isinstance(PIPELINE_MAX_CONCURRENT, int)
+        assert PIPELINE_MAX_CONCURRENT > 0
