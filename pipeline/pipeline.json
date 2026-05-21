@@ -104,14 +104,30 @@
     },
 
     {
-      "agent": "05_execute/pr-reviewer",
+      "agent": "05_execute/merge-conflict",
       "phase": "05_execute",
       "object": ["issue"],
       "trigger": {
         "label": "ci-gate:complete"
       },
-      "human_gate_after": false,
+      "human_gate_after": true,
+      "human_gate_label": "merge-conflict:approved",
       "dependencies": ["05_execute/ci-gate"],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "exclude_classifications": ["spike"],
+      "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, posts a prioritised resolution plan as PR comments and pauses at the merge-conflict:approved gate — no further stages advance until a human approves the plan. After approval the coder is re-invoked (via the pr-reviewer review loop) to apply the agreed resolutions."
+    },
+
+    {
+      "agent": "05_execute/pr-reviewer",
+      "phase": "05_execute",
+      "object": ["issue"],
+      "trigger": {
+        "label": "merge-conflict:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["05_execute/merge-conflict"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "exclude_classifications": ["spike"],
