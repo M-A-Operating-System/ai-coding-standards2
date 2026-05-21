@@ -2375,18 +2375,18 @@ def process_work_item(
                 gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 labels.add(agent_def.status_label(STATUS_WIP))
                 work_item.labels = labels
+                # Increment only on successful label application — a failed
+                # add_label means no :wip was set so no slot is consumed.
+                if concurrency is not None:
+                    concurrency.running_counts[agent_def.label_key] = (
+                        concurrency.running_counts.get(agent_def.label_key, 0) + 1
+                    )
+                    concurrency.tick_launch_count += 1
             except Exception as exc:
                 log.error(
                     "  could not apply :wip for %s on #%d: %s",
                     agent_def.agent, work_item.number, exc,
                 )
-            # Update concurrency counts after :wip attempt so subsequent
-            # agents and work items see the launch reflected in the ceiling.
-            if concurrency is not None:
-                concurrency.running_counts[agent_def.label_key] = (
-                    concurrency.running_counts.get(agent_def.label_key, 0) + 1
-                )
-                concurrency.tick_launch_count += 1
             try:
                 # Use the agent's own deterministic session ID (not the
                 # orchestrator's timestamped ID) so the announcement matches
@@ -2401,6 +2401,14 @@ def process_work_item(
                     "  could not post opening announcement for %s on #%d: %s",
                     agent_def.agent, work_item.number, exc,
                 )
+        else:
+            # dry_run: :wip ceremony is skipped, but counters still advance so
+            # the simulated output respects per-agent and aggregate ceilings.
+            if concurrency is not None:
+                concurrency.running_counts[agent_def.label_key] = (
+                    concurrency.running_counts.get(agent_def.label_key, 0) + 1
+                )
+                concurrency.tick_launch_count += 1
 
         if audit_log is not None and session_id and not dry_run:
             audit_log.append(_make_audit_event(
