@@ -152,7 +152,13 @@ The only external writes are the mutex label and the audit log event.
 
 Agent steps are re-invoked up to `max_retries` times (configured per agent in
 `pipeline.json`) with exponential backoff (5 s, 10 s, 20 s…) when the agent
-exits non-zero without a sentinel. Script steps are not retried.
+exits non-zero without a sentinel. On each retry, the orchestrator posts a
+comment on the work item recording the attempt number so operators can audit
+the retry history. When the retry limit is exhausted, the orchestrator applies
+`:failed` and posts a comment stating the limit has been reached and human
+intervention is required. An agent that succeeds after one or more retries
+receives the normal success label — no retry count is retained or displayed in
+the final state. Script steps are not retried.
 
 ---
 
@@ -330,10 +336,14 @@ if sentinel found:
 elif agent exited zero (no sentinel):
     remove :wip, apply :complete   ← backward-compat default
 else (exited non-zero, no sentinel):
-    remove :wip, apply :failed
-    post recovery comment
-    emit agent.failed (mode=agent) to audit log
-    break item loop
+    if attempt_count < max_retries:
+        post retry comment: "Retry attempt {attempt} of {max_retries}"
+        increment attempt_count; re-invoke agent (no :failed applied)
+    else:  ← retry limit reached (or max_retries == 0)
+        remove :wip, apply :failed
+        post exhaustion comment: "Retry limit exhausted; human intervention required"
+        emit agent.failed (mode=agent) to audit log
+        break item loop
 ```
 
 **Script steps** — the orchestrator reads the sentinel and applies the label:
