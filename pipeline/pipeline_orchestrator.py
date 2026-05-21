@@ -1499,7 +1499,7 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
     if agent_def.session_id_pattern:
         _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
         try:
-            if re.search(r"\{[^}]*[.[]", agent_def.session_id_pattern):
+            if re.search(r"\{[^}]*[.[]}", agent_def.session_id_pattern):
                 raise ValueError("unsafe attribute/index access in id_pattern")
             sid = _tok_re.sub(
                 lambda m: session_tokens[m.group(1)],

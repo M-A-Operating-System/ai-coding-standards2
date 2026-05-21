@@ -700,6 +700,210 @@ class TestRateLimitCounterRollback:
 
 
 # ---------------------------------------------------------------------------
+# TestWipLabelFailureDoesNotInflateCount  (#103)
+# ---------------------------------------------------------------------------
+
+class TestWipLabelFailureDoesNotInflateCount:
+    """Regression: concurrency counter must not increment when :wip label fails."""
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_counter_unchanged_when_add_label_raises(self, mock_invoke):
+        """
+        Given add_label raises for the :wip application
+        When process_work_item is called
+        Then running_counts is unchanged (no phantom slot consumed)
+        And tick_launch_count is unchanged
+        """
+        mock_invoke.return_value = AgentRunResult(success=True)
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=5,
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ConcurrencyState(running_counts={"prd-writer": 2}, tick_launch_count=4)
+
+        gh = _make_gh_mock()
+        gh.add_label.side_effect = Exception("GitHub 500 error")
+
+        work_item = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        process_work_item(
+            work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+            concurrency=conc,
+        )
+
+        assert conc.running_counts.get("prd-writer", 0) == 2, (
+            f"running_counts must stay at 2 when :wip label fails; "
+            f"got {conc.running_counts.get('prd-writer', 0)}"
+        )
+        assert conc.tick_launch_count == 4, (
+            f"tick_launch_count must stay at 4 when :wip label fails; "
+            f"got {conc.tick_launch_count}"
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_second_item_not_blocked_by_phantom_count(self, mock_invoke):
+        """
+        Given max_concurrent=2 and 1 item already running (running_counts=1)
+        And add_label raises for the first new eligible item
+        When process_work_item is called for a second new eligible item
+        Then the second item is launched (phantom count didn't block it)
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=2,
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ConcurrencyState(running_counts={"prd-writer": 1}, tick_launch_count=1)
+
+        gh_fail = _make_gh_mock()
+        gh_fail.add_label.side_effect = Exception("GitHub 500 error")
+        wi_fail = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        process_work_item(
+            wi_fail, agents, pipeline_map, gh_fail, dry_run=False, repo="test/repo",
+            concurrency=conc,
+        )
+
+        # No phantom count; slot still free for item 2
+        gh_ok = _make_gh_mock()
+        wi_ok = _make_work_item_with_labels(2, {"issue-classifier:complete"})
+        launched = process_work_item(
+            wi_ok, agents, pipeline_map, gh_ok, dry_run=False, repo="test/repo",
+            concurrency=conc,
+        )
+
+        assert launched == 1, (
+            f"Second item should launch (1 running + 1 new = 2 ceiling); got {launched}"
+        )
+        assert conc.running_counts.get("prd-writer", 0) == 2
+
+
+# ---------------------------------------------------------------------------
+# TestDryRunConcurrency  (#102)
+# ---------------------------------------------------------------------------
+
+class TestDryRunConcurrency:
+    """Regression: dry-run mode must enforce concurrency ceilings."""
+
+    def test_dry_run_increments_tick_count(self):
+        """
+        Given dry_run=True and 3 eligible items with max_concurrent=1
+        When process_work_item is called for each
+        Then only the first shows as launched (ceiling enforced in simulation)
+        And concurrency.running_counts reflects 1 counted instance
+        """
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=1,
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+
+        total_launched = 0
+        for i in range(1, 4):
+            gh = _make_gh_mock()
+            wi = _make_work_item_with_labels(i, {"issue-classifier:complete"})
+            n = process_work_item(
+                wi, agents, pipeline_map, gh, dry_run=True, repo="test/repo",
+                concurrency=conc,
+            )
+            total_launched += n
+
+        assert total_launched == 1, (
+            f"dry_run must respect per-agent ceiling of 1; got {total_launched}"
+        )
+        assert conc.running_counts.get("prd-writer", 0) == 1, (
+            f"running_counts must be 1 after dry-run of 3 items (ceiling=1); "
+            f"got {conc.running_counts.get('prd-writer', 0)}"
+        )
+
+    def test_dry_run_respects_aggregate_ceiling(self):
+        """
+        Given PIPELINE_MAX_CONCURRENT and 5 items eligible across two agents
+        And dry_run=True
+        When process_work_item processes all items
+        Then no more than PIPELINE_MAX_CONCURRENT total are reported as launched
+        """
+        agent_a = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="a",
+            max_concurrent=100,
+        )
+        agent_b = AgentDef(
+            agent="05_execute/coder",
+            phase="05_execute",
+            objects=["issue"],
+            trigger={"label": "prd-docs-updater:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="b",
+            max_concurrent=100,
+        )
+        agents = [agent_a, agent_b]
+        pipeline_map = {
+            "01_product_docs/prd-writer": agent_a,
+            "05_execute/coder": agent_b,
+        }
+        conc = ConcurrencyState(
+            running_counts={"prd-writer": 0, "coder": 0},
+            tick_launch_count=PIPELINE_MAX_CONCURRENT - 1,
+        )
+
+        # One item eligible only for agent_a, one eligible only for agent_b
+        wi_a = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        wi_b = _make_work_item_with_labels(2, {"prd-docs-updater:complete"})
+
+        gh = _make_gh_mock()
+        n_a = process_work_item(
+            wi_a, agents, pipeline_map, gh, dry_run=True, repo="test/repo",
+            concurrency=conc,
+        )
+        gh2 = _make_gh_mock()
+        n_b = process_work_item(
+            wi_b, agents, pipeline_map, gh2, dry_run=True, repo="test/repo",
+            concurrency=conc,
+        )
+
+        # Only the first item should launch — aggregate ceiling is reached after it
+        assert n_a == 1, f"First item should launch; got {n_a}"
+        assert n_b == 0, f"Second item must be deferred by aggregate ceiling; got {n_b}"
+        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT
+
+
+# ---------------------------------------------------------------------------
 # TestOrchestratorNonOverlapping
 # ---------------------------------------------------------------------------
 
