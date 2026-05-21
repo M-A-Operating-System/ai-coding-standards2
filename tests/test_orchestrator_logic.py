@@ -13,6 +13,7 @@ from pipeline_orchestrator import (
     AgentDef, AgentRunResult, WorkItem,
     ConcurrencyState, _count_running, PIPELINE_MAX_CONCURRENT,
     parse_frontmatter,
+    process_work_item,
 )
 
 
@@ -374,3 +375,169 @@ class TestConcurrencyState:
     def test_pipeline_max_concurrent_is_positive_int(self):
         assert isinstance(PIPELINE_MAX_CONCURRENT, int)
         assert PIPELINE_MAX_CONCURRENT > 0
+
+
+# ---------------------------------------------------------------------------
+# TestRetryPolicy  (PRD scenarios for per-agent retry and restart policy)
+# ---------------------------------------------------------------------------
+
+class TestRetryPolicy:
+    """Gherkin-traced tests for the per-agent retry/restart policy in the orchestrator.
+
+    Each test corresponds to a named scenario in the approved PRD for issue #16.
+    """
+
+    def _make_agent(self, max_retries: int = 0) -> AgentDef:
+        return AgentDef(
+            agent="05_execute/coder",
+            phase="05_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent",
+            max_retries=max_retries,
+            commit_after=False,
+        )
+
+    def _make_gh(self) -> MagicMock:
+        gh = MagicMock()
+        gh.get_issue_labels.return_value = set()
+        return gh
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_retries_within_limit_posts_comment_and_succeeds(self, mock_invoke, mock_sleep):
+        """Scenario: Orchestrator retries a failed agent within configured limit.
+
+        Given an agent is configured with max_retries: 3 in pipeline.json
+        When the agent exits with a failure status and the current attempt count is below the limit
+        Then the orchestrator restarts the agent without applying :failed
+        And a comment is posted on the work item recording the retry attempt number
+        """
+        mock_invoke.side_effect = [
+            AgentRunResult(success=False, returncode=1, captured_tail="error"),
+            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
+        ]
+        agent_def = self._make_agent(max_retries=3)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"05_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:failed" not in add_calls, (
+            f":failed must not be applied when retry succeeds. add_label calls: {add_calls}"
+        )
+        assert "coder:complete" in add_calls, (
+            f":complete must be applied after successful retry. add_label calls: {add_calls}"
+        )
+        comment_bodies = [str(c[0][1]) for c in gh.post_comment.call_args_list]
+        assert any("retry" in b.lower() for b in comment_bodies), (
+            f"Expected a retry attempt comment. post_comment calls: {comment_bodies}"
+        )
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_escalates_when_retry_limit_exhausted(self, mock_invoke, mock_sleep):
+        """Scenario: Orchestrator escalates when retry limit is exhausted.
+
+        Given an agent is configured with max_retries: 3 in pipeline.json
+        And the agent has already failed 3 times (retry limit reached)
+        When the agent exits with a failure status again
+        Then the orchestrator applies :failed to the work item
+        And posts a comment stating that the retry limit has been exhausted
+        and human intervention is required
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=False, returncode=1, captured_tail="error"
+        )
+        agent_def = self._make_agent(max_retries=3)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"05_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:failed" in add_calls, (
+            f":failed must be applied when retry limit is exhausted. add_label calls: {add_calls}"
+        )
+        comment_bodies = [str(c[0][1]) for c in gh.post_comment.call_args_list]
+        escalation_comments = [
+            b for b in comment_bodies
+            if "exhausted" in b.lower() and "human" in b.lower()
+        ]
+        assert escalation_comments, (
+            f"Expected comment mentioning retry limit exhausted and human intervention. "
+            f"post_comment calls: {comment_bodies}"
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_no_retry_when_not_configured(self, mock_invoke):
+        """Scenario: Agent with no retry configuration fails immediately.
+
+        Given an agent has no max_retries entry in pipeline.json (defaults to 0)
+        When the agent exits with a failure status
+        Then the orchestrator applies :failed to the work item immediately without retrying
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=False, returncode=1, captured_tail="error"
+        )
+        agent_def = self._make_agent(max_retries=0)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"05_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        assert mock_invoke.call_count == 1, (
+            f"With max_retries=0, invoke_agent must be called exactly once (no retries). "
+            f"Call count: {mock_invoke.call_count}"
+        )
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:failed" in add_calls, (
+            f":failed must be applied immediately with max_retries=0. add_label calls: {add_calls}"
+        )
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_successful_recovery_applies_complete_no_retry_state(self, mock_invoke, mock_sleep):
+        """Scenario: Successfully recovered agent clears retry state.
+
+        Given an agent has been retried at least once
+        When the agent exits successfully on a subsequent attempt
+        Then the orchestrator applies the normal success label
+        And does not retain or display a retry count in the final state
+        """
+        mock_invoke.side_effect = [
+            AgentRunResult(success=False, returncode=1, captured_tail="error"),
+            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
+        ]
+        agent_def = self._make_agent(max_retries=3)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"05_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:complete" in add_calls, (
+            f":complete (normal success label) must be applied after recovery. "
+            f"add_label calls: {add_calls}"
+        )
+        retry_count_labels = [lbl for lbl in add_calls if "retry" in lbl.lower()]
+        assert not retry_count_labels, (
+            f"No retry-count label must remain on the work item after successful recovery. "
+            f"Found: {retry_count_labels}"
+        )
