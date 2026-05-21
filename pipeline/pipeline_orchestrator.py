@@ -124,6 +124,12 @@ LABEL_COLOURS = {s["status"]: s["colour"] for s in STATUSES}
 # Maximum wall-clock time for a single script invocation.
 SCRIPT_TIMEOUT_SECONDS = 300
 
+# Maximum agent instances launched across ALL agent types in a single tick.
+# Prevents unbounded resource consumption when many issues become eligible
+# simultaneously. Per-agent max_concurrent values may permit more in total,
+# but this aggregate cap is the backstop.
+PIPELINE_MAX_CONCURRENT = 20
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -148,6 +154,7 @@ class AgentDef:
     commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
+    max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
 
     @property
@@ -217,6 +224,20 @@ class AgentRunResult:
     output_tokens: Optional[int] = None
 
 
+@dataclass
+class ConcurrencyState:
+    """Mutable concurrency accounting for one orchestrator tick.
+
+    running_counts maps each agent label_key to the number of work items
+    currently carrying that agent's :wip label — initialised from work_items
+    fetched at the start of the tick, then incremented as agents are launched
+    within the tick. tick_launch_count tracks the total agents launched in this
+    tick against the pipeline-wide aggregate ceiling (PIPELINE_MAX_CONCURRENT).
+    """
+    running_counts: dict  # label_key → int
+    tick_launch_count: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Pipeline loader
 # ---------------------------------------------------------------------------
@@ -251,6 +272,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 review_loop=entry.get("review_loop"),
+                max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
             ))
 
@@ -269,6 +291,23 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
 
 def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
     return {a.agent: a for a in agents}
+
+
+def _count_running(work_items: list[WorkItem], agents: list[AgentDef]) -> dict[str, int]:
+    """Count work items carrying each agent's :wip label at tick start.
+
+    Returns a dict from agent label_key to count. Used to initialise
+    ConcurrencyState so the per-agent ceiling accounts for instances already
+    running from a prior orchestrator tick before this one started.
+    """
+    counts: dict[str, int] = {}
+    for agent_def in agents:
+        key = agent_def.label_key
+        counts[key] = sum(
+            1 for wi in work_items
+            if agent_def.in_progress_label in wi.labels
+        )
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -1460,7 +1499,7 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
     if agent_def.session_id_pattern:
         _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
         try:
-            if re.search(r"\{[^}]*[.[]", agent_def.session_id_pattern):
+            if re.search(r"\{[^}]*[.[]}", agent_def.session_id_pattern):
                 raise ValueError("unsafe attribute/index access in id_pattern")
             sid = _tok_re.sub(
                 lambda m: session_tokens[m.group(1)],
@@ -2212,6 +2251,7 @@ def process_work_item(
     session_id: str = "",
     audit_log: Optional[list] = None,
     default_extra_tools: Optional[list[str]] = None,
+    concurrency: Optional[ConcurrencyState] = None,
 ) -> int:
     """
     Evaluate all agents against a single issue or PR.
@@ -2294,6 +2334,24 @@ def process_work_item(
             log.debug("  skip %-40s  [dependencies unmet]", agent_def.agent)
             continue
 
+        # Per-agent concurrency ceiling: count instances already running
+        # (from prior ticks) plus those launched this tick.
+        if concurrency is not None:
+            _running = concurrency.running_counts.get(agent_def.label_key, 0)
+            if _running >= agent_def.max_concurrent:
+                log.info(
+                    "  skip %-40s  [per-agent concurrency: %d/%d running]",
+                    agent_def.agent, _running, agent_def.max_concurrent,
+                )
+                continue
+            # Aggregate pipeline ceiling: total launches across all agent types.
+            if concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+                log.info(
+                    "  ceiling %-38s  [pipeline max-concurrent: %d/%d launched this tick]",
+                    agent_def.agent, concurrency.tick_launch_count, PIPELINE_MAX_CONCURRENT,
+                )
+                break
+
         # All conditions met — dispatch to the correct invocation mode.
         # Pre-invocation ceremony: apply :wip and post the opening
         # announcement so the timeline shows the agent is active before
@@ -2317,6 +2375,13 @@ def process_work_item(
                 gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 labels.add(agent_def.status_label(STATUS_WIP))
                 work_item.labels = labels
+                # Increment only on successful label application — a failed
+                # add_label means no :wip was set so no slot is consumed.
+                if concurrency is not None:
+                    concurrency.running_counts[agent_def.label_key] = (
+                        concurrency.running_counts.get(agent_def.label_key, 0) + 1
+                    )
+                    concurrency.tick_launch_count += 1
             except Exception as exc:
                 log.error(
                     "  could not apply :wip for %s on #%d: %s",
@@ -2336,6 +2401,14 @@ def process_work_item(
                     "  could not post opening announcement for %s on #%d: %s",
                     agent_def.agent, work_item.number, exc,
                 )
+        else:
+            # dry_run: :wip ceremony is skipped, but counters still advance so
+            # the simulated output respects per-agent and aggregate ceilings.
+            if concurrency is not None:
+                concurrency.running_counts[agent_def.label_key] = (
+                    concurrency.running_counts.get(agent_def.label_key, 0) + 1
+                )
+                concurrency.tick_launch_count += 1
 
         if audit_log is not None and session_id and not dry_run:
             audit_log.append(_make_audit_event(
@@ -2437,6 +2510,14 @@ def process_work_item(
                     gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 except Exception:
                     pass
+                # Roll back in-memory concurrency counts: the :wip was removed,
+                # so the slot is free again. Without this the per-agent and
+                # aggregate ceilings would over-count for the rest of the tick.
+                if concurrency is not None:
+                    concurrency.running_counts[agent_def.label_key] = max(
+                        0, concurrency.running_counts.get(agent_def.label_key, 0) - 1
+                    )
+                    concurrency.tick_launch_count = max(0, concurrency.tick_launch_count - 1)
                 _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
@@ -2737,12 +2818,27 @@ def main() -> None:
             outcome_detail=f"evaluating {len(work_items)} work item(s)",
         ))
 
+    # Build concurrency state from labels fetched above. running_counts reflects
+    # agents started in prior ticks that are still :wip; tick_launch_count will
+    # accumulate launches within this tick against PIPELINE_MAX_CONCURRENT.
+    conc = ConcurrencyState(running_counts=_count_running(work_items, agents))
+    _active = {k: v for k, v in conc.running_counts.items() if v > 0}
+    if _active:
+        log.info("Running at tick start (prior-tick :wip): %s", _active)
+
     total_triggered = 0
     for item in work_items:
+        if not args.dry_run and conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+            log.info(
+                "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",
+                PIPELINE_MAX_CONCURRENT,
+            )
+            break
         n = process_work_item(
             item, agents, pipeline_map, gh, args.dry_run, args.repo,
             session_id=session_id, audit_log=audit_log,
             default_extra_tools=default_extra_tools,
+            concurrency=conc,
         )
         total_triggered += n
         if n > 0:
