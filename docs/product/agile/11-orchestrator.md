@@ -415,6 +415,10 @@ runs. It:
 1. Creates branch `issue-{N}` from the default branch HEAD (if absent)
 2. Opens a draft PR: title `issue-{N}: {title[:60]}`, body `Closes #{N}`
 3. Calls `link-pr-to-issue.sh` to apply the `source-issue:{N}` label
+4. Posts a comment on the issue with the PR number and URL, so stakeholders
+   and engineers can navigate to the draft PR directly from the issue without
+   consulting build logs. This comment is posted only once — on idempotent
+   re-runs where the PR already exists, no duplicate comment is posted.
 
 Both the branch and the PR exist before `prd-docs-updater` is invoked, so
 all subsequent agent commits accumulate in the already-open PR.
