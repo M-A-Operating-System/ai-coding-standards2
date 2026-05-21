@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.coverage
+.venv/
+venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Orchestrator runtime state
+# Written when an Anthropic rate limit is hit; consumed on subsequent
+# ticks to back off. Should never be committed.
+.pipeline-pause
+
+# Local Claude Code settings (developer-specific)
+.claude/settings.local.json
+
+# Claude Code agent worktrees (temporary checkouts used by background agents)
+.claude/worktrees/

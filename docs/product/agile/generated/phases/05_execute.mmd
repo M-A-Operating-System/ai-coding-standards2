@@ -1,0 +1,8 @@
+flowchart TD
+    n_01_product_docs__prd_docs_updater(["↓ prd-docs-updater:approved"])
+    n_05_execute__coder["coder"]
+    n_05_execute__ci_gate("ci-gate")
+    n_05_execute__pr_reviewer["pr-reviewer"]
+    n_01_product_docs__prd_docs_updater --> n_05_execute__coder
+    n_05_execute__coder --> n_05_execute__ci_gate
+    n_05_execute__ci_gate --> n_05_execute__pr_reviewer
