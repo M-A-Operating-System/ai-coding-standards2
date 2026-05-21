@@ -122,6 +122,12 @@
           "default": 0,
           "description": "How many times the orchestrator will re-invoke this step after a :failed outcome before giving up. 0 means no retries (fail immediately)."
         },
+        "max_concurrent": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "default": 1,
+          "description": "Maximum concurrent instances of this agent type across all work items in a single orchestrator tick. The orchestrator counts :wip labels before launching and skips eligible work items once this ceiling is reached. Null or absent means 1 (default). A pipeline-wide aggregate ceiling (see PIPELINE_MAX_CONCURRENT in pipeline_orchestrator.py for the authoritative value) applies across all agent types regardless of per-agent values."
+        },
         "git_ops": {
           "type": "object",
           "description": "Declares that this agent produces file output the orchestrator should commit, push, and optionally open a PR for. Absent means the agent does not produce file output.",

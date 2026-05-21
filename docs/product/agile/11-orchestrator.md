@@ -124,6 +124,12 @@ for each work item (issue or PR):
         if not dependencies_complete(labels, agent_def):
             skip                          ← upstream agents / gates not yet done
 
+        if running_count(agent_def.agent) >= agent_def.max_concurrent:
+            skip                          ← per-agent concurrency ceiling reached
+
+        if tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+            skip                          ← aggregate pipeline ceiling reached for this tick
+
         ← step is eligible
         acquire_mutex(work_item, agent_def)
         # Pre-invocation ceremony
@@ -162,41 +168,9 @@ the final state. Script steps are not retried.
 
 ---
 
-## Concurrency control
-
-The orchestrator enforces two concurrency ceilings per tick to prevent
-unbounded resource consumption when many issues become eligible simultaneously.
-
-**Per-agent ceiling (`max_concurrent`).**
-Each agent definition in `pipeline.json` may specify a `max_concurrent`
-integer (default: `1`). Before launching an agent for a work item, the
-orchestrator counts how many work items already carry that agent's `:wip` label
-(from prior ticks still running) plus how many were launched in the current
-tick. If that total meets or exceeds `max_concurrent`, the agent is skipped for
-this tick and deferred to the next one. The work item is not failed — it retains
-its eligibility and will be picked up as soon as a slot opens.
-
-**Aggregate pipeline ceiling (`PIPELINE_MAX_CONCURRENT`).**
-In addition to the per-agent ceiling, the orchestrator enforces an aggregate
-cap of `PIPELINE_MAX_CONCURRENT` (default: `20`) total agent launches across
-all agent types within a single tick. Once this limit is hit, the remaining
-work items in the tick are deferred silently; a log line records the deferral.
-Dry-run mode respects both ceilings to produce an accurate simulation.
-
-**Concurrency state accounting.**
-At the start of each tick the orchestrator initialises a `ConcurrencyState`
-struct from the live label snapshot: `running_counts` maps each agent's
-`label_key` to the number of work items currently carrying its `:wip` label.
-As agents are launched within the tick, counts are incremented. If a launch
-fails (`:wip` application error) or the agent is rate-limited and its `:wip`
-is removed, the counts are decremented to keep the in-memory ceiling accurate
-for the remainder of the tick.
-
----
-
 ## Eligibility check
 
-An agent is eligible to run when all four conditions hold simultaneously:
+An agent is eligible to run when all six conditions hold simultaneously:
 
 **1. Object match.**
 The agent's `object` array in `pipeline.json` contains the type of the
@@ -232,6 +206,17 @@ Both conditions must hold. A `dep:complete` without its gate label means the
 human gate has not yet been applied; the dependent agent stays ineligible.
 A `dep:skipped` label is treated as equivalent to `dep:complete` — the agent
 was bypassed and downstream work may proceed.
+
+**5. Per-agent concurrency ceiling not reached.**
+The count of all open issues that currently carry `{agent}:wip` (instances
+running from a prior tick) is less than `agent_def.max_concurrent` (default 1
+when the field is absent). When the ceiling is already reached, all remaining
+eligible issues for that agent are deferred to the next tick.
+
+**6. Aggregate pipeline ceiling not reached.**
+The total number of agent instances launched in the current tick is less than
+the pipeline-wide maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value). If this ceiling is reached, all
+remaining eligible work across all agent types is deferred to the next tick.
 
 ---
 
@@ -760,18 +745,27 @@ Options:
 
 ## Concurrency model
 
-**Cross-issue parallelism.** The global `pipeline-orchestrator` concurrency
-group serialises all orchestrator runs globally. Two issues therefore cannot
-advance simultaneously — each run processes all eligible work items in
-sequence and then exits, letting the next queued run start. This is the
-intentional trade-off for correctness: the alternative (per-item concurrency
-groups) recreated the race condition described below.
+**Orchestrator-run serialisation.** The global `pipeline-orchestrator`
+concurrency group serialises all orchestrator *runs* globally — only one
+orchestrator process executes at a time. If a label event fires while a run
+is active, GitHub queues the new run; the queued run starts only after the
+first completes, at which point labels reflect settled state and already-`:wip`
+agents are correctly skipped.
 
-**Intra-item serialisation.** Because the concurrency group is global, if a
-label event fires while a previous run is still executing, GitHub queues the
-new run rather than starting it in parallel. The queued run starts only after
-the first completes; by then labels reflect the settled state of the first
-run, so the second run correctly skips already-`:wip` agents.
+**Per-agent concurrency ceiling.** Within a single orchestrator run, multiple
+agent instances of the same type may be launched for different issues, up to
+the `max_concurrent` value configured in `pipeline.json` (default: 1 when the
+field is absent or null). Before launching an instance, the orchestrator counts
+the number of open issues that currently carry `{agent}:wip` — instances
+running from a prior tick. It starts at most `max_concurrent − running_count`
+additional instances. If the running count already meets or exceeds
+`max_concurrent`, no new instances are launched for that tick; eligible issues
+remain pending until the next tick.
+
+**Aggregate pipeline ceiling.** A pipeline-wide maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value) caps
+the total number of agent instances launched across all agent types in a
+single tick, regardless of per-agent `max_concurrent` values. This prevents
+unbounded resource consumption when many agent types each have large backlogs.
 
 **Scheduled reconciler as backstop.** GitHub Actions keeps at most one pending
 run per concurrency group. If two label events fire in rapid succession while

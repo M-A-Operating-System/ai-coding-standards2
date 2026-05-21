@@ -120,8 +120,8 @@ subsequent agent commits accumulate into. Agents (`prd-docs-updater`,
 `coder`) write files during their run; the orchestrator commits and
 pushes those changes to the branch after the agent signals `complete`
 (`git_ops.commit_after: true`). Reading issues and PRs is allowed,
-but only the orchestrator may create, commit to, or advance the PR. When `pr-reviewer` completes with APPROVE, the
-orchestrator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`).
+but only the orchestrator may create, commit to, or advance the PR. `pr-reviewer` issues `REQUEST_CHANGES` when any Critical, High, or Medium severity finding is present; it issues `APPROVE` only when all findings are Low or Informational severity. When `pr-reviewer` completes with APPROVE, the
+orchestrator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`); when it issues `REQUEST_CHANGES`, the orchestrator automatically re-invokes the coder to address the findings (up to three cycles before requiring human sign-off).
 The linked issue closes automatically on merge via the "Closes #{N}"
 trailer in the PR body; the branch is deleted automatically by GitHub's
 "auto-delete head branches" repo setting.
