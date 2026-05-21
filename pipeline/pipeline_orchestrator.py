@@ -1499,7 +1499,7 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
     if agent_def.session_id_pattern:
         _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
         try:
-            if re.search(r"\{[^}]*[.[]}", agent_def.session_id_pattern):
+            if re.search(r"\{[^}]*[.\[][^}]*\}", agent_def.session_id_pattern):
                 raise ValueError("unsafe attribute/index access in id_pattern")
             sid = _tok_re.sub(
                 lambda m: session_tokens[m.group(1)],
@@ -1938,6 +1938,7 @@ def _apply_failed(
     result: AgentRunResult,
     *,
     reason: str = "",
+    heading: str = "",
 ) -> None:
     """Apply :failed for an agent, clear any other non-terminal status it
     left behind, and post a diagnostic comment that includes the tail
@@ -1987,13 +1988,13 @@ def _apply_failed(
         else "_Posted by the orchestrator after the agent subprocess exited non-zero "
              "without one of the three terminal status calls (set-complete / set-review / set-blocked)._"
     )
-    heading = (
+    _heading = heading or (
         f"### `{agent_def.agent}` completed — post-run step failed"
         if reason
         else f"### `{agent_def.agent}` exited with an error"
     )
     body_parts = [
-        heading,
+        _heading,
         "",
         f"Return code: `{result.returncode if result.returncode is not None else 'unknown'}`",
         "",
@@ -2541,7 +2542,15 @@ def process_work_item(
                     f"{_attempt + 1} attempt(s). Human intervention is required to "
                     f"clear `:failed` and re-trigger._"
                 ) if agent_def.max_retries > 0 else ""
-                _apply_failed(gh, agent_def, work_item, result, reason=_exhaustion_reason)
+                _apply_failed(
+                    gh, agent_def, work_item, result,
+                    reason=_exhaustion_reason,
+                    heading=(
+                        f"### `{agent_def.agent}` failed — retry limit exhausted"
+                        if agent_def.max_retries > 0
+                        else ""
+                    ),
+                )
                 final_status = STATUS_FAILED
                 log.error(
                     "  FAILED  %-38s  after %d attempt(s) on #%d",
