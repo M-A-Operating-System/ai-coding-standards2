@@ -321,6 +321,18 @@ def install_agents(
         dst = dst_dir / rel
         if write_file(dst, src.read_text(), force, dry_run):
             written += 1
+
+    # Remove stale agents that are no longer in the submodule.
+    if dst_dir.is_dir():
+        for dst in sorted(dst_dir.rglob("*.md")):
+            rel = dst.relative_to(dst_dir)
+            if not (src_dir / rel).exists():
+                if dry_run:
+                    print(f"  WOULD REMOVE {dst}  (no longer in submodule)")
+                else:
+                    dst.unlink()
+                    print(f"  REMOVED {dst}  (no longer in submodule)")
+
     return written
 
 
@@ -348,6 +360,17 @@ def install_slash_commands(
             print(f"    (rewriting paths in {src.name})")
         if write_file(dst, rewritten, force, dry_run):
             written += 1
+
+    # Remove stale commands that are no longer in the submodule.
+    if dst_dir.is_dir():
+        for dst in sorted(dst_dir.glob("*.md")):
+            if not (src_dir / dst.name).exists():
+                if dry_run:
+                    print(f"  WOULD REMOVE {dst}  (no longer in submodule)")
+                else:
+                    dst.unlink()
+                    print(f"  REMOVED {dst}  (no longer in submodule)")
+
     return written
 
 

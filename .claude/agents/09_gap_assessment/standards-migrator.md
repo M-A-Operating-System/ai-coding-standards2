@@ -31,20 +31,28 @@ You write only approved rules to `$AI_AGILE_ROOT/standards/`.
 ## Step 0 — Orient
 
 ```bash
-# The parent repo root is one level above the submodule root.
-PARENT_ROOT="$(cd "${AI_AGILE_ROOT:-.}" && cd .. && pwd)"
-echo "AI_AGILE_ROOT : ${AI_AGILE_ROOT:-.}"
-echo "Parent repo   : $PARENT_ROOT"
+# AI_AGILE_ROOT is the consuming repo root (Option A layout).
+# When run via the orchestrator it is set explicitly; fall back to CWD.
+PARENT_ROOT="${AI_AGILE_ROOT:-.}"
+
+# Derive the submodule directory so we can exclude it from knowledge-file
+# searches. AI_AGILE_CONTEXT = $SUBMODULE_ROOT/.claude/AGENTS.md when set
+# by the orchestrator, so two levels up gives us the submodule root.
+if [ -n "${AI_AGILE_CONTEXT:-}" ]; then
+  SUBMODULE_EXCLUDE="$(cd "$(dirname "$AI_AGILE_CONTEXT")/.." && pwd)"
+else
+  # Ad-hoc fallback: exclude the most common submodule name.
+  SUBMODULE_EXCLUDE="${PARENT_ROOT}/ai-coding-standards2"
+fi
+
+echo "Consuming repo : $PARENT_ROOT"
+echo "Excluding      : $SUBMODULE_EXCLUDE"
 
 # Load existing standards so you do not propose rules already covered.
 echo "=== Existing standards ==="
-find "${AI_AGILE_ROOT:-.}/standards" -name "*.json" ! -name "*.schema.json" \
+find "${PARENT_ROOT}/standards" -name "*.json" ! -name "*.schema.json" \
   | sort | while IFS= read -r f; do echo "--- $f ---"; cat "$f"; done
 ```
-
-If `AI_AGILE_ROOT` is unset (running outside the pipeline), default to
-the repository root of the current working directory. Adjust paths
-accordingly.
 
 ---
 
@@ -57,7 +65,7 @@ find "$PARENT_ROOT" \
   -not -path "*/node_modules/*" \
   -not -path "*/__pycache__/*" \
   -not -path "*/.venv/*" \
-  -not -path "${AI_AGILE_ROOT}/*" \
+  -not -path "${SUBMODULE_EXCLUDE}/*" \
   \( \
     -iname "CLAUDE.md" \
     -o -iname "AGENTS.md" \
@@ -79,7 +87,7 @@ find "$PARENT_ROOT" \
 # Secondary: any .md file in a docs/ or .claude/ directory (depth ≤ 3)
 find "$PARENT_ROOT" -maxdepth 3 \
   -not -path "*/.git/*" \
-  -not -path "${AI_AGILE_ROOT}/*" \
+  -not -path "${SUBMODULE_EXCLUDE}/*" \
   \( -path "*/docs/*" -o -path "*/.claude/*" \) \
   -name "*.md" -type f | sort
 ```
