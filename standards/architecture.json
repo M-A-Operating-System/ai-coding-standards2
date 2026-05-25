@@ -1,0 +1,107 @@
+{
+  "$schema": "../pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "category": "architecture",
+  "description": "Code architecture and design standards. Applied by the coder agent during implementation and checked by the pr-reviewer agent against every diff.",
+  "standards": [
+
+    {
+      "id": "STD-ARCH-001",
+      "title": "Reuse before writing new code",
+      "severity": "High",
+      "description": "Before implementing new logic, search the codebase for existing functions, classes, or modules that already solve the same problem or a close approximation of it. Extend existing code rather than duplicating it.",
+      "rationale": "Duplicate logic diverges over time, creates inconsistent behaviour, and multiplies the maintenance surface. The codebase already contains tested, deployed solutions — use them.",
+      "acceptance_criteria": [
+        "No function or method in the diff duplicates logic that is already present in another module at the time of writing.",
+        "If an existing utility solves 80%+ of the need, the diff extends or calls that utility rather than reimplementing the behaviour from scratch.",
+        "Any deliberate duplication includes an inline comment explaining why the existing implementation could not be reused."
+      ],
+      "anti_patterns": [
+        "Copying a block from one module and pasting it with minor edits into another.",
+        "Reimplementing a sort, filter, or transformation already present in a sibling module.",
+        "Creating a new helper that is functionally equivalent to an existing one with a different name."
+      ],
+      "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-ARCH-002",
+      "title": "Abstract only at two concrete call sites",
+      "severity": "Medium",
+      "description": "Do not create helpers, base classes, mixins, decorators, or utility modules unless they have at least two distinct, concrete call sites in the codebase at the time of writing. Three similar lines of code are not sufficient justification for a new abstraction.",
+      "rationale": "Premature abstractions introduce indirection that obscures intent, makes code harder to read, and must be maintained even when requirements change. A duplication that is removed too early often results in an abstraction that fits neither call site well.",
+      "acceptance_criteria": [
+        "Every new function, class, or module introduced in the diff has at least two concrete, distinct call sites visible in the repo at the time the PR is written.",
+        "New base classes and mixins have at least two concrete subclasses in the diff or the existing codebase.",
+        "New decorator or wrapper functions are applied to at least two target functions in the diff or existing codebase."
+      ],
+      "anti_patterns": [
+        "A helper function called only once.",
+        "A base class with exactly one subclass.",
+        "A utility module with a single export used by a single caller.",
+        "Extracting a two-line block into a named function 'for readability' when the block is only used once."
+      ],
+      "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-ARCH-003",
+      "title": "No speculative generality",
+      "severity": "Medium",
+      "description": "Do not add parameters, configuration options, plugin hooks, strategy objects, or extension points for anticipated future requirements that have no current specification in the product docs or active issues. Solve the problem as stated, not a generalised version of it.",
+      "rationale": "Speculative features are never free — they add complexity, surface area for bugs, and cognitive load for future readers, even if they are never actually used. YAGNI (You Aren't Gonna Need It) applies to every layer of the stack.",
+      "acceptance_criteria": [
+        "Every parameter, config key, and extension point introduced in the diff is exercised by at least one real call site in the same diff or existing codebase.",
+        "Optional parameters whose only caller always passes the default value are removed or never introduced.",
+        "No code path exists in the diff that is not reachable from any call site present at the time of writing.",
+        "Abstract base classes, interfaces, and protocols are only introduced when multiple concrete implementations exist or are required by the current issue's acceptance criteria."
+      ],
+      "anti_patterns": [
+        "Adding a `strategy=` or `backend=` parameter with only one value ever passed.",
+        "A plugin registry or hook system with zero registered plugins in the diff.",
+        "A config flag that is always `True` or always `False` at every call site.",
+        "An abstract method defined 'for future subclasses' with no current implementation."
+      ],
+      "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-ARCH-004",
+      "title": "Implementations scope to stated acceptance criteria",
+      "severity": "Medium",
+      "description": "Every line of new behaviour in a diff must be traceable to an acceptance criterion in the approved PRD, an existing standard in this file, or an approved ADR. Behaviour that is not required by any of these sources must not be introduced.",
+      "rationale": "Out-of-scope additions bypass product approval gates, make PRs harder to review, and risk introducing untested behaviour into production. Scope creep in code is the dual of scope creep in planning.",
+      "acceptance_criteria": [
+        "For each new behaviour visible in the diff, the coder can cite the PRD acceptance criterion, STD ID, or ADR ID that requires it.",
+        "No new user-visible behaviour (API surface, config keys, labels, log output) exists in the diff without a corresponding PRD acceptance criterion.",
+        "New constants, flags, and configuration fields introduced for a current feature are marked clearly as belonging to that feature, not designed as general infrastructure."
+      ],
+      "anti_patterns": [
+        "Adding concurrency controls when the issue only asks for retry logic.",
+        "Introducing a metrics endpoint when the issue asks for a config change.",
+        "Adding a CLI flag 'while we're here' that is not in the PRD."
+      ],
+      "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-ARCH-005",
+      "title": "Keep functions and modules focused",
+      "severity": "Low",
+      "description": "Functions should do one thing. Modules should own one concern. When a function grows beyond approximately 40 lines or handles more than one distinct responsibility, split it. When a module imports from more than two unrelated domains, consider splitting it.",
+      "rationale": "Small, focused units are easier to test, easier to reuse, and easier to reason about. Long functions with multiple responsibilities are the primary source of hidden coupling.",
+      "acceptance_criteria": [
+        "No new function in the diff exceeds 50 lines (excluding docstring and blank lines) unless the lines are a single flat sequence with no branching — e.g. a long match/switch statement.",
+        "Functions introduced in the diff have a single clearly-stated purpose that can be described in one sentence without using 'and'.",
+        "No module introduced in the diff imports from more than three unrelated domains at the same abstraction level."
+      ],
+      "anti_patterns": [
+        "A function named `process_and_validate_and_save()`.",
+        "A 200-line function containing distinct phases separated by blank lines and comments.",
+        "A module that is both a data model and a network client."
+      ],
+      "applies_to": ["coder", "pr-reviewer"]
+    }
+
+  ]
+}
