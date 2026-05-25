@@ -126,6 +126,28 @@
         "Leaving a `pass` or `raise NotImplementedError` in a method that is called in the current execution path."
       ],
       "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-ARCH-007",
+      "title": "Do not open issues for work that can be done in the current PR",
+      "severity": "High",
+      "description": "Agents must not file new GitHub issues as a substitute for doing work that is within their current scope. If a defect, missing test, incomplete implementation, or related improvement is small enough to be resolved inside the current PR, resolve it there. Creating a new issue is only justified when the work requires a separate product decision, a different owner, a human gate, or a scope that is genuinely outside the current issue's acceptance criteria.",
+      "rationale": "Issue creation is not free. Every new issue added to the backlog consumes triage time, clutters the pipeline, and is statistically unlikely to be resolved — most small 'follow-up' issues are never actioned. Agents that defer solvable work into new issues are shifting cost onto humans and future pipeline runs. The backlog should contain work that cannot be done now, not work that an agent chose not to do.",
+      "acceptance_criteria": [
+        "No new GitHub issue is created by an agent for a defect or gap that is visible in the current diff and resolvable within the current issue's acceptance criteria.",
+        "No new GitHub issue is created for work that would be completed in fewer than 30 lines of code and has no dependency on a human gate or external decision.",
+        "When an agent creates a new issue, the PR description explains specifically why the work cannot be done inline and what external dependency or decision blocks it.",
+        "Agents do not split a single coherent feature into multiple issues to reduce the scope of their current run."
+      ],
+      "anti_patterns": [
+        "Opening a 'follow-up' issue for a missing test when the test could be written in the current PR.",
+        "Creating an issue titled 'Clean up X' for code touched in the current diff.",
+        "Filing an issue for a one-line bug fix found while implementing the current feature.",
+        "Splitting 'implement feature' and 'document feature' into separate issues when documentation is an acceptance criterion of the feature.",
+        "Creating a placeholder issue with no acceptance criteria as a way to acknowledge tech debt without fixing it."
+      ],
+      "applies_to": ["coder", "pr-reviewer", "issue-classifier"]
     }
 
   ]
