@@ -6,23 +6,34 @@ This script is run ONCE after `git submodule add ...` has placed this
 repo at `<consuming-repo>/ai-coding-standards2/`. It:
 
   1. Verifies it's running from inside the submodule of a consuming repo.
-  2. Creates the consuming repo's `.claude/` directory (Claude Code's
-     local config) and copies the slash commands from this submodule
-     into it, rewriting any submodule-relative paths so they resolve
-     from the consuming repo's root.
-  3. Drops the orchestrator workflow into the consuming repo's
+  2. Copies the agent prompts from this submodule's .claude/agents/ into
+     the consuming repo's .claude/agents/, preserving subdirectory
+     structure. Agents use $AI_AGILE_ROOT for all paths so no rewriting
+     is needed.
+  3. Creates the consuming repo's `.claude/commands/` directory and
+     copies the slash commands from this submodule into it, rewriting
+     any submodule-relative paths so they resolve from the consuming
+     repo's root.
+  4. Drops the orchestrator workflow into the consuming repo's
      `.github/workflows/orchestrator.yml`. (GitHub Actions cannot pick
      up workflows from submodules; the consuming repo's own workflow
      dir is the only place they can run from.)
-  4. Writes `.claude/settings.local.json` setting AI_AGILE_ROOT so
+  5. Drops the daily .claude sync workflow into the consuming repo's
+     `.github/workflows/sync-claude.yml`. This workflow re-runs this
+     script with --force every day to prevent agent/command drift.
+  6. Writes `.claude/settings.local.json` setting AI_AGILE_ROOT so
      anyone running the orchestrator manually from the consuming repo
      gets the right paths.
-  5. Prints a short follow-up checklist (set ANTHROPIC_API_KEY,
+  7. Prints a short follow-up checklist (set ANTHROPIC_API_KEY,
      bootstrap labels, open a test issue).
 
 Run from the consuming repo's root:
 
     python ai-coding-standards2/get_started.py
+
+Re-run with --force after updating the submodule to pick up new agents,
+commands, and workflow changes. The sync-claude.yml workflow does this
+automatically every day.
 
 Options:
     --force      Overwrite existing files in the consuming repo
@@ -244,6 +255,36 @@ def rewrite_paths(text: str) -> str:
     return out
 
 
+def install_agents(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    """Copy .claude/agents/ from the submodule into the consuming repo.
+
+    Preserves the full subdirectory structure (01_product_docs/,
+    05_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
+    so no path rewriting is needed — they are copied verbatim.
+
+    Returns the number of files written.
+    """
+    src_dir = SUBMODULE_ROOT / ".claude" / "agents"
+    dst_dir = consuming_root / ".claude" / "agents"
+
+    if not src_dir.is_dir():
+        print(f"  SKIP   agents  ({src_dir} missing)")
+        return 0
+
+    print(f"  Agents: {src_dir} → {dst_dir}")
+    written = 0
+    for src in sorted(src_dir.rglob("*.md")):
+        rel = src.relative_to(src_dir)
+        dst = dst_dir / rel
+        if write_file(dst, src.read_text(), force, dry_run):
+            written += 1
+    return written
+
+
 def install_slash_commands(
     consuming_root: Path,
     force: bool,
@@ -298,6 +339,22 @@ def install_label_cleanup_workflow(
     return write_file(dst, content, force, dry_run)
 
 
+def install_sync_workflow(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> bool:
+    """Copy sync-claude.yml into the consuming repo with paths rewritten."""
+    src = SUBMODULE_ROOT / ".github" / "workflows" / "sync-claude.yml"
+    dst = consuming_root / ".github" / "workflows" / "sync-claude.yml"
+    if not src.exists():
+        print(f"  SKIP   sync-claude workflow  ({src} missing)")
+        return False
+    print(f"  Sync-claude workflow: → {dst}")
+    content = rewrite_paths(src.read_text())
+    return write_file(dst, content, force, dry_run)
+
+
 def install_local_settings(
     consuming_root: Path,
     force: bool,
@@ -334,8 +391,16 @@ def print_followup(consuming_root: Path) -> None:
     print(f"  2. Commit the new files:")
     print(f"     git add .github/workflows/orchestrator.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
-    print(f"             .claude/")
+    print(f"             .github/workflows/sync-claude.yml \\")
+    print(f"             .claude/agents/ \\")
+    print(f"             .claude/commands/")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
+    print()
+    print(f"     NOTE: do NOT commit .claude/settings.local.json — it is")
+    print(f"     developer-local. Add it to your .gitignore if not already.")
+    print(f"     The sync-claude.yml workflow re-syncs agents and commands")
+    print(f"     automatically every day; re-run get_started.py --force after")
+    print(f"     updating the submodule to pick up changes immediately.")
     print()
     print(f"  3. Bootstrap the {{agent}}:{{status}} labels:")
     print(f"     Trigger the orchestrator workflow manually once from")
@@ -381,6 +446,8 @@ def main() -> int:
 
     install_orchestrator_workflow(consuming_root, args.force, args.dry_run)
     install_label_cleanup_workflow(consuming_root, args.force, args.dry_run)
+    install_sync_workflow(consuming_root, args.force, args.dry_run)
+    install_agents(consuming_root, args.force, args.dry_run)
     install_slash_commands(consuming_root, args.force, args.dry_run)
     install_local_settings(consuming_root, args.force, args.dry_run)
 

@@ -1,0 +1,70 @@
+name: Sync AI Agile .claude directory
+
+# Keeps the consuming repo's .claude/agents/ and .claude/commands/ in
+# sync with whatever version of the ai-coding-standards2 submodule is
+# currently pinned. Runs daily to catch any manual edits that have
+# drifted from the submodule source, and can be triggered on demand.
+#
+# This workflow is installed into consuming repos by get_started.py.
+# Do NOT edit it directly in the consuming repo — edit the source at
+# ai-coding-standards2/.github/workflows/sync-claude.yml and re-run
+# get_started.py --force (or wait for the next daily sync).
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-claude
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Sync .claude from ai-coding-standards2 submodule
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          # Use AI_AGILE_BOT_TOKEN so the commit is attributed to the bot
+          # and so branch-protection rules that block GITHUB_TOKEN pushes
+          # are bypassed. Falls back to GITHUB_TOKEN if the secret is absent.
+          token: ${{ secrets.AI_AGILE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync agents, commands, and workflows
+        # --force overwrites any files that have drifted from the submodule.
+        # settings.local.json is written to disk but not staged below, so it
+        # is never accidentally committed.
+        run: python ai-coding-standards2/get_started.py --force
+
+      - name: Commit and push if anything changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage only the managed directories; deliberately exclude
+          # .claude/settings.local.json (developer-local, must not be committed).
+          git add \
+            .claude/agents/ \
+            .claude/commands/ \
+            .github/workflows/orchestrator.yml \
+            .github/workflows/label-cleanup.yml \
+            .github/workflows/sync-claude.yml
+
+          if git diff --cached --quiet; then
+            echo "✓ .claude is already in sync with the submodule — nothing to commit."
+          else
+            git commit -m "chore: sync .claude and workflows from ai-coding-standards2 submodule"
+            git push origin HEAD
+          fi
