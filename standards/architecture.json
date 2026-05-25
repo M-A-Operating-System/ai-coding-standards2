@@ -101,6 +101,31 @@
         "A module that is both a data model and a network client."
       ],
       "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-ARCH-006",
+      "title": "Fix now, not later — no deferred small defects",
+      "severity": "High",
+      "description": "If a defect, inconsistency, dead code path, stale comment, incorrect type annotation, or other small correctness issue is visible while working on a diff, fix it in the same PR rather than deferring it. Do not introduce or perpetuate TODO/FIXME markers for issues that can be resolved immediately. Apply the Boy Scout Rule: leave every file you touch at least as clean as you found it.",
+      "rationale": "Small deferred items compound. A codebase full of acknowledged-but-unresolved defects degrades reviewer confidence, slows onboarding, and creates a ratchet where each PR adds more debt than it removes. The cheapest time to fix a defect is when you are already reading the affected code. Deferral is only justified when the fix requires a separate product decision or architectural change that is genuinely out of scope for the current issue.",
+      "acceptance_criteria": [
+        "No TODO or FIXME comment is introduced in the diff unless it references an open issue number (e.g. '# TODO(#123)') and the linked issue is created before the PR is merged.",
+        "Existing TODO/FIXME comments in files touched by the diff are either resolved inline or converted to tracked issues — they are not left as-is.",
+        "Dead code (unreachable branches, unused imports, unused variables) visible in files touched by the diff is removed rather than left in place.",
+        "Stale inline comments that describe behaviour that no longer exists are removed or corrected.",
+        "Type annotations that are visibly wrong or missing on functions touched by the diff are corrected.",
+        "A fix is only deferred when the coder documents in the PR description exactly why it cannot be resolved in this PR and links a follow-up issue."
+      ],
+      "anti_patterns": [
+        "Adding '# TODO: clean this up later' without an issue number.",
+        "Leaving an unreachable `else` branch in a function you are modifying.",
+        "Removing a feature but leaving its import and dead helper function.",
+        "Correcting a bug in one call site but leaving identical buggy code in the sibling call site in the same file.",
+        "Commenting out code instead of deleting it.",
+        "Leaving a `pass` or `raise NotImplementedError` in a method that is called in the current execution path."
+      ],
+      "applies_to": ["coder", "pr-reviewer"]
     }
 
   ]
