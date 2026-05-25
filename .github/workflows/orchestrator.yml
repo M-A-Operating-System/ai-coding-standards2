@@ -87,6 +87,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           GIT_TRACE: "1"
+          # Consuming repo root — agents resolve $AI_AGILE_ROOT/standards/
+          # and $AI_AGILE_ROOT/.claude/agents/ from here.
+          AI_AGILE_ROOT: ${{ github.workspace }}
           # ci-gate uses this to exclude all orchestrator check runs from its poll.
           # List every job display name in this workflow (newline-separated).
           # The live-query fallback in ci-gate.sh keeps this in sync automatically,

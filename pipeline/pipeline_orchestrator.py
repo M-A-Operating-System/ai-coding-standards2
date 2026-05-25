@@ -97,14 +97,12 @@ TERMINAL_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED}
 STATUSES_JSON = Path(__file__).parent / "statuses.json"
 
 # Submodule root — the directory containing this repo's .github/ and
-# pipeline/. When installed as a submodule, it is the submodule's root,
-# not the consuming repo's root. Used to locate status.sh and agent
-# prompt files. Override with $AI_AGILE_ROOT for non-standard layouts.
-SUBMODULE_ROOT = (
-    Path(os.environ["AI_AGILE_ROOT"]).resolve()
-    if os.environ.get("AI_AGILE_ROOT")
-    else Path(__file__).resolve().parent.parent
-)
+# pipeline/. Always derived from __file__ so it reliably points at the
+# submodule regardless of where the consuming repo mounts it.
+# Do NOT derive from AI_AGILE_ROOT: that env var now points at the
+# consuming repo root (where standards/ and .claude/ live after sync),
+# which is a different directory when installed as a submodule.
+SUBMODULE_ROOT = Path(__file__).resolve().parent.parent
 
 def load_statuses() -> list[dict]:
     """Load status definitions from statuses.json. Exits if file is missing or malformed."""
@@ -1395,7 +1393,7 @@ def invoke_script(
     agent_env = {
         **os.environ,
         "STATUS_SH":        str(STATUS_SH),
-        "AI_AGILE_ROOT":    str(SUBMODULE_ROOT),
+        "AI_AGILE_ROOT":    os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO":             repo,
         "WORK_ITEM_KIND":   work_item.kind,
@@ -1679,7 +1677,7 @@ def invoke_agent(
     # work item's kind, so the agent's prompt cannot get them confused.
     agent_env = {
         **os.environ,
-        "AI_AGILE_ROOT": str(SUBMODULE_ROOT),
+        "AI_AGILE_ROOT": os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO": repo,
         "WORK_ITEM_KIND": work_item.kind,

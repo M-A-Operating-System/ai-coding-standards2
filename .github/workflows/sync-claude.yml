@@ -55,7 +55,11 @@ jobs:
 
           # Stage only the managed directories; deliberately exclude
           # .claude/settings.local.json (developer-local, must not be committed).
+          # standards/ contains the synced base standards plus any project-specific
+          # files; the sync only overwrites files that exist in the submodule so
+          # project-specific additions are never deleted.
           git add \
+            standards/ \
             .claude/agents/ \
             .claude/commands/ \
             .github/workflows/orchestrator.yml \
