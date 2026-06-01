@@ -65,7 +65,9 @@ if [[ -f "$STATUSES_JSON" ]] && command -v python3 &>/dev/null; then
 import json, sys
 data = json.load(open(sys.argv[1]))
 for s in data["statuses"]:
-    print(f"{s['status']}\t{s['colour']}\t{s['description']}")
+    # Replace any tabs in description so the bash `read` field-split is safe.
+    desc = s['description'].replace('\t', ' ')
+    print(f"{s['status']}\t{s['colour']}\t{desc}")
 PYEOF
 )
 fi

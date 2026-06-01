@@ -1718,7 +1718,13 @@ def invoke_agent(
         deadline = time.monotonic() + AGENT_TIMEOUT_SECONDS
         # Wall-clock timer fires unconditionally — unlike the per-line check
         # below, it also fires when the agent hangs without emitting output.
-        _kill_timer = threading.Timer(AGENT_TIMEOUT_SECONDS, _terminate_subprocess, args=(proc,))
+        # _timed_out lets the loop raise TimeoutExpired with a clear message
+        # even when stdout goes silent (no lines arrive to trigger the check).
+        _timed_out = threading.Event()
+        def _timer_callback() -> None:
+            _timed_out.set()
+            _terminate_subprocess(proc)
+        _kill_timer = threading.Timer(AGENT_TIMEOUT_SECONDS, _timer_callback)
         _kill_timer.daemon = True
         _kill_timer.start()
         try:
@@ -1746,7 +1752,7 @@ def invoke_agent(
                         # Non-JSON line from the CLI (startup messages, etc.);
                         # include as plain text so diagnostics remain readable.
                         agent_text_parts.append(line.rstrip("\n"))
-                if time.monotonic() > deadline:
+                if time.monotonic() > deadline or _timed_out.is_set():
                     raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
