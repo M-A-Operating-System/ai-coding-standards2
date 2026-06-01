@@ -13,7 +13,7 @@ permissions:
   issues: write
 
 jobs:
-  prune-labels:
+  ai-standards-label-cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

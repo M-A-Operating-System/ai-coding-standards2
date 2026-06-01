@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  sync:
+  ai-standards-sync:
     name: Sync .claude from ai-coding-standards2 submodule
     runs-on: ubuntu-latest
 

@@ -88,7 +88,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  orchestrate:
+  ai-standards-orchestrator:
     name: Evaluate pipeline state
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -152,7 +152,7 @@ jobs:
             --verbose \\
             ${{ steps.args.outputs.args }}
 
-  bootstrap-labels:
+  ai-standards-setup-labels:
     name: Bootstrap pipeline labels
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'

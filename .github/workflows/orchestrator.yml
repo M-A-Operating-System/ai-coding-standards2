@@ -36,7 +36,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  orchestrate:
+  ai-standards-orchestrator:
     name: Evaluate pipeline state
     runs-on: ubuntu-latest
     timeout-minutes: 120
