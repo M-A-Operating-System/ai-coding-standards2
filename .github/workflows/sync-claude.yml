@@ -63,6 +63,7 @@ jobs:
             .claude/agents/ \
             .claude/commands/ \
             .github/workflows/orchestrator.yml \
+            .github/workflows/bootstrap-labels.yml \
             .github/workflows/label-cleanup.yml \
             .github/workflows/sync-claude.yml
 

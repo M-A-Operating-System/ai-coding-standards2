@@ -53,123 +53,6 @@ from pathlib import Path
 SUBMODULE_NAME = "ai-coding-standards2"
 SUBMODULE_ROOT = Path(__file__).resolve().parent
 
-# The orchestrator workflow content — kept inline so a fresh consumer
-# repo gets a known-good copy without relying on a separate template
-# file. Update this when the canonical workflow at
-# .github/workflows/orchestrator.yml in this repo changes.
-ORCHESTRATOR_WORKFLOW_TEMPLATE = """\
-name: AI Agile orchestrator
-
-on:
-  issues:
-    types: [opened, reopened, labeled, unlabeled]
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
-  schedule:
-    - cron: '*/15 6-20 * * 1-5'  # Every 15 min, 06:00–20:00 UTC, weekdays
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: 'Process a single issue/PR number (leave blank for all)'
-        required: false
-      dry_run:
-        description: 'Dry run — show what would trigger without executing'
-        type: boolean
-        default: false
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  checks: read
-
-concurrency:
-  group: pipeline-orchestrator
-  cancel-in-progress: false
-
-jobs:
-  ai-standards-orchestrator:
-    name: Evaluate pipeline state
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Build orchestrator args
-        id: args
-        env:
-          ISSUE_INPUT: ${{ github.event.inputs.issue_number }}
-        run: |
-          ARGS=""
-
-          [[ "$ISSUE_INPUT" =~ ^[0-9]*$ ]] || { echo "ERROR: issue_number must be a positive integer" >&2; exit 1; }
-
-          if [ -n "$ISSUE_INPUT" ]; then
-            ARGS="$ARGS --issue $ISSUE_INPUT"
-          elif [ "${{ github.event_name }}" = "issues" ]; then
-            ARGS="$ARGS --issue ${{ github.event.issue.number }} --kind issue"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS="$ARGS --issue ${{ github.event.pull_request.number }} --kind pr"
-          fi
-
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            ARGS="$ARGS --dry-run"
-          fi
-
-          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
-
-      - name: Run orchestrator
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
-          GIT_TRACE: "1"
-          # Consuming repo root — agents resolve $AI_AGILE_ROOT/standards/
-          # and $AI_AGILE_ROOT/.claude/agents/ from here.
-          AI_AGILE_ROOT: ${{ github.workspace }}
-          # ci-gate uses this to exclude orchestrator check runs from its poll.
-          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
-        run: |
-          python ai-coding-standards2/pipeline/pipeline_orchestrator.py \\
-            --repo "$GITHUB_REPOSITORY" \\
-            --verbose \\
-            ${{ steps.args.outputs.args }}
-
-  ai-standards-setup-labels:
-    name: Bootstrap pipeline labels
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Bootstrap labels
-        env:
-          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \\
-            ai-coding-standards2/pipeline/pipeline.json
-"""
-
 
 # Path-rewrite rules applied to slash command markdown when copying
 # from the submodule into the consuming repo's .claude/. Each rule is
@@ -287,7 +170,11 @@ def install_standards(
         if src.name.endswith(".schema.json"):
             continue
         dst = dst_dir / src.name
-        if write_file(dst, src.read_text(), force, dry_run):
+        content = src.read_text().replace(
+            '"../pipeline/schemas/standards.schema.json"',
+            f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
+        )
+        if write_file(dst, content, force, dry_run):
             written += 1
     return written
 
@@ -372,15 +259,69 @@ def install_slash_commands(
     return written
 
 
+def _add_submodules_to_checkout(content: str) -> str:
+    """Insert 'submodules: true' into every bare actions/checkout step.
+
+    The standalone orchestrator.yml omits submodules: true because this
+    repo IS the submodule. Consuming repos need it to check out the
+    ai-coding-standards2 submodule at workflow runtime.
+
+    Handles both named form ('- name: Checkout\\n  uses: ...') and
+    shorthand form ('- uses: actions/checkout@...') in YAML steps.
+    Already-expanded steps (with: block present) are left untouched.
+    """
+    # Named form: the uses: line sits one level deeper than the name: line.
+    # Capture the indent of the uses: line to align with: correctly.
+    content = re.sub(
+        r"(- name: Checkout\n([ \t]+)uses: actions/checkout@[^\n]+\n)"
+        r"(?![ \t]+with:)",
+        r"\1\2with:\n\2  submodules: true\n",
+        content,
+    )
+    # Shorthand form: "- uses: actions/checkout@..." with no name: line.
+    # Capture the indent of the dash to derive the correct with: indent.
+    content = re.sub(
+        r"([ \t]+)(- uses: actions/checkout@[^\n]+\n)(?![ \t]+with:)",
+        lambda m: (
+            m.group(0)
+            + m.group(1) + "  with:\n"
+            + m.group(1) + "    submodules: true\n"
+        ),
+        content,
+    )
+    return content
+
+
 def install_orchestrator_workflow(
     consuming_root: Path,
     force: bool,
     dry_run: bool,
 ) -> bool:
-    """Drop the orchestrator workflow into the consuming repo."""
+    """Copy orchestrator.yml into the consuming repo with paths rewritten."""
+    src = SUBMODULE_ROOT / ".github" / "workflows" / "orchestrator.yml"
     dst = consuming_root / ".github" / "workflows" / "orchestrator.yml"
+    if not src.exists():
+        print(f"  SKIP   orchestrator workflow  ({src} missing)")
+        return False
     print(f"  Orchestrator workflow: → {dst}")
-    return write_file(dst, ORCHESTRATOR_WORKFLOW_TEMPLATE, force, dry_run)
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    return write_file(dst, content, force, dry_run)
+
+
+def install_bootstrap_labels_workflow(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> bool:
+    """Copy bootstrap-labels.yml into the consuming repo with paths rewritten."""
+    src = SUBMODULE_ROOT / ".github" / "workflows" / "bootstrap-labels.yml"
+    dst = consuming_root / ".github" / "workflows" / "bootstrap-labels.yml"
+    if not src.exists():
+        print(f"  SKIP   bootstrap-labels workflow  ({src} missing)")
+        return False
+    print(f"  Bootstrap-labels workflow: → {dst}")
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    return write_file(dst, content, force, dry_run)
 
 
 def install_label_cleanup_workflow(
@@ -451,6 +392,7 @@ def print_followup(consuming_root: Path) -> None:
     print()
     print(f"  2. Commit the new files:")
     print(f"     git add .github/workflows/orchestrator.yml \\")
+    print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
     print(f"             .claude/agents/ \\")
@@ -509,6 +451,7 @@ def main() -> int:
     print()
 
     install_orchestrator_workflow(consuming_root, args.force, args.dry_run)
+    install_bootstrap_labels_workflow(consuming_root, args.force, args.dry_run)
     install_label_cleanup_workflow(consuming_root, args.force, args.dry_run)
     install_sync_workflow(consuming_root, args.force, args.dry_run)
     install_standards(consuming_root, args.force, args.dry_run)
