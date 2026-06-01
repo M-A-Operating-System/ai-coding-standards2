@@ -1879,13 +1879,10 @@ def promote_gated_agents(
         # Standard promotion: gate applied while agent is in :review.
         if gate_present and review_present:
             try:
-                # Add :complete first. If we crash here, next tick sees
-                # both labels — the agent_status() check returns
-                # :complete (it's checked first in ALL_STATUSES iteration
-                # order? actually ordering isn't guaranteed in a set; the
-                # invariant we need is the agent is treated as done).
-                # Below we also handle the cleanup case where both are
-                # present from a previous interrupted promotion.
+                # Add :complete first so a crash between add and remove
+                # leaves the issue with both labels; the next tick sees
+                # :complete and treats the agent as done regardless of
+                # :review still being present.
                 if not complete_present:
                     gh.add_label(work_item.number, complete_label)
                     updated.add(complete_label)
@@ -2017,25 +2014,23 @@ def _apply_failed(
 def _configure_git_auth() -> None:
     """Ensure all git operations use GITHUB_TOKEN for the lifetime of this process.
 
-    actions/checkout injects GITHUB_TOKEN via http.extraheader. We also embed
-    the token directly in the remote URL so git has a consistent credential
-    regardless of whether the extraheader is present. This gives the orchestrator
-    `contents: write` access (push to any non-workflow branch).
+    Sets http.https://github.com/.extraHeader globally so every git operation
+    in this process authenticates with GITHUB_TOKEN (contents:write scope).
+    The token is never embedded in a URL, keeping it out of `git remote -v`,
+    `ps`, and CI logs.
 
     NOTE: GITHUB_TOKEN cannot push .github/workflows/ files — that requires
     a classic PAT with `repo` + `workflow` scopes. _run_commit_after detects
-    staged workflow files and switches to AI_AGILE_BOT_TOKEN for that push.
+    staged workflow files and uses AI_AGILE_BOT_TOKEN via GIT_CONFIG env vars
+    for those pushes.
     """
-    import subprocess as _sg
     github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not github_token:
         log.warning("git auth: no GITHUB_TOKEN found — git push may fail")
         return
 
     try:
-        # Use http.extraHeader so the token is never embedded in a URL
-        # that appears in `git remote -v`, `ps`, or CI logs.
-        _sg.run(
+        subprocess.run(
             ["git", "config", "--global",
              "http.https://github.com/.extraHeader",
              f"Authorization: Bearer {github_token}"],
@@ -2053,10 +2048,10 @@ def _configure_git_auth() -> None:
         else:
             log.info(
                 "git auth: AI_AGILE_BOT_TOKEN is present — "
-                "will be used for pushes that include .github/workflows/ files."
+                "will be used via GIT_CONFIG env vars for pushes that include .github/workflows/ files."
             )
     except Exception as exc:
-        log.warning("git auth: could not configure GITHUB_TOKEN — %s", exc)
+        log.warning("git auth: could not configure http.extraHeader — %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -2072,13 +2067,11 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
     Returns True on success (including the no-changes case), False if any
     git operation fails. On False the caller should mark the step :failed.
     """
-    import subprocess as _sp
-
     branch = f"issue-{work_item.number}"
 
     try:
         # Check working tree for any changes (untracked or modified).
-        dirty = _sp.run(
+        dirty = subprocess.run(
             ["git", "status", "--porcelain"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
@@ -2094,47 +2087,47 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             agent_def.agent, work_item.number, branch,
         )
 
-        _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-        _sp.run(["git", "config", "user.name",  "github-actions[bot]"], check=True)
+        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+        subprocess.run(["git", "config", "user.name",  "github-actions[bot]"], check=True)
 
         # Stash all working-tree changes (staged + unstaged + untracked),
         # switch to the issue branch, pop the stash, then commit and push.
-        current = _sp.run(
+        current = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
 
         stashed = False
         try:
-            _sp.run(["git", "stash", "push", "--include-untracked", "-m",
+            subprocess.run(["git", "stash", "push", "--include-untracked", "-m",
                      f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
             stashed = True
             log.info("  commit_after: stashed working-tree changes")
 
-            _sp.run(["git", "fetch", "origin", branch], check=True)
+            subprocess.run(["git", "fetch", "origin", branch], check=True)
             # Reset local branch to exactly match remote so that git push is
             # always a fast-forward. Without this, a stale local branch (e.g.
             # one that pre-dates commits from an earlier agent like prd-docs-
             # updater) causes a rejected non-fast-forward push.
-            _sp.run(["git", "checkout", "-B", branch, f"origin/{branch}"], check=True)
+            subprocess.run(["git", "checkout", "-B", branch, f"origin/{branch}"], check=True)
 
             # Identify which files the agent wrote before popping the stash,
             # so we add only those files (not any unrelated working-tree noise).
-            stash_files = _sp.run(
+            stash_files = subprocess.run(
                 ["git", "stash", "show", "--name-only"],
                 capture_output=True, text=True, check=True,
             ).stdout.strip().splitlines()
-            _sp.run(["git", "stash", "pop"], check=True)
+            subprocess.run(["git", "stash", "pop"], check=True)
 
             if stash_files:
-                _sp.run(["git", "add", "--"] + stash_files, check=True)
+                subprocess.run(["git", "add", "--"] + stash_files, check=True)
             else:
-                _sp.run(["git", "add", "-A"], check=True)
+                subprocess.run(["git", "add", "-A"], check=True)
 
             # Detect workflow files — GITHUB_TOKEN cannot push them.
             # If AI_AGILE_BOT_TOKEN is available (classic PAT with repo+workflow
-            # scope), temporarily swap the remote URL to use it for this push.
-            workflow_files = _sp.run(
+            # scope), pass it via GIT_CONFIG env vars for this push only.
+            workflow_files = subprocess.run(
                 ["git", "diff", "--cached", "--name-only", "--", ".github/workflows/"],
                 capture_output=True, text=True, check=True,
             ).stdout.strip()
@@ -2143,7 +2136,7 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                 if bot_token:
                     log.info(
                         "  commit_after: workflow files staged (%s) — "
-                        "switching remote URL to AI_AGILE_BOT_TOKEN for this push",
+                        "using AI_AGILE_BOT_TOKEN via GIT_CONFIG env vars for this push",
                         workflow_files.replace("\n", ", "),
                     )
                 else:
@@ -2156,7 +2149,7 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                     )
 
             # Guard: nothing staged → skip (agent found nothing to update).
-            staged = _sp.run(["git", "diff", "--cached", "--quiet"])
+            staged = subprocess.run(["git", "diff", "--cached", "--quiet"])
             if staged.returncode == 0:
                 log.info(
                     "  commit_after: stash popped but staging area empty — skipping commit for %s",
@@ -2171,7 +2164,7 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                 "10_tech_debt": "refactor",
             }.get(agent_def.phase, "chore")
             msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
-            _sp.run(["git", "commit", "-m", msg], check=True)
+            subprocess.run(["git", "commit", "-m", msg], check=True)
 
             # Use AI_AGILE_BOT_TOKEN for the push when workflow files are staged,
             # since GITHUB_TOKEN lacks the workflow scope required by GitHub.
@@ -2185,9 +2178,9 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                     "GIT_CONFIG_KEY_0": "http.https://github.com/.extraHeader",
                     "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {push_token}",
                 }
-                _sp.run(["git", "push", "origin", branch], check=True, env=push_env)
+                subprocess.run(["git", "push", "origin", branch], check=True, env=push_env)
             else:
-                _sp.run(["git", "push", "origin", branch], check=True)
+                subprocess.run(["git", "push", "origin", branch], check=True)
 
             log.info("  commit_after: pushed commit to %s", branch)
             return True
@@ -2196,18 +2189,18 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             # Always return to the original branch so the orchestrator's
             # subsequent git operations (if any) run in the expected state.
             try:
-                _sp.run(["git", "checkout", current], check=False)
+                subprocess.run(["git", "checkout", current], check=False)
             except Exception:
                 pass
             # Drop any stash entry that is still on the stack (i.e. if
             # git stash pop was never reached due to an earlier exception).
             if stashed:
                 try:
-                    _sp.run(["git", "stash", "drop"], check=False)
+                    subprocess.run(["git", "stash", "drop"], check=False)
                 except Exception:
                     pass
 
-    except _sp.CalledProcessError as exc:
+    except subprocess.CalledProcessError as exc:
         log.error(
             "  commit_after: git operation failed for %s on #%d: %s",
             agent_def.agent, work_item.number, exc,
@@ -2224,8 +2217,7 @@ def _restore_pre_agent_branch(branch: str) -> None:
     if not branch:
         return
     try:
-        import subprocess as _sp3
-        _sp3.run(["git", "checkout", branch], check=False, capture_output=True)
+        subprocess.run(["git", "checkout", branch], check=False, capture_output=True)
     except Exception:
         pass
 
@@ -2425,15 +2417,14 @@ def process_work_item(
         # try/finally below. _run_commit_after handles the actual commit/push.
         _pre_agent_branch: str = ""
         if not dry_run and agent_def.commit_after and work_item.kind == "issue":
-            import subprocess as _sp2
             try:
-                _pre_agent_branch = _sp2.run(
+                _pre_agent_branch = subprocess.run(
                     ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                     capture_output=True, text=True, check=True,
                 ).stdout.strip()
                 _issue_branch = f"issue-{work_item.number}"
-                _sp2.run(["git", "fetch", "origin", _issue_branch], check=True)
-                _sp2.run(["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"], check=True)
+                subprocess.run(["git", "fetch", "origin", _issue_branch], check=True)
+                subprocess.run(["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"], check=True)
                 log.info("  pre-agent: checked out %s for %s", _issue_branch, agent_def.agent)
             except Exception as _pre_exc:
                 log.warning(
@@ -2763,8 +2754,8 @@ def main() -> None:
             )
             sys.exit(1)
 
-    # Embed GITHUB_TOKEN in the remote URL so all git fetch/checkout/push
-    # operations use a consistent credential with contents:write scope.
+    # Set http.extraHeader globally so all git operations in this process
+    # authenticate with GITHUB_TOKEN (contents:write scope).
     _configure_git_auth()
 
     agents, default_extra_tools = load_pipeline(args.pipeline)
