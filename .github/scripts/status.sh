@@ -32,7 +32,8 @@ set -euo pipefail
 REPO="${GITHUB_REPOSITORY:-}"
 STATUSES_JSON="${STATUSES_JSON:-$(dirname "$0")/../../pipeline/statuses.json}"
 
-# Colour codes — kept in sync with statuses.json
+# Colour codes — loaded from statuses.json at runtime.
+# Hardcoded values serve as a fallback when the JSON file is absent.
 declare -A STATUS_COLOURS=(
   [wip]="E4E669"
   [complete]="0E8A16"
@@ -50,6 +51,24 @@ declare -A STATUS_DESCRIPTIONS=(
   [failed]="Agent exited with an error"
   [skipped]="Intentionally bypassed"
 )
+
+# Override hardcoded values with the canonical source of truth (statuses.json)
+# so colour/description changes in the JSON are automatically picked up without
+# editing this file.  python3 is always available in CI; offline callers fall
+# back to the hardcoded values above.
+if [[ -f "$STATUSES_JSON" ]] && command -v python3 &>/dev/null; then
+  while IFS=$'\t' read -r _s _c _d; do
+    [[ -z "$_s" ]] && continue
+    STATUS_COLOURS["$_s"]="$_c"
+    STATUS_DESCRIPTIONS["$_s"]="$_d"
+  done < <(python3 - "$STATUSES_JSON" <<'PYEOF'
+import json, sys
+data = json.load(open(sys.argv[1]))
+for s in data["statuses"]:
+    print(f"{s['status']}\t{s['colour']}\t{s['description']}")
+PYEOF
+)
+fi
 
 ALL_STATUSES=(wip complete review blocked failed skipped)
 
@@ -95,10 +114,11 @@ _remove_all_statuses() {
     gh label remove "$lbl" --repo "$repo" \
       "$(gh issue view "$number" --repo "$repo" --json id -q .id 2>/dev/null || true)" \
       2>/dev/null || true
-    # Direct removal via issues API (more reliable)
+    # Direct removal via issues API (more reliable).
+    # Pass $lbl as argv[1] — never interpolate it into Python source code.
     gh api \
       --method DELETE \
-      "/repos/${repo}/issues/${number}/labels/$(python3 -c "import urllib.parse; print(urllib.parse.quote('${lbl}', safe=''))")"\
+      "/repos/${repo}/issues/${number}/labels/$(python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1],safe=''))" "$lbl")"\
       2>/dev/null || true
   done
 }

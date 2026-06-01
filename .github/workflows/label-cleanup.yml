@@ -16,7 +16,7 @@ jobs:
   ai-standards-label-cleanup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
         with:
           submodules: true
 
@@ -24,9 +24,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           ARGS=(pipeline/pipeline.json)
-          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS+=(--dry-run)
+          [ "$DRY_RUN_INPUT" = "true" ] && ARGS+=(--dry-run)
           bash .github/scripts/status.sh prune "${ARGS[@]}"
 
       - name: Bootstrap correct labels

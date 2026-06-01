@@ -44,6 +44,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -127,6 +128,9 @@ SCRIPT_TIMEOUT_SECONDS = 300
 # simultaneously. Per-agent max_concurrent values may permit more in total,
 # but this aggregate cap is the backstop.
 PIPELINE_MAX_CONCURRENT = 20
+
+# Maximum wall-clock time for a single agent invocation.
+AGENT_TIMEOUT_SECONDS = 1800
 
 
 # ---------------------------------------------------------------------------
@@ -743,7 +747,9 @@ def pause_pipeline(seconds: int, reason: str) -> datetime:
         "paused_at": _now_utc().isoformat(),
         "seconds": seconds,
     }
-    PAUSE_MARKER_PATH.write_text(json.dumps(payload, indent=2))
+    tmp = PAUSE_MARKER_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.replace(PAUSE_MARKER_PATH)
     log.warning(
         "Pipeline paused for %d seconds (until %s): %s",
         seconds, until.isoformat(), reason,
@@ -1695,7 +1701,6 @@ def invoke_agent(
     # detection) and token usage (from the result event). We also retain the
     # raw lines (capped) so the tail can appear in diagnostic comments.
     MAX_CAPTURED_LINES = 5000
-    AGENT_TIMEOUT_SECONDS = 1800
     captured_lines: list[str] = []       # raw NDJSON lines (for diagnostics)
     agent_text_parts: list[str] = []     # text extracted from JSON events
     result_input_tokens: Optional[int] = None
@@ -1711,6 +1716,11 @@ def invoke_agent(
             env=agent_env,
         )
         deadline = time.monotonic() + AGENT_TIMEOUT_SECONDS
+        # Wall-clock timer fires unconditionally — unlike the per-line check
+        # below, it also fires when the agent hangs without emitting output.
+        _kill_timer = threading.Timer(AGENT_TIMEOUT_SECONDS, _terminate_subprocess, args=(proc,))
+        _kill_timer.daemon = True
+        _kill_timer.start()
         try:
             if proc.stdout is None:
                 raise RuntimeError("subprocess stdout pipe unexpectedly None")
@@ -1754,6 +1764,8 @@ def invoke_agent(
                 input_tokens=result_input_tokens,
                 output_tokens=result_output_tokens,
             )
+        finally:
+            _kill_timer.cancel()
 
         # Build the agent's text output for sentinel and rate-limit detection.
         # Text is accumulated from assistant message events (incremental) and
@@ -1897,26 +1909,6 @@ def promote_gated_agents(
                 )
             continue
 
-        # Cleanup: previous promotion crashed after add(:complete) and
-        # before remove(:review). Both labels coexist; clear the stale
-        # :review so the issue ends with exactly one terminal status.
-        if gate_present and complete_present and review_present:
-            # (Unreachable given the branch above already handles
-            # review_present, but keep as a defensive guard for future
-            # edits.)
-            try:
-                gh.remove_label(work_item.number, review_label)
-                updated.discard(review_label)
-                log.info(
-                    "  CLEANUP %-38s  removed stale :review after :complete",
-                    agent_def.agent,
-                )
-            except Exception as exc:
-                log.debug(
-                    "  could not clean stale :review on %s: %s",
-                    agent_def.agent, exc,
-                )
-
         # All other states (gate present without :review; gate present
         # with :wip / :blocked / :failed; gate not present at all) are
         # left alone. The agent runs / re-runs / is unblocked through
@@ -2041,20 +2033,15 @@ def _configure_git_auth() -> None:
         return
 
     try:
-        orig_url = _sg.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-
-        # Strip any existing embedded credentials, then insert GITHUB_TOKEN.
-        clean_url = re.sub(r"https://[^@]+@", "https://", orig_url)
-        auth_url = clean_url.replace(
-            "https://github.com",
-            f"https://x-access-token:{github_token}@github.com",
-            1,
+        # Use http.extraHeader so the token is never embedded in a URL
+        # that appears in `git remote -v`, `ps`, or CI logs.
+        _sg.run(
+            ["git", "config", "--global",
+             "http.https://github.com/.extraHeader",
+             f"Authorization: Bearer {github_token}"],
+            check=True,
         )
-        _sg.run(["git", "remote", "set-url", "origin", auth_url], check=True)
-        log.info("git auth: configured origin to use GITHUB_TOKEN (contents:write scope)")
+        log.info("git auth: configured http.extraHeader to use GITHUB_TOKEN (contents:write scope)")
 
         bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
         if not bot_token:
@@ -2118,20 +2105,31 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
         ).stdout.strip()
 
         stashed = False
-        _sp.run(["git", "stash", "push", "--include-untracked", "-m",
-                 f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
-        stashed = True
-
         try:
+            _sp.run(["git", "stash", "push", "--include-untracked", "-m",
+                     f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
+            stashed = True
+            log.info("  commit_after: stashed working-tree changes")
+
             _sp.run(["git", "fetch", "origin", branch], check=True)
             # Reset local branch to exactly match remote so that git push is
             # always a fast-forward. Without this, a stale local branch (e.g.
             # one that pre-dates commits from an earlier agent like prd-docs-
             # updater) causes a rejected non-fast-forward push.
             _sp.run(["git", "checkout", "-B", branch, f"origin/{branch}"], check=True)
+
+            # Identify which files the agent wrote before popping the stash,
+            # so we add only those files (not any unrelated working-tree noise).
+            stash_files = _sp.run(
+                ["git", "stash", "show", "--name-only"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip().splitlines()
             _sp.run(["git", "stash", "pop"], check=True)
 
-            _sp.run(["git", "add", "-A"], check=True)
+            if stash_files:
+                _sp.run(["git", "add", "--"] + stash_files, check=True)
+            else:
+                _sp.run(["git", "add", "-A"], check=True)
 
             # Detect workflow files — GITHUB_TOKEN cannot push them.
             # If AI_AGILE_BOT_TOKEN is available (classic PAT with repo+workflow
@@ -2179,21 +2177,15 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             # since GITHUB_TOKEN lacks the workflow scope required by GitHub.
             push_token = bot_token if (workflow_files and bot_token) else None
             if push_token:
-                orig_url = _sp.run(
-                    ["git", "remote", "get-url", "origin"],
-                    capture_output=True, text=True, check=True,
-                ).stdout.strip()
-                clean_url = re.sub(r"https://[^@]+@", "https://", orig_url)
-                bot_url = clean_url.replace(
-                    "https://github.com",
-                    f"https://x-access-token:{push_token}@github.com",
-                    1,
-                )
-                _sp.run(["git", "remote", "set-url", "origin", bot_url], check=True)
-                try:
-                    _sp.run(["git", "push", "origin", branch], check=True)
-                finally:
-                    _sp.run(["git", "remote", "set-url", "origin", orig_url], check=False)
+                # Pass the token via GIT_CONFIG env vars — never embedded in
+                # a URL (which would appear in `git remote -v`, `ps`, CI logs).
+                push_env = {
+                    **os.environ,
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "http.https://github.com/.extraHeader",
+                    "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {push_token}",
+                }
+                _sp.run(["git", "push", "origin", branch], check=True, env=push_env)
             else:
                 _sp.run(["git", "push", "origin", branch], check=True)
 

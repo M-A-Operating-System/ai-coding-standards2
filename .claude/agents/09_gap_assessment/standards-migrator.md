@@ -273,11 +273,29 @@ Each standard object schema:
   the coder agent can resolve
 - `Low` — style or preference; does not block APPROVE but should be fixed
 
-Write and immediately validate each file:
+Write and immediately validate each file against the schema:
 
 ```bash
-python3 -c "import json; json.load(open('PATH')); print('valid')"
+python3 - <<'PYEOF'
+import json, sys
+try:
+    import jsonschema
+except ImportError:
+    print("jsonschema not available — falling back to JSON-only check")
+    json.load(open('PATH'))
+    print('valid (JSON only)')
+    sys.exit(0)
+schema = json.load(open('SCHEMA_PATH'))
+data   = json.load(open('PATH'))
+jsonschema.validate(data, schema)
+print('valid')
+PYEOF
 ```
+
+Replace `PATH` with the target file and `SCHEMA_PATH` with the path to
+`standards.schema.json` (typically `../ai-coding-standards2/pipeline/schemas/standards.schema.json`
+in the consuming repo, or `pipeline/schemas/standards.schema.json` from the
+submodule root).
 
 If validation fails, fix the JSON before writing the next file. Report
 any failure to the human immediately.
