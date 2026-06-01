@@ -45,11 +45,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 
 SUBMODULE_NAME = "ai-coding-standards2"
@@ -119,7 +117,7 @@ jobs:
         run: |
           ARGS=""
 
-          [[ "$ISSUE_INPUT" =~ ^[0-9]*$ ]] || {{ echo "ERROR: issue_number must be a positive integer" >&2; exit 1; }}
+          [[ "$ISSUE_INPUT" =~ ^[0-9]*$ ]] || { echo "ERROR: issue_number must be a positive integer" >&2; exit 1; }
 
           if [ -n "$ISSUE_INPUT" ]; then
             ARGS="$ARGS --issue $ISSUE_INPUT"
