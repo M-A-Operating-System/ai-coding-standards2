@@ -268,7 +268,9 @@ def _add_submodules_to_checkout(content: str) -> str:
 
     Handles both named form ('- name: Checkout\\n  uses: ...') and
     shorthand form ('- uses: actions/checkout@...') in YAML steps.
-    Already-expanded steps (with: block present) are left untouched.
+    Already-expanded steps (with: block present) are left untouched —
+    callers that add their own with: options (e.g. fetch-depth) must
+    include submodules: true themselves.
     """
     # Named form: the uses: line sits one level deeper than the name: line.
     # Capture the indent of the uses: line to align with: correctly.
@@ -336,7 +338,7 @@ def install_label_cleanup_workflow(
         print(f"  SKIP   label-cleanup workflow  ({src} missing)")
         return False
     print(f"  Label-cleanup workflow: → {dst}")
-    content = rewrite_paths(src.read_text())
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
     return write_file(dst, content, force, dry_run)
 
 
@@ -352,7 +354,7 @@ def install_sync_workflow(
         print(f"  SKIP   sync-claude workflow  ({src} missing)")
         return False
     print(f"  Sync-claude workflow: → {dst}")
-    content = rewrite_paths(src.read_text())
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
     return write_file(dst, content, force, dry_run)
 
 

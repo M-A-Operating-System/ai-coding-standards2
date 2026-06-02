@@ -13,6 +13,7 @@ from pipeline_orchestrator import (
     agent_status,
     _apply_failed,
     _count_running,
+    promote_gated_agents,
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
     process_work_item,
@@ -1064,3 +1065,121 @@ class TestInvokeAgentTimeout:
         assert "timed out" in result.captured_tail.lower(), (
             f"Expected 'timed out' in captured_tail, got: {result.captured_tail!r}"
         )
+
+
+class TestPromoteGatedAgents:
+    """Tests for promote_gated_agents covering all label-state transitions."""
+
+    def _gated_agent(self, name: str = "01_product_docs/prd-writer") -> AgentDef:
+        return AgentDef(
+            agent=name,
+            phase=name.split("/")[0],
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=True,
+            human_gate_label=f"{name.rsplit('/', 1)[-1]}:approved",
+            description="gated agent",
+        )
+
+    def _work_item(self) -> MagicMock:
+        wi = MagicMock()
+        wi.number = 42
+        wi.kind = "issue"
+        return wi
+
+    def test_promotion_adds_complete_and_removes_review(self):
+        """Gate label + :review present → :complete added, :review removed."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.human_gate_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_called_once_with(wi.number, agent.complete_label)
+        gh.remove_label.assert_any_call(wi.number, agent.review_label)
+        assert agent.complete_label in result
+        assert agent.review_label not in result
+
+    def test_rejection_removes_review_leaves_requested(self):
+        """:review + :requested (no gate) → :review removed, :requested kept."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.status_label(STATUS_REQUESTED)}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.remove_label.assert_called_once_with(wi.number, agent.review_label)
+        assert agent.review_label not in result
+        assert agent.status_label(STATUS_REQUESTED) in result
+        assert agent.complete_label not in result
+
+    def test_simultaneous_approved_and_requested_promotes_and_cleans_requested(self):
+        """Both :approved and :requested arrive — promotion wins, :requested cleaned up."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {
+            agent.review_label,
+            agent.human_gate_label,
+            agent.status_label(STATUS_REQUESTED),
+        }
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        assert agent.complete_label in result
+        assert agent.review_label not in result
+        assert agent.status_label(STATUS_REQUESTED) not in result
+
+    def test_gate_present_without_review_is_no_op(self):
+        """:approved present but no :review — nothing changed (agent hasn't run yet)."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.human_gate_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()
+        gh.remove_label.assert_not_called()
+        assert result == labels
+
+    def test_non_gated_agent_skipped(self):
+        """Agents without human_gate_after are not touched."""
+        agent = _make_agent_def("05_execute/coder")  # human_gate_after=False
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.complete_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()
+        gh.remove_label.assert_not_called()
+
+    def test_wrong_work_item_kind_skipped(self):
+        """Agent objects=['issue'] does not fire for kind='pr'."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        wi.kind = "pr"
+        gh = MagicMock()
+        labels = {agent.review_label, agent.human_gate_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()
+        gh.remove_label.assert_not_called()
+
+    def test_complete_already_present_skips_add_but_still_removes_review(self):
+        """Crash-recovery: :complete already there from prior tick — remove stale :review."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.human_gate_label, agent.complete_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()  # already present, skip
+        gh.remove_label.assert_any_call(wi.number, agent.review_label)
+        assert agent.review_label not in result

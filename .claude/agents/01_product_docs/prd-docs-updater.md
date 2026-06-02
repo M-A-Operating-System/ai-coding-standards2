@@ -34,7 +34,7 @@ run any git commands.
 Check whether this is a first run or a revision after human rejection.
 
 ```bash
-PREV_ARTEFACT_TIME=$(gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
+PREV_ARTEFACT_TIME=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
   --jq '[.comments[]
         | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater"))
         ] | last | .createdAt // ""')
@@ -45,12 +45,11 @@ after the last artefact and keep it in mind when reassessing which doc
 changes are needed:
 
 ```bash
-HUMAN_FEEDBACK=$(gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
-  --jq --arg since "$PREV_ARTEFACT_TIME" \
-  '[.comments[]
-    | select(.createdAt > $since)
-    | select(.body | startswith("<!-- ai-agile/") | not)
-    | "**\(.user.login):** \(.body)"
+HUMAN_FEEDBACK=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments --jq '.comments' \
+  | jq --arg since "$PREV_ARTEFACT_TIME" \
+  '[.[] | select(.createdAt > $since)
+       | select(.body | startswith("<!-- ai-agile/") | not)
+       | "**\(.user.login):** \(.body)"
   ] | join("\n\n---\n\n")')
 echo "$HUMAN_FEEDBACK"
 ```

@@ -1928,6 +1928,14 @@ def promote_gated_agents(
                     updated.add(complete_label)
                 gh.remove_label(work_item.number, review_label)
                 updated.discard(review_label)
+                # Clean up a stale :requested that arrived simultaneously with
+                # :approved — promotion wins but :requested must not linger.
+                if requested_label in updated:
+                    try:
+                        gh.remove_label(work_item.number, requested_label)
+                        updated.discard(requested_label)
+                    except Exception:
+                        pass  # best-effort; stale label is cosmetic only
                 log.info(
                     "  PROMOTE %-38s  %s applied → :review → :complete",
                     agent_def.agent, gate_label,
@@ -2154,7 +2162,7 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             # Identify which files the agent wrote before popping the stash,
             # so we add only those files (not any unrelated working-tree noise).
             stash_files = subprocess.run(
-                ["git", "stash", "show", "--name-only"],
+                ["git", "stash", "show", "--name-only", "-u"],
                 capture_output=True, text=True, check=True,
             ).stdout.strip().splitlines()
             subprocess.run(["git", "stash", "pop"], check=True)
@@ -2630,11 +2638,15 @@ def process_work_item(
                     gh.post_comment(
                         work_item.number,
                         (
+                            f"<!-- ai-agile/gate-prompt/v1 by {agent_def.agent} -->\n"
                             f"**{agent_def.agent}** is complete.\n\n"
                             f"- Apply `{agent_def.human_gate_label}` to approve and advance the pipeline.\n"
                             f"- Add your feedback as a comment, then apply "
                             f"`{agent_def.status_label(STATUS_REQUESTED)}` to request changes "
-                            f"(the agent will re-read your comments and revise)."
+                            f"(the agent will re-read your comments and revise).\n\n"
+                            f"> **Note:** Applying `:requested` clears the current `:review` state. "
+                            f"If you had already applied `{agent_def.human_gate_label}`, "
+                            f"re-apply it after reviewing the revision."
                         )
                     )
                 except Exception as exc:
