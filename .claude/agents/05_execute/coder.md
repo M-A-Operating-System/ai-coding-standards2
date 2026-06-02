@@ -53,7 +53,12 @@ REVIEW_CYCLE=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
   --jq '.labels[].name | select(startswith("review-cycle:")) | ltrimstr("review-cycle:")' \
   | head -1)
 
-if [ -n "$REVIEW_CYCLE" ] && [ "$REVIEW_CYCLE" -gt 0 ] 2>/dev/null; then
+if [ -n "$REVIEW_CYCLE" ]; then
+  # Validate: must be a positive integer (orchestrator always sets N >= 1)
+  if ! printf '%s' "$REVIEW_CYCLE" | grep -qE '^[1-9][0-9]*$'; then
+    echo "AI_AGILE_STATUS: blocked \"review-cycle label has malformed value '${REVIEW_CYCLE}' — expected a positive integer\""
+    exit 1
+  fi
   # Mode B — self-discover the associated PR via GitHub data model
   PR_NUMBER=$(gh pr list \
     --repo "$REPO" \
@@ -62,8 +67,7 @@ if [ -n "$REVIEW_CYCLE" ] && [ "$REVIEW_CYCLE" -gt 0 ] 2>/dev/null; then
     --json number \
     --jq '.[0].number // empty')
   if [ -z "$PR_NUMBER" ]; then
-    echo "ERROR: review-cycle:${REVIEW_CYCLE} label present but no open PR found for head branch issue-${ISSUE_NUMBER}"
-    echo "AI_AGILE_STATUS: blocked"
+    echo "AI_AGILE_STATUS: blocked \"review-cycle:${REVIEW_CYCLE} present but no open PR found for head branch issue-${ISSUE_NUMBER}\""
     exit 1
   fi
   echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE}  PR=${PR_NUMBER}"
@@ -307,15 +311,15 @@ AI_AGILE_STATUS: complete
 and the PR — they are linked via the GitHub data model.
 
 ```bash
-# Structured review artefact from pr-reviewer agent (posted on the issue)
-gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 05_execute/pr-reviewer")) | .body] | last'
+# Structured review artefact from pr-reviewer agent (posted on the PR)
+gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
+  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 05_execute/pr-reviewer")) | .body] | last // empty'
 
-# Inline review comments and human reviews on the PR
+# Inline review threads and human reviews on the PR
 gh pr view "$PR_NUMBER" --repo "$REPO" --json reviews \
   --jq '[.reviews[] | {author: .author.login, state: .state, body: .body}]'
 
-# PR-level comments (may include additional human feedback)
+# Human comments on the PR (excluding agent artefacts)
 gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
   --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .author.login, body: .body}]'
 ```
@@ -356,7 +360,7 @@ Also read the approved PRD from the issue comments:
 
 ```bash
 gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .body] | last'
+  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .body] | last // empty'
 ```
 
 Use these documents to decide whether each piece of feedback is valid:
