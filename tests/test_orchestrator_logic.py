@@ -928,3 +928,139 @@ class TestOrchestratorNonOverlapping:
             "Workflow must set cancel-in-progress: false so a queued run waits "
             "for the active run to finish rather than being cancelled"
         )
+
+
+# ---------------------------------------------------------------------------
+# QA-001: invoke_agent timeout — timer fires and agent does not hang forever
+# ---------------------------------------------------------------------------
+
+class TestInvokeAgentTimeout:
+    """Verify DP-006 fix: kill-timer terminates a silent or slow agent.
+
+    Two scenarios:
+    1. Agent produces no stdout at all (silent hang) — timer fires, process
+       is killed, invoke_agent returns AgentRunResult(success=False) instead
+       of hanging forever.
+    2. Agent keeps producing output past the deadline — _timed_out.is_set()
+       check in the per-line loop raises TimeoutExpired, and the returned
+       captured_tail contains the "timed out" message.
+    """
+
+    def _make_minimal_agent_def(self) -> "AgentDef":
+        import pipeline_orchestrator as orch
+        return orch.AgentDef(
+            agent="05_execute/coder",
+            phase="05_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="Test coder agent",
+            step_type="agent",
+        )
+
+    def _make_work_item(self) -> "WorkItem":
+        import pipeline_orchestrator as orch
+        return orch.WorkItem(
+            number=1,
+            kind="issue",
+            title="Test issue",
+            labels=set(),
+            url="https://github.com/test/repo/issues/1",
+        )
+
+    def test_silent_agent_does_not_hang(self, monkeypatch):
+        """Agent that produces no stdout terminates within timeout + small buffer."""
+        import threading
+        import time
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
+
+        # Stdout blocks until the process is killed.
+        _killed = threading.Event()
+
+        class BlockingStdout:
+            def __iter__(self):
+                _killed.wait(timeout=10)  # unblocks when process is terminated
+                return iter([])
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = BlockingStdout()
+        mock_proc.returncode = -15  # SIGTERM
+
+        poll_done = threading.Event()
+
+        def poll_side_effect():
+            return -15 if poll_done.is_set() else None
+
+        def terminate_side_effect():
+            poll_done.set()
+            _killed.set()
+
+        mock_proc.poll.side_effect = poll_side_effect
+        mock_proc.terminate.side_effect = terminate_side_effect
+        mock_proc.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            start = time.monotonic()
+            result = orch.invoke_agent(
+                self._make_minimal_agent_def(),
+                self._make_work_item(),
+                dry_run=False,
+                repo="test/repo",
+                agent_text_override="---\ntools: []\n---\nTest agent.",
+            )
+            elapsed = time.monotonic() - start
+
+        assert result.success is False
+        # Must complete well within 2× the patched timeout, not hang forever.
+        assert elapsed < 2.0, f"invoke_agent hung for {elapsed:.2f}s (expected < 2s)"
+
+    def test_timed_out_event_triggers_timeout_message(self, monkeypatch):
+        """When _timed_out fires while agent is emitting lines, captured_tail says timed out."""
+        import threading
+        import time
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
+
+        # Stdout yields lines until the process is killed, then stops.
+        _killed = threading.Event()
+
+        def line_generator():
+            while not _killed.is_set():
+                yield '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}\n'
+                time.sleep(0.005)
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = line_generator()
+        mock_proc.returncode = -15
+
+        poll_done = threading.Event()
+
+        def poll_side_effect():
+            return -15 if poll_done.is_set() else None
+
+        def terminate_side_effect():
+            poll_done.set()
+            _killed.set()
+
+        mock_proc.poll.side_effect = poll_side_effect
+        mock_proc.terminate.side_effect = terminate_side_effect
+        mock_proc.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            result = orch.invoke_agent(
+                self._make_minimal_agent_def(),
+                self._make_work_item(),
+                dry_run=False,
+                repo="test/repo",
+                agent_text_override="---\ntools: []\n---\nTest agent.",
+            )
+
+        assert result.success is False
+        assert "timed out" in result.captured_tail.lower(), (
+            f"Expected 'timed out' in captured_tail, got: {result.captured_tail!r}"
+        )

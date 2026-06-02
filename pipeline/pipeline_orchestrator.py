@@ -1754,6 +1754,11 @@ def invoke_agent(
                         agent_text_parts.append(line.rstrip("\n"))
                 if time.monotonic() > deadline or _timed_out.is_set():
                     raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
+            # Timer may have fired and drained stdout without triggering the
+            # per-line check above (process died between lines). Raise here so
+            # the timeout path is always taken when the timer fired.
+            if _timed_out.is_set():
+                raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             log.error("    Agent %s timed out on #%d", agent_def.agent, work_item.number)
@@ -2124,6 +2129,7 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                 capture_output=True, text=True, check=True,
             ).stdout.strip().splitlines()
             subprocess.run(["git", "stash", "pop"], check=True)
+            stashed = False  # entry consumed; finally must not drop
 
             if stash_files:
                 subprocess.run(["git", "add", "--"] + stash_files, check=True)
