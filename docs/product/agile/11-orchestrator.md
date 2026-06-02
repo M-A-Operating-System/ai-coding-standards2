@@ -995,10 +995,18 @@ event-driven tick proceeds as if no pause had been set.
 |---|---|---|---|
 | `GITHUB_TOKEN` | Yes | Orchestrator | Auto-provisioned by Actions; scoped to the repo and workflow run |
 | `ANTHROPIC_API_KEY` | Yes | Orchestrator → Claude CLI | Required for agent invocations; store as an Actions repository or org secret |
-| `AI_AGILE_BOT_TOKEN` | When agents write `.github/workflows/` files | `_run_commit_after` | Classic PAT with `repo` + `workflow` scopes. `GITHUB_TOKEN` cannot push workflow files — GitHub enforces this at the API layer. When absent and an agent writes workflow files, `commit_after` fails fast with a clear error rather than a 403. |
 
 The `GITHUB_TOKEN` auto-provisioned by Actions has the scopes declared in
 each workflow's `permissions` block. No PAT is needed for the orchestrator
-itself — unless agents produce `.github/workflows/` files (see `AI_AGILE_BOT_TOKEN` above). A dedicated GitHub App token is required before any production
+itself. A dedicated GitHub App token is required before any production
 compliance claim (see [`10-roadmap.md`](10-roadmap.md) — agent identity
 prerequisite).
+
+**Workflow file limitation.** GitHub prevents `GITHUB_TOKEN` from pushing
+changes to `.github/workflows/`. Automated agents (coder, prd-docs-updater)
+must not write directly to that directory. Instead, agents that need to
+propose a new workflow write the file to `docs/workflow-proposals/{name}.yml`
+and note in their closing announcement that a human must move it to
+`.github/workflows/` and push with a token that has `workflow` scope. The
+proposed file is committed to the issue branch and visible in the draft PR for
+review.
