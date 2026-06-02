@@ -1850,10 +1850,12 @@ def promote_gated_agents(
     """Find every gated agent currently in :review whose gate label is
     now present, and transition it from :review to :complete.
 
-    Why this exists. The agent posts an artefact and applies :review,
-    then the pipeline halts. When the human applies the gate label
-    (e.g. prd-writer:approved), no event reaches the agent — the orchestrator
-    is the actor that closes the loop.
+    Why this exists. Both mid-run blocks (agent emits AI_AGILE_STATUS: review)
+    and post-completion human gates (human_gate_after: true — orchestrator
+    applies :review on the agent's behalf after it emits :complete) land the
+    work item in :review. When the human applies the gate label
+    (e.g. prd-writer:approved or prd-docs-updater:approved), no event reaches
+    the agent — the orchestrator is the actor that closes the loop.
 
     Promotion only fires when the agent is **actually in :review**. If
     the human applies the gate label before the agent has run, the
@@ -2561,7 +2563,20 @@ def process_work_item(
                     _restore_pre_agent_branch(_pre_agent_branch)
                     break
 
-            _apply_terminal_status(gh, agent_def, work_item, final_status)
+            # When an agent with a human gate completes, apply :review rather
+            # than :complete. This makes the "needs human action" state visible
+            # consistently — both mid-run blocks and post-completion gates use
+            # the same :review label. promote_gated_agents advances to :complete
+            # once the human applies the configured gate label (e.g. :approved).
+            applied_status = final_status
+            if (
+                final_status == STATUS_COMPLETE
+                and agent_def.human_gate_after
+                and agent_def.human_gate_label
+            ):
+                applied_status = STATUS_REVIEW
+
+            _apply_terminal_status(gh, agent_def, work_item, applied_status)
 
             # Post closing announcement for non-failure outcomes.
             try:
@@ -2569,7 +2584,7 @@ def process_work_item(
                     work_item.number,
                     _build_closing_announcement(
                         agent_def, work_item, session_id,
-                        final_status, sentinel_message,
+                        applied_status, sentinel_message,
                     ),
                 )
             except Exception as exc:
@@ -2578,16 +2593,40 @@ def process_work_item(
                     agent_def.agent, work_item.number, exc,
                 )
 
+            # If the step is awaiting human sign-off, post the gate prompt
+            # immediately after the closing announcement so it is clear what
+            # action is required. Both mid-run :review (agent emitted the
+            # sentinel) and post-completion gates (applied_status overridden
+            # to :review above) go through this path.
+            if applied_status == STATUS_REVIEW and agent_def.human_gate_after and agent_def.human_gate_label:
+                try:
+                    gh.post_comment(
+                        work_item.number,
+                        (
+                            f"**{agent_def.agent}** is complete.\n\n"
+                            f"Apply `{agent_def.human_gate_label}` to advance the pipeline."
+                        )
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "  could not post gate comment for %s on #%d: %s",
+                        agent_def.agent, work_item.number, exc,
+                    )
+                log.info(
+                    "  GATE    %-38s  waiting for: %s",
+                    agent_def.agent, agent_def.human_gate_label,
+                )
+
             # Refresh label set from GitHub after our writes.
             labels = gh.get_issue_labels(work_item.number)
             work_item.labels = labels
 
             log.info(
                 "  %-6s  %-38s",
-                (final_status or "?").upper(), agent_def.agent,
+                (applied_status or "?").upper(), agent_def.agent,
             )
 
-            if audit_log is not None and session_id and final_status:
+            if audit_log is not None and session_id and applied_status:
                 _et_map = {
                     STATUS_COMPLETE: "agent.complete",
                     STATUS_REVIEW:   "agent.review",
@@ -2595,15 +2634,16 @@ def process_work_item(
                     STATUS_SKIPPED:  "agent.skipped",
                 }
                 audit_log.append(_make_audit_event(
-                    session_id, _et_map.get(final_status, "agent.complete"), repo,
+                    session_id, _et_map.get(applied_status, "agent.complete"), repo,
                     work_item=work_item, agent=agent_def.agent,
-                    outcome_status=final_status,
+                    outcome_status=applied_status,
                     outcome_detail=f"mode={agent_def.step_type}",
                     duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                 ))
 
             # Mark the PR ready-for-review if the agent declares it (P-16).
-            if final_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
+            # Only fires on true completion — not when awaiting a human gate.
+            if applied_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
                 if work_item.kind == "pr":
                     _ready_pr_number = work_item.number
                 elif work_item.kind == "issue":
@@ -2637,27 +2677,12 @@ def process_work_item(
                         agent_def.agent, work_item.number,
                     )
 
-            # If the step completed and a human gate is configured, post
-            # the gate comment so the reviewer knows what to do.
-            if final_status == STATUS_COMPLETE and agent_def.human_gate_after and agent_def.human_gate_label:
-                gh.post_comment(
-                    work_item.number,
-                    (
-                        f"**{agent_def.agent}** is complete.\n\n"
-                        f"Apply `{agent_def.human_gate_label}` to advance the pipeline."
-                    )
-                )
-                log.info(
-                    "  GATE    %-38s  waiting for: %s",
-                    agent_def.agent, agent_def.human_gate_label,
-                )
-
             # Halt if blocked or awaiting review — do not trigger further
             # steps on this item this run.
-            if final_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
+            if applied_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
                 # review_loop: automatically re-invoke the target agent rather
                 # than waiting for human sign-off, until max_cycles is reached.
-                if final_status == STATUS_REVIEW and agent_def.review_loop:
+                if applied_status == STATUS_REVIEW and agent_def.review_loop:
                     labels = _handle_review_loop(
                         gh, agent_def, work_item, labels, pipeline_map
                     )
