@@ -583,6 +583,7 @@ not write to it. Events emitted by the orchestrator:
 | `agent.failed` | Agent crashed or timed out without a sentinel; `:failed` applied |
 | `gate.approved` | Human applied the gate label; gate promotion about to run |
 | `lock.reclaimed` | Stale `:wip` was force-reclaimed |
+| `system.emergency_stop` | Stop marker detected at run start; orchestrator exited without invoking agents |
 
 Each event carries: `session_id`, `event`, `actor.kind` (human or agent),
 `actor.login`, `object.kind`, `object.number`, `agent`, `timestamp`,
@@ -739,6 +740,34 @@ serialises all orchestrator runs; it never cancels a run already in progress.
   flaky webhook delivery)
 - Partial-state recovery (interrupted `:review` → `:complete` transitions)
 
+### `pipeline-emergency-stop.yml`
+
+`.github/workflows/pipeline-emergency-stop.yml` is a `workflow_dispatch`-only
+workflow that halts the pipeline immediately.
+
+| Input | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `reason` | string | yes | — | Recorded in the stop marker and shown in the workflow log |
+| `cancel_runs` | boolean | no | `true` | Whether to cancel all currently-running orchestrator runs via `gh run cancel` |
+
+On run: cancels in-progress orchestrator runs (if `cancel_runs` is `true`),
+writes `.pipeline-stop` to the repo root, and logs how many runs were
+cancelled. See [Emergency stop](#emergency-stop) for the marker format and
+orchestrator behaviour.
+
+### `pipeline-restart.yml`
+
+`.github/workflows/pipeline-restart.yml` is a `workflow_dispatch`-only
+workflow that clears the emergency stop and resumes normal pipeline operation.
+
+| Input | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `trigger_run` | boolean | no | `true` | Whether to immediately dispatch a fresh orchestrator run after clearing the marker |
+
+On run: deletes `.pipeline-stop` and, if `trigger_run` is `true`, dispatches
+a new orchestrator run so the pipeline resumes without waiting for the next
+scheduled tick.
+
 ---
 
 ## CLI reference
@@ -756,6 +785,8 @@ Options:
   --clear-pause         Clear the rate-limit pause marker if set, then exit
                         (manual override for operators; see "Anthropic API"
                         in Rate limit handling)
+  --clear-stop          Clear the emergency stop marker if set, then exit
+                        (manual override for operators; see "Emergency stop")
   --verbose, -v         Debug-level output
 ```
 
@@ -1016,3 +1047,54 @@ and note in their closing announcement that a human must move it to
 `.github/workflows/` and push with a token that has `workflow` scope. The
 proposed file is committed to the issue branch and visible in the draft PR for
 review.
+
+---
+
+## Emergency stop
+
+The emergency stop mechanism lets an operator halt all pipeline activity
+immediately. Unlike the rate-limit pause (automatic, time-bounded), the
+emergency stop is **operator-initiated** and **never expires** — it persists
+until explicitly cleared.
+
+### Stop marker
+
+The orchestrator checks for `.pipeline-stop` at the submodule root at
+the very start of `main()`, **after** the pause-marker check. If the
+marker exists, the orchestrator:
+
+1. Logs the stop reason.
+2. Emits a `system.emergency_stop` audit event.
+3. Exits 0 — no labels are changed, no agents are invoked.
+
+The marker is not auto-cleared on the next tick. It persists until a human
+runs the restart workflow or invokes `--clear-stop`.
+
+**Marker format** (`.pipeline-stop` in repo root):
+
+```json
+{
+  "stopped_at": "2026-05-06T21:00:00Z",
+  "reason": "bad prompt deployed to prd-writer",
+  "stopped_by": "github-actions"
+}
+```
+
+### Relationship to pause
+
+| | `.pipeline-pause` | `.pipeline-stop` |
+|---|---|---|
+| Trigger | Automatic (Anthropic rate limit) | Manual (`workflow_dispatch`) |
+| Expiry | Yes — auto-cleared when `until` passes | No — must be explicitly cleared |
+| Cancels in-flight runs | No | Yes (if `cancel_runs` is `true`) |
+| Clear mechanism | Auto on expiry; `--clear-pause` | `pipeline-restart.yml`; `--clear-stop` |
+| Check order in `main()` | First | Immediately after pause check |
+
+### Manual override
+
+```bash
+python pipeline/pipeline_orchestrator.py --clear-stop
+```
+
+Deletes the marker and exits. The next scheduled or event-driven tick
+proceeds normally.
