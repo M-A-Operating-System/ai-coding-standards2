@@ -6,23 +6,34 @@ This script is run ONCE after `git submodule add ...` has placed this
 repo at `<consuming-repo>/ai-coding-standards2/`. It:
 
   1. Verifies it's running from inside the submodule of a consuming repo.
-  2. Creates the consuming repo's `.claude/` directory (Claude Code's
-     local config) and copies the slash commands from this submodule
-     into it, rewriting any submodule-relative paths so they resolve
-     from the consuming repo's root.
-  3. Drops the orchestrator workflow into the consuming repo's
+  2. Copies the agent prompts from this submodule's .claude/agents/ into
+     the consuming repo's .claude/agents/, preserving subdirectory
+     structure. Agents use $AI_AGILE_ROOT for all paths so no rewriting
+     is needed.
+  3. Creates the consuming repo's `.claude/commands/` directory and
+     copies the slash commands from this submodule into it, rewriting
+     any submodule-relative paths so they resolve from the consuming
+     repo's root.
+  4. Drops the orchestrator workflow into the consuming repo's
      `.github/workflows/orchestrator.yml`. (GitHub Actions cannot pick
      up workflows from submodules; the consuming repo's own workflow
      dir is the only place they can run from.)
-  4. Writes `.claude/settings.local.json` setting AI_AGILE_ROOT so
+  5. Drops the daily .claude sync workflow into the consuming repo's
+     `.github/workflows/sync-claude.yml`. This workflow re-runs this
+     script with --force every day to prevent agent/command drift.
+  6. Writes `.claude/settings.local.json` setting AI_AGILE_ROOT so
      anyone running the orchestrator manually from the consuming repo
      gets the right paths.
-  5. Prints a short follow-up checklist (set ANTHROPIC_API_KEY,
+  7. Prints a short follow-up checklist (set ANTHROPIC_API_KEY,
      bootstrap labels, open a test issue).
 
 Run from the consuming repo's root:
 
     python ai-coding-standards2/get_started.py
+
+Re-run with --force after updating the submodule to pick up new agents,
+commands, and workflow changes. The sync-claude.yml workflow does this
+automatically every day.
 
 Options:
     --force      Overwrite existing files in the consuming repo
@@ -34,130 +45,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 
-SUBMODULE_NAME = "ai-coding-standards2"
 SUBMODULE_ROOT = Path(__file__).resolve().parent
-
-# The orchestrator workflow content — kept inline so a fresh consumer
-# repo gets a known-good copy without relying on a separate template
-# file. Update this when the canonical workflow at
-# .github/workflows/orchestrator.yml in this repo changes.
-ORCHESTRATOR_WORKFLOW_TEMPLATE = """\
-name: AI Agile orchestrator
-
-on:
-  issues:
-    types: [opened, reopened, labeled, unlabeled]
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
-  schedule:
-    - cron: '*/15 6-20 * * 1-5'  # Every 15 min, 06:00–20:00 UTC, weekdays
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: 'Process a single issue/PR number (leave blank for all)'
-        required: false
-      dry_run:
-        description: 'Dry run — show what would trigger without executing'
-        type: boolean
-        default: false
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  checks: read
-
-concurrency:
-  group: pipeline-orchestrator
-  cancel-in-progress: false
-
-jobs:
-  orchestrate:
-    name: Evaluate pipeline state
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Build orchestrator args
-        id: args
-        env:
-          ISSUE_INPUT: ${{ github.event.inputs.issue_number }}
-        run: |
-          ARGS=""
-
-          [[ "$ISSUE_INPUT" =~ ^[0-9]*$ ]] || {{ echo "ERROR: issue_number must be a positive integer" >&2; exit 1; }}
-
-          if [ -n "$ISSUE_INPUT" ]; then
-            ARGS="$ARGS --issue $ISSUE_INPUT"
-          elif [ "${{ github.event_name }}" = "issues" ]; then
-            ARGS="$ARGS --issue ${{ github.event.issue.number }} --kind issue"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS="$ARGS --issue ${{ github.event.pull_request.number }} --kind pr"
-          fi
-
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            ARGS="$ARGS --dry-run"
-          fi
-
-          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
-
-      - name: Run orchestrator
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
-          GIT_TRACE: "1"
-          AI_AGILE_ROOT: ${{ github.workspace }}/ai-coding-standards2
-          # ci-gate uses this to exclude orchestrator check runs from its poll.
-          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
-        run: |
-          python ai-coding-standards2/pipeline/pipeline_orchestrator.py \\
-            --repo "$GITHUB_REPOSITORY" \\
-            --verbose \\
-            ${{ steps.args.outputs.args }}
-
-  bootstrap-labels:
-    name: Bootstrap pipeline labels
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Bootstrap labels
-        env:
-          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \\
-            ai-coding-standards2/pipeline/pipeline.json
-"""
+SUBMODULE_NAME = SUBMODULE_ROOT.name  # actual dir name, not hard-coded
 
 
 # Path-rewrite rules applied to slash command markdown when copying
@@ -244,6 +138,89 @@ def rewrite_paths(text: str) -> str:
     return out
 
 
+def install_standards(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    """Copy standards/*.json from the submodule into the consuming repo.
+
+    Seeds the consuming repo's standards/ folder with the pipeline's base
+    standards. The consuming repo can add project-specific standards as
+    additional files (e.g. standards/myapp.json) — the sync never deletes
+    files it didn't create.
+
+    Convention: do not modify the base files directly; add new files for
+    custom standards so the daily sync can safely overwrite the base set
+    without destroying local additions.
+
+    Skips *.schema.json (pipeline infrastructure, not agent-loadable).
+    Returns the number of files written.
+    """
+    src_dir = SUBMODULE_ROOT / "standards"
+    dst_dir = consuming_root / "standards"
+
+    if not src_dir.is_dir():
+        print(f"  SKIP   standards  ({src_dir} missing)")
+        return 0
+
+    print(f"  Standards: {src_dir} → {dst_dir}")
+    written = 0
+    for src in sorted(src_dir.glob("*.json")):
+        if src.name.endswith(".schema.json"):
+            continue
+        dst = dst_dir / src.name
+        content = src.read_text().replace(
+            '"../pipeline/schemas/standards.schema.json"',
+            f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
+        )
+        if write_file(dst, content, force, dry_run):
+            written += 1
+    return written
+
+
+def install_agents(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    """Copy .claude/agents/ from the submodule into the consuming repo.
+
+    Preserves the full subdirectory structure (01_product_docs/,
+    05_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
+    so no path rewriting is needed — they are copied verbatim.
+
+    Returns the number of files written.
+    """
+    src_dir = SUBMODULE_ROOT / ".claude" / "agents"
+    dst_dir = consuming_root / ".claude" / "agents"
+
+    if not src_dir.is_dir():
+        print(f"  SKIP   agents  ({src_dir} missing)")
+        return 0
+
+    print(f"  Agents: {src_dir} → {dst_dir}")
+    written = 0
+    for src in sorted(src_dir.rglob("*.md")):
+        rel = src.relative_to(src_dir)
+        dst = dst_dir / rel
+        if write_file(dst, src.read_text(), force, dry_run):
+            written += 1
+
+    # Remove stale agents that are no longer in the submodule.
+    if dst_dir.is_dir():
+        for dst in sorted(dst_dir.rglob("*.md")):
+            rel = dst.relative_to(dst_dir)
+            if not (src_dir / rel).exists():
+                if dry_run:
+                    print(f"  WOULD REMOVE {dst}  (no longer in submodule)")
+                else:
+                    dst.unlink()
+                    print(f"  REMOVED {dst}  (no longer in submodule)")
+
+    return written
+
+
 def install_slash_commands(
     consuming_root: Path,
     force: bool,
@@ -268,7 +245,53 @@ def install_slash_commands(
             print(f"    (rewriting paths in {src.name})")
         if write_file(dst, rewritten, force, dry_run):
             written += 1
+
+    # Remove stale commands that are no longer in the submodule.
+    if dst_dir.is_dir():
+        for dst in sorted(dst_dir.glob("*.md")):
+            if not (src_dir / dst.name).exists():
+                if dry_run:
+                    print(f"  WOULD REMOVE {dst}  (no longer in submodule)")
+                else:
+                    dst.unlink()
+                    print(f"  REMOVED {dst}  (no longer in submodule)")
+
     return written
+
+
+def _add_submodules_to_checkout(content: str) -> str:
+    """Insert 'submodules: true' into every bare actions/checkout step.
+
+    The standalone orchestrator.yml omits submodules: true because this
+    repo IS the submodule. Consuming repos need it to check out the
+    ai-coding-standards2 submodule at workflow runtime.
+
+    Handles both named form ('- name: Checkout\\n  uses: ...') and
+    shorthand form ('- uses: actions/checkout@...') in YAML steps.
+    Already-expanded steps (with: block present) are left untouched —
+    callers that add their own with: options (e.g. fetch-depth) must
+    include submodules: true themselves.
+    """
+    # Named form: the uses: line sits one level deeper than the name: line.
+    # Capture the indent of the uses: line to align with: correctly.
+    content = re.sub(
+        r"(- name: Checkout\n([ \t]+)uses: actions/checkout@[^\n]+\n)"
+        r"(?![ \t]+with:)",
+        r"\1\2with:\n\2  submodules: true\n",
+        content,
+    )
+    # Shorthand form: "- uses: actions/checkout@..." with no name: line.
+    # Capture the indent of the dash to derive the correct with: indent.
+    content = re.sub(
+        r"([ \t]+)(- uses: actions/checkout@[^\n]+\n)(?![ \t]+with:)",
+        lambda m: (
+            m.group(0)
+            + m.group(1) + "  with:\n"
+            + m.group(1) + "    submodules: true\n"
+        ),
+        content,
+    )
+    return content
 
 
 def install_orchestrator_workflow(
@@ -276,10 +299,31 @@ def install_orchestrator_workflow(
     force: bool,
     dry_run: bool,
 ) -> bool:
-    """Drop the orchestrator workflow into the consuming repo."""
+    """Copy orchestrator.yml into the consuming repo with paths rewritten."""
+    src = SUBMODULE_ROOT / ".github" / "workflows" / "orchestrator.yml"
     dst = consuming_root / ".github" / "workflows" / "orchestrator.yml"
+    if not src.exists():
+        print(f"  SKIP   orchestrator workflow  ({src} missing)")
+        return False
     print(f"  Orchestrator workflow: → {dst}")
-    return write_file(dst, ORCHESTRATOR_WORKFLOW_TEMPLATE, force, dry_run)
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    return write_file(dst, content, force, dry_run)
+
+
+def install_bootstrap_labels_workflow(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> bool:
+    """Copy bootstrap-labels.yml into the consuming repo with paths rewritten."""
+    src = SUBMODULE_ROOT / ".github" / "workflows" / "bootstrap-labels.yml"
+    dst = consuming_root / ".github" / "workflows" / "bootstrap-labels.yml"
+    if not src.exists():
+        print(f"  SKIP   bootstrap-labels workflow  ({src} missing)")
+        return False
+    print(f"  Bootstrap-labels workflow: → {dst}")
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    return write_file(dst, content, force, dry_run)
 
 
 def install_label_cleanup_workflow(
@@ -294,7 +338,23 @@ def install_label_cleanup_workflow(
         print(f"  SKIP   label-cleanup workflow  ({src} missing)")
         return False
     print(f"  Label-cleanup workflow: → {dst}")
-    content = rewrite_paths(src.read_text())
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    return write_file(dst, content, force, dry_run)
+
+
+def install_sync_workflow(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> bool:
+    """Copy sync-claude.yml into the consuming repo with paths rewritten."""
+    src = SUBMODULE_ROOT / ".github" / "workflows" / "sync-claude.yml"
+    dst = consuming_root / ".github" / "workflows" / "sync-claude.yml"
+    if not src.exists():
+        print(f"  SKIP   sync-claude workflow  ({src} missing)")
+        return False
+    print(f"  Sync-claude workflow: → {dst}")
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
     return write_file(dst, content, force, dry_run)
 
 
@@ -309,13 +369,14 @@ def install_local_settings(
     dst = consuming_root / ".claude" / "settings.local.json"
     payload = {
         "env": {
-            "AI_AGILE_ROOT": SUBMODULE_NAME,
+            "AI_AGILE_ROOT": ".",
         },
         "_comment": (
             "Generated by ai-coding-standards2/get_started.py. "
-            "AI_AGILE_ROOT tells the orchestrator where to find pipeline.json, "
-            "status.sh, and the agent prompts when running from the consuming "
-            "repo's root. Add to .gitignore if your project doesn't already "
+            "AI_AGILE_ROOT points at the consuming repo root (.) so agents "
+            "resolve standards/ and .claude/agents/ from here. The pipeline "
+            "submodule locates its own files via __file__, not this var. "
+            "Add to .gitignore if your project doesn't already "
             "ignore .claude/settings.local.json."
         ),
     }
@@ -333,9 +394,21 @@ def print_followup(consuming_root: Path) -> None:
     print()
     print(f"  2. Commit the new files:")
     print(f"     git add .github/workflows/orchestrator.yml \\")
+    print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
-    print(f"             .claude/")
+    print(f"             .github/workflows/sync-claude.yml \\")
+    print(f"             .claude/agents/ \\")
+    print(f"             .claude/commands/ \\")
+    print(f"             standards/")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
+    print()
+    print(f"     NOTE: do NOT commit .claude/settings.local.json — it is")
+    print(f"     developer-local. Add it to your .gitignore if not already.")
+    print()
+    print(f"     The base standards in standards/ are managed by the submodule.")
+    print(f"     Add project-specific standards as NEW files (e.g. standards/myapp.json)")
+    print(f"     rather than modifying the base files — the daily sync-claude.yml")
+    print(f"     will overwrite base files but never delete your additions.")
     print()
     print(f"  3. Bootstrap the {{agent}}:{{status}} labels:")
     print(f"     Trigger the orchestrator workflow manually once from")
@@ -380,7 +453,11 @@ def main() -> int:
     print()
 
     install_orchestrator_workflow(consuming_root, args.force, args.dry_run)
+    install_bootstrap_labels_workflow(consuming_root, args.force, args.dry_run)
     install_label_cleanup_workflow(consuming_root, args.force, args.dry_run)
+    install_sync_workflow(consuming_root, args.force, args.dry_run)
+    install_standards(consuming_root, args.force, args.dry_run)
+    install_agents(consuming_root, args.force, args.dry_run)
     install_slash_commands(consuming_root, args.force, args.dry_run)
     install_local_settings(consuming_root, args.force, args.dry_run)
 

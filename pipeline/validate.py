@@ -26,7 +26,7 @@ except ImportError:
 HERE = Path(__file__).parent
 DEFAULT_PIPELINE = HERE / "pipeline.json"
 DEFAULT_SCHEMA = HERE / "schemas" / "pipeline.schema.json"
-DEFAULT_AGENTS_DIR = HERE.parent.parent / ".claude" / "agents"
+DEFAULT_AGENTS_DIR = HERE.parent / ".claude" / "agents"
 
 VALID_MODELS = frozenset({
     "claude-opus-4-7",

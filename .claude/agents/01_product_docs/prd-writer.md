@@ -21,6 +21,40 @@ decomposition before a PRD is written.
 
 ---
 
+## Step 0 — Detect revision run
+
+Check whether this is a first run or a revision after human rejection.
+
+```bash
+# Find the timestamp of the most recent prd-writer artefact comment.
+PREV_ARTEFACT_TIME=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
+  --jq '[.comments[]
+        | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer"))
+        ] | last | .createdAt // ""')
+```
+
+If `$PREV_ARTEFACT_TIME` is **non-empty**, this is a revision run. Read the
+human feedback posted after the last artefact:
+
+```bash
+HUMAN_FEEDBACK=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments --jq '.comments' \
+  | jq --arg since "$PREV_ARTEFACT_TIME" \
+  '[.[] | select(.createdAt > $since)
+       | select(.body | startswith("<!-- ai-agile/") | not)
+       | "**\(.user.login):** \(.body)"
+  ] | join("\n\n---\n\n")')
+```
+
+If `$HUMAN_FEEDBACK` is non-empty, incorporate the feedback when
+rewriting the PRD in Step 4. Address every point the reviewer raised.
+If a comment is ambiguous, make the most conservative interpretation
+that satisfies the stated concern.
+
+If `$PREV_ARTEFACT_TIME` is **empty**, this is a first run — proceed
+normally from Step 1.
+
+---
+
 ## Step 1 — Read the issue and classification
 
 Fetch issue metadata and the classifier artefact in two calls:

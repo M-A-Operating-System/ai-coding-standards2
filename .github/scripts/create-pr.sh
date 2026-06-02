@@ -97,8 +97,18 @@ else
     git fetch origin "${DEFAULT_BRANCH}"
     git checkout -B "${BRANCH}" "origin/${DEFAULT_BRANCH}"
     git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
-    git push -f origin "${BRANCH}"
-    echo "Reset ${BRANCH} to ${DEFAULT_BRANCH} and pushed placeholder commit."
+    # Only force-push if the remote branch HEAD is still the known placeholder
+    # commit (or the branch is brand-new). This prevents destroying agent commits
+    # if create-pr is re-triggered after prd-docs-updater or coder has pushed work.
+    # Fetch first so the local tracking ref reflects the true remote state.
+    git fetch origin "${BRANCH}" 2>/dev/null || true
+    REMOTE_MSG=$(git log -1 --format="%s" "origin/${BRANCH}" 2>/dev/null || echo "")
+    if [[ "${REMOTE_MSG}" == "chore: open branch for issue-${ISSUE_NUMBER}" || -z "${REMOTE_MSG}" ]]; then
+      git push -f origin "${BRANCH}"
+      echo "Reset ${BRANCH} to ${DEFAULT_BRANCH} and pushed placeholder commit."
+    else
+      echo "Branch ${BRANCH} has non-placeholder commits ('${REMOTE_MSG}') — skipping force-push to preserve agent work." >&2
+    fi
   fi
 
   # Pre-flight: verify the token can access this repo.

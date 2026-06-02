@@ -13,6 +13,7 @@ from pipeline_orchestrator import (
     agent_status,
     _apply_failed,
     _count_running,
+    promote_gated_agents,
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
     process_work_item,
@@ -928,3 +929,257 @@ class TestOrchestratorNonOverlapping:
             "Workflow must set cancel-in-progress: false so a queued run waits "
             "for the active run to finish rather than being cancelled"
         )
+
+
+# ---------------------------------------------------------------------------
+# QA-001: invoke_agent timeout — timer fires and agent does not hang forever
+# ---------------------------------------------------------------------------
+
+class TestInvokeAgentTimeout:
+    """Verify DP-006 fix: kill-timer terminates a silent or slow agent.
+
+    Two scenarios:
+    1. Agent produces no stdout at all (silent hang) — timer fires, process
+       is killed, invoke_agent returns AgentRunResult(success=False) instead
+       of hanging forever.
+    2. Agent keeps producing output past the deadline — _timed_out.is_set()
+       check in the per-line loop raises TimeoutExpired, and the returned
+       captured_tail contains the "timed out" message.
+    """
+
+    def _make_minimal_agent_def(self) -> "AgentDef":
+        import pipeline_orchestrator as orch
+        return orch.AgentDef(
+            agent="05_execute/coder",
+            phase="05_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="Test coder agent",
+            step_type="agent",
+        )
+
+    def _make_work_item(self) -> "WorkItem":
+        import pipeline_orchestrator as orch
+        return orch.WorkItem(
+            number=1,
+            kind="issue",
+            title="Test issue",
+            labels=set(),
+            url="https://github.com/test/repo/issues/1",
+        )
+
+    def test_silent_agent_does_not_hang(self, monkeypatch):
+        """Agent that produces no stdout terminates within timeout + small buffer."""
+        import threading
+        import time
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
+
+        # Stdout blocks until the process is killed.
+        _killed = threading.Event()
+
+        class BlockingStdout:
+            def __iter__(self):
+                _killed.wait(timeout=10)  # unblocks when process is terminated
+                return iter([])
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = BlockingStdout()
+        mock_proc.returncode = -15  # SIGTERM
+
+        poll_done = threading.Event()
+
+        def poll_side_effect():
+            return -15 if poll_done.is_set() else None
+
+        def terminate_side_effect():
+            poll_done.set()
+            _killed.set()
+
+        mock_proc.poll.side_effect = poll_side_effect
+        mock_proc.terminate.side_effect = terminate_side_effect
+        mock_proc.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            start = time.monotonic()
+            result = orch.invoke_agent(
+                self._make_minimal_agent_def(),
+                self._make_work_item(),
+                dry_run=False,
+                repo="test/repo",
+                agent_text_override="---\ntools: []\n---\nTest agent.",
+            )
+            elapsed = time.monotonic() - start
+
+        assert result.success is False
+        # Must complete well within 2× the patched timeout, not hang forever.
+        assert elapsed < 2.0, f"invoke_agent hung for {elapsed:.2f}s (expected < 2s)"
+
+    def test_timed_out_event_triggers_timeout_message(self, monkeypatch):
+        """When _timed_out fires while agent is emitting lines, captured_tail says timed out."""
+        import threading
+        import time
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
+
+        # Stdout yields lines until the process is killed, then stops.
+        _killed = threading.Event()
+
+        def line_generator():
+            while not _killed.is_set():
+                yield '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}\n'
+                time.sleep(0.005)
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = line_generator()
+        mock_proc.returncode = -15
+
+        poll_done = threading.Event()
+
+        def poll_side_effect():
+            return -15 if poll_done.is_set() else None
+
+        def terminate_side_effect():
+            poll_done.set()
+            _killed.set()
+
+        mock_proc.poll.side_effect = poll_side_effect
+        mock_proc.terminate.side_effect = terminate_side_effect
+        mock_proc.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            result = orch.invoke_agent(
+                self._make_minimal_agent_def(),
+                self._make_work_item(),
+                dry_run=False,
+                repo="test/repo",
+                agent_text_override="---\ntools: []\n---\nTest agent.",
+            )
+
+        assert result.success is False
+        assert "timed out" in result.captured_tail.lower(), (
+            f"Expected 'timed out' in captured_tail, got: {result.captured_tail!r}"
+        )
+
+
+class TestPromoteGatedAgents:
+    """Tests for promote_gated_agents covering all label-state transitions."""
+
+    def _gated_agent(self, name: str = "01_product_docs/prd-writer") -> AgentDef:
+        return AgentDef(
+            agent=name,
+            phase=name.split("/")[0],
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=True,
+            human_gate_label=f"{name.rsplit('/', 1)[-1]}:approved",
+            description="gated agent",
+        )
+
+    def _work_item(self) -> MagicMock:
+        wi = MagicMock()
+        wi.number = 42
+        wi.kind = "issue"
+        return wi
+
+    def test_promotion_adds_complete_and_removes_review(self):
+        """Gate label + :review present → :complete added, :review removed."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.human_gate_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_called_once_with(wi.number, agent.complete_label)
+        gh.remove_label.assert_any_call(wi.number, agent.review_label)
+        assert agent.complete_label in result
+        assert agent.review_label not in result
+
+    def test_rejection_removes_review_leaves_requested(self):
+        """:review + :requested (no gate) → :review removed, :requested kept."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.status_label(STATUS_REQUESTED)}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.remove_label.assert_called_once_with(wi.number, agent.review_label)
+        assert agent.review_label not in result
+        assert agent.status_label(STATUS_REQUESTED) in result
+        assert agent.complete_label not in result
+
+    def test_simultaneous_approved_and_requested_promotes_and_cleans_requested(self):
+        """Both :approved and :requested arrive — promotion wins, :requested cleaned up."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {
+            agent.review_label,
+            agent.human_gate_label,
+            agent.status_label(STATUS_REQUESTED),
+        }
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        assert agent.complete_label in result
+        assert agent.review_label not in result
+        assert agent.status_label(STATUS_REQUESTED) not in result
+
+    def test_gate_present_without_review_is_no_op(self):
+        """:approved present but no :review — nothing changed (agent hasn't run yet)."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.human_gate_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()
+        gh.remove_label.assert_not_called()
+        assert result == labels
+
+    def test_non_gated_agent_skipped(self):
+        """Agents without human_gate_after are not touched."""
+        agent = _make_agent_def("05_execute/coder")  # human_gate_after=False
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.complete_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()
+        gh.remove_label.assert_not_called()
+
+    def test_wrong_work_item_kind_skipped(self):
+        """Agent objects=['issue'] does not fire for kind='pr'."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        wi.kind = "pr"
+        gh = MagicMock()
+        labels = {agent.review_label, agent.human_gate_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()
+        gh.remove_label.assert_not_called()
+
+    def test_complete_already_present_skips_add_but_still_removes_review(self):
+        """Crash-recovery: :complete already there from prior tick — remove stale :review."""
+        agent = self._gated_agent()
+        wi = self._work_item()
+        gh = MagicMock()
+        labels = {agent.review_label, agent.human_gate_label, agent.complete_label}
+
+        result = promote_gated_agents(labels, [agent], wi, gh)
+
+        gh.add_label.assert_not_called()  # already present, skip
+        gh.remove_label.assert_any_call(wi.number, agent.review_label)
+        assert agent.review_label not in result

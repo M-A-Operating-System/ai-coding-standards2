@@ -429,6 +429,13 @@ AI_AGILE_STATUS: complete
 - **Never run git commit, git push, git checkout, gh pr create, or gh pr edit.**
   The orchestrator owns all git and PR operations.
 - **Never create or apply labels.** The orchestrator manages the label lifecycle.
+- **Never write files to `.github/workflows/`.** The orchestrator's
+  `commit_after` push uses `GITHUB_TOKEN`, which GitHub prevents from pushing
+  workflow file changes. If the issue requires a new GitHub Actions workflow,
+  write the file to `docs/workflow-proposals/{filename}.yml` instead and add a
+  note in your closing announcement that a human must move it to
+  `.github/workflows/` and push manually. The proposed file is committed to
+  the issue branch so it is visible in the draft PR for review.
 - **Defensive first, always.** Guard clauses, explicit error paths, named
   constants, boundary validation — on every change, in every mode.
 - **JSON standards and ADRs are authoritative (P-2).** `ai-agile/standards/*.json`
