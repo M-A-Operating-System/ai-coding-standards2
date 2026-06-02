@@ -45,34 +45,21 @@ class TestInstallStandards:
         assert "../submodule/pipeline/schemas/standards.schema.json" in result
         assert '"../pipeline/schemas/standards.schema.json"' not in result
 
-    def test_removes_stale_standards(self, tmp_path, monkeypatch):
+    def test_preserves_project_specific_standards(self, tmp_path, monkeypatch):
+        """Standards not in the submodule (project-specific) are never deleted."""
         fake_src = tmp_path / "submodule"
         (fake_src / "standards").mkdir(parents=True)
-        (fake_src / "standards" / "current.json").write_text("{}")
+        (fake_src / "standards" / "base.json").write_text("{}")
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
         (consuming / "standards").mkdir(parents=True)
-        stale = consuming / "standards" / "stale.json"
-        stale.write_text("{}")
+        project_specific = consuming / "standards" / "myapp.json"
+        project_specific.write_text("{}")
 
         get_started.install_standards(consuming, force=True, dry_run=False)
 
-        assert (consuming / "standards" / "current.json").exists()
-        assert not stale.exists()
-
-    def test_stale_cleanup_skips_schema_files(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        (fake_src / "standards").mkdir(parents=True)
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        (consuming / "standards").mkdir(parents=True)
-        schema_file = consuming / "standards" / "local.schema.json"
-        schema_file.write_text("{}")
-
-        get_started.install_standards(consuming, force=True, dry_run=False)
-
-        # *.schema.json files are never deleted by stale cleanup
-        assert schema_file.exists()
+        assert (consuming / "standards" / "base.json").exists()
+        assert project_specific.exists()  # must not be deleted
 
     def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"

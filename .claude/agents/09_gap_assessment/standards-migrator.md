@@ -37,7 +37,7 @@ PARENT_ROOT="${AI_AGILE_ROOT:-.}"
 
 # Derive the submodule directory so we can exclude it from knowledge-file
 # searches. AI_AGILE_CONTEXT = $SUBMODULE_ROOT/.claude/AGENTS.md when set
-# by the orchestrator, so two levels up gives us the submodule root.
+# by the orchestrator. dirname gives .claude/; /.. steps up to the submodule root.
 if [ -n "${AI_AGILE_CONTEXT:-}" ]; then
   SUBMODULE_EXCLUDE="$(cd "$(dirname "$AI_AGILE_CONTEXT")/.." && pwd)"
 else

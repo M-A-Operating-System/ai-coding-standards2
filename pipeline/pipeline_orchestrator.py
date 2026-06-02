@@ -2082,9 +2082,12 @@ def _configure_git_auth() -> None:
         # are not visible in `git config --list` or GIT_TRACE output, unlike the
         # --global extraHeader approach which writes the token to disk and leaks
         # it in verbose git traces.
+        # GitHub git transport uses HTTP Basic auth, not Bearer.
+        # Format: base64("x-access-token:TOKEN") — identical to actions/checkout.
+        _encoded = base64.b64encode(f"x-access-token:{github_token}".encode()).decode()
         os.environ["GIT_CONFIG_COUNT"] = "1"
         os.environ["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
-        os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {github_token}"
+        os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_encoded}"
         log.info("git auth: configured http.extraHeader via GIT_CONFIG env vars (contents:write scope)")
 
         bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
@@ -2224,11 +2227,14 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             if push_token:
                 # Pass the token via GIT_CONFIG env vars — never embedded in
                 # a URL (which would appear in `git remote -v`, `ps`, CI logs).
+                _push_encoded = base64.b64encode(
+                    f"x-access-token:{push_token}".encode()
+                ).decode()
                 push_env = {
                     **os.environ,
                     "GIT_CONFIG_COUNT": "1",
                     "GIT_CONFIG_KEY_0": "http.https://github.com/.extraHeader",
-                    "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {push_token}",
+                    "GIT_CONFIG_VALUE_0": f"Authorization: Basic {_push_encoded}",
                 }
                 subprocess.run(["git", "push", "origin", branch], check=True, env=push_env)
             else:

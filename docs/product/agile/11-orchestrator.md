@@ -697,7 +697,7 @@ mode.
 | Install function | Destination | Stale-file cleanup |
 |---|---|---|
 | `install_agents` | `.claude/agents/` | Yes — removes agents no longer in the submodule |
-| `install_standards` | `standards/` | Yes — removes base standards no longer in the submodule |
+| `install_standards` | `standards/` | No — project-specific standards files are never deleted |
 | `install_slash_commands` | `.claude/commands/` | Yes |
 | `install_orchestrator_workflow` | `.github/workflows/orchestrator.yml` | No (single file) |
 | `install_bootstrap_labels_workflow` | `.github/workflows/bootstrap-labels.yml` | No (single file) |
