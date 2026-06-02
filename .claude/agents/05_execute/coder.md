@@ -49,14 +49,16 @@ the pr-reviewer previously requested changes — this is Mode B. Absence means
 Mode A (initial build).
 
 ```bash
-REVIEW_CYCLE=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
-  --jq '.labels[].name | select(startswith("review-cycle:")) | ltrimstr("review-cycle:")' \
+REVIEW_CYCLE_LABEL=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+  --jq '.labels[].name | select(startswith("review-cycle:"))' \
   | head -1)
 
-if [ -n "$REVIEW_CYCLE" ]; then
+if [ -n "$REVIEW_CYCLE_LABEL" ]; then
+  # Strip prefix in bash so an empty suffix (review-cycle:) is reliably caught
+  REVIEW_CYCLE="${REVIEW_CYCLE_LABEL#review-cycle:}"
   # Validate: must be a positive integer (orchestrator always sets N >= 1)
   if ! printf '%s' "$REVIEW_CYCLE" | grep -qE '^[1-9][0-9]*$'; then
-    echo "AI_AGILE_STATUS: blocked \"review-cycle label has malformed value '${REVIEW_CYCLE}' — expected a positive integer\""
+    echo "AI_AGILE_STATUS: blocked \"'${REVIEW_CYCLE_LABEL}' is malformed — expected review-cycle:N where N is a positive integer\""
     exit 1
   fi
   # Mode B — self-discover the associated PR via GitHub data model
@@ -307,8 +309,7 @@ AI_AGILE_STATUS: complete
 
 ### B1 — Read all review feedback
 
-`$PR_NUMBER` was discovered in Step 0. Read all feedback from both the issue
-and the PR — they are linked via the GitHub data model.
+`$PR_NUMBER` was discovered in Step 0. Read all feedback from the PR.
 
 ```bash
 # Structured review artefact from pr-reviewer agent (posted on the PR)
