@@ -51,7 +51,6 @@ HUMAN_FEEDBACK=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments --
        | select(.body | startswith("<!-- ai-agile/") | not)
        | "**\(.user.login):** \(.body)"
   ] | join("\n\n---\n\n")')
-echo "$HUMAN_FEEDBACK"
 ```
 
 Incorporate the feedback when re-assessing in Step 2. If the reviewer

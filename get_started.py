@@ -176,6 +176,19 @@ def install_standards(
         )
         if write_file(dst, content, force, dry_run):
             written += 1
+
+    # Remove stale standards that are no longer in the submodule.
+    if dst_dir.is_dir():
+        for dst in sorted(dst_dir.glob("*.json")):
+            if dst.name.endswith(".schema.json"):
+                continue
+            if not (src_dir / dst.name).exists():
+                if dry_run:
+                    print(f"  WOULD REMOVE {dst}  (no longer in submodule)")
+                else:
+                    dst.unlink()
+                    print(f"  REMOVED {dst}  (no longer in submodule)")
+
     return written
 
 

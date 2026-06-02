@@ -1,11 +1,219 @@
-"""Tests for get_started._add_submodules_to_checkout."""
+"""Tests for get_started install helpers and _add_submodules_to_checkout."""
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
 import get_started
 
+
+# ---------------------------------------------------------------------------
+# TestInstallStandards
+# ---------------------------------------------------------------------------
+
+class TestInstallStandards:
+    def test_copies_json_not_schema(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "base.json").write_text('{"standards": []}')
+        (fake_src / "standards" / "pipeline.schema.json").write_text("{}")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        written = get_started.install_standards(consuming, force=True, dry_run=False)
+
+        assert written == 1
+        assert (consuming / "standards" / "base.json").exists()
+        assert not (consuming / "standards" / "pipeline.schema.json").exists()
+
+    def test_rewrites_schema_ref_path(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "s.json").write_text(
+            '{"$schema": "../pipeline/schemas/standards.schema.json"}'
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", "submodule")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_standards(consuming, force=True, dry_run=False)
+
+        result = (consuming / "standards" / "s.json").read_text()
+        assert "../submodule/pipeline/schemas/standards.schema.json" in result
+        assert '"../pipeline/schemas/standards.schema.json"' not in result
+
+    def test_removes_stale_standards(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "current.json").write_text("{}")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        (consuming / "standards").mkdir(parents=True)
+        stale = consuming / "standards" / "stale.json"
+        stale.write_text("{}")
+
+        get_started.install_standards(consuming, force=True, dry_run=False)
+
+        assert (consuming / "standards" / "current.json").exists()
+        assert not stale.exists()
+
+    def test_stale_cleanup_skips_schema_files(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        (consuming / "standards").mkdir(parents=True)
+        schema_file = consuming / "standards" / "local.schema.json"
+        schema_file.write_text("{}")
+
+        get_started.install_standards(consuming, force=True, dry_run=False)
+
+        # *.schema.json files are never deleted by stale cleanup
+        assert schema_file.exists()
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "base.json").write_text("{}")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        written = get_started.install_standards(consuming, force=True, dry_run=True)
+
+        assert written == 1
+        assert not (consuming / "standards" / "base.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# TestInstallAgents
+# ---------------------------------------------------------------------------
+
+class TestInstallAgents:
+    def test_copies_agent_files_with_subdirs(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        agents_src = fake_src / ".claude" / "agents" / "01_product_docs"
+        agents_src.mkdir(parents=True)
+        (agents_src / "prd-writer.md").write_text("# prd-writer")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        written = get_started.install_agents(consuming, force=True, dry_run=False)
+
+        assert written == 1
+        dst = consuming / ".claude" / "agents" / "01_product_docs" / "prd-writer.md"
+        assert dst.exists()
+        assert dst.read_text() == "# prd-writer"
+
+    def test_removes_stale_agents(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        agents_src = fake_src / ".claude" / "agents" / "01_product_docs"
+        agents_src.mkdir(parents=True)
+        (agents_src / "prd-writer.md").write_text("# prd-writer")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        stale_dir = consuming / ".claude" / "agents" / "99_retired"
+        stale_dir.mkdir(parents=True)
+        stale = stale_dir / "old-agent.md"
+        stale.write_text("old")
+
+        get_started.install_agents(consuming, force=True, dry_run=False)
+
+        assert not stale.exists()
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        agents_src = fake_src / ".claude" / "agents"
+        agents_src.mkdir(parents=True)
+        (agents_src / "agent.md").write_text("# agent")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        written = get_started.install_agents(consuming, force=True, dry_run=True)
+
+        assert written == 1
+        assert not (consuming / ".claude" / "agents" / "agent.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# TestInstallSyncWorkflow
+# ---------------------------------------------------------------------------
+
+class TestInstallSyncWorkflow:
+    def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / ".github" / "workflows").mkdir(parents=True)
+        (fake_src / ".github" / "workflows" / "sync-claude.yml").write_text(
+            "steps:\n"
+            "  - uses: actions/checkout@v4\n"
+            "  - run: echo hi\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_sync_workflow(consuming, force=True, dry_run=False)
+
+        assert result is True
+        dst = consuming / ".github" / "workflows" / "sync-claude.yml"
+        assert dst.exists()
+        assert "submodules: true" in dst.read_text()
+
+    def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "empty"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_sync_workflow(consuming, force=True, dry_run=False)
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# TestInstallBootstrapLabelsWorkflow
+# ---------------------------------------------------------------------------
+
+class TestInstallBootstrapLabelsWorkflow:
+    def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / ".github" / "workflows").mkdir(parents=True)
+        (fake_src / ".github" / "workflows" / "bootstrap-labels.yml").write_text(
+            "steps:\n"
+            "  - name: Checkout\n"
+            "    uses: actions/checkout@v4\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_bootstrap_labels_workflow(consuming, force=True, dry_run=False)
+
+        assert result is True
+        dst = consuming / ".github" / "workflows" / "bootstrap-labels.yml"
+        assert "submodules: true" in dst.read_text()
+
+    def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "empty"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_bootstrap_labels_workflow(consuming, force=True, dry_run=False)
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# TestAddSubmodulesToCheckout
+# ---------------------------------------------------------------------------
 
 class TestAddSubmodulesToCheckout:
     def test_named_form_inserts_submodules(self):

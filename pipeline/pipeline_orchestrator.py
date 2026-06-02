@@ -2078,13 +2078,14 @@ def _configure_git_auth() -> None:
         return
 
     try:
-        subprocess.run(
-            ["git", "config", "--global",
-             "http.https://github.com/.extraHeader",
-             f"Authorization: Bearer {github_token}"],
-            check=True,
-        )
-        log.info("git auth: configured http.extraHeader to use GITHUB_TOKEN (contents:write scope)")
+        # Set via process env vars rather than writing to ~/.gitconfig — env vars
+        # are not visible in `git config --list` or GIT_TRACE output, unlike the
+        # --global extraHeader approach which writes the token to disk and leaks
+        # it in verbose git traces.
+        os.environ["GIT_CONFIG_COUNT"] = "1"
+        os.environ["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
+        os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {github_token}"
+        log.info("git auth: configured http.extraHeader via GIT_CONFIG env vars (contents:write scope)")
 
         bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
         if not bot_token:
@@ -2189,13 +2190,15 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                         workflow_files.replace("\n", ", "),
                     )
                 else:
-                    log.warning(
-                        "  commit_after: agent wrote .github/workflows/ files: %s — "
-                        "GITHUB_TOKEN cannot push workflow files and AI_AGILE_BOT_TOKEN "
-                        "is not set. Push will fail with 403. Set AI_AGILE_BOT_TOKEN to "
-                        "a classic PAT with repo+workflow scopes.",
+                    log.error(
+                        "  commit_after: agent wrote .github/workflows/ files (%s) but "
+                        "AI_AGILE_BOT_TOKEN is not set. GITHUB_TOKEN cannot push workflow "
+                        "files (GitHub enforces this). Add AI_AGILE_BOT_TOKEN to your "
+                        "repository secrets as a classic PAT with repo+workflow scopes. "
+                        "Failing early — remove :failed to retry after adding the secret.",
                         workflow_files.replace("\n", ", "),
                     )
+                    return False
 
             # Guard: nothing staged → skip (agent found nothing to update).
             staged = subprocess.run(["git", "diff", "--cached", "--quiet"])

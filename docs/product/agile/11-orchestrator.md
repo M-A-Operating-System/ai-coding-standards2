@@ -685,6 +685,40 @@ jobs:
             ${{ steps.args.outputs.args }}
 ```
 
+### `sync-claude.yml`
+
+`.github/workflows/sync-claude.yml` keeps the consuming repo's pipeline
+artefacts in sync with the `ai-coding-standards2` submodule. It runs
+nightly (and on `workflow_dispatch`) and calls `get_started.py` in sync
+mode.
+
+**What it updates:**
+
+| Install function | Destination | Stale-file cleanup |
+|---|---|---|
+| `install_agents` | `.claude/agents/` | Yes — removes agents no longer in the submodule |
+| `install_standards` | `standards/` | Yes — removes base standards no longer in the submodule |
+| `install_slash_commands` | `.claude/commands/` | Yes |
+| `install_orchestrator_workflow` | `.github/workflows/orchestrator.yml` | No (single file) |
+| `install_bootstrap_labels_workflow` | `.github/workflows/bootstrap-labels.yml` | No (single file) |
+| `install_label_cleanup_workflow` | `.github/workflows/label-cleanup.yml` | No (single file) |
+| `install_sync_workflow` | `.github/workflows/sync-claude.yml` | No (self) |
+
+The sync commit is made by the Actions bot if any files changed. If nothing
+changed, the workflow exits without a commit.
+
+**Path rewriting.** Workflow files reference `ai-coding-standards2/` as a
+path prefix. `install_*_workflow` functions rewrite these paths to
+`{SUBMODULE_NAME}/` so they work regardless of the submodule directory name
+the consuming repo chose. `_add_submodules_to_checkout` injects
+`submodules: true` into any bare `actions/checkout` step that doesn't
+already have a `with:` block.
+
+**Initial setup.** The first time a consuming repo adopts the pipeline,
+run `python ai-coding-standards2/get_started.py --force` to install all
+artefacts. This is idempotent — re-running it updates without overwriting
+local additions (e.g. project-specific standards files not in the submodule).
+
 **Why `cancel-in-progress: false`.** Two label events can fire within
 seconds (e.g., human applies gate label; orchestrator immediately promotes
 the agent and applies `:complete`, firing a second event). Cancelling the
@@ -957,13 +991,14 @@ event-driven tick proceeds as if no pause had been set.
 
 ## Secrets required
 
-| Secret | Used by | Description |
-|---|---|---|
-| `GITHUB_TOKEN` | Orchestrator | Auto-provisioned by Actions; scoped to the repo and workflow run |
-| `ANTHROPIC_API_KEY` | Orchestrator → Claude CLI | Required for agent invocations; store as an Actions repository or org secret |
+| Secret | Required | Used by | Description |
+|---|---|---|---|
+| `GITHUB_TOKEN` | Yes | Orchestrator | Auto-provisioned by Actions; scoped to the repo and workflow run |
+| `ANTHROPIC_API_KEY` | Yes | Orchestrator → Claude CLI | Required for agent invocations; store as an Actions repository or org secret |
+| `AI_AGILE_BOT_TOKEN` | When agents write `.github/workflows/` files | `_run_commit_after` | Classic PAT with `repo` + `workflow` scopes. `GITHUB_TOKEN` cannot push workflow files — GitHub enforces this at the API layer. When absent and an agent writes workflow files, `commit_after` fails fast with a clear error rather than a 403. |
 
 The `GITHUB_TOKEN` auto-provisioned by Actions has the scopes declared in
 each workflow's `permissions` block. No PAT is needed for the orchestrator
-itself. A dedicated GitHub App token is required before any production
+itself — unless agents produce `.github/workflows/` files (see `AI_AGILE_BOT_TOKEN` above). A dedicated GitHub App token is required before any production
 compliance claim (see [`10-roadmap.md`](10-roadmap.md) — agent identity
 prerequisite).
