@@ -29,6 +29,38 @@ run any git commands.
 
 ---
 
+## Step 0 — Detect revision run
+
+Check whether this is a first run or a revision after human rejection.
+
+```bash
+PREV_ARTEFACT_TIME=$(gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
+  --jq '[.comments[]
+        | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater"))
+        ] | last | .createdAt // ""')
+```
+
+If `$PREV_ARTEFACT_TIME` is **non-empty**, read the human feedback posted
+after the last artefact and keep it in mind when reassessing which doc
+changes are needed:
+
+```bash
+HUMAN_FEEDBACK=$(gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
+  --jq --arg since "$PREV_ARTEFACT_TIME" \
+  '[.comments[]
+    | select(.createdAt > $since)
+    | select(.body | startswith("<!-- ai-agile/") | not)
+    | "**\(.user.login):** \(.body)"
+  ] | join("\n\n---\n\n")')
+echo "$HUMAN_FEEDBACK"
+```
+
+Incorporate the feedback when re-assessing in Step 2. If the reviewer
+pointed to a specific doc section or asked for a different framing,
+prioritise that over your own initial assessment.
+
+---
+
 ## Step 1 — Read the PRD and existing docs
 
 Read the approved PRD from the issue body:

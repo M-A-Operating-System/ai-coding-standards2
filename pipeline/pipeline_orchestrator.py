@@ -1884,10 +1884,37 @@ def promote_gated_agents(
         review_label = agent_def.review_label
         complete_label = agent_def.complete_label
         gate_label = agent_def.human_gate_label
+        requested_label = agent_def.status_label(STATUS_REQUESTED)
 
         gate_present = gate_label in updated
         review_present = review_label in updated
         complete_present = complete_label in updated
+        requested_present = requested_label in updated
+
+        # Rejection: human commented and applied :requested while the agent
+        # is in :review. Remove :review so :requested is the highest-priority
+        # status on the next pass, triggering a re-run in the per-agent loop.
+        if review_present and requested_present and not gate_present and not complete_present:
+            try:
+                gh.remove_label(work_item.number, review_label)
+                updated.discard(review_label)
+                log.info(
+                    "  REJECT  %-38s  :requested while in :review → clearing :review for re-run",
+                    agent_def.agent,
+                )
+                if audit_log is not None and session_id:
+                    audit_log.append(_make_audit_event(
+                        session_id, "gate.rejected", repo or gh.repo,
+                        work_item=work_item, agent=agent_def.agent,
+                        outcome_status="requested",
+                        outcome_detail="human applied :requested — agent will re-run and read feedback",
+                    ))
+            except Exception as exc:
+                log.error(
+                    "  could not clear :review for rejection of %s on #%d: %s — pipeline state may be inconsistent",
+                    agent_def.agent, work_item.number, exc,
+                )
+            continue
 
         # Standard promotion: gate applied while agent is in :review.
         if gate_present and review_present:
@@ -2604,7 +2631,10 @@ def process_work_item(
                         work_item.number,
                         (
                             f"**{agent_def.agent}** is complete.\n\n"
-                            f"Apply `{agent_def.human_gate_label}` to advance the pipeline."
+                            f"- Apply `{agent_def.human_gate_label}` to approve and advance the pipeline.\n"
+                            f"- Add your feedback as a comment, then apply "
+                            f"`{agent_def.status_label(STATUS_REQUESTED)}` to request changes "
+                            f"(the agent will re-read your comments and revise)."
                         )
                     )
                 except Exception as exc:
