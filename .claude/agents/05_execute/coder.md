@@ -28,8 +28,9 @@ You may be invoked **multiple times** for the same issue:
   sub-issues. Branch `issue-{N}` and its draft PR already exist (created by
   the `create-pr` script step before this agent runs). The orchestrator
   commits and pushes all changes to that branch.
-- **Mode B — Address feedback:** The orchestrator has placed you on the
-  existing branch and set `$PR_NUMBER`. Read review comments, fix the code,
+- **Mode B — Address feedback:** A `review-cycle:N` label (N ≥ 1) is present
+  on the issue, indicating the pr-reviewer requested changes. Discover the
+  associated PR via the GitHub data model. Read review comments, fix the code,
   post a response. The orchestrator commits and pushes.
 
 **The orchestrator owns git and PR mechanics.** You own the code and the
@@ -43,15 +44,38 @@ Write defensively. Apply project standards exactly as loaded from
 
 ## Step 0 — Detect mode
 
-The orchestrator sets `$PR_NUMBER` when an existing PR needs feedback
-addressed. If it is set, this is Mode B. Otherwise Mode A.
+Check for a `review-cycle:N` label on the issue. Its presence (N ≥ 1) means
+the pr-reviewer previously requested changes — this is Mode B. Absence means
+Mode A (initial build).
 
 ```bash
-if [ -n "${PR_NUMBER:-}" ]; then
-  echo "MODE=B  PR=${PR_NUMBER}"
+REVIEW_CYCLE=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+  --jq '.labels[].name | select(startswith("review-cycle:")) | ltrimstr("review-cycle:")' \
+  | head -1)
+
+if [ -n "$REVIEW_CYCLE" ] && [ "$REVIEW_CYCLE" -gt 0 ] 2>/dev/null; then
+  # Mode B — self-discover the associated PR via GitHub data model
+  PR_NUMBER=$(gh pr list \
+    --repo "$REPO" \
+    --head "issue-${ISSUE_NUMBER}" \
+    --state open \
+    --json number \
+    --jq '.[0].number // empty')
+  if [ -z "$PR_NUMBER" ]; then
+    echo "ERROR: review-cycle:${REVIEW_CYCLE} label present but no open PR found for head branch issue-${ISSUE_NUMBER}"
+    echo "AI_AGILE_STATUS: blocked"
+    exit 1
+  fi
+  echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE}  PR=${PR_NUMBER}"
 else
   echo "MODE=A"
 fi
+```
+
+Export `PR_NUMBER` so later steps can use it:
+
+```bash
+export PR_NUMBER
 ```
 
 Then follow the corresponding section below.
@@ -279,16 +303,21 @@ AI_AGILE_STATUS: complete
 
 ### B1 — Read all review feedback
 
-The orchestrator has placed you on the existing branch. `$PR_NUMBER` is set.
+`$PR_NUMBER` was discovered in Step 0. Read all feedback from both the issue
+and the PR — they are linked via the GitHub data model.
 
 ```bash
-# Structured review from pr-reviewer agent
-gh pr view $PR_NUMBER --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 05_execute/pr-reviewer")) | .body]'
+# Structured review artefact from pr-reviewer agent (posted on the issue)
+gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
+  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 05_execute/pr-reviewer")) | .body] | last'
 
-# Inline review comments from human reviewers
-gh pr view $PR_NUMBER --repo "$REPO" --json reviews \
+# Inline review comments and human reviews on the PR
+gh pr view "$PR_NUMBER" --repo "$REPO" --json reviews \
   --jq '[.reviews[] | {author: .author.login, state: .state, body: .body}]'
+
+# PR-level comments (may include additional human feedback)
+gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
+  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .author.login, body: .body}]'
 ```
 
 ---
@@ -308,11 +337,29 @@ open a follow-up issue and link it in a PR comment instead.
 
 ---
 
-### B3 — Verify feedback against spec and standards
+### B3 — Read the spec and standards, then verify feedback
 
-The PRD, tech-spec, JSON standards, and ADRs you read in Mode A are already
-in this session's context. Do not re-read them. Refer to that context now to
-decide whether each piece of feedback is valid:
+Read the technical specification, machine-readable standards, and ADRs exactly
+as in A2. This is a fresh invocation — do not assume any prior context.
+
+```bash
+find docs/tech-spec -name "*.md" 2>/dev/null | sort
+[ -f CLAUDE.md ] && cat CLAUDE.md
+
+: "${AI_AGILE_ROOT:?AI_AGILE_ROOT must be set}"
+find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null \
+  | sort | while IFS= read -r f; do echo "=== $f ==="; cat "$f"; done
+cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null || echo "(no adrs.json)"
+```
+
+Also read the approved PRD from the issue comments:
+
+```bash
+gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
+  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .body] | last'
+```
+
+Use these documents to decide whether each piece of feedback is valid:
 
 - If a reviewer requests something that contradicts the PRD or tech-spec,
   do not implement it — post a comment explaining the conflict and emit
