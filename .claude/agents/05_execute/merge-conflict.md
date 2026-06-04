@@ -38,24 +38,6 @@ If no open PR exists, complete immediately — there is nothing to check:
   echo "AI_AGILE_STATUS: complete"; exit 0; }
 ```
 
-Post the opening announcement:
-
-```bash
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
-<!-- ai-agile/announcement/v1 by 05_execute/merge-conflict -->
-```json
-{
-  "session_id": "SESSION_ID_PLACEHOLDER",
-  "agent": "05_execute/merge-conflict",
-  "phase": "start"
-}
-```
-EOF
-)"
-```
-
-Replace `SESSION_ID_PLACEHOLDER` with `$SESSION_ID` before posting.
-
 ---
 
 ## Step 1 — Check mergeability
@@ -104,7 +86,11 @@ exit 0
 
 ---
 
-## Step 2 — Read the PR diff and identify conflicting files
+## Step 2 — Identify conflicting files and extract conflict hunks
+
+`gh pr diff` shows head-vs-base changes, not the synthetic merge result with
+conflict markers — it cannot be used to identify conflicts. Instead, simulate
+the merge locally:
 
 ```bash
 BASE_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
@@ -112,20 +98,33 @@ BASE_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
 HEAD_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
   --json headRefName --jq '.headRefName')
 
-# Get the list of files changed in the PR
-gh pr view "$PR_NUMBER" --repo "$REPO" \
-  --json files --jq '.files[].path'
+# Fetch both sides
+git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
 
-# Read the full diff
-gh pr diff "$PR_NUMBER" --repo "$REPO"
+# Attempt a no-commit merge against the base to surface conflict details
+git checkout -b _conflict_assess "origin/${HEAD_BRANCH}" 2>/dev/null
+git merge --no-commit "origin/${BASE_BRANCH}" 2>&1 || true
+
+# List conflicted files
+CONFLICTED_FILES=$(git diff --name-only --diff-filter=U)
+echo "Conflicted files:"
+echo "$CONFLICTED_FILES"
+
+# For each conflicted file, show the full conflict diff
+for f in $CONFLICTED_FILES; do
+  echo "=== $f ==="
+  git diff HEAD -- "$f"
+done
+
+# Clean up — abort the in-progress merge and restore the branch
+git merge --abort 2>/dev/null || true
+git checkout - 2>/dev/null || true
+git branch -D _conflict_assess 2>/dev/null || true
 ```
 
-Identify which files contain merge conflict markers (`<<<<<<<`, `=======`,
-`>>>>>>>`) from the diff output. Parse the conflict hunks to extract:
-- The **ours** side (HEAD / the PR branch) — lines between `<<<<<<< HEAD`
-  and `=======`
-- The **theirs** side (incoming from base) — lines between `=======` and
-  `>>>>>>>>`
+Parse the conflict hunks to extract:
+- The **ours** side (PR branch) — lines between `<<<<<<< HEAD` and `=======`
+- The **theirs** side (base branch) — lines between `=======` and `>>>>>>>`
 
 ---
 
@@ -206,9 +205,11 @@ explain the recommended resolution approach.
 
 **To proceed:**
 1. Review each recommendation above.
-2. Apply the resolutions to the PR branch and push the result.
-3. Apply `merge-conflict:approved` to issue #ISSUE_NUMBER_PLACEHOLDER when
-   the resolution plan is acceptable. The pipeline will resume after approval.
+2. If the resolution plan is acceptable, apply `merge-conflict:approved`
+   to issue #ISSUE_NUMBER_PLACEHOLDER. The orchestrator will re-invoke the
+   coding agent to apply the resolutions automatically.
+3. If a recommendation is wrong, add a comment explaining the correction
+   before approving.
 
 *Posted by the orchestrator — 05_execute/merge-conflict*
 EOF

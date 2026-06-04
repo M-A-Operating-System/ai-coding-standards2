@@ -158,6 +158,7 @@ class AgentDef:
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
     max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
+    auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
 
     @property
     def label_key(self) -> str:
@@ -276,6 +277,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 review_loop=entry.get("review_loop"),
                 max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
+                auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
             ))
 
         _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
@@ -2612,13 +2614,31 @@ def process_work_item(
             # consistently — both mid-run blocks and post-completion gates use
             # the same :review label. promote_gated_agents advances to :complete
             # once the human applies the configured gate label (e.g. :approved).
+            #
+            # Exception: auto_approve_on_complete=True means the agent's :complete
+            # path requires no human action (e.g. merge-conflict on a clean PR).
+            # The orchestrator auto-applies the gate label so downstream agents
+            # are not blocked, and applied_status stays :complete.
             applied_status = final_status
             if (
                 final_status == STATUS_COMPLETE
                 and agent_def.human_gate_after
                 and agent_def.human_gate_label
             ):
-                applied_status = STATUS_REVIEW
+                if agent_def.auto_approve_on_complete:
+                    try:
+                        gh.add_label(work_item.number, agent_def.human_gate_label)
+                        log.info(
+                            "  auto-approved  %-38s  applied %s on #%d",
+                            agent_def.agent, agent_def.human_gate_label, work_item.number,
+                        )
+                    except Exception as exc:
+                        log.warning(
+                            "  could not auto-apply gate label %s on #%d: %s",
+                            agent_def.human_gate_label, work_item.number, exc,
+                        )
+                else:
+                    applied_status = STATUS_REVIEW
 
             _apply_terminal_status(gh, agent_def, work_item, applied_status)
 

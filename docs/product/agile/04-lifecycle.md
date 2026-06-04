@@ -167,19 +167,19 @@ their own pipelines and attach, and one PR closes the super-issue and
 all its children on merge. See
 [P-6](02-principles.md#p-6--group-small-work-under-a-super-issue).
 
-### PR contains merge conflicts _(planned)_
+### PR contains merge conflicts
 
-When a PR is marked Ready for Review and the branch contains one or more
-files with merge conflict markers, a **`merge-conflict`** agent would run
-automatically before any other review stages advance. It would assess each
-conflicting file, then post a prioritised list of resolution recommendations
-on the PR — one entry per file, each naming the conflict scope and the
-suggested resolution approach. The pipeline would halt at a
+After CI passes, a **`merge-conflict`** agent runs automatically before
+pr-reviewer. It checks the PR's mergeability via the GitHub API. If the
+branch is clean, the agent emits complete and the orchestrator auto-advances
+the pipeline to pr-reviewer without any human action (clean PRs are
+unaffected). If conflicts are found, the agent fetches both branches
+locally, simulates the merge, and posts a prioritised list of resolution
+recommendations on the PR — one entry per file, each naming the conflict
+scope and the suggested resolution approach. The pipeline pauses at a
 `merge-conflict:approved` gate (see [`07-human-gates.md`](07-human-gates.md)).
-On approval, the coding agent would be re-invoked with the approved resolution
-recommendations as its input; it applies the resolutions and pushes the
-updated branch. A PR with no conflict markers is unaffected and advances to
-its normal post-review stages.
+On approval, the coding agent is re-invoked with the approved resolution
+plan as context; it applies the resolutions and pushes the updated branch.
 
 ### SQL changes _(planned)_
 
