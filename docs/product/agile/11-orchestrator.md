@@ -124,6 +124,12 @@ for each work item (issue or PR):
         if not dependencies_complete(labels, agent_def):
             skip                          ← upstream agents / gates not yet done
 
+        if running_count(agent_def.agent) >= agent_def.max_concurrent:
+            skip                          ← per-agent concurrency ceiling reached
+
+        if tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+            skip                          ← aggregate pipeline ceiling reached for this tick
+
         ← step is eligible
         acquire_mutex(work_item, agent_def)
         # Pre-invocation ceremony
@@ -158,7 +164,7 @@ exits non-zero without a sentinel. Script steps are not retried.
 
 ## Eligibility check
 
-An agent is eligible to run when all four conditions hold simultaneously:
+An agent is eligible to run when all six conditions hold simultaneously:
 
 **1. Object match.**
 The agent's `object` array in `pipeline.json` contains the type of the
@@ -194,6 +200,17 @@ Both conditions must hold. A `dep:complete` without its gate label means the
 human gate has not yet been applied; the dependent agent stays ineligible.
 A `dep:skipped` label is treated as equivalent to `dep:complete` — the agent
 was bypassed and downstream work may proceed.
+
+**5. Per-agent concurrency ceiling not reached.**
+The count of all open issues that currently carry `{agent}:wip` (instances
+running from a prior tick) is less than `agent_def.max_concurrent` (default 1
+when the field is absent). When the ceiling is already reached, all remaining
+eligible issues for that agent are deferred to the next tick.
+
+**6. Aggregate pipeline ceiling not reached.**
+The total number of agent instances launched in the current tick is less than
+the pipeline-wide maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value). If this ceiling is reached, all
+remaining eligible work across all agent types is deferred to the next tick.
 
 ---
 
@@ -415,6 +432,10 @@ runs. It:
 1. Creates branch `issue-{N}` from the default branch HEAD (if absent)
 2. Opens a draft PR: title `issue-{N}: {title[:60]}`, body `Closes #{N}`
 3. Calls `link-pr-to-issue.sh` to apply the `source-issue:{N}` label
+4. Posts a comment on the issue with the PR number and URL, so stakeholders
+   and engineers can navigate to the draft PR directly from the issue without
+   consulting build logs. This comment is posted only once — on idempotent
+   re-runs where the PR already exists, no duplicate comment is posted.
 
 Both the branch and the PR exist before `prd-docs-updater` is invoked, so
 all subsequent agent commits accumulate in the already-open PR.
@@ -664,6 +685,40 @@ jobs:
             ${{ steps.args.outputs.args }}
 ```
 
+### `sync-claude.yml`
+
+`.github/workflows/sync-claude.yml` keeps the consuming repo's pipeline
+artefacts in sync with the `ai-coding-standards2` submodule. It runs
+nightly (and on `workflow_dispatch`) and calls `get_started.py` in sync
+mode.
+
+**What it updates:**
+
+| Install function | Destination | Stale-file cleanup |
+|---|---|---|
+| `install_agents` | `.claude/agents/` | Yes — removes agents no longer in the submodule |
+| `install_standards` | `standards/` | No — project-specific standards files are never deleted |
+| `install_slash_commands` | `.claude/commands/` | Yes |
+| `install_orchestrator_workflow` | `.github/workflows/orchestrator.yml` | No (single file) |
+| `install_bootstrap_labels_workflow` | `.github/workflows/bootstrap-labels.yml` | No (single file) |
+| `install_label_cleanup_workflow` | `.github/workflows/label-cleanup.yml` | No (single file) |
+| `install_sync_workflow` | `.github/workflows/sync-claude.yml` | No (self) |
+
+The sync commit is made by the Actions bot if any files changed. If nothing
+changed, the workflow exits without a commit.
+
+**Path rewriting.** Workflow files reference `ai-coding-standards2/` as a
+path prefix. `install_*_workflow` functions rewrite these paths to
+`{SUBMODULE_NAME}/` so they work regardless of the submodule directory name
+the consuming repo chose. `_add_submodules_to_checkout` injects
+`submodules: true` into any bare `actions/checkout` step that doesn't
+already have a `with:` block.
+
+**Initial setup.** The first time a consuming repo adopts the pipeline,
+run `python ai-coding-standards2/get_started.py --force` to install all
+artefacts. This is idempotent — re-running it updates without overwriting
+local additions (e.g. project-specific standards files not in the submodule).
+
 **Why `cancel-in-progress: false`.** Two label events can fire within
 seconds (e.g., human applies gate label; orchestrator immediately promotes
 the agent and applies `:complete`, firing a second event). Cancelling the
@@ -714,18 +769,27 @@ Options:
 
 ## Concurrency model
 
-**Cross-issue parallelism.** The global `pipeline-orchestrator` concurrency
-group serialises all orchestrator runs globally. Two issues therefore cannot
-advance simultaneously — each run processes all eligible work items in
-sequence and then exits, letting the next queued run start. This is the
-intentional trade-off for correctness: the alternative (per-item concurrency
-groups) recreated the race condition described below.
+**Orchestrator-run serialisation.** The global `pipeline-orchestrator`
+concurrency group serialises all orchestrator *runs* globally — only one
+orchestrator process executes at a time. If a label event fires while a run
+is active, GitHub queues the new run; the queued run starts only after the
+first completes, at which point labels reflect settled state and already-`:wip`
+agents are correctly skipped.
 
-**Intra-item serialisation.** Because the concurrency group is global, if a
-label event fires while a previous run is still executing, GitHub queues the
-new run rather than starting it in parallel. The queued run starts only after
-the first completes; by then labels reflect the settled state of the first
-run, so the second run correctly skips already-`:wip` agents.
+**Per-agent concurrency ceiling.** Within a single orchestrator run, multiple
+agent instances of the same type may be launched for different issues, up to
+the `max_concurrent` value configured in `pipeline.json` (default: 1 when the
+field is absent or null). Before launching an instance, the orchestrator counts
+the number of open issues that currently carry `{agent}:wip` — instances
+running from a prior tick. It starts at most `max_concurrent − running_count`
+additional instances. If the running count already meets or exceeds
+`max_concurrent`, no new instances are launched for that tick; eligible issues
+remain pending until the next tick.
+
+**Aggregate pipeline ceiling.** A pipeline-wide maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value) caps
+the total number of agent instances launched across all agent types in a
+single tick, regardless of per-agent `max_concurrent` values. This prevents
+unbounded resource consumption when many agent types each have large backlogs.
 
 **Scheduled reconciler as backstop.** GitHub Actions keeps at most one pending
 run per concurrency group. If two label events fire in rapid succession while
@@ -927,13 +991,22 @@ event-driven tick proceeds as if no pause had been set.
 
 ## Secrets required
 
-| Secret | Used by | Description |
-|---|---|---|
-| `GITHUB_TOKEN` | Orchestrator | Auto-provisioned by Actions; scoped to the repo and workflow run |
-| `ANTHROPIC_API_KEY` | Orchestrator → Claude CLI | Required for agent invocations; store as an Actions repository or org secret |
+| Secret | Required | Used by | Description |
+|---|---|---|---|
+| `GITHUB_TOKEN` | Yes | Orchestrator | Auto-provisioned by Actions; scoped to the repo and workflow run |
+| `ANTHROPIC_API_KEY` | Yes | Orchestrator → Claude CLI | Required for agent invocations; store as an Actions repository or org secret |
 
 The `GITHUB_TOKEN` auto-provisioned by Actions has the scopes declared in
 each workflow's `permissions` block. No PAT is needed for the orchestrator
 itself. A dedicated GitHub App token is required before any production
 compliance claim (see [`10-roadmap.md`](10-roadmap.md) — agent identity
 prerequisite).
+
+**Workflow file limitation.** GitHub prevents `GITHUB_TOKEN` from pushing
+changes to `.github/workflows/`. Automated agents (coder, prd-docs-updater)
+must not write directly to that directory. Instead, agents that need to
+propose a new workflow write the file to `docs/workflow-proposals/{name}.yml`
+and note in their closing announcement that a human must move it to
+`.github/workflows/` and push with a token that has `workflow` scope. The
+proposed file is committed to the issue branch and visible in the draft PR for
+review.

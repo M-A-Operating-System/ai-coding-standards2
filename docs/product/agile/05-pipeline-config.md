@@ -21,6 +21,7 @@ pipeline/
   generators/
     generate_docs.py                ← produces docs/product/agile/generated/
     generate_pipeline_mermaid.py    ← produces .mmd flowcharts
+    generate_phase_mermaid.py       ← produces per-phase .mmd charts under generated/phases/
 ```
 
 The current `.claude/pipeline.json` is migrated to this location. The
@@ -47,6 +48,7 @@ For each step, exactly these facts are declared:
 | `human_gate_after` | yes | Boolean — is there a human gate after this step? |
 | `human_gate_label` | conditional | Required if `human_gate_after` is true; the label a human applies to advance. Gate labels are stable identifiers — they may be agent-scoped (e.g. `01_product_docs/prd-writer:approved`) or short-form (e.g. `pr:approved`). |
 | `max_retries` | no | How many times the orchestrator re-invokes this step after a `:failed` outcome before giving up (default: 0 — no retries). |
+| `max_concurrent` | no | Maximum number of instances of this agent the orchestrator may launch simultaneously across all issues in a single tick. The orchestrator counts active `{agent}:wip` labels across all open issues before launching additional instances; it starts no more than this many at once. Default 1 when the field is absent or null. A pipeline-wide aggregate maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value) caps total agent launches across all agent types per tick regardless of per-agent settings. |
 | `description` | yes | One-sentence statement of what the step owns |
 | `session` | no | Session management config (agent steps only — see [§ Session management](#session-management) below). Ignored for script steps. |
 
@@ -137,6 +139,7 @@ The schema enforces:
 | `docs/product/agile/generated/pipeline.mmd` | Full mermaid flowchart |
 | `docs/product/agile/generated/pipeline-issue.mmd` | Issue subgraph |
 | `docs/product/agile/generated/pipeline-pr.mmd` | PR subgraph |
+| `docs/product/agile/generated/phases/{phase}.mmd` (one per phase) | Per-phase mermaid flowchart showing only the agents and boundary gates for that phase |
 
 The generator is idempotent: running it twice on the same input produces
 byte-identical output. CI runs the generator and fails the PR if any
@@ -154,7 +157,8 @@ process:
 2. **Validate locally** with `python pipeline/validate.py`
    before pushing.
 3. **Regenerate the docs** with
-   `python pipeline/generators/generate_docs.py`.
+   `python pipeline/generators/generate_docs.py` and
+   `python pipeline/generators/generate_phase_mermaid.py`.
    Commit the regenerated files in the same PR.
 4. **CI validates** the schema, the acyclicity, and the freshness of
    generated files.

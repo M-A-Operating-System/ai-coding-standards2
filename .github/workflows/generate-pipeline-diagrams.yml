@@ -1,0 +1,62 @@
+name: Generate pipeline diagrams
+
+on:
+  push:
+    paths:
+      - 'pipeline/pipeline.json'
+      - 'pipeline/generators/generate_phase_mermaid.py'
+  pull_request:
+    paths:
+      - 'pipeline/pipeline.json'
+      - 'pipeline/generators/generate_phase_mermaid.py'
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    name: Regenerate Mermaid diagrams
+    runs-on: ubuntu-latest
+    # Only auto-commit on direct pushes (not PRs — forks lack write access
+    # and the check job below validates PRs instead).
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Checkout the actual branch so we can push back to it.
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Regenerate diagrams
+        run: python3 pipeline/generators/generate_phase_mermaid.py
+
+      - name: Commit updated diagrams if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Diagrams are already up-to-date — nothing to commit."
+          else
+            git add docs/product/agile/generated/phases/
+            git commit -m "chore: regenerate pipeline diagrams [skip ci]"
+            git push
+          fi
+
+  check:
+    name: Verify diagrams match pipeline.json
+    runs-on: ubuntu-latest
+    # On pull requests, verify the author kept diagrams in sync.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check diagrams are up-to-date
+        run: python3 pipeline/generators/generate_phase_mermaid.py --check

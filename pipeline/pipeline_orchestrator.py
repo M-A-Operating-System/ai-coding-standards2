@@ -44,6 +44,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -97,14 +98,12 @@ TERMINAL_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED}
 STATUSES_JSON = Path(__file__).parent / "statuses.json"
 
 # Submodule root — the directory containing this repo's .github/ and
-# pipeline/. When installed as a submodule, it is the submodule's root,
-# not the consuming repo's root. Used to locate status.sh and agent
-# prompt files. Override with $AI_AGILE_ROOT for non-standard layouts.
-SUBMODULE_ROOT = (
-    Path(os.environ["AI_AGILE_ROOT"]).resolve()
-    if os.environ.get("AI_AGILE_ROOT")
-    else Path(__file__).resolve().parent.parent
-)
+# pipeline/. Always derived from __file__ so it reliably points at the
+# submodule regardless of where the consuming repo mounts it.
+# Do NOT derive from AI_AGILE_ROOT: that env var now points at the
+# consuming repo root (where standards/ and .claude/ live after sync),
+# which is a different directory when installed as a submodule.
+SUBMODULE_ROOT = Path(__file__).resolve().parent.parent
 
 def load_statuses() -> list[dict]:
     """Load status definitions from statuses.json. Exits if file is missing or malformed."""
@@ -123,6 +122,15 @@ LABEL_COLOURS = {s["status"]: s["colour"] for s in STATUSES}
 
 # Maximum wall-clock time for a single script invocation.
 SCRIPT_TIMEOUT_SECONDS = 300
+
+# Maximum agent instances launched across ALL agent types in a single tick.
+# Prevents unbounded resource consumption when many issues become eligible
+# simultaneously. Per-agent max_concurrent values may permit more in total,
+# but this aggregate cap is the backstop.
+PIPELINE_MAX_CONCURRENT = 20
+
+# Maximum wall-clock time for a single agent invocation.
+AGENT_TIMEOUT_SECONDS = 1800
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +156,7 @@ class AgentDef:
     commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
+    max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
 
     @property
@@ -217,6 +226,20 @@ class AgentRunResult:
     output_tokens: Optional[int] = None
 
 
+@dataclass
+class ConcurrencyState:
+    """Mutable concurrency accounting for one orchestrator tick.
+
+    running_counts maps each agent label_key to the number of work items
+    currently carrying that agent's :wip label — initialised from work_items
+    fetched at the start of the tick, then incremented as agents are launched
+    within the tick. tick_launch_count tracks the total agents launched in this
+    tick against the pipeline-wide aggregate ceiling (PIPELINE_MAX_CONCURRENT).
+    """
+    running_counts: dict  # label_key → int
+    tick_launch_count: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Pipeline loader
 # ---------------------------------------------------------------------------
@@ -251,6 +274,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 review_loop=entry.get("review_loop"),
+                max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
             ))
 
@@ -269,6 +293,23 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
 
 def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
     return {a.agent: a for a in agents}
+
+
+def _count_running(work_items: list[WorkItem], agents: list[AgentDef]) -> dict[str, int]:
+    """Count work items carrying each agent's :wip label at tick start.
+
+    Returns a dict from agent label_key to count. Used to initialise
+    ConcurrencyState so the per-agent ceiling accounts for instances already
+    running from a prior orchestrator tick before this one started.
+    """
+    counts: dict[str, int] = {}
+    for agent_def in agents:
+        key = agent_def.label_key
+        counts[key] = sum(
+            1 for wi in work_items
+            if agent_def.in_progress_label in wi.labels
+        )
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -706,7 +747,9 @@ def pause_pipeline(seconds: int, reason: str) -> datetime:
         "paused_at": _now_utc().isoformat(),
         "seconds": seconds,
     }
-    PAUSE_MARKER_PATH.write_text(json.dumps(payload, indent=2))
+    tmp = PAUSE_MARKER_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.replace(PAUSE_MARKER_PATH)
     log.warning(
         "Pipeline paused for %d seconds (until %s): %s",
         seconds, until.isoformat(), reason,
@@ -1356,7 +1399,7 @@ def invoke_script(
     agent_env = {
         **os.environ,
         "STATUS_SH":        str(STATUS_SH),
-        "AI_AGILE_ROOT":    str(SUBMODULE_ROOT),
+        "AI_AGILE_ROOT":    os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO":             repo,
         "WORK_ITEM_KIND":   work_item.kind,
@@ -1460,7 +1503,7 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
     if agent_def.session_id_pattern:
         _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
         try:
-            if re.search(r"\{[^}]*[.[]", agent_def.session_id_pattern):
+            if re.search(r"\{[^}]*[.[]}", agent_def.session_id_pattern):
                 raise ValueError("unsafe attribute/index access in id_pattern")
             sid = _tok_re.sub(
                 lambda m: session_tokens[m.group(1)],
@@ -1640,7 +1683,7 @@ def invoke_agent(
     # work item's kind, so the agent's prompt cannot get them confused.
     agent_env = {
         **os.environ,
-        "AI_AGILE_ROOT": str(SUBMODULE_ROOT),
+        "AI_AGILE_ROOT": os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO": repo,
         "WORK_ITEM_KIND": work_item.kind,
@@ -1658,7 +1701,6 @@ def invoke_agent(
     # detection) and token usage (from the result event). We also retain the
     # raw lines (capped) so the tail can appear in diagnostic comments.
     MAX_CAPTURED_LINES = 5000
-    AGENT_TIMEOUT_SECONDS = 1800
     captured_lines: list[str] = []       # raw NDJSON lines (for diagnostics)
     agent_text_parts: list[str] = []     # text extracted from JSON events
     result_input_tokens: Optional[int] = None
@@ -1674,6 +1716,17 @@ def invoke_agent(
             env=agent_env,
         )
         deadline = time.monotonic() + AGENT_TIMEOUT_SECONDS
+        # Wall-clock timer fires unconditionally — unlike the per-line check
+        # below, it also fires when the agent hangs without emitting output.
+        # _timed_out lets the loop raise TimeoutExpired with a clear message
+        # even when stdout goes silent (no lines arrive to trigger the check).
+        _timed_out = threading.Event()
+        def _timer_callback() -> None:
+            _timed_out.set()
+            _terminate_subprocess(proc)
+        _kill_timer = threading.Timer(AGENT_TIMEOUT_SECONDS, _timer_callback)
+        _kill_timer.daemon = True
+        _kill_timer.start()
         try:
             if proc.stdout is None:
                 raise RuntimeError("subprocess stdout pipe unexpectedly None")
@@ -1699,8 +1752,13 @@ def invoke_agent(
                         # Non-JSON line from the CLI (startup messages, etc.);
                         # include as plain text so diagnostics remain readable.
                         agent_text_parts.append(line.rstrip("\n"))
-                if time.monotonic() > deadline:
+                if time.monotonic() > deadline or _timed_out.is_set():
                     raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
+            # Timer may have fired and drained stdout without triggering the
+            # per-line check above (process died between lines). Raise here so
+            # the timeout path is always taken when the timer fired.
+            if _timed_out.is_set():
+                raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             log.error("    Agent %s timed out on #%d", agent_def.agent, work_item.number)
@@ -1717,6 +1775,8 @@ def invoke_agent(
                 input_tokens=result_input_tokens,
                 output_tokens=result_output_tokens,
             )
+        finally:
+            _kill_timer.cancel()
 
         # Build the agent's text output for sentinel and rate-limit detection.
         # Text is accumulated from assistant message events (incremental) and
@@ -1790,10 +1850,12 @@ def promote_gated_agents(
     """Find every gated agent currently in :review whose gate label is
     now present, and transition it from :review to :complete.
 
-    Why this exists. The agent posts an artefact and applies :review,
-    then the pipeline halts. When the human applies the gate label
-    (e.g. prd-writer:approved), no event reaches the agent — the orchestrator
-    is the actor that closes the loop.
+    Why this exists. Both mid-run blocks (agent emits AI_AGILE_STATUS: review)
+    and post-completion human gates (human_gate_after: true — orchestrator
+    applies :review on the agent's behalf after it emits :complete) land the
+    work item in :review. When the human applies the gate label
+    (e.g. prd-writer:approved or prd-docs-updater:approved), no event reaches
+    the agent — the orchestrator is the actor that closes the loop.
 
     Promotion only fires when the agent is **actually in :review**. If
     the human applies the gate label before the agent has run, the
@@ -1822,26 +1884,58 @@ def promote_gated_agents(
         review_label = agent_def.review_label
         complete_label = agent_def.complete_label
         gate_label = agent_def.human_gate_label
+        requested_label = agent_def.status_label(STATUS_REQUESTED)
 
         gate_present = gate_label in updated
         review_present = review_label in updated
         complete_present = complete_label in updated
+        requested_present = requested_label in updated
+
+        # Rejection: human commented and applied :requested while the agent
+        # is in :review. Remove :review so :requested is the highest-priority
+        # status on the next pass, triggering a re-run in the per-agent loop.
+        if review_present and requested_present and not gate_present and not complete_present:
+            try:
+                gh.remove_label(work_item.number, review_label)
+                updated.discard(review_label)
+                log.info(
+                    "  REJECT  %-38s  :requested while in :review → clearing :review for re-run",
+                    agent_def.agent,
+                )
+                if audit_log is not None and session_id:
+                    audit_log.append(_make_audit_event(
+                        session_id, "gate.rejected", repo or gh.repo,
+                        work_item=work_item, agent=agent_def.agent,
+                        outcome_status="requested",
+                        outcome_detail="human applied :requested — agent will re-run and read feedback",
+                    ))
+            except Exception as exc:
+                log.error(
+                    "  could not clear :review for rejection of %s on #%d: %s — pipeline state may be inconsistent",
+                    agent_def.agent, work_item.number, exc,
+                )
+            continue
 
         # Standard promotion: gate applied while agent is in :review.
         if gate_present and review_present:
             try:
-                # Add :complete first. If we crash here, next tick sees
-                # both labels — the agent_status() check returns
-                # :complete (it's checked first in ALL_STATUSES iteration
-                # order? actually ordering isn't guaranteed in a set; the
-                # invariant we need is the agent is treated as done).
-                # Below we also handle the cleanup case where both are
-                # present from a previous interrupted promotion.
+                # Add :complete first so a crash between add and remove
+                # leaves the issue with both labels; the next tick sees
+                # :complete and treats the agent as done regardless of
+                # :review still being present.
                 if not complete_present:
                     gh.add_label(work_item.number, complete_label)
                     updated.add(complete_label)
                 gh.remove_label(work_item.number, review_label)
                 updated.discard(review_label)
+                # Clean up a stale :requested that arrived simultaneously with
+                # :approved — promotion wins but :requested must not linger.
+                if requested_label in updated:
+                    try:
+                        gh.remove_label(work_item.number, requested_label)
+                        updated.discard(requested_label)
+                    except Exception:
+                        pass  # best-effort; stale label is cosmetic only
                 log.info(
                     "  PROMOTE %-38s  %s applied → :review → :complete",
                     agent_def.agent, gate_label,
@@ -1859,26 +1953,6 @@ def promote_gated_agents(
                     agent_def.agent, work_item.number, exc,
                 )
             continue
-
-        # Cleanup: previous promotion crashed after add(:complete) and
-        # before remove(:review). Both labels coexist; clear the stale
-        # :review so the issue ends with exactly one terminal status.
-        if gate_present and complete_present and review_present:
-            # (Unreachable given the branch above already handles
-            # review_present, but keep as a defensive guard for future
-            # edits.)
-            try:
-                gh.remove_label(work_item.number, review_label)
-                updated.discard(review_label)
-                log.info(
-                    "  CLEANUP %-38s  removed stale :review after :complete",
-                    agent_def.agent,
-                )
-            except Exception as exc:
-                log.debug(
-                    "  could not clean stale :review on %s: %s",
-                    agent_def.agent, exc,
-                )
 
         # All other states (gate present without :review; gate present
         # with :wip / :blocked / :failed; gate not present at all) are
@@ -1988,36 +2062,33 @@ def _apply_failed(
 def _configure_git_auth() -> None:
     """Ensure all git operations use GITHUB_TOKEN for the lifetime of this process.
 
-    actions/checkout injects GITHUB_TOKEN via http.extraheader. We also embed
-    the token directly in the remote URL so git has a consistent credential
-    regardless of whether the extraheader is present. This gives the orchestrator
-    `contents: write` access (push to any non-workflow branch).
+    Sets http.https://github.com/.extraHeader globally so every git operation
+    in this process authenticates with GITHUB_TOKEN (contents:write scope).
+    The token is never embedded in a URL, keeping it out of `git remote -v`,
+    `ps`, and CI logs.
 
     NOTE: GITHUB_TOKEN cannot push .github/workflows/ files — that requires
     a classic PAT with `repo` + `workflow` scopes. _run_commit_after detects
-    staged workflow files and switches to AI_AGILE_BOT_TOKEN for that push.
+    staged workflow files and uses AI_AGILE_BOT_TOKEN via GIT_CONFIG env vars
+    for those pushes.
     """
-    import subprocess as _sg
     github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not github_token:
         log.warning("git auth: no GITHUB_TOKEN found — git push may fail")
         return
 
     try:
-        orig_url = _sg.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-
-        # Strip any existing embedded credentials, then insert GITHUB_TOKEN.
-        clean_url = re.sub(r"https://[^@]+@", "https://", orig_url)
-        auth_url = clean_url.replace(
-            "https://github.com",
-            f"https://x-access-token:{github_token}@github.com",
-            1,
-        )
-        _sg.run(["git", "remote", "set-url", "origin", auth_url], check=True)
-        log.info("git auth: configured origin to use GITHUB_TOKEN (contents:write scope)")
+        # Set via process env vars rather than writing to ~/.gitconfig — env vars
+        # are not visible in `git config --list` or GIT_TRACE output, unlike the
+        # --global extraHeader approach which writes the token to disk and leaks
+        # it in verbose git traces.
+        # GitHub git transport uses HTTP Basic auth, not Bearer.
+        # Format: base64("x-access-token:TOKEN") — identical to actions/checkout.
+        _encoded = base64.b64encode(f"x-access-token:{github_token}".encode()).decode()
+        os.environ["GIT_CONFIG_COUNT"] = "1"
+        os.environ["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
+        os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_encoded}"
+        log.info("git auth: configured http.extraHeader via GIT_CONFIG env vars (contents:write scope)")
 
         bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
         if not bot_token:
@@ -2029,10 +2100,10 @@ def _configure_git_auth() -> None:
         else:
             log.info(
                 "git auth: AI_AGILE_BOT_TOKEN is present — "
-                "will be used for pushes that include .github/workflows/ files."
+                "will be used via GIT_CONFIG env vars for pushes that include .github/workflows/ files."
             )
     except Exception as exc:
-        log.warning("git auth: could not configure GITHUB_TOKEN — %s", exc)
+        log.warning("git auth: could not configure http.extraHeader — %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -2048,13 +2119,11 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
     Returns True on success (including the no-changes case), False if any
     git operation fails. On False the caller should mark the step :failed.
     """
-    import subprocess as _sp
-
     branch = f"issue-{work_item.number}"
 
     try:
         # Check working tree for any changes (untracked or modified).
-        dirty = _sp.run(
+        dirty = subprocess.run(
             ["git", "status", "--porcelain"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
@@ -2070,36 +2139,48 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             agent_def.agent, work_item.number, branch,
         )
 
-        _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-        _sp.run(["git", "config", "user.name",  "github-actions[bot]"], check=True)
+        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+        subprocess.run(["git", "config", "user.name",  "github-actions[bot]"], check=True)
 
         # Stash all working-tree changes (staged + unstaged + untracked),
         # switch to the issue branch, pop the stash, then commit and push.
-        current = _sp.run(
+        current = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
 
         stashed = False
-        _sp.run(["git", "stash", "push", "--include-untracked", "-m",
-                 f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
-        stashed = True
-
         try:
-            _sp.run(["git", "fetch", "origin", branch], check=True)
+            subprocess.run(["git", "stash", "push", "--include-untracked", "-m",
+                     f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
+            stashed = True
+            log.info("  commit_after: stashed working-tree changes")
+
+            subprocess.run(["git", "fetch", "origin", branch], check=True)
             # Reset local branch to exactly match remote so that git push is
             # always a fast-forward. Without this, a stale local branch (e.g.
             # one that pre-dates commits from an earlier agent like prd-docs-
             # updater) causes a rejected non-fast-forward push.
-            _sp.run(["git", "checkout", "-B", branch, f"origin/{branch}"], check=True)
-            _sp.run(["git", "stash", "pop"], check=True)
+            subprocess.run(["git", "checkout", "-B", branch, f"origin/{branch}"], check=True)
 
-            _sp.run(["git", "add", "-A"], check=True)
+            # Identify which files the agent wrote before popping the stash,
+            # so we add only those files (not any unrelated working-tree noise).
+            stash_files = subprocess.run(
+                ["git", "stash", "show", "--name-only", "-u"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip().splitlines()
+            subprocess.run(["git", "stash", "pop"], check=True)
+            stashed = False  # entry consumed; finally must not drop
+
+            if stash_files:
+                subprocess.run(["git", "add", "--"] + stash_files, check=True)
+            else:
+                subprocess.run(["git", "add", "-A"], check=True)
 
             # Detect workflow files — GITHUB_TOKEN cannot push them.
             # If AI_AGILE_BOT_TOKEN is available (classic PAT with repo+workflow
-            # scope), temporarily swap the remote URL to use it for this push.
-            workflow_files = _sp.run(
+            # scope), pass it via GIT_CONFIG env vars for this push only.
+            workflow_files = subprocess.run(
                 ["git", "diff", "--cached", "--name-only", "--", ".github/workflows/"],
                 capture_output=True, text=True, check=True,
             ).stdout.strip()
@@ -2108,20 +2189,22 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                 if bot_token:
                     log.info(
                         "  commit_after: workflow files staged (%s) — "
-                        "switching remote URL to AI_AGILE_BOT_TOKEN for this push",
+                        "using AI_AGILE_BOT_TOKEN via GIT_CONFIG env vars for this push",
                         workflow_files.replace("\n", ", "),
                     )
                 else:
-                    log.warning(
-                        "  commit_after: agent wrote .github/workflows/ files: %s — "
-                        "GITHUB_TOKEN cannot push workflow files and AI_AGILE_BOT_TOKEN "
-                        "is not set. Push will fail with 403. Set AI_AGILE_BOT_TOKEN to "
-                        "a classic PAT with repo+workflow scopes.",
+                    log.error(
+                        "  commit_after: agent wrote .github/workflows/ files (%s) but "
+                        "AI_AGILE_BOT_TOKEN is not set. GITHUB_TOKEN cannot push workflow "
+                        "files (GitHub enforces this). Add AI_AGILE_BOT_TOKEN to your "
+                        "repository secrets as a classic PAT with repo+workflow scopes. "
+                        "Failing early — remove :failed to retry after adding the secret.",
                         workflow_files.replace("\n", ", "),
                     )
+                    return False
 
             # Guard: nothing staged → skip (agent found nothing to update).
-            staged = _sp.run(["git", "diff", "--cached", "--quiet"])
+            staged = subprocess.run(["git", "diff", "--cached", "--quiet"])
             if staged.returncode == 0:
                 log.info(
                     "  commit_after: stash popped but staging area empty — skipping commit for %s",
@@ -2136,29 +2219,26 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
                 "10_tech_debt": "refactor",
             }.get(agent_def.phase, "chore")
             msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
-            _sp.run(["git", "commit", "-m", msg], check=True)
+            subprocess.run(["git", "commit", "-m", msg], check=True)
 
             # Use AI_AGILE_BOT_TOKEN for the push when workflow files are staged,
             # since GITHUB_TOKEN lacks the workflow scope required by GitHub.
             push_token = bot_token if (workflow_files and bot_token) else None
             if push_token:
-                orig_url = _sp.run(
-                    ["git", "remote", "get-url", "origin"],
-                    capture_output=True, text=True, check=True,
-                ).stdout.strip()
-                clean_url = re.sub(r"https://[^@]+@", "https://", orig_url)
-                bot_url = clean_url.replace(
-                    "https://github.com",
-                    f"https://x-access-token:{push_token}@github.com",
-                    1,
-                )
-                _sp.run(["git", "remote", "set-url", "origin", bot_url], check=True)
-                try:
-                    _sp.run(["git", "push", "origin", branch], check=True)
-                finally:
-                    _sp.run(["git", "remote", "set-url", "origin", orig_url], check=False)
+                # Pass the token via GIT_CONFIG env vars — never embedded in
+                # a URL (which would appear in `git remote -v`, `ps`, CI logs).
+                _push_encoded = base64.b64encode(
+                    f"x-access-token:{push_token}".encode()
+                ).decode()
+                push_env = {
+                    **os.environ,
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "http.https://github.com/.extraHeader",
+                    "GIT_CONFIG_VALUE_0": f"Authorization: Basic {_push_encoded}",
+                }
+                subprocess.run(["git", "push", "origin", branch], check=True, env=push_env)
             else:
-                _sp.run(["git", "push", "origin", branch], check=True)
+                subprocess.run(["git", "push", "origin", branch], check=True)
 
             log.info("  commit_after: pushed commit to %s", branch)
             return True
@@ -2167,18 +2247,18 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
             # Always return to the original branch so the orchestrator's
             # subsequent git operations (if any) run in the expected state.
             try:
-                _sp.run(["git", "checkout", current], check=False)
+                subprocess.run(["git", "checkout", current], check=False)
             except Exception:
                 pass
             # Drop any stash entry that is still on the stack (i.e. if
             # git stash pop was never reached due to an earlier exception).
             if stashed:
                 try:
-                    _sp.run(["git", "stash", "drop"], check=False)
+                    subprocess.run(["git", "stash", "drop"], check=False)
                 except Exception:
                     pass
 
-    except _sp.CalledProcessError as exc:
+    except subprocess.CalledProcessError as exc:
         log.error(
             "  commit_after: git operation failed for %s on #%d: %s",
             agent_def.agent, work_item.number, exc,
@@ -2195,8 +2275,7 @@ def _restore_pre_agent_branch(branch: str) -> None:
     if not branch:
         return
     try:
-        import subprocess as _sp3
-        _sp3.run(["git", "checkout", branch], check=False, capture_output=True)
+        subprocess.run(["git", "checkout", branch], check=False, capture_output=True)
     except Exception:
         pass
 
@@ -2212,6 +2291,7 @@ def process_work_item(
     session_id: str = "",
     audit_log: Optional[list] = None,
     default_extra_tools: Optional[list[str]] = None,
+    concurrency: Optional[ConcurrencyState] = None,
 ) -> int:
     """
     Evaluate all agents against a single issue or PR.
@@ -2294,6 +2374,24 @@ def process_work_item(
             log.debug("  skip %-40s  [dependencies unmet]", agent_def.agent)
             continue
 
+        # Per-agent concurrency ceiling: count instances already running
+        # (from prior ticks) plus those launched this tick.
+        if concurrency is not None:
+            _running = concurrency.running_counts.get(agent_def.label_key, 0)
+            if _running >= agent_def.max_concurrent:
+                log.info(
+                    "  skip %-40s  [per-agent concurrency: %d/%d running]",
+                    agent_def.agent, _running, agent_def.max_concurrent,
+                )
+                continue
+            # Aggregate pipeline ceiling: total launches across all agent types.
+            if concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+                log.info(
+                    "  ceiling %-38s  [pipeline max-concurrent: %d/%d launched this tick]",
+                    agent_def.agent, concurrency.tick_launch_count, PIPELINE_MAX_CONCURRENT,
+                )
+                break
+
         # All conditions met — dispatch to the correct invocation mode.
         # Pre-invocation ceremony: apply :wip and post the opening
         # announcement so the timeline shows the agent is active before
@@ -2317,6 +2415,13 @@ def process_work_item(
                 gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 labels.add(agent_def.status_label(STATUS_WIP))
                 work_item.labels = labels
+                # Increment only on successful label application — a failed
+                # add_label means no :wip was set so no slot is consumed.
+                if concurrency is not None:
+                    concurrency.running_counts[agent_def.label_key] = (
+                        concurrency.running_counts.get(agent_def.label_key, 0) + 1
+                    )
+                    concurrency.tick_launch_count += 1
             except Exception as exc:
                 log.error(
                     "  could not apply :wip for %s on #%d: %s",
@@ -2336,6 +2441,14 @@ def process_work_item(
                     "  could not post opening announcement for %s on #%d: %s",
                     agent_def.agent, work_item.number, exc,
                 )
+        else:
+            # dry_run: :wip ceremony is skipped, but counters still advance so
+            # the simulated output respects per-agent and aggregate ceilings.
+            if concurrency is not None:
+                concurrency.running_counts[agent_def.label_key] = (
+                    concurrency.running_counts.get(agent_def.label_key, 0) + 1
+                )
+                concurrency.tick_launch_count += 1
 
         if audit_log is not None and session_id and not dry_run:
             audit_log.append(_make_audit_event(
@@ -2362,15 +2475,14 @@ def process_work_item(
         # try/finally below. _run_commit_after handles the actual commit/push.
         _pre_agent_branch: str = ""
         if not dry_run and agent_def.commit_after and work_item.kind == "issue":
-            import subprocess as _sp2
             try:
-                _pre_agent_branch = _sp2.run(
+                _pre_agent_branch = subprocess.run(
                     ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                     capture_output=True, text=True, check=True,
                 ).stdout.strip()
                 _issue_branch = f"issue-{work_item.number}"
-                _sp2.run(["git", "fetch", "origin", _issue_branch], check=True)
-                _sp2.run(["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"], check=True)
+                subprocess.run(["git", "fetch", "origin", _issue_branch], check=True)
+                subprocess.run(["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"], check=True)
                 log.info("  pre-agent: checked out %s for %s", _issue_branch, agent_def.agent)
             except Exception as _pre_exc:
                 log.warning(
@@ -2437,6 +2549,14 @@ def process_work_item(
                     gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 except Exception:
                     pass
+                # Roll back in-memory concurrency counts: the :wip was removed,
+                # so the slot is free again. Without this the per-agent and
+                # aggregate ceilings would over-count for the rest of the tick.
+                if concurrency is not None:
+                    concurrency.running_counts[agent_def.label_key] = max(
+                        0, concurrency.running_counts.get(agent_def.label_key, 0) - 1
+                    )
+                    concurrency.tick_launch_count = max(0, concurrency.tick_launch_count - 1)
                 _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
@@ -2487,7 +2607,20 @@ def process_work_item(
                     _restore_pre_agent_branch(_pre_agent_branch)
                     break
 
-            _apply_terminal_status(gh, agent_def, work_item, final_status)
+            # When an agent with a human gate completes, apply :review rather
+            # than :complete. This makes the "needs human action" state visible
+            # consistently — both mid-run blocks and post-completion gates use
+            # the same :review label. promote_gated_agents advances to :complete
+            # once the human applies the configured gate label (e.g. :approved).
+            applied_status = final_status
+            if (
+                final_status == STATUS_COMPLETE
+                and agent_def.human_gate_after
+                and agent_def.human_gate_label
+            ):
+                applied_status = STATUS_REVIEW
+
+            _apply_terminal_status(gh, agent_def, work_item, applied_status)
 
             # Post closing announcement for non-failure outcomes.
             try:
@@ -2495,7 +2628,7 @@ def process_work_item(
                     work_item.number,
                     _build_closing_announcement(
                         agent_def, work_item, session_id,
-                        final_status, sentinel_message,
+                        applied_status, sentinel_message,
                     ),
                 )
             except Exception as exc:
@@ -2504,16 +2637,47 @@ def process_work_item(
                     agent_def.agent, work_item.number, exc,
                 )
 
+            # If the step is awaiting human sign-off, post the gate prompt
+            # immediately after the closing announcement so it is clear what
+            # action is required. Both mid-run :review (agent emitted the
+            # sentinel) and post-completion gates (applied_status overridden
+            # to :review above) go through this path.
+            if applied_status == STATUS_REVIEW and agent_def.human_gate_after and agent_def.human_gate_label:
+                try:
+                    gh.post_comment(
+                        work_item.number,
+                        (
+                            f"<!-- ai-agile/gate-prompt/v1 by {agent_def.agent} -->\n"
+                            f"**{agent_def.agent}** is complete.\n\n"
+                            f"- Apply `{agent_def.human_gate_label}` to approve and advance the pipeline.\n"
+                            f"- Add your feedback as a comment, then apply "
+                            f"`{agent_def.status_label(STATUS_REQUESTED)}` to request changes "
+                            f"(the agent will re-read your comments and revise).\n\n"
+                            f"> **Note:** Applying `:requested` clears the current `:review` state. "
+                            f"If you had already applied `{agent_def.human_gate_label}`, "
+                            f"re-apply it after reviewing the revision."
+                        )
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "  could not post gate comment for %s on #%d: %s",
+                        agent_def.agent, work_item.number, exc,
+                    )
+                log.info(
+                    "  GATE    %-38s  waiting for: %s",
+                    agent_def.agent, agent_def.human_gate_label,
+                )
+
             # Refresh label set from GitHub after our writes.
             labels = gh.get_issue_labels(work_item.number)
             work_item.labels = labels
 
             log.info(
                 "  %-6s  %-38s",
-                (final_status or "?").upper(), agent_def.agent,
+                (applied_status or "?").upper(), agent_def.agent,
             )
 
-            if audit_log is not None and session_id and final_status:
+            if audit_log is not None and session_id and applied_status:
                 _et_map = {
                     STATUS_COMPLETE: "agent.complete",
                     STATUS_REVIEW:   "agent.review",
@@ -2521,15 +2685,16 @@ def process_work_item(
                     STATUS_SKIPPED:  "agent.skipped",
                 }
                 audit_log.append(_make_audit_event(
-                    session_id, _et_map.get(final_status, "agent.complete"), repo,
+                    session_id, _et_map.get(applied_status, "agent.complete"), repo,
                     work_item=work_item, agent=agent_def.agent,
-                    outcome_status=final_status,
+                    outcome_status=applied_status,
                     outcome_detail=f"mode={agent_def.step_type}",
                     duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                 ))
 
             # Mark the PR ready-for-review if the agent declares it (P-16).
-            if final_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
+            # Only fires on true completion — not when awaiting a human gate.
+            if applied_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
                 if work_item.kind == "pr":
                     _ready_pr_number = work_item.number
                 elif work_item.kind == "issue":
@@ -2563,27 +2728,12 @@ def process_work_item(
                         agent_def.agent, work_item.number,
                     )
 
-            # If the step completed and a human gate is configured, post
-            # the gate comment so the reviewer knows what to do.
-            if final_status == STATUS_COMPLETE and agent_def.human_gate_after and agent_def.human_gate_label:
-                gh.post_comment(
-                    work_item.number,
-                    (
-                        f"**{agent_def.agent}** is complete.\n\n"
-                        f"Apply `{agent_def.human_gate_label}` to advance the pipeline."
-                    )
-                )
-                log.info(
-                    "  GATE    %-38s  waiting for: %s",
-                    agent_def.agent, agent_def.human_gate_label,
-                )
-
             # Halt if blocked or awaiting review — do not trigger further
             # steps on this item this run.
-            if final_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
+            if applied_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
                 # review_loop: automatically re-invoke the target agent rather
                 # than waiting for human sign-off, until max_cycles is reached.
-                if final_status == STATUS_REVIEW and agent_def.review_loop:
+                if applied_status == STATUS_REVIEW and agent_def.review_loop:
                     labels = _handle_review_loop(
                         gh, agent_def, work_item, labels, pipeline_map
                     )
@@ -2692,8 +2842,8 @@ def main() -> None:
             )
             sys.exit(1)
 
-    # Embed GITHUB_TOKEN in the remote URL so all git fetch/checkout/push
-    # operations use a consistent credential with contents:write scope.
+    # Set http.extraHeader globally so all git operations in this process
+    # authenticate with GITHUB_TOKEN (contents:write scope).
     _configure_git_auth()
 
     agents, default_extra_tools = load_pipeline(args.pipeline)
@@ -2737,12 +2887,27 @@ def main() -> None:
             outcome_detail=f"evaluating {len(work_items)} work item(s)",
         ))
 
+    # Build concurrency state from labels fetched above. running_counts reflects
+    # agents started in prior ticks that are still :wip; tick_launch_count will
+    # accumulate launches within this tick against PIPELINE_MAX_CONCURRENT.
+    conc = ConcurrencyState(running_counts=_count_running(work_items, agents))
+    _active = {k: v for k, v in conc.running_counts.items() if v > 0}
+    if _active:
+        log.info("Running at tick start (prior-tick :wip): %s", _active)
+
     total_triggered = 0
     for item in work_items:
+        if not args.dry_run and conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+            log.info(
+                "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",
+                PIPELINE_MAX_CONCURRENT,
+            )
+            break
         n = process_work_item(
             item, agents, pipeline_map, gh, args.dry_run, args.repo,
             session_id=session_id, audit_log=audit_log,
             default_extra_tools=default_extra_tools,
+            concurrency=conc,
         )
         total_triggered += n
         if n > 0:

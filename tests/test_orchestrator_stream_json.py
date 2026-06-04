@@ -13,7 +13,7 @@ import pytest
 
 # Ensure the orchestrator module is importable without its runtime dependencies
 # resolving. We import only the pure functions under test.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "ai-agile", "pipeline"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 from pipeline_orchestrator import (
     _extract_text_from_stream_event,

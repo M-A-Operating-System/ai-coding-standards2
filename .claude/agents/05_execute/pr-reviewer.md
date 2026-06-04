@@ -5,6 +5,8 @@ description: >
   diff and spec through four independent personas — Defensive Programmer,
   Security Analyst, QA Engineer, Standards Compliance — then posts a
   prioritised finding list with an APPROVE or REQUEST CHANGES verdict.
+  Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues
+  APPROVE only when all findings are Low or Informational severity.
   On APPROVE marks the PR ready for human review. Gates on pr-reviewer:approved.
 tools: [Bash, Read, Glob, Grep]
 model: claude-sonnet-4-6
@@ -220,8 +222,8 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ## Step 8 — Verdict
 
-- Any Critical, High, Medium, or Low finding → **REQUEST CHANGES**
-- Informational only (or zero findings) → **APPROVE**
+- Any Critical, High, or Medium finding → **REQUEST CHANGES**
+- Low or Informational only (or zero findings) → **APPROVE**
 - ADR-covered findings downgraded to Informational never block APPROVE
 
 ---

@@ -1,0 +1,12 @@
+flowchart TD
+    n_01_product_docs__issue_classifier["issue-classifier"]
+    n_01_product_docs__prd_writer["prd-writer"]
+    n_01_product_docs__create_pr("create-pr")
+    n_01_product_docs__prd_docs_updater["prd-docs-updater"]
+    gate__n_01_product_docs__prd_writer{"prd-writer:approved"}
+    gate__n_01_product_docs__prd_docs_updater{"prd-docs-updater:approved"}
+    n_01_product_docs__prd_writer --> gate__n_01_product_docs__prd_writer
+    n_01_product_docs__prd_docs_updater --> gate__n_01_product_docs__prd_docs_updater
+    n_01_product_docs__issue_classifier --> n_01_product_docs__prd_writer
+    gate__n_01_product_docs__prd_writer --> n_01_product_docs__create_pr
+    n_01_product_docs__create_pr --> n_01_product_docs__prd_docs_updater
