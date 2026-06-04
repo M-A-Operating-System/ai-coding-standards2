@@ -121,7 +121,7 @@ subsequent agent commits accumulate into. Agents (`prd-docs-updater`,
 pushes those changes to the branch after the agent signals `complete`
 (`git_ops.commit_after: true`). Reading issues and PRs is allowed,
 but only the orchestrator may create, commit to, or advance the PR. `pr-reviewer` issues `REQUEST_CHANGES` when any Critical, High, or Medium severity finding is present; it issues `APPROVE` only when all findings are Low or Informational severity. When `pr-reviewer` completes with APPROVE, the
-orchestr ator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`); when it issues `REQUEST_CHANGES`, the orchestrator automatically re-invokes the coder to address the findings (up to three cycles before requiring human sign-off).
+orchestrator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`); when it issues `REQUEST_CHANGES`, the orchestrator automatically re-invokes the coder to address the findings (up to three cycles before requiring human sign-off).
 The linked issue closes automatically on merge via the "Closes #{N}"
 trailer in the PR body; the branch is deleted automatically by GitHub's
 "auto-delete head branches" repo setting.
@@ -131,6 +131,11 @@ and [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-th
 ---
 
 ## Forks in the path
+
+> **Note:** Most forks below are planned design. Exception: `merge-conflict`
+> is implemented and runs after CI (see below). The current pipeline runs
+> `issue-classifier → prd-writer → create-pr → prd-docs-updater → coder →
+> ci-gate → merge-conflict → pr-reviewer`.
 
 ### The ticket is too big _(planned)_
 
@@ -222,7 +227,7 @@ the step. `agent:complete` and `agent:review` are agent status labels
 (see [`06-status-model.md`](06-status-model.md)); the `*:approved`
 labels are human gates (see [`07-human-gates.md`](07-human-gates.md)).
 Rows marked _(orchestrator …)_ are git operations run directly by the
-orchestr ator, not label transitions.
+orchestrator, not label transitions.
 
 Total wall-clock human time: minutes. Total elapsed time: hours.
 
@@ -383,7 +388,7 @@ purposes.
 ## Phase 10 — Tech debt
 
 Phase 10 looks for **poor architecture or implementation choices that
-warrant remediation**. The per-ticket pipeline blocks `required`
+want remediation**. The per-ticket pipeline blocks `required`
 standards violations at merge time, but it does not catch slower
 problems: layered shortcuts that compound, abstractions that have
 ossified, modules that have grown beyond their original scope, ADRs
