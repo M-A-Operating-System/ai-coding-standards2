@@ -88,6 +88,11 @@
           "type": "string",
           "description": "Required when human_gate_after is true."
         },
+        "auto_approve_on_complete": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true and the agent emits :complete, the orchestrator automatically applies human_gate_label without requiring a human to act. Use for agents whose :review path needs a gate (conflicted PRs) but whose :complete path should advance uninterrupted (clean PRs)."
+        },
         "session": {
           "type": "object",
           "description": "Session management configuration for this agent. Controls whether the claude CLI is invoked with a per-issue session ID or a single shared session ID across all issues.",
