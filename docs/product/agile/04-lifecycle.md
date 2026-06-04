@@ -132,10 +132,10 @@ and [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-th
 
 ## Forks in the path
 
-> **Note:** The forks described below are planned design — none are
-> currently implemented in `pipeline.json`. The current pipeline runs
-> linearly through `issue-classifier → prd-writer → create-pr →
-> prd-docs-updater → coder → pr-reviewer`.
+> **Note:** Most forks below are planned design. Exception: `merge-conflict`
+> is implemented and runs after CI (see below). The current pipeline runs
+> `issue-classifier → prd-writer → create-pr → prd-docs-updater → coder →
+> ci-gate → merge-conflict → pr-reviewer`.
 
 ### The ticket is too big _(planned)_
 
