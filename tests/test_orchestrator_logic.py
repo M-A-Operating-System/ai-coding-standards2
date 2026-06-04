@@ -13,6 +13,9 @@ from pipeline_orchestrator import (
     agent_status,
     _apply_failed,
     _count_running,
+    _handle_review_loop,
+    _make_audit_event,
+    write_audit_log,
     promote_gated_agents,
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
@@ -1183,3 +1186,272 @@ class TestPromoteGatedAgents:
         gh.add_label.assert_not_called()  # already present, skip
         gh.remove_label.assert_any_call(wi.number, agent.review_label)
         assert agent.review_label not in result
+
+
+# ---------------------------------------------------------------------------
+# QA-001: TestHandleReviewLoop
+# ---------------------------------------------------------------------------
+
+class TestHandleReviewLoop:
+    """Tests for _handle_review_loop() — review-cycle counter and escalation."""
+
+    def _reviewer_def(
+        self,
+        reviewer: str = "05_execute/pr-reviewer",
+        target: str = "05_execute/coder",
+        max_cycles: int = 3,
+    ) -> AgentDef:
+        return AgentDef(
+            agent=reviewer,
+            phase=reviewer.split("/")[0],
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="reviewer",
+            review_loop={
+                "re_invoke": target,
+                "max_cycles": max_cycles,
+            },
+        )
+
+    def _target_def(self, name: str = "05_execute/coder") -> AgentDef:
+        return AgentDef(
+            agent=name,
+            phase=name.split("/")[0],
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="coder",
+        )
+
+    def _work_item(self) -> WorkItem:
+        return WorkItem(
+            number=42,
+            kind="issue",
+            title="Test issue",
+            labels=set(),
+            url="https://github.com/test/repo/issues/42",
+        )
+
+    def test_first_cycle_clears_reviewer_review_and_target_complete(self):
+        """Cycle 0 → 1: removes reviewer :review and target :complete so target re-runs."""
+        reviewer = self._reviewer_def()
+        target = self._target_def()
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target}
+        # Starting with reviewer in :review and target in :complete
+        labels = {reviewer.review_label, target.complete_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        # :review removed from reviewer
+        gh.remove_label.assert_any_call(wi.number, reviewer.review_label)
+        assert reviewer.review_label not in result
+        # :complete removed from target
+        gh.remove_label.assert_any_call(wi.number, target.complete_label)
+        assert target.complete_label not in result
+
+    def test_first_cycle_adds_review_cycle_label(self):
+        """After cycle 0→1, review-cycle:1 label is applied."""
+        reviewer = self._reviewer_def()
+        target = self._target_def()
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target}
+        labels = {reviewer.review_label, target.complete_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        gh.add_label.assert_any_call(wi.number, "review-cycle:1")
+        assert "review-cycle:1" in result
+
+    def test_max_cycles_reached_escalates_to_human(self):
+        """When next_cycle >= max_cycles, :review is left intact (escalation)."""
+        reviewer = self._reviewer_def(max_cycles=2)
+        target = self._target_def()
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target}
+        # Already at cycle 1; next would be 2 == max_cycles → escalate
+        labels = {reviewer.review_label, target.complete_label, "review-cycle:1"}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        # :review must remain for human to act on
+        assert reviewer.review_label in result
+        # A comment should be posted explaining the escalation
+        gh.post_comment.assert_called_once()
+        comment_text = gh.post_comment.call_args[0][1]
+        assert "human" in comment_text.lower() or "escalat" in comment_text.lower() or "required" in comment_text.lower()
+
+    def test_unknown_re_invoke_returns_labels_unchanged(self):
+        """If re_invoke target is not in pipeline_map, labels are returned unchanged."""
+        reviewer = self._reviewer_def(target="05_execute/nonexistent")
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {}  # target not present
+        labels = {reviewer.review_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        assert result == labels
+        gh.add_label.assert_not_called()
+        gh.remove_label.assert_not_called()
+
+    def test_second_cycle_removes_old_cycle_label(self):
+        """On cycle 1→2, the review-cycle:1 label is removed before review-cycle:2 is added."""
+        reviewer = self._reviewer_def(max_cycles=5)
+        target = self._target_def()
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target}
+        labels = {reviewer.review_label, target.complete_label, "review-cycle:1"}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        gh.remove_label.assert_any_call(wi.number, "review-cycle:1")
+        gh.add_label.assert_any_call(wi.number, "review-cycle:2")
+        assert "review-cycle:1" not in result
+        assert "review-cycle:2" in result
+
+    def test_both_labels_coexist_recovery(self):
+        """DP-002 recovery: both :complete and :review coexist from a crashed prior run.
+
+        The review-loop handler is NOT responsible for this recovery — it only
+        fires when the reviewer is in :review. If the pipeline sees both
+        :complete and :review on the *reviewer* simultaneously (which would
+        be an unusual crash state), it still processes normally.
+        """
+        reviewer = self._reviewer_def()
+        target = self._target_def()
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target}
+        # Both present on the target (crashed prior run residue)
+        labels = {reviewer.review_label, target.complete_label, target.review_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        # Reviewer :review removed, target :complete cleared
+        assert reviewer.review_label not in result
+        assert target.complete_label not in result
+        # Cycle label applied
+        assert "review-cycle:1" in result
+
+
+# ---------------------------------------------------------------------------
+# QA-001: TestWriteAuditLog
+# ---------------------------------------------------------------------------
+
+class TestWriteAuditLog:
+    """Tests for write_audit_log() and _make_audit_event()."""
+
+    def _make_gh(self) -> MagicMock:
+        gh = MagicMock()
+        gh.repo = "test/repo"
+        return gh
+
+    def test_make_audit_event_has_required_fields(self):
+        """_make_audit_event returns a dict with all schema-required fields."""
+        wi = WorkItem(
+            number=42, kind="issue", title="test", labels=set(),
+            url="https://github.com/test/repo/issues/42",
+        )
+        event = _make_audit_event(
+            "sess-123", "agent.complete", "test/repo",
+            work_item=wi, agent="05_execute/coder",
+            outcome_status="ok",
+        )
+        assert event["event_type"] == "agent.complete"
+        assert event["session_id"] == "sess-123"
+        assert event["agent"] == "05_execute/coder"
+        assert event["outcome"]["status"] == "ok"
+        assert event["object"]["kind"] == "issue"
+        assert event["object"]["id"] == 42
+        assert "ts" in event
+        assert "actor" in event
+
+    def test_make_audit_event_without_work_item(self):
+        """_make_audit_event with no work_item sets object to None."""
+        event = _make_audit_event("sess-1", "session.start", "test/repo")
+        assert event["object"] is None
+        assert event["agent"] is None
+
+    def test_write_audit_log_no_op_on_empty_events(self):
+        """write_audit_log returns without API calls when events list is empty."""
+        gh = self._make_gh()
+        write_audit_log(gh, [])
+        gh._request.assert_not_called()
+
+    def test_write_audit_log_emits_jsonl_lines(self):
+        """write_audit_log writes one JSON line per event."""
+        gh = self._make_gh()
+        import base64 as _base64, json as _json
+
+        # Mock the branch-check GET (200 = branch exists)
+        branch_response = MagicMock()
+        branch_response.status_code = 200
+
+        # Mock the file-not-found GET (404 = new file)
+        file_response = MagicMock()
+        file_response.status_code = 404
+
+        # Mock a successful PUT
+        put_response = MagicMock()
+        put_response.status_code = 201
+
+        gh._request.side_effect = [branch_response, file_response]
+        gh._put.return_value = put_response
+
+        event = _make_audit_event("s1", "agent.complete", "test/repo", outcome_status="ok")
+        write_audit_log(gh, [event])
+
+        # PUT must have been called with base64-encoded content
+        assert gh._put.called
+        put_body = gh._put.call_args[0][1]
+        content = _base64.b64decode(put_body["content"]).decode()
+        parsed = _json.loads(content.strip())
+        assert parsed["event_type"] == "agent.complete"
+
+    def test_write_audit_log_retries_on_409_conflict(self):
+        """409 conflict triggers a retry — events must not be dropped silently."""
+        gh = self._make_gh()
+        import base64 as _base64, json as _json
+
+        branch_response = MagicMock()
+        branch_response.status_code = 200
+
+        file_response = MagicMock()
+        file_response.status_code = 404
+
+        conflict_response = MagicMock()
+        conflict_response.status_code = 409
+
+        file_response2 = MagicMock()
+        file_response2.status_code = 404
+
+        success_response = MagicMock()
+        success_response.status_code = 201
+
+        # First attempt: branch check, file 404, PUT → 409
+        # Second attempt: file 404 again, PUT → 201
+        gh._request.side_effect = [
+            branch_response,
+            file_response,
+            file_response2,
+        ]
+        gh._put.side_effect = [conflict_response, success_response]
+
+        event = _make_audit_event("s1", "test.event", "test/repo")
+
+        import unittest.mock as _mock
+        with _mock.patch("time.sleep"):  # don't actually sleep in tests
+            write_audit_log(gh, [event])
+
+        # Should have been called twice (one conflict + one success)
+        assert gh._put.call_count == 2
