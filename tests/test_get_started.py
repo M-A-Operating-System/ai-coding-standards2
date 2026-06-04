@@ -313,7 +313,7 @@ class TestRewritePaths:
         )
 
     def test_schema_path_rewritten_in_standards_file(self, tmp_path, monkeypatch):
-        """install_standards rewrites $schema path in installed JSON files."""
+        """install_standards rewrites the $schema URL in installed standards JSON files."""
         fake_src = tmp_path / "submodule"
         (fake_src / "standards").mkdir(parents=True)
         (fake_src / "standards" / "s.json").write_text(

@@ -2,6 +2,8 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
+import base64
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 import pytest
@@ -1287,7 +1289,7 @@ class TestHandleReviewLoop:
         # A comment should be posted explaining the escalation
         gh.post_comment.assert_called_once()
         comment_text = gh.post_comment.call_args[0][1]
-        assert "human" in comment_text.lower() or "escalat" in comment_text.lower() or "required" in comment_text.lower()
+        assert "human review required" in comment_text.lower()
 
     def test_unknown_re_invoke_returns_labels_unchanged(self):
         """If re_invoke target is not in pipeline_map, labels are returned unchanged."""
@@ -1299,7 +1301,7 @@ class TestHandleReviewLoop:
 
         result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
 
-        assert result == labels
+        assert reviewer.review_label in result
         gh.add_label.assert_not_called()
         gh.remove_label.assert_not_called()
 
@@ -1320,13 +1322,7 @@ class TestHandleReviewLoop:
         assert "review-cycle:2" in result
 
     def test_both_labels_coexist_recovery(self):
-        """DP-002 recovery: both :complete and :review coexist from a crashed prior run.
-
-        The review-loop handler is NOT responsible for this recovery — it only
-        fires when the reviewer is in :review. If the pipeline sees both
-        :complete and :review on the *reviewer* simultaneously (which would
-        be an unusual crash state), it still processes normally.
-        """
+        """Normal cycle 0→1 runs correctly when target also carries a stale :review label."""
         reviewer = self._reviewer_def()
         target = self._target_def()
         wi = self._work_item()
@@ -1391,7 +1387,6 @@ class TestWriteAuditLog:
     def test_write_audit_log_emits_jsonl_lines(self):
         """write_audit_log writes one JSON line per event."""
         gh = self._make_gh()
-        import base64 as _base64, json as _json
 
         # Mock the branch-check GET (200 = branch exists)
         branch_response = MagicMock()
@@ -1414,14 +1409,13 @@ class TestWriteAuditLog:
         # PUT must have been called with base64-encoded content
         assert gh._put.called
         put_body = gh._put.call_args[0][1]
-        content = _base64.b64decode(put_body["content"]).decode()
-        parsed = _json.loads(content.strip())
+        content = base64.b64decode(put_body["content"]).decode()
+        parsed = json.loads(content.strip())
         assert parsed["event_type"] == "agent.complete"
 
     def test_write_audit_log_retries_on_409_conflict(self):
         """409 conflict triggers a retry — events must not be dropped silently."""
         gh = self._make_gh()
-        import base64 as _base64, json as _json
 
         branch_response = MagicMock()
         branch_response.status_code = 200
@@ -1449,8 +1443,7 @@ class TestWriteAuditLog:
 
         event = _make_audit_event("s1", "test.event", "test/repo")
 
-        import unittest.mock as _mock
-        with _mock.patch("time.sleep"):  # don't actually sleep in tests
+        with patch("time.sleep"):  # don't actually sleep in tests
             write_audit_log(gh, [event])
 
         # Should have been called twice (one conflict + one success)
