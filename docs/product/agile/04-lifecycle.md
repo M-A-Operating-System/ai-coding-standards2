@@ -132,10 +132,10 @@ and [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-th
 
 ## Forks in the path
 
-> **Note:** The forks described below are planned design — none are
-> currently implemented in `pipeline.json`. The current pipeline runs
-> linearly through `issue-classifier → prd-writer → create-pr →
-> prd-docs-updater → coder → pr-reviewer`.
+> **Note:** Most forks below are planned design. Exception: `merge-conflict`
+> is implemented and runs after CI (see below). The current pipeline runs
+> `issue-classifier → prd-writer → create-pr → prd-docs-updater → coder →
+> ci-gate → merge-conflict → pr-reviewer`.
 
 ### The ticket is too big _(planned)_
 
@@ -166,6 +166,20 @@ through the full pipeline as a single unit, the grouped children pause
 their own pipelines and attach, and one PR closes the super-issue and
 all its children on merge. See
 [P-6](02-principles.md#p-6--group-small-work-under-a-super-issue).
+
+### PR contains merge conflicts
+
+After CI passes, a **`merge-conflict`** agent runs automatically before
+pr-reviewer. It checks the PR's mergeability via the GitHub API. If the
+branch is clean, the agent emits complete and the orchestrator auto-advances
+the pipeline to pr-reviewer without any human action (clean PRs are
+unaffected). If conflicts are found, the agent fetches both branches
+locally, simulates the merge, and posts a prioritised list of resolution
+recommendations on the PR — one entry per file, each naming the conflict
+scope and the suggested resolution approach. The pipeline pauses at a
+`merge-conflict:approved` gate (see [`07-human-gates.md`](07-human-gates.md)).
+On approval, the coding agent is re-invoked with the approved resolution
+plan as context; it applies the resolutions and pushes the updated branch.
 
 ### SQL changes _(planned)_
 
