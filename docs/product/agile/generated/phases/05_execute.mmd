@@ -2,7 +2,11 @@ flowchart TD
     n_01_product_docs__prd_docs_updater(["↓ prd-docs-updater:approved"])
     n_05_execute__coder["coder"]
     n_05_execute__ci_gate("ci-gate")
+    n_05_execute__merge_conflict["merge-conflict"]
     n_05_execute__pr_reviewer["pr-reviewer"]
+    gate__n_05_execute__merge_conflict{"merge-conflict:approved"}
+    n_05_execute__merge_conflict --> gate__n_05_execute__merge_conflict
     n_01_product_docs__prd_docs_updater --> n_05_execute__coder
     n_05_execute__coder --> n_05_execute__ci_gate
-    n_05_execute__ci_gate --> n_05_execute__pr_reviewer
+    n_05_execute__ci_gate --> n_05_execute__merge_conflict
+    gate__n_05_execute__merge_conflict --> n_05_execute__pr_reviewer
