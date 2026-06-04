@@ -120,8 +120,8 @@ subsequent agent commits accumulate into. Agents (`prd-docs-updater`,
 `coder`) write files during their run; the orchestrator commits and
 pushes those changes to the branch after the agent signals `complete`
 (`git_ops.commit_after: true`). Reading issues and PRs is allowed,
-but only the orchestrator may create, commit to, or advance the PR. When `pr-reviewer` completes with APPROVE, the
-orchestrator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`).
+but only the orchestrator may create, commit to, or advance the PR. `pr-reviewer` issues `REQUEST_CHANGES` when any Critical, High, or Medium severity finding is present; it issues `APPROVE` only when all findings are Low or Informational severity. When `pr-reviewer` completes with APPROVE, the
+orchestr ator marks the PR ready-for-review (`git_ops.mark_ready_on_complete`); when it issues `REQUEST_CHANGES`, the orchestrator automatically re-invokes the coder to address the findings (up to three cycles before requiring human sign-off).
 The linked issue closes automatically on merge via the "Closes #{N}"
 trailer in the PR body; the branch is deleted automatically by GitHub's
 "auto-delete head branches" repo setting.
@@ -131,11 +131,6 @@ and [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-th
 ---
 
 ## Forks in the path
-
-> **Note:** The forks described below are planned design — none are
-> currently implemented in `pipeline.json`. The current pipeline runs
-> linearly through `issue-classifier → prd-writer → create-pr →
-> prd-docs-updater → coder → pr-reviewer`.
 
 ### The ticket is too big _(planned)_
 
@@ -167,19 +162,19 @@ their own pipelines and attach, and one PR closes the super-issue and
 all its children on merge. See
 [P-6](02-principles.md#p-6--group-small-work-under-a-super-issue).
 
-### PR contains merge conflicts _(planned)_
+### PR contains merge conflicts
 
-When a PR is marked Ready for Review and the branch contains one or more
-files with merge conflict markers, a **`merge-conflict`** agent would run
-automatically before any other review stages advance. It would assess each
-conflicting file, then post a prioritised list of resolution recommendations
-on the PR — one entry per file, each naming the conflict scope and the
-suggested resolution approach. The pipeline would halt at a
+After CI passes, a **`merge-conflict`** agent runs automatically before
+pr-reviewer. It checks the PR's mergeability via the GitHub API. If the
+branch is clean, the agent emits complete and the orchestrator auto-advances
+the pipeline to pr-reviewer without any human action (clean PRs are
+unaffected). If conflicts are found, the agent fetches both branches
+locally, simulates the merge, and posts a prioritised list of resolution
+recommendations on the PR — one entry per file, each naming the conflict
+scope and the suggested resolution approach. The pipeline pauses at a
 `merge-conflict:approved` gate (see [`07-human-gates.md`](07-human-gates.md)).
-On approval, the coding agent would be re-invoked with the approved resolution
-recommendations as its input; it applies the resolutions and pushes the
-updated branch. A PR with no conflict markers is unaffected and advances to
-its normal post-review stages.
+On approval, the coding agent is re-invoked with the approved resolution
+plan as context; it applies the resolutions and pushes the updated branch.
 
 ### SQL changes _(planned)_
 
@@ -208,7 +203,7 @@ there is no code to ship, so no branch or PR is created.
 | T+2m | Issue | `01_product_docs/issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` |
 | T+5m | Issue | `01_product_docs/prd-writer` | Drafts PRD; rewrites issue body in user-story + Gherkin format | `prd-writer:review` |
 | T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` → `prd-writer:complete` |
-| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Creates `issue-{N}` branch; opens draft PR with "Closes #{N}" | `create-pr:complete` |
+| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Creates `issue-{N}` branch; opens draft PR with "Closes #{N}"; posts PR number and link as a comment on the issue | `create-pr:complete` |
 | T+5m | PR | `01_product_docs/prd-docs-updater` | Cross-checks PRD against product docs; commits any updates | `prd-docs-updater:review` |
 | T+30m | PR | Stakeholder | Approves doc updates | `prd-docs-updater:approved` → `prd-docs-updater:complete` |
 | T+30m | Issue | `05_execute/coder` | Implements issue and sub-issues; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
@@ -227,7 +222,7 @@ the step. `agent:complete` and `agent:review` are agent status labels
 (see [`06-status-model.md`](06-status-model.md)); the `*:approved`
 labels are human gates (see [`07-human-gates.md`](07-human-gates.md)).
 Rows marked _(orchestrator …)_ are git operations run directly by the
-orchestrator, not label transitions.
+orchestr ator, not label transitions.
 
 Total wall-clock human time: minutes. Total elapsed time: hours.
 

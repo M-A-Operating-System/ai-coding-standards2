@@ -112,11 +112,12 @@
       },
       "human_gate_after": true,
       "human_gate_label": "merge-conflict:approved",
+      "auto_approve_on_complete": true,
       "dependencies": ["05_execute/ci-gate"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "exclude_classifications": ["spike"],
-      "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, posts a prioritised resolution plan as PR comments and pauses at the merge-conflict:approved gate — no further stages advance until a human approves the plan. After approval the coder is re-invoked (via the pr-reviewer review loop) to apply the agreed resolutions."
+      "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the orchestrator auto-applies merge-conflict:approved so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review — the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions."
     },
 
     {
@@ -134,13 +135,13 @@
       "review_loop": {
         "re_invoke": "05_execute/coder",
         "max_cycles": 3,
-        "also_clear": ["05_execute/ci-gate"]
+        "also_clear": ["05_execute/ci-gate", "05_execute/merge-conflict"]
       },
       "git_ops": {
         "commit_after": false,
         "mark_ready_on_complete": true
       },
-      "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. On APPROVE emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required."
+      "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues APPROVE only when all findings are Low or Informational severity. On APPROVE emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required."
     },
 
     {
