@@ -86,7 +86,8 @@
         },
         "auto_approve_on_complete": {
           "type": "boolean",
-          "description": "When true and the agent emits complete, the orchestrator applies the human_gate_label automatically so the pipeline advances without waiting for a human. Used by gates that only need human input on the review path (e.g. merge-conflict: clean branches advance unattended; conflicts pause for approval)."
+          "default": false,
+          "description": "When true and the agent emits :complete, the orchestrator automatically applies human_gate_label without requiring a human to act. Use for agents whose :review path needs a gate (conflicted PRs) but whose :complete path should advance uninterrupted (clean PRs)."
         },
         "session": {
           "type": "object",
