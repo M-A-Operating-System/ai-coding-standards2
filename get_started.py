@@ -64,18 +64,18 @@ SUBMODULE_NAME = SUBMODULE_ROOT.name  # actual dir name, not hard-coded
 PATH_REWRITES = [
     # Bare ".github/scripts/status.sh" → "ai-coding-standards2/.github/scripts/status.sh"
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
-    (rf"(?<!{SUBMODULE_NAME}/)\. github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
+    (rf"(?<!{SUBMODULE_NAME}/)\x2egithub/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
     # Bare ".github/scripts/migrate_labels.py" → "ai-coding-standards2/.github/scripts/migrate_labels.py"
-    (rf"(?<!{SUBMODULE_NAME}/)\. github/scripts/migrate_labels\.py", f"{SUBMODULE_NAME}/.github/scripts/migrate_labels.py"),
+    (rf"(?<!{SUBMODULE_NAME}/)\x2egithub/scripts/migrate_labels\.py", f"{SUBMODULE_NAME}/.github/scripts/migrate_labels.py"),
     # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
-    (rf"(?<!{SUBMODULE_NAME}/)\. claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
+    (rf"(?<!{SUBMODULE_NAME}/)\x2eclaude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
     # Bare "pipeline/..." → "ai-coding-standards2/pipeline/..."
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
     (rf"(?<!{SUBMODULE_NAME}/)pipeline/", f"{SUBMODULE_NAME}/pipeline/"),
     # Bare ".claude/agent-todo-standard.md" was retired (see 13-todos.md);
     # rewrite any lingering reference to point at the new doc.
     (
-        r"\. claude/agent-todo-standard\.md",
+        r"\x2eclaude/agent-todo-standard\.md",
         f"{SUBMODULE_NAME}/docs/product/agile/13-todos.md",
     ),
 ]
@@ -368,7 +368,7 @@ def _add_submodules_to_checkout(content: str) -> str:
     repo IS the submodule. Consuming repos need it to check out the
     ai-coding-standards2 submodule at workflow runtime.
 
-    Handles both named form ('- name: Checkout\\n  uses: ...') and
+    Handles both named form ('- name: Checkout\n  uses: ...') and
     shorthand form ('- uses: actions/checkout@...') in YAML steps.
     Already-expanded steps (with: block present) are left untouched —
     callers that add their own with: options (e.g. fetch-depth) must
