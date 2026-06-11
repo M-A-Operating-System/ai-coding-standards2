@@ -75,42 +75,47 @@ fi
 ## Step 1 — Discover knowledge files in the parent repo
 
 ```bash
-# Primary targets — well-known knowledge file names
-find "$PARENT_ROOT" \
-  -not -path "*/.git/*" \
-  -not -path "*/node_modules/*" \
-  -not -path "*/__pycache__/*" \
-  -not -path "*/.venv/*" \
-  -not -path "${SUBMODULE_EXCLUDE}/*" \
+EXCLUDE_PATHS=(
+  -not -path "*/.git/*"
+  -not -path "*/node_modules/*"
+  -not -path "*/__pycache__/*"
+  -not -path "*/.venv/*"
+  -not -path "*/.tox/*"
+  -not -path "*/dist/*"
+  -not -path "*/build/*"
+  -not -path "*/vendor/*"
+  -not -path "${SUBMODULE_EXCLUDE}/*"
+)
+
+# All markdown files across the entire repo (no depth limit, no directory filter)
+echo "=== All .md files ==="
+find "$PARENT_ROOT" "${EXCLUDE_PATHS[@]}" -name "*.md" -type f | sort
+
+# Non-markdown knowledge files (AI editor config, plain-text rule files)
+echo "=== Non-markdown knowledge files ==="
+find "$PARENT_ROOT" "${EXCLUDE_PATHS[@]}" \
   \( \
-    -iname "CLAUDE.md" \
-    -o -iname "AGENTS.md" \
-    -o -iname "*_knowledge*" \
-    -o -iname "*_standards*" \
-    -o -iname "*_guidelines*" \
-    -o -iname "*_conventions*" \
-    -o -iname "*_rules*" \
-    -o -iname ".cursorrules" \
+    -iname ".cursorrules" \
     -o -iname ".windsurfrules" \
-    -o -iname "CONTRIBUTING.md" \
-    -o -iname "DEVELOPMENT.md" \
-    -o -iname "ARCHITECTURE.md" \
-    -o -iname "CODING_STANDARDS.md" \
-    -o -iname "STYLE_GUIDE.md" \
+    -o -iname ".aider*" \
+    -o -iname "*_knowledge" \
+    -o -iname "*_guidelines" \
+    -o -iname "*_conventions" \
+    -o -iname "*_rules" \
+    -o -iname "*_standards" \
   \) \
   -type f | sort
-
-# Secondary: any .md file in a docs/ or .claude/ directory (depth ≤ 3)
-find "$PARENT_ROOT" -maxdepth 3 \
-  -not -path "*/.git/*" \
-  -not -path "${SUBMODULE_EXCLUDE}/*" \
-  \( -path "*/docs/*" -o -path "*/.claude/*" \) \
-  -name "*.md" -type f | sort
 ```
 
-Read each discovered file in full. Skip files that contain only narrative
-prose (project history, changelogs, README boilerplate) with no extractable
-rules.
+Read each discovered file in full. For each file, make a quick judgement:
+
+- **Read fully** — any file whose name or opening content suggests coding
+  rules, design decisions, architecture constraints, testing expectations,
+  security requirements, or team conventions.
+- **Skip** — files that contain only narrative prose: changelogs, release
+  notes, user-facing documentation, marketing copy, or README boilerplate
+  with no actionable rules. Also skip auto-generated files (lock files,
+  coverage reports, schema dumps).
 
 Tell the human which files you found and which you are skipping, with a
 one-line reason for each skip.
