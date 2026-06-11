@@ -108,15 +108,21 @@ architecture and product standards that govern the codebase.
 
 **How AI Agile serves them.**
 
-- Every standard has a stable STD ID, a layer, a severity, an enforcement
-  method, and machine-readable acceptance criteria.
+- Every standard has a stable STD ID, a scope (`org` or `project`), a
+  category, an `adr_overridable` flag, and machine-readable acceptance
+  criteria and anti-patterns. See [14-standards.md](14-standards.md) for
+  the full field reference and category taxonomy.
+- Standards exist at two tiers: org-wide rules in the `ai-coding-standards2`
+  submodule (read-only in consuming projects) and project-specific rules in
+  the consuming repo. Both tiers are enforced on every diff.
 - The `standards-compliance-reviewer` runs daily and on every PR, raising
   issues for violations with the offending STD ID and proposed fix.
 - The `standards-evolver` runs weekly, reviews recent retrospectives and
   recurring violations, and drafts standards proposals as issues for human
   approval.
-- Exceptions to a standard require an ADR. The schema enforces this —
-  `exceptions[].adr_ref` is a required field.
+- Exceptions to a standard require an ADR citing the STD ID via
+  `authorises_exception_to`. Standards marked `adr_overridable: false`
+  cannot be waived by any ADR and always block merge.
 
 ---
 
@@ -139,9 +145,9 @@ authorisation, RLS, secret handling, PII, and regulatory compliance.
 
 **How AI Agile serves them.**
 
-- The standards schema has dedicated `security` and `product-compliance`
-  layers. Standards in those layers carry `severity: required` by
-  default and block merge on violation.
+- The standards schema has a dedicated `security` category. Security
+  standards are declared with `adr_overridable: false` by default,
+  meaning they always block merge and cannot be waived by any ADR.
 - The `impact-assessor` flags any change whose touched files or schema
   intersect with security-sensitive paths (a configurable allowlist
   including `auth/**`, RLS policies, `secrets/**`, IAM definitions).
