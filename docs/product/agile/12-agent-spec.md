@@ -35,8 +35,9 @@ Examples: `01_product_docs/issue-classifier`, `02_technical_docs/architect`,
 `05_execute/coder`, `07_evaluate/retrospective-writer`,
 `08_learn/metrics-aggregator`.
 
-The phase prefix is one of the ten phase identifiers defined in
-[`04-lifecycle.md`](04-lifecycle.md):
+The phase prefix is one of the ten lifecycle phase identifiers defined in
+[`04-lifecycle.md`](04-lifecycle.md), or `00_ondemand` for human-triggered
+agents outside the lifecycle flow:
 
 | Per-ticket | Continuous |
 |---|---|
@@ -58,9 +59,16 @@ appear in GitHub labels, audit-log entries, and status markers where hyphens
 are the standard separator. The two conventions serve different audiences and
 must not be conflated.
 
-**Non-phase directories** inside `.claude/agents/` use the prefix `00_` to
-distinguish them from real phase directories and to sort before all phases
-in directory listings. The only current example is `00_templates/`.
+**Special directories** inside `.claude/agents/`:
+
+- `_templates/` — copy-paste starting points for new agents. The underscore
+  prefix marks it as a support directory, not a phase; it is never referenced
+  in `pipeline.json`.
+- `00_ondemand/` — human-triggered agents that sit outside the lifecycle flow
+  (e.g. `00_ondemand/codebase-reviewer`, `00_ondemand/standards-migrator`).
+  They are registered in `pipeline.json` with phase `00_ondemand` and run only
+  when a human applies their `:requested` label or invokes them manually. The
+  `00_` prefix sorts them before all lifecycle phases.
 
 **Why prefix.** A glance at any label, comment, or audit-log line
 reveals which phase the agent belongs to without consulting
@@ -92,7 +100,7 @@ So `01_product_docs/issue-classifier` lives at
   the `agent` field in `pipeline.json`.
 
 A copy-paste starting point lives at
-[`.claude/agents/00_templates/agent-template.md`](../../../.claude/agents/00_templates/agent-template.md).
+[`.claude/agents/_templates/agent-template.md`](../../../.claude/agents/_templates/agent-template.md).
 
 ---
 
@@ -349,7 +357,7 @@ PRs that fail validation cannot merge.
 ## Adding a new agent — checklist
 
 1. Copy
-   `.claude/agents/00_templates/agent-template.md` to
+   `.claude/agents/_templates/agent-template.md` to
    `.claude/agents/{new-agent}.md`.
 2. Fill in the frontmatter: `name`, `description`, `tools`, `model`.
 3. Replace the role statement, work steps, and behaviour rules.

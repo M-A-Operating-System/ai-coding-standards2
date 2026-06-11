@@ -157,7 +157,7 @@ SUBMODULE_ROOT="$(dirname "$(dirname "$AI_AGILE_CONTEXT")")"
 
 ## Adding a new standard
 
-Use the `09_gap_assessment/standards-migrator` agent. It scans existing
+Use the `00_ondemand/standards-migrator` agent. It scans existing
 knowledge files (CLAUDE.md, `*_knowledge*`, markdown guides) in the consuming
 repo and proposes each rule as a structured standard for human approval before
 writing. Each proposed standard is presented one at a time — the human decides

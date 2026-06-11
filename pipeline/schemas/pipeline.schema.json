@@ -42,12 +42,13 @@
       "properties": {
         "agent": {
           "type": "string",
-          "pattern": "^(01_product_docs|02_technical_docs|03_testing_spec|04_build_plan|05_execute|06_test|07_evaluate|08_learn|09_gap_assessment|10_tech_debt)/[a-z][a-z0-9-]*[a-z0-9]$",
-          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .claude/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix is numeric-prefixed (e.g. 01_product_docs) so the directory tree sorts in lifecycle order. The phase prefix must equal the phase field. See docs/product/agile/12-agent-spec.md."
+          "pattern": "^(00_ondemand|01_product_docs|02_technical_docs|03_testing_spec|04_build_plan|05_execute|06_test|07_evaluate|08_learn|09_gap_assessment|10_tech_debt)/[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .claude/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix is numeric-prefixed (e.g. 01_product_docs) so the directory tree sorts in lifecycle order. 00_ondemand holds human-triggered agents outside the lifecycle flow. The phase prefix must equal the phase field. See docs/product/agile/12-agent-spec.md."
         },
         "phase": {
           "type": "string",
           "enum": [
+            "00_ondemand",
             "01_product_docs",
             "02_technical_docs",
             "03_testing_spec",
@@ -87,6 +88,10 @@
         "human_gate_label": {
           "type": "string",
           "description": "Required when human_gate_after is true."
+        },
+        "auto_approve_on_complete": {
+          "type": "boolean",
+          "description": "When true and the agent emits complete, the orchestrator applies the human_gate_label automatically so the pipeline advances without waiting for a human. Used by gates that only need human input on the review path (e.g. merge-conflict: clean branches advance unattended; conflicts pause for approval)."
         },
         "session": {
           "type": "object",

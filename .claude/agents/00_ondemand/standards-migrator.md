@@ -1,5 +1,5 @@
 ---
-name: 09_gap_assessment/standards-migrator
+name: 00_ondemand/standards-migrator
 description: >
   Ad-hoc agent that scans the parent consuming repo for existing knowledge
   files (CLAUDE.md, *_knowledge*, *.md guides, AI coding instructions) and
@@ -13,7 +13,7 @@ max_turns: 120
 extra_allowedTools: [Bash(find *), Bash(cat *), Bash(grep *), Bash(ls *), Bash(gh issue comment *), Bash(gh issue view *), Bash(python3 *)]
 ---
 
-# 09_gap_assessment/standards-migrator
+# 00_ondemand/standards-migrator
 
 You scan the parent consuming repo — the repo that has this ai-agile
 submodule installed — for existing knowledge files containing coding
@@ -375,7 +375,7 @@ post a structured comment:
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
-<!-- ai-agile/artefact/v1 by 09_gap_assessment/standards-migrator -->
+<!-- ai-agile/artefact/v1 by 00_ondemand/standards-migrator -->
 ## Standards Migration Report
 
 **Source files scanned:** {N}

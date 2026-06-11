@@ -145,8 +145,8 @@
     },
 
     {
-      "agent": "09_gap_assessment/codebase-reviewer",
-      "phase": "09_gap_assessment",
+      "agent": "00_ondemand/codebase-reviewer",
+      "phase": "00_ondemand",
       "object": ["issue"],
       "trigger": {
         "label": "codebase-reviewer:requested"
