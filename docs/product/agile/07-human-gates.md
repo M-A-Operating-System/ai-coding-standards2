@@ -41,6 +41,7 @@ orientation; the generated file is the source of truth (see
 | `standards-proposal:approved` | Evaluate (weekly) | Standards owner | The proposed change to the standards is sound |
 | `security-review:approved` | Execute | Security owner | Security-flagged PR is safe to merge |
 | `data-migration:approved` | Execute | Data owner | Migration is forward-only, idempotent, and safe for production data |
+| `merge-conflict:approved` | Execute | Engineer | The conflict resolution plan is sound and safe to apply |
 | `gap-report:approved` | Gap assessment | Stakeholder + Standards owner | The proposed gap-issues are real gaps worth filing |
 | `debt-report:approved` | Tech debt | Engineer + Standards owner | The proposed debt-issues are worth filing and prioritising |
 | `pipeline-change:approved` | Learn | Standards owner | The proposed change to `pipeline.json` is sound |
@@ -268,6 +269,18 @@ rationale is real, and the agent guidance is unambiguous.
 **What you are signing off.** That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted.
 
 **Cost of getting it wrong.** Data loss or corruption in production. Only required on PRs that include `**/*.sql` files.
+
+### `merge-conflict:approved`
+
+**Approver.** Engineer.
+
+**Artefact.** A prioritised list of conflict resolution recommendations from the `merge-conflict` agent, posted as a PR comment. Each recommendation identifies the affected file, the conflict scope, and the suggested resolution approach.
+
+**What you are signing off.** That the proposed resolution approach for each conflicting file is correct, safe, and consistent with the intended changes on both sides of the merge. Binary files and generated files (lock files, compiled assets) may be flagged but are outside the scope of automated recommendations — those require manual handling.
+
+**Cost of getting it wrong.** Applying the wrong resolution silently drops or corrupts intentional changes. Review each conflicting hunk against the PR's stated intent before approving. Only required on PRs that contain merge conflict markers when marked Ready for Review; clean PRs skip this gate automatically.
+
+---
 
 ### `gap-report:approved`
 
