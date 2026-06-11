@@ -11,14 +11,11 @@ applicable) a human gate.
 This document describes the phases conceptually. The authoritative list
 of agents per phase, their dependencies, triggers, and gates lives in
 [`pipeline/pipeline.json`](../../../pipeline/pipeline.json)
-and is rendered at:
+and per-phase mermaid charts are rendered at
+[`generated/phases/`](generated/phases/).
 
-- [`generated/phases.md`](generated/phases.md) — agents per phase
-- [`generated/agents.md`](generated/agents.md) — full agent catalogue
-- [`generated/pipeline.mmd`](generated/pipeline.mmd) — full mermaid flow
-
-If anything in the prose below disagrees with the generated views, the
-generated views are correct. See [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
+If anything in the prose below disagrees with `pipeline.json`,
+`pipeline.json` is correct. See [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
 
 ---
 

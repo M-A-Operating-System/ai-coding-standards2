@@ -13,15 +13,15 @@ human-readable views are generated from machine-readable sources.
 
 ## Sources and generators
 
-| Generated file | Source | Generator |
-|---|---|---|
-| `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
-| `phases.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
-| `gates.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
-| `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |
-| `pipeline-issue.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |
-| `pipeline-pr.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` |
-| `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
+| Generated file | Source | Generator | Status |
+|---|---|---|---|
+| `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` | Implemented |
+| `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` | Planned |
+| `phases.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` | Planned |
+| `gates.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` | Planned |
+| `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` | Planned |
+| `pipeline-issue.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` | Planned |
+| `pipeline-pr.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` | Planned |
 
 ---
 
@@ -30,14 +30,12 @@ human-readable views are generated from machine-readable sources.
 From the repo root:
 
 ```bash
-python pipeline/generators/generate_docs.py
-python pipeline/generators/generate_pipeline_mermaid.py
 python pipeline/generators/generate_phase_mermaid.py
 ```
 
 Generators are idempotent — running them twice produces byte-identical
-output. CI runs both and fails the PR if any committed file differs from
-the regenerated version.
+output. CI runs the generator and fails the PR if any committed file
+differs from the regenerated version.
 
 ---
 

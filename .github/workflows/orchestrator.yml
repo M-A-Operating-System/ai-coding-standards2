@@ -90,7 +90,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
-          GIT_TRACE: "1"
           # Consuming repo root — agents resolve $AI_AGILE_ROOT/standards/
           # and $AI_AGILE_ROOT/.claude/agents/ from here.
           AI_AGILE_ROOT: ${{ github.workspace }}

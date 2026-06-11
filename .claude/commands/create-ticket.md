@@ -16,7 +16,7 @@ The calling agent is responsible for constructing the title. It MUST match this 
 [<agent-name>] - <KEY> - <short description>
 ```
 
-Where `<KEY>` follows the Issue Key Standard from `.claude/agent-todo-standard.md`:
+Where `<KEY>` follows the Issue Key Standard from `docs/product/agile/13-todos.md`:
 - Format: `<AGENT>-<CATEGORY>-<HASH>`
 - `<AGENT>`: uppercase short agent name (e.g., `REVDOC`, `FACTORY`, `USER`)
 - `<CATEGORY>`: one of `DEAD`, `BUG`, `SEC`, `PERF`, `TYPE`, `STYLE`, `MISS`, `STALE`, `GEN`
@@ -50,7 +50,7 @@ Examples of valid titles:
    Received: <the invalid title>
 
    The calling agent is responsible for constructing a valid title.
-   See .claude/agent-todo-standard.md for the Issue Key Standard.
+   See docs/product/agile/13-todos.md for the Issue Key Standard.
    ```
    **Do NOT create the issue. Stop here.**
 
@@ -88,9 +88,7 @@ Examples of valid titles:
    **Timestamp:** YYYY-MM-DD HH:MM UTC
    ```
 
-7. **Record in todo file.** If the agent has a todo file at `.claude/todos/<agent-name>.todo`, append the key under `## Issues Raised`.
-
-8. **Print the result:**
+7. **Print the result:**
    ```
    Issue created: #<number> — <title>
    Key: <KEY>

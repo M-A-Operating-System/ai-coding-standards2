@@ -63,6 +63,8 @@ PATH_REWRITES = [
     # Bare ".github/scripts/status.sh" → "ai-coding-standards2/.github/scripts/status.sh"
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
     (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
+    # Bare ".github/scripts/migrate_labels.py" → "ai-coding-standards2/.github/scripts/migrate_labels.py"
+    (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/migrate_labels\.py", f"{SUBMODULE_NAME}/.github/scripts/migrate_labels.py"),
     # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
     (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
     # Bare "pipeline/..." → "ai-coding-standards2/pipeline/..."
@@ -218,6 +220,14 @@ def install_agents(
     Preserves the full subdirectory structure (01_product_docs/,
     03_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
     so no path rewriting is needed — they are copied verbatim.
+
+    IMPORTANT: The orchestrator ALWAYS reads agent prompts from the
+    submodule (SUBMODULE_ROOT/.claude/agents/), never from these copies.
+    The copies are provided solely for interactive Claude Code sessions
+    (developers using /agents or viewing agent files locally). Editing the
+    copies has no effect on pipeline execution and the copies are
+    overwritten on every daily sync-claude run. To customise an agent for
+    the pipeline, pin the submodule to a fork or raise a PR upstream.
 
     Returns the number of files written.
     """
@@ -438,6 +448,13 @@ def print_followup(consuming_root: Path) -> None:
     print(f"     Add project-specific standards as NEW files (e.g. standards/myapp.json)")
     print(f"     rather than modifying the base files — the daily sync-claude.yml")
     print(f"     will overwrite base files but never delete your additions.")
+    print()
+    print(f"     AGENT PROMPTS: The pipeline orchestrator reads agent prompts")
+    print(f"     directly from the submodule ({SUBMODULE_NAME}/.claude/agents/).")
+    print(f"     The copies in .claude/agents/ are for interactive Claude Code")
+    print(f"     sessions only. Editing them does NOT affect pipeline execution")
+    print(f"     and they are overwritten by the daily sync. To change agent")
+    print(f"     behaviour, pin to a fork or raise a PR upstream.")
     print()
     print(f"  3. Bootstrap the {{agent}}:{{status}} labels:")
     print(f"     Trigger the orchestrator workflow manually once from")

@@ -26,6 +26,13 @@ The full design is in `docs/product/agile/`. Start with
 
 ## Install in a consuming repo
 
+> **Security notice:** Do **not** install this pipeline on a public
+> repository where untrusted users can open issues. The `coder` agent
+> runs with `Bash(*)` access and has `ANTHROPIC_API_KEY`,
+> `GITHUB_TOKEN`, and `AI_AGILE_BOT_TOKEN` in its environment. It
+> processes issue bodies that any GitHub user can write. This
+> combination is safe for private repos with trusted contributors only.
+
 The whole flow is four shell commands plus one secret. The
 `get_started.py` script does the bulk of the wiring.
 
@@ -254,13 +261,13 @@ workflow nor any slash command changed, no re-run is required.
 │       ├── 04_evaluate/
 │       ├── 05_continuous/
 │       └── _templates/agent-template.md     # template for new agents
-└── ai-agile/
-    └── pipeline/
-        ├── pipeline.json                    # the agent dependency graph (source of truth)
-        ├── pipeline_orchestrator.py         # the deterministic Python orchestrator
-        ├── statuses.json                    # canonical status definitions
-        ├── validate.py                      # pipeline.json validator
-        └── schemas/pipeline.schema.json
+└── pipeline/
+    ├── pipeline.json                        # the agent dependency graph (source of truth)
+    ├── pipeline_orchestrator.py             # the deterministic Python orchestrator
+    ├── statuses.json                        # canonical status definitions
+    ├── validate.py                          # pipeline.json validator
+    ├── generators/                          # doc generators (generate_phase_mermaid.py, …)
+    └── schemas/pipeline.schema.json
 ```
 
 The numeric prefixes on the per-phase agent directories (`01_…` →

@@ -1066,7 +1066,7 @@ AI_AGILE_CONTEXT = SUBMODULE_ROOT / ".claude" / "AGENTS.md"
 # anything; if the until-time has not yet passed, the orchestrator logs
 # the wait and exits cleanly. The next scheduled tick (or a manual
 # workflow_dispatch with --clear-pause) resumes work.
-PAUSE_MARKER_PATH = SUBMODULE_ROOT / ".pipeline-pause"
+PAUSE_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / ".pipeline-pause"
 
 # Fixed UUID v5 namespace for deterministic session ID generation.
 # The claude CLI requires a valid UUID for --session-id; we derive one
