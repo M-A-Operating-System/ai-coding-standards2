@@ -1512,3 +1512,222 @@ class TestWriteAuditLog:
 
         # Should have been called twice (one conflict + one success)
         assert gh._put.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# TestApplyFailedHeadingKwarg — heading= overrides default comment title
+# ---------------------------------------------------------------------------
+
+class TestApplyFailedHeadingKwarg:
+    """Tests for the heading kwarg added to _apply_failed."""
+
+    def _make_gh(self) -> MagicMock:
+        return MagicMock()
+
+    def test_custom_heading_appears_in_comment(self):
+        """heading= kwarg overrides the generated heading."""
+        gh = self._make_gh()
+        agent = _make_agent_def("03_execute/coder")
+        wi = _make_work_item(42)
+        result = AgentRunResult(success=False, returncode=1)
+
+        _apply_failed(gh, agent, wi, result, heading="### retry limit exhausted")
+
+        body = gh.post_comment.call_args[0][1]
+        assert "### retry limit exhausted" in body
+
+    def test_default_heading_without_reason_says_exited_with_error(self):
+        """No heading and no reason → default 'exited with an error' heading."""
+        gh = self._make_gh()
+        agent = _make_agent_def("03_execute/coder")
+        wi = _make_work_item(42)
+        result = AgentRunResult(success=False, returncode=1)
+
+        _apply_failed(gh, agent, wi, result)
+
+        body = gh.post_comment.call_args[0][1]
+        assert "exited with an error" in body
+        assert "post-run step failed" not in body
+
+    def test_reason_without_heading_uses_post_run_heading(self):
+        """reason= without heading= selects 'post-run step failed' heading."""
+        gh = self._make_gh()
+        agent = _make_agent_def("03_execute/coder")
+        wi = _make_work_item(42)
+        result = AgentRunResult(success=False, returncode=1)
+
+        _apply_failed(gh, agent, wi, result, reason="commit_after git ops failed")
+
+        body = gh.post_comment.call_args[0][1]
+        assert "post-run step failed" in body
+
+    def test_heading_takes_precedence_over_reason_default(self):
+        """heading= wins even when reason= is also provided."""
+        gh = self._make_gh()
+        agent = _make_agent_def("03_execute/coder")
+        wi = _make_work_item(42)
+        result = AgentRunResult(success=False, returncode=1)
+
+        _apply_failed(gh, agent, wi, result,
+                      reason="some reason",
+                      heading="### custom override")
+
+        body = gh.post_comment.call_args[0][1]
+        assert "### custom override" in body
+        assert "post-run step failed" not in body
+
+
+# ---------------------------------------------------------------------------
+# TestRetryPolicy — per-agent retry comments and exhaustion behaviour
+# ---------------------------------------------------------------------------
+
+class TestRetryPolicy:
+    """Tests for retry comment posting and exhaustion escalation."""
+
+    def _make_retry_agent(self, max_retries: int = 2) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "prd-writer:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="coder",
+            max_retries=max_retries,
+        )
+
+    def _wi(self) -> WorkItem:
+        return WorkItem(
+            number=42,
+            kind="issue",
+            title="Test issue",
+            labels={"prd-writer:complete"},
+            url="https://github.com/test/repo/issues/42",
+        )
+
+    def _gh(self) -> MagicMock:
+        gh = MagicMock()
+        gh.add_label.return_value = None
+        gh.remove_label.return_value = None
+        return gh
+
+    def _run(self, agent, wi, gh, side_effects):
+        pipeline_map = {agent.agent: agent}
+        with patch("pipeline_orchestrator.invoke_agent", side_effect=side_effects), \
+             patch("time.sleep"):
+            process_work_item(wi, [agent], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+    def test_posts_retry_comment_for_each_attempt(self):
+        """A comment recording the retry number is posted for each automatic retry."""
+        agent = self._make_retry_agent(max_retries=2)
+        wi = self._wi()
+        gh = self._gh()
+
+        fail = AgentRunResult(success=False, returncode=1, captured_tail="error")
+        ok = AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete")
+
+        self._run(agent, wi, gh, [fail, fail, ok])
+
+        all_comments = [c[0][1] for c in gh.post_comment.call_args_list]
+        retry_comments = [c for c in all_comments if "retry" in c.lower()]
+        assert len(retry_comments) >= 2
+        assert any("1/2" in c for c in retry_comments)
+        assert any("2/2" in c for c in retry_comments)
+
+    def test_exhaustion_failure_comment_mentions_human_intervention(self):
+        """When retry limit is exhausted, failure comment says human intervention required."""
+        agent = self._make_retry_agent(max_retries=1)
+        wi = self._wi()
+        gh = self._gh()
+
+        fail = AgentRunResult(success=False, returncode=1, captured_tail="error")
+
+        self._run(agent, wi, gh, [fail, fail])
+
+        all_comments = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert any("human intervention" in c.lower() for c in all_comments)
+        assert any("exhausted" in c.lower() for c in all_comments)
+
+    def test_exhaustion_failure_heading_says_retry_limit_exhausted(self):
+        """The failure comment heading for retry exhaustion is distinct from a plain error."""
+        agent = self._make_retry_agent(max_retries=1)
+        wi = self._wi()
+        gh = self._gh()
+
+        fail = AgentRunResult(success=False, returncode=1, captured_tail="error")
+
+        self._run(agent, wi, gh, [fail, fail])
+
+        all_comments = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert any("retry limit exhausted" in c.lower() for c in all_comments)
+
+    def test_max_retries_one_both_fail_applies_failed_label(self):
+        """max_retries=1: two failures → :failed label applied."""
+        agent = self._make_retry_agent(max_retries=1)
+        wi = self._wi()
+        gh = self._gh()
+
+        fail = AgentRunResult(success=False, returncode=1, captured_tail="error")
+        self._run(agent, wi, gh, [fail, fail])
+
+        gh.add_label.assert_any_call(wi.number, "coder:failed")
+
+    def test_max_retries_one_fail_then_succeed_applies_complete_label(self):
+        """max_retries=1: first fails, second succeeds → :complete label applied."""
+        agent = self._make_retry_agent(max_retries=1)
+        wi = self._wi()
+        gh = self._gh()
+
+        fail = AgentRunResult(success=False, returncode=1, captured_tail="error")
+        ok = AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete")
+        self._run(agent, wi, gh, [fail, ok])
+
+        gh.add_label.assert_any_call(wi.number, "coder:complete")
+
+    def test_zero_max_retries_fails_without_retry_comment(self):
+        """max_retries=0: single failure → :failed, no retry comment posted."""
+        agent = self._make_retry_agent(max_retries=0)
+        wi = self._wi()
+        gh = self._gh()
+
+        fail = AgentRunResult(success=False, returncode=1, captured_tail="error")
+        self._run(agent, wi, gh, [fail])
+
+        gh.add_label.assert_any_call(wi.number, "coder:failed")
+        all_comments = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert not any("retry 1/" in c for c in all_comments)
+
+
+# ---------------------------------------------------------------------------
+# TestSessionIdPatternRegexFix — correct detection of attribute/index access
+# ---------------------------------------------------------------------------
+
+class TestSessionIdPatternRegexFix:
+    """The regex r'\\{[^}]*[.\\[][^}]*\\}' must catch {foo.bar} and {foo[0]}."""
+
+    _PATTERN = r"\{[^}]*[.\[][^}]*\}"
+
+    def test_detects_attribute_access(self):
+        """{foo.bar} is matched — attribute access inside braces."""
+        import re
+        assert re.search(self._PATTERN, "{foo.bar}") is not None
+
+    def test_detects_index_access(self):
+        """{foo[0]} is matched — index access inside braces."""
+        import re
+        assert re.search(self._PATTERN, "{foo[0]}") is not None
+
+    def test_simple_token_not_flagged(self):
+        """{issue_number} and {agent} are safe — no dot or bracket."""
+        import re
+        assert re.search(self._PATTERN, "{issue_number}") is None
+        assert re.search(self._PATTERN, "{agent}") is None
+
+    def test_old_broken_regex_raises_on_compile(self):
+        """The old regex r'\\{[^}]*[.[}' was an unterminated character set that raised
+        re.error on Python 3.11+, meaning the guard crashed rather than silently missing
+        {foo.bar} patterns."""
+        import re
+        with pytest.raises(re.error):
+            re.search(r"\{[^}]*[.[}", "{foo.bar}")

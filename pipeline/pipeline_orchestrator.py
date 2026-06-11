@@ -1505,7 +1505,7 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
     if agent_def.session_id_pattern:
         _tok_re = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
         try:
-            if re.search(r"\{[^}]*[.[]}", agent_def.session_id_pattern):
+            if re.search(r"\{[^}]*[.\[][^}]*\}", agent_def.session_id_pattern):
                 raise ValueError("unsafe attribute/index access in id_pattern")
             sid = _tok_re.sub(
                 lambda m: session_tokens[m.group(1)],
@@ -1975,6 +1975,7 @@ def _apply_failed(
     result: AgentRunResult,
     *,
     reason: str = "",
+    heading: str = "",
 ) -> None:
     """Apply :failed for an agent, clear any other non-terminal status it
     left behind, and post a diagnostic comment that includes the tail
@@ -1985,10 +1986,10 @@ def _apply_failed(
     never silently masks the :failed signal.
 
     Args:
-        reason: Optional human-readable cause override. When set it replaces
-            the generic "exited non-zero" footer in the failure comment so
-            readers know whether the failure was in the agent subprocess or
-            in a post-run orchestrator operation (e.g. commit_after git ops).
+        reason: Optional human-readable cause override for the comment footer.
+        heading: Optional heading override. When set it replaces the default
+            heading so callers can distinguish retry-exhaustion failures from
+            generic non-zero exits.
     """
     # Clear any non-terminal status the agent may have left behind so
     # the work item has exactly one status label after this. We only
@@ -2025,9 +2026,13 @@ def _apply_failed(
              "without one of the three terminal status calls (set-complete / set-review / set-blocked)._"
     )
     heading = (
-        f"### `{agent_def.agent}` completed — post-run step failed"
-        if reason
-        else f"### `{agent_def.agent}` exited with an error"
+        heading
+        if heading
+        else (
+            f"### `{agent_def.agent}` completed — post-run step failed"
+            if reason
+            else f"### `{agent_def.agent}` exited with an error"
+        )
     )
     body_parts = [
         heading,
@@ -2523,6 +2528,15 @@ def process_work_item(
                     _attempt, agent_def.max_retries,
                     agent_def.agent, result.returncode or -1, _backoff,
                 )
+                try:
+                    gh.post_comment(
+                        work_item.number,
+                        f"**`{agent_def.agent}` retry {_attempt}/{agent_def.max_retries}** — "
+                        f"attempt {_attempt} failed (exit {result.returncode if result.returncode is not None else 'unknown'}); "
+                        f"retrying automatically.",
+                    )
+                except Exception:
+                    pass
                 time.sleep(_backoff)
                 result = invoke_agent(
                     agent_def, work_item, dry_run, repo, attempt=_attempt,
@@ -2567,8 +2581,21 @@ def process_work_item(
                 final_status = STATUS_COMPLETE
                 sentinel_message = "completed (no sentinel; inferred from exit 0)"
             else:
-                # Non-zero exit, no sentinel (retries exhausted for agents) — :failed.
-                _apply_failed(gh, agent_def, work_item, result)
+                # Non-zero exit, no sentinel — retries exhausted (or not configured).
+                if _attempt > 0:
+                    _exhaustion_reason = (
+                        f"Retry limit exhausted — `{agent_def.agent}` failed "
+                        f"{_attempt + 1} time(s) (max_retries: {agent_def.max_retries}). "
+                        f"Human intervention is required: fix the underlying issue, "
+                        f"then remove `{agent_def.failed_label}` to retry."
+                    )
+                    _apply_failed(
+                        gh, agent_def, work_item, result,
+                        heading=f"### `{agent_def.agent}` failed — retry limit exhausted",
+                        reason=_exhaustion_reason,
+                    )
+                else:
+                    _apply_failed(gh, agent_def, work_item, result)
                 final_status = STATUS_FAILED
                 log.error(
                     "  FAILED  %-38s  after %d attempt(s) on #%d",
