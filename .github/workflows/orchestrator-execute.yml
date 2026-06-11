@@ -1,6 +1,9 @@
 name: Pipeline Orchestrator (execute)
 
 # Runs phases: 03_execute, 04_evaluate, 05_continuous
+# Also runs the 01_product_docs/create-pr and 01_product_docs/prd-docs-updater
+# steps (phase: 03_execute in pipeline.json) — both require contents:write to
+# push to the issue branch.
 # The coder agent pushes branches and creates PRs — contents:write required.
 # This workflow is the higher-risk tier. It is only reachable after human
 # gates in the pre-execute phases have approved the work (prd-writer:approved,
