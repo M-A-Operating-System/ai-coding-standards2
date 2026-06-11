@@ -1,5 +1,5 @@
 ---
-name: 05_execute/merge-conflict
+name: 03_execute/merge-conflict
 description: >
   Triggered after CI passes for any issue PR. Checks whether the PR branch has
   merge conflicts against the base. If the branch is clean, immediately signals
@@ -13,7 +13,7 @@ max_turns: 60
 extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *), Bash(gh api *)]
 ---
 
-# 05_execute/merge-conflict
+# 03_execute/merge-conflict
 
 Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 
@@ -73,7 +73,7 @@ Post a brief warning that mergeability could not be determined, then exit
 
 ```bash
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
-<!-- ai-agile/artefact/v1 by 05_execute/merge-conflict -->
+<!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
 > **merge-conflict:** GitHub mergeability check returned UNKNOWN after retry.
 > Advancing to pr-reviewer — any conflicts will be flagged there.
 EOF
@@ -167,7 +167,7 @@ and a detailed section per conflict:
 
 ```bash
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
-<!-- ai-agile/artefact/v1 by 05_execute/merge-conflict -->
+<!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
 ## Merge Conflict Assessment
 
 **PR:** #PR_NUMBER_PLACEHOLDER | **Issue:** #ISSUE_NUMBER_PLACEHOLDER
@@ -211,7 +211,7 @@ explain the recommended resolution approach.
 3. If a recommendation is wrong, add a comment explaining the correction
    before approving.
 
-*Posted by the orchestrator — 05_execute/merge-conflict*
+*Posted by the orchestrator — 03_execute/merge-conflict*
 EOF
 )"
 ```

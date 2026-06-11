@@ -170,7 +170,7 @@ project-specific standards are PRd against the consuming project repo.
 
 ## Evolving existing standards
 
-Standards are evolved by the `07_evaluate/standards-evolver` agent (roadmap
+Standards are evolved by the `04_evaluate/standards-evolver` agent (roadmap
 item — not yet active in MVP). When active, it runs after each retrospective,
 identifies recurring violations, and drafts proposals as GitHub issues for
 Standards Owner approval. Approved proposals are merged as PRs against the

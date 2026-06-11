@@ -104,14 +104,14 @@ with the reason "PRD not approved; cannot proceed to {your phase}".
 
 ## The lifecycle in three sentences
 
-1. **Per-ticket phases (1–7):** Product docs → Technical docs →
-   Testing spec → Build plan → Execute → Test → Evaluate. Each phase
-   takes the previous phase's artefact as input and produces the next
-   phase's input.
-2. **Continuous phases (8–10):** Learn (improve the pipeline itself),
-   Gap assessment (find drift between design and implementation), and
-   Tech debt (surface remediation opportunities). They run on schedule,
-   not per ticket.
+1. **Per-ticket phases (1–4):** Product docs → Design → Execute →
+   Evaluate. Each phase takes the previous phase's artefact as input
+   and produces the next phase's input. Design covers technical docs,
+   testing spec, and build plan; Execute covers build and test.
+2. **Continuous phase (5):** Three loops — Learn (improve the pipeline
+   itself), Gap assessment (find drift between design and
+   implementation), and Tech debt (surface remediation opportunities).
+   They run on schedule, not per ticket.
 3. **Humans gate every phase transition** that affects user-visible
    outcomes (PRD, design, test spec, plan, PR, coverage); agents
    transition automatically only between non-gated steps.

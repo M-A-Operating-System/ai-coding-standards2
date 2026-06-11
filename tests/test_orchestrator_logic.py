@@ -20,7 +20,7 @@ from pipeline_orchestrator import (
 )
 
 
-def _make_agent_def(name: str = "05_execute/coder") -> AgentDef:
+def _make_agent_def(name: str = "03_execute/coder") -> AgentDef:
     """Build a minimal AgentDef for tests."""
     return AgentDef(
         agent=name,
@@ -115,7 +115,7 @@ class TestApplyFailed:
         return gh
 
     def test_clears_wip_before_applying_failed(self):
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         result = AgentRunResult(success=False, returncode=1, captured_tail="error output")
@@ -133,7 +133,7 @@ class TestApplyFailed:
 
     def test_clears_requested(self):
         """_apply_failed removes :requested — validates DP-001 fix."""
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         result = AgentRunResult(success=False, returncode=1)
@@ -147,7 +147,7 @@ class TestApplyFailed:
 
     def test_does_not_raise_when_remove_fails(self):
         """_apply_failed swallows remove_label exceptions (best-effort cleanup)."""
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         gh.remove_label.side_effect = Exception("API error")
@@ -158,7 +158,7 @@ class TestApplyFailed:
 
     def test_clears_all_stale_statuses(self):
         """All of wip, review, blocked, requested are cleared."""
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         result = AgentRunResult(success=False, returncode=1)
@@ -279,7 +279,7 @@ class TestCountRunning:
     def test_counts_are_independent_per_agent(self):
         agents = [
             _make_agent_def_concurrent("01_product_docs/prd-writer"),
-            _make_agent_def_concurrent("05_execute/coder"),
+            _make_agent_def_concurrent("03_execute/coder"),
         ]
         work_items = [
             _make_work_item_with_labels(1, {"prd-writer:wip"}),
@@ -326,7 +326,7 @@ class TestDefaultMaxConcurrentIsOne:
     """Scenario: Default concurrency of 1 when max_concurrent is absent."""
 
     def test_agent_def_default_max_concurrent(self):
-        agent = _make_agent_def("05_execute/coder")
+        agent = _make_agent_def("03_execute/coder")
         assert agent.max_concurrent == 1, (
             "AgentDef.max_concurrent must default to 1 when not specified"
         )
@@ -594,8 +594,8 @@ class TestAggregatePipelineCeiling:
             max_concurrent=100,
         )
         agent_two = AgentDef(
-            agent="05_execute/coder",
-            phase="05_execute",
+            agent="03_execute/coder",
+            phase="03_execute",
             objects=["issue"],
             trigger={"label": "issue-classifier:complete"},
             dependencies=[],
@@ -607,7 +607,7 @@ class TestAggregatePipelineCeiling:
         agents = [agent_one, agent_two]
         pipeline_map = {
             "01_product_docs/prd-writer": agent_one,
-            "05_execute/coder": agent_two,
+            "03_execute/coder": agent_two,
         }
         # One below the aggregate ceiling — first agent launch will hit it exactly.
         conc = ConcurrencyState(
@@ -863,8 +863,8 @@ class TestDryRunConcurrency:
             max_concurrent=100,
         )
         agent_b = AgentDef(
-            agent="05_execute/coder",
-            phase="05_execute",
+            agent="03_execute/coder",
+            phase="03_execute",
             objects=["issue"],
             trigger={"label": "prd-docs-updater:complete"},
             dependencies=[],
@@ -876,7 +876,7 @@ class TestDryRunConcurrency:
         agents = [agent_a, agent_b]
         pipeline_map = {
             "01_product_docs/prd-writer": agent_a,
-            "05_execute/coder": agent_b,
+            "03_execute/coder": agent_b,
         }
         conc = ConcurrencyState(
             running_counts={"prd-writer": 0, "coder": 0},
@@ -950,8 +950,8 @@ class TestInvokeAgentTimeout:
     def _make_minimal_agent_def(self) -> "AgentDef":
         import pipeline_orchestrator as orch
         return orch.AgentDef(
-            agent="05_execute/coder",
-            phase="05_execute",
+            agent="03_execute/coder",
+            phase="03_execute",
             objects=["issue"],
             trigger={},
             dependencies=[],
@@ -1148,7 +1148,7 @@ class TestPromoteGatedAgents:
 
     def test_non_gated_agent_skipped(self):
         """Agents without human_gate_after are not touched."""
-        agent = _make_agent_def("05_execute/coder")  # human_gate_after=False
+        agent = _make_agent_def("03_execute/coder")  # human_gate_after=False
         wi = self._work_item()
         gh = MagicMock()
         labels = {agent.review_label, agent.complete_label}

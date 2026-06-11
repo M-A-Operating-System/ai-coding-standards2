@@ -2216,9 +2216,8 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
 
             _phase_prefix = {
                 "01_product_docs": "docs",
-                "02_technical_docs": "docs",
-                "05_execute": "feat",
-                "10_tech_debt": "refactor",
+                "02_design": "docs",
+                "03_execute": "feat",
             }.get(agent_def.phase, "chore")
             msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
             subprocess.run(["git", "commit", "-m", msg], check=True)

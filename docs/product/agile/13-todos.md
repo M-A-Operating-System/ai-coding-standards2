@@ -342,7 +342,7 @@ Bodies that fail validation cannot be saved. The orchestrator emits a
 
 ## Cross-ticket improvement agents — no tracker, individual issues
 
-Some agents — the **improvement agents** in Phases 8, 9, and 10, plus
+Some agents — the **improvement agents** in the continuous phase (`05_continuous`), plus
 codebase-wide agents like `reverse-doc` — do work that is fundamentally
 cross-ticket. Their **outputs** are GitHub issues (gap-issues,
 debt-issues, knowledge-artefact issues, refactor proposals); each

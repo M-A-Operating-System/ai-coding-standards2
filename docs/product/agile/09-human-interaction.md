@@ -45,7 +45,7 @@ This matters because every agent posts under the same bot account
 identical for all of them — the marker is the only place each
 agent's identity surfaces in the timeline. Reviewers can grep one
 line per comment to see which agent posted what; tooling that wants
-"all artefacts from `02_technical_docs/architect`" needs only a
+"all artefacts from `02_design/architect`" needs only a
 regex on the marker, not JSON parsing of the body. The actor
 convention mirrors the line-level `by <actor>` annotations used in
 the todos block (see [`13-todos.md`](13-todos.md#timestamp-and-actor-format)).
@@ -237,12 +237,12 @@ actually has a question, or split into two.
 **Decision question (architect needs schema choice):**
 
 ````
-<!-- ai-agile/question/v1 by 02_technical_docs/architect -->
+<!-- ai-agile/question/v1 by 02_design/architect -->
 ```json
 {
-  "id": "Q-ais-v1-iss-42-02_technical_docs/architect-001",
+  "id": "Q-ais-v1-iss-42-02_design/architect-001",
   "type": "decision",
-  "asked_by": "02_technical_docs/architect",
+  "asked_by": "02_design/architect",
   "asked_of": "engineer",
   "asked_at": "2026-05-04T14:23:11.482Z",
   "prompt": "Where should the new 'last_login_at' field live?",
@@ -252,13 +252,13 @@ actually has a question, or split into two.
       "key": "A",
       "label": "Add to users table",
       "consequence": "Simplest read path. Bumps users row size by 8 bytes.",
-      "label_to_apply": "answer:Q-ais-v1-iss-42-02_technical_docs/architect-001:A"
+      "label_to_apply": "answer:Q-ais-v1-iss-42-02_design/architect-001:A"
     },
     {
       "key": "B",
       "label": "New user_sessions table",
       "consequence": "Decouples hot writes; one extra read per request.",
-      "label_to_apply": "answer:Q-ais-v1-iss-42-02_technical_docs/architect-001:B"
+      "label_to_apply": "answer:Q-ais-v1-iss-42-02_design/architect-001:B"
     }
   ],
   "required_fields": [],

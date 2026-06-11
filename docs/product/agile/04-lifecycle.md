@@ -1,11 +1,12 @@
 # Lifecycle
 
-Every change passes through seven per-ticket phases. Three additional
-phases run continuously across all tickets — learning from the
-pipeline itself, finding gaps between the product design and what
-actually shipped, and surfacing tech debt for remediation. Each phase
-has clearly defined inputs, outputs, agents, and (where applicable) a
-human gate.
+Every change passes through four per-ticket phases. A fifth phase runs
+continuously across all tickets — learning from the pipeline itself,
+finding gaps between the product design and what actually shipped, and
+surfacing tech debt for remediation. A zero-numbered on-demand group
+holds human-triggered agents that sit outside the lifecycle flow. Each
+phase has clearly defined inputs, outputs, agents, and (where
+applicable) a human gate.
 
 This document describes the phases conceptually. The authoritative list
 of agents per phase, their dependencies, triggers, and gates lives in
@@ -21,37 +22,45 @@ generated views are correct. See [P-2](02-principles.md#p-2--one-machine-readabl
 
 ---
 
-## The ten phases
+## The five phases (plus on-demand)
 
-Phases 1–7 run per ticket, in order. Phases 8, 9, and 10 run
-continuously across all tickets, each mining a different input to
-produce a different kind of improvement proposal.
+Phases 1–4 run per ticket, in order. Phase 5 runs continuously across
+all tickets. `00_ondemand` is not a lifecycle phase: it holds agents a
+human triggers explicitly (by label or manual invocation), at any time,
+independent of any ticket's progress.
 
-| # | Phase | Cadence | Purpose | Primary artefact |
-|---|---|---|---|---|
-| 1 | Product docs | Per ticket | Establish what is being built and whether it fits | PRD + sized ticket + dependency map |
-| 2 | Technical docs | Per ticket | Establish how it will be built | Technical design + ADR drafts |
-| 3 | Testing spec | Per ticket | Establish what "done" means | Numbered Gherkin scenarios |
-| 4 | Build plan | Per ticket | Establish the order of work | Ordered child task list |
-| 5 | Execute | Per ticket | Build it | One PR (draft from first commit, per [P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr)) |
-| 6 | Test | Per ticket | Verify it | Tests, coverage report |
-| 7 | Evaluate | Per ticket | Record what shipped and reflect on this ticket | Changelog, per-ticket retrospective, targeted standards proposals |
-| 8 | Learn | Continuous | Improve the pipeline itself from accumulated experience | Pipeline metrics, pipeline-graph proposals, agent-prompt tuning proposals, knowledge artefacts |
-| 9 | Gap assessment | Continuous | Find drift between product design (PRDs, vision, principles) and what was actually shipped | Gap-issue proposals, design-vs-implementation reports |
-| 10 | Tech debt | Continuous | Surface poor architecture or implementation choices that warrant remediation | Tech-debt issue proposals, remediation roadmaps |
+| # | Phase | Directory | Cadence | Purpose | Primary artefact |
+|---|---|---|---|---|---|
+| 0 | On-demand | `00_ondemand` | Human-triggered | Ad-hoc analysis and setup tools (codebase review, standards migration) | Varies per agent |
+| 1 | Product docs | `01_product_docs` | Per ticket | Establish what is being built and whether it fits | PRD + sized ticket + dependency map |
+| 2 | Design | `02_design` | Per ticket | Establish how it will be built, what "done" means, and the order of work | Technical design + ADR drafts + numbered Gherkin scenarios + ordered task list |
+| 3 | Execute | `03_execute` | Per ticket | Build it and verify it | One PR (draft from first commit, per [P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr)) including tests and coverage |
+| 4 | Evaluate | `04_evaluate` | Per ticket | Record what shipped and reflect on this ticket | Changelog, per-ticket retrospective, targeted standards proposals |
+| 5 | Continuous | `05_continuous` | Continuous | Improve the pipeline, the product, and the implementation from accumulated evidence | Pipeline metrics and tuning proposals, gap-issue proposals, tech-debt issue proposals |
 
 Each per-ticket phase produces an artefact that is the input to the
 next. Skipping a phase is not supported — the orchestrator will not
 invoke a downstream agent until its declared dependencies are
-satisfied. Phases 8, 9, and 10 do not block any per-ticket flow; they
-operate independently and feed back into the queue as new issues
-(gap-issues, debt-issues) or as proposals against `pipeline.json` and
-the standards.
+satisfied. Phase 5 does not block any per-ticket flow; it operates
+independently and feeds back into the queue as new issues (gap-issues,
+debt-issues) or as proposals against `pipeline.json` and the standards.
 
-**Why three continuous phases, not one.** They have different inputs,
-different cadences, different review bars, and different consumers:
+**Phase consolidation note.** Earlier revisions of this document
+described a ten-phase model (product docs / technical docs / testing
+spec / build plan / execute / test / evaluate / learn / gap assessment
+/ tech debt). The conceptual stages are unchanged, but the directory
+and `pipeline.json` phase structure consolidates them: technical docs,
+testing spec, and build plan are one **Design** phase (their artefacts
+are produced in sequence within it); test is part of **Execute** (tests
+ship in the same PR as the code, so a phase boundary between them
+fought the workflow); and learn, gap assessment, and tech debt are
+three loops within one **Continuous** phase (same trigger shape, same
+output type — new issues and proposals — different corpus each).
 
-| | Phase 8 (Learn) | Phase 9 (Gap assessment) | Phase 10 (Tech debt) |
+**The three continuous loops.** Within Phase 5, three loops mine
+different inputs at different cadences:
+
+| | Learn loop | Gap-assessment loop | Tech-debt loop |
 |---|---|---|---|
 | Inputs | Audit log + retrospectives | PRDs/vision + shipped code | Codebase + ADRs + standards |
 | Looks at | The pipeline | The product | The implementation |
@@ -149,7 +158,7 @@ re-enters the pipeline at `issue-classifier` and runs through its own
 full lifecycle. The parent waits and closes when all children close,
 with a roll-up retrospective.
 
-Distinct from a future `task-decomposer` (Phase 4): `task-decomposer`
+Distinct from a future `task-decomposer` (Design phase): `task-decomposer`
 would break a *sized* feature into implementation tasks (one file, one
 concern) that all ship in one PR. `issue-decomposer` would run *before*
 sizing clears, breaking a too-large issue into smaller business-outcome
@@ -195,8 +204,9 @@ of the standard review path.
 A typical feature/bug/enhancement/toil ticket flows like this. The table
 reflects the **current implementation** — the agents actually present in
 [`pipeline.json`](../../../pipeline/pipeline.json).
-Phases 2–4, 6–7, and 8–10 described elsewhere in this document are
-planned but not yet wired into the pipeline.
+The Design (2), Evaluate (4), and Continuous (5) phases described
+elsewhere in this document are planned but not yet wired into the
+pipeline; their directories exist but hold no agents.
 
 **Spike issues** (`classification: spike`) stop after `prd-writer:approved`.
 `create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —
@@ -211,8 +221,8 @@ there is no code to ship, so no branch or PR is created.
 | T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Creates `issue-{N}` branch; opens draft PR with "Closes #{N}"; posts PR number and link as a comment on the issue | `create-pr:complete` |
 | T+5m | PR | `01_product_docs/prd-docs-updater` | Cross-checks PRD against product docs; commits any updates | `prd-docs-updater:review` |
 | T+30m | PR | Stakeholder | Approves doc updates | `prd-docs-updater:approved` → `prd-docs-updater:complete` |
-| T+30m | Issue | `05_execute/coder` | Implements issue and sub-issues; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
-| T+10m | PR | `05_execute/pr-reviewer` | Reviews PR diff against spec; posts structured review | `pr-reviewer:review` |
+| T+30m | Issue | `03_execute/coder` | Implements issue and sub-issues; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
+| T+10m | PR | `03_execute/pr-reviewer` | Reviews PR diff against spec; posts structured review | `pr-reviewer:review` |
 | T+30m | PR | Engineer | Approves review | `pr-reviewer:approved` → orchestrator marks PR ready |
 | — | PR | Engineer | Reviews and merges PR | `pr.merged` → issue auto-closes |
 
@@ -233,28 +243,29 @@ Total wall-clock human time: minutes. Total elapsed time: hours.
 
 ---
 
-## Phases 8–10 — the continuous meta-loops
+## Phase 5 — the continuous meta-loops
 
-Phases 8, 9, and 10 are continuously running meta-loops, not per-ticket
-steps. Each treats a different corpus as its primary input and produces
-a different kind of improvement proposal. None blocks the per-ticket
-pipeline; they feed it new issues and proposals.
+Phase 5 (`05_continuous`) holds three continuously running meta-loops,
+not per-ticket steps. Each loop treats a different corpus as its
+primary input and produces a different kind of improvement proposal.
+None blocks the per-ticket pipeline; they feed it new issues and
+proposals.
 
 ---
 
-## Phase 8 — Learn
+### The Learn loop
 
-Phase 8 treats the audit log branch
+The Learn loop treats the audit log branch
 (see [`08-audit-log.md`](08-audit-log.md)) and the corpus of closed
 retrospectives as its primary inputs and proposes improvements to the
 pipeline itself.
 
-**Distinction from Phase 7.** Phase 7 closes one ticket: it writes the
-changelog, records a per-ticket retrospective, and feeds targeted
-standards proposals. Phase 8 looks across many tickets to find systemic
-patterns and tune the system that produced them.
+**Distinction from Phase 4 (Evaluate).** Evaluate closes one ticket: it
+writes the changelog, records a per-ticket retrospective, and feeds
+targeted standards proposals. The Learn loop looks across many tickets
+to find systemic patterns and tune the system that produced them.
 
-| Concern | Phase 7 (Evaluate) | Phase 8 (Learn) |
+| Concern | Phase 4 (Evaluate) | Learn loop |
 |---|---|---|
 | Scope | One ticket | All tickets in a window |
 | Cadence | On PR merge / issue close | Continuous: daily metrics, weekly tuning |
@@ -308,23 +319,23 @@ patterns and tune the system that produced them.
   nature of these changes.
 - Changes from `knowledge-curator` follow normal PR review.
 
-**Why Phase 8 is its own phase.**
+**Why the Learn loop is distinct.**
 
 - Per-ticket retrospectives surface ticket-shaped lessons.
   Cross-ticket meta-analysis surfaces system-shaped lessons. They
   use different inputs and produce different outputs.
-- Changes in Phase 8 affect all subsequent tickets, so they need
-  higher review bars than per-ticket standards changes.
-- Separating Phase 8 lets us scale the cadence: daily metrics,
+- Changes from the Learn loop affect all subsequent tickets, so they
+  need higher review bars than per-ticket standards changes.
+- Separating the Learn loop lets us scale the cadence: daily metrics,
   weekly knowledge curation, monthly tuning — without entangling
   with the per-ticket lifecycle.
 
 ---
 
-## Phase 9 — Gap assessment
+### The Gap-assessment loop
 
-Phase 9 looks for **drift between the product design and what was
-actually shipped**. The per-ticket pipeline is good at delivering what
+The Gap-assessment loop looks for **drift between the product design and
+what was actually shipped**. The per-ticket pipeline is good at delivering what
 each ticket asks for, but it does not, by itself, ensure the *whole
 product* still matches the *whole design*. Acceptance criteria slip,
 edge cases get pruned during execution, PRDs evolve faster than code,
@@ -343,7 +354,7 @@ explicitly looking for it.
 
 **Outputs.** New GitHub issues — *gap-issues* — proposing work to
 close a gap. Gap-issues re-enter the per-ticket pipeline at
-`issue-classifier` and run through Phases 1–7 like any other ticket;
+`issue-classifier` and run through Phases 1–4 like any other ticket;
 the difference is their provenance, which is recorded in the issue
 body via a `Gap-source: ai-agile/gap-assessor` trailer for audit
 purposes.
@@ -372,10 +383,10 @@ purposes.
   the queue from being flooded with churn issues that don't reflect
   real product intent.
 
-**Why Phase 9 is its own phase.**
+**Why the Gap-assessment loop is distinct.**
 
-- The input corpus (PRDs + shipped code) is different from Phase 7's
-  per-ticket retrospective and Phase 8's audit log.
+- The input corpus (PRDs + shipped code) is different from Evaluate's
+  per-ticket retrospective and the Learn loop's audit log.
 - Gap-issues are *new product work*, not pipeline tweaks — they go
   back through the per-ticket pipeline rather than being applied
   directly.
@@ -385,10 +396,10 @@ purposes.
 
 ---
 
-## Phase 10 — Tech debt
+### The Tech-debt loop
 
-Phase 10 looks for **poor architecture or implementation choices that
-warrant remediation**. The per-ticket pipeline blocks `required`
+The Tech-debt loop looks for **poor architecture or implementation
+choices that warrant remediation**. The per-ticket pipeline blocks `required`
 standards violations at merge time, but it does not catch slower
 problems: layered shortcuts that compound, abstractions that have
 ossified, modules that have grown beyond their original scope, ADRs
@@ -438,27 +449,27 @@ trailer.
   engineer judges feasibility and priority; the standards owner judges
   fit with architecture direction.
 
-**Why Phase 10 is its own phase.**
+**Why the Tech-debt loop is distinct.**
 
 - The signal is structural and slow-moving — it cannot be detected
   inside a single ticket's flow.
 - The remediation cost is often material (refactor of a hot module,
   ADR superseded by a new one), so the proposal-then-approval shape is
-  necessary; we do not want a Phase-10 agent quietly opening 30
+  necessary; we do not want a debt agent quietly opening 30
   refactor issues a week.
-- Distinct from Phase 8: Phase 8 changes the *pipeline*; Phase 10
+- Distinct from the Learn loop: Learn changes the *pipeline*; Tech debt
   changes the *product's implementation*. Both are improvements;
   they're different surfaces.
 
 ---
 
-## How Phases 9 and 10 integrate with the per-ticket pipeline
+## How the gap and debt loops integrate with the per-ticket pipeline
 
-Both phases produce **issues**, not direct edits. This keeps a hard
+Both loops produce **issues**, not direct edits. This keeps a hard
 boundary:
 
-- Continuous phases never touch the codebase directly.
-- Every change still flows through Phases 1–7, with the same gates,
+- The continuous phase never touches the codebase directly.
+- Every change still flows through Phases 1–4, with the same gates,
   the same standards checks, and the same audit trail.
 - Gap-issues and debt-issues are visible in the issue list alongside
   feature work, so reviewers can see and prioritise them against the

@@ -1,5 +1,5 @@
 ---
-name: 05_execute/coder
+name: 03_execute/coder
 description: >
   Implements a GitHub issue and its sub-issues as a defensive programmer.
   Reads the approved PRD from the issue, the technical specification from
@@ -15,7 +15,7 @@ max_turns: 120
 extra_allowedTools: [Bash(*)]
 ---
 
-# 05_execute/coder
+# 03_execute/coder
 
 You implement the work described in a GitHub issue and its sub-issues,
 following the approved PRD, the technical specifications in `docs/tech-spec/`,
@@ -183,11 +183,11 @@ and error-handling style.
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "start",
   "mode": "initial-build",
   "branch": "issue-${ISSUE_NUMBER}",
@@ -278,11 +278,11 @@ All tests must pass. Fix any failures before signalling complete.
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "end",
   "mode": "initial-build",
   "branch": "issue-${ISSUE_NUMBER}",
@@ -314,7 +314,7 @@ AI_AGILE_STATUS: complete
 ```bash
 # Structured review artefact from pr-reviewer agent (posted on the PR)
 gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 05_execute/pr-reviewer")) | .body] | last // empty'
+  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
 
 # Inline review threads and human reviews on the PR
 gh pr view "$PR_NUMBER" --repo "$REPO" --json reviews \
@@ -382,11 +382,11 @@ that the reviewer is referencing).
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "start",
   "mode": "address-feedback",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -427,7 +427,7 @@ After completing all fixes, post a single summary comment:
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<'REPLY'
-<!-- ai-agile/artefact/v1 by 05_execute/coder -->
+<!-- ai-agile/artefact/v1 by 03_execute/coder -->
 ## Feedback addressed
 
 **Required items fixed:**
@@ -449,11 +449,11 @@ REPLY
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "end",
   "mode": "address-feedback",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",

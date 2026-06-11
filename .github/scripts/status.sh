@@ -461,7 +461,7 @@ Status colour reference:
 Examples:
   status.sh set-wip      01_product_docs/prd-writer 42
   status.sh set-review   01_product_docs/prd-writer 42 "PRD draft posted above for review"
-  status.sh set-complete 05_execute/coder 42
+  status.sh set-complete 03_execute/coder 42
   status.sh show         42
   status.sh bootstrap-all
   status.sh bootstrap-triggers

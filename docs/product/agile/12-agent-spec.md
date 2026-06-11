@@ -31,23 +31,20 @@ slash:
 {phase}/{short-name}
 ```
 
-Examples: `01_product_docs/issue-classifier`, `02_technical_docs/architect`,
-`05_execute/coder`, `07_evaluate/retrospective-writer`,
-`08_learn/metrics-aggregator`.
+Examples: `01_product_docs/issue-classifier`, `02_design/architect`,
+`03_execute/coder`, `04_evaluate/retrospective-writer`,
+`05_continuous/metrics-aggregator`.
 
-The phase prefix is one of the ten lifecycle phase identifiers defined in
+The phase prefix is one of the five lifecycle phase identifiers defined in
 [`04-lifecycle.md`](04-lifecycle.md), or `00_ondemand` for human-triggered
 agents outside the lifecycle flow:
 
-| Per-ticket | Continuous |
-|---|---|
-| `01_product_docs` | `08_learn` |
-| `02_technical_docs` | `09_gap_assessment` |
-| `03_testing_spec` | `10_tech_debt` |
-| `04_build_plan` | |
-| `05_execute` | |
-| `06_test` | |
-| `07_evaluate` | |
+| Per-ticket | Continuous | On-demand |
+|---|---|---|
+| `01_product_docs` | `05_continuous` | `00_ondemand` |
+| `02_design` | | |
+| `03_execute` | | |
+| `04_evaluate` | | |
 
 The short-name is lowercase-hyphenated with no spaces or underscores.
 
@@ -73,7 +70,7 @@ must not be conflated.
 **Why prefix.** A glance at any label, comment, or audit-log line
 reveals which phase the agent belongs to without consulting
 `pipeline.json`. It also prevents future name collisions across phases
-(e.g. a hypothetical `05_execute/dependency-resolver` could coexist with
+(e.g. a hypothetical `03_execute/dependency-resolver` could coexist with
 `01_product_docs/dependency-resolver` if the design ever requires it).
 
 **Constraint.** An agent's phase prefix is part of its identity. If
@@ -160,15 +157,15 @@ is the policy; any deviation requires an ADR.
 | Agent type | Example agents | Tools |
 |---|---|---|
 | **Classifier / sizer** | `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer` | `[Bash, Read]` |
-| **Document drafter** | `01_product_docs/prd-writer`, `02_technical_docs/architect`, `03_testing_spec/test-spec-writer`, `07_evaluate/retrospective-writer`, `07_evaluate/release-noter` | `[Bash, Read, Grep]` |
-| **Validator / reviewer** | `05_execute/standards-compliance-reviewer`, `05_execute/migration-validator`, `05_execute/pr-reviewer`, `03_testing_spec/test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
-| **Decomposer / planner** | `04_build_plan/task-decomposer`, `01_product_docs/dependency-resolver`, `01_product_docs/impact-assessor` | `[Bash, Read, Glob, Grep]` |
-| **ADR proposer** | `02_technical_docs/adr-proposer` (folded into `02_technical_docs/architect` per roadmap) | `[Bash, Read]` |
-| **Coder** | `05_execute/coder` | `[Bash, Read, Edit, Write, Glob, Grep]` |
-| **Test writer / runner** | `06_test/test-writer`, `06_test/test-runner` | `[Bash, Read, Edit, Write, Glob, Grep]` |
-| **Standards evolver** | `07_evaluate/standards-evolver` | `[Bash, Read, Glob, Grep, Edit]` |
-| **Phase 8/9/10 meta-agents** | `08_learn/metrics-aggregator`, `09_gap_assessment/gap-assessor`, `10_tech_debt/debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
-| **Phase 8 prompt mutator** | `08_learn/prompt-tuner` | `[Bash, Read, Edit]` (edits agent prompt files only) |
+| **Document drafter** | `01_product_docs/prd-writer`, `02_design/architect`, `02_design/test-spec-writer`, `04_evaluate/retrospective-writer`, `04_evaluate/release-noter` | `[Bash, Read, Grep]` |
+| **Validator / reviewer** | `03_execute/standards-compliance-reviewer`, `03_execute/migration-validator`, `03_execute/pr-reviewer`, `02_design/test-coverage-auditor` | `[Bash, Read, Glob, Grep]` |
+| **Decomposer / planner** | `02_design/task-decomposer`, `01_product_docs/dependency-resolver`, `01_product_docs/impact-assessor` | `[Bash, Read, Glob, Grep]` |
+| **ADR proposer** | `02_design/adr-proposer` (folded into `02_design/architect` per roadmap) | `[Bash, Read]` |
+| **Coder** | `03_execute/coder` | `[Bash, Read, Edit, Write, Glob, Grep]` |
+| **Test writer / runner** | `03_execute/test-writer`, `03_execute/test-runner` | `[Bash, Read, Edit, Write, Glob, Grep]` |
+| **Standards evolver** | `04_evaluate/standards-evolver` | `[Bash, Read, Glob, Grep, Edit]` |
+| **Continuous-phase meta-agents** | `05_continuous/metrics-aggregator`, `05_continuous/gap-assessor`, `05_continuous/debt-finder`, etc. | `[Bash, Read, Glob, Grep]` |
+| **Prompt mutator** | `05_continuous/prompt-tuner` | `[Bash, Read, Edit]` (edits agent prompt files only) |
 
 ### Security note on WebFetch and WebSearch
 
@@ -190,9 +187,9 @@ inclusion documented as an exception ADR.
 
 | Model | When to use |
 |---|---|
-| `claude-opus-4-7` | Hardest reasoning: `02_technical_docs/architect`, `05_execute/pr-reviewer`, `08_learn/process-reviewer`, `07_evaluate/standards-evolver` |
+| `claude-opus-4-7` | Hardest reasoning: `02_design/architect`, `03_execute/pr-reviewer`, `05_continuous/process-reviewer`, `04_evaluate/standards-evolver` |
 | `claude-sonnet-4-6` | Default for most agents — drafters, decomposers, validators |
-| `claude-haiku-4-5` | Fast, cheap, deterministic: `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer`, `07_evaluate/release-noter`, `08_learn/metrics-aggregator` |
+| `claude-haiku-4-5` | Fast, cheap, deterministic: `01_product_docs/issue-classifier`, `01_product_docs/ticket-sizer`, `04_evaluate/release-noter`, `05_continuous/metrics-aggregator` |
 
 Choosing a more expensive model than necessary wastes budget without
 improving outcomes. Choosing a cheaper model than necessary produces

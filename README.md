@@ -246,14 +246,13 @@ workflow nor any slash command changed, no re-run is required.
 │       └── validate-pipeline.yml
 ├── .claude/
 │   └── agents/                              # agent prompts, one subdir per phase
+│       ├── 00_ondemand/                     # human-triggered agents (codebase-reviewer, standards-migrator)
 │       ├── 01_product_docs/
 │       │   └── issue-classifier.md
-│       ├── 02_technical_docs/               # added in future Phase 1 slices
-│       ├── 03_testing_spec/
-│       ├── 04_build_plan/
-│       ├── 05_execute/
-│       ├── 06_test/
-│       ├── 07_evaluate/
+│       ├── 02_design/                       # added in future Phase 1 slices
+│       ├── 03_execute/
+│       ├── 04_evaluate/
+│       ├── 05_continuous/
 │       └── _templates/agent-template.md     # template for new agents
 └── ai-agile/
     └── pipeline/
@@ -265,14 +264,15 @@ workflow nor any slash command changed, no re-run is required.
 ```
 
 The numeric prefixes on the per-phase agent directories (`01_…` →
-`10_…`) make `ls` show phases in lifecycle order. Agent names in
-`pipeline.json` and on labels carry the same prefix:
+`05_…`, plus `00_ondemand` for human-triggered agents) make `ls` show
+phases in lifecycle order. Agent names in `pipeline.json` and on labels
+carry the same prefix:
 
 ```
 01_product_docs/issue-classifier
-02_technical_docs/architect
-05_execute/coder
-07_evaluate/retrospective-writer
+02_design/architect
+03_execute/coder
+04_evaluate/retrospective-writer
 ```
 
 ---

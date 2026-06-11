@@ -216,7 +216,7 @@ def install_agents(
     """Copy .claude/agents/ from the submodule into the consuming repo.
 
     Preserves the full subdirectory structure (01_product_docs/,
-    05_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
+    03_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
     so no path rewriting is needed — they are copied verbatim.
 
     Returns the number of files written.
