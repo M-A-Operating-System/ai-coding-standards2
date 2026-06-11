@@ -38,7 +38,7 @@
       "agent": "01_product_docs/create-pr",
       "type": "script",
       "script": ".github/scripts/create-pr.sh",
-      "phase": "01_product_docs",
+      "phase": "03_execute",
       "object": ["issue"],
       "trigger": {
         "label": "prd-writer:complete"
@@ -51,7 +51,7 @@
 
     {
       "agent": "01_product_docs/prd-docs-updater",
-      "phase": "01_product_docs",
+      "phase": "03_execute",
       "object": ["issue"],
       "trigger": {
         "label": "create-pr:complete"
