@@ -333,20 +333,46 @@ def _add_submodules_to_checkout(content: str) -> str:
     return content
 
 
-def install_orchestrator_workflow(
+def install_orchestrator_workflows(
     consuming_root: Path,
     force: bool,
     dry_run: bool,
-) -> bool:
-    """Copy orchestrator.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "orchestrator.yml"
-    dst = consuming_root / ".github" / "workflows" / "orchestrator.yml"
-    if not src.exists():
-        print(f"  SKIP   orchestrator workflow  ({src} missing)")
-        return False
-    print(f"  Orchestrator workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
-    return write_file(dst, content, force, dry_run)
+) -> int:
+    """Copy the two orchestrator workflows into the consuming repo.
+
+    The pipeline uses two separate workflow files with different
+    GITHUB_TOKEN permission scopes:
+
+      orchestrator-pre-execute.yml  contents:read
+        Phases: 00_ondemand, 01_product_docs, 02_design
+        Agents only post comments and apply labels — cannot push code.
+
+      orchestrator-execute.yml      contents:write
+        Phases: 03_execute, 04_evaluate, 05_continuous
+        Coder pushes branches and creates PRs.
+
+    Splitting by file (rather than by job) makes the permission boundary
+    visible in the GitHub Actions UI and gives each workflow its own
+    independent concurrency group.
+
+    Returns the number of files written.
+    """
+    workflows = [
+        "orchestrator-pre-execute.yml",
+        "orchestrator-execute.yml",
+    ]
+    written = 0
+    for name in workflows:
+        src = SUBMODULE_ROOT / ".github" / "workflows" / name
+        dst = consuming_root / ".github" / "workflows" / name
+        if not src.exists():
+            print(f"  SKIP   {name}  ({src} missing)")
+            continue
+        print(f"  Orchestrator workflow ({name}): → {dst}")
+        content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+        if write_file(dst, content, force, dry_run):
+            written += 1
+    return written
 
 
 def install_bootstrap_labels_workflow(
@@ -432,7 +458,8 @@ def print_followup(consuming_root: Path) -> None:
     print(f"       AI_AGILE_BOT_TOKEN — a GitHub PAT for the bot account")
     print()
     print(f"  2. Commit the new files:")
-    print(f"     git add .github/workflows/orchestrator.yml \\")
+    print(f"     git add .github/workflows/orchestrator-pre-execute.yml \\")
+    print(f"             .github/workflows/orchestrator-execute.yml \\")
     print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
@@ -498,7 +525,7 @@ def main() -> int:
         print("(dry run — no files will be written)")
     print()
 
-    install_orchestrator_workflow(consuming_root, args.force, args.dry_run)
+    install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
     install_bootstrap_labels_workflow(consuming_root, args.force, args.dry_run)
     install_label_cleanup_workflow(consuming_root, args.force, args.dry_run)
     install_sync_workflow(consuming_root, args.force, args.dry_run)

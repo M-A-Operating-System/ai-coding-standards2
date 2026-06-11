@@ -911,24 +911,26 @@ class TestDryRunConcurrency:
 class TestOrchestratorNonOverlapping:
     """Scenario: Orchestrator runs remain non-overlapping."""
 
-    def test_workflow_defines_pipeline_orchestrator_concurrency_group(self):
+    def test_workflow_defines_concurrency_groups(self):
         """
-        Given the GitHub Actions workflow
-        Then it defines concurrency group 'pipeline-orchestrator' with
-        cancel-in-progress: false so new triggers queue rather than
-        cancel the active run.
+        Given the two orchestrator workflow files
+        Then each defines its own concurrency group with cancel-in-progress: false
+        so concurrent triggers queue rather than cancel the active run.
         """
-        workflow_path = Path(__file__).parent.parent / ".github/workflows/orchestrator.yml"
-        assert workflow_path.exists(), f"Workflow file not found at {workflow_path}"
-        content = workflow_path.read_text()
-        assert "group: pipeline-orchestrator" in content, (
-            "Workflow must declare concurrency group 'pipeline-orchestrator' "
-            "to serialise orchestrator runs"
-        )
-        assert "cancel-in-progress: false" in content, (
-            "Workflow must set cancel-in-progress: false so a queued run waits "
-            "for the active run to finish rather than being cancelled"
-        )
+        workflows_dir = Path(__file__).parent.parent / ".github" / "workflows"
+        for name, expected_group in [
+            ("orchestrator-pre-execute.yml", "pipeline-pre-execute"),
+            ("orchestrator-execute.yml", "pipeline-execute"),
+        ]:
+            path = workflows_dir / name
+            assert path.exists(), f"Workflow file not found: {path}"
+            content = path.read_text()
+            assert f"group: {expected_group}" in content, (
+                f"{name} must declare concurrency group '{expected_group}'"
+            )
+            assert "cancel-in-progress: false" in content, (
+                f"{name} must set cancel-in-progress: false"
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -136,7 +136,10 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 ### 5. Commit and open a test issue
 
 ```bash
-git add .gitmodules ai-coding-standards2 .github/workflows/orchestrator.yml .claude/
+git add .gitmodules ai-coding-standards2 \
+        .github/workflows/orchestrator-pre-execute.yml \
+        .github/workflows/orchestrator-execute.yml \
+        .claude/
 git commit -m "Wire up ai-coding-standards2 orchestrator"
 git push
 ```
@@ -249,7 +252,8 @@ workflow nor any slash command changed, no re-run is required.
 ├── .github/
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # this repo's own CI (does not run from a consuming repo)
-│       ├── orchestrator.yml
+│       ├── orchestrator-pre-execute.yml     # phases 0-2, contents:read
+│       ├── orchestrator-execute.yml         # phases 3-5, contents:write
 │       └── validate-pipeline.yml
 ├── .claude/
 │   └── agents/                              # agent prompts, one subdir per phase
