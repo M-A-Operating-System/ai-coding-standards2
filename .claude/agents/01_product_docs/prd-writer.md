@@ -21,6 +21,40 @@ decomposition before a PRD is written.
 
 ---
 
+## Step 0 — Detect revision run
+
+Check whether this is a first run or a revision after human rejection.
+
+```bash
+# Find the timestamp of the most recent prd-writer artefact comment.
+PREV_ARTEFACT_TIME=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
+  --jq '[.comments[]
+        | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer"))
+        ] | last | .createdAt // ""')
+```
+
+If `$PREV_ARTEFACT_TIME` is **non-empty**, this is a revision run. Read the
+human feedback posted after the last artefact:
+
+```bash
+HUMAN_FEEDBACK=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments --jq '.comments' \
+  | jq --arg since "$PREV_ARTEFACT_TIME" \
+  '[.[] | select(.createdAt > $since)
+       | select(.body | startswith("<!-- ai-agile/") | not)
+       | "**\(.user.login):** \(.body)"
+  ] | join("\n\n---\n\n")')
+```
+
+If `$HUMAN_FEEDBACK` is non-empty, incorporate the feedback when
+rewriting the PRD in Step 4. Address every point the reviewer raised.
+If a comment is ambiguous, make the most conservative interpretation
+that satisfies the stated concern.
+
+If `$PREV_ARTEFACT_TIME` is **empty**, this is a first run — proceed
+normally from Step 1.
+
+---
+
 ## Step 1 — Read the issue and classification
 
 Fetch issue metadata and the classifier artefact in two calls:
@@ -40,11 +74,11 @@ gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
 The second call uses a targeted `--jq` filter so only the classifier
 artefact comment is returned — not the full growing comment history.
 
-If any product-layer standards exist in `ai-agile/standards/`, read
+If any product-layer standards exist in `${AI_AGILE_ROOT}/standards/`, read
 them so you can flag inline violations in the PRD:
 
 ```bash
-find ai-agile/standards -name "*.json" ! -name "*.schema.json" 2>/dev/null
+find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null
 ```
 
 ---
@@ -159,7 +193,7 @@ classification band (Step 3a) says to include.
 ```
 
 Append a **Standards check** line **only when** product-layer
-(`ai-agile/standards/product/*.json`) violations exist, listing them
+(`${AI_AGILE_ROOT}/standards/*.json`) violations exist, listing them
 by STD ID. If there are no violations — or no product-layer standards
 files exist — omit the footer entirely.
 
