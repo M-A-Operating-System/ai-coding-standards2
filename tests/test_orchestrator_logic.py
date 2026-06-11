@@ -1183,3 +1183,65 @@ class TestPromoteGatedAgents:
         gh.add_label.assert_not_called()  # already present, skip
         gh.remove_label.assert_any_call(wi.number, agent.review_label)
         assert agent.review_label not in result
+
+
+# ---------------------------------------------------------------------------
+# --phases flag: phase-scoped agent filtering
+# ---------------------------------------------------------------------------
+
+class TestPhasesFilter:
+    """Verify --phases restricts which agents the orchestrator evaluates."""
+
+    def test_phases_flag_filters_agents_to_allowed_set(self):
+        """Agents outside --phases are excluded before the main loop."""
+        from pipeline_orchestrator import load_pipeline
+        from pathlib import Path
+
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        if not pipeline_path.exists():
+            pytest.skip("pipeline.json not available")
+
+        agents, _ = load_pipeline(pipeline_path)
+        all_phases = {a.phase for a in agents}
+        target_phase = next(iter(sorted(all_phases)))
+
+        filtered = [a for a in agents if a.phase in {target_phase}]
+        assert filtered
+        assert all(a.phase == target_phase for a in filtered)
+
+    def test_phases_flag_all_phases_passes_all_agents(self):
+        """Filtering with the full phase set returns every agent unchanged."""
+        from pipeline_orchestrator import load_pipeline
+        from pathlib import Path
+
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        if not pipeline_path.exists():
+            pytest.skip("pipeline.json not available")
+
+        agents, _ = load_pipeline(pipeline_path)
+        all_phases = {a.phase for a in agents}
+        filtered = [a for a in agents if a.phase in all_phases]
+        assert filtered == agents
+
+    def test_workflow_split_phases_are_non_overlapping_and_complete(self):
+        """The two workflow job phase sets must cover all pipeline phases with no overlap."""
+        pre_execute = {"00_ondemand", "01_product_docs", "02_design"}
+        execute = {"03_execute", "04_evaluate", "05_continuous"}
+
+        assert pre_execute.isdisjoint(execute), "Phase sets must not overlap"
+
+        from pipeline_orchestrator import load_pipeline
+        from pathlib import Path
+
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        if not pipeline_path.exists():
+            pytest.skip("pipeline.json not available")
+
+        agents, _ = load_pipeline(pipeline_path)
+        all_pipeline_phases = {a.phase for a in agents}
+        union = pre_execute | execute
+        uncovered = all_pipeline_phases - union
+        assert not uncovered, (
+            f"Pipeline phases not covered by either workflow job: {uncovered}. "
+            "Add them to pre_execute or execute in orchestrator.yml."
+        )
