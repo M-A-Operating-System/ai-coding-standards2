@@ -57,7 +57,7 @@ python ai-coding-standards2/get_started.py
 This script:
 
 - Detects the consuming repo's root (via `git rev-parse --show-superproject-working-tree`).
-- Drops the orchestrator workflow into your `.github/workflows/orchestrator.yml`. (GitHub Actions only reads workflows from the consuming repo's own `.github/`; it cannot pick them up from submodules.)
+- Drops the two orchestrator workflows (`orchestrator-pre-execute.yml` and `orchestrator-execute.yml`) into your `.github/workflows/`. (GitHub Actions only reads workflows from the consuming repo's own `.github/`; it cannot pick them up from submodules.)
 - Copies the slash commands from `ai-coding-standards2/.claude/commands/` into your `.claude/commands/`, rewriting any submodule-relative paths so they resolve from your repo's root.
 - Writes `.claude/settings.local.json` setting `AI_AGILE_ROOT=ai-coding-standards2` so anyone running the orchestrator manually from your repo's root finds the right `pipeline.json`, `status.sh`, and agent prompts.
 
@@ -222,14 +222,17 @@ orchestrator reads them straight from the submodule:
 A small set of files were copied into your repo by `get_started.py`
 and **don't** auto-update:
 
-- `.github/workflows/orchestrator.yml` (GitHub Actions can't read workflows from submodules)
+- `.github/workflows/orchestrator-pre-execute.yml` (GitHub Actions can't read workflows from submodules)
+- `.github/workflows/orchestrator-execute.yml`
 - `.claude/commands/*.md` (path rewrites are baked in at install time)
 
 If those have changed in the new submodule version, re-run:
 
 ```bash
 python ai-coding-standards2/get_started.py --force
-git add .github/workflows/orchestrator.yml .claude/
+git add .github/workflows/orchestrator-pre-execute.yml \
+        .github/workflows/orchestrator-execute.yml \
+        .claude/
 git commit -m "Refresh ai-coding-standards2 wrapper files"
 ```
 
@@ -291,8 +294,9 @@ carry the same prefix:
 ## Standalone use (without submodule)
 
 This repo also runs against itself, for testing the standards. Open an
-issue or PR in this repo and the same orchestrator workflow at
-`.github/workflows/orchestrator.yml` fires. No changes needed. This
+issue or PR in this repo and the same orchestrator workflows at
+`.github/workflows/orchestrator-pre-execute.yml` and
+`.github/workflows/orchestrator-execute.yml` fire. No changes needed. This
 mode is how new agents are tested before being shipped to consuming
 repos.
 

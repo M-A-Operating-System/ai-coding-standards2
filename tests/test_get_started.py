@@ -288,3 +288,314 @@ class TestAddSubmodulesToCheckout:
         result = get_started._add_submodules_to_checkout(content)
         assert "submodules" not in result
         assert result == content
+
+
+# ---------------------------------------------------------------------------
+# TestRewritePaths — unit tests for each PATH_REWRITES regex
+# ---------------------------------------------------------------------------
+
+class TestRewritePaths:
+    """Each PATH_REWRITES rule is tested against a representative input."""
+
+    def _name(self):
+        return get_started.SUBMODULE_NAME
+
+    def test_rewrites_status_sh(self):
+        src = "bash .github/scripts/status.sh bootstrap-all"
+        result = get_started.rewrite_paths(src)
+        assert f"{self._name()}/.github/scripts/status.sh" in result
+        assert "/.github/scripts/status.sh" not in result.replace(f"{self._name()}/", "")
+
+    def test_no_double_prefix_status_sh(self):
+        already = f"bash {self._name()}/.github/scripts/status.sh arg"
+        assert get_started.rewrite_paths(already) == already
+
+    def test_rewrites_migrate_labels_py(self):
+        src = "python .github/scripts/migrate_labels.py"
+        result = get_started.rewrite_paths(src)
+        assert f"{self._name()}/.github/scripts/migrate_labels.py" in result
+
+    def test_no_double_prefix_migrate_labels_py(self):
+        already = f"python {self._name()}/.github/scripts/migrate_labels.py"
+        assert get_started.rewrite_paths(already) == already
+
+    def test_rewrites_claude_agents(self):
+        src = "cat .claude/agents/01_product_docs/issue-classifier.md"
+        result = get_started.rewrite_paths(src)
+        assert f"{self._name()}/.claude/agents/" in result
+
+    def test_no_double_prefix_claude_agents(self):
+        already = f"cat {self._name()}/.claude/agents/foo.md"
+        assert get_started.rewrite_paths(already) == already
+
+    def test_rewrites_pipeline(self):
+        src = "python pipeline/pipeline_orchestrator.py"
+        result = get_started.rewrite_paths(src)
+        assert f"{self._name()}/pipeline/" in result
+
+    def test_no_double_prefix_pipeline(self):
+        already = f"python {self._name()}/pipeline/pipeline_orchestrator.py"
+        assert get_started.rewrite_paths(already) == already
+
+    def test_rewrites_agent_todo_standard(self):
+        src = "See .claude/agent-todo-standard.md for details."
+        result = get_started.rewrite_paths(src)
+        assert f"{self._name()}/docs/product/agile/13-todos.md" in result
+        assert "agent-todo-standard.md" not in result
+
+
+# ---------------------------------------------------------------------------
+# TestInstallLabelCleanupWorkflow
+# ---------------------------------------------------------------------------
+
+class TestInstallLabelCleanupWorkflow:
+    def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / ".github" / "workflows").mkdir(parents=True)
+        (fake_src / ".github" / "workflows" / "label-cleanup.yml").write_text(
+            "steps:\n"
+            "  - name: Checkout\n"
+            "    uses: actions/checkout@v4\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=False)
+
+        assert result is True
+        dst = consuming / ".github" / "workflows" / "label-cleanup.yml"
+        assert dst.exists()
+        assert "submodules: true" in dst.read_text()
+
+    def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "empty"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=False)
+
+        assert result is False
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / ".github" / "workflows").mkdir(parents=True)
+        (fake_src / ".github" / "workflows" / "label-cleanup.yml").write_text("steps: []")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=True)
+
+        assert result is True
+        assert not (consuming / ".github" / "workflows" / "label-cleanup.yml").exists()
+
+
+# ---------------------------------------------------------------------------
+# TestInstallOrchestratorWorkflows
+# ---------------------------------------------------------------------------
+
+class TestInstallOrchestratorWorkflows:
+    def _make_src(self, tmp_path):
+        fake_src = tmp_path / "submodule"
+        wf_dir = fake_src / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "orchestrator-pre-execute.yml").write_text(
+            "steps:\n  - uses: actions/checkout@v4\n"
+        )
+        (wf_dir / "orchestrator-execute.yml").write_text(
+            "steps:\n  - name: Checkout\n    uses: actions/checkout@v4\n"
+        )
+        return fake_src
+
+    def test_copies_both_workflow_files(self, tmp_path, monkeypatch):
+        fake_src = self._make_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
+
+        assert count == 2
+        assert (consuming / ".github" / "workflows" / "orchestrator-pre-execute.yml").exists()
+        assert (consuming / ".github" / "workflows" / "orchestrator-execute.yml").exists()
+
+    def test_injects_submodules_true_into_both(self, tmp_path, monkeypatch):
+        fake_src = self._make_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
+
+        for name in ("orchestrator-pre-execute.yml", "orchestrator-execute.yml"):
+            content = (consuming / ".github" / "workflows" / name).read_text()
+            assert "submodules: true" in content, f"{name} missing submodules: true"
+
+    def test_returns_zero_when_both_src_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "empty"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
+
+        assert count == 0
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = self._make_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=True)
+
+        assert count == 2
+        assert not (consuming / ".github" / "workflows" / "orchestrator-pre-execute.yml").exists()
+        assert not (consuming / ".github" / "workflows" / "orchestrator-execute.yml").exists()
+
+    def test_skip_when_force_false_and_file_exists(self, tmp_path, monkeypatch):
+        fake_src = self._make_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        wf_dir = consuming / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        existing = wf_dir / "orchestrator-pre-execute.yml"
+        existing.write_text("original content")
+
+        get_started.install_orchestrator_workflows(consuming, force=False, dry_run=False)
+
+        assert existing.read_text() == "original content"
+
+
+# ---------------------------------------------------------------------------
+# TestInstallSlashCommands
+# ---------------------------------------------------------------------------
+
+class TestInstallSlashCommands:
+    def _make_src(self, tmp_path, name="ai-coding-standards2"):
+        fake_src = tmp_path / name
+        cmd_dir = fake_src / ".claude" / "commands"
+        cmd_dir.mkdir(parents=True)
+        return fake_src, cmd_dir
+
+    def test_copies_command_files(self, tmp_path, monkeypatch):
+        fake_src, cmd_dir = self._make_src(tmp_path)
+        (cmd_dir / "my-cmd.md").write_text("# my-cmd\nsome content")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", fake_src.name)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_slash_commands(consuming, force=True, dry_run=False)
+
+        assert count == 1
+        assert (consuming / ".claude" / "commands" / "my-cmd.md").exists()
+
+    def test_rewrites_status_sh_path(self, tmp_path, monkeypatch):
+        fake_src, cmd_dir = self._make_src(tmp_path, "mysubmodule")
+        (cmd_dir / "cmd.md").write_text("run .github/scripts/status.sh bootstrap-all")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", "mysubmodule")
+        import re
+        monkeypatch.setattr(get_started, "PATH_REWRITES", [
+            (r"(?<!mysubmodule/)\.github/scripts/status\.sh", "mysubmodule/.github/scripts/status.sh"),
+        ])
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_slash_commands(consuming, force=True, dry_run=False)
+
+        content = (consuming / ".claude" / "commands" / "cmd.md").read_text()
+        assert "mysubmodule/.github/scripts/status.sh" in content
+
+    def test_removes_stale_commands(self, tmp_path, monkeypatch):
+        fake_src, cmd_dir = self._make_src(tmp_path)
+        (cmd_dir / "current.md").write_text("# current")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", fake_src.name)
+        consuming = tmp_path / "consuming"
+        dst_cmd_dir = consuming / ".claude" / "commands"
+        dst_cmd_dir.mkdir(parents=True)
+        stale = dst_cmd_dir / "old-cmd.md"
+        stale.write_text("stale")
+
+        get_started.install_slash_commands(consuming, force=True, dry_run=False)
+
+        assert not stale.exists()
+        assert (dst_cmd_dir / "current.md").exists()
+
+    def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "empty"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_slash_commands(consuming, force=True, dry_run=False)
+
+        assert count == 0
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src, cmd_dir = self._make_src(tmp_path)
+        (cmd_dir / "cmd.md").write_text("# cmd")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", fake_src.name)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_slash_commands(consuming, force=True, dry_run=True)
+
+        assert count == 1
+        assert not (consuming / ".claude" / "commands" / "cmd.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# TestInstallLocalSettings
+# ---------------------------------------------------------------------------
+
+class TestInstallLocalSettings:
+    def test_writes_valid_json_with_ai_agile_root(self, tmp_path, monkeypatch):
+        import json
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_local_settings(consuming, force=True, dry_run=False)
+
+        assert result is True
+        dst = consuming / ".claude" / "settings.local.json"
+        assert dst.exists()
+        data = json.loads(dst.read_text())
+        assert data["env"]["AI_AGILE_ROOT"] == "."
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_local_settings(consuming, force=True, dry_run=True)
+
+        assert result is True
+        assert not (consuming / ".claude" / "settings.local.json").exists()
+
+    def test_skipped_when_exists_and_no_force(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        dst = consuming / ".claude" / "settings.local.json"
+        dst.parent.mkdir(parents=True)
+        dst.write_text('{"env":{"AI_AGILE_ROOT":"original"}}')
+
+        result = get_started.install_local_settings(consuming, force=False, dry_run=False)
+
+        assert result is False
+        assert '"original"' in dst.read_text()

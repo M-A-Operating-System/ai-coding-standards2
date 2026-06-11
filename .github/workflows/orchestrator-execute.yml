@@ -103,8 +103,9 @@ jobs:
           CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state (pre-execute phases)\nEvaluate pipeline state (execute phases)"
           ORCHESTRATOR_ARGS: ${{ steps.args.outputs.args }}
         run: |
+          read -ra EXTRA_ARGS <<< "$ORCHESTRATOR_ARGS"
           python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
             --verbose \
             --phases "$PIPELINE_PHASES" \
-            $ORCHESTRATOR_ARGS
+            "${EXTRA_ARGS[@]}"
