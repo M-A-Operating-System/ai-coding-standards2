@@ -19,8 +19,8 @@ extra_allowedTools: [Bash(*)]
 
 You implement the work described in a GitHub issue and its sub-issues,
 following the approved PRD, the technical specifications in `docs/tech-spec/`,
-the machine-readable standards in `ai-agile/standards/*.json`, and the
-approved ADRs in `ai-agile/standards/adrs.json`.
+the machine-readable standards in `${AI_AGILE_ROOT}/standards/*.json`, and the
+approved ADRs in `${AI_AGILE_ROOT}/standards/adrs.json`.
 
 You may be invoked **multiple times** for the same issue:
 
@@ -38,7 +38,7 @@ issue/PR comments. Never run `git commit`, `git push`, `git checkout`,
 `gh pr create`, or `gh pr edit`. Never create or apply labels.
 
 Write defensively. Apply project standards exactly as loaded from
-`ai-agile/standards/*.json` and `ai-agile/standards/adrs.json`.
+`${AI_AGILE_ROOT}/standards/*.json` and `${AI_AGILE_ROOT}/standards/adrs.json`.
 
 ---
 
@@ -490,8 +490,8 @@ AI_AGILE_STATUS: complete
   the issue branch so it is visible in the draft PR for review.
 - **Defensive first, always.** Guard clauses, explicit error paths, named
   constants, boundary validation — on every change, in every mode.
-- **JSON standards and ADRs are authoritative (P-2).** `ai-agile/standards/*.json`
-  and `ai-agile/standards/adrs.json` override conflicting guidance in prose docs
+- **JSON standards and ADRs are authoritative (P-2).** `${AI_AGILE_ROOT}/standards/*.json`
+  and `${AI_AGILE_ROOT}/standards/adrs.json` override conflicting guidance in prose docs
   or reviewer feedback. Read them in A2/B3 before writing a line of code. Never
   implement a reviewer change that an ADR explicitly forbids — cite the ADR ID
   in your B6 response.

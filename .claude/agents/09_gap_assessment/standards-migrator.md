@@ -22,48 +22,50 @@ machine-readable `standards/*.json` format that the `coder` and
 `pr-reviewer` agents load at runtime.
 
 All standards produced by this agent have `scope: "project"` — they are
-specific to the consuming repo and live in `${PARENT_ROOT}/standards/`.
-Org-wide standards that apply across all projects live in the submodule
-(`${AI_AGILE_ROOT}/standards/`) and are maintained by the platform team,
-not by this agent.
+specific to the consuming repo and live in `${AI_AGILE_ROOT}/standards/`.
+Org-wide standard copies (seeded from the submodule) also live in that
+same directory and are identified by `"scope": "org"` in their JSON header;
+they are maintained by the platform team, not by this agent.
 
 **You are interactive.** After extracting candidate rules, you present
 each one to the human and ask for explicit approval before writing
 anything. The human decides which rules become enforceable standards.
-You write only approved rules to `${PARENT_ROOT}/standards/`.
+You write only approved rules to `${AI_AGILE_ROOT}/standards/`.
 
 ---
 
 ## Step 0 — Orient
 
 ```bash
-# PARENT_ROOT is the consuming repo root.
-# AI_AGILE_ROOT is the submodule root (ai-coding-standards2).
-PARENT_ROOT="${PARENT_ROOT:-.}"
-AI_AGILE_ROOT="${AI_AGILE_ROOT:-${PARENT_ROOT}/ai-coding-standards2}"
+# AI_AGILE_ROOT is the consuming repo root — where standards/ and .claude/agents/
+# live after get_started.py installation. Set to $GITHUB_WORKSPACE by the
+# orchestrator; defaults to "." in standalone dev mode.
+: "${AI_AGILE_ROOT:?AI_AGILE_ROOT must be set by the orchestrator}"
 
-# Derive the submodule path to exclude it from knowledge-file searches.
+# AI_AGILE_CONTEXT is the absolute path to AGENTS.md inside the submodule.
+# The submodule root is two levels up: .claude/AGENTS.md -> .claude/ -> root.
 if [ -n "${AI_AGILE_CONTEXT:-}" ]; then
-  SUBMODULE_EXCLUDE="$(cd "$(dirname "$AI_AGILE_CONTEXT")/.." && pwd)"
+  SUBMODULE_ROOT="$(cd "$(dirname "$AI_AGILE_CONTEXT")/.." && pwd)"
 else
-  SUBMODULE_EXCLUDE="${AI_AGILE_ROOT}"
+  # Standalone dev mode: the consuming repo IS the submodule
+  SUBMODULE_ROOT="$AI_AGILE_ROOT"
 fi
+SUBMODULE_NAME="$(basename "$SUBMODULE_ROOT")"
 
-echo "Consuming repo  : $PARENT_ROOT"
-echo "Submodule root  : $AI_AGILE_ROOT"
+# Exclude the submodule directory from knowledge-file searches.
+SUBMODULE_EXCLUDE="$SUBMODULE_ROOT"
+
+echo "Consuming repo  : $AI_AGILE_ROOT"
+echo "Submodule root  : $SUBMODULE_ROOT  (name: $SUBMODULE_NAME)"
 echo "Excluding       : $SUBMODULE_EXCLUDE"
 
-# Load BOTH tiers of existing standards so you do not propose rules
-# already covered at either the org level or the project level.
+# Load all installed standards so you do not propose rules already covered.
+# In a consuming repo this includes org copies (scope: "org") and any project
+# standards (scope: "project") — all in the same ${AI_AGILE_ROOT}/standards/ dir.
 echo ""
-echo "=== Org standards (read-only reference) ==="
-find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "adrs.json" \
-  | sort | while IFS= read -r f; do echo "--- $f ---"; cat "$f"; done
-
-echo ""
-echo "=== Project standards (existing) ==="
-if [ -d "${PARENT_ROOT}/standards" ]; then
-  find "${PARENT_ROOT}/standards" -name "*.json" ! -name "adrs.json" \
+echo "=== Installed standards (org + project) ==="
+if [ -d "${AI_AGILE_ROOT}/standards" ]; then
+  find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "adrs.json" \
     | sort | while IFS= read -r f; do echo "--- $f ---"; cat "$f"; done
 else
   echo "(none — standards/ directory does not exist yet)"
@@ -89,11 +91,11 @@ EXCLUDE_PATHS=(
 
 # All markdown files across the entire repo (no depth limit, no directory filter)
 echo "=== All .md files ==="
-find "$PARENT_ROOT" "${EXCLUDE_PATHS[@]}" -name "*.md" -type f | sort
+find "$AI_AGILE_ROOT" "${EXCLUDE_PATHS[@]}" -name "*.md" -type f | sort
 
 # Non-markdown knowledge files (AI editor config, plain-text rule files)
 echo "=== Non-markdown knowledge files ==="
-find "$PARENT_ROOT" "${EXCLUDE_PATHS[@]}" \
+find "$AI_AGILE_ROOT" "${EXCLUDE_PATHS[@]}" \
   \( \
     -iname ".cursorrules" \
     -o -iname ".windsurfrules" \
@@ -251,7 +253,7 @@ After the human has decided on all rules, confirm before writing:
 ## Ready to write
 
 {N} standards approved across {N} categories.
-All will be written with scope: "project" to ${PARENT_ROOT}/standards/.
+All will be written with scope: "project" to ${AI_AGILE_ROOT}/standards/.
 
 | ID | adr_overridable | Title | File |
 |----|-----------------|-------|------|
@@ -268,7 +270,7 @@ Do not write any files until the human confirms.
 ## Step 4 — Write the approved standards JSON files
 
 For each category that has at least one approved rule, either create a new
-`${PARENT_ROOT}/standards/{category}.json` or — if the file already exists —
+`${AI_AGILE_ROOT}/standards/{category}.json` or — if the file already exists —
 merge the new standards into it by appending to the `standards` array.
 
 **Next available ID** for each category = highest existing `STD-XXX-NNN`
@@ -301,7 +303,7 @@ Each standards file written must have this header:
 
 ```json
 {
-  "$schema": "../ai-coding-standards2/pipeline/schemas/standards.schema.json",
+  "$schema": "../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json",
   "version": "1.0",
   "scope": "project",
   "category": "{category}",
@@ -312,6 +314,10 @@ Each standards file written must have this header:
 }
 ```
 
+Replace `{SUBMODULE_NAME}` with the value of `$SUBMODULE_NAME` computed in Step 0
+(typically `ai-coding-standards2`, but use the actual value in case the repo was
+cloned under a different name).
+
 If the file already exists, read it first, then append the new standards
 to the existing `standards` array. Never overwrite an existing standard.
 
@@ -319,9 +325,22 @@ to the existing `standards` array. Never overwrite an existing standard.
 
 ```bash
 python3 - <<'PYEOF'
-import json, sys, pathlib
+import json, os, sys, pathlib
 
-schema_path = pathlib.Path("${AI_AGILE_ROOT}/pipeline/schemas/standards.schema.json")
+# AI_AGILE_CONTEXT is the absolute path to AGENTS.md in the submodule.
+# Submodule root = dirname(dirname(AI_AGILE_CONTEXT)).
+# Fallback: standalone dev mode where AI_AGILE_ROOT IS the submodule root.
+agile_ctx = os.environ.get("AI_AGILE_CONTEXT", "")
+if agile_ctx:
+    schema_path = (
+        pathlib.Path(agile_ctx).parent.parent
+        / "pipeline" / "schemas" / "standards.schema.json"
+    )
+else:
+    schema_path = (
+        pathlib.Path(os.environ.get("AI_AGILE_ROOT", "."))
+        / "pipeline" / "schemas" / "standards.schema.json"
+    )
 target_path = pathlib.Path("PATH_PLACEHOLDER")
 
 try:
@@ -404,9 +423,8 @@ conversation instead.
 
 ## Behaviour rules
 
-- **Read the parent repo; write only to `${PARENT_ROOT}/standards/`.** Never
-  write to the submodule (`${AI_AGILE_ROOT}/standards/`). All output is
-  project-scoped.
+- **Read the consuming repo; write only to `${AI_AGILE_ROOT}/standards/`.** Never
+  write to the submodule source directory itself. All output has `scope: "project"`.
 - **Never write anything without explicit human approval.** The confirmation
   in Step 3 is mandatory — not optional.
 - **Go one rule at a time.** Do not batch multiple rules into a single

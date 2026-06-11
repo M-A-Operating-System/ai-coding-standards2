@@ -240,7 +240,7 @@ Environment variables the orchestrator exports for you:
 
 | Variable | Meaning |
 |---|---|
-| `AI_AGILE_ROOT` | Absolute path to the AI Agile submodule root |
+| `AI_AGILE_ROOT` | Absolute path to the consuming repo root — where `standards/` and `.claude/agents/` live after `get_started.py` installation. In standalone dev mode (running ai-coding-standards2 directly), equals the submodule root. |
 | `AI_AGILE_CONTEXT` | Absolute path to **this file** |
 | `REPO` | `owner/repo` of the consuming repository |
 | `ISSUE_NUMBER` | Set when the work item is an issue |

@@ -74,6 +74,40 @@ class TestInstallStandards:
         assert written == 1
         assert not (consuming / "standards" / "base.json").exists()
 
+    def test_adrs_json_seeded_on_first_install(self, tmp_path, monkeypatch):
+        """adrs.json is created on first install as a project-scoped empty file."""
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "adrs.json").write_text('{"adrs": []}')
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", "submodule")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_standards(consuming, force=True, dry_run=False)
+
+        dst = consuming / "standards" / "adrs.json"
+        assert dst.exists()
+        import json
+        data = json.loads(dst.read_text())
+        assert data["scope"] == "project"
+        assert data["adrs"] == []
+
+    def test_adrs_json_not_overwritten_on_sync(self, tmp_path, monkeypatch):
+        """adrs.json is never overwritten by --force so project ADRs are preserved."""
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "adrs.json").write_text('{"adrs": []}')
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        (consuming / "standards").mkdir(parents=True)
+        existing_adrs = consuming / "standards" / "adrs.json"
+        existing_adrs.write_text('{"scope":"project","adrs":[{"id":"ADR-001"}]}')
+
+        get_started.install_standards(consuming, force=True, dry_run=False)
+
+        assert existing_adrs.read_text() == '{"scope":"project","adrs":[{"id":"ADR-001"}]}'
+
 
 # ---------------------------------------------------------------------------
 # TestInstallAgents

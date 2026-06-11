@@ -154,6 +154,12 @@ def install_standards(
     custom standards so the daily sync can safely overwrite the base set
     without destroying local additions.
 
+    Special case — adrs.json: the consuming repo owns its adrs.json as the
+    place to record project ADRs. The sync never overwrites it so that project
+    ADRs are not lost. On first install (file absent), a minimal project-owned
+    adrs.json is created. Org ADRs are a separate concern; the submodule's
+    adrs.json is the canonical source for those.
+
     Skips *.schema.json (pipeline infrastructure, not agent-loadable).
     Returns the number of files written.
     """
@@ -169,7 +175,30 @@ def install_standards(
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".schema.json"):
             continue
+
         dst = dst_dir / src.name
+
+        if src.name == "adrs.json":
+            # adrs.json is project-owned: only seed it when it does not yet
+            # exist. Never overwrite — project ADRs would be lost on every
+            # daily sync.
+            if dst.exists():
+                print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
+                continue
+            # First install: create a project-scoped empty ADRs file.
+            project_adrs = (
+                '{\n'
+                f'  "$schema": "../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json",\n'
+                '  "version": "1.0",\n'
+                '  "scope": "project",\n'
+                '  "description": "Approved project-level Architecture Decision Records.",\n'
+                '  "adrs": []\n'
+                '}\n'
+            )
+            if write_file(dst, project_adrs, force, dry_run):
+                written += 1
+            continue
+
         content = src.read_text().replace(
             '"../pipeline/schemas/standards.schema.json"',
             f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',

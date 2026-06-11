@@ -22,7 +22,7 @@ Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope. All risk
 judgements are calibrated to that context: sentinel injection and token
 leakage are Critical here; web-app vulnerabilities are not applicable.
-ADRs in `ai-agile/standards/adrs.json` are authoritative exceptions — cite
+ADRs in `${AI_AGILE_ROOT}/standards/adrs.json` are authoritative exceptions — cite
 the ADR ID and downgrade any covered finding to Informational.
 
 ---

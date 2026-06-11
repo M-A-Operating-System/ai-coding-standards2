@@ -50,6 +50,18 @@ The phase prefix is one of the ten phase identifiers defined in
 
 The short-name is lowercase-hyphenated with no spaces or underscores.
 
+**Why the split convention.** Phase directories use `NN_snake_case` (numeric
+prefix + underscore) so they match the phase enum values in `pipeline.json`
+exactly and sort in lifecycle order in any directory listing. Agent
+short-names use `kebab-case` (hyphens only, no underscores) because they
+appear in GitHub labels, audit-log entries, and status markers where hyphens
+are the standard separator. The two conventions serve different audiences and
+must not be conflated.
+
+**Non-phase directories** inside `.claude/agents/` use the prefix `00_` to
+distinguish them from real phase directories and to sort before all phases
+in directory listings. The only current example is `00_templates/`.
+
 **Why prefix.** A glance at any label, comment, or audit-log line
 reveals which phase the agent belongs to without consulting
 `pipeline.json`. It also prevents future name collisions across phases
@@ -80,7 +92,7 @@ So `01_product_docs/issue-classifier` lives at
   the `agent` field in `pipeline.json`.
 
 A copy-paste starting point lives at
-[`.claude/agents/_templates/agent-template.md`](../../../.claude/agents/_templates/agent-template.md).
+[`.claude/agents/00_templates/agent-template.md`](../../../.claude/agents/00_templates/agent-template.md).
 
 ---
 
@@ -337,7 +349,7 @@ PRs that fail validation cannot merge.
 ## Adding a new agent — checklist
 
 1. Copy
-   `.claude/agents/_templates/agent-template.md` to
+   `.claude/agents/00_templates/agent-template.md` to
    `.claude/agents/{new-agent}.md`.
 2. Fill in the frontmatter: `name`, `description`, `tools`, `model`.
 3. Replace the role statement, work steps, and behaviour rules.

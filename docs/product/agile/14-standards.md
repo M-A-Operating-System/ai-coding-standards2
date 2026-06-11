@@ -10,24 +10,29 @@ commit messages, and PR findings.
 ## Two-tier scope
 
 Standards exist at two scopes. Scope is declared explicitly in the JSON file
-and confirmed by where the file lives.
+header (`"scope": "org"` or `"scope": "project"`).
 
-| Scope | Location | Who owns it | Purpose |
-|-------|----------|-------------|---------|
-| **org** | `ai-coding-standards2/standards/*.json` (submodule, read-only in consuming repos) | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
-| **project** | `{project-root}/standards/*.json` (consuming repo) | Project tech lead | Rules specific to this project's stack, domain, or team conventions — always additive |
+| Scope | Canonical source | On-disk in a consuming repo | Who owns it | Purpose |
+|-------|-----------------|------------------------------|-------------|---------|
+| **org** | `ai-coding-standards2/standards/*.json` (submodule) | `{project-root}/standards/` (copied by `get_started.py`; re-seeded daily by `sync-claude.yml`) | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
+| **project** | `{project-root}/standards/*.json` | `{project-root}/standards/` (same directory) | Project tech lead | Rules specific to this project's stack, domain, or team conventions — always additive |
+
+After `get_started.py` runs, both tiers are co-located in the consuming repo's
+`standards/` directory. The `"scope"` field in each file's JSON header is the
+authoritative indicator of which tier a file belongs to.
 
 **Rules governing the two tiers:**
 
-- Org standards are read-only in consuming projects. They are never copied into
-  the project directory and are never modified per-project.
+- Org standard files are re-seeded by the daily `sync-claude.yml` sync. Do not
+  modify them directly in the consuming repo — changes will be overwritten. Add
+  project-specific files instead.
 - Project standards extend the org set. They may not redeclare an org STD ID
   at a different enforcement level.
 - A project that needs to waive an org standard for specific code writes a
   **project ADR** citing the org STD ID. This is the only mechanism for
   per-project exceptions.
-- Agents load org standards first, then project standards. Both sets are
-  enforced independently — a violation against either tier raises a finding.
+- Agents load all standards from `${AI_AGILE_ROOT}/standards/` in one pass.
+  Both tiers are enforced — a violation against either raises a finding.
 
 ---
 
@@ -126,21 +131,27 @@ The pr-reviewer verdict rule: **APPROVE if and only if zero unwaived findings.**
 
 ## Agent load paths
 
-Agents load both tiers at startup. The load order is: org first, then project.
+Agents load all standards from a single directory at startup.
 
 ```bash
-# Org standards (read-only submodule)
+# All standards — org copies and project additions are co-located.
+# AI_AGILE_ROOT = consuming repo root (set by the orchestrator as $GITHUB_WORKSPACE).
 find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "adrs.json" | sort
 
-# Project standards (consuming repo root)
-find "${PARENT_ROOT}/standards" -name "*.json" ! -name "adrs.json" | sort
-
-# ADRs — both tiers
-cat "${AI_AGILE_ROOT}/standards/adrs.json"
-cat "${PARENT_ROOT}/standards/adrs.json" 2>/dev/null || true
+# ADRs (project-owned; org ADR entries are in adrs.json at scope: "org")
+cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null || true
 ```
 
-`AI_AGILE_ROOT` is the submodule root. `PARENT_ROOT` is the consuming repo root.
+`AI_AGILE_ROOT` is the consuming repo root — where `standards/` lives after
+`get_started.py` installation. In standalone dev mode (running inside
+ai-coding-standards2 directly), it equals the submodule root.
+
+`AI_AGILE_CONTEXT` (also set by the orchestrator) is the absolute path to
+`AGENTS.md` inside the submodule. Agents that need to locate the schema
+validator can derive the submodule root from it:
+```bash
+SUBMODULE_ROOT="$(dirname "$(dirname "$AI_AGILE_CONTEXT")")"
+```
 
 ---
 
