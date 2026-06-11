@@ -39,7 +39,7 @@ gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
   -q '.comments[] | select(.body | contains("ai-agile/artefact/v1")) | .body'
 
 # Files in the repo if needed
-find ai-agile/standards -name "*.json" ! -name "*.schema.json"
+find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json"
 ```
 
 Replace the examples above with the actual reads this agent needs.

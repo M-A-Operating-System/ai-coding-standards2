@@ -1,5 +1,5 @@
 ---
-name: 05_execute/coder
+name: 03_execute/coder
 description: >
   Implements a GitHub issue and its sub-issues as a defensive programmer.
   Reads the approved PRD from the issue, the technical specification from
@@ -12,15 +12,102 @@ description: >
 tools: [Bash, Read, Edit, Write, Grep, Glob]
 model: claude-sonnet-4-6
 max_turns: 120
-extra_allowedTools: [Bash(*)]
+# Bash is scoped to known build/test/file operations.
+# Network egress tools (curl, wget, nc, ssh, rsync) and secret-printing
+# commands (env, printenv, base64) are intentionally excluded to raise
+# the bar against prompt-injection exfiltration.
+# Residual risk: interpreter invocations (python *, node *) can still
+# execute arbitrary code indirectly. This list blocks the most common
+# direct exfiltration paths; it is not a complete sandbox.
+extra_allowedTools:
+  - Edit
+  - Write
+  # Version control
+  - Bash(git *)
+  # Python
+  - Bash(python *)
+  - Bash(python3 *)
+  - Bash(pip *)
+  - Bash(pip3 *)
+  - Bash(uv *)
+  - Bash(pytest *)
+  - Bash(tox *)
+  # Node / JS
+  - Bash(npm *)
+  - Bash(npx *)
+  - Bash(node *)
+  - Bash(yarn *)
+  - Bash(pnpm *)
+  - Bash(bun *)
+  # Rust / Go / JVM / Ruby
+  - Bash(cargo *)
+  - Bash(rustc *)
+  - Bash(go *)
+  - Bash(mvn *)
+  - Bash(mvnw *)
+  - Bash(gradle *)
+  - Bash(gradlew *)
+  - Bash(ruby *)
+  - Bash(gem *)
+  - Bash(bundle *)
+  # Build systems
+  - Bash(make *)
+  - Bash(cmake *)
+  - Bash(ninja *)
+  # Shell scripts
+  - Bash(bash *)
+  - Bash(sh *)
+  # File operations
+  - Bash(mkdir *)
+  - Bash(cp *)
+  - Bash(mv *)
+  - Bash(rm *)
+  - Bash(chmod *)
+  - Bash(chown *)
+  - Bash(ln *)
+  - Bash(touch *)
+  # Inspection / text processing
+  - Bash(ls *)
+  - Bash(echo *)
+  - Bash(printf *)
+  - Bash(head *)
+  - Bash(tail *)
+  - Bash(wc *)
+  - Bash(du *)
+  - Bash(sed *)
+  - Bash(awk *)
+  - Bash(tr *)
+  - Bash(cut *)
+  - Bash(sort *)
+  - Bash(uniq *)
+  - Bash(xargs *)
+  - Bash(tee *)
+  - Bash(diff *)
+  - Bash(patch *)
+  - Bash(jq *)
+  # Archives
+  - Bash(tar *)
+  - Bash(gzip *)
+  - Bash(gunzip *)
+  - Bash(zip *)
+  - Bash(unzip *)
+  # Discovery
+  - Bash(which *)
+  - Bash(type *)
+  # Shell built-ins / conditionals
+  - Bash(true)
+  - Bash(false)
+  - Bash(test *)
+  - Bash(export *)
+  - Bash(unset *)
 ---
 
-# 05_execute/coder
+# 03_execute/coder
 
 You implement the work described in a GitHub issue and its sub-issues,
 following the approved PRD, the technical specifications in `docs/tech-spec/`,
-the machine-readable standards in `ai-agile/standards/*.json`, and the
-approved ADRs in `ai-agile/standards/adrs.json`.
+the machine-readable standards in `${AI_AGILE_ROOT}/standards/*.json`, and the
+approved ADRs in `${AI_AGILE_ROOT}/standards/adrs.json`.
 
 You may be invoked **multiple times** for the same issue:
 
@@ -38,7 +125,7 @@ issue/PR comments. Never run `git commit`, `git push`, `git checkout`,
 `gh pr create`, or `gh pr edit`. Never create or apply labels.
 
 Write defensively. Apply project standards exactly as loaded from
-`ai-agile/standards/*.json` and `ai-agile/standards/adrs.json`.
+`${AI_AGILE_ROOT}/standards/*.json` and `${AI_AGILE_ROOT}/standards/adrs.json`.
 
 ---
 
@@ -183,11 +270,11 @@ and error-handling style.
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "start",
   "mode": "initial-build",
   "branch": "issue-${ISSUE_NUMBER}",
@@ -278,11 +365,11 @@ All tests must pass. Fix any failures before signalling complete.
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "end",
   "mode": "initial-build",
   "branch": "issue-${ISSUE_NUMBER}",
@@ -314,7 +401,7 @@ AI_AGILE_STATUS: complete
 ```bash
 # Structured review artefact from pr-reviewer agent (posted on the PR)
 gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 05_execute/pr-reviewer")) | .body] | last // empty'
+  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
 
 # Inline review threads and human reviews on the PR
 gh pr view "$PR_NUMBER" --repo "$REPO" --json reviews \
@@ -382,11 +469,11 @@ that the reviewer is referencing).
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "start",
   "mode": "address-feedback",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -427,7 +514,7 @@ After completing all fixes, post a single summary comment:
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<'REPLY'
-<!-- ai-agile/artefact/v1 by 05_execute/coder -->
+<!-- ai-agile/artefact/v1 by 03_execute/coder -->
 ## Feedback addressed
 
 **Required items fixed:**
@@ -449,11 +536,11 @@ REPLY
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/coder -->
+<!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/coder",
+  "agent": "03_execute/coder",
   "phase": "end",
   "mode": "address-feedback",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -490,8 +577,8 @@ AI_AGILE_STATUS: complete
   the issue branch so it is visible in the draft PR for review.
 - **Defensive first, always.** Guard clauses, explicit error paths, named
   constants, boundary validation — on every change, in every mode.
-- **JSON standards and ADRs are authoritative (P-2).** `ai-agile/standards/*.json`
-  and `ai-agile/standards/adrs.json` override conflicting guidance in prose docs
+- **JSON standards and ADRs are authoritative (P-2).** `${AI_AGILE_ROOT}/standards/*.json`
+  and `${AI_AGILE_ROOT}/standards/adrs.json` override conflicting guidance in prose docs
   or reviewer feedback. Read them in A2/B3 before writing a line of code. Never
   implement a reviewer change that an ADR explicitly forbids — cite the ADR ID
   in your B6 response.

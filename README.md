@@ -26,6 +26,13 @@ The full design is in `docs/product/agile/`. Start with
 
 ## Install in a consuming repo
 
+> **Security notice:** Do **not** install this pipeline on a public
+> repository where untrusted users can open issues. The `coder` agent
+> runs with `Bash(*)` access and has `ANTHROPIC_API_KEY`,
+> `GITHUB_TOKEN`, and `AI_AGILE_BOT_TOKEN` in its environment. It
+> processes issue bodies that any GitHub user can write. This
+> combination is safe for private repos with trusted contributors only.
+
 The whole flow is four shell commands plus one secret. The
 `get_started.py` script does the bulk of the wiring.
 
@@ -50,7 +57,7 @@ python ai-coding-standards2/get_started.py
 This script:
 
 - Detects the consuming repo's root (via `git rev-parse --show-superproject-working-tree`).
-- Drops the orchestrator workflow into your `.github/workflows/orchestrator.yml`. (GitHub Actions only reads workflows from the consuming repo's own `.github/`; it cannot pick them up from submodules.)
+- Drops the two orchestrator workflows (`orchestrator-pre-execute.yml` and `orchestrator-execute.yml`) into your `.github/workflows/`. (GitHub Actions only reads workflows from the consuming repo's own `.github/`; it cannot pick them up from submodules.)
 - Copies the slash commands from `ai-coding-standards2/.claude/commands/` into your `.claude/commands/`, rewriting any submodule-relative paths so they resolve from your repo's root.
 - Writes `.claude/settings.local.json` setting `AI_AGILE_ROOT=ai-coding-standards2` so anyone running the orchestrator manually from your repo's root finds the right `pipeline.json`, `status.sh`, and agent prompts.
 
@@ -129,7 +136,10 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 ### 5. Commit and open a test issue
 
 ```bash
-git add .gitmodules ai-coding-standards2 .github/workflows/orchestrator.yml .claude/
+git add .gitmodules ai-coding-standards2 \
+        .github/workflows/orchestrator-pre-execute.yml \
+        .github/workflows/orchestrator-execute.yml \
+        .claude/
 git commit -m "Wire up ai-coding-standards2 orchestrator"
 git push
 ```
@@ -212,14 +222,17 @@ orchestrator reads them straight from the submodule:
 A small set of files were copied into your repo by `get_started.py`
 and **don't** auto-update:
 
-- `.github/workflows/orchestrator.yml` (GitHub Actions can't read workflows from submodules)
+- `.github/workflows/orchestrator-pre-execute.yml` (GitHub Actions can't read workflows from submodules)
+- `.github/workflows/orchestrator-execute.yml`
 - `.claude/commands/*.md` (path rewrites are baked in at install time)
 
 If those have changed in the new submodule version, re-run:
 
 ```bash
 python ai-coding-standards2/get_started.py --force
-git add .github/workflows/orchestrator.yml .claude/
+git add .github/workflows/orchestrator-pre-execute.yml \
+        .github/workflows/orchestrator-execute.yml \
+        .claude/
 git commit -m "Refresh ai-coding-standards2 wrapper files"
 ```
 
@@ -242,37 +255,38 @@ workflow nor any slash command changed, no re-run is required.
 ├── .github/
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # this repo's own CI (does not run from a consuming repo)
-│       ├── orchestrator.yml
+│       ├── orchestrator-pre-execute.yml     # phases 0-2, contents:read
+│       ├── orchestrator-execute.yml         # phases 3-5, contents:write
 │       └── validate-pipeline.yml
 ├── .claude/
 │   └── agents/                              # agent prompts, one subdir per phase
+│       ├── 00_ondemand/                     # human-triggered agents (codebase-reviewer, standards-migrator)
 │       ├── 01_product_docs/
 │       │   └── issue-classifier.md
-│       ├── 02_technical_docs/               # added in future Phase 1 slices
-│       ├── 03_testing_spec/
-│       ├── 04_build_plan/
-│       ├── 05_execute/
-│       ├── 06_test/
-│       ├── 07_evaluate/
+│       ├── 02_design/                       # added in future Phase 1 slices
+│       ├── 03_execute/
+│       ├── 04_evaluate/
+│       ├── 05_continuous/
 │       └── _templates/agent-template.md     # template for new agents
-└── ai-agile/
-    └── pipeline/
-        ├── pipeline.json                    # the agent dependency graph (source of truth)
-        ├── pipeline_orchestrator.py         # the deterministic Python orchestrator
-        ├── statuses.json                    # canonical status definitions
-        ├── validate.py                      # pipeline.json validator
-        └── schemas/pipeline.schema.json
+└── pipeline/
+    ├── pipeline.json                        # the agent dependency graph (source of truth)
+    ├── pipeline_orchestrator.py             # the deterministic Python orchestrator
+    ├── statuses.json                        # canonical status definitions
+    ├── validate.py                          # pipeline.json validator
+    ├── generators/                          # doc generators (generate_phase_mermaid.py, …)
+    └── schemas/pipeline.schema.json
 ```
 
 The numeric prefixes on the per-phase agent directories (`01_…` →
-`10_…`) make `ls` show phases in lifecycle order. Agent names in
-`pipeline.json` and on labels carry the same prefix:
+`05_…`, plus `00_ondemand` for human-triggered agents) make `ls` show
+phases in lifecycle order. Agent names in `pipeline.json` and on labels
+carry the same prefix:
 
 ```
 01_product_docs/issue-classifier
-02_technical_docs/architect
-05_execute/coder
-07_evaluate/retrospective-writer
+02_design/architect
+03_execute/coder
+04_evaluate/retrospective-writer
 ```
 
 ---
@@ -280,8 +294,9 @@ The numeric prefixes on the per-phase agent directories (`01_…` →
 ## Standalone use (without submodule)
 
 This repo also runs against itself, for testing the standards. Open an
-issue or PR in this repo and the same orchestrator workflow at
-`.github/workflows/orchestrator.yml` fires. No changes needed. This
+issue or PR in this repo and the same orchestrator workflows at
+`.github/workflows/orchestrator-pre-execute.yml` and
+`.github/workflows/orchestrator-execute.yml` fire. No changes needed. This
 mode is how new agents are tested before being shipped to consuming
 repos.
 

@@ -1,6 +1,7 @@
 {
   "$schema": "../pipeline/schemas/standards.schema.json",
   "version": "1.0",
+  "scope": "org",
   "category": "architecture",
   "description": "Code architecture and design standards. Applied by the coder agent during implementation and checked by the pr-reviewer agent against every diff.",
   "standards": [
@@ -8,7 +9,6 @@
     {
       "id": "STD-ARCH-001",
       "title": "Reuse before writing new code",
-      "severity": "High",
       "description": "Before implementing new logic, search the codebase for existing functions, classes, or modules that already solve the same problem or a close approximation of it. Extend existing code rather than duplicating it.",
       "rationale": "Duplicate logic diverges over time, creates inconsistent behaviour, and multiplies the maintenance surface. The codebase already contains tested, deployed solutions — use them.",
       "acceptance_criteria": [
@@ -21,13 +21,13 @@
         "Reimplementing a sort, filter, or transformation already present in a sibling module.",
         "Creating a new helper that is functionally equivalent to an existing one with a different name."
       ],
+      "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"]
     },
 
     {
       "id": "STD-ARCH-002",
       "title": "Abstract only at two concrete call sites",
-      "severity": "Medium",
       "description": "Do not create helpers, base classes, mixins, decorators, or utility modules unless they have at least two distinct, concrete call sites in the codebase at the time of writing. Three similar lines of code are not sufficient justification for a new abstraction.",
       "rationale": "Premature abstractions introduce indirection that obscures intent, makes code harder to read, and must be maintained even when requirements change. A duplication that is removed too early often results in an abstraction that fits neither call site well.",
       "acceptance_criteria": [
@@ -41,13 +41,13 @@
         "A utility module with a single export used by a single caller.",
         "Extracting a two-line block into a named function 'for readability' when the block is only used once."
       ],
+      "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"]
     },
 
     {
       "id": "STD-ARCH-003",
       "title": "No speculative generality",
-      "severity": "Medium",
       "description": "Do not add parameters, configuration options, plugin hooks, strategy objects, or extension points for anticipated future requirements that have no current specification in the product docs or active issues. Solve the problem as stated, not a generalised version of it.",
       "rationale": "Speculative features are never free — they add complexity, surface area for bugs, and cognitive load for future readers, even if they are never actually used. YAGNI (You Aren't Gonna Need It) applies to every layer of the stack.",
       "acceptance_criteria": [
@@ -62,13 +62,13 @@
         "A config flag that is always `True` or always `False` at every call site.",
         "An abstract method defined 'for future subclasses' with no current implementation."
       ],
+      "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"]
     },
 
     {
       "id": "STD-ARCH-004",
       "title": "Implementations scope to stated acceptance criteria",
-      "severity": "Medium",
       "description": "Every line of new behaviour in a diff must be traceable to an acceptance criterion in the approved PRD, an existing standard in this file, or an approved ADR. Behaviour that is not required by any of these sources must not be introduced.",
       "rationale": "Out-of-scope additions bypass product approval gates, make PRs harder to review, and risk introducing untested behaviour into production. Scope creep in code is the dual of scope creep in planning.",
       "acceptance_criteria": [
@@ -81,13 +81,13 @@
         "Introducing a metrics endpoint when the issue asks for a config change.",
         "Adding a CLI flag 'while we're here' that is not in the PRD."
       ],
+      "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"]
     },
 
     {
       "id": "STD-ARCH-005",
       "title": "Keep functions and modules focused",
-      "severity": "Low",
       "description": "Functions should do one thing. Modules should own one concern. When a function grows beyond approximately 40 lines or handles more than one distinct responsibility, split it. When a module imports from more than two unrelated domains, consider splitting it.",
       "rationale": "Small, focused units are easier to test, easier to reuse, and easier to reason about. Long functions with multiple responsibilities are the primary source of hidden coupling.",
       "acceptance_criteria": [
@@ -100,15 +100,15 @@
         "A 200-line function containing distinct phases separated by blank lines and comments.",
         "A module that is both a data model and a network client."
       ],
+      "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"]
     },
 
     {
       "id": "STD-ARCH-006",
       "title": "Fix now, not later — no deferred small defects",
-      "severity": "High",
-      "description": "If a defect, inconsistency, dead code path, stale comment, incorrect type annotation, or other small correctness issue is visible while working on a diff, fix it in the same PR rather than deferring it. Do not introduce or perpetuate TODO/FIXME markers for issues that can be resolved immediately. Apply the Boy Scout Rule: leave every file you touch at least as clean as you found it.",
-      "rationale": "Small deferred items compound. A codebase full of acknowledged-but-unresolved defects degrades reviewer confidence, slows onboarding, and creates a ratchet where each PR adds more debt than it removes. The cheapest time to fix a defect is when you are already reading the affected code. Deferral is only justified when the fix requires a separate product decision or architectural change that is genuinely out of scope for the current issue.",
+      "description": "If a defect, inconsistency, dead code path, stale comment, incorrect type annotation, or other small correctness issue is visible while working on a diff, fix it in the same PR rather than deferring it. Do not introduce or perpetuate TODO/FIXME markers for issues that can be resolved immediately.",
+      "rationale": "Small deferred items compound. A codebase full of acknowledged-but-unresolved defects degrades reviewer confidence, slows onboarding, and creates a ratchet where each PR adds more debt than it removes. The cheapest time to fix a defect is when you are already reading the affected code.",
       "acceptance_criteria": [
         "No TODO or FIXME comment is introduced in the diff unless it references an open issue number (e.g. '# TODO(#123)') and the linked issue is created before the PR is merged.",
         "Existing TODO/FIXME comments in files touched by the diff are either resolved inline or converted to tracked issues — they are not left as-is.",
@@ -125,15 +125,15 @@
         "Commenting out code instead of deleting it.",
         "Leaving a `pass` or `raise NotImplementedError` in a method that is called in the current execution path."
       ],
+      "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"]
     },
 
     {
       "id": "STD-ARCH-007",
       "title": "Do not open issues for work that can be done in the current PR",
-      "severity": "High",
       "description": "Agents must not file new GitHub issues as a substitute for doing work that is within their current scope. If a defect, missing test, incomplete implementation, or related improvement is small enough to be resolved inside the current PR, resolve it there. Creating a new issue is only justified when the work requires a separate product decision, a different owner, a human gate, or a scope that is genuinely outside the current issue's acceptance criteria.",
-      "rationale": "Issue creation is not free. Every new issue added to the backlog consumes triage time, clutters the pipeline, and is statistically unlikely to be resolved — most small 'follow-up' issues are never actioned. Agents that defer solvable work into new issues are shifting cost onto humans and future pipeline runs. The backlog should contain work that cannot be done now, not work that an agent chose not to do.",
+      "rationale": "Issue creation is not free. Every new issue added to the backlog consumes triage time, clutters the pipeline, and is statistically unlikely to be resolved — most small 'follow-up' issues are never actioned. Agents that defer solvable work into new issues are shifting cost onto humans and future pipeline runs.",
       "acceptance_criteria": [
         "No new GitHub issue is created by an agent for a defect or gap that is visible in the current diff and resolvable within the current issue's acceptance criteria.",
         "No new GitHub issue is created for work that would be completed in fewer than 30 lines of code and has no dependency on a human gate or external decision.",
@@ -147,6 +147,7 @@
         "Splitting 'implement feature' and 'document feature' into separate issues when documentation is an acceptance criterion of the feature.",
         "Creating a placeholder issue with no acceptance criteria as a way to acknowledge tech debt without fixing it."
       ],
+      "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer", "issue-classifier"]
     }
 

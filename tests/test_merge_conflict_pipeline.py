@@ -32,11 +32,11 @@ from pipeline_orchestrator import (
 def _make_merge_conflict_agent() -> AgentDef:
     """Build the merge-conflict AgentDef matching the pipeline.json entry."""
     return AgentDef(
-        agent="05_execute/merge-conflict",
-        phase="05_execute",
+        agent="03_execute/merge-conflict",
+        phase="03_execute",
         objects=["issue"],
         trigger={"label": "ci-gate:complete"},
-        dependencies=["05_execute/ci-gate"],
+        dependencies=["03_execute/ci-gate"],
         human_gate_after=True,
         human_gate_label="merge-conflict:approved",
         description="Checks for merge conflicts on the issue PR after CI passes.",
@@ -46,8 +46,8 @@ def _make_merge_conflict_agent() -> AgentDef:
 
 def _make_ci_gate_agent() -> AgentDef:
     return AgentDef(
-        agent="05_execute/ci-gate",
-        phase="05_execute",
+        agent="03_execute/ci-gate",
+        phase="03_execute",
         objects=["issue"],
         trigger={},
         dependencies=[],
@@ -64,11 +64,11 @@ def _make_pr_reviewer_agent() -> AgentDef:
     Its trigger is merge-conflict:complete.
     """
     return AgentDef(
-        agent="05_execute/pr-reviewer",
-        phase="05_execute",
+        agent="03_execute/pr-reviewer",
+        phase="03_execute",
         objects=["issue"],
         trigger={"label": "merge-conflict:complete"},
-        dependencies=["05_execute/merge-conflict"],
+        dependencies=["03_execute/merge-conflict"],
         human_gate_after=False,
         human_gate_label=None,
         description="Reviews the draft PR after CI and merge-conflict pass.",
@@ -117,13 +117,13 @@ class TestMergeConflictAgentTriggeredWhenPrHasConflicts:
 
     def test_dependencies_complete_when_ci_gate_done(self):
         """dependencies_complete returns True when ci-gate:complete is present."""
-        pipeline_map = {"05_execute/ci-gate": _make_ci_gate_agent()}
+        pipeline_map = {"03_execute/ci-gate": _make_ci_gate_agent()}
         labels = {"ci-gate:complete"}
         assert dependencies_complete(labels, _make_merge_conflict_agent(), pipeline_map) is True
 
     def test_dependencies_not_complete_without_ci_gate(self):
         """dependencies_complete returns False when ci-gate:complete is absent."""
-        pipeline_map = {"05_execute/ci-gate": _make_ci_gate_agent()}
+        pipeline_map = {"03_execute/ci-gate": _make_ci_gate_agent()}
         assert dependencies_complete(set(), _make_merge_conflict_agent(), pipeline_map) is False
 
     def test_spike_classification_excluded(self):
@@ -212,13 +212,13 @@ class TestPipelinePausesAwaitingHumanApproval:
 
     def test_pr_reviewer_blocked_when_merge_conflict_in_review(self):
         """pr-reviewer dependencies_complete returns False while merge-conflict is in :review."""
-        pipeline_map = {"05_execute/merge-conflict": _make_merge_conflict_agent()}
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
         labels = {"merge-conflict:review"}
         assert dependencies_complete(labels, _make_pr_reviewer_agent(), pipeline_map) is False
 
     def test_pr_reviewer_blocked_when_merge_conflict_not_yet_run(self):
         """pr-reviewer is blocked when merge-conflict has not run at all (no labels)."""
-        pipeline_map = {"05_execute/merge-conflict": _make_merge_conflict_agent()}
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
         assert dependencies_complete(set(), _make_pr_reviewer_agent(), pipeline_map) is False
 
     def test_promote_does_not_fire_for_other_agents(self):
@@ -260,7 +260,7 @@ class TestCodingAgentTaskedAfterPlanApproval:
 
     def test_pr_reviewer_eligible_after_approval(self):
         """After gate approval, merge-conflict:complete + gate → pr-reviewer dependencies_complete."""
-        pipeline_map = {"05_execute/merge-conflict": _make_merge_conflict_agent()}
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
         labels = {"merge-conflict:complete", "merge-conflict:approved"}
         assert dependencies_complete(labels, _make_pr_reviewer_agent(), pipeline_map) is True
 
@@ -272,7 +272,7 @@ class TestCodingAgentTaskedAfterPlanApproval:
 
     def test_pr_reviewer_blocked_without_gate_even_when_complete(self):
         """pr-reviewer is blocked when merge-conflict:complete is present but gate is absent."""
-        pipeline_map = {"05_execute/merge-conflict": _make_merge_conflict_agent()}
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
         labels = {"merge-conflict:complete"}
         assert dependencies_complete(labels, _make_pr_reviewer_agent(), pipeline_map) is False
 
@@ -334,7 +334,7 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
 
     def test_pr_reviewer_eligible_after_clean_pr_auto_approve(self):
         """Clean PR: auto_approve_on_complete sets both :complete and :approved; pr-reviewer runs."""
-        pipeline_map = {"05_execute/merge-conflict": _make_merge_conflict_agent()}
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
         # Both labels are present after orchestrator auto-approve
         labels = {"merge-conflict:complete", "merge-conflict:approved"}
         assert dependencies_complete(labels, _make_pr_reviewer_agent(), pipeline_map) is True
@@ -345,7 +345,7 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
         This scenario can't arise for auto_approve_on_complete agents in normal flow,
         but the guard in dependencies_complete must remain correct for all agent types.
         """
-        pipeline_map = {"05_execute/merge-conflict": _make_merge_conflict_agent()}
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
         labels = {"merge-conflict:complete"}
         assert dependencies_complete(labels, _make_pr_reviewer_agent(), pipeline_map) is False
 
@@ -369,8 +369,8 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
         from pipeline_orchestrator import AgentDef, STATUS_COMPLETE
 
         agent = AgentDef(
-            agent="05_execute/merge-conflict",
-            phase="05_execute",
+            agent="03_execute/merge-conflict",
+            phase="03_execute",
             objects=["issue"],
             trigger={"label": "ci-gate:complete"},
             dependencies=[],
@@ -388,5 +388,5 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
         from pathlib import Path
         pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
         data = json.loads(pipeline_path.read_text())
-        mc = next(e for e in data["pipeline"] if e["agent"] == "05_execute/merge-conflict")
+        mc = next(e for e in data["pipeline"] if e["agent"] == "03_execute/merge-conflict")
         assert mc.get("auto_approve_on_complete") is True

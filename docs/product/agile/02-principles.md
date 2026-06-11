@@ -54,13 +54,18 @@ hand-edited.
 |---|---|---|
 | Pipeline graph | `pipeline/pipeline.json` | `pipeline.schema.json` |
 | Status definitions | `pipeline/statuses.json` | `statuses.schema.json` |
-| Architecture & product standards | `standards/*.json` | `standards.schema.json` |
-| ADRs | `standards/adrs.json` | `adrs.schema.json` |
+| Org-wide standards | `ai-coding-standards2/standards/*.json` | `standards.schema.json` |
+| Project standards | `{project-root}/standards/*.json` | `standards.schema.json` |
+| Org ADRs | `ai-coding-standards2/standards/adrs.json` | `standards.schema.json` |
+| Project ADRs | `{project-root}/standards/adrs.json` | `standards.schema.json` |
 
 **Consequences.**
 
 - A PR that edits the JSON without regenerating dependent docs fails CI.
 - A PR that hand-edits a generated file fails CI.
+- Org standards (submodule) are read-only in consuming projects. Project
+  standards extend the org set additively. Exceptions to org standards require
+  a project ADR citing the org STD ID — see [14-standards.md](14-standards.md).
 - New concerns (e.g. agent factory recipes) get their own JSON + schema +
   generator. Prose-only definitions of system state are not allowed.
 

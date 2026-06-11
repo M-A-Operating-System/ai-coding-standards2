@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-_GEN_PATH = Path(__file__).parents[1] / "generate_phase_mermaid.py"
+_GEN_PATH = Path(__file__).parent.parent / "pipeline" / "generators" / "generate_phase_mermaid.py"
 _spec = importlib.util.spec_from_file_location("generate_phase_mermaid", _GEN_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

@@ -63,6 +63,8 @@ PATH_REWRITES = [
     # Bare ".github/scripts/status.sh" → "ai-coding-standards2/.github/scripts/status.sh"
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
     (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
+    # Bare ".github/scripts/migrate_labels.py" → "ai-coding-standards2/.github/scripts/migrate_labels.py"
+    (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/migrate_labels\.py", f"{SUBMODULE_NAME}/.github/scripts/migrate_labels.py"),
     # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
     (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
     # Bare "pipeline/..." → "ai-coding-standards2/pipeline/..."
@@ -154,6 +156,12 @@ def install_standards(
     custom standards so the daily sync can safely overwrite the base set
     without destroying local additions.
 
+    Special case — adrs.json: the consuming repo owns its adrs.json as the
+    place to record project ADRs. The sync never overwrites it so that project
+    ADRs are not lost. On first install (file absent), a minimal project-owned
+    adrs.json is created. Org ADRs are a separate concern; the submodule's
+    adrs.json is the canonical source for those.
+
     Skips *.schema.json (pipeline infrastructure, not agent-loadable).
     Returns the number of files written.
     """
@@ -169,7 +177,30 @@ def install_standards(
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".schema.json"):
             continue
+
         dst = dst_dir / src.name
+
+        if src.name == "adrs.json":
+            # adrs.json is project-owned: only seed it when it does not yet
+            # exist. Never overwrite — project ADRs would be lost on every
+            # daily sync.
+            if dst.exists():
+                print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
+                continue
+            # First install: create a project-scoped empty ADRs file.
+            project_adrs = (
+                '{\n'
+                f'  "$schema": "../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json",\n'
+                '  "version": "1.0",\n'
+                '  "scope": "project",\n'
+                '  "description": "Approved project-level Architecture Decision Records.",\n'
+                '  "adrs": []\n'
+                '}\n'
+            )
+            if write_file(dst, project_adrs, force, dry_run):
+                written += 1
+            continue
+
         content = src.read_text().replace(
             '"../pipeline/schemas/standards.schema.json"',
             f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
@@ -187,8 +218,16 @@ def install_agents(
     """Copy .claude/agents/ from the submodule into the consuming repo.
 
     Preserves the full subdirectory structure (01_product_docs/,
-    05_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
+    03_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
     so no path rewriting is needed — they are copied verbatim.
+
+    IMPORTANT: The orchestrator ALWAYS reads agent prompts from the
+    submodule (SUBMODULE_ROOT/.claude/agents/), never from these copies.
+    The copies are provided solely for interactive Claude Code sessions
+    (developers using /agents or viewing agent files locally). Editing the
+    copies has no effect on pipeline execution and the copies are
+    overwritten on every daily sync-claude run. To customise an agent for
+    the pipeline, pin the submodule to a fork or raise a PR upstream.
 
     Returns the number of files written.
     """
@@ -294,20 +333,46 @@ def _add_submodules_to_checkout(content: str) -> str:
     return content
 
 
-def install_orchestrator_workflow(
+def install_orchestrator_workflows(
     consuming_root: Path,
     force: bool,
     dry_run: bool,
-) -> bool:
-    """Copy orchestrator.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "orchestrator.yml"
-    dst = consuming_root / ".github" / "workflows" / "orchestrator.yml"
-    if not src.exists():
-        print(f"  SKIP   orchestrator workflow  ({src} missing)")
-        return False
-    print(f"  Orchestrator workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
-    return write_file(dst, content, force, dry_run)
+) -> int:
+    """Copy the two orchestrator workflows into the consuming repo.
+
+    The pipeline uses two separate workflow files with different
+    GITHUB_TOKEN permission scopes:
+
+      orchestrator-pre-execute.yml  contents:read
+        Phases: 00_ondemand, 01_product_docs, 02_design
+        Agents only post comments and apply labels — cannot push code.
+
+      orchestrator-execute.yml      contents:write
+        Phases: 03_execute, 04_evaluate, 05_continuous
+        Coder pushes branches and creates PRs.
+
+    Splitting by file (rather than by job) makes the permission boundary
+    visible in the GitHub Actions UI and gives each workflow its own
+    independent concurrency group.
+
+    Returns the number of files written.
+    """
+    workflows = [
+        "orchestrator-pre-execute.yml",
+        "orchestrator-execute.yml",
+    ]
+    written = 0
+    for name in workflows:
+        src = SUBMODULE_ROOT / ".github" / "workflows" / name
+        dst = consuming_root / ".github" / "workflows" / name
+        if not src.exists():
+            print(f"  SKIP   {name}  ({src} missing)")
+            continue
+        print(f"  Orchestrator workflow ({name}): → {dst}")
+        content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+        if write_file(dst, content, force, dry_run):
+            written += 1
+    return written
 
 
 def install_bootstrap_labels_workflow(
@@ -393,7 +458,8 @@ def print_followup(consuming_root: Path) -> None:
     print(f"       AI_AGILE_BOT_TOKEN — a GitHub PAT for the bot account")
     print()
     print(f"  2. Commit the new files:")
-    print(f"     git add .github/workflows/orchestrator.yml \\")
+    print(f"     git add .github/workflows/orchestrator-pre-execute.yml \\")
+    print(f"             .github/workflows/orchestrator-execute.yml \\")
     print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
@@ -409,6 +475,13 @@ def print_followup(consuming_root: Path) -> None:
     print(f"     Add project-specific standards as NEW files (e.g. standards/myapp.json)")
     print(f"     rather than modifying the base files — the daily sync-claude.yml")
     print(f"     will overwrite base files but never delete your additions.")
+    print()
+    print(f"     AGENT PROMPTS: The pipeline orchestrator reads agent prompts")
+    print(f"     directly from the submodule ({SUBMODULE_NAME}/.claude/agents/).")
+    print(f"     The copies in .claude/agents/ are for interactive Claude Code")
+    print(f"     sessions only. Editing them does NOT affect pipeline execution")
+    print(f"     and they are overwritten by the daily sync. To change agent")
+    print(f"     behaviour, pin to a fork or raise a PR upstream.")
     print()
     print(f"  3. Bootstrap the {{agent}}:{{status}} labels:")
     print(f"     Trigger the orchestrator workflow manually once from")
@@ -452,7 +525,7 @@ def main() -> int:
         print("(dry run — no files will be written)")
     print()
 
-    install_orchestrator_workflow(consuming_root, args.force, args.dry_run)
+    install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
     install_bootstrap_labels_workflow(consuming_root, args.force, args.dry_run)
     install_label_cleanup_workflow(consuming_root, args.force, args.dry_run)
     install_sync_workflow(consuming_root, args.force, args.dry_run)

@@ -28,6 +28,7 @@ evolve them as the system matures.
 | 11 | [Orchestrator](11-orchestrator.md) | Python orchestrator technical design, decision logic, and GitHub Actions workflows |
 | 12 | [Agent specification](12-agent-spec.md) | Required shape of an agent prompt file: frontmatter, body sections, tool allowlist |
 | 13 | [Todos](13-todos.md) | How tasks are stored in issue/PR bodies, with ISO 8601 timestamps |
+| 14 | [Standards](14-standards.md) | Two-tier standards structure, category taxonomy, enforcement model, ADR scoping |
 
 ## Generated views
 
@@ -36,16 +37,15 @@ Authoritative facts about the pipeline are declared once in
 
 | File | Description |
 |---|---|
-| [`generated/agents.md`](generated/agents.md) | Catalogue of every agent, its role, dependencies, and gate |
-| [`generated/phases.md`](generated/phases.md) | Agents grouped by phase, in dependency order |
-| [`generated/gates.md`](generated/gates.md) | The full list of human gates |
-| `generated/pipeline.mmd` | Full mermaid flowchart |
-| `generated/pipeline-issue.mmd` | Issue subgraph |
-| `generated/pipeline-pr.mmd` | PR subgraph |
+| `generated/phases/{phase}.mmd` | Per-phase mermaid flowchart (one file per phase) |
 
-These files are produced by `pipeline/generators/` and committed
-in the same PR as any change to the source JSON. They are not
+These files are produced by `pipeline/generators/generate_phase_mermaid.py`
+and committed in the same PR as any change to the source JSON. They are not
 hand-edited. See [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
+
+Full pipeline-level views (agents catalogue, gates list, pipeline mermaid)
+are planned but not yet generated. Track progress in
+[`backlog.md`](15-backlog.md).
 
 ---
 

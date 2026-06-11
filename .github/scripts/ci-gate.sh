@@ -127,10 +127,10 @@ while true; do
             || echo '[]')"
 
         post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "blocked",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",
@@ -185,10 +185,10 @@ EOF
         if (( empty_polls >= NO_CHECKS_GRACE )); then
             log "  → grace period exhausted — no CI configured, passing through"
             post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "complete",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",
@@ -233,10 +233,10 @@ EOF
     if (( FAILED > 0 )); then
         log "RESULT: ${FAILED} check(s) failed"
         post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "review",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",
@@ -251,10 +251,10 @@ EOF
     else
         log "RESULT: all ${TOTAL} check(s) passed"
         post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "complete",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",

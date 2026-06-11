@@ -1066,7 +1066,7 @@ AI_AGILE_CONTEXT = SUBMODULE_ROOT / ".claude" / "AGENTS.md"
 # anything; if the until-time has not yet passed, the orchestrator logs
 # the wait and exits cleanly. The next scheduled tick (or a manual
 # workflow_dispatch with --clear-pause) resumes work.
-PAUSE_MARKER_PATH = SUBMODULE_ROOT / ".pipeline-pause"
+PAUSE_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / ".pipeline-pause"
 
 # Fixed UUID v5 namespace for deterministic session ID generation.
 # The claude CLI requires a valid UUID for --session-id; we derive one
@@ -2216,9 +2216,8 @@ def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
 
             _phase_prefix = {
                 "01_product_docs": "docs",
-                "02_technical_docs": "docs",
-                "05_execute": "feat",
-                "10_tech_debt": "refactor",
+                "02_design": "docs",
+                "03_execute": "feat",
             }.get(agent_def.phase, "chore")
             msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
             subprocess.run(["git", "commit", "-m", msg], check=True)
@@ -2810,6 +2809,20 @@ def parse_args() -> argparse.Namespace:
              "without waiting for it to expire naturally.",
     )
     p.add_argument(
+        "--phases",
+        default=None,
+        metavar="PHASE[,PHASE...]",
+        help=(
+            "Comma-separated list of phases to process "
+            "(e.g. '01_product_docs,02_design'). "
+            "Default: all phases. "
+            "Use this to scope a CI job to a specific GITHUB_TOKEN permission "
+            "tier — pre-execute jobs run with contents:read; execute jobs run "
+            "with contents:write. Agents outside the allowed set are silently "
+            "skipped for this run only; pipeline state is unchanged."
+        ),
+    )
+    p.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Show debug-level output",
@@ -2867,6 +2880,20 @@ def main() -> None:
     _configure_git_auth()
 
     agents, default_extra_tools = load_pipeline(args.pipeline)
+
+    # Phase filter — restrict which agents this job is allowed to run.
+    # Used by the split-permission workflow (pre-execute job gets
+    # contents:read; execute job gets contents:write). Agents outside the
+    # allowed set are skipped silently; pipeline state is unchanged.
+    if args.phases:
+        allowed_phases = {p.strip() for p in args.phases.split(",") if p.strip()}
+        before_count = len(agents)
+        agents = [a for a in agents if a.phase in allowed_phases]
+        log.info(
+            "Phase filter: %s — %d/%d agents active",
+            ", ".join(sorted(allowed_phases)), len(agents), before_count,
+        )
+
     pipeline_map = pipeline_by_name(agents)
     gh = GitHubClient(repo=args.repo, token=token)
 

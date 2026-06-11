@@ -74,11 +74,11 @@ gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
 The second call uses a targeted `--jq` filter so only the classifier
 artefact comment is returned — not the full growing comment history.
 
-If any product-layer standards exist in `ai-agile/standards/`, read
+If any product-layer standards exist in `${AI_AGILE_ROOT}/standards/`, read
 them so you can flag inline violations in the PRD:
 
 ```bash
-find ai-agile/standards -name "*.json" ! -name "*.schema.json" 2>/dev/null
+find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null
 ```
 
 ---
@@ -193,7 +193,7 @@ classification band (Step 3a) says to include.
 ```
 
 Append a **Standards check** line **only when** product-layer
-(`ai-agile/standards/product/*.json`) violations exist, listing them
+(`${AI_AGILE_ROOT}/standards/*.json`) violations exist, listing them
 by STD ID. If there are no violations — or no product-layer standards
 files exist — omit the footer entirely.
 

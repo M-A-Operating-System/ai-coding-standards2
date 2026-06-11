@@ -472,8 +472,8 @@ the orchestrator commits the agent's file changes to the existing branch:
 7. Stage:    git add -A
 8. Guard:    git diff --cached --quiet → if empty, skip commit
 9. Commit:   git commit -m "{phase_prefix}: {label_key} changes for issue #{N}"
-             (phase_prefix: "docs" for 01/02 phases, "feat" for 05_execute,
-              "refactor" for 10_tech_debt, "chore" otherwise)
+             (phase_prefix: "docs" for 01/02 phases, "feat" for 03_execute,
+              "chore" otherwise)
 10. Push:    git push origin issue-{N}
 11. Restore: git checkout {original_branch}  (called at all exit points)
 ```

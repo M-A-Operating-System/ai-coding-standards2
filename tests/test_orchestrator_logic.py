@@ -25,7 +25,7 @@ from pipeline_orchestrator import (
 )
 
 
-def _make_agent_def(name: str = "05_execute/coder") -> AgentDef:
+def _make_agent_def(name: str = "03_execute/coder") -> AgentDef:
     """Build a minimal AgentDef for tests."""
     return AgentDef(
         agent=name,
@@ -120,7 +120,7 @@ class TestApplyFailed:
         return gh
 
     def test_clears_wip_before_applying_failed(self):
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         result = AgentRunResult(success=False, returncode=1, captured_tail="error output")
@@ -138,7 +138,7 @@ class TestApplyFailed:
 
     def test_clears_requested(self):
         """_apply_failed removes :requested — validates DP-001 fix."""
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         result = AgentRunResult(success=False, returncode=1)
@@ -152,7 +152,7 @@ class TestApplyFailed:
 
     def test_does_not_raise_when_remove_fails(self):
         """_apply_failed swallows remove_label exceptions (best-effort cleanup)."""
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         gh.remove_label.side_effect = Exception("API error")
@@ -163,7 +163,7 @@ class TestApplyFailed:
 
     def test_clears_all_stale_statuses(self):
         """All of wip, review, blocked, requested are cleared."""
-        agent_def = _make_agent_def("05_execute/coder")
+        agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
         result = AgentRunResult(success=False, returncode=1)
@@ -284,7 +284,7 @@ class TestCountRunning:
     def test_counts_are_independent_per_agent(self):
         agents = [
             _make_agent_def_concurrent("01_product_docs/prd-writer"),
-            _make_agent_def_concurrent("05_execute/coder"),
+            _make_agent_def_concurrent("03_execute/coder"),
         ]
         work_items = [
             _make_work_item_with_labels(1, {"prd-writer:wip"}),
@@ -331,7 +331,7 @@ class TestDefaultMaxConcurrentIsOne:
     """Scenario: Default concurrency of 1 when max_concurrent is absent."""
 
     def test_agent_def_default_max_concurrent(self):
-        agent = _make_agent_def("05_execute/coder")
+        agent = _make_agent_def("03_execute/coder")
         assert agent.max_concurrent == 1, (
             "AgentDef.max_concurrent must default to 1 when not specified"
         )
@@ -599,8 +599,8 @@ class TestAggregatePipelineCeiling:
             max_concurrent=100,
         )
         agent_two = AgentDef(
-            agent="05_execute/coder",
-            phase="05_execute",
+            agent="03_execute/coder",
+            phase="03_execute",
             objects=["issue"],
             trigger={"label": "issue-classifier:complete"},
             dependencies=[],
@@ -612,7 +612,7 @@ class TestAggregatePipelineCeiling:
         agents = [agent_one, agent_two]
         pipeline_map = {
             "01_product_docs/prd-writer": agent_one,
-            "05_execute/coder": agent_two,
+            "03_execute/coder": agent_two,
         }
         # One below the aggregate ceiling — first agent launch will hit it exactly.
         conc = ConcurrencyState(
@@ -868,8 +868,8 @@ class TestDryRunConcurrency:
             max_concurrent=100,
         )
         agent_b = AgentDef(
-            agent="05_execute/coder",
-            phase="05_execute",
+            agent="03_execute/coder",
+            phase="03_execute",
             objects=["issue"],
             trigger={"label": "prd-docs-updater:complete"},
             dependencies=[],
@@ -881,7 +881,7 @@ class TestDryRunConcurrency:
         agents = [agent_a, agent_b]
         pipeline_map = {
             "01_product_docs/prd-writer": agent_a,
-            "05_execute/coder": agent_b,
+            "03_execute/coder": agent_b,
         }
         conc = ConcurrencyState(
             running_counts={"prd-writer": 0, "coder": 0},
@@ -916,24 +916,26 @@ class TestDryRunConcurrency:
 class TestOrchestratorNonOverlapping:
     """Scenario: Orchestrator runs remain non-overlapping."""
 
-    def test_workflow_defines_pipeline_orchestrator_concurrency_group(self):
+    def test_workflow_defines_concurrency_groups(self):
         """
-        Given the GitHub Actions workflow
-        Then it defines concurrency group 'pipeline-orchestrator' with
-        cancel-in-progress: false so new triggers queue rather than
-        cancel the active run.
+        Given the two orchestrator workflow files
+        Then each defines its own concurrency group with cancel-in-progress: false
+        so concurrent triggers queue rather than cancel the active run.
         """
-        workflow_path = Path(__file__).parent.parent / ".github/workflows/orchestrator.yml"
-        assert workflow_path.exists(), f"Workflow file not found at {workflow_path}"
-        content = workflow_path.read_text()
-        assert "group: pipeline-orchestrator" in content, (
-            "Workflow must declare concurrency group 'pipeline-orchestrator' "
-            "to serialise orchestrator runs"
-        )
-        assert "cancel-in-progress: false" in content, (
-            "Workflow must set cancel-in-progress: false so a queued run waits "
-            "for the active run to finish rather than being cancelled"
-        )
+        workflows_dir = Path(__file__).parent.parent / ".github" / "workflows"
+        for name, expected_group in [
+            ("orchestrator-pre-execute.yml", "pipeline-pre-execute"),
+            ("orchestrator-execute.yml", "pipeline-execute"),
+        ]:
+            path = workflows_dir / name
+            assert path.exists(), f"Workflow file not found: {path}"
+            content = path.read_text()
+            assert f"group: {expected_group}" in content, (
+                f"{name} must declare concurrency group '{expected_group}'"
+            )
+            assert "cancel-in-progress: false" in content, (
+                f"{name} must set cancel-in-progress: false"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -955,8 +957,8 @@ class TestInvokeAgentTimeout:
     def _make_minimal_agent_def(self) -> "AgentDef":
         import pipeline_orchestrator as orch
         return orch.AgentDef(
-            agent="05_execute/coder",
-            phase="05_execute",
+            agent="03_execute/coder",
+            phase="03_execute",
             objects=["issue"],
             trigger={},
             dependencies=[],
@@ -1153,7 +1155,7 @@ class TestPromoteGatedAgents:
 
     def test_non_gated_agent_skipped(self):
         """Agents without human_gate_after are not touched."""
-        agent = _make_agent_def("05_execute/coder")  # human_gate_after=False
+        agent = _make_agent_def("03_execute/coder")  # human_gate_after=False
         wi = self._work_item()
         gh = MagicMock()
         labels = {agent.review_label, agent.complete_label}
@@ -1191,6 +1193,68 @@ class TestPromoteGatedAgents:
 
 
 # ---------------------------------------------------------------------------
+# --phases flag: phase-scoped agent filtering
+# ---------------------------------------------------------------------------
+
+class TestPhasesFilter:
+    """Verify --phases restricts which agents the orchestrator evaluates."""
+
+    def test_phases_flag_filters_agents_to_allowed_set(self):
+        """Agents outside --phases are excluded before the main loop."""
+        from pipeline_orchestrator import load_pipeline
+        from pathlib import Path
+
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        if not pipeline_path.exists():
+            pytest.skip("pipeline.json not available")
+
+        agents, _ = load_pipeline(pipeline_path)
+        all_phases = {a.phase for a in agents}
+        target_phase = next(iter(sorted(all_phases)))
+
+        filtered = [a for a in agents if a.phase in {target_phase}]
+        assert filtered
+        assert all(a.phase == target_phase for a in filtered)
+
+    def test_phases_flag_all_phases_passes_all_agents(self):
+        """Filtering with the full phase set returns every agent unchanged."""
+        from pipeline_orchestrator import load_pipeline
+        from pathlib import Path
+
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        if not pipeline_path.exists():
+            pytest.skip("pipeline.json not available")
+
+        agents, _ = load_pipeline(pipeline_path)
+        all_phases = {a.phase for a in agents}
+        filtered = [a for a in agents if a.phase in all_phases]
+        assert filtered == agents
+
+    def test_workflow_split_phases_are_non_overlapping_and_complete(self):
+        """The two workflow job phase sets must cover all pipeline phases with no overlap."""
+        pre_execute = {"00_ondemand", "01_product_docs", "02_design"}
+        execute = {"03_execute", "04_evaluate", "05_continuous"}
+
+        assert pre_execute.isdisjoint(execute), "Phase sets must not overlap"
+
+        from pipeline_orchestrator import load_pipeline
+        from pathlib import Path
+
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        if not pipeline_path.exists():
+            pytest.skip("pipeline.json not available")
+
+        agents, _ = load_pipeline(pipeline_path)
+        all_pipeline_phases = {a.phase for a in agents}
+        union = pre_execute | execute
+        uncovered = all_pipeline_phases - union
+        assert not uncovered, (
+            f"Pipeline phases not covered by either workflow job: {uncovered}. "
+            "Add them to pre_execute or execute in orchestrator.yml."
+        )
+
+
+# ---------------------------------------------------------------------------
 # QA-001: TestHandleReviewLoop
 # ---------------------------------------------------------------------------
 
@@ -1199,8 +1263,8 @@ class TestHandleReviewLoop:
 
     def _reviewer_def(
         self,
-        reviewer: str = "05_execute/pr-reviewer",
-        target: str = "05_execute/coder",
+        reviewer: str = "03_execute/pr-reviewer",
+        target: str = "03_execute/coder",
         max_cycles: int = 3,
     ) -> AgentDef:
         return AgentDef(
@@ -1218,7 +1282,7 @@ class TestHandleReviewLoop:
             },
         )
 
-    def _target_def(self, name: str = "05_execute/coder") -> AgentDef:
+    def _target_def(self, name: str = "03_execute/coder") -> AgentDef:
         return AgentDef(
             agent=name,
             phase=name.split("/")[0],
@@ -1293,7 +1357,7 @@ class TestHandleReviewLoop:
 
     def test_unknown_re_invoke_returns_labels_unchanged(self):
         """If re_invoke target is not in pipeline_map, labels are returned unchanged."""
-        reviewer = self._reviewer_def(target="05_execute/nonexistent")
+        reviewer = self._reviewer_def(target="03_execute/nonexistent")
         wi = self._work_item()
         gh = MagicMock()
         pipeline_map = {}  # target not present
@@ -1360,12 +1424,12 @@ class TestWriteAuditLog:
         )
         event = _make_audit_event(
             "sess-123", "agent.complete", "test/repo",
-            work_item=wi, agent="05_execute/coder",
+            work_item=wi, agent="03_execute/coder",
             outcome_status="ok",
         )
         assert event["event_type"] == "agent.complete"
         assert event["session_id"] == "sess-123"
-        assert event["agent"] == "05_execute/coder"
+        assert event["agent"] == "03_execute/coder"
         assert event["outcome"]["status"] == "ok"
         assert event["object"]["kind"] == "issue"
         assert event["object"]["id"] == 42

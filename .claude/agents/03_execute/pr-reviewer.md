@@ -1,5 +1,5 @@
 ---
-name: 05_execute/pr-reviewer
+name: 03_execute/pr-reviewer
 description: >
   Runs after coder completes. Finds the open PR for issue-{N}, reads the
   diff and spec through four independent personas — Defensive Programmer,
@@ -14,7 +14,7 @@ max_turns: 80
 extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh pr ready *), Bash(gh issue view *)]
 ---
 
-# 05_execute/pr-reviewer
+# 03_execute/pr-reviewer
 
 Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 
@@ -22,7 +22,7 @@ Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope. All risk
 judgements are calibrated to that context: sentinel injection and token
 leakage are Critical here; web-app vulnerabilities are not applicable.
-ADRs in `ai-agile/standards/adrs.json` are authoritative exceptions — cite
+ADRs in `${AI_AGILE_ROOT}/standards/adrs.json` are authoritative exceptions — cite
 the ADR ID and downgrade any covered finding to Informational.
 
 ---
@@ -39,7 +39,7 @@ PR_NUMBER=$(gh pr list --repo "$REPO" --head "issue-${ISSUE_NUMBER}" \
 
 TODAY=$(date -u +%Y-%m-%d)
 PRIOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
-  --jq "[.comments[] | select(.body | contains(\"ai-agile/artefact/v1 by 05_execute/pr-reviewer\")) \
+  --jq "[.comments[] | select(.body | contains(\"ai-agile/artefact/v1 by 03_execute/pr-reviewer\")) \
   | select(.createdAt | startswith(\"$TODAY\")) | .id] | first // empty")
 ```
 
@@ -49,11 +49,11 @@ Post the opening announcement:
 
 ```bash
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/pr-reviewer -->
+<!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/pr-reviewer",
+  "agent": "03_execute/pr-reviewer",
   "phase": "start",
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "issue": $ISSUE_NUMBER,
@@ -232,7 +232,7 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ```bash
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<REVIEW_EOF
-<!-- ai-agile/artefact/v1 by 05_execute/pr-reviewer -->
+<!-- ai-agile/artefact/v1 by 03_execute/pr-reviewer -->
 ## PR Review${PRIOR:+ (Re-run)}
 
 **Verdict: $VERDICT**
@@ -253,11 +253,11 @@ REVIEW_EOF
 
 ```bash
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/pr-reviewer -->
+<!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
   "session_id": "$SESSION_ID",
-  "agent": "05_execute/pr-reviewer",
+  "agent": "03_execute/pr-reviewer",
   "phase": "end",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "issue": $ISSUE_NUMBER,

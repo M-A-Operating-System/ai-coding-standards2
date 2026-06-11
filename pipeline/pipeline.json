@@ -69,8 +69,8 @@
     },
 
     {
-      "agent": "05_execute/coder",
-      "phase": "05_execute",
+      "agent": "03_execute/coder",
+      "phase": "03_execute",
       "object": ["issue"],
       "trigger": {
         "label": "prd-docs-updater:complete"
@@ -87,16 +87,16 @@
     },
 
     {
-      "agent": "05_execute/ci-gate",
+      "agent": "03_execute/ci-gate",
       "type": "script",
       "script": ".github/scripts/ci-gate.sh",
-      "phase": "05_execute",
+      "phase": "03_execute",
       "object": ["issue"],
       "trigger": {
         "label": "coder:complete"
       },
       "human_gate_after": false,
-      "dependencies": ["05_execute/coder"],
+      "dependencies": ["03_execute/coder"],
       "max_retries": 1,
       "exclude_classifications": ["spike"],
       "script_timeout_seconds": 900,
@@ -104,8 +104,8 @@
     },
 
     {
-      "agent": "05_execute/merge-conflict",
-      "phase": "05_execute",
+      "agent": "03_execute/merge-conflict",
+      "phase": "03_execute",
       "object": ["issue"],
       "trigger": {
         "label": "ci-gate:complete"
@@ -113,7 +113,7 @@
       "human_gate_after": true,
       "human_gate_label": "merge-conflict:approved",
       "auto_approve_on_complete": true,
-      "dependencies": ["05_execute/ci-gate"],
+      "dependencies": ["03_execute/ci-gate"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "exclude_classifications": ["spike"],
@@ -121,21 +121,21 @@
     },
 
     {
-      "agent": "05_execute/pr-reviewer",
-      "phase": "05_execute",
+      "agent": "03_execute/pr-reviewer",
+      "phase": "03_execute",
       "object": ["issue"],
       "trigger": {
         "label": "merge-conflict:complete"
       },
       "human_gate_after": false,
-      "dependencies": ["05_execute/merge-conflict"],
+      "dependencies": ["03_execute/merge-conflict"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "exclude_classifications": ["spike"],
       "review_loop": {
-        "re_invoke": "05_execute/coder",
+        "re_invoke": "03_execute/coder",
         "max_cycles": 3,
-        "also_clear": ["05_execute/ci-gate", "05_execute/merge-conflict"]
+        "also_clear": ["03_execute/ci-gate", "03_execute/merge-conflict"]
       },
       "git_ops": {
         "commit_after": false,
@@ -145,8 +145,8 @@
     },
 
     {
-      "agent": "09_gap_assessment/codebase-reviewer",
-      "phase": "09_gap_assessment",
+      "agent": "00_ondemand/codebase-reviewer",
+      "phase": "00_ondemand",
       "object": ["issue"],
       "trigger": {
         "label": "codebase-reviewer:requested"

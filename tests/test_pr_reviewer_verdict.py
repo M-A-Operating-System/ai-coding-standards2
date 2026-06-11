@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
-PR_REVIEWER_MD = REPO_ROOT / ".claude" / "agents" / "05_execute" / "pr-reviewer.md"
+PR_REVIEWER_MD = REPO_ROOT / ".claude" / "agents" / "03_execute" / "pr-reviewer.md"
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
 
 VERDICT_APPROVE = "APPROVE"
@@ -37,7 +37,7 @@ def _load_pipeline_json() -> dict:
 def _find_pr_reviewer_entry(pipeline: dict) -> dict:
     def search(obj):
         if isinstance(obj, dict):
-            if obj.get("agent") == "05_execute/pr-reviewer":
+            if obj.get("agent") == "03_execute/pr-reviewer":
                 return obj
             for v in obj.values():
                 result = search(v)
@@ -50,7 +50,7 @@ def _find_pr_reviewer_entry(pipeline: dict) -> dict:
                     return result
         return None
     entry = search(pipeline)
-    assert entry is not None, "05_execute/pr-reviewer not found in pipeline.json"
+    assert entry is not None, "03_execute/pr-reviewer not found in pipeline.json"
     return entry
 
 

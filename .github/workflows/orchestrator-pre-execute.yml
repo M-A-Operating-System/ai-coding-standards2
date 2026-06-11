@@ -1,8 +1,18 @@
-name: Pipeline Orchestrator
+name: Pipeline Orchestrator (pre-execute)
+
+# Runs phases: 00_ondemand, 01_product_docs, 02_design
+# These agents only post comments, rewrite issue bodies, and apply labels.
+# contents:read means a compromised agent cannot push code to the repo even
+# if a prompt-injection attack succeeds.
+#
+# Trade-off: audit-log events from these phases are dropped because the
+# GitHub Contents API requires contents:write. The exception is caught and
+# logged as a warning by the orchestrator.
+#
+# Security note: if you are running this pipeline on a public repository,
+# see docs/product/agile/README.md for the full security guidance.
 
 on:
-  # Issue lifecycle events — opened/reopened brings new work in;
-  # labeled/unlabeled is the primary advance trigger.
   issues:
     types: [opened, reopened, labeled, unlabeled]
   pull_request:
@@ -23,23 +33,23 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
   issues: write
   pull-requests: write
   checks: read
 
-# Only one orchestrator run at a time. A second trigger queues and runs
-# after the first completes — prevents two runs from both seeing an agent
-# as not-:wip and invoking it concurrently.
+# Only one pre-execute run at a time.
 concurrency:
-  group: pipeline-orchestrator
+  group: pipeline-pre-execute
   cancel-in-progress: false
 
 jobs:
-  ai-standards-orchestrator:
-    name: Evaluate pipeline state
+  pre-execute:
+    name: Evaluate pipeline state (pre-execute phases)
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      PIPELINE_PHASES: "00_ondemand,01_product_docs,02_design"
 
     steps:
       - name: Checkout
@@ -90,20 +100,13 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
-          GIT_TRACE: "1"
-          # Consuming repo root — agents resolve $AI_AGILE_ROOT/standards/
-          # and $AI_AGILE_ROOT/.claude/agents/ from here.
           AI_AGILE_ROOT: ${{ github.workspace }}
-          # ci-gate uses this to exclude all orchestrator check runs from its poll.
-          # List every job display name in this workflow (newline-separated).
-          # The live-query fallback in ci-gate.sh keeps this in sync automatically,
-          # but having it here avoids the extra API call and works even if the query fails.
-          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
-          # Pass step output via env var — safe shell variable, not an Actions expression
-          # interpolated into the run: body (which would be an injection vector).
+          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state (pre-execute phases)\nEvaluate pipeline state (execute phases)"
           ORCHESTRATOR_ARGS: ${{ steps.args.outputs.args }}
         run: |
+          read -ra EXTRA_ARGS <<< "$ORCHESTRATOR_ARGS"
           python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
             --verbose \
-            $ORCHESTRATOR_ARGS
+            --phases "$PIPELINE_PHASES" \
+            "${EXTRA_ARGS[@]}"

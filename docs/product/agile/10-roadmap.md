@@ -8,14 +8,14 @@ described in the rest of these docs.
 
 ## MVP scope
 
-The MVP covers Phases 1–7 of the per-ticket pipeline only. It does not include
-the continuous meta-loop phases (8, 9, 10), and it defers several agents and
+The MVP covers the per-ticket lifecycle phases (1–4) only. It does not include
+the continuous phase (5) with its meta-loops, and it defers several agents and
 gates that require the pipeline to be stable with real tickets before they can
 be tuned effectively.
 
 ### What ships in MVP
 
-All seven per-ticket phases (product docs through evaluate), with the agent
+All four per-ticket phases (product docs through evaluate), with the agent
 merges described below applied. The pipeline can take a ticket from a GitHub
 issue to a merged PR and a retrospective, with human gates at each step.
 
@@ -23,14 +23,14 @@ issue to a merged PR and a retrospective, with human gates at each step.
 
 | Out of scope | Reason |
 |---|---|
-| Phase 8 (Learn) | Requires audit log with ≥ 50 closed tickets to mine meaningfully |
-| Phase 9 (Gap assessment) | Requires multiple shipped product surfaces before drift is detectable |
-| Phase 10 (Tech debt) | Requires codebase mass and history for structural metrics |
+| Learn loop (`05_continuous`) | Requires audit log with ≥ 50 closed tickets to mine meaningfully |
+| Gap-assessment loop (`05_continuous`) | Requires multiple shipped product surfaces before drift is detectable |
+| Tech-debt loop (`05_continuous`) | Requires codebase mass and history for structural metrics |
 | `security-review:approved` gate (Persona 5) | Deferred until gate set is stable; Security Owner persona is defined but not gated in MVP |
 | `data-migration:approved` gate (Persona 6) | Deferred until gate set is stable; Data Owner persona is defined but not gated in MVP |
 | `super-issue-grouper` agent | Humans manually group small tickets for MVP |
 | XL `issue-decomposer` agent | Humans manually decompose XL tickets for MVP |
-| Phase 8 prompt mutation | Agent prompts are edited manually by the standards owner in MVP |
+| Prompt mutation (Learn loop) | Agent prompts are edited manually by the standards owner in MVP |
 | Cross-issue concurrency cap enforcement | Manual for MVP; the risk is accepted |
 | Per-agent cost/budget hard limits | Tracked aspirationally; not enforced by the orchestrator in MVP |
 | Comment-edit auditing | Audit log captures label events; comment edits are not snapshotted in MVP |
@@ -97,7 +97,8 @@ running. This is the baseline from which Phase 1 is built.
 
 ### Phase 1 — Core loop
 
-**Covers.** Per-ticket phases 1–5 (product docs through execute).
+**Covers.** Per-ticket lifecycle phases 1–3 (product docs through execute,
+excluding test generation).
 
 **Agents.** `issue-classifier`, `prd-writer` (with `product-standards-checker`
 merged in), `ticket-sizer`, `architect` (with `adr-proposer` merged in),
@@ -116,7 +117,8 @@ intervention.
 
 ### Phase 2 — Quality layer
 
-**Covers.** Per-ticket phases 3 and 6 (testing spec and test).
+**Covers.** The testing-spec artefact of the Design phase (2) and the test
+half of the Execute phase (3).
 
 **Adds.** `test-spec-writer`, `test-coverage-auditor`, `test-writer`,
 `test-runner` (with `coverage-enforcer` merged in), `migration-validator`.
@@ -134,7 +136,7 @@ migrations are validated before merge.
 
 ### Phase 3 — Close the loop
 
-**Covers.** Per-ticket phase 7 (evaluate) and standards evolution.
+**Covers.** Per-ticket lifecycle phase 4 (evaluate) and standards evolution.
 
 **Adds.** `release-noter`, `retrospective-writer`, `standards-evolver`.
 
@@ -149,12 +151,13 @@ direct result of retrospective findings processed by `standards-evolver`.
 
 ### Phase 4 — Continuous phases
 
-**Covers.** Phases 8, 9, and 10 (Learn, Gap assessment, Tech debt).
+**Covers.** Lifecycle phase 5 (`05_continuous`) — the Learn,
+Gap-assessment, and Tech-debt loops.
 
 **Adds.** `metrics-aggregator`, `pipeline-tuner`, `prompt-tuner`,
-`knowledge-curator`, `process-reviewer` (Phase 8); `gap-assessor`,
-`vision-aligner`, `gap-curator` (Phase 9); `debt-finder`, `adr-revisitor`,
-`debt-curator` (Phase 10).
+`knowledge-curator`, `process-reviewer` (Learn loop); `gap-assessor`,
+`vision-aligner`, `gap-curator` (Gap-assessment loop); `debt-finder`,
+`adr-revisitor`, `debt-curator` (Tech-debt loop).
 
 **Prerequisite.** Phase 3 has been stable for at least one quarter and the
 audit log contains at least 50 closed tickets. These phases mine data; without
@@ -182,8 +185,9 @@ tickets) is additive, not a replacement.
 
 ## Relationship to the full design
 
-The rest of these docs describe the **target state** — all ten phases, all
-22 agents, all personas including Security Owner and Data Owner gates. This
+The rest of these docs describe the **target state** — all five lifecycle
+phases, all 22 agents, all personas including Security Owner and Data Owner
+gates. This
 roadmap describes how to get there incrementally. Nothing in the target-state
 docs is retracted; the MVP simply defers parts of it. When a deferred item is
 implemented it is added to `pipeline.json` following the normal change process
