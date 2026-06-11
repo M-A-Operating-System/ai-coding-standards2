@@ -59,34 +59,34 @@ post_comment() {
 # because names are stable across all runs of the same workflow.
 
 declare -A seen_names=()
-KEEP_FILTER=""
+EXCLUDE_NAMES='[]'  # JSON array of job names to exclude — passed via --argjson to jq
+
+_add_excluded_name() {
+    local name="$1"
+    [[ -z "$name" || -v "seen_names[$name]" ]] && return
+    seen_names["$name"]=1
+    # Build the JSON array incrementally via jq — names are args, never interpolated
+    # into jq source code, so crafted job names cannot inject jq expressions.
+    EXCLUDE_NAMES="$(jq -n --argjson arr "$EXCLUDE_NAMES" --arg name "$name" '$arr + [$name]')"
+}
 
 # 1. Explicit list from workflow env (most reliable — no API call required)
 if [[ -n "${CI_GATE_EXCLUDE_JOB_NAMES:-}" ]]; then
     while IFS= read -r name; do
-        [[ -z "$name" || -v "seen_names[$name]" ]] && continue
-        seen_names["$name"]=1
-        escaped="$(printf '%s' "$name" | jq -Rs .)"
-        KEEP_FILTER="${KEEP_FILTER:+${KEEP_FILTER} and }.name != ${escaped}"
+        _add_excluded_name "$name"
     done <<<"$CI_GATE_EXCLUDE_JOB_NAMES"
 fi
 
 # 2. Live query — picks up any jobs not yet listed in CI_GATE_EXCLUDE_JOB_NAMES
 if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
     while IFS= read -r name; do
-        [[ -z "$name" || -v "seen_names[$name]" ]] && continue
-        seen_names["$name"]=1
-        escaped="$(printf '%s' "$name" | jq -Rs .)"
-        KEEP_FILTER="${KEEP_FILTER:+${KEEP_FILTER} and }.name != ${escaped}"
+        _add_excluded_name "$name"
     done < <(gh api "/repos/${REPO}/actions/runs/${GITHUB_RUN_ID}/jobs" \
         --jq '.jobs[].name' 2>/dev/null || true)
 fi
 
-# If neither source produced any names, keep all (fail-open — better than deadlock)
-[[ -z "$KEEP_FILTER" ]] && KEEP_FILTER='true'
-
 log "GITHUB_RUN_ID=${GITHUB_RUN_ID:-<not set>}"
-log "exclude filter: ${KEEP_FILTER}"
+log "exclude list: ${EXCLUDE_NAMES}"
 log "excluded job names: ${!seen_names[*]:-<none>}"
 
 # ── locate PR ────────────────────────────────────────────────────────────────
@@ -127,10 +127,10 @@ while true; do
             || echo '[]')"
 
         post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "blocked",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",
@@ -164,7 +164,11 @@ EOF
     fi
 
     # ── apply exclusion filter ────────────────────────────────────────────────
-    CHECK_JSON="$(jq -rs "[.[] | select(${KEEP_FILTER})][]" <<<"${RAW_JSON:-[]}" 2>/dev/null || true)"
+    # Pass the exclusion list via --argjson so job names are never interpolated
+    # into jq source code (prevents crafted names from injecting jq expressions).
+    CHECK_JSON="$(jq -rs --argjson excl "$EXCLUDE_NAMES" \
+        '[.[] | select(.name as $n | ($excl | index($n)) == null)][]' \
+        <<<"${RAW_JSON:-[]}" 2>/dev/null || true)"
 
     raw_count=0
     [[ -n "$RAW_JSON" ]] && raw_count="$(jq -rs 'length' <<<"$RAW_JSON" 2>/dev/null || echo 0)"
@@ -181,10 +185,10 @@ EOF
         if (( empty_polls >= NO_CHECKS_GRACE )); then
             log "  → grace period exhausted — no CI configured, passing through"
             post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "complete",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",
@@ -229,10 +233,10 @@ EOF
     if (( FAILED > 0 )); then
         log "RESULT: ${FAILED} check(s) failed"
         post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "review",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",
@@ -247,10 +251,10 @@ EOF
     else
         log "RESULT: all ${TOTAL} check(s) passed"
         post_comment "$PR_NUMBER" "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 05_execute/ci-gate -->
+<!-- ai-agile/announcement/v1 by 03_execute/ci-gate -->
 \`\`\`json
 {
-  "agent": "05_execute/ci-gate",
+  "agent": "03_execute/ci-gate",
   "outcome": "complete",
   "pr": ${PR_NUMBER},
   "sha": "${HEAD_SHA}",
