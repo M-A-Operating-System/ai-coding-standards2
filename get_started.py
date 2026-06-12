@@ -566,7 +566,7 @@ def add_gitignore_entries(
         print(f"  SKIP   .gitignore  (all entries already present)")
         return 0
 
-    header = "# Managed by get_started.py — re-created by sync-claude.yml; do not commit"
+    header = "# Managed by get_started.py — do not commit these paths manually; sync-claude.yml is the authoritative committer"
     needs_header = header not in existing_lines
     block = (
         ("\n" + header + "\n" if needs_header else "\n")

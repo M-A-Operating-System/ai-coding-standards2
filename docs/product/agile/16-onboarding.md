@@ -21,7 +21,7 @@ root performs the following steps:
 | Install standards | Copies `standards/*.json` (excluding schema files) into the consuming repo's `standards/` |
 | Add .gitignore entries | Marks copied/symlinked paths as gitignored to prevent accidental commits on Windows |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
-| Write settings | Creates `.claude/settings.local.json` with `AI_AGILE_ROOT` pointing at the submodule |
+| Write settings | Creates `.claude/settings.local.json` with `AI_AGILE_ROOT=.` (consuming repo root) so agents resolve `standards/` and `.claude/agents/` from the repo root |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
@@ -32,10 +32,10 @@ Use `--force` to overwrite existing files; `--dry-run` to preview without writin
 
 | Aspect | Linux / macOS | Windows |
 |---|---|---|
-| `.claude/agents` | Relative directory symlink committed as a tiny git blob | Individual file copies — gitignored |
-| `.claude/commands/` | Gitignored (sync workflow is the authoritative committer) | Gitignored |
-| `standards/` | Gitignored | Gitignored |
-| Bootstrap path | Run `get_started.py`, commit, push | Two-step (see below) |
+| `.claude/agents` | Relative directory symlink — committed via sync-claude.yml as a tiny git blob | Individual file copies — gitignored |
+| `.claude/commands/` | Gitignored — committed via sync-claude.yml | Gitignored — committed via sync-claude.yml |
+| `standards/` | Base files gitignored (`adrs.json` stays committed) | Base files gitignored (`adrs.json` stays committed) |
+| Bootstrap path | Two-step: seed commit on Linux, then trigger sync-claude.yml | Two-step: seed commit on Windows, then trigger sync-claude.yml |
 
 ### Why the split?
 
@@ -61,7 +61,9 @@ Run `get_started.py` on Windows. It will:
 
 Commit only the seed files:
 ```
-git add .github/workflows/ .gitignore
+git add .gitmodules ai-coding-standards2 \
+        .github/workflows/ \
+        .gitignore
 git commit -m "chore: add ai-coding-standards2 submodule and seed workflows"
 git push
 ```

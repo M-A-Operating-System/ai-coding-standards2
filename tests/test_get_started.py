@@ -121,7 +121,7 @@ class TestInstallStandards:
 
 
 # ---------------------------------------------------------------------------
-# TestInstallAgentsWindows — copy behaviour (simulated via os.name = "nt")
+# TestInstallAgentsWindows — copy behaviour (simulated via sys.platform == "win32")
 # ---------------------------------------------------------------------------
 
 class TestInstallAgentsWindows:

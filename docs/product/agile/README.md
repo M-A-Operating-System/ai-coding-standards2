@@ -28,7 +28,6 @@ evolve them as the system matures.
 | 11 | [Orchestrator](11-orchestrator.md) | Python orchestrator technical design, decision logic, and GitHub Actions workflows |
 | 12 | [Agent specification](12-agent-spec.md) | Required shape of an agent prompt file: frontmatter, body sections, tool allowlist |
 | 13 | [Todos](13-todos.md) | How tasks are stored in issue/PR bodies, with ISO 8601 timestamps |
-| 14 | [Standards](14-standards.md) | Two-tier standards structure, category taxonomy, enforcement model, ADR scoping |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires the submodule; Linux symlink vs Windows copy; Windows two-step bootstrap; daily sync workflow |
 
 ## Generated views

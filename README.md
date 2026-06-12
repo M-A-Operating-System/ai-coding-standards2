@@ -54,16 +54,12 @@ tag or specific commit when you're ready to control upgrades.
 python ai-coding-standards2/get_started.py
 ```
 
-This script handles the full wiring in one step — see
+This script does the local wiring — dropping workflows, creating the symlink
+or copies, and writing `.gitignore` entries. On Windows a second step (triggering
+`sync-claude.yml`) is needed to finish building and committing the managed paths
+via a Linux runner. See
 [`docs/product/agile/16-onboarding.md`](docs/product/agile/16-onboarding.md)
-for the complete breakdown of what it does. In brief:
-
-- On **Linux/macOS**: creates a relative directory symlink `.claude/agents → submodule/.claude/agents`
-- On **Windows**: copies agent files individually (all managed paths are gitignored so copies are never committed)
-- Drops orchestrator workflows into `.github/workflows/` and slash commands into `.claude/commands/`
-- Adds `.gitignore` entries for all managed paths and removes any previously-tracked copies from the git index
-
-Re-run with `--force` to overwrite existing files; with `--dry-run` to preview.
+for the full two-step breakdown.
 
 ### 3. Bootstrap the labels
 
