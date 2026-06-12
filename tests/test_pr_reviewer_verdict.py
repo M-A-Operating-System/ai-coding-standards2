@@ -10,8 +10,9 @@ Gherkin scenarios traced:
 """
 import json
 import re
-import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 PR_REVIEWER_MD = REPO_ROOT / ".claude" / "agents" / "03_execute" / "pr-reviewer.md"
@@ -21,6 +22,14 @@ VERDICT_APPROVE = "APPROVE"
 VERDICT_REQUEST_CHANGES = "REQUEST_CHANGES"
 THRESHOLD_SEVERITIES = ("Critical", "High", "Medium")
 PASS_THROUGH_SEVERITIES = ("Low", "Informational")
+
+# The severity → verdict partition under test. Critical/High/Medium must drive
+# REQUEST_CHANGES; Low/Informational must drive APPROVE. Tested as a whole so the
+# partition can never silently lose a severity.
+SEVERITY_VERDICT_MAP = (
+    [(sev, VERDICT_REQUEST_CHANGES) for sev in THRESHOLD_SEVERITIES]
+    + [(sev, VERDICT_APPROVE) for sev in PASS_THROUGH_SEVERITIES]
+)
 
 
 def _load_pr_reviewer_text() -> str:
@@ -66,85 +75,126 @@ def _extract_frontmatter_description(text: str) -> str:
     return match.group(1)
 
 
-class TestScenarioMediumTriggersRequestChanges:
-    """Scenario: Medium finding triggers REQUEST_CHANGES"""
+def _request_changes_rule_line(section: str) -> str:
+    """Return the single REQUEST CHANGES rule line from the verdict section."""
+    lines = [
+        l.strip()
+        for l in section.splitlines()
+        if "REQUEST CHANGES" in l or "REQUEST_CHANGES" in l
+    ]
+    assert lines, "No REQUEST CHANGES line found in Step 8"
+    # The threshold rule is the line that enumerates the blocking severities; pick
+    # the one mentioning the highest severity so we test the rule, not prose.
+    rule = next((l for l in lines if "Critical" in l), lines[0])
+    return rule
 
-    def test_verdict_section_includes_medium_in_request_changes(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        assert "Medium" in section, (
-            "Step 8 verdict section must mention Medium in the REQUEST_CHANGES rule"
-        )
-        lines = [l.strip() for l in section.splitlines() if "REQUEST CHANGES" in l or "REQUEST_CHANGES" in l]
-        assert lines, "No REQUEST CHANGES line found in Step 8"
-        combined = " ".join(lines)
-        assert "Medium" in combined, (
-            f"REQUEST CHANGES rule must include Medium; got: {combined!r}"
+
+def _approve_rule_line(section: str) -> str:
+    """Return the single APPROVE rule line from the verdict section."""
+    lines = [l.strip() for l in section.splitlines() if "APPROVE" in l]
+    assert lines, "No APPROVE line found in Step 8"
+    rule = next(
+        (l for l in lines if "Low" in l or "Informational" in l),
+        lines[0],
+    )
+    return rule
+
+
+class TestVerdictRuleOrderedStructure:
+    """The verdict rules must enumerate severities in order before the arrow.
+
+    Substring presence (``"Medium" in section``) passes for the wrong reason —
+    the word could appear anywhere. These assert the ordered shape of each rule:
+    severities listed (in canonical order) before the verdict they map to.
+    """
+
+    def test_request_changes_rule_lists_severities_before_arrow(self):
+        section = _extract_verdict_section(_load_pr_reviewer_text())
+        rule = _request_changes_rule_line(section)
+        assert re.search(r"Critical.*High.*Medium.*REQUEST", rule), (
+            "REQUEST CHANGES rule must list Critical, High, AND Medium (in that "
+            f"order) before the verdict; got: {rule!r}"
         )
 
-    def test_medium_not_in_approve_rule(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        approve_lines = [l.strip() for l in section.splitlines() if "APPROVE" in l]
-        assert approve_lines, "No APPROVE line found in Step 8"
-        for line in approve_lines:
-            assert "Medium" not in line, (
-                f"APPROVE rule must not include Medium; offending line: {line!r}"
+    def test_approve_rule_lists_severities_before_arrow(self):
+        section = _extract_verdict_section(_load_pr_reviewer_text())
+        rule = _approve_rule_line(section)
+        assert re.search(r"Low.*Informational.*APPROVE", rule), (
+            "APPROVE rule must list Low AND Informational (in that order) before "
+            f"the verdict; got: {rule!r}"
+        )
+
+    def test_request_changes_rule_excludes_pass_through_severities(self):
+        section = _extract_verdict_section(_load_pr_reviewer_text())
+        rule = _request_changes_rule_line(section)
+        for sev in PASS_THROUGH_SEVERITIES:
+            assert sev not in rule, (
+                f"REQUEST CHANGES rule must not include {sev}; got: {rule!r}"
+            )
+
+    def test_approve_rule_excludes_threshold_severities(self):
+        section = _extract_verdict_section(_load_pr_reviewer_text())
+        rule = _approve_rule_line(section)
+        for sev in THRESHOLD_SEVERITIES:
+            assert sev not in rule, (
+                f"APPROVE rule must not include {sev}; got: {rule!r}"
             )
 
 
-class TestScenarioOnlyLowOrInformationalYieldsApprove:
-    """Scenario: Only Low or Informational findings yield APPROVE"""
+class TestSeverityVerdictPartition:
+    """The severity → verdict partition, exercised as a mapping table.
 
-    def test_verdict_section_approve_includes_low(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        approve_lines = [l.strip() for l in section.splitlines() if "APPROVE" in l]
-        assert approve_lines, "No APPROVE line found in Step 8"
-        combined = " ".join(approve_lines)
-        assert "Low" in combined, (
-            f"APPROVE rule must include Low severity; got: {combined!r}"
+    Each severity must appear on the rule line for exactly the verdict it maps
+    to, and be absent from the opposite rule. Parametrizing over
+    ``SEVERITY_VERDICT_MAP`` tests the partition as a whole rather than one
+    severity at a time.
+    """
+
+    @pytest.mark.parametrize("severity,verdict", SEVERITY_VERDICT_MAP)
+    def test_severity_maps_to_expected_verdict(self, severity, verdict):
+        section = _extract_verdict_section(_load_pr_reviewer_text())
+        if verdict == VERDICT_REQUEST_CHANGES:
+            target = _request_changes_rule_line(section)
+            other = _approve_rule_line(section)
+        else:
+            target = _approve_rule_line(section)
+            other = _request_changes_rule_line(section)
+        assert severity in target, (
+            f"{severity} must appear on the {verdict} rule; got: {target!r}"
+        )
+        assert severity not in other, (
+            f"{severity} must not appear on the opposing rule; got: {other!r}"
         )
 
-    def test_verdict_section_approve_includes_informational(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        approve_lines = [l.strip() for l in section.splitlines() if "APPROVE" in l]
-        combined = " ".join(approve_lines)
-        assert "Informational" in combined, (
-            f"APPROVE rule must include Informational severity; got: {combined!r}"
+
+class TestAdrDowngradeCarveOut:
+    """The trickiest verdict branch: ADR-downgraded findings never block APPROVE.
+
+    pr-reviewer.md Step 8 carries a carve-out line stating that findings an ADR
+    downgrades to Informational do not count toward the REQUEST_CHANGES
+    threshold. This branch is otherwise untested.
+    """
+
+    def test_adr_downgrade_does_not_block_approve(self):
+        section = _extract_verdict_section(_load_pr_reviewer_text())
+        adr_lines = [
+            l.strip()
+            for l in section.splitlines()
+            if "ADR" in l and "Informational" in l
+        ]
+        assert adr_lines, (
+            "Step 8 must carry an ADR-downgrade carve-out line mentioning "
+            "Informational (e.g. 'ADR-covered findings downgraded to "
+            "Informational never block APPROVE')"
         )
-
-    def test_low_not_in_request_changes_rule(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        rc_lines = [l.strip() for l in section.splitlines() if "REQUEST CHANGES" in l or "REQUEST_CHANGES" in l]
-        for line in rc_lines:
-            assert "Low" not in line, (
-                f"REQUEST CHANGES rule must not include Low; offending line: {line!r}"
-            )
-
-
-class TestScenarioCriticalHighContinueTrigger:
-    """Scenario: Critical and High findings continue to trigger REQUEST_CHANGES"""
-
-    def test_critical_in_request_changes_rule(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        rc_lines = [l.strip() for l in section.splitlines() if "REQUEST CHANGES" in l or "REQUEST_CHANGES" in l]
-        assert rc_lines, "No REQUEST CHANGES line found in Step 8"
-        combined = " ".join(rc_lines)
-        assert "Critical" in combined, (
-            f"REQUEST CHANGES rule must include Critical; got: {combined!r}"
+        combined = " ".join(adr_lines)
+        assert "APPROVE" in combined, (
+            "ADR carve-out must state the downgrade never blocks APPROVE; got: "
+            f"{combined!r}"
         )
-
-    def test_high_in_request_changes_rule(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        rc_lines = [l.strip() for l in section.splitlines() if "REQUEST CHANGES" in l or "REQUEST_CHANGES" in l]
-        combined = " ".join(rc_lines)
-        assert "High" in combined, (
-            f"REQUEST CHANGES rule must include High; got: {combined!r}"
+        assert re.search(r"never block", combined, re.IGNORECASE), (
+            "ADR carve-out must state downgraded findings 'never block' APPROVE; "
+            f"got: {combined!r}"
         )
 
 
@@ -160,13 +210,17 @@ class TestScenarioVerdictInClosingAnnouncement:
             'Step 10 closing JSON must contain a "verdict" field'
         )
 
-    def test_verdict_field_uses_verdict_variable(self):
+    def test_verdict_field_bound_to_a_variable(self):
+        # Presence of the field is covered by test_verdict_field_present_in_step10.
+        # Here we only assert the field is bound to *some* shell variable, without
+        # coupling to the exact variable name (which is an implementation detail).
         text = _load_pr_reviewer_text()
         step10_match = re.search(r"## Step 10 — Close(.+?)(?=\n---|\Z)", text, re.DOTALL)
         assert step10_match
         step10 = step10_match.group(1)
-        assert '"verdict": "$VERDICT"' in step10, (
-            'verdict field must be set to "$VERDICT" in Step 10 JSON'
+        assert re.search(r'"verdict":\s*"\$\{?\w+\}?"', step10), (
+            'verdict field must be bound to a shell variable (e.g. "$VERDICT") '
+            "in the Step 10 closing JSON"
         )
 
 

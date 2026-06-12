@@ -1268,6 +1268,65 @@ def _extract_usage_from_result_event(event: dict) -> tuple[Optional[int], Option
     return input_tok, output_tok
 
 
+class _StreamAccumulator:
+    """Accumulates agent text and token usage from stream-json CLI lines.
+
+    A single line at a time is fed via ``feed()``. Both the live
+    ``invoke_agent`` read loop and the batch ``_accumulate_stream_text``
+    helper drive the same ``feed()`` logic, so tests that exercise the
+    batch form cover the exact parsing the production loop uses.
+    """
+
+    __slots__ = ("text_parts", "input_tokens", "output_tokens")
+
+    def __init__(self) -> None:
+        self.text_parts: list[str] = []
+        self.input_tokens: Optional[int] = None
+        self.output_tokens: Optional[int] = None
+
+    def feed(self, line: str) -> None:
+        """Parse one stream-json line, collecting text and (last-wins) tokens.
+
+        Blank lines are ignored. A non-JSON line is kept as plain text so
+        CLI startup messages remain visible in diagnostics.
+        """
+        stripped = line.strip()
+        if not stripped:
+            return
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            self.text_parts.append(line.rstrip("\n"))
+            return
+        text = _extract_text_from_stream_event(event)
+        if text:
+            self.text_parts.append(text)
+        inp, out = _extract_usage_from_result_event(event)
+        if inp is not None:
+            self.input_tokens = inp
+        if out is not None:
+            self.output_tokens = out
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.text_parts)
+
+
+def _accumulate_stream_text(
+    lines: "Iterable[str]",
+) -> tuple[str, Optional[int], Optional[int]]:
+    """Batch form of the ``invoke_agent`` stream-json accumulation loop.
+
+    Parses each line as a stream-json event and returns
+    ``(agent_text, input_tokens, output_tokens)``. Shares ``feed()`` with
+    the live loop so it is a faithful stand-in for testing.
+    """
+    acc = _StreamAccumulator()
+    for line in lines:
+        acc.feed(line)
+    return acc.text, acc.input_tokens, acc.output_tokens
+
+
 def _build_opening_announcement(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -1704,9 +1763,7 @@ def invoke_agent(
     # raw lines (capped) so the tail can appear in diagnostic comments.
     MAX_CAPTURED_LINES = 5000
     captured_lines: list[str] = []       # raw NDJSON lines (for diagnostics)
-    agent_text_parts: list[str] = []     # text extracted from JSON events
-    result_input_tokens: Optional[int] = None
-    result_output_tokens: Optional[int] = None
+    acc = _StreamAccumulator()           # agent text + token usage from events
 
     proc: subprocess.Popen | None = None
     try:
@@ -1738,22 +1795,8 @@ def invoke_agent(
                 sys.stderr.write(line)
                 if len(captured_lines) < MAX_CAPTURED_LINES:
                     captured_lines.append(line)
-                stripped = line.strip()
-                if stripped:
-                    try:
-                        event = json.loads(stripped)
-                        text = _extract_text_from_stream_event(event)
-                        if text:
-                            agent_text_parts.append(text)
-                        inp, out = _extract_usage_from_result_event(event)
-                        if inp is not None:
-                            result_input_tokens = inp
-                        if out is not None:
-                            result_output_tokens = out
-                    except json.JSONDecodeError:
-                        # Non-JSON line from the CLI (startup messages, etc.);
-                        # include as plain text so diagnostics remain readable.
-                        agent_text_parts.append(line.rstrip("\n"))
+                # Shared with _accumulate_stream_text so tests cover this path.
+                acc.feed(line)
                 if time.monotonic() > deadline or _timed_out.is_set():
                     raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
             # Timer may have fired and drained stdout without triggering the
@@ -1765,7 +1808,7 @@ def invoke_agent(
         except subprocess.TimeoutExpired:
             log.error("    Agent %s timed out on #%d", agent_def.agent, work_item.number)
             _terminate_subprocess(proc)
-            agent_text = "\n".join(agent_text_parts)
+            agent_text = acc.text
             agent_tail = _captured_tail([l + "\n" for l in agent_text.splitlines()])
             return AgentRunResult(
                 success=False,
@@ -1774,8 +1817,8 @@ def invoke_agent(
                     f"Agent timed out after {AGENT_TIMEOUT_SECONDS}s.\n\n"
                     f"Last output:\n{agent_tail}"
                 ),
-                input_tokens=result_input_tokens,
-                output_tokens=result_output_tokens,
+                input_tokens=acc.input_tokens,
+                output_tokens=acc.output_tokens,
             )
         finally:
             _kill_timer.cancel()
@@ -1783,7 +1826,7 @@ def invoke_agent(
         # Build the agent's text output for sentinel and rate-limit detection.
         # Text is accumulated from assistant message events (incremental) and
         # the result event (final); the sentinel appears at the end of this text.
-        agent_text = "\n".join(agent_text_parts)
+        agent_text = acc.text
         agent_tail = _captured_tail([l + "\n" for l in agent_text.splitlines()])
 
         # On non-zero exit, check whether the cause was a rate-limit
@@ -1808,23 +1851,23 @@ def invoke_agent(
                     returncode=proc.returncode,
                     rate_limited=True,
                     captured_tail=agent_tail,
-                    input_tokens=result_input_tokens,
-                    output_tokens=result_output_tokens,
+                    input_tokens=acc.input_tokens,
+                    output_tokens=acc.output_tokens,
                 )
             return AgentRunResult(
                 success=False,
                 returncode=proc.returncode,
                 captured_tail=agent_tail,
-                input_tokens=result_input_tokens,
-                output_tokens=result_output_tokens,
+                input_tokens=acc.input_tokens,
+                output_tokens=acc.output_tokens,
             )
 
         return AgentRunResult(
             success=True,
             returncode=0,
             captured_tail=agent_tail,
-            input_tokens=result_input_tokens,
-            output_tokens=result_output_tokens,
+            input_tokens=acc.input_tokens,
+            output_tokens=acc.output_tokens,
         )
 
     except FileNotFoundError:
