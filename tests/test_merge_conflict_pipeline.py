@@ -10,19 +10,38 @@ Covers the five Gherkin acceptance criteria from issue #79:
 
 import sys
 import os
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 from pipeline_orchestrator import (
     AgentDef,
+    AgentRunResult,
     WorkItem,
     dependencies_complete,
+    load_pipeline,
+    pipeline_by_name,
+    process_work_item,
     promote_gated_agents,
     trigger_label_present,
     get_work_item_classification,
     _parse_agent_sentinel,
+    STATUS_COMPLETE,
 )
+
+PIPELINE_JSON_PATH = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+
+
+def _load_agent_from_pipeline(agent_name: str) -> AgentDef:
+    """Load a real AgentDef from pipeline.json via the production loader.
+
+    Used by trigger/dependency/exclusion/auto_approve assertions so they
+    verify the shipped configuration rather than a hand-built fixture that
+    the test itself populated (which would be tautological).
+    """
+    agents, _ = load_pipeline(PIPELINE_JSON_PATH)
+    return pipeline_by_name(agents)[agent_name]
 
 
 # ---------------------------------------------------------------------------
@@ -94,55 +113,88 @@ def _make_gh() -> MagicMock:
     return gh
 
 
+def merge_conflict_review_label() -> str:
+    """The merge-conflict :review label, derived from the real AgentDef."""
+    return _load_agent_from_pipeline("03_execute/merge-conflict").review_label
+
+
 # ---------------------------------------------------------------------------
 # Scenario 1: merge_conflict_agent_triggered_when_pr_has_conflicts_at_ready_for_review
 # ---------------------------------------------------------------------------
 
 class TestMergeConflictAgentTriggeredWhenPrHasConflicts:
-    """Verify the merge-conflict agent becomes eligible when ci-gate:complete is on the issue."""
+    """Verify the merge-conflict agent becomes eligible when ci-gate:complete is on the issue.
+
+    Trigger / dependency / exclusion assertions load the real AgentDef from
+    pipeline.json so they verify the shipped configuration, not a literal the
+    test itself wrote into a hand-built fixture.
+    """
+
+    def test_fixture_matches_pipeline_json(self):
+        """Cross-check the hand-built fixture against the loaded pipeline.json entry.
+
+        The fixture is still used by scenario tests that need an AgentDef with
+        specific overrides; this guards it against drifting from the real config.
+        """
+        fixture = _make_merge_conflict_agent()
+        real = _load_agent_from_pipeline("03_execute/merge-conflict")
+        assert fixture.agent == real.agent
+        assert fixture.trigger == real.trigger
+        assert fixture.dependencies == real.dependencies
+        assert fixture.human_gate_after == real.human_gate_after
+        assert fixture.human_gate_label == real.human_gate_label
+        assert fixture.exclude_classifications == real.exclude_classifications
 
     def test_trigger_met_when_ci_gate_complete(self):
         """Given ci-gate:complete is on the issue, the merge-conflict trigger is satisfied."""
-        merge_conflict = _make_merge_conflict_agent()
+        merge_conflict = _load_agent_from_pipeline("03_execute/merge-conflict")
         assert trigger_label_present({"ci-gate:complete"}, merge_conflict) is True
 
     def test_trigger_not_met_without_ci_gate_complete(self):
         """Without ci-gate:complete, the trigger is not satisfied."""
-        merge_conflict = _make_merge_conflict_agent()
+        merge_conflict = _load_agent_from_pipeline("03_execute/merge-conflict")
         assert trigger_label_present({"coder:complete"}, merge_conflict) is False
 
     def test_trigger_not_met_with_empty_labels(self):
         """Empty label set yields no trigger."""
-        assert trigger_label_present(set(), _make_merge_conflict_agent()) is False
+        merge_conflict = _load_agent_from_pipeline("03_execute/merge-conflict")
+        assert trigger_label_present(set(), merge_conflict) is False
 
     def test_dependencies_complete_when_ci_gate_done(self):
         """dependencies_complete returns True when ci-gate:complete is present."""
-        pipeline_map = {"03_execute/ci-gate": _make_ci_gate_agent()}
+        agents, _ = load_pipeline(PIPELINE_JSON_PATH)
+        pipeline_map = pipeline_by_name(agents)
+        merge_conflict = pipeline_map["03_execute/merge-conflict"]
         labels = {"ci-gate:complete"}
-        assert dependencies_complete(labels, _make_merge_conflict_agent(), pipeline_map) is True
+        assert dependencies_complete(labels, merge_conflict, pipeline_map) is True
 
     def test_dependencies_not_complete_without_ci_gate(self):
         """dependencies_complete returns False when ci-gate:complete is absent."""
-        pipeline_map = {"03_execute/ci-gate": _make_ci_gate_agent()}
-        assert dependencies_complete(set(), _make_merge_conflict_agent(), pipeline_map) is False
+        agents, _ = load_pipeline(PIPELINE_JSON_PATH)
+        pipeline_map = pipeline_by_name(agents)
+        merge_conflict = pipeline_map["03_execute/merge-conflict"]
+        assert dependencies_complete(set(), merge_conflict, pipeline_map) is False
 
     def test_spike_classification_excluded(self):
         """Spike issues are excluded from the merge-conflict agent (exclude_classifications)."""
         spike_issue = _make_work_item(title="[SPIKE] - Research approach")
+        merge_conflict = _load_agent_from_pipeline("03_execute/merge-conflict")
         assert get_work_item_classification(spike_issue) == "spike"
-        assert "spike" in _make_merge_conflict_agent().exclude_classifications
+        assert "spike" in merge_conflict.exclude_classifications
 
     def test_feature_classification_not_excluded(self):
         """Feature issues are not excluded from the merge-conflict agent."""
         feature_issue = _make_work_item(title="[FEATURE] - Add merge-conflict agent")
+        merge_conflict = _load_agent_from_pipeline("03_execute/merge-conflict")
         assert get_work_item_classification(feature_issue) == "feature"
-        assert "feature" not in _make_merge_conflict_agent().exclude_classifications
+        assert "feature" not in merge_conflict.exclude_classifications
 
     def test_bug_classification_not_excluded(self):
         """Bug issues are not excluded from the merge-conflict agent."""
         bug_issue = _make_work_item(title="[BUG] - Pipeline stops on conflict")
+        merge_conflict = _load_agent_from_pipeline("03_execute/merge-conflict")
         assert get_work_item_classification(bug_issue) == "bug"
-        assert "bug" not in _make_merge_conflict_agent().exclude_classifications
+        assert "bug" not in merge_conflict.exclude_classifications
 
 
 # ---------------------------------------------------------------------------
@@ -174,15 +226,37 @@ class TestResolutionRecommendationsPostedAsPrComments:
         assert status == "complete"
         assert message == ""
 
-    def test_blocked_sentinel_parsed_on_unknown_mergeability(self):
-        """When GitHub mergeability is persistently UNKNOWN the agent may emit blocked."""
+    def test_blocked_sentinel_parsed_generically(self):
+        """The sentinel parser handles a blocked sentinel with a quoted message.
+
+        NOTE: the merge-conflict agent does not itself emit blocked — on a
+        persistently UNKNOWN mergeability it posts a warning and emits
+        complete (so pr-reviewer flags any conflicts downstream), and on
+        CONFLICTING it emits review. This test only exercises the generic
+        sentinel-parsing path for the blocked status, which the orchestrator
+        shares across all agents.
+        """
         agent_output = (
-            "GitHub returned UNKNOWN after retry.\n"
-            'AI_AGILE_STATUS: blocked "Mergeability unknown after retry — investigate CI"'
+            "Some agent could not proceed.\n"
+            'AI_AGILE_STATUS: blocked "Blocked — investigate"'
         )
         status, message = _parse_agent_sentinel(agent_output)
         assert status == "blocked"
-        assert "unknown" in message.lower()
+        assert "investigate" in message.lower()
+
+    def test_complete_sentinel_parsed_on_unknown_mergeability(self):
+        """On persistently UNKNOWN mergeability the merge-conflict agent emits complete.
+
+        Per the agent definition, an UNKNOWN-after-retry result posts a warning
+        comment and advances with complete — it never emits blocked.
+        """
+        agent_output = (
+            "GitHub mergeability check returned UNKNOWN after retry. Advancing.\n"
+            "AI_AGILE_STATUS: complete"
+        )
+        status, message = _parse_agent_sentinel(agent_output)
+        assert status == "complete"
+        assert message == ""
 
     def test_no_sentinel_returns_none(self):
         """If the agent exits without emitting a sentinel, _parse_agent_sentinel returns None."""
@@ -235,6 +309,29 @@ class TestPipelinePausesAwaitingHumanApproval:
         assert "coder:complete" in result
         # merge-conflict stays in :review
         assert "merge-conflict:complete" not in result
+
+    def test_rejection_clears_review_when_requested_applied(self):
+        """Rejection branch: :requested applied while in :review (no gate, no complete).
+
+        promote_gated_agents removes :review so :requested becomes the highest
+        priority status on the next pass, triggering a re-run in the per-agent
+        loop. The work item is NOT promoted to :complete.
+        """
+        merge_conflict = _make_merge_conflict_agent()
+        labels = {"merge-conflict:review", "merge-conflict:requested"}
+        work_item = _make_work_item(labels=labels.copy())
+        gh = _make_gh()
+
+        result = promote_gated_agents(labels, [merge_conflict], work_item, gh)
+
+        # :review is cleared so :requested wins on the next tick
+        assert "merge-conflict:review" not in result
+        gh.remove_label.assert_called_once_with(work_item.number, "merge-conflict:review")
+        # :requested is left in place to drive the re-run
+        assert "merge-conflict:requested" in result
+        # No promotion to :complete
+        assert "merge-conflict:complete" not in result
+        gh.add_label.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -390,3 +487,108 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
         data = json.loads(pipeline_path.read_text())
         mc = next(e for e in data["pipeline"] if e["agent"] == "03_execute/merge-conflict")
         assert mc.get("auto_approve_on_complete") is True
+
+
+# ---------------------------------------------------------------------------
+# Scenario 5 (orchestrator drive): auto_approve_on_complete actually applies
+# the gate label through process_work_item
+# ---------------------------------------------------------------------------
+
+class TestAutoApproveOnCompleteDrivesProcessWorkItem:
+    """Drive the real process_work_item branch that auto-applies the gate label.
+
+    The attribute-only test above proves the AgentDef carries the flag; these
+    tests prove the orchestrator actually calls gh.add_label(human_gate_label)
+    when an auto_approve agent emits :complete. invoke_agent is patched to
+    return a success AgentRunResult whose captured_tail carries the
+    AI_AGILE_STATUS: complete sentinel; gh is a MagicMock so all label/comment
+    calls are absorbed and inspectable.
+    """
+
+    def _run(self, gh):
+        """Drive process_work_item for the merge-conflict agent on a clean PR.
+
+        Loads the shipped pipeline so dependency resolution uses the real
+        config, makes the merge-conflict agent eligible (ci-gate:complete is
+        both its trigger and its sole dependency), and patches invoke_agent to
+        emit a complete sentinel. Returns the agent label_key for convenience.
+        """
+        agents, default_extra_tools = load_pipeline(PIPELINE_JSON_PATH)
+        pipeline_map = pipeline_by_name(agents)
+        merge_conflict = pipeline_map["03_execute/merge-conflict"]
+
+        # Only ci-gate:complete present → merge-conflict trigger satisfied and
+        # its single dependency (03_execute/ci-gate, no human gate) is complete.
+        work_item = _make_work_item(labels={"ci-gate:complete"})
+
+        complete_result = AgentRunResult(
+            success=True,
+            returncode=0,
+            captured_tail="No merge conflicts found. Branch is clean.\nAI_AGILE_STATUS: complete",
+        )
+
+        # Pass only the merge-conflict agent in the eligibility loop so no other
+        # agent is invoked; pipeline_map stays complete for dependency lookups.
+        with patch("pipeline_orchestrator.invoke_agent", return_value=complete_result) as mock_invoke:
+            process_work_item(
+                work_item,
+                [merge_conflict],
+                pipeline_map,
+                gh,
+                dry_run=False,
+                repo="test/repo",
+                session_id="ais-test",
+                default_extra_tools=default_extra_tools,
+            )
+
+        mock_invoke.assert_called_once()
+        return merge_conflict.human_gate_label, merge_conflict.complete_label
+
+    def test_gate_label_applied_on_complete(self):
+        """auto_approve_on_complete=True → orchestrator applies merge-conflict:approved."""
+        gh = _make_gh()
+
+        gate_label, complete_label = self._run(gh)
+
+        added = [c.args[1] for c in gh.add_label.call_args_list]
+        # The gate label is auto-applied, and the agent ends :complete (not :review).
+        assert gate_label in added
+        assert complete_label in added
+        # It must NOT land in :review — auto_approve bypasses the human gate.
+        assert merge_conflict_review_label() not in added
+
+    def test_complete_state_not_demoted_to_review(self):
+        """The work item is left in :complete (auto-approved), never halted at :review."""
+        gh = _make_gh()
+
+        gate_label, complete_label = self._run(gh)
+
+        added = [c.args[1] for c in gh.add_label.call_args_list]
+        assert complete_label in added
+        assert merge_conflict_review_label() not in added
+
+    def test_add_label_exception_on_gate_does_not_crash(self):
+        """If gh.add_label raises on the gate label, the branch swallows it and still completes.
+
+        The orchestrator logs a warning and proceeds — the agent must still be
+        driven to its terminal :complete via _apply_terminal_status, which uses
+        its own add_label call. We make only the gate-label add raise.
+        """
+        gh = _make_gh()
+        gate_label = "merge-conflict:approved"
+
+        def _raise_on_gate(number, label):
+            if label == gate_label:
+                raise RuntimeError("simulated GitHub 500 on gate label")
+            return None
+
+        gh.add_label.side_effect = _raise_on_gate
+
+        returned_gate, complete_label = self._run(gh)
+        assert returned_gate == gate_label
+
+        attempted = [c.args[1] for c in gh.add_label.call_args_list]
+        # The gate add was attempted (and raised)...
+        assert gate_label in attempted
+        # ...and the terminal :complete was still applied afterwards.
+        assert complete_label in attempted

@@ -19,7 +19,10 @@ from pipeline_orchestrator import (
     _extract_text_from_stream_event,
     _extract_usage_from_result_event,
     _parse_agent_sentinel,
+    _captured_tail,
+    _accumulate_stream_text,
     detect_rate_limit,
+    MAX_PAUSE_SECONDS,
 )
 
 
@@ -179,22 +182,6 @@ class TestExtractUsageFromResultEvent:
 class TestSentinelDetectionFromStream:
     """Simulate a full stream-json run and verify sentinel detection."""
 
-    def _build_agent_text(self, ndjson_lines: list[str]) -> str:
-        """Replicate the accumulation loop from invoke_agent."""
-        parts: list[str] = []
-        for line in ndjson_lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                event = json.loads(stripped)
-                text = _extract_text_from_stream_event(event)
-                if text:
-                    parts.append(text)
-            except json.JSONDecodeError:
-                parts.append(line.rstrip("\n"))
-        return "\n".join(parts)
-
     def test_complete_sentinel_from_result_event(self):
         lines = [
             json.dumps({"type": "system", "subtype": "init"}),
@@ -204,7 +191,7 @@ class TestSentinelDetectionFromStream:
             json.dumps({"type": "result", "subtype": "success", "is_error": False,
                         "result": "Doing work...\nAI_AGILE_STATUS: complete"}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         status, message = _parse_agent_sentinel(agent_text)
         assert status == "complete"
         assert message == ""
@@ -214,7 +201,7 @@ class TestSentinelDetectionFromStream:
             json.dumps({"type": "result", "subtype": "success", "is_error": False,
                         "result": "PRD drafted.\nAI_AGILE_STATUS: review \"PRD ready for approval\""}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         status, message = _parse_agent_sentinel(agent_text)
         assert status == "review"
         assert message == "PRD ready for approval"
@@ -224,7 +211,7 @@ class TestSentinelDetectionFromStream:
             json.dumps({"type": "result", "subtype": "success", "is_error": False,
                         "result": "Cannot continue.\nAI_AGILE_STATUS: blocked \"spec is ambiguous\""}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         status, message = _parse_agent_sentinel(agent_text)
         assert status == "blocked"
         assert message == "spec is ambiguous"
@@ -236,7 +223,7 @@ class TestSentinelDetectionFromStream:
                 {"type": "text", "text": "Work done.\nAI_AGILE_STATUS: complete"}
             ]}}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         status, _ = _parse_agent_sentinel(agent_text)
         assert status == "complete"
 
@@ -245,7 +232,7 @@ class TestSentinelDetectionFromStream:
             json.dumps({"type": "result", "subtype": "success",
                         "result": "Agent ran but forgot to emit sentinel."}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         status, _ = _parse_agent_sentinel(agent_text)
         assert status is None
 
@@ -271,9 +258,79 @@ class TestSentinelDetectionFromStream:
             ],
             # No actual sentinel in the last 5 lines
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         status, _ = _parse_agent_sentinel(agent_text)
         assert status is None
+
+    def test_malformed_ndjson_line_kept_as_plain_text(self):
+        """A truncated/partial JSON line cannot be parsed and is kept verbatim.
+
+        Exercises the JSONDecodeError branch in _StreamAccumulator.feed:
+        the raw line survives in agent_text so CLI noise stays visible.
+        """
+        lines = [
+            json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "Starting work"}
+            ]}}),
+            # Truncated JSON object — not valid, must fall through to plain text.
+            '{"type": "result", "result": "half a line',
+            json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                        "result": "Done\nAI_AGILE_STATUS: complete"}),
+        ]
+        agent_text, _, _ = _accumulate_stream_text(lines)
+        assert '{"type": "result", "result": "half a line' in agent_text
+        # The well-formed events around it are still parsed normally.
+        assert "Starting work" in agent_text
+        status, _ = _parse_agent_sentinel(agent_text)
+        assert status == "complete"
+
+    def test_multiple_sentinels_in_final_window_returns_last(self):
+        """When several sentinels sit in the final window, the LAST one wins."""
+        captured_tail = (
+            "AI_AGILE_STATUS: review \"first\"\n"
+            "AI_AGILE_STATUS: blocked \"second\"\n"
+            "AI_AGILE_STATUS: complete\n"
+        )
+        status, message = _parse_agent_sentinel(captured_tail)
+        assert status == "complete"
+        assert message == ""
+
+    def test_two_stage_composition_does_not_spoof_within_50_lines(self):
+        """Real path: _parse_agent_sentinel(_captured_tail(lines)).
+
+        An injected AI_AGILE_STATUS line sits inside the last 50 lines (so it
+        survives _captured_tail) but OUTSIDE the last 5 lines (so the sentinel
+        parser must not match it). With no legitimate trailing sentinel the
+        result must be None.
+        """
+        # 40 lines total: an injected sentinel near the top, then 30+ lines of
+        # legit work, ending with non-sentinel output.
+        lines = (
+            ["legit setup line\n"]
+            + ["AI_AGILE_STATUS: complete\n"]   # injected, line 2 of 40
+            + [f"work line {i}\n" for i in range(36)]
+            + ["all done, no sentinel emitted\n"]
+        )
+        assert len(lines) <= 50  # survives the _captured_tail line cap
+        captured = _captured_tail(lines)
+        # The injected sentinel is retained by the tail (within last 50 lines)...
+        assert "AI_AGILE_STATUS: complete" in captured
+        # ...but it is outside the last 5 lines, so it must not spoof.
+        status, _ = _parse_agent_sentinel(captured)
+        assert status is None
+
+    def test_two_stage_composition_returns_legitimate_trailing_sentinel(self):
+        """The legitimate final sentinel is returned despite an earlier injection."""
+        lines = (
+            ["AI_AGILE_STATUS: complete\n"]    # injected near the top
+            + [f"work line {i}\n" for i in range(36)]
+            + ["wrapping up\n"]
+            + ["AI_AGILE_STATUS: review \"please approve\"\n"]   # legit, final line
+        )
+        captured = _captured_tail(lines)
+        status, message = _parse_agent_sentinel(captured)
+        assert status == "review"
+        assert message == "please approve"
 
 
 # ---------------------------------------------------------------------------
@@ -283,28 +340,13 @@ class TestSentinelDetectionFromStream:
 class TestRateLimitDetectionFromStream:
     """Verify detect_rate_limit works correctly on text extracted from stream events."""
 
-    def _build_agent_text(self, ndjson_lines: list[str]) -> str:
-        parts: list[str] = []
-        for line in ndjson_lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                event = json.loads(stripped)
-                text = _extract_text_from_stream_event(event)
-                if text:
-                    parts.append(text)
-            except json.JSONDecodeError:
-                parts.append(line.rstrip("\n"))
-        return "\n".join(parts)
-
     def test_rate_limit_in_result_event(self):
         lines = [
             json.dumps({"type": "result", "subtype": "error_during_execution",
                         "is_error": True,
                         "result": "Error: 429 Too Many Requests\nrate limit exceeded"}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         is_limited, _ = detect_rate_limit(agent_text)
         assert is_limited is True
 
@@ -314,7 +356,7 @@ class TestRateLimitDetectionFromStream:
                         "is_error": True,
                         "result": "rate limit exceeded\nRetry-After: 60"}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         is_limited, retry_after = detect_rate_limit(agent_text)
         assert is_limited is True
         assert retry_after == 60
@@ -324,7 +366,7 @@ class TestRateLimitDetectionFromStream:
             json.dumps({"type": "result", "subtype": "success", "is_error": False,
                         "result": "AI_AGILE_STATUS: complete"}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         is_limited, _ = detect_rate_limit(agent_text)
         assert is_limited is False
 
@@ -334,13 +376,63 @@ class TestRateLimitDetectionFromStream:
                         "is_error": True,
                         "result": "usage limit exceeded for this billing period"}),
         ]
-        agent_text = self._build_agent_text(lines)
+        agent_text, _, _ = _accumulate_stream_text(lines)
         is_limited, _ = detect_rate_limit(agent_text)
         assert is_limited is True
 
     def test_empty_stream_not_rate_limited(self):
         is_limited, _ = detect_rate_limit("")
         assert is_limited is False
+
+    def test_retry_after_exceeding_max_pause_is_capped(self):
+        """A retry-after larger than MAX_PAUSE_SECONDS must be capped.
+
+        detect_rate_limit applies the cap itself (min(seconds, MAX_PAUSE_SECONDS))
+        before returning, so a malicious/misconfigured server cannot make the
+        pipeline pause indefinitely. pause_pipeline applies the same cap as a
+        second line of defence, but the value is already clamped here.
+        """
+        oversized = MAX_PAUSE_SECONDS + 10_000
+        lines = [
+            json.dumps({"type": "result", "subtype": "error_during_execution",
+                        "is_error": True,
+                        "result": f"rate limit exceeded\nRetry-After: {oversized}"}),
+        ]
+        agent_text, _, _ = _accumulate_stream_text(lines)
+        is_limited, retry_after = detect_rate_limit(agent_text)
+        assert is_limited is True
+        assert retry_after == MAX_PAUSE_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# _captured_tail: line cap and char truncation
+# ---------------------------------------------------------------------------
+
+class TestCapturedTail:
+    def test_line_cap_keeps_last_50_lines(self):
+        lines = [f"line {i}\n" for i in range(120)]
+        tail = _captured_tail(lines)
+        kept = tail.splitlines()
+        assert len(kept) == 50
+        assert kept[0] == "line 70"
+        assert kept[-1] == "line 119"
+        assert "line 69" not in tail
+
+    def test_char_truncation_adds_prefix(self):
+        # A single very long line (within the 50-line cap) that exceeds 4000 chars.
+        long_line = "x" * 5000 + "\n"
+        tail = _captured_tail([long_line])
+        assert tail.startswith("…(truncated)…\n")
+        # The retained payload is the last 4000 chars after the prefix.
+        assert len(tail) == len("…(truncated)…\n") + 4000
+
+    def test_no_truncation_prefix_when_under_limit(self):
+        tail = _captured_tail(["short output\n"])
+        assert "…(truncated)…" not in tail
+        assert tail == "short output"
+
+    def test_empty_lines_returns_empty(self):
+        assert _captured_tail([]) == ""
 
 
 # ---------------------------------------------------------------------------

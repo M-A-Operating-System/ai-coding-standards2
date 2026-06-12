@@ -22,6 +22,7 @@ from pipeline_orchestrator import (
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
     process_work_item,
+    _compute_agent_session_id,
 )
 
 
@@ -120,6 +121,9 @@ class TestApplyFailed:
         return gh
 
     def test_clears_wip_before_applying_failed(self):
+        """:wip must be removed BEFORE :failed is added so the item never
+        carries two status labels at once — assert real ordering via the
+        shared mock's recorded call sequence."""
         agent_def = _make_agent_def("03_execute/coder")
         work_item = _make_work_item(42)
         gh = self._make_gh()
@@ -135,6 +139,25 @@ class TestApplyFailed:
         # add_label should be called with coder:failed
         add_calls = [c[0][1] for c in gh.add_label.call_args_list]
         assert "coder:failed" in add_calls, f"Expected 'coder:failed' in add_label calls: {add_calls}"
+
+        # Ordering: the remove of coder:wip must precede the add of coder:failed.
+        # gh is a single MagicMock so .mock_calls records both in dispatch order.
+        method_args = [
+            (c[0], c[1][1]) for c in gh.mock_calls
+            if c[0] in ("remove_label", "add_label") and len(c[1]) >= 2
+        ]
+        wip_remove_idx = next(
+            i for i, (m, lbl) in enumerate(method_args)
+            if m == "remove_label" and lbl == "coder:wip"
+        )
+        failed_add_idx = next(
+            i for i, (m, lbl) in enumerate(method_args)
+            if m == "add_label" and lbl == "coder:failed"
+        )
+        assert wip_remove_idx < failed_add_idx, (
+            f"coder:wip must be removed before coder:failed is added; "
+            f"call order was {method_args}"
+        )
 
     def test_clears_requested(self):
         """_apply_failed removes :requested — validates DP-001 fix."""
@@ -916,26 +939,21 @@ class TestDryRunConcurrency:
 class TestOrchestratorNonOverlapping:
     """Scenario: Orchestrator runs remain non-overlapping."""
 
-    def test_workflow_defines_concurrency_groups(self):
+    def test_workflow_defines_concurrency_group(self):
         """
-        Given the two orchestrator workflow files
-        Then each defines its own concurrency group with cancel-in-progress: false
+        Given the single orchestrator workflow file
+        Then it defines a concurrency group with cancel-in-progress: false
         so concurrent triggers queue rather than cancel the active run.
         """
-        workflows_dir = Path(__file__).parent.parent / ".github" / "workflows"
-        for name, expected_group in [
-            ("orchestrator-pre-execute.yml", "pipeline-pre-execute"),
-            ("orchestrator-execute.yml", "pipeline-execute"),
-        ]:
-            path = workflows_dir / name
-            assert path.exists(), f"Workflow file not found: {path}"
-            content = path.read_text()
-            assert f"group: {expected_group}" in content, (
-                f"{name} must declare concurrency group '{expected_group}'"
-            )
-            assert "cancel-in-progress: false" in content, (
-                f"{name} must set cancel-in-progress: false"
-            )
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
+        assert path.exists(), f"Workflow file not found: {path}"
+        content = path.read_text()
+        assert "group: pipeline-orchestrator" in content, (
+            "orchestrator.yml must declare concurrency group 'pipeline-orchestrator'"
+        )
+        assert "cancel-in-progress: false" in content, (
+            "orchestrator.yml must set cancel-in-progress: false"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1230,27 +1248,83 @@ class TestPhasesFilter:
         filtered = [a for a in agents if a.phase in all_phases]
         assert filtered == agents
 
-    def test_workflow_split_phases_are_non_overlapping_and_complete(self):
-        """The two workflow job phase sets must cover all pipeline phases with no overlap."""
-        pre_execute = {"00_ondemand", "01_product_docs", "02_design"}
-        execute = {"03_execute", "04_evaluate", "05_continuous"}
+    def test_main_phases_filter_excludes_other_phase_agents_from_dispatch(self):
+        """Drive the real main() --phases path: agents outside the allowed
+        phase set must never reach process_work_item, so they are never
+        dispatched. Patches argv/parse_args + GitHub so no network occurs."""
+        import argparse
+        import pipeline_orchestrator as orch
 
-        assert pre_execute.isdisjoint(execute), "Phase sets must not overlap"
+        in_phase = AgentDef(
+            agent="01_product_docs/issue-classifier",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"event": "issue.opened"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="in-phase",
+        )
+        out_phase = AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "x:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="out-of-phase",
+        )
 
-        from pipeline_orchestrator import load_pipeline
-        from pathlib import Path
+        fake_args = argparse.Namespace(
+            verbose=False, clear_pause=False, repo="test/repo",
+            pipeline="pipeline.json", phases="01_product_docs",
+            issue=None, kind=None, dry_run=True,
+        )
 
-        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
-        if not pipeline_path.exists():
-            pytest.skip("pipeline.json not available")
+        wi = _make_work_item_with_labels(1, set())
+        captured = {}
 
-        agents, _ = load_pipeline(pipeline_path)
-        all_pipeline_phases = {a.phase for a in agents}
-        union = pre_execute | execute
-        uncovered = all_pipeline_phases - union
-        assert not uncovered, (
-            f"Pipeline phases not covered by either workflow job: {uncovered}. "
-            "Add them to pre_execute or execute in orchestrator.yml."
+        def _capture_process(item, agents, pipeline_map, gh, dry_run, repo, **kw):
+            captured["agents"] = list(agents)
+            captured["pipeline_map"] = dict(pipeline_map)
+            return 0
+
+        gh_mock = MagicMock()
+        gh_mock.list_open_issues.return_value = [wi]
+
+        with patch.object(orch, "parse_args", return_value=fake_args), \
+             patch.object(orch, "is_pipeline_paused", return_value=(False, None, None)), \
+             patch.object(orch, "load_pipeline", return_value=([in_phase, out_phase], [])), \
+             patch.object(orch, "_configure_git_auth"), \
+             patch.object(orch, "GitHubClient", return_value=gh_mock), \
+             patch.object(orch, "process_work_item", side_effect=_capture_process), \
+             patch.dict(os.environ, {"GITHUB_TOKEN": "x"}), \
+             patch("time.sleep"):
+            orch.main()
+
+        active_agents = {a.agent for a in captured["agents"]}
+        assert "01_product_docs/issue-classifier" in active_agents
+        assert "03_execute/coder" not in active_agents, (
+            "Agent outside --phases must be filtered out before dispatch; "
+            f"active agents were {active_agents}"
+        )
+        assert "03_execute/coder" not in captured["pipeline_map"]
+
+    def test_orchestrator_workflow_runs_all_phases(self):
+        """The single orchestrator workflow must not restrict phases.
+
+        Consolidating the two split workflows back into one means the
+        orchestrator loads every agent in a single pass, so cross-phase
+        dependencies always resolve. Guard against a regression that
+        reintroduces a --phases filter (which would silently drop agents).
+        """
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
+        assert path.exists(), f"Workflow file not found: {path}"
+        content = path.read_text()
+        assert "--phases" not in content, (
+            "orchestrator.yml must not pass --phases — the single workflow runs "
+            "all phases so cross-phase dependencies resolve."
         )
 
 
@@ -1478,26 +1552,40 @@ class TestWriteAuditLog:
         assert parsed["event_type"] == "agent.complete"
 
     def test_write_audit_log_retries_on_409_conflict(self):
-        """409 conflict triggers a retry — events must not be dropped silently."""
+        """409 conflict triggers a retry — events must not be dropped silently.
+
+        On the retry, the orchestrator must re-GET the file and re-send the
+        *refreshed* sha so the second PUT no longer collides with the
+        concurrent writer's commit.
+        """
         gh = self._make_gh()
 
         branch_response = MagicMock()
         branch_response.status_code = 200
 
+        # First attempt: file is brand new (404 → no sha sent), PUT races and
+        # loses with a 409.
         file_response = MagicMock()
         file_response.status_code = 404
 
         conflict_response = MagicMock()
         conflict_response.status_code = 409
 
+        # Retry attempt: the concurrent writer's commit now exists, so the GET
+        # returns 200 with a refreshed sha and existing content.
+        refreshed_sha = "refreshed-sha-deadbeef"
         file_response2 = MagicMock()
-        file_response2.status_code = 404
+        file_response2.status_code = 200
+        file_response2.json.return_value = {
+            "sha": refreshed_sha,
+            "content": base64.b64encode(b'{"prior":"line"}\n').decode(),
+        }
 
         success_response = MagicMock()
         success_response.status_code = 201
 
         # First attempt: branch check, file 404, PUT → 409
-        # Second attempt: file 404 again, PUT → 201
+        # Second attempt: file 200 (refreshed sha), PUT → 201
         gh._request.side_effect = [
             branch_response,
             file_response,
@@ -1512,6 +1600,20 @@ class TestWriteAuditLog:
 
         # Should have been called twice (one conflict + one success)
         assert gh._put.call_count == 2
+
+        # The first PUT carried no sha (file was new / 404).
+        first_put_body = gh._put.call_args_list[0][0][1]
+        assert "sha" not in first_put_body, (
+            f"First PUT should not carry a sha for a new file; got {first_put_body!r}"
+        )
+
+        # The retried PUT must carry the refreshed sha fetched on the retry GET —
+        # re-sending the stale (absent) sha would just 409 again.
+        second_put_body = gh._put.call_args_list[1][0][1]
+        assert second_put_body.get("sha") == refreshed_sha, (
+            f"Retried PUT must re-send the refreshed sha {refreshed_sha!r}; "
+            f"got {second_put_body.get('sha')!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1653,8 +1755,13 @@ class TestRetryPolicy:
             f":complete must be applied after successful retry. add_label calls: {add_calls}"
         )
         comment_bodies = [str(c[0][1]) for c in gh.post_comment.call_args_list]
-        assert any("retry" in b.lower() for b in comment_bodies), (
-            f"Expected a retry attempt comment. post_comment calls: {comment_bodies}"
+        # The retry comment records the specific attempt number in "retry N/M"
+        # form — assert that exact format, not just the loose substring "retry".
+        assert any(
+            ("retry 1/3" in b.lower()) or ("retry 1 " in b.lower())
+            for b in comment_bodies
+        ), (
+            f"Expected a 'retry 1/3' attempt comment. post_comment calls: {comment_bodies}"
         )
 
     @patch("pipeline_orchestrator.time.sleep")
@@ -1805,27 +1912,452 @@ class TestRetryPolicy:
 # ---------------------------------------------------------------------------
 
 class TestSessionIdPatternRegexFix:
-    """The regex r'\\{[^}]*[.\\[][^}]*\\}' must catch {foo.bar} and {foo[0]}
-    without false-positives on plain tokens like {issue_number}."""
+    """Exercise the REAL _compute_agent_session_id guard against unsafe
+    attribute/index access in session_id_pattern.
 
-    _PATTERN = r"\{[^}]*[.\[][^}]*\}"
+    The internal guard regex r'\\{[^}]*[.\\[][^}]*\\}' catches {foo.bar} and
+    {foo[0]} (which would otherwise raise inside the token substitution) and
+    falls back to the scope-default session id rather than raising. Safe
+    patterns like {number}/{safe_agent} substitute normally.
+    """
 
-    def test_detects_attribute_access(self):
-        import re
-        assert re.search(self._PATTERN, "{foo.bar}") is not None
+    def _agent_def(self, pattern, scope="per_issue") -> AgentDef:
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent",
+            session_scope=scope,
+            session_id_pattern=pattern,
+        )
 
-    def test_detects_index_access(self):
-        import re
-        assert re.search(self._PATTERN, "{foo[0]}") is not None
+    def _work_item(self, number: int = 42) -> WorkItem:
+        return WorkItem(
+            number=number, kind="issue", title="T", labels=set(),
+            url=f"https://github.com/test/repo/issues/{number}",
+        )
 
-    def test_simple_token_not_flagged(self):
-        import re
-        assert re.search(self._PATTERN, "{issue_number}") is None
-        assert re.search(self._PATTERN, "{agent}") is None
+    def test_attribute_access_pattern_falls_back_to_scope_default(self):
+        """{foo.bar} is rejected by the guard → scope default, no raise."""
+        agent = self._agent_def("{foo.bar}", scope="per_issue")
+        sid = _compute_agent_session_id(agent, self._work_item(42), "test/repo")
+        # per_issue default: ais-v1-{safe_agent}-issue-{number}
+        assert sid == "ais-v1-03-execute-coder-issue-42", (
+            f"Expected scope-default session id for unsafe attr pattern; got {sid!r}"
+        )
+
+    def test_index_access_pattern_falls_back_to_scope_default(self):
+        """{foo[0]} is rejected by the guard → scope default, no raise."""
+        agent = self._agent_def("{foo[0]}", scope="global")
+        sid = _compute_agent_session_id(agent, self._work_item(7), "test/repo")
+        # global default: ais-v1-{safe_agent}
+        assert sid == "ais-v1-03-execute-coder", (
+            f"Expected global scope-default session id for unsafe index pattern; got {sid!r}"
+        )
+
+    def test_safe_number_token_substitutes(self):
+        """A safe {number} token substitutes the work item number."""
+        agent = self._agent_def("ais-{number}")
+        sid = _compute_agent_session_id(agent, self._work_item(99), "test/repo")
+        assert sid == "ais-99", f"Expected '{{number}}' substituted; got {sid!r}"
+
+    def test_safe_agent_token_substitutes(self):
+        """A safe {safe_agent} token substitutes the sanitised agent name."""
+        agent = self._agent_def("sess-{safe_agent}")
+        sid = _compute_agent_session_id(agent, self._work_item(1), "test/repo")
+        assert sid == "sess-03-execute-coder", f"Expected '{{safe_agent}}' substituted; got {sid!r}"
 
     def test_old_broken_regex_raises_on_compile(self):
-        """The old regex r'\\{[^}]*[.[}' was an unterminated character set
-        that raised re.error on Python 3.11+."""
+        """Regression: the OLD broken guard r'\\{[^}]*[.[}' was an unterminated
+        character set that raises re.error — the current code must not use it."""
         import re
         with pytest.raises(re.error):
             re.search(r"\{[^}]*[.[}", "{foo.bar}")
+
+
+# ---------------------------------------------------------------------------
+# TestLoadPipelineMalformed — load_pipeline exits cleanly on bad JSON
+# ---------------------------------------------------------------------------
+
+class TestLoadPipelineMalformed:
+    """load_pipeline must sys.exit(1) on malformed pipeline.json rather than
+    raising an unhandled exception."""
+
+    def test_invalid_json_exits_1(self, tmp_path):
+        """A syntactically invalid JSON file → SystemExit(1)."""
+        from pipeline_orchestrator import load_pipeline
+        path = tmp_path / "pipeline.json"
+        path.write_text("{ this is not valid json ]")
+        with pytest.raises(SystemExit) as exc_info:
+            load_pipeline(path)
+        assert exc_info.value.code == 1
+
+    def test_missing_required_key_exits_1(self, tmp_path):
+        """Valid JSON but a pipeline entry missing a required key (KeyError)
+        → SystemExit(1)."""
+        from pipeline_orchestrator import load_pipeline
+        path = tmp_path / "pipeline.json"
+        # 'agent' key is required by load_pipeline but absent here.
+        path.write_text(json.dumps({"pipeline": [{"phase": "x"}]}))
+        with pytest.raises(SystemExit) as exc_info:
+            load_pipeline(path)
+        assert exc_info.value.code == 1
+
+    def test_pipeline_not_a_list_exits_1(self, tmp_path):
+        """'pipeline' present but not iterable as expected (TypeError) →
+        SystemExit(1)."""
+        from pipeline_orchestrator import load_pipeline
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps({"pipeline": 5}))
+        with pytest.raises(SystemExit) as exc_info:
+            load_pipeline(path)
+        assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# TestInvokeScript — script-step error paths
+# ---------------------------------------------------------------------------
+
+class TestInvokeScript:
+    """Focused tests for invoke_script's error branches."""
+
+    def _script_agent(self, script_path, timeout=300) -> AgentDef:
+        return AgentDef(
+            agent="00_ondemand/some-script",
+            phase="00_ondemand",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="script step",
+            step_type="script",
+            script_path=script_path,
+            script_timeout_seconds=timeout,
+        )
+
+    def _work_item(self) -> WorkItem:
+        return WorkItem(
+            number=42, kind="issue", title="T", labels=set(),
+            url="https://github.com/test/repo/issues/42",
+        )
+
+    def test_missing_script_path_returns_failure(self):
+        """type:script entry with no script field → success=False, no subprocess."""
+        from pipeline_orchestrator import invoke_script
+        agent = self._script_agent(script_path=None)
+        with patch("subprocess.Popen") as mock_popen:
+            result = invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
+        assert result.success is False
+        assert "no script field" in result.captured_tail
+        mock_popen.assert_not_called()
+
+    def test_nonexistent_script_file_returns_failure(self, tmp_path, monkeypatch):
+        """script field points at a file that doesn't exist → success=False."""
+        import pipeline_orchestrator as orch
+        monkeypatch.setattr(orch, "SUBMODULE_ROOT", tmp_path)
+        agent = self._script_agent(script_path="scripts/missing.sh")
+        result = orch.invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
+        assert result.success is False
+        assert "not found" in result.captured_tail.lower()
+
+    def test_nonzero_exit_returns_failure(self, tmp_path, monkeypatch):
+        """A real script that exits non-zero → success=False with that returncode."""
+        import pipeline_orchestrator as orch
+        monkeypatch.setattr(orch, "SUBMODULE_ROOT", tmp_path)
+        script = tmp_path / "fail.sh"
+        script.write_text("#!/usr/bin/env bash\necho 'doing work'\nexit 3\n")
+        agent = self._script_agent(script_path="fail.sh")
+        result = orch.invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
+        assert result.success is False
+        assert result.returncode == 3, f"Expected returncode 3, got {result.returncode}"
+
+    def test_zero_exit_returns_success(self, tmp_path, monkeypatch):
+        """A real script that exits 0 → success=True (happy-path control)."""
+        import pipeline_orchestrator as orch
+        monkeypatch.setattr(orch, "SUBMODULE_ROOT", tmp_path)
+        script = tmp_path / "ok.sh"
+        script.write_text("#!/usr/bin/env bash\necho 'AI_AGILE_STATUS: complete'\nexit 0\n")
+        agent = self._script_agent(script_path="ok.sh")
+        result = orch.invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
+        assert result.success is True
+        assert result.returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# TestExcludeClassifications — exclude_classifications skip branch
+# ---------------------------------------------------------------------------
+
+class TestExcludeClassifications:
+    """An agent with exclude_classifications must skip work items whose
+    classification matches — invoke_agent is never called for them."""
+
+    def _agent(self, exclude) -> AgentDef:
+        return AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            exclude_classifications=exclude,
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_excluded_classification_is_skipped(self, mock_invoke):
+        """classification 'bug' is excluded → agent not dispatched."""
+        agent = self._agent(exclude=["bug"])
+        agents = [agent]
+        pipeline_map = {agent.agent: agent}
+        gh = _make_gh_mock()
+        # Trigger label present so only the exclude branch can prevent dispatch.
+        wi = _make_work_item_with_labels(
+            1, {"issue-classifier:complete", "classification: bug"}
+        )
+        n = process_work_item(
+            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+        )
+        assert n == 0, "Excluded-classification item must not dispatch the agent"
+        mock_invoke.assert_not_called()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_non_excluded_classification_still_dispatches(self, mock_invoke):
+        """classification 'feature' is NOT excluded → agent dispatches normally."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = self._agent(exclude=["bug"])
+        agents = [agent]
+        pipeline_map = {agent.agent: agent}
+        gh = _make_gh_mock()
+        wi = _make_work_item_with_labels(
+            2, {"issue-classifier:complete", "classification: feature"}
+        )
+        n = process_work_item(
+            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+        )
+        assert n == 1, "Non-excluded classification must dispatch the agent"
+        mock_invoke.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TestManualRequestedOverride — :requested bypasses the trigger check
+# ---------------------------------------------------------------------------
+
+class TestManualRequestedOverride:
+    """A :requested label is a manual override that dispatches the agent even
+    when its configured trigger label is absent, and clears :requested first."""
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_requested_dispatches_without_trigger_label(self, mock_invoke):
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            # Trigger that is NOT present on the work item.
+            objects=["issue"],
+            trigger={"label": "never-present:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+        )
+        agents = [agent]
+        pipeline_map = {agent.agent: agent}
+        gh = _make_gh_mock()
+        # Only the manual override label is present — no trigger label.
+        wi = _make_work_item_with_labels(7, {"coder:requested"})
+
+        n = process_work_item(
+            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+        )
+
+        assert n == 1, "Manual :requested override must dispatch despite missing trigger"
+        mock_invoke.assert_called_once()
+        # :requested must be removed before :wip is applied.
+        remove_calls = [c[0][1] for c in gh.remove_label.call_args_list]
+        assert "coder:requested" in remove_calls, (
+            f"Manual override must clear :requested; remove_label calls: {remove_calls}"
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_no_requested_and_no_trigger_does_not_dispatch(self, mock_invoke):
+        """Control: without :requested and without the trigger label, the agent
+        is not dispatched — proving the override is what drives the path above."""
+        agent = AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "never-present:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+        )
+        agents = [agent]
+        pipeline_map = {agent.agent: agent}
+        gh = _make_gh_mock()
+        wi = _make_work_item_with_labels(8, set())
+
+        n = process_work_item(
+            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+        )
+        assert n == 0
+        mock_invoke.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestMarkReadyOnComplete — orchestrator marks PR ready on :complete
+# ---------------------------------------------------------------------------
+
+class TestMarkReadyOnComplete:
+    """An agent with mark_ready_on_complete must trigger gh.mark_pr_ready when
+    it completes on a PR work item."""
+
+    def _agent(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["pr"],
+            trigger={"label": "coder:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            mark_ready_on_complete=True,
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_marks_pr_ready_on_complete(self, mock_invoke):
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = self._agent()
+        agents = [agent]
+        pipeline_map = {agent.agent: agent}
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=55, kind="pr", title="PR", labels={"coder:complete"},
+            url="https://github.com/test/repo/pull/55",
+        )
+
+        n = process_work_item(
+            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+        )
+
+        assert n == 1
+        gh.mark_pr_ready.assert_called_once_with(55)
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_does_not_mark_ready_on_review(self, mock_invoke):
+        """When the agent emits :review (not :complete), the PR must NOT be
+        marked ready — readiness only fires on true completion."""
+        mock_invoke.return_value = AgentRunResult(
+            success=False,
+            captured_tail='AI_AGILE_STATUS: review "needs changes"',
+        )
+        agent = self._agent()
+        agents = [agent]
+        pipeline_map = {agent.agent: agent}
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=56, kind="pr", title="PR", labels={"coder:complete"},
+            url="https://github.com/test/repo/pull/56",
+        )
+
+        process_work_item(
+            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+        )
+        gh.mark_pr_ready.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestRunCommitAfter — orchestrator-driven git commit_after step
+# ---------------------------------------------------------------------------
+
+class TestRunCommitAfter:
+    """Tests for _run_commit_after covering the no-changes happy path and the
+    'workflow files staged without AI_AGILE_BOT_TOKEN' failure branch."""
+
+    def _agent(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            commit_after=True,
+        )
+
+    def _work_item(self) -> WorkItem:
+        return WorkItem(
+            number=42, kind="issue", title="T", labels=set(),
+            url="https://github.com/test/repo/issues/42",
+        )
+
+    def test_no_working_tree_changes_returns_true(self):
+        """Clean working tree (git status --porcelain empty) → True, no commit."""
+        import pipeline_orchestrator as orch
+
+        def _run(cmd, *args, **kwargs):
+            r = MagicMock()
+            if cmd[:2] == ["git", "status"]:
+                r.stdout = ""        # clean tree
+            else:
+                r.stdout = ""
+            r.returncode = 0
+            return r
+
+        with patch("subprocess.run", side_effect=_run) as mock_run:
+            ok = orch._run_commit_after(self._agent(), self._work_item())
+
+        assert ok is True
+        # Only the status check should have run — no commit/push.
+        commands = [c.args[0][:2] for c in mock_run.call_args_list]
+        assert ["git", "status"] in commands
+        assert ["git", "commit"] not in commands
+
+    def test_workflow_files_without_bot_token_returns_false(self, monkeypatch):
+        """Workflow files staged but AI_AGILE_BOT_TOKEN unset → False (GITHUB_TOKEN
+        cannot push workflow files)."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.delenv("AI_AGILE_BOT_TOKEN", raising=False)
+
+        def _run(cmd, *args, **kwargs):
+            r = MagicMock()
+            r.returncode = 0
+            r.stdout = ""
+            head = cmd[:2]
+            if head == ["git", "status"]:
+                r.stdout = " M foo.txt"  # dirty tree
+            elif head == ["git", "rev-parse"]:
+                r.stdout = "main"
+            elif cmd[:3] == ["git", "stash", "show"]:
+                r.stdout = ".github/workflows/ci.yml"
+            elif cmd[:3] == ["git", "diff", "--cached"] and "--name-only" in cmd:
+                # workflow-file detection diff
+                r.stdout = ".github/workflows/ci.yml"
+            return r
+
+        with patch("subprocess.run", side_effect=_run) as mock_run:
+            ok = orch._run_commit_after(self._agent(), self._work_item())
+
+        assert ok is False, (
+            "Staging workflow files without AI_AGILE_BOT_TOKEN must fail the "
+            "commit_after step (GITHUB_TOKEN lacks the workflow scope)."
+        )
+        # Must not have attempted a commit after the early failure.
+        commands = [c.args[0][:2] for c in mock_run.call_args_list]
+        assert ["git", "commit"] not in commands

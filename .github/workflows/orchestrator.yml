@@ -1,16 +1,22 @@
-name: Pipeline Orchestrator (pre-execute)
+name: Pipeline Orchestrator
 
-# Runs phases: 00_ondemand, 01_product_docs, 02_design
-# These agents only post comments, rewrite issue bodies, and apply labels.
-# contents:read means a compromised agent cannot push code to the repo even
-# if a prompt-injection attack succeeds.
+# Single orchestrator workflow — evaluates every pipeline phase in one pass.
 #
-# Trade-off: audit-log events from these phases are dropped because the
-# GitHub Contents API requires contents:write. The exception is caught and
-# logged as a warning by the orchestrator.
+# The orchestrator loads all agents from pipeline.json and processes whichever
+# work items are eligible, in dependency order, across every phase. Running the
+# whole pipeline in one workflow means cross-phase dependencies always resolve
+# (an agent in 03_execute can depend on one in 01_product_docs) and there is a
+# single concurrency group, so runs queue rather than race.
 #
-# Security note: if you are running this pipeline on a public repository,
-# see docs/product/agile/README.md for the full security guidance.
+# Permissions: contents:write is required because the coder pushes branches,
+# create-pr opens PRs, and prd-docs-updater commits doc changes to the issue
+# branch. The execute-phase agents are only reachable after the human gates in
+# the earlier phases (prd-writer:approved, etc.) have approved the work.
+#
+# Security note: if you are running this pipeline on a public repository, an
+# attacker who can open issues may be able to craft a prompt-injection payload
+# that reaches the coder agent after gates are approved. See
+# docs/product/agile/README.md for the full security guidance.
 
 on:
   issues:
@@ -33,23 +39,21 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
   issues: write
   pull-requests: write
   checks: read
 
-# Only one pre-execute run at a time.
+# Only one orchestrator run at a time — concurrent triggers queue.
 concurrency:
-  group: pipeline-pre-execute
+  group: pipeline-orchestrator
   cancel-in-progress: false
 
 jobs:
-  pre-execute:
-    name: Evaluate pipeline state (pre-execute phases)
+  orchestrate:
+    name: Evaluate pipeline state
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    env:
-      PIPELINE_PHASES: "00_ondemand,01_product_docs,02_design"
 
     steps:
       - name: Checkout
@@ -101,12 +105,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           AI_AGILE_ROOT: ${{ github.workspace }}
-          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state (pre-execute phases)\nEvaluate pipeline state (execute phases)"
+          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
           ORCHESTRATOR_ARGS: ${{ steps.args.outputs.args }}
         run: |
           read -ra EXTRA_ARGS <<< "$ORCHESTRATOR_ARGS"
           python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
             --verbose \
-            --phases "$PIPELINE_PHASES" \
             "${EXTRA_ARGS[@]}"

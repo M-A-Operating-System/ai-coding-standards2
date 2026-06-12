@@ -223,7 +223,7 @@ orchestrator reads them straight from the submodule:
 A small set of files were copied into your repo by `get_started.py`
 and **don't** auto-update:
 
-- `.github/workflows/orchestrator-pre-execute.yml` and `orchestrator-execute.yml` (GitHub Actions can't read workflows from submodules)
+- `.github/workflows/orchestrator.yml` (GitHub Actions can't read workflows from submodules)
 - `.claude/commands/*.md` (path rewrites are baked in at install time)
 
 If those have changed in the new submodule version, re-run:
@@ -256,8 +256,7 @@ workflow nor any slash command changed, no re-run is required.
 ├── .github/
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # this repo's own CI (does not run from a consuming repo)
-│       ├── orchestrator-pre-execute.yml     # phases 0-2, contents:read
-│       ├── orchestrator-execute.yml         # phases 3-5, contents:write
+│       ├── orchestrator.yml                 # all phases, contents:write
 │       └── validate-pipeline.yml
 ├── .claude/
 │   └── agents/                              # agent prompts, one subdir per phase
@@ -295,9 +294,8 @@ carry the same prefix:
 ## Standalone use (without submodule)
 
 This repo also runs against itself, for testing the standards. Open an
-issue or PR in this repo and the same orchestrator workflows at
-`.github/workflows/orchestrator-pre-execute.yml` and
-`.github/workflows/orchestrator-execute.yml` fire. No changes needed. This
+issue or PR in this repo and the same orchestrator workflow at
+`.github/workflows/orchestrator.yml` fires. No changes needed. This
 mode is how new agents are tested before being shipped to consuming
 repos.
 

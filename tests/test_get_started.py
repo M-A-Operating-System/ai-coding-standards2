@@ -450,6 +450,15 @@ class TestAddSubmodulesToCheckout:
         result = get_started._add_submodules_to_checkout(content)
         assert "with:\n" in result
         assert "submodules: true\n" in result
+        # Indentation is load-bearing: wrong indent = invalid YAML. The dash
+        # sits at 6 spaces, so with: must be at 8 and submodules: at 10.
+        assert (
+            "      - uses: actions/checkout@abc123\n"
+            "        with:\n"
+            "          submodules: true\n"
+        ) in result
+        # The non-checkout step below must remain untouched (no with: injected).
+        assert "      - uses: actions/setup-python@def456\n" in result
 
     def test_already_expanded_form_left_untouched(self):
         content = (
@@ -596,15 +605,12 @@ class TestInstallOrchestratorWorkflows:
         fake_src = tmp_path / "submodule"
         wf_dir = fake_src / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
-        (wf_dir / "orchestrator-pre-execute.yml").write_text(
-            "steps:\n  - uses: actions/checkout@v4\n"
-        )
-        (wf_dir / "orchestrator-execute.yml").write_text(
+        (wf_dir / "orchestrator.yml").write_text(
             "steps:\n  - name: Checkout\n    uses: actions/checkout@v4\n"
         )
         return fake_src
 
-    def test_copies_both_workflow_files(self, tmp_path, monkeypatch):
+    def test_copies_workflow_file(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
@@ -612,11 +618,10 @@ class TestInstallOrchestratorWorkflows:
 
         count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
 
-        assert count == 2
-        assert (consuming / ".github" / "workflows" / "orchestrator-pre-execute.yml").exists()
-        assert (consuming / ".github" / "workflows" / "orchestrator-execute.yml").exists()
+        assert count == 1
+        assert (consuming / ".github" / "workflows" / "orchestrator.yml").exists()
 
-    def test_injects_submodules_true_into_both(self, tmp_path, monkeypatch):
+    def test_injects_submodules_true(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
@@ -624,11 +629,10 @@ class TestInstallOrchestratorWorkflows:
 
         get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
 
-        for name in ("orchestrator-pre-execute.yml", "orchestrator-execute.yml"):
-            content = (consuming / ".github" / "workflows" / name).read_text()
-            assert "submodules: true" in content, f"{name} missing submodules: true"
+        content = (consuming / ".github" / "workflows" / "orchestrator.yml").read_text()
+        assert "submodules: true" in content, "orchestrator.yml missing submodules: true"
 
-    def test_returns_zero_when_both_src_missing(self, tmp_path, monkeypatch):
+    def test_returns_zero_when_src_missing(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "empty"
         fake_src.mkdir()
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
@@ -647,9 +651,8 @@ class TestInstallOrchestratorWorkflows:
 
         count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=True)
 
-        assert count == 2
-        assert not (consuming / ".github" / "workflows" / "orchestrator-pre-execute.yml").exists()
-        assert not (consuming / ".github" / "workflows" / "orchestrator-execute.yml").exists()
+        assert count == 1
+        assert not (consuming / ".github" / "workflows" / "orchestrator.yml").exists()
 
     def test_skip_when_force_false_and_file_exists(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
@@ -657,7 +660,7 @@ class TestInstallOrchestratorWorkflows:
         consuming = tmp_path / "consuming"
         wf_dir = consuming / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
-        existing = wf_dir / "orchestrator-pre-execute.yml"
+        existing = wf_dir / "orchestrator.yml"
         existing.write_text("original content")
 
         get_started.install_orchestrator_workflows(consuming, force=False, dry_run=False)
@@ -852,15 +855,94 @@ class TestAddGitignoreEntries:
         assert "__pycache__/" in text
         assert ".claude/agents" in text
 
-    def test_idempotent_no_duplicate_entries(self, tmp_path, monkeypatch):
+    def test_no_leading_blank_line_when_gitignore_absent(self, tmp_path, monkeypatch):
+        """New .gitignore must not start with a leading blank line; the managed
+        header is the first line (separator == "" when no existing content)."""
         fake_src = self._make_submodule(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
         consuming.mkdir()
 
         get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        text = (consuming / ".gitignore").read_text()
+        assert not text.startswith("\n")
+        first_line = text.splitlines()[0]
+        assert first_line == (
+            "# Managed by get_started.py — do not commit these paths manually; "
+            "sync-claude.yml is the authoritative committer"
+        )
+
+    def test_single_separator_newline_before_header(self, tmp_path, monkeypatch):
+        """Existing non-empty .gitignore gets exactly ONE blank line between the
+        prior content and the managed header — no doubled, no zero blank line."""
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / ".gitignore").write_text("*.pyc\n__pycache__/\n")
+
+        get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        text = (consuming / ".gitignore").read_text()
+        # Prior content ends "__pycache__/\n"; the appended block starts with a
+        # single "\n" separator before the header. The exact boundary substring
+        # proves there is exactly one blank line (not zero, not two).
+        assert (
+            "__pycache__/\n"
+            "\n"
+            "# Managed by get_started.py — do not commit these paths manually; "
+            "sync-claude.yml is the authoritative committer"
+        ) in text
+
+    def test_appends_without_duplicate_header_when_header_present(self, tmp_path, monkeypatch):
+        """header-already-present branch (needs_header=False): seed a .gitignore
+        that already has the managed header plus one managed pattern, then assert
+        new patterns are appended WITHOUT a second header line."""
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        header = (
+            "# Managed by get_started.py — do not commit these paths manually; "
+            "sync-claude.yml is the authoritative committer"
+        )
+        # Seed with header + one of the managed patterns already present.
+        (consuming / ".gitignore").write_text(
+            "*.pyc\n\n" + header + "\n.claude/agents\n"
+        )
+
+        count = get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        text = (consuming / ".gitignore").read_text()
+        # No duplicate header.
+        assert text.count(header) == 1
+        # The remaining managed patterns were appended.
+        assert ".claude/commands/" in text
+        assert ".claude/settings.local.json" in text
+        assert "standards/architecture.json" in text
+        # .claude/agents was already present, so it is not re-added.
+        assert text.count(".claude/agents") == 1
+        # Only the genuinely-missing patterns are counted.
+        assert count > 0
+
+    def test_idempotent_no_duplicate_entries(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        patterns = [
+            ".claude/agents",
+            ".claude/commands/",
+            ".claude/settings.local.json",
+            *get_started._managed_standards_files(),
+        ]
+        first = get_started.add_gitignore_entries(consuming, dry_run=False)
         second = get_started.add_gitignore_entries(consuming, dry_run=False)
 
+        # First call writes one entry per managed pattern.
+        assert first == len(patterns)
         assert second == 0
         text = (consuming / ".gitignore").read_text()
         assert text.count(".claude/agents") == 1
@@ -994,3 +1076,199 @@ class TestUntrackManagedPaths:
         assert len(rm_calls) == 1
         assert "--cached" in rm_calls[0]
         assert ".claude/agents" in rm_calls[0]
+
+
+# ---------------------------------------------------------------------------
+# TestPrintFollowup
+# ---------------------------------------------------------------------------
+
+class TestPrintFollowup:
+    """print_followup emits the load-bearing setup guidance. We assert stable
+    substrings rather than whole-line matches so wording tweaks don't break."""
+
+    def test_emits_load_bearing_guidance(self, tmp_path, capsys):
+        get_started.print_followup(tmp_path)
+        out = capsys.readouterr().out
+
+        # Step 4: bootstrap labels guidance.
+        assert "Bootstrap the" in out
+        assert "labels:" in out
+        # The local status.sh bootstrap-all invocation.
+        assert "status.sh" in out
+        assert "bootstrap-all" in out
+
+    def test_references_single_orchestrator_workflow(self, tmp_path, capsys):
+        """A SINGLE orchestrator.yml workflow is installed — the old split
+        pre-execute/execute files no longer exist and must not be referenced."""
+        get_started.print_followup(tmp_path)
+        out = capsys.readouterr().out
+
+        assert "orchestrator.yml" in out
+        # The retired split workflow filenames must not appear.
+        assert "pre-execute" not in out
+        assert "execute.yml" not in out
+
+    def test_emits_two_step_windows_bootstrap(self, tmp_path, capsys):
+        """The Windows flow is two-step: commit seed files (step 2), then run
+        the sync workflow on a Linux runner (step 3)."""
+        get_started.print_followup(tmp_path)
+        out = capsys.readouterr().out
+
+        assert "2. Commit the seed files" in out
+        assert "3. Run the sync workflow" in out
+        # Step 2 explicitly calls out Windows committing only the seed files.
+        assert "On Windows" in out
+
+
+# ---------------------------------------------------------------------------
+# TestParseArgsAndMain
+# ---------------------------------------------------------------------------
+
+class TestParseArgsAndMain:
+    def test_parse_args_defaults(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["get_started.py"])
+        args = get_started.parse_args()
+        assert args.force is False
+        assert args.dry_run is False
+
+    def test_parse_args_flags(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--force", "--dry-run"])
+        args = get_started.parse_args()
+        assert args.force is True
+        assert args.dry_run is True
+
+    def test_main_runs_dry_run_end_to_end(self, tmp_path, monkeypatch, capsys):
+        """main() in --dry-run wires the consuming repo without writing files."""
+        # A minimal submodule with one of every source the installers read.
+        fake_src = tmp_path / "submodule"
+        wf = fake_src / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        for name in (
+            "orchestrator.yml",
+            "bootstrap-labels.yml",
+            "label-cleanup.yml",
+            "sync-claude.yml",
+        ):
+            (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "architecture.json").write_text("{}")
+        (fake_src / ".claude" / "agents").mkdir(parents=True)
+        (fake_src / ".claude" / "agents" / "agent.md").write_text("# agent")
+        (fake_src / ".claude" / "commands").mkdir(parents=True)
+        (fake_src / ".claude" / "commands" / "cmd.md").write_text("# cmd")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        monkeypatch.setattr(
+            get_started, "find_consuming_repo_root", lambda: consuming
+        )
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--dry-run"])
+
+        rc = get_started.main()
+
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "dry run" in out
+        # Dry-run must not have written anything into the consuming repo.
+        assert not (consuming / ".github").exists()
+        assert not (consuming / "standards").exists()
+        assert not (consuming / ".gitignore").exists()
+
+
+# ---------------------------------------------------------------------------
+# TestFindConsumingRepoRoot
+# ---------------------------------------------------------------------------
+
+class TestFindConsumingRepoRoot:
+    def test_returns_superproject_path(self, tmp_path, monkeypatch):
+        """Success path: git reports a superproject working tree."""
+        import subprocess as sp
+        import types
+
+        super_dir = tmp_path / "super"
+        super_dir.mkdir()
+
+        def _mock_run(args, **kwargs):
+            return types.SimpleNamespace(
+                returncode=0, stdout=str(super_dir) + "\n", stderr=""
+            )
+
+        monkeypatch.setattr(sp, "run", _mock_run)
+
+        result = get_started.find_consuming_repo_root()
+
+        assert result == super_dir.resolve()
+
+    def test_exits_when_superproject_empty(self, monkeypatch):
+        """Empty superproject output => not installed as a submodule => sys.exit."""
+        import subprocess as sp
+        import types
+
+        def _mock_run(args, **kwargs):
+            return types.SimpleNamespace(returncode=0, stdout="\n", stderr="")
+
+        monkeypatch.setattr(sp, "run", _mock_run)
+
+        with pytest.raises(SystemExit) as exc:
+            get_started.find_consuming_repo_root()
+        # Non-zero / message exit (SystemExit carries the error string).
+        assert "submodule" in str(exc.value)
+
+    def test_exits_when_git_missing(self, monkeypatch):
+        """git binary missing => FileNotFoundError => sys.exit with guidance."""
+        import subprocess as sp
+
+        def _raise(*args, **kwargs):
+            raise FileNotFoundError("git not found")
+
+        monkeypatch.setattr(sp, "run", _raise)
+
+        with pytest.raises(SystemExit) as exc:
+            get_started.find_consuming_repo_root()
+        assert "git" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# TestDryRunStaleRemoval — the "WOULD REMOVE" branch
+# ---------------------------------------------------------------------------
+
+class TestDryRunStaleRemoval:
+    def test_install_agents_copy_dry_run_would_remove(self, tmp_path, capsys):
+        """_install_agents_copy in dry_run prints WOULD REMOVE for stale files
+        instead of deleting them."""
+        fake_src = _make_agents_src(tmp_path)
+        src_dir = fake_src / ".claude" / "agents"
+        consuming = tmp_path / "consuming"
+        dst_dir = consuming / ".claude" / "agents"
+        stale_dir = dst_dir / "99_retired"
+        stale_dir.mkdir(parents=True)
+        stale = stale_dir / "old-agent.md"
+        stale.write_text("old")
+
+        get_started._install_agents_copy(src_dir, dst_dir, force=True, dry_run=True)
+
+        out = capsys.readouterr().out
+        assert "WOULD REMOVE" in out
+        assert stale.exists()  # dry-run must not delete
+
+    def test_install_slash_commands_dry_run_would_remove(self, tmp_path, monkeypatch, capsys):
+        """install_slash_commands in dry_run prints WOULD REMOVE for stale
+        commands instead of deleting them."""
+        fake_src = tmp_path / "submodule"
+        cmd_dir = fake_src / ".claude" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "current.md").write_text("# current")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", fake_src.name)
+        consuming = tmp_path / "consuming"
+        dst_cmd_dir = consuming / ".claude" / "commands"
+        dst_cmd_dir.mkdir(parents=True)
+        stale = dst_cmd_dir / "old-cmd.md"
+        stale.write_text("stale")
+
+        get_started.install_slash_commands(consuming, force=True, dry_run=True)
+
+        out = capsys.readouterr().out
+        assert "WOULD REMOVE" in out
+        assert stale.exists()  # dry-run must not delete

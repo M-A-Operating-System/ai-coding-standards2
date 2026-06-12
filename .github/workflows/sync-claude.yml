@@ -82,8 +82,7 @@ jobs:
             .claude/agents \
             .claude/commands/ \
             .gitignore \
-            .github/workflows/orchestrator-pre-execute.yml \
-            .github/workflows/orchestrator-execute.yml \
+            .github/workflows/orchestrator.yml \
             .github/workflows/bootstrap-labels.yml \
             .github/workflows/label-cleanup.yml \
             .github/workflows/sync-claude.yml
