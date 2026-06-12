@@ -405,28 +405,16 @@ def install_orchestrator_workflows(
     force: bool,
     dry_run: bool,
 ) -> int:
-    """Copy the two orchestrator workflows into the consuming repo.
+    """Copy the orchestrator workflow into the consuming repo.
 
-    The pipeline uses two separate workflow files with different
-    GITHUB_TOKEN permission scopes:
-
-      orchestrator-pre-execute.yml  contents:read
-        Phases: 00_ondemand, 01_product_docs, 02_design
-        Agents only post comments and apply labels — cannot push code.
-
-      orchestrator-execute.yml      contents:write
-        Phases: 03_execute, 04_evaluate, 05_continuous
-        Coder pushes branches and creates PRs.
-
-    Splitting by file (rather than by job) makes the permission boundary
-    visible in the GitHub Actions UI and gives each workflow its own
-    independent concurrency group.
+    A single workflow file (orchestrator.yml) evaluates every pipeline
+    phase in one pass, with contents:write so the execute-phase agents
+    (coder, create-pr, prd-docs-updater) can push to the issue branch.
 
     Returns the number of files written.
     """
     workflows = [
-        "orchestrator-pre-execute.yml",
-        "orchestrator-execute.yml",
+        "orchestrator.yml",
     ]
     written = 0
     for name in workflows:
@@ -664,8 +652,7 @@ def print_followup(consuming_root: Path) -> None:
     print()
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
-    print(f"             .github/workflows/orchestrator-pre-execute.yml \\")
-    print(f"             .github/workflows/orchestrator-execute.yml \\")
+    print(f"             .github/workflows/orchestrator.yml \\")
     print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
@@ -696,7 +683,7 @@ def print_followup(consuming_root: Path) -> None:
     print(f"     regenerate it after a fresh clone.")
     print()
     print(f"  4. Bootstrap the {{agent}}:{{status}} labels:")
-    print(f"     Actions → 'AI Agile orchestrator (pre-execute)' → Run workflow.")
+    print(f"     Actions → 'Pipeline Orchestrator' → Run workflow.")
     print(f"     The bootstrap-labels job runs automatically on workflow_dispatch")
     print(f"     and creates all required labels in one step.")
     print()

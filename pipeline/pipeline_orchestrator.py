@@ -2850,10 +2850,10 @@ def parse_args() -> argparse.Namespace:
             "Comma-separated list of phases to process "
             "(e.g. '01_product_docs,02_design'). "
             "Default: all phases. "
-            "Use this to scope a CI job to a specific GITHUB_TOKEN permission "
-            "tier — pre-execute jobs run with contents:read; execute jobs run "
-            "with contents:write. Agents outside the allowed set are silently "
-            "skipped for this run only; pipeline state is unchanged."
+            "Useful for manual or debug runs to scope the orchestrator to a "
+            "subset of phases. Agents outside the allowed set are silently "
+            "skipped for this run only; pipeline state is unchanged. The "
+            "orchestrator workflow does not set this — it runs all phases."
         ),
     )
     p.add_argument(
@@ -2915,10 +2915,10 @@ def main() -> None:
 
     agents, default_extra_tools = load_pipeline(args.pipeline)
 
-    # Phase filter — restrict which agents this job is allowed to run.
-    # Used by the split-permission workflow (pre-execute job gets
-    # contents:read; execute job gets contents:write). Agents outside the
-    # allowed set are skipped silently; pipeline state is unchanged.
+    # Phase filter — restrict which agents this run is allowed to process.
+    # Optional; used for manual or debug runs. The orchestrator workflow does
+    # not set --phases, so it processes all phases in one pass. Agents outside
+    # the allowed set are skipped silently; pipeline state is unchanged.
     if args.phases:
         allowed_phases = {p.strip() for p in args.phases.split(",") if p.strip()}
         before_count = len(agents)

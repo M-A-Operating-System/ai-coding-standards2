@@ -916,26 +916,21 @@ class TestDryRunConcurrency:
 class TestOrchestratorNonOverlapping:
     """Scenario: Orchestrator runs remain non-overlapping."""
 
-    def test_workflow_defines_concurrency_groups(self):
+    def test_workflow_defines_concurrency_group(self):
         """
-        Given the two orchestrator workflow files
-        Then each defines its own concurrency group with cancel-in-progress: false
+        Given the single orchestrator workflow file
+        Then it defines a concurrency group with cancel-in-progress: false
         so concurrent triggers queue rather than cancel the active run.
         """
-        workflows_dir = Path(__file__).parent.parent / ".github" / "workflows"
-        for name, expected_group in [
-            ("orchestrator-pre-execute.yml", "pipeline-pre-execute"),
-            ("orchestrator-execute.yml", "pipeline-execute"),
-        ]:
-            path = workflows_dir / name
-            assert path.exists(), f"Workflow file not found: {path}"
-            content = path.read_text()
-            assert f"group: {expected_group}" in content, (
-                f"{name} must declare concurrency group '{expected_group}'"
-            )
-            assert "cancel-in-progress: false" in content, (
-                f"{name} must set cancel-in-progress: false"
-            )
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
+        assert path.exists(), f"Workflow file not found: {path}"
+        content = path.read_text()
+        assert "group: pipeline-orchestrator" in content, (
+            "orchestrator.yml must declare concurrency group 'pipeline-orchestrator'"
+        )
+        assert "cancel-in-progress: false" in content, (
+            "orchestrator.yml must set cancel-in-progress: false"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1230,27 +1225,20 @@ class TestPhasesFilter:
         filtered = [a for a in agents if a.phase in all_phases]
         assert filtered == agents
 
-    def test_workflow_split_phases_are_non_overlapping_and_complete(self):
-        """The two workflow job phase sets must cover all pipeline phases with no overlap."""
-        pre_execute = {"00_ondemand", "01_product_docs", "02_design"}
-        execute = {"03_execute", "04_evaluate", "05_continuous"}
+    def test_orchestrator_workflow_runs_all_phases(self):
+        """The single orchestrator workflow must not restrict phases.
 
-        assert pre_execute.isdisjoint(execute), "Phase sets must not overlap"
-
-        from pipeline_orchestrator import load_pipeline
-        from pathlib import Path
-
-        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
-        if not pipeline_path.exists():
-            pytest.skip("pipeline.json not available")
-
-        agents, _ = load_pipeline(pipeline_path)
-        all_pipeline_phases = {a.phase for a in agents}
-        union = pre_execute | execute
-        uncovered = all_pipeline_phases - union
-        assert not uncovered, (
-            f"Pipeline phases not covered by either workflow job: {uncovered}. "
-            "Add them to pre_execute or execute in orchestrator.yml."
+        Consolidating the two split workflows back into one means the
+        orchestrator loads every agent in a single pass, so cross-phase
+        dependencies always resolve. Guard against a regression that
+        reintroduces a --phases filter (which would silently drop agents).
+        """
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
+        assert path.exists(), f"Workflow file not found: {path}"
+        content = path.read_text()
+        assert "--phases" not in content, (
+            "orchestrator.yml must not pass --phases — the single workflow runs "
+            "all phases so cross-phase dependencies resolve."
         )
 
 

@@ -1,18 +1,22 @@
-name: Pipeline Orchestrator (execute)
+name: Pipeline Orchestrator
 
-# Runs phases: 03_execute, 04_evaluate, 05_continuous
-# Also runs the 01_product_docs/create-pr and 01_product_docs/prd-docs-updater
-# steps (phase: 03_execute in pipeline.json) — both require contents:write to
-# push to the issue branch.
-# The coder agent pushes branches and creates PRs — contents:write required.
-# This workflow is the higher-risk tier. It is only reachable after human
-# gates in the pre-execute phases have approved the work (prd-writer:approved,
-# design:approved, etc.).
+# Single orchestrator workflow — evaluates every pipeline phase in one pass.
 #
-# Security note: if you are running this pipeline on a public repository,
-# an attacker who can open issues may be able to craft a prompt-injection
-# payload that reaches the coder agent after gates are approved.
-# See docs/product/agile/README.md for the full security guidance.
+# The orchestrator loads all agents from pipeline.json and processes whichever
+# work items are eligible, in dependency order, across every phase. Running the
+# whole pipeline in one workflow means cross-phase dependencies always resolve
+# (an agent in 03_execute can depend on one in 01_product_docs) and there is a
+# single concurrency group, so runs queue rather than race.
+#
+# Permissions: contents:write is required because the coder pushes branches,
+# create-pr opens PRs, and prd-docs-updater commits doc changes to the issue
+# branch. The execute-phase agents are only reachable after the human gates in
+# the earlier phases (prd-writer:approved, etc.) have approved the work.
+#
+# Security note: if you are running this pipeline on a public repository, an
+# attacker who can open issues may be able to craft a prompt-injection payload
+# that reaches the coder agent after gates are approved. See
+# docs/product/agile/README.md for the full security guidance.
 
 on:
   issues:
@@ -40,18 +44,16 @@ permissions:
   pull-requests: write
   checks: read
 
-# Only one execute run at a time.
+# Only one orchestrator run at a time — concurrent triggers queue.
 concurrency:
-  group: pipeline-execute
+  group: pipeline-orchestrator
   cancel-in-progress: false
 
 jobs:
-  execute:
-    name: Evaluate pipeline state (execute phases)
+  orchestrate:
+    name: Evaluate pipeline state
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    env:
-      PIPELINE_PHASES: "03_execute,04_evaluate,05_continuous"
 
     steps:
       - name: Checkout
@@ -103,12 +105,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_AGILE_BOT_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN }}
           AI_AGILE_ROOT: ${{ github.workspace }}
-          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state (pre-execute phases)\nEvaluate pipeline state (execute phases)"
+          CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
           ORCHESTRATOR_ARGS: ${{ steps.args.outputs.args }}
         run: |
           read -ra EXTRA_ARGS <<< "$ORCHESTRATOR_ARGS"
           python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
             --verbose \
-            --phases "$PIPELINE_PHASES" \
             "${EXTRA_ARGS[@]}"

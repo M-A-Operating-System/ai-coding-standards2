@@ -596,15 +596,12 @@ class TestInstallOrchestratorWorkflows:
         fake_src = tmp_path / "submodule"
         wf_dir = fake_src / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
-        (wf_dir / "orchestrator-pre-execute.yml").write_text(
-            "steps:\n  - uses: actions/checkout@v4\n"
-        )
-        (wf_dir / "orchestrator-execute.yml").write_text(
+        (wf_dir / "orchestrator.yml").write_text(
             "steps:\n  - name: Checkout\n    uses: actions/checkout@v4\n"
         )
         return fake_src
 
-    def test_copies_both_workflow_files(self, tmp_path, monkeypatch):
+    def test_copies_workflow_file(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
@@ -612,11 +609,10 @@ class TestInstallOrchestratorWorkflows:
 
         count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
 
-        assert count == 2
-        assert (consuming / ".github" / "workflows" / "orchestrator-pre-execute.yml").exists()
-        assert (consuming / ".github" / "workflows" / "orchestrator-execute.yml").exists()
+        assert count == 1
+        assert (consuming / ".github" / "workflows" / "orchestrator.yml").exists()
 
-    def test_injects_submodules_true_into_both(self, tmp_path, monkeypatch):
+    def test_injects_submodules_true(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
@@ -624,11 +620,10 @@ class TestInstallOrchestratorWorkflows:
 
         get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
 
-        for name in ("orchestrator-pre-execute.yml", "orchestrator-execute.yml"):
-            content = (consuming / ".github" / "workflows" / name).read_text()
-            assert "submodules: true" in content, f"{name} missing submodules: true"
+        content = (consuming / ".github" / "workflows" / "orchestrator.yml").read_text()
+        assert "submodules: true" in content, "orchestrator.yml missing submodules: true"
 
-    def test_returns_zero_when_both_src_missing(self, tmp_path, monkeypatch):
+    def test_returns_zero_when_src_missing(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "empty"
         fake_src.mkdir()
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
@@ -647,9 +642,8 @@ class TestInstallOrchestratorWorkflows:
 
         count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=True)
 
-        assert count == 2
-        assert not (consuming / ".github" / "workflows" / "orchestrator-pre-execute.yml").exists()
-        assert not (consuming / ".github" / "workflows" / "orchestrator-execute.yml").exists()
+        assert count == 1
+        assert not (consuming / ".github" / "workflows" / "orchestrator.yml").exists()
 
     def test_skip_when_force_false_and_file_exists(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
@@ -657,7 +651,7 @@ class TestInstallOrchestratorWorkflows:
         consuming = tmp_path / "consuming"
         wf_dir = consuming / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
-        existing = wf_dir / "orchestrator-pre-execute.yml"
+        existing = wf_dir / "orchestrator.yml"
         existing.write_text("original content")
 
         get_started.install_orchestrator_workflows(consuming, force=False, dry_run=False)
