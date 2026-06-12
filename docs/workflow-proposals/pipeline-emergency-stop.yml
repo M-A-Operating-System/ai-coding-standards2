@@ -1,0 +1,89 @@
+name: Pipeline Emergency Stop
+
+# NOTE: This file must be moved to .github/workflows/pipeline-emergency-stop.yml
+# by a human with a classic PAT (repo+workflow scopes). GITHUB_TOKEN cannot push
+# workflow files. See issue #23 for context.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for stopping (recorded in .pipeline-stop and audit log)'
+        required: true
+        type: string
+      cancel_runs:
+        description: 'Cancel all currently-running orchestrator workflow runs'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  emergency-stop:
+    name: Write stop marker and cancel in-flight runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write stop marker
+        env:
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, datetime
+          marker = {
+            "stopped_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "reason": os.environ["REASON"],
+            "stopped_by": "github-actions",
+          }
+          with open(".pipeline-stop", "w") as f:
+              json.dump(marker, f, indent=2)
+          print(f"Stop marker written: {json.dumps(marker)}")
+          PYEOF
+
+      - name: Commit and push stop marker
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add .pipeline-stop
+          git commit -m "chore: write emergency stop marker [skip ci]"
+          git push
+
+      - name: Cancel in-flight orchestrator runs
+        if: ${{ github.event.inputs.cancel_runs == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Cancelling in-progress orchestrator runs..."
+          CANCELLED=0
+          RUN_IDS=$(gh run list \
+            --repo "$REPO" \
+            --workflow orchestrator.yml \
+            --status in_progress \
+            --json databaseId \
+            --jq '.[].databaseId')
+          for RUN_ID in $RUN_IDS; do
+            if gh run cancel "$RUN_ID" --repo "$REPO" 2>/dev/null; then
+              echo "Cancelled run $RUN_ID"
+              CANCELLED=$((CANCELLED + 1))
+            fi
+          done
+          echo "Total runs cancelled: $CANCELLED"
+          echo "CANCELLED_COUNT=$CANCELLED" >> "$GITHUB_ENV"
+
+      - name: Summary
+        run: |
+          echo "## Pipeline Emergency Stop Applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event.inputs.cancel_runs }}" = "true" ]; then
+            echo "**Runs cancelled:** ${CANCELLED_COUNT:-0}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The pipeline will not invoke any agents until the stop marker is cleared." >> "$GITHUB_STEP_SUMMARY"
+          echo "Run the **Pipeline Restart** workflow to resume normal operation." >> "$GITHUB_STEP_SUMMARY"

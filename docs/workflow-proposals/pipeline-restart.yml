@@ -1,0 +1,57 @@
+name: Pipeline Restart
+
+# NOTE: This file must be moved to .github/workflows/pipeline-restart.yml
+# by a human with a classic PAT (repo+workflow scopes). GITHUB_TOKEN cannot push
+# workflow files. See issue #23 for context.
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_run:
+        description: 'Immediately trigger a fresh orchestrator run after clearing the stop marker'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  restart:
+    name: Clear stop marker and optionally trigger orchestrator
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clear stop marker
+        run: |
+          if [ -f .pipeline-stop ]; then
+            echo "Found stop marker:"
+            cat .pipeline-stop
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git rm .pipeline-stop
+            git commit -m "chore: clear emergency stop marker [skip ci]"
+            git push
+            echo "Stop marker removed."
+          else
+            echo "No stop marker found — pipeline was not stopped."
+          fi
+
+      - name: Trigger fresh orchestrator run
+        if: ${{ github.event.inputs.trigger_run == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh workflow run orchestrator.yml --repo "$REPO"
+          echo "Fresh orchestrator run triggered."
+
+      - name: Summary
+        run: |
+          echo "## Pipeline Restart" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Stop marker:** Removed" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Fresh run triggered:** ${{ github.event.inputs.trigger_run }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
