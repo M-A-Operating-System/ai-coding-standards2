@@ -1987,6 +1987,10 @@ def _apply_failed(
 
     Args:
         reason: Optional human-readable cause override for the comment footer.
+            When set (and heading is not), it also changes the default heading
+            from "exited with an error" to "completed — post-run step failed",
+            implying the agent itself succeeded but a subsequent orchestrator
+            step failed. Pass an explicit heading= to override this behaviour.
         heading: Optional heading override. When set it replaces the default
             heading so callers can distinguish retry-exhaustion failures from
             generic non-zero exits.
@@ -2535,8 +2539,11 @@ def process_work_item(
                         f"attempt {_attempt} failed (exit {result.returncode if result.returncode is not None else 'unknown'}); "
                         f"retrying automatically.",
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning(
+                        "  could not post retry comment on #%d: %s",
+                        work_item.number, exc,
+                    )
                 time.sleep(_backoff)
                 result = invoke_agent(
                     agent_def, work_item, dry_run, repo, attempt=_attempt,
