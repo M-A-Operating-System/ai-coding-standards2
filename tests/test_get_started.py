@@ -179,6 +179,18 @@ class TestInstallAgentsWindows:
 
         assert written == 0
 
+    def test_direct_copy_helper_writes_files(self, tmp_path):
+        """_install_agents_copy called directly (second call site for STD-ARCH-002)."""
+        fake_src = _make_agents_src(tmp_path)
+        src_dir = fake_src / ".claude" / "agents"
+        consuming = tmp_path / "consuming"
+        dst_dir = consuming / ".claude" / "agents"
+
+        result = get_started._install_agents_copy(src_dir, dst_dir, force=True, dry_run=False)
+
+        assert result == 1
+        assert (dst_dir / "01_product_docs" / "prd-writer.md").exists()
+
 
 # ---------------------------------------------------------------------------
 # TestInstallAgentsLinux — symlink behaviour (default on Linux/macOS)
@@ -328,6 +340,19 @@ class TestInstallAgentsLinux:
 
         assert result == 0
         assert dst.is_file()  # not deleted
+
+    def test_direct_symlink_helper_creates_link(self, tmp_path):
+        """_install_agents_symlink called directly (second call site for STD-ARCH-002)."""
+        fake_src = _make_agents_src(tmp_path)
+        src_dir = fake_src / ".claude" / "agents"
+        consuming = tmp_path / "consuming"
+        dst_dir = consuming / ".claude" / "agents"
+
+        result = get_started._install_agents_symlink(src_dir, dst_dir, force=True, dry_run=False)
+
+        assert result == 1
+        assert dst_dir.is_symlink()
+        assert dst_dir.resolve() == src_dir.resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -939,3 +964,33 @@ class TestUntrackManagedPaths:
         rm_calls = [c for c in calls if "rm" in c]
         assert len(rm_calls) == 0
         assert count > 0  # tracked paths are counted in dry_run
+
+    def test_removes_tracked_path_non_dry_run(self, tmp_path, monkeypatch):
+        """Non-dry-run: git rm --cached is called for a tracked path and result == 1."""
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        calls = []
+        import subprocess as sp
+        import types
+
+        def _mock_run(args, **kwargs):
+            calls.append(list(args))
+            if args[1] == "ls-files":
+                stdout = ".claude/agents\n" if args[-1] == ".claude/agents" else ""
+                return types.SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+            if "rm" in args:
+                return types.SimpleNamespace(returncode=0, stdout="rm '.claude/agents'\n", stderr="")
+            return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+
+        monkeypatch.setattr(sp, "run", _mock_run)
+
+        result = get_started.untrack_managed_paths(consuming, dry_run=False)
+
+        rm_calls = [c for c in calls if "rm" in c]
+        assert result == 1
+        assert len(rm_calls) == 1
+        assert "--cached" in rm_calls[0]
+        assert ".claude/agents" in rm_calls[0]
