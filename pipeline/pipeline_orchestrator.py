@@ -1313,7 +1313,7 @@ class _StreamAccumulator:
 
 
 def _accumulate_stream_text(
-    lines: "Iterable[str]",
+    lines: list[str],
 ) -> tuple[str, Optional[int], Optional[int]]:
     """Batch form of the ``invoke_agent`` stream-json accumulation loop.
 
