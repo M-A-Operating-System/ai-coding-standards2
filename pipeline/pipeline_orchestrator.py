@@ -2139,6 +2139,15 @@ def _configure_git_auth() -> None:
         # GitHub git transport uses HTTP Basic auth, not Bearer.
         # Format: base64("x-access-token:TOKEN") — identical to actions/checkout.
         _encoded = base64.b64encode(f"x-access-token:{github_token}".encode()).decode()
+        # Remove any extraHeader written by actions/checkout into .git/config.
+        # Without this, git collects both the local-config entry and our env-var
+        # entry and sends two Authorization headers, causing HTTP 400.
+        subprocess.run(
+            ["git", "config", "--local", "--unset-all",
+             "http.https://github.com/.extraHeader"],
+            check=False,
+            capture_output=True,
+        )
         os.environ["GIT_CONFIG_COUNT"] = "1"
         os.environ["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
         os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_encoded}"
