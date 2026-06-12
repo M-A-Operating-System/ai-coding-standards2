@@ -568,11 +568,11 @@ def add_gitignore_entries(
 
     header = "# Managed by get_started.py — do not commit these paths manually; sync-claude.yml is the authoritative committer"
     needs_header = header not in existing_lines
-    block = (
-        ("\n" + header + "\n" if needs_header else "\n")
-        + "\n".join(to_add)
-        + "\n"
-    )
+    separator = "\n" if existing_lines else ""
+    if needs_header:
+        block = separator + header + "\n" + "\n".join(to_add) + "\n"
+    else:
+        block = separator + "\n".join(to_add) + "\n"
 
     if dry_run:
         print(f"  WOULD APPEND to {gitignore}:")
