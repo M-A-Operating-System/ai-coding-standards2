@@ -1512,3 +1512,320 @@ class TestWriteAuditLog:
 
         # Should have been called twice (one conflict + one success)
         assert gh._put.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# TestApplyFailedReason — heading= kwarg and reason= in _apply_failed
+# ---------------------------------------------------------------------------
+
+class TestApplyFailedReason:
+    """_apply_failed posts exhaustion reason and uses the correct heading."""
+
+    def _make_gh(self) -> MagicMock:
+        gh = MagicMock()
+        gh.remove_label = MagicMock()
+        gh.add_label = MagicMock()
+        gh.post_comment = MagicMock()
+        return gh
+
+    def test_reason_appears_in_failure_comment(self):
+        """When reason is provided, post_comment includes that text."""
+        agent_def = _make_agent_def("03_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+        reason = "_Retry limit of 3 exhausted after 4 attempt(s). Human intervention is required._"
+
+        _apply_failed(gh, agent_def, work_item, result, reason=reason)
+
+        assert gh.post_comment.called, "Expected post_comment to be called"
+        comment_body = gh.post_comment.call_args[0][1]
+        assert reason in comment_body, (
+            f"Expected reason text in comment body. Got: {comment_body!r}"
+        )
+
+    def test_retry_exhaustion_heading_not_post_run(self):
+        """Retry exhaustion uses a distinct heading — not 'post-run step failed'."""
+        agent_def = _make_agent_def("03_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+        exhaustion_heading = "### `03_execute/coder` failed — retry limit exhausted"
+
+        _apply_failed(
+            gh, agent_def, work_item, result,
+            reason="_Retry limit of 3 exhausted._",
+            heading=exhaustion_heading,
+        )
+
+        comment_body = gh.post_comment.call_args[0][1]
+        assert exhaustion_heading in comment_body, (
+            f"Expected exhaustion heading in comment. Got: {comment_body!r}"
+        )
+        assert "post-run step failed" not in comment_body, (
+            "Misleading 'post-run step failed' heading must not appear for retry exhaustion"
+        )
+
+    def test_no_reason_uses_generic_error_heading(self):
+        """Without reason, comment uses the generic 'exited with an error' heading."""
+        agent_def = _make_agent_def("03_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+
+        _apply_failed(gh, agent_def, work_item, result)
+
+        comment_body = gh.post_comment.call_args[0][1]
+        assert "exited with an error" in comment_body
+
+    def test_custom_heading_overrides_default(self):
+        """An explicit heading= kwarg takes precedence over the reason-derived heading."""
+        agent_def = _make_agent_def("03_execute/coder")
+        work_item = _make_work_item(42)
+        gh = self._make_gh()
+        result = AgentRunResult(success=False, returncode=1)
+        custom = "### `03_execute/coder` failed — custom context"
+
+        _apply_failed(gh, agent_def, work_item, result, reason="some reason", heading=custom)
+
+        comment_body = gh.post_comment.call_args[0][1]
+        assert custom in comment_body
+        assert "post-run step failed" not in comment_body
+
+
+# ---------------------------------------------------------------------------
+# TestRetryPolicy  (PRD scenarios for per-agent retry and restart policy)
+# ---------------------------------------------------------------------------
+
+class TestRetryPolicy:
+    """Gherkin-traced tests for the per-agent retry/restart policy in the orchestrator.
+
+    Each test corresponds to a named scenario in the approved PRD for issue #16.
+    """
+
+    def _make_agent(self, max_retries: int = 0) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent",
+            max_retries=max_retries,
+            commit_after=False,
+        )
+
+    def _make_gh(self) -> MagicMock:
+        gh = MagicMock()
+        gh.get_issue_labels.return_value = set()
+        return gh
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_retries_within_limit_posts_comment_and_succeeds(self, mock_invoke, mock_sleep):
+        """Scenario: Orchestrator retries a failed agent within configured limit.
+
+        Given an agent is configured with max_retries: 3 in pipeline.json
+        When the agent exits with a failure status and the current attempt count is below the limit
+        Then the orchestrator restarts the agent without applying :failed
+        And a comment is posted on the work item recording the retry attempt number
+        """
+        mock_invoke.side_effect = [
+            AgentRunResult(success=False, returncode=1, captured_tail="error"),
+            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
+        ]
+        agent_def = self._make_agent(max_retries=3)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"03_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:failed" not in add_calls, (
+            f":failed must not be applied when retry succeeds. add_label calls: {add_calls}"
+        )
+        assert "coder:complete" in add_calls, (
+            f":complete must be applied after successful retry. add_label calls: {add_calls}"
+        )
+        comment_bodies = [str(c[0][1]) for c in gh.post_comment.call_args_list]
+        assert any("retry" in b.lower() for b in comment_bodies), (
+            f"Expected a retry attempt comment. post_comment calls: {comment_bodies}"
+        )
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_escalates_when_retry_limit_exhausted(self, mock_invoke, mock_sleep):
+        """Scenario: Orchestrator escalates when retry limit is exhausted.
+
+        Given an agent is configured with max_retries: 3 in pipeline.json
+        And the agent has already failed 3 times (retry limit reached)
+        When the agent exits with a failure status again
+        Then the orchestrator applies :failed to the work item
+        And posts a comment stating that the retry limit has been exhausted
+        and human intervention is required
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=False, returncode=1, captured_tail="error"
+        )
+        agent_def = self._make_agent(max_retries=3)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"03_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:failed" in add_calls, (
+            f":failed must be applied when retry limit is exhausted. add_label calls: {add_calls}"
+        )
+        comment_bodies = [str(c[0][1]) for c in gh.post_comment.call_args_list]
+        escalation_comments = [
+            b for b in comment_bodies
+            if "exhausted" in b.lower() and "human" in b.lower()
+        ]
+        assert escalation_comments, (
+            f"Expected comment mentioning retry limit exhausted and human intervention. "
+            f"post_comment calls: {comment_bodies}"
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_no_retry_when_not_configured(self, mock_invoke):
+        """Scenario: Agent with no retry configuration fails immediately.
+
+        Given an agent has no max_retries entry in pipeline.json (defaults to 0)
+        When the agent exits with a failure status
+        Then the orchestrator applies :failed to the work item immediately without retrying
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=False, returncode=1, captured_tail="error"
+        )
+        agent_def = self._make_agent(max_retries=0)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"03_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        assert mock_invoke.call_count == 1, (
+            f"With max_retries=0, invoke_agent must be called exactly once (no retries). "
+            f"Call count: {mock_invoke.call_count}"
+        )
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:failed" in add_calls, (
+            f":failed must be applied immediately with max_retries=0. add_label calls: {add_calls}"
+        )
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_successful_recovery_applies_complete_no_retry_state(self, mock_invoke, mock_sleep):
+        """Scenario: Successfully recovered agent clears retry state.
+
+        Given an agent has been retried at least once
+        When the agent exits successfully on a subsequent attempt
+        Then the orchestrator applies the normal success label
+        And does not retain or display a retry count in the final state
+        """
+        mock_invoke.side_effect = [
+            AgentRunResult(success=False, returncode=1, captured_tail="error"),
+            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
+        ]
+        agent_def = self._make_agent(max_retries=3)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"03_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:complete" in add_calls, (
+            f":complete (normal success label) must be applied after recovery. "
+            f"add_label calls: {add_calls}"
+        )
+        retry_count_labels = [lbl for lbl in add_calls if "retry" in lbl.lower()]
+        assert not retry_count_labels, (
+            f"No retry-count label must remain on the work item after successful recovery. "
+            f"Found: {retry_count_labels}"
+        )
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_max_retries_one_both_fail_applies_failed(self, mock_invoke, mock_sleep):
+        """Boundary: max_retries=1 — first and second invocation fail → :failed applied."""
+        mock_invoke.return_value = AgentRunResult(
+            success=False, returncode=1, captured_tail="error"
+        )
+        agent_def = self._make_agent(max_retries=1)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"03_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:failed" in add_calls
+        assert mock_invoke.call_count == 2
+
+    @patch("pipeline_orchestrator.time.sleep")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_max_retries_one_fail_then_succeed_applies_complete(self, mock_invoke, mock_sleep):
+        """Boundary: max_retries=1 — first fails, second succeeds → :complete applied."""
+        mock_invoke.side_effect = [
+            AgentRunResult(success=False, returncode=1, captured_tail="error"),
+            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
+        ]
+        agent_def = self._make_agent(max_retries=1)
+        gh = self._make_gh()
+        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+
+        process_work_item(
+            work_item, [agent_def], {"03_execute/coder": agent_def},
+            gh, False, "test/repo",
+        )
+
+        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
+        assert "coder:complete" in add_calls
+        assert "coder:failed" not in add_calls
+
+
+# ---------------------------------------------------------------------------
+# TestSessionIdPatternRegexFix — correct detection of attribute/index access
+# ---------------------------------------------------------------------------
+
+class TestSessionIdPatternRegexFix:
+    """The regex r'\\{[^}]*[.\\[][^}]*\\}' must catch {foo.bar} and {foo[0]}
+    without false-positives on plain tokens like {issue_number}."""
+
+    _PATTERN = r"\{[^}]*[.\[][^}]*\}"
+
+    def test_detects_attribute_access(self):
+        import re
+        assert re.search(self._PATTERN, "{foo.bar}") is not None
+
+    def test_detects_index_access(self):
+        import re
+        assert re.search(self._PATTERN, "{foo[0]}") is not None
+
+    def test_simple_token_not_flagged(self):
+        import re
+        assert re.search(self._PATTERN, "{issue_number}") is None
+        assert re.search(self._PATTERN, "{agent}") is None
+
+    def test_old_broken_regex_raises_on_compile(self):
+        """The old regex r'\\{[^}]*[.[}' was an unterminated character set
+        that raised re.error on Python 3.11+."""
+        import re
+        with pytest.raises(re.error):
+            re.search(r"\{[^}]*[.[}", "{foo.bar}")
