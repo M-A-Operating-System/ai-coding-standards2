@@ -54,14 +54,12 @@ tag or specific commit when you're ready to control upgrades.
 python ai-coding-standards2/get_started.py
 ```
 
-This script:
-
-- Detects the consuming repo's root (via `git rev-parse --show-superproject-working-tree`).
-- Drops the two orchestrator workflows (`orchestrator-pre-execute.yml` and `orchestrator-execute.yml`) into your `.github/workflows/`. (GitHub Actions only reads workflows from the consuming repo's own `.github/`; it cannot pick them up from submodules.)
-- Copies the slash commands from `ai-coding-standards2/.claude/commands/` into your `.claude/commands/`, rewriting any submodule-relative paths so they resolve from your repo's root.
-- Writes `.claude/settings.local.json` setting `AI_AGILE_ROOT=ai-coding-standards2` so anyone running the orchestrator manually from your repo's root finds the right `pipeline.json`, `status.sh`, and agent prompts.
-
-Re-run with `--force` to overwrite existing files; with `--dry-run` to preview.
+This script does the local wiring — dropping workflows, creating the symlink
+or copies, and writing `.gitignore` entries. On Windows a second step (triggering
+`sync-claude.yml`) is needed to finish building and committing the managed paths
+via a Linux runner. See
+[`docs/product/agile/16-onboarding.md`](docs/product/agile/16-onboarding.md)
+for the full two-step breakdown.
 
 ### 3. Bootstrap the labels
 
@@ -135,11 +133,14 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 
 ### 5. Commit and open a test issue
 
+Commit only the seed files — `.claude/agents` and other managed paths are
+gitignored and will be set up by the sync workflow on Linux (see
+[16-onboarding.md](docs/product/agile/16-onboarding.md#windows-bootstrap-two-step-process)):
+
 ```bash
 git add .gitmodules ai-coding-standards2 \
-        .github/workflows/orchestrator-pre-execute.yml \
-        .github/workflows/orchestrator-execute.yml \
-        .claude/
+        .github/workflows/ \
+        .gitignore
 git commit -m "Wire up ai-coding-standards2 orchestrator"
 git push
 ```
@@ -222,19 +223,19 @@ orchestrator reads them straight from the submodule:
 A small set of files were copied into your repo by `get_started.py`
 and **don't** auto-update:
 
-- `.github/workflows/orchestrator-pre-execute.yml` (GitHub Actions can't read workflows from submodules)
-- `.github/workflows/orchestrator-execute.yml`
+- `.github/workflows/orchestrator-pre-execute.yml` and `orchestrator-execute.yml` (GitHub Actions can't read workflows from submodules)
 - `.claude/commands/*.md` (path rewrites are baked in at install time)
 
 If those have changed in the new submodule version, re-run:
 
 ```bash
 python ai-coding-standards2/get_started.py --force
-git add .github/workflows/orchestrator-pre-execute.yml \
-        .github/workflows/orchestrator-execute.yml \
-        .claude/
+git add .github/workflows/
 git commit -m "Refresh ai-coding-standards2 wrapper files"
 ```
+
+`.claude/agents`, `.claude/commands/`, and `standards/` are managed by the
+daily `sync-claude.yml` workflow and should not be committed manually.
 
 Look at the submodule's CHANGELOG (when one exists) or the diff
 between tags to know whether re-running is needed. If neither the
