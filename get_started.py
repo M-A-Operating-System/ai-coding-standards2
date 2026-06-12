@@ -14,10 +14,10 @@ repo at `<consuming-repo>/ai-coding-standards2/`. It:
      copies the slash commands from this submodule into it, rewriting
      any submodule-relative paths so they resolve from the consuming
      repo's root.
-  4. Drops the orchestrator workflow into the consuming repo's
-     `.github/workflows/orchestrator.yml`. (GitHub Actions cannot pick
-     up workflows from submodules; the consuming repo's own workflow
-     dir is the only place they can run from.)
+  4. Drops the orchestrator workflows into the consuming repo's
+     `.github/workflows/` directory. (GitHub Actions cannot pick up
+     workflows from submodules; the consuming repo's own workflow dir
+     is the only place they can run from.)
   5. Drops the daily .claude sync workflow into the consuming repo's
      `.github/workflows/sync-claude.yml`. This workflow re-runs this
      script with --force every day to prevent agent/command drift.
@@ -44,7 +44,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -215,21 +217,23 @@ def install_agents(
     force: bool,
     dry_run: bool,
 ) -> int:
-    """Copy .claude/agents/ from the submodule into the consuming repo.
+    """Wire .claude/agents/ from the submodule into the consuming repo.
 
-    Preserves the full subdirectory structure (01_product_docs/,
-    03_execute/, etc.). Agent files reference all paths via $AI_AGILE_ROOT
-    so no path rewriting is needed — they are copied verbatim.
+    On Linux/macOS: creates a directory symlink dst → src so the agents
+    directory is always in sync with the submodule without copying files.
+
+    On Windows: falls back to verbatim file copies (directory symlinks
+    require elevated privileges on Windows).
 
     IMPORTANT: The orchestrator ALWAYS reads agent prompts from the
     submodule (SUBMODULE_ROOT/.claude/agents/), never from these copies.
-    The copies are provided solely for interactive Claude Code sessions
-    (developers using /agents or viewing agent files locally). Editing the
-    copies has no effect on pipeline execution and the copies are
-    overwritten on every daily sync-claude run. To customise an agent for
-    the pipeline, pin the submodule to a fork or raise a PR upstream.
+    The symlink / copies are provided solely for interactive Claude Code
+    sessions (developers using /agents or viewing agent files locally).
+    Editing the copies has no effect on pipeline execution. To customise
+    an agent for the pipeline, pin the submodule to a fork or raise a PR
+    upstream.
 
-    Returns the number of files written.
+    Returns 1 (symlink created/updated) or the number of files written.
     """
     src_dir = SUBMODULE_ROOT / ".claude" / "agents"
     dst_dir = consuming_root / ".claude" / "agents"
@@ -239,6 +243,69 @@ def install_agents(
         return 0
 
     print(f"  Agents: {src_dir} → {dst_dir}")
+
+    if sys.platform != "win32":
+        return _install_agents_symlink(src_dir, dst_dir, force, dry_run)
+    return _install_agents_copy(src_dir, dst_dir, force, dry_run)
+
+
+def _install_agents_symlink(
+    src_dir: Path,
+    dst_dir: Path,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    """Create a relative directory symlink dst_dir → src_dir.
+
+    Returns 1 if a symlink was (or would be) created/updated, 0 if skipped.
+    """
+    rel_target = os.path.relpath(src_dir, dst_dir.parent)
+
+    if dst_dir.is_symlink():
+        resolved = (dst_dir.parent / os.readlink(dst_dir)).resolve()
+        if resolved == src_dir.resolve():
+            print(f"  SKIP   {dst_dir}  (symlink already correct)")
+            return 0
+        if not force:
+            print(f"  SKIP   {dst_dir}  (symlink exists pointing elsewhere; pass --force to update)")
+            return 0
+        if dry_run:
+            print(f"  WOULD  {dst_dir} → {rel_target}  (replace symlink)")
+            return 1
+        dst_dir.unlink()
+    elif dst_dir.is_dir():
+        if not force:
+            print(f"  SKIP   {dst_dir}  (directory exists; pass --force to replace with symlink)")
+            return 0
+        if dry_run:
+            print(f"  WOULD  {dst_dir} → {rel_target}  (replace directory with symlink; contents will be removed)")
+            return 1
+        print(f"  WARNING  replacing {dst_dir} with symlink — any files not in the submodule will be removed")
+        shutil.rmtree(dst_dir)
+    elif dst_dir.exists():
+        print(f"  SKIP   {dst_dir}  (exists but is not a directory or symlink; skipping)")
+        return 0
+    elif dry_run:
+        print(f"  WOULD  {dst_dir} → {rel_target}")
+        return 1
+
+    dst_dir.parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(rel_target, dst_dir)
+    print(f"  LINKED {dst_dir} → {rel_target}")
+    return 1
+
+
+def _install_agents_copy(
+    src_dir: Path,
+    dst_dir: Path,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    """Verbatim-copy agent files from src_dir into dst_dir.
+
+    Used on Windows where directory symlinks require elevated privileges.
+    Returns the number of files written.
+    """
     written = 0
     for src in sorted(src_dir.rglob("*.md")):
         rel = src.relative_to(src_dir)
@@ -301,8 +368,8 @@ def install_slash_commands(
 def _add_submodules_to_checkout(content: str) -> str:
     """Insert 'submodules: true' into every bare actions/checkout step.
 
-    The standalone orchestrator.yml omits submodules: true because this
-    repo IS the submodule. Consuming repos need it to check out the
+    The standalone orchestrator workflows omit submodules: true because
+    this repo IS the submodule. Consuming repos need it to check out the
     ai-coding-standards2 submodule at workflow runtime.
 
     Handles both named form ('- name: Checkout\\n  uses: ...') and
@@ -449,6 +516,139 @@ def install_local_settings(
     return write_file(dst, json.dumps(payload, indent=2) + "\n", force, dry_run)
 
 
+def _managed_standards_files() -> list[str]:
+    """Return 'standards/<name>.json' for every submodule-managed base standard.
+
+    Excludes adrs.json (project-owned, stays committed) and *.schema.json
+    (pipeline infrastructure, not agent-loadable).
+    """
+    src = SUBMODULE_ROOT / "standards"
+    if not src.is_dir():
+        return []
+    return [
+        f"standards/{f.name}"
+        for f in sorted(src.glob("*.json"))
+        if not f.name.endswith(".schema.json") and f.name != "adrs.json"
+    ]
+
+
+def add_gitignore_entries(
+    consuming_root: Path,
+    dry_run: bool,
+) -> int:
+    """Append .gitignore entries for get_started-managed files.
+
+    Covers directories/files that get_started creates but that should not
+    be committed to the consuming repo:
+      - .claude/agents    — symlink (Linux) or copied files (Windows)
+      - .claude/commands/ — always copied with path rewrites
+      - .claude/settings.local.json — developer-local settings
+      - standards/<name>.json — base standards copied from the submodule
+        (project-owned adrs.json is intentionally excluded so it remains
+         committed)
+
+    Idempotent: patterns already present in .gitignore are not re-added.
+    Returns the number of new entries written (or that would be written).
+    """
+    gitignore = consuming_root / ".gitignore"
+
+    patterns: list[str] = [
+        ".claude/agents",
+        ".claude/commands/",
+        ".claude/settings.local.json",
+        *_managed_standards_files(),
+    ]
+
+    existing_lines = set(gitignore.read_text().splitlines()) if gitignore.exists() else set()
+
+    to_add = [p for p in patterns if p not in existing_lines]
+    if not to_add:
+        print(f"  SKIP   .gitignore  (all entries already present)")
+        return 0
+
+    header = "# Managed by get_started.py — re-created by sync-claude.yml; do not commit"
+    needs_header = header not in existing_lines
+    block = (
+        ("\n" + header + "\n" if needs_header else "\n")
+        + "\n".join(to_add)
+        + "\n"
+    )
+
+    if dry_run:
+        print(f"  WOULD APPEND to {gitignore}:")
+        for p in to_add:
+            print(f"    {p}")
+        return len(to_add)
+
+    gitignore.parent.mkdir(parents=True, exist_ok=True)
+    with open(gitignore, "a") as fh:
+        fh.write(block)
+
+    plural = "entry" if len(to_add) == 1 else "entries"
+    print(f"  Gitignore: added {len(to_add)} {plural} to {gitignore}")
+    return len(to_add)
+
+
+def untrack_managed_paths(consuming_root: Path, dry_run: bool) -> int:
+    """Remove get_started-managed paths from git tracking (git rm --cached).
+
+    Previous versions of get_started.py instructed users to commit
+    .claude/agents/, .claude/commands/, and base standards files.
+    This function removes those paths from the git index so they stop
+    being tracked, without deleting the local copies.  Safe to call on
+    repos that never tracked these paths (no-op when not tracked).
+
+    Returns the number of paths removed from the index.
+    """
+    candidates = [
+        ".claude/agents",
+        ".claude/commands",
+        ".claude/settings.local.json",
+        *_managed_standards_files(),
+    ]
+
+    removed = 0
+    for path in candidates:
+        try:
+            check = subprocess.run(
+                ["git", "ls-files", "--", path],
+                cwd=consuming_root,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            break  # git binary not found; skip all
+
+        if check.returncode != 0:
+            # Fatal git error (e.g. "not a git repository") — no point continuing.
+            # Transient per-path errors also return non-zero; bail once on first.
+            if check.stderr.strip():
+                break
+            continue
+
+        if not check.stdout.strip():
+            continue  # not tracked
+
+        if dry_run:
+            print(f"  WOULD  git rm --cached -r {path}  (currently tracked; will be gitignored)")
+            removed += 1
+            continue
+
+        result = subprocess.run(
+            ["git", "rm", "--cached", "-r", "--", path],
+            cwd=consuming_root,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            print(f"  UNTRACKED  {path}  (removed from git index; local files unchanged)")
+            removed += 1
+        else:
+            print(f"  WARN  {path}  (git rm --cached failed: {result.stderr.strip()})")
+
+    return removed
+
+
 def print_followup(consuming_root: Path) -> None:
     print()
     print("Done. Next steps:")
@@ -457,42 +657,53 @@ def print_followup(consuming_root: Path) -> None:
     print(f"       ANTHROPIC_API_KEY  — your Anthropic API key")
     print(f"       AI_AGILE_BOT_TOKEN — a GitHub PAT for the bot account")
     print()
-    print(f"  2. Commit the new files:")
-    print(f"     git add .github/workflows/orchestrator-pre-execute.yml \\")
+    print(f"  2. Commit the seed files (workflows + .gitignore only).")
+    print(f"     On Windows these are the only files to commit — the sync")
+    print(f"     workflow (step 3) will create and commit everything else")
+    print(f"     from a Linux runner automatically.")
+    print()
+    print(f"     git add .gitmodules \\")
+    print(f"             {SUBMODULE_NAME} \\")
+    print(f"             .github/workflows/orchestrator-pre-execute.yml \\")
     print(f"             .github/workflows/orchestrator-execute.yml \\")
     print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
-    print(f"             .claude/agents/ \\")
-    print(f"             .claude/commands/ \\")
-    print(f"             standards/")
+    print(f"             .gitignore")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
+    print(f"     git push")
     print()
-    print(f"     NOTE: do NOT commit .claude/settings.local.json — it is")
-    print(f"     developer-local. Add it to your .gitignore if not already.")
+    print(f"     If any managed paths were previously committed,")
+    print(f"     get_started.py has already staged their removal via")
+    print(f"     'git rm --cached' — include those staged deletions in")
+    print(f"     this commit too.")
     print()
-    print(f"     The base standards in standards/ are managed by the submodule.")
-    print(f"     Add project-specific standards as NEW files (e.g. standards/myapp.json)")
-    print(f"     rather than modifying the base files — the daily sync-claude.yml")
-    print(f"     will overwrite base files but never delete your additions.")
+    print(f"  3. Run the sync workflow to build the full Linux environment.")
+    print(f"     Go to: GitHub → Actions → 'Sync AI Agile .claude directory'")
+    print(f"     → Run workflow.")
     print()
-    print(f"     AGENT PROMPTS: The pipeline orchestrator reads agent prompts")
-    print(f"     directly from the submodule ({SUBMODULE_NAME}/.claude/agents/).")
-    print(f"     The copies in .claude/agents/ are for interactive Claude Code")
-    print(f"     sessions only. Editing them does NOT affect pipeline execution")
-    print(f"     and they are overwritten by the daily sync. To change agent")
-    print(f"     behaviour, pin to a fork or raise a PR upstream.")
+    print(f"     This runs get_started.py on a Linux runner, which creates:")
+    print(f"       .claude/agents      — symlink → submodule agents dir")
+    print(f"       .claude/commands/   — copies with path rewrites")
+    print(f"       standards/          — copies with schema path rewrites")
+    print(f"     and commits them all. After this step the repo is fully set up.")
     print()
-    print(f"  3. Bootstrap the {{agent}}:{{status}} labels:")
-    print(f"     Trigger the orchestrator workflow manually once from")
-    print(f"     Actions → AI Agile orchestrator → Run workflow.")
+    print(f"     The sync workflow also runs daily at 06:00 UTC so these")
+    print(f"     files are kept in sync as the submodule is updated.")
+    print()
+    print(f"     NOTE: .claude/settings.local.json is never committed —")
+    print(f"     it is developer-local. Run get_started.py locally to")
+    print(f"     regenerate it after a fresh clone.")
+    print()
+    print(f"  4. Bootstrap the {{agent}}:{{status}} labels:")
+    print(f"     Actions → 'AI Agile orchestrator (pre-execute)' → Run workflow.")
     print(f"     The bootstrap-labels job runs automatically on workflow_dispatch")
     print(f"     and creates all required labels in one step.")
     print()
     print(f"     (Or run locally: bash {SUBMODULE_NAME}/.github/scripts/status.sh")
     print(f"      bootstrap-all {SUBMODULE_NAME}/pipeline/pipeline.json)")
     print()
-    print(f"  4. Open a test issue with a problem statement and acceptance criteria.")
+    print(f"  5. Open a test issue with a problem statement and acceptance criteria.")
     print(f"     The orchestrator workflow fires on issue-opened; expect")
     print(f"     `01_product_docs/issue-classifier:wip` then `:complete` labels.")
     print()
@@ -533,6 +744,8 @@ def main() -> int:
     install_agents(consuming_root, args.force, args.dry_run)
     install_slash_commands(consuming_root, args.force, args.dry_run)
     install_local_settings(consuming_root, args.force, args.dry_run)
+    add_gitignore_entries(consuming_root, args.dry_run)
+    untrack_managed_paths(consuming_root, args.dry_run)
 
     print_followup(consuming_root)
     return 0

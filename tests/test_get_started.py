@@ -7,6 +7,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 import get_started
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_agents_src(tmp_path, name="submodule"):
+    fake_src = tmp_path / name
+    agents_src = fake_src / ".claude" / "agents" / "01_product_docs"
+    agents_src.mkdir(parents=True)
+    (agents_src / "prd-writer.md").write_text("# prd-writer")
+    return fake_src
+
 
 # ---------------------------------------------------------------------------
 # TestInstallStandards
@@ -110,16 +121,14 @@ class TestInstallStandards:
 
 
 # ---------------------------------------------------------------------------
-# TestInstallAgents
+# TestInstallAgentsWindows — copy behaviour (simulated via os.name = "nt")
 # ---------------------------------------------------------------------------
 
-class TestInstallAgents:
+class TestInstallAgentsWindows:
     def test_copies_agent_files_with_subdirs(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        agents_src = fake_src / ".claude" / "agents" / "01_product_docs"
-        agents_src.mkdir(parents=True)
-        (agents_src / "prd-writer.md").write_text("# prd-writer")
+        fake_src = _make_agents_src(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "win32")
         consuming = tmp_path / "consuming"
         consuming.mkdir()
 
@@ -131,11 +140,9 @@ class TestInstallAgents:
         assert dst.read_text() == "# prd-writer"
 
     def test_removes_stale_agents(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        agents_src = fake_src / ".claude" / "agents" / "01_product_docs"
-        agents_src.mkdir(parents=True)
-        (agents_src / "prd-writer.md").write_text("# prd-writer")
+        fake_src = _make_agents_src(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "win32")
         consuming = tmp_path / "consuming"
         stale_dir = consuming / ".claude" / "agents" / "99_retired"
         stale_dir.mkdir(parents=True)
@@ -148,10 +155,10 @@ class TestInstallAgents:
 
     def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
-        agents_src = fake_src / ".claude" / "agents"
-        agents_src.mkdir(parents=True)
-        (agents_src / "agent.md").write_text("# agent")
+        (fake_src / ".claude" / "agents").mkdir(parents=True)
+        (fake_src / ".claude" / "agents" / "agent.md").write_text("# agent")
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "win32")
         consuming = tmp_path / "consuming"
         consuming.mkdir()
 
@@ -159,6 +166,168 @@ class TestInstallAgents:
 
         assert written == 1
         assert not (consuming / ".claude" / "agents" / "agent.md").exists()
+
+    def test_skips_when_src_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "empty"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "win32")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        written = get_started.install_agents(consuming, force=True, dry_run=False)
+
+        assert written == 0
+
+
+# ---------------------------------------------------------------------------
+# TestInstallAgentsLinux — symlink behaviour (default on Linux/macOS)
+# ---------------------------------------------------------------------------
+
+class TestInstallAgentsLinux:
+    def test_creates_symlink_to_src(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_agents(consuming, force=True, dry_run=False)
+
+        dst = consuming / ".claude" / "agents"
+        assert result == 1
+        assert dst.is_symlink()
+        # Symlink should resolve to the source directory
+        assert dst.resolve() == (fake_src / ".claude" / "agents").resolve()
+
+    def test_symlink_uses_relative_target(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_agents(consuming, force=True, dry_run=False)
+
+        dst = consuming / ".claude" / "agents"
+        link_target = os.readlink(dst)
+        assert not os.path.isabs(link_target), "symlink target should be relative"
+
+    def test_idempotent_correct_symlink_skipped(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_agents(consuming, force=True, dry_run=False)
+        result = get_started.install_agents(consuming, force=False, dry_run=False)
+
+        assert result == 0  # already correct, skipped
+
+    def test_force_replaces_wrong_symlink(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        (consuming / ".claude").mkdir(parents=True)
+        dst = consuming / ".claude" / "agents"
+        os.symlink("/tmp/wrong-target", dst)
+
+        result = get_started.install_agents(consuming, force=True, dry_run=False)
+
+        assert result == 1
+        assert dst.resolve() == (fake_src / ".claude" / "agents").resolve()
+
+    def test_force_replaces_existing_directory_with_symlink(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        dst = consuming / ".claude" / "agents"
+        dst.mkdir(parents=True)
+        (dst / "stale.md").write_text("stale copy")
+
+        result = get_started.install_agents(consuming, force=True, dry_run=False)
+
+        assert result == 1
+        assert dst.is_symlink()
+
+    def test_dry_run_does_not_remove_existing_directory(self, tmp_path, monkeypatch):
+        """dry_run + force + existing dir returns 1 but must not delete the directory."""
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        dst = consuming / ".claude" / "agents"
+        dst.mkdir(parents=True)
+        (dst / "existing.md").write_text("existing")
+
+        result = get_started.install_agents(consuming, force=True, dry_run=True)
+
+        assert result == 1
+        assert dst.is_dir()  # not deleted
+        assert (dst / "existing.md").exists()  # contents preserved
+
+    def test_no_force_skips_existing_directory(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        dst = consuming / ".claude" / "agents"
+        dst.mkdir(parents=True)
+        (dst / "existing.md").write_text("existing")
+
+        result = get_started.install_agents(consuming, force=False, dry_run=False)
+
+        assert result == 0
+        assert not dst.is_symlink()
+
+    def test_dry_run_does_not_create_symlink(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_agents(consuming, force=True, dry_run=True)
+
+        assert result == 1
+        assert not (consuming / ".claude" / "agents").exists()
+
+    def test_agents_accessible_through_symlink(self, tmp_path, monkeypatch):
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_agents(consuming, force=True, dry_run=False)
+
+        agent = consuming / ".claude" / "agents" / "01_product_docs" / "prd-writer.md"
+        assert agent.exists()
+        assert agent.read_text() == "# prd-writer"
+
+    def test_cygwin_msys2_takes_symlink_path(self, tmp_path, monkeypatch):
+        """sys.platform != 'win32' is the correct guard; Cygwin has os.name=='posix'."""
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        # Simulate Cygwin: os.name is 'posix' but sys.platform is still 'cygwin'.
+        # The guard sys.platform != 'win32' correctly takes the symlink path.
+        monkeypatch.setattr(sys, "platform", "cygwin")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        result = get_started.install_agents(consuming, force=True, dry_run=False)
+
+        dst = consuming / ".claude" / "agents"
+        assert result == 1
+        assert dst.is_symlink()
+
+    def test_skip_when_agents_path_is_regular_file(self, tmp_path, monkeypatch):
+        """shutil.rmtree must not be called on a regular file — skip instead."""
+        fake_src = _make_agents_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        dst = consuming / ".claude" / "agents"
+        dst.parent.mkdir(parents=True)
+        dst.write_text("i am a file, not a directory")
+
+        result = get_started.install_agents(consuming, force=True, dry_run=False)
+
+        assert result == 0
+        assert dst.is_file()  # not deleted
 
 
 # ---------------------------------------------------------------------------
@@ -599,3 +768,174 @@ class TestInstallLocalSettings:
 
         assert result is False
         assert '"original"' in dst.read_text()
+
+
+# ---------------------------------------------------------------------------
+# TestAddGitignoreEntries
+# ---------------------------------------------------------------------------
+
+class TestAddGitignoreEntries:
+    def _make_submodule(self, tmp_path):
+        """Minimal submodule with one base standards file."""
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "architecture.json").write_text("{}")
+        (fake_src / "standards" / "adrs.json").write_text("{}")
+        (fake_src / "standards" / "pipeline.schema.json").write_text("{}")
+        return fake_src
+
+    def test_creates_gitignore_when_absent(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        assert count > 0
+        gitignore = consuming / ".gitignore"
+        assert gitignore.exists()
+        text = gitignore.read_text()
+        assert ".claude/agents" in text
+        assert ".claude/commands/" in text
+        assert ".claude/settings.local.json" in text
+
+    def test_includes_base_standards_not_adrs(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        text = (consuming / ".gitignore").read_text()
+        assert "standards/architecture.json" in text
+        assert "standards/adrs.json" not in text
+        assert "standards/pipeline.schema.json" not in text
+
+    def test_appends_to_existing_gitignore(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / ".gitignore").write_text("*.pyc\n__pycache__/\n")
+
+        get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        text = (consuming / ".gitignore").read_text()
+        assert "*.pyc" in text
+        assert "__pycache__/" in text
+        assert ".claude/agents" in text
+
+    def test_idempotent_no_duplicate_entries(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.add_gitignore_entries(consuming, dry_run=False)
+        second = get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        assert second == 0
+        text = (consuming / ".gitignore").read_text()
+        assert text.count(".claude/agents") == 1
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.add_gitignore_entries(consuming, dry_run=True)
+
+        assert count > 0
+        assert not (consuming / ".gitignore").exists()
+
+    def test_partial_update_adds_only_missing(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / ".gitignore").write_text(".claude/agents\n")
+
+        count = get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        text = (consuming / ".gitignore").read_text()
+        assert text.count(".claude/agents") == 1
+        assert ".claude/commands/" in text
+        assert ".claude/settings.local.json" in text
+        # count reflects only the newly added pattern lines (not the header/blank)
+        new_entries = [l for l in text.splitlines() if l and not l.startswith("#") and l != ".claude/agents"]
+        assert count == len(new_entries)
+
+
+# ---------------------------------------------------------------------------
+# TestUntrackManagedPaths
+# ---------------------------------------------------------------------------
+
+class TestUntrackManagedPaths:
+    """untrack_managed_paths() removes get_started-managed paths from git.
+
+    We cannot run real git operations in tmp_path, so we test the
+    git-not-available path and verify the function is a safe no-op.
+    """
+
+    def _make_submodule(self, tmp_path):
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "architecture.json").write_text("{}")
+        (fake_src / "standards" / "adrs.json").write_text("{}")
+        return fake_src
+
+    def test_returns_zero_when_git_unavailable(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        # Monkeypatch subprocess.run to simulate git not found
+        import subprocess as sp
+        def _raise(*args, **kwargs):
+            raise FileNotFoundError("git not found")
+        monkeypatch.setattr(sp, "run", _raise)
+
+        result = get_started.untrack_managed_paths(consuming, dry_run=False)
+
+        assert result == 0
+
+    def test_returns_zero_in_non_git_dir(self, tmp_path, monkeypatch):
+        """In a non-git directory git ls-files returns non-zero; function is a no-op."""
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        # Run against a real non-git directory; should not raise, returns 0
+        result = get_started.untrack_managed_paths(consuming, dry_run=False)
+
+        assert result == 0
+
+    def test_dry_run_does_not_call_git_rm(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        calls = []
+        import subprocess as sp
+        real_run = sp.run
+        def _mock_run(args, **kwargs):
+            calls.append(args)
+            if args[1] == "ls-files":
+                # Simulate a tracked file
+                import types
+                r = types.SimpleNamespace(returncode=0, stdout=".claude/agents\n", stderr="")
+                return r
+            return real_run(args, **kwargs)
+        monkeypatch.setattr(sp, "run", _mock_run)
+
+        count = get_started.untrack_managed_paths(consuming, dry_run=True)
+
+        rm_calls = [c for c in calls if "rm" in c]
+        assert len(rm_calls) == 0
+        assert count > 0  # tracked paths are counted in dry_run
