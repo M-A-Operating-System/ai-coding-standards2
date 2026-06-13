@@ -22,9 +22,9 @@ def _make_gh(reviews=None, get_error=None):
     gh = MagicMock()
     gh.repo = "owner/repo"
     if get_error:
-        gh._get.side_effect = get_error
+        gh.get_pr_reviews.side_effect = get_error
     else:
-        gh._get.return_value = reviews if reviews is not None else []
+        gh.get_pr_reviews.return_value = reviews if reviews is not None else []
     gh.add_label = MagicMock()
     gh.remove_label = MagicMock()
     gh.post_comment = MagicMock()
@@ -160,7 +160,7 @@ class TestFetchUnresolvedHumanReviewRequests:
     def test_uses_correct_api_endpoint(self):
         gh = _make_gh(reviews=[])
         _fetch_unresolved_human_review_requests(gh, 77)
-        gh._get.assert_called_once_with("/repos/owner/repo/pulls/77/reviews")
+        gh.get_pr_reviews.assert_called_once_with(77)
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +201,8 @@ class TestHandleReviewLoopFreeReInvoke:
         review_cycle_labels = [l for l in labels if l.startswith("review-cycle:")]
         assert review_cycle_labels == []
         for call_args in gh.add_label.call_args_list:
-            assert not str(call_args).startswith("review-cycle:"), (
+            applied_label = call_args[0][1]
+            assert not applied_label.startswith("review-cycle:"), (
                 "review-cycle label should not be applied on free re-invoke"
             )
 

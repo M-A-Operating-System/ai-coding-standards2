@@ -424,6 +424,9 @@ class GitHubClient:
         data = self._get(f"/repos/{self.repo}/issues/{number}/labels")
         return {lbl["name"] for lbl in data}
 
+    def get_pr_reviews(self, pr_number: int) -> list:
+        return self._get(f"/repos/{self.repo}/pulls/{pr_number}/reviews")
+
     def add_label(self, number: int, label: str) -> None:
         self._ensure_label_exists(label)
         self._post(f"/repos/{self.repo}/issues/{number}/labels", {"labels": [label]})
@@ -1111,7 +1114,7 @@ def _fetch_unresolved_human_review_requests(gh: "GitHubClient", pr_number: int) 
     the edge-case path without failing the run.
     """
     try:
-        reviews = gh._get(f"/repos/{gh.repo}/pulls/{pr_number}/reviews")
+        reviews = gh.get_pr_reviews(pr_number)
     except Exception as exc:
         log.warning("could not fetch PR reviews for #%d: %s", pr_number, exc)
         return []
