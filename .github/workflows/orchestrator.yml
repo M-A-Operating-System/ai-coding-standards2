@@ -107,9 +107,12 @@ jobs:
           AI_AGILE_ROOT: ${{ github.workspace }}
           CI_GATE_EXCLUDE_JOB_NAMES: "Evaluate pipeline state"
           ORCHESTRATOR_ARGS: ${{ steps.args.outputs.args }}
+          ORCHESTRATOR_DEBUG: ${{ vars.ORCHESTRATOR_DEBUG }}
         run: |
           read -ra EXTRA_ARGS <<< "$ORCHESTRATOR_ARGS"
+          DEBUG_FLAG=""
+          [ "${ORCHESTRATOR_DEBUG:-false}" = "true" ] && DEBUG_FLAG="--verbose"
           python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
-            --verbose \
+            ${DEBUG_FLAG} \
             "${EXTRA_ARGS[@]}"
