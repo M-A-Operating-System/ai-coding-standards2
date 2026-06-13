@@ -148,27 +148,44 @@ if [ -n "$REVIEW_CYCLE_LABEL" ]; then
     echo "AI_AGILE_STATUS: blocked \"'${REVIEW_CYCLE_LABEL}' is malformed — expected review-cycle:N where N is a positive integer\""
     exit 1
   fi
-  # Mode B — self-discover the associated PR via GitHub data model
+  # Mode B — self-discover the associated PR via GitHub data model.
+  # Try the canonical branch name first, then fall back to the source-issue
+  # label (applied by link-pr-to-issue.sh) so that rebased branches (e.g.
+  # issue-23-rebase) are found even when they don't match the issue-{N} pattern.
   PR_NUMBER=$(gh pr list \
     --repo "$REPO" \
     --head "issue-${ISSUE_NUMBER}" \
     --state open \
     --json number \
     --jq '.[0].number // empty')
+
   if [ -z "$PR_NUMBER" ]; then
-    echo "AI_AGILE_STATUS: blocked \"review-cycle:${REVIEW_CYCLE} present but no open PR found for head branch issue-${ISSUE_NUMBER}\""
+    PR_NUMBER=$(gh pr list \
+      --repo "$REPO" \
+      --state open \
+      --label "source-issue:${ISSUE_NUMBER}" \
+      --json number \
+      --jq '.[0].number // empty')
+  fi
+
+  if [ -z "$PR_NUMBER" ]; then
+    echo "AI_AGILE_STATUS: blocked \"review-cycle:${REVIEW_CYCLE} present but no open PR found for issue #${ISSUE_NUMBER} (checked head branch issue-${ISSUE_NUMBER} and source-issue:${ISSUE_NUMBER} label)\""
     exit 1
   fi
-  echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE}  PR=${PR_NUMBER}"
+
+  # Capture the PR's actual head branch — may differ from issue-{N} if the
+  # branch was rebased. Used in announcements and for the orchestrator push.
+  PR_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')
+  echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE}  PR=${PR_NUMBER}  BRANCH=${PR_BRANCH}"
 else
   echo "MODE=A"
 fi
 ```
 
-Export `PR_NUMBER` so later steps can use it:
+Export `PR_NUMBER` and `PR_BRANCH` so later steps can use them:
 
 ```bash
-export PR_NUMBER
+export PR_NUMBER PR_BRANCH
 ```
 
 Then follow the corresponding section below.
@@ -303,6 +320,8 @@ that apply.
 - Named constants for every magic literal
 - Boundary validation on all external inputs
 - Only implement what the sub-issue specifies
+- For file removal, use `try: path.unlink() / except FileNotFoundError: pass` — never `if path.exists(): path.unlink()` (TOCTOU race)
+- Before adding a new `import` to a test file, read the CI install step (`.github/workflows/test.yml` or equivalent) and verify the package is installed there; if not, add it in the same commit
 
 **6c — Write Gherkin-traced tests.** For every Gherkin scenario in the
 approved PRD, write at least one corresponding test. Each test must:
@@ -494,7 +513,8 @@ Work through Required items first, then Expected items. For each:
 code it refers to. Understand the root cause, not just the surface symptom.
 
 **5b — Fix defensively.** Apply the full defensive canon to every change.
-If the fix reveals a related issue nearby, fix that too.
+If the fix reveals a related issue nearby, fix that too. Same rules as 6b apply:
+exception-guarded file removal, CI dependency check before new test imports.
 
 **5c — Update or add tests.** If the feedback identified a missing test
 or a test that didn't catch a bug, fix or add the test now. After all
@@ -545,7 +565,7 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "mode": "address-feedback",
   "ended_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "outcome": "complete",
-  "summary": "Addressed review feedback on PR #${PR_NUMBER}. Orchestrator will commit and push to the existing branch."
+  "summary": "Addressed review feedback on PR #${PR_NUMBER}. Orchestrator will commit and push to the existing branch (${PR_BRANCH})."
 }
 \`\`\`
 EOF
