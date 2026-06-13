@@ -8,7 +8,7 @@ description: >
   review — the pipeline pauses at the merge-conflict:approved gate until a human
   approves the plan. Gates on merge-conflict:approved.
 tools: [Bash, Read, Glob, Grep]
-model: claude-sonnet-4-6
+model: claude-haiku-4-5-20251001
 max_turns: 60
 extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *), Bash(gh api *)]
 ---

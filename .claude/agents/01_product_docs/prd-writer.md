@@ -2,8 +2,12 @@
 name: 01_product_docs/prd-writer
 description: >
   Drafts a Product Requirements Document for an issue that has passed
-  classification. Rewrites the issue body with the PRD in user-story
-  and Gherkin format. Waits for the prd-writer:approved gate.
+  classification. First checks whether the issue body already contains a
+  complete specification (Gherkin, acceptance criteria, user stories, problem
+  statement) — if so, preserves it and only appends missing governance elements
+  (header comment, title prefix, standards check). If no pre-existing spec is
+  found, rewrites the issue body with a full PRD in user-story and Gherkin
+  format. Waits for the prd-writer:approved gate.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 45
@@ -80,6 +84,35 @@ them so you can flag inline violations in the PRD:
 ```bash
 find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null
 ```
+
+---
+
+## Step 1.5 — Detect pre-existing specification
+
+Before drafting anything, assess whether the issue body already contains a
+complete technical specification that should be preserved.
+
+Score the following signals against the current issue body:
+
+| Signal | Present? |
+|---|---|
+| Gherkin-style scenarios (lines starting with **Given**, **When**, **Then**) | |
+| An explicit acceptance criteria section (heading or bullet list) | |
+| User stories ("As a … I want … so that …") | |
+| A problem or background section (>2 sentences of context) | |
+| A goal or objective statement | |
+| Body length > ~300 words | |
+
+**Decision:**
+
+- **≥4 signals present** → the issue is **pre-specified**. Go to
+  **Step 3A (Augmentation mode)** — skip Steps 2 and 3. The existing
+  specification is preserved; only governance elements are added.
+- **<4 signals present** → the issue needs a full PRD. Continue to
+  **Step 2 (Sanity-check)** and **Step 3 (Draft)** as normal.
+
+Log your assessment briefly (e.g. "Pre-specified: 5/6 signals — going to
+augmentation mode") so the human can see what path was taken.
 
 ---
 
@@ -196,6 +229,71 @@ Append a **Standards check** line **only when** product-layer
 (`${AI_AGILE_ROOT}/standards/*.json`) violations exist, listing them
 by STD ID. If there are no violations — or no product-layer standards
 files exist — omit the footer entirely.
+
+---
+
+## Step 3A — Augmentation mode (pre-specified issues only)
+
+**Only enter this step when Step 1.5 scored ≥4 signals.** Skip it entirely
+for issues going through the normal Step 3 draft path.
+
+The existing specification is the source of truth. Your job is to:
+
+1. Identify which governance elements are missing from the body.
+2. Add only what is missing — never remove or paraphrase existing content.
+
+### 3A-1 — Assess what governance is missing
+
+Check the body for:
+
+- **PRD header comment** — `<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->`
+- **Standards check** — a "Standards check" line citing any violated STD IDs
+  (only relevant if product-layer standards files exist in
+  `${AI_AGILE_ROOT}/standards/`)
+- **Correct title prefix** — `[BUG]`, `[FEATURE]`, `[ENHANCEMENT]`, etc.
+  (see Step 4b prefix table)
+
+### 3A-2 — Snapshot the original body
+
+Run the snapshot block from Step 4a (below) — the same idempotent check
+applies. If a snapshot already exists, this is a no-op.
+
+### 3A-3 — Build the augmented body
+
+Construct the new body by:
+
+1. Adding the governance header comment as the very first line.
+2. Keeping the entire existing body content verbatim beneath it.
+3. Appending a **Standards check** block at the end **only if** there are
+   product-layer standards files AND the existing body contains violations
+   (list them by STD ID). If there are no violations, omit it entirely.
+
+```bash
+NEW_BODY=$(cat <<'BODY_EOF'
+<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
+
+{EXISTING_BODY_VERBATIM}
+
+---
+*Pre-existing specification preserved. Governance elements added by prd-writer.*
+BODY_EOF
+)
+# Append standards check only if violations were found:
+# NEW_BODY="${NEW_BODY}\n\n**Standards check:** STD-SEC-001 ..."
+```
+
+### 3A-4 — Rewrite title (prefix only) and body
+
+Apply the title prefix from the Step 4b table. Do **not** rephrase the
+existing title text — only prepend the `[CATEGORY]` prefix if absent.
+
+```bash
+gh issue edit $ISSUE_NUMBER --repo $REPO \
+  --title "${NEW_TITLE}" \
+  --body  "${NEW_BODY}"
+```
+
+Then go directly to **Step 5** — signal review.
 
 ---
 
@@ -330,6 +428,9 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 
 ## Behaviour rules
 
+- **Detect before drafting.** Always run Step 1.5 before writing anything.
+  A pre-existing spec (≥4 signals) goes through augmentation (Step 3A),
+  not the full draft path. Never discard a detailed existing specification.
 - **The snapshot is immutable.** Once posted, never edit it, even if
   the PRD is rewritten after rejection.
 - **PRD lives in the issue body, not a comment.** Re-runs overwrite
