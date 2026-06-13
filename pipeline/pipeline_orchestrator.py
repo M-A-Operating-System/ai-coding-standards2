@@ -3011,6 +3011,21 @@ def main() -> None:
     else:
         work_items = gh.list_open_issues(kind="all")
 
+    # Two-pass priority ordering: issues carrying the `priority` label are
+    # moved to the front so they receive the next available :wip slot before
+    # any non-priority work item. Concurrency limits apply unchanged to both
+    # passes. Python's sort is stable, so relative order within each group
+    # is preserved from the GitHub API response.
+    _priority_items = [wi for wi in work_items if "priority" in wi.labels]
+    _other_items    = [wi for wi in work_items if "priority" not in wi.labels]
+    if _priority_items:
+        log.info(
+            "Priority items: %d (will be evaluated first): %s",
+            len(_priority_items),
+            [wi.number for wi in _priority_items],
+        )
+    work_items = _priority_items + _other_items
+
     log.info("Work items to evaluate: %d", len(work_items))
 
     if not args.dry_run:

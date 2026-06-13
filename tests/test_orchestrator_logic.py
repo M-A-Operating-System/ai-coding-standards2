@@ -2361,3 +2361,211 @@ class TestRunCommitAfter:
         # Must not have attempted a commit after the early failure.
         commands = [c.args[0][:2] for c in mock_run.call_args_list]
         assert ["git", "commit"] not in commands
+
+
+# ---------------------------------------------------------------------------
+# TestPriorityScheduling — Gherkin-traced tests for issue #119
+# ---------------------------------------------------------------------------
+
+class TestPriorityScheduling:
+    """Tests for the two-pass priority work item ordering in main().
+
+    Each test corresponds to a named scenario in the approved PRD for issue #119.
+    """
+
+    def _make_agent_for_priority(self) -> AgentDef:
+        return AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=10,
+        )
+
+    def _eligible_wi(self, number: int, *, priority: bool = False) -> WorkItem:
+        labels = {"issue-classifier:complete"}
+        if priority:
+            labels.add("priority")
+        return WorkItem(
+            number=number,
+            kind="issue",
+            title=f"Test issue #{number}",
+            labels=labels,
+            url=f"https://github.com/test/repo/issues/{number}",
+        )
+
+    # Scenario: Priority issue is started before a non-priority issue
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_priority_issue_receives_wip_before_non_priority(self, mock_invoke):
+        """Given a priority issue and a non-priority issue both eligible to start
+        When the orchestrator selects the next work item to start
+        Then the priority-labeled issue receives :wip before the non-priority issue.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = self._make_agent_for_priority()
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+
+        # priority_wi has number 2, non_priority_wi has number 1 —
+        # without priority sorting, number 1 would be processed first.
+        non_priority_wi = self._eligible_wi(1, priority=False)
+        priority_wi = self._eligible_wi(2, priority=True)
+
+        # Simulate main()'s two-pass reorder: priority items first.
+        _priority = [wi for wi in [non_priority_wi, priority_wi] if "priority" in wi.labels]
+        _other    = [wi for wi in [non_priority_wi, priority_wi] if "priority" not in wi.labels]
+        ordered = _priority + _other
+
+        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        dispatched_numbers = []
+        for wi in ordered:
+            gh = _make_gh_mock()
+            n = process_work_item(
+                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+                concurrency=conc,
+            )
+            if n > 0:
+                dispatched_numbers.append(wi.number)
+
+        assert dispatched_numbers[0] == 2, (
+            f"Priority issue #2 must be dispatched first; actual order: {dispatched_numbers}"
+        )
+
+    # Scenario: Concurrency limit is respected for priority items
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_concurrency_limit_respected_for_priority_items(self, mock_invoke):
+        """Given the orchestrator is at the max concurrent limit
+        And a priority-labeled issue exists
+        When the orchestrator evaluates the next selection cycle
+        Then no new work item is started until a concurrency slot becomes available.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = self._make_agent_for_priority()
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+
+        conc = ConcurrencyState(
+            running_counts={"prd-writer": 10},  # at max_concurrent ceiling
+            tick_launch_count=0,
+        )
+        priority_wi = self._eligible_wi(1, priority=True)
+
+        gh = _make_gh_mock()
+        n = process_work_item(
+            priority_wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+            concurrency=conc,
+        )
+
+        assert n == 0, (
+            f"Priority issue must not start when per-agent concurrency ceiling is reached; "
+            f"dispatched count: {n}"
+        )
+        mock_invoke.assert_not_called()
+
+    # Scenario: Normal selection resumes when no priority items are open
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_normal_selection_resumes_when_no_priority_items(self, mock_invoke):
+        """Given there are no open priority-labeled issues
+        And non-priority issues are eligible
+        When the orchestrator selects the next work item
+        Then a non-priority issue is selected using normal selection logic.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = self._make_agent_for_priority()
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+
+        # No priority items — only regular ones.
+        regular_items = [self._eligible_wi(i, priority=False) for i in [10, 20, 30]]
+
+        _priority = [wi for wi in regular_items if "priority" in wi.labels]
+        _other    = [wi for wi in regular_items if "priority" not in wi.labels]
+        ordered = _priority + _other  # same order as input when no priority items
+
+        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        dispatched = []
+        for wi in ordered:
+            gh = _make_gh_mock()
+            n = process_work_item(
+                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+                concurrency=conc,
+            )
+            if n > 0:
+                dispatched.append(wi.number)
+
+        assert dispatched == [10], (
+            f"With no priority items, normal selection (first eligible) must proceed; "
+            f"dispatched: {dispatched}"
+        )
+
+    # Scenario: Priority label on an already-in-progress item has no effect on selection
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_priority_on_in_progress_item_is_ignored(self, mock_invoke):
+        """Given an issue is already in progress (has :wip)
+        When a stakeholder applies the priority label to that in-progress issue
+        Then no duplicate processing is triggered.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = self._make_agent_for_priority()
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+
+        # Work item already carrying :wip — even with priority label.
+        in_progress_priority_wi = WorkItem(
+            number=5,
+            kind="issue",
+            title="In-progress priority issue",
+            labels={"issue-classifier:complete", "priority", "prd-writer:wip"},
+            url="https://github.com/test/repo/issues/5",
+        )
+
+        gh = _make_gh_mock()
+        conc = ConcurrencyState(running_counts={"prd-writer": 1})
+        n = process_work_item(
+            in_progress_priority_wi, agents, pipeline_map, gh,
+            dry_run=False, repo="test/repo", concurrency=conc,
+        )
+
+        assert n == 0, (
+            "An already-in-progress priority issue must not trigger a duplicate run; "
+            f"dispatched count: {n}"
+        )
+        mock_invoke.assert_not_called()
+
+    def test_priority_sort_puts_labeled_items_first(self):
+        """Unit test for the two-pass reorder logic used in main().
+
+        Given a mixed list of work items — some with priority, some without —
+        When the two-pass sort is applied
+        Then all priority-labeled items precede all non-priority items.
+        """
+        items = [
+            WorkItem(1, "issue", "Normal 1",   {"issue-classifier:complete"},          "http://x/1"),
+            WorkItem(2, "issue", "Priority 1", {"issue-classifier:complete", "priority"}, "http://x/2"),
+            WorkItem(3, "issue", "Normal 2",   {"issue-classifier:complete"},          "http://x/3"),
+            WorkItem(4, "issue", "Priority 2", {"priority"},                           "http://x/4"),
+        ]
+        _priority = [wi for wi in items if "priority" in wi.labels]
+        _other    = [wi for wi in items if "priority" not in wi.labels]
+        ordered = _priority + _other
+
+        ordered_numbers = [wi.number for wi in ordered]
+        # Both priority items (2, 4) must come before non-priority items (1, 3).
+        priority_indices = [i for i, wi in enumerate(ordered) if "priority" in wi.labels]
+        other_indices    = [i for i, wi in enumerate(ordered) if "priority" not in wi.labels]
+        assert max(priority_indices) < min(other_indices), (
+            f"All priority items must precede all non-priority items; "
+            f"got order {ordered_numbers}"
+        )
