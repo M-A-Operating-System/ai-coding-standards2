@@ -22,6 +22,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install pytest requests
+        run: pip install pytest requests pyyaml
       - name: Run tests
         run: pytest tests/ -v
