@@ -2307,6 +2307,7 @@ class TestMarkReadyOnComplete:
         process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
         gh.mark_pr_ready.assert_called_once_with(99)
+        gh.find_pr_by_label.assert_not_called()
 
     @patch("pipeline_orchestrator.invoke_agent")
     def test_label_fallback_finds_pr_by_source_issue_label(self, mock_invoke):

@@ -537,7 +537,7 @@ class GitHubClient:
         """
         data = self._get(
             f"/repos/{self.repo}/issues",
-            params={"labels": label, "state": "open", "per_page": 10},
+            params={"labels": label, "state": "open", "per_page": 100},
         )
         for item in data:
             if "pull_request" in item:
