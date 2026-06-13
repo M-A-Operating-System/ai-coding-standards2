@@ -529,6 +529,21 @@ class GitHubClient:
         )
         return data[0]["number"] if data else None
 
+    def find_pr_by_label(self, label: str) -> Optional[int]:
+        """Return the number of the first open PR that has *label*, or None.
+
+        Uses the issues API (which includes PRs) since the pulls API does not
+        support label filtering directly.
+        """
+        data = self._get(
+            f"/repos/{self.repo}/issues",
+            params={"labels": label, "state": "open", "per_page": 100},
+        )
+        for item in data:
+            if "pull_request" in item:
+                return item["number"]
+        return None
+
     def _put(self, path: str, body: dict) -> requests.Response:
         """Issue a PUT request; returns the raw response so callers can inspect 409."""
         return self._request("PUT", path, json_body=body)
@@ -766,6 +781,49 @@ def clear_pause() -> bool:
         log.info("Pause marker cleared.")
         return True
     return False
+
+
+def is_pipeline_stopped() -> tuple[bool, str]:
+    """Return (stopped, reason). No auto-expiry — must be cleared explicitly.
+
+    The stop marker is a JSON file at STOP_MARKER_PATH containing:
+        { "stopped_at": "<ISO-8601>", "reason": "...", "stopped_by": "github-actions" }
+
+    Unlike the pause marker, the stop marker has no time field and is never
+    auto-cleared. It persists until the pipeline-restart workflow deletes it
+    or the operator runs --clear-stop.
+    """
+    try:
+        raw = STOP_MARKER_PATH.read_text()
+    except FileNotFoundError:
+        return False, ""
+    except OSError as exc:
+        log.warning(
+            "Stop marker at %s could not be read (%s); ignoring.",
+            STOP_MARKER_PATH, exc,
+        )
+        return False, ""
+
+    try:
+        marker = json.loads(raw)
+        reason = marker.get("reason", "pipeline stopped")
+    except (json.JSONDecodeError, ValueError):
+        reason = "pipeline stopped (malformed marker)"
+
+    return True, reason
+
+
+def clear_stop() -> bool:
+    """Clear the emergency stop marker. Returns True if a marker was cleared.
+
+    # Mirrors clear_pause() — one call site is expected for this operator-only flag.
+    """
+    try:
+        STOP_MARKER_PATH.unlink()
+        log.info("Stop marker cleared.")
+        return True
+    except FileNotFoundError:
+        return False
 
 
 def detect_rate_limit(output: str) -> tuple[bool, int]:
@@ -1067,6 +1125,12 @@ AI_AGILE_CONTEXT = SUBMODULE_ROOT / ".claude" / "AGENTS.md"
 # the wait and exits cleanly. The next scheduled tick (or a manual
 # workflow_dispatch with --clear-pause) resumes work.
 PAUSE_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / ".pipeline-pause"
+
+# Emergency stop marker. Written by the pipeline-emergency-stop workflow when an
+# operator halts the pipeline manually. Unlike the rate-limit pause, this marker
+# is never auto-cleared — it persists until the pipeline-restart workflow deletes
+# it (or the operator runs --clear-stop locally).
+STOP_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / ".pipeline-stop"
 
 # Fixed UUID v5 namespace for deterministic session ID generation.
 # The claude CLI requires a valid UUID for --session-id; we derive one
@@ -2810,8 +2874,14 @@ def process_work_item(
                     _ready_pr_number = work_item.number
                 elif work_item.kind == "issue":
                     # For issue-scoped agents, look up the PR on the issue branch.
+                    # Fall back to source-issue:{N} label for rebased branches that
+                    # don't match the canonical issue-{N} pattern.
                     try:
                         _ready_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+                        if _ready_pr_number is None:
+                            _ready_pr_number = gh.find_pr_by_label(
+                                f"source-issue:{work_item.number}"
+                            )
                     except Exception as exc:
                         log.warning(
                             "  could not look up PR for issue #%d: %s",
@@ -2822,6 +2892,7 @@ def process_work_item(
                     _ready_pr_number = None
 
                 if _ready_pr_number:
+                    # Best-effort draft→ready promotion (no-op when not supported).
                     try:
                         gh.mark_pr_ready(_ready_pr_number)
                         log.info(
@@ -2856,6 +2927,24 @@ def process_work_item(
         triggered += 1
 
     return triggered
+
+
+# ---------------------------------------------------------------------------
+# Helpers used by entry point
+# ---------------------------------------------------------------------------
+
+def _discover_github_token() -> str | None:
+    """Return the GitHub token from env or gh CLI; None if unavailable."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return token
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -2915,6 +3004,13 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--clear-stop",
+        action="store_true",
+        help="Clear the emergency stop marker if set, then exit. "
+             "Use this when you want to resume after an emergency stop "
+             "without running the pipeline-restart workflow.",
+    )
+    p.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Show debug-level output",
@@ -2936,6 +3032,14 @@ def main() -> None:
             log.info("No pause marker was set.")
         return
 
+    # Manual stop clear — short-circuit before doing anything else.
+    if args.clear_stop:
+        if clear_stop():
+            log.info("Stop marker cleared. Re-run without --clear-stop to resume work.")
+        else:
+            log.info("No stop marker was set.")
+        return
+
     # If a previous run hit an Anthropic rate limit and wrote the pause
     # marker, exit early. The scheduled tick will retry once the marker
     # has expired (or the operator clears it manually with --clear-pause).
@@ -2949,23 +3053,40 @@ def main() -> None:
         )
         return
 
+    # Emergency stop: an operator has halted the pipeline indefinitely.
+    # Unlike the rate-limit pause, the stop marker is never auto-cleared.
+    stopped, stop_reason = is_pipeline_stopped()
+    if stopped:
+        log.warning(
+            "Pipeline is STOPPED: %s. No agents will be invoked. "
+            "(Run pipeline-restart or use `--clear-stop` to resume.)",
+            stop_reason or "no reason recorded",
+        )
+        if args.repo:
+            _stop_token = _discover_github_token()
+            if _stop_token:
+                try:
+                    _stop_gh = GitHubClient(repo=args.repo, token=_stop_token)
+                    _stop_session = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+                    write_audit_log(_stop_gh, [_make_audit_event(
+                        _stop_session, "system.emergency_stop", args.repo,
+                        outcome_status="stopped",
+                        outcome_detail=stop_reason or "no reason recorded",
+                    )])
+                except Exception as exc:
+                    log.warning("Could not write emergency_stop audit event: %s", exc)
+        return
+
     if not args.repo:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
         sys.exit(1)
 
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    token = _discover_github_token()
     if not token:
-        # Fall back to gh CLI token
-        try:
-            result = subprocess.run(
-                ["gh", "auth", "token"], capture_output=True, text=True, check=True
-            )
-            token = result.stdout.strip()
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            log.error(
-                "No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`"
-            )
-            sys.exit(1)
+        log.error(
+            "No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`"
+        )
+        sys.exit(1)
 
     # Set http.extraHeader globally so all git operations in this process
     # authenticate with GITHUB_TOKEN (contents:write scope).
@@ -3036,6 +3157,14 @@ def main() -> None:
 
     total_triggered = 0
     for item in work_items:
+        stopped, stop_reason = is_pipeline_stopped()
+        if stopped:
+            log.warning(
+                "Pipeline STOPPED mid-run: %s. Exiting without further agent invocations.",
+                stop_reason or "no reason recorded",
+            )
+            return
+
         if not args.dry_run and conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
             log.info(
                 "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",

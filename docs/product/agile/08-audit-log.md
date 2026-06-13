@@ -96,7 +96,7 @@ orchestrator:
 | Agent | `agent.invoked`, `agent.complete`, `agent.review`, `agent.blocked`, `agent.failed`, `agent.skipped` |
 | Lock | `lock.acquired`, `lock.released`, `lock.reclaimed_stale` |
 | Gate | `gate.requested`, `gate.approved`, `gate.rejected` |
-| System | `system.tick`, `system.malformed_event`, `system.config_reloaded` |
+| System | `system.tick`, `system.malformed_event`, `system.config_reloaded`, `system.emergency_stop` |
 
 What is *not* logged:
 
