@@ -113,6 +113,20 @@
     }
   ],
 
+  "standalone_labels": [
+    {
+      "label": "human-review-pending",
+      "colour": "FBCA04",
+      "colour_name": "amber",
+      "meaning": "The orchestrator applies this label when the pr-reviewer emits :complete but unresolved human REQUEST_CHANGES reviews exist on the PR. It signals the coder agent for a free re-invoke (Mode B without advancing the review-cycle counter). Removed once the pr-reviewer APPROVEs a second time after the coder addresses the human feedback. Guards against repeated free re-invokes (once-only).",
+      "set_by": "orchestrator",
+      "cleared_by": "orchestrator",
+      "blocks_pipeline": false,
+      "terminal": false,
+      "human_action_required": false
+    }
+  ],
+
   "label_format": "{agent-name}:{status}",
   "label_format_examples": [
     "codebase-reviewer:requested",

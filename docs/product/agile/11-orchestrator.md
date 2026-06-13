@@ -499,6 +499,26 @@ new PR or new branch is created for re-invocations. The orchestrator
 then re-applies `pr-reviewer:requested` to the PR to trigger another
 review cycle.
 
+**What the coder receives on re-invocation.** The coder reads both the
+`pr-reviewer`'s structured finding list and any unresolved human
+`REQUEST_CHANGES` review comments on the PR. Both sources are surfaced
+together so the coder addresses them in one pass.
+
+**Automated vs. human re-invocation triggers.** Two distinct conditions
+can trigger a Mode B re-invocation:
+
+| Trigger | Counts toward `max_cycles`? | Notes |
+|---|---|---|
+| `pr-reviewer` emits `REQUEST_CHANGES` | Yes | Standard automated quality loop |
+| Human posts `REQUEST_CHANGES` review; `pr-reviewer` issues APPROVE | **No** | Free re-invoke; ci-gate and `pr-reviewer` run again afterward |
+
+For the human-triggered edge case: when the `pr-reviewer` completes
+with APPROVE but one or more human `REQUEST_CHANGES` reviews remain
+open (from non-bot GitHub accounts), the orchestrator does **not** mark
+the PR ready. Instead it re-invokes the coder once to address the human
+feedback. Bot accounts (`user.type == "Bot"`) are excluded — only
+human GitHub accounts count as blocking human reviews.
+
 ### Environment variables injected before coder invocation
 
 The orchestrator sets these in the agent subprocess environment so the

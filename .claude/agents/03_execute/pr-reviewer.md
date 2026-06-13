@@ -7,11 +7,14 @@ description: >
   prioritised finding list with an APPROVE or REQUEST CHANGES verdict.
   Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues
   APPROVE only when all findings are Low or Informational severity.
-  On APPROVE marks the PR ready for human review. Gates on pr-reviewer:approved.
+  Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on
+  the PR -- this is a hard block regardless of automated findings. On APPROVE
+  with no unresolved human reviews, marks the PR ready for human review.
+  Gates on pr-reviewer:approved.
 tools: [Bash, Read, Glob, Grep]
 model: claude-sonnet-4-6
 max_turns: 80
-extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh pr ready *), Bash(gh issue view *)]
+extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh pr ready *), Bash(gh issue view *), Bash(gh api *)]
 ---
 
 # 03_execute/pr-reviewer
@@ -93,6 +96,48 @@ If `$MERGEABLE` is `CONFLICTING`, raise it as a Critical finding
 If `$MERGEABLE` is `UNKNOWN` (GitHub is still computing mergeability),
 raise it as a High finding `DP-001[DP+SA] — Merge status unknown; recheck
 before merge` but do not skip remaining review steps.
+
+
+---
+
+## Step 1.5 — Check for unresolved human reviews
+
+Fetch PR reviews and determine whether any human reviewer (non-bot) has an
+unresolved `CHANGES_REQUESTED` state. A reviewer's current state is their
+latest review ordered by `submitted_at`. `DISMISSED` reviews are resolved.
+Bot accounts (`.user.type == "Bot"`) are excluded.
+
+```bash
+HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
+  --jq '[.[] | select(.user.type != "Bot")]
+    | group_by(.user.login)
+    | map(sort_by(.submitted_at) | last)
+    | map(select(.state == "CHANGES_REQUESTED") | "@" + .user.login)
+    | join(", ")')
+```
+
+If `$HUMAN_BLOCK_REVIEWERS` is non-empty:
+
+- Set `VERDICT=REQUEST CHANGES` (hard block — takes priority over all other findings).
+- Prepend the following to `FINDING_BODY` **before** any automated findings:
+
+```
+### HR-001 — Unresolved human REQUEST_CHANGES block APPROVE   [High]
+
+**Persona:** Human Review Block
+**Reviewer(s):** $HUMAN_BLOCK_REVIEWERS
+
+**Description:** One or more human reviewers have submitted REQUEST_CHANGES
+reviews that are not resolved (not yet dismissed or superseded by an APPROVE).
+The pr-reviewer cannot issue APPROVE while unresolved human reviews exist,
+regardless of automated findings.
+
+**Remediation:** Address the human reviewer's feedback. Each listed reviewer
+must submit an APPROVE or DISMISSED review to clear the block.
+```
+
+Do **not** skip the remaining review steps — continue reading the diff so the
+combined report is useful to the coder.
 
 ---
 
@@ -222,9 +267,10 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ## Step 8 — Verdict
 
+- `$HUMAN_BLOCK_REVIEWERS` is non-empty → **REQUEST CHANGES** (hard block; takes priority over all other findings)
 - Any Critical, High, or Medium finding → **REQUEST CHANGES**
-- Low or Informational only (or zero findings) → **APPROVE**
-- ADR-covered findings downgraded to Informational never block APPROVE
+- Low or Informational only (or zero findings) AND `$HUMAN_BLOCK_REVIEWERS` is empty → **APPROVE**
+- ADR-covered findings downgraded to Informational never block APPROVE (but human block still does)
 
 ---
 

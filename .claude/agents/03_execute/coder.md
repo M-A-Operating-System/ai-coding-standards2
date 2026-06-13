@@ -5,8 +5,10 @@ description: >
   Reads the approved PRD from the issue, the technical specification from
   docs/tech-spec/, and each sub-issue in order. On first invocation (Mode A):
   writes code for all sub-issues and posts a closing announcement. On
-  subsequent invocations after review feedback (Mode B): reads review
-  comments, addresses required and expected changes, and posts a response.
+  subsequent invocations after review feedback (Mode B -- triggered by
+  review-cycle:N or human-review-pending label): reads review comments
+  and any unresolved human REQUEST_CHANGES reviews, addresses required
+  and expected changes, and posts a response.
   The orchestrator owns all git operations (branch, commit, push) and the
   PR lifecycle (create, ready, labels). Triggered by build:requested.
 tools: [Bash, Read, Edit, Write, Grep, Glob]
@@ -115,10 +117,13 @@ You may be invoked **multiple times** for the same issue:
   sub-issues. Branch `issue-{N}` and its draft PR already exist (created by
   the `create-pr` script step before this agent runs). The orchestrator
   commits and pushes all changes to that branch.
-- **Mode B — Address feedback:** A `review-cycle:N` label (N ≥ 1) is present
-  on the issue, indicating the pr-reviewer requested changes. Discover the
-  associated PR via the GitHub data model. Read review comments, fix the code,
-  post a response. The orchestrator commits and pushes.
+- **Mode B — Address feedback:** A `review-cycle:N` label (N ≥ 1) OR a
+  `human-review-pending` label is present on the issue. `review-cycle:N`
+  means the pr-reviewer requested changes; `human-review-pending` means
+  pr-reviewer approved but unresolved human REQUEST_CHANGES reviews exist.
+  In both cases: discover the associated PR, read review comments AND human
+  REQUEST_CHANGES reviews, fix the code, post a response. The orchestrator
+  commits and pushes.
 
 **The orchestrator owns git and PR mechanics.** You own the code and the
 issue/PR comments. Never run `git commit`, `git push`, `git checkout`,
@@ -131,16 +136,23 @@ Write defensively. Apply project standards exactly as loaded from
 
 ## Step 0 — Detect mode
 
-Check for a `review-cycle:N` label on the issue. Its presence (N ≥ 1) means
-the pr-reviewer previously requested changes — this is Mode B. Absence means
-Mode A (initial build).
+Check for Mode B trigger labels on the issue:
+- `review-cycle:N` (N ≥ 1): the pr-reviewer previously requested changes
+- `human-review-pending`: pr-reviewer approved but unresolved human
+  REQUEST_CHANGES reviews exist — a free re-invoke was triggered
+
+Absence of both means Mode A (initial build).
 
 ```bash
 REVIEW_CYCLE_LABEL=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
   --jq '.labels[].name | select(startswith("review-cycle:"))' \
   | head -1)
 
-if [ -n "$REVIEW_CYCLE_LABEL" ]; then
+HUMAN_REVIEW_PENDING=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+  --jq '.labels[].name | select(. == "human-review-pending")' \
+  | head -1)
+
+if [ -n "$REVIEW_CYCLE_LABEL" ] || [ -n "$HUMAN_REVIEW_PENDING" ]; then
   # Strip prefix in bash so an empty suffix (review-cycle:) is reliably caught
   REVIEW_CYCLE="${REVIEW_CYCLE_LABEL#review-cycle:}"
   # Validate: must be a positive integer (orchestrator always sets N >= 1)
@@ -426,6 +438,14 @@ gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
 gh pr view "$PR_NUMBER" --repo "$REPO" --json reviews \
   --jq '[.reviews[] | {author: .author.login, state: .state, body: .body}]'
 
+# Unresolved human REQUEST_CHANGES reviews — latest state per reviewer, bots excluded
+HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
+  --jq '[.[] | select(.user.type != "Bot")]
+    | group_by(.user.login)
+    | map(sort_by(.submitted_at) | last)
+    | map(select(.state == "CHANGES_REQUESTED") | "@" + .user.login)
+    | join(", ")')
+
 # Human comments on the PR (excluding agent artefacts)
 gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
   --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .author.login, body: .body}]'
@@ -439,7 +459,7 @@ Group every piece of feedback into:
 
 | Category | What it means | Must address? |
 |---|---|---|
-| **Required** | Correctness bug, security issue, spec violation, failing test | Yes — block merge if not fixed |
+| **Required** | Correctness bug, security issue, spec violation, failing test, or unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`) | Yes — block merge if not fixed |
 | **Expected** | Design improvement, missing guard clause, error handling gap | Yes — within scope of this agent's mandate |
 | **Suggested** | Style preference, future improvement, nice-to-have | No — acknowledge, open a follow-up issue if valuable |
 
