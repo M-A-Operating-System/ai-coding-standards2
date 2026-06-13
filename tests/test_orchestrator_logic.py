@@ -2278,6 +2278,86 @@ class TestMarkReadyOnComplete:
         )
         gh.mark_pr_ready.assert_not_called()
 
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_mark_pr_ready_called_on_issue_work_item(self, mock_invoke):
+        """On APPROVE of an issue-scoped agent, mark_pr_ready is called with the
+        PR number found via find_pr_by_branch."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            mark_ready_on_complete=True,
+        )
+        gh = _make_gh_mock()
+        gh.find_pr_by_branch = MagicMock(return_value=99)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+        wi = WorkItem(
+            number=42, kind="issue", title="issue", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/42",
+        )
+
+        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        gh.mark_pr_ready.assert_called_once_with(99)
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_label_fallback_finds_pr_by_source_issue_label(self, mock_invoke):
+        """When find_pr_by_branch returns None (rebased branch), falls back to
+        find_pr_by_label('source-issue:{N}') and still marks the PR ready."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            mark_ready_on_complete=True,
+        )
+        gh = _make_gh_mock()
+        gh.find_pr_by_branch = MagicMock(return_value=None)  # canonical branch not found
+        gh.find_pr_by_label = MagicMock(return_value=132)    # found via source-issue label
+        wi = WorkItem(
+            number=23, kind="issue", title="issue", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/23",
+        )
+
+        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        gh.find_pr_by_branch.assert_called_once_with("issue-23")
+        gh.find_pr_by_label.assert_called_once_with("source-issue:23")
+        gh.mark_pr_ready.assert_called_once_with(132)
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_mark_pr_ready_exception_is_caught(self, mock_invoke):
+        """mark_pr_ready exception is caught and logged — does not propagate."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = self._agent()  # kind="pr"
+        gh = _make_gh_mock()
+        gh.mark_pr_ready = MagicMock(side_effect=Exception("draft not supported"))
+        wi = WorkItem(
+            number=55, kind="pr", title="PR", labels={"coder:complete"},
+            url="https://github.com/test/repo/pull/55",
+        )
+
+        # Must not raise — exception is caught internally and logged as warning.
+        n = process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+        assert n == 1
+
 
 # ---------------------------------------------------------------------------
 # TestRunCommitAfter — orchestrator-driven git commit_after step
