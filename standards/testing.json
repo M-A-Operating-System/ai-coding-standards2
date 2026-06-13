@@ -1,0 +1,95 @@
+{
+  "$schema": "../pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "org",
+  "category": "testing",
+  "description": "Test coverage, isolation, naming, and hygiene standards. Applied by the coder agent when writing tests and checked by the pr-reviewer agent against every diff that introduces or modifies tested code.",
+  "standards": [
+
+    {
+      "id": "STD-TEST-001",
+      "title": "New public behaviour requires at least one test",
+      "description": "Every new public function, method, class, or API endpoint introduced in a diff must have at least one corresponding test that exercises the primary success path. Untested public behaviour is not shippable.",
+      "rationale": "Code without tests cannot be refactored safely, cannot be verified by CI, and will silently break as the codebase evolves. The cost of writing a test at authoring time is a fraction of the cost of debugging a regression later.",
+      "acceptance_criteria": [
+        "For every new public function or method in the diff, at least one test in the same diff (or an existing test file) exercises its primary happy-path behaviour.",
+        "For every new HTTP route, CLI command, or public API endpoint, at least one test asserts the expected response for a valid request.",
+        "Tests for new behaviour are added in the same PR as the behaviour — not deferred to a follow-up.",
+        "Private functions and internal helpers that are only reachable via tested public interfaces are exempt from direct test requirements."
+      ],
+      "anti_patterns": [
+        "Introducing a new function and leaving the test file unchanged.",
+        "Adding a new API endpoint with only a placeholder '# TODO: add tests' comment.",
+        "Implementing a new feature and planning to 'add tests in the next PR'.",
+        "Marking a function as private solely to avoid the test requirement when it has externally observable effects."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-TEST-002",
+      "title": "Unit tests must not make real network or filesystem calls",
+      "description": "Tests in the unit-test layer must not perform real HTTP requests, DNS lookups, database queries, or filesystem writes outside a designated temp directory. All I/O must be replaced by mocks, fakes, or fixtures injected at test setup.",
+      "rationale": "Tests that rely on real external state are non-deterministic, slow, and fail in CI environments without network access. They also create hidden dependencies between tests and external systems that are hard to reproduce on failure.",
+      "acceptance_criteria": [
+        "No test in the unit-test layer makes an outbound HTTP request (requests.get, urllib, httpx, fetch) without mocking the transport layer.",
+        "No test reads from or writes to paths outside of tempfile.mkdtemp(), pytest's tmp_path, or an equivalent isolated temporary directory.",
+        "No test opens a real database connection — database calls are replaced by in-memory databases (sqlite :memory:), fakes, or mock objects.",
+        "Network or filesystem mocking is applied at the lowest practical boundary (e.g. patching the HTTP adapter, not the entire requests module).",
+        "Integration tests that intentionally exercise real I/O are placed in a separate directory (tests/integration/) and excluded from the default pytest run."
+      ],
+      "anti_patterns": [
+        "A unit test that calls requests.get('https://api.example.com/...') without patching.",
+        "A test that writes to a hardcoded path like /tmp/test_output.json that could collide across parallel test runs.",
+        "Mocking an entire external library (mock.patch('requests')) instead of patching at the HTTP adapter boundary.",
+        "A test that passes only when a specific database server is reachable, with no skip or xfail guard."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-TEST-003",
+      "title": "Each test asserts exactly one behaviour",
+      "description": "Each test function must assert a single, named behaviour. Tests must not be assertion-free, and must not bundle multiple unrelated scenarios into one test body.",
+      "rationale": "Tests that verify multiple behaviours produce ambiguous failure messages — a reader cannot tell which behaviour broke. Assertion-free tests always pass, giving false confidence. One behaviour per test makes failures self-documenting.",
+      "acceptance_criteria": [
+        "Every test function in the diff contains at least one explicit assertion (assert, pytest.raises, unittest assertion method).",
+        "Each test function asserts a single logical behaviour — multiple assertions are permitted only when they collectively verify one indivisible outcome (e.g. asserting both status code and response body for one request).",
+        "Test functions that verify multiple distinct scenarios (happy path AND error path) are split into separate test functions.",
+        "No test uses a bare pass or returns early without asserting anything."
+      ],
+      "anti_patterns": [
+        "A test named test_user_flow that exercises login, update, and logout in sequence with assertions scattered throughout.",
+        "A test function with zero assert statements (assertion-free test).",
+        "A parametrized test where some parameter combinations test happy paths and others test error paths in the same assertion block.",
+        "Using a loop to run multiple independent scenarios inside a single test function."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"]
+    },
+
+    {
+      "id": "STD-TEST-004",
+      "title": "Test names encode scenario and expected outcome",
+      "description": "Test function names must describe the condition under test and the expected outcome in a form that reads as a specification. Names must not be generic (test_1, test_it, test_works) or repeat only the function name being tested.",
+      "rationale": "A test name is the first and often only information a developer sees when a test fails in CI. A descriptive name eliminates the need to read the test body to understand what broke and what the expected behaviour was.",
+      "acceptance_criteria": [
+        "Every test function name in the diff follows the pattern test_<scenario>_<expected_outcome> or a domain-appropriate equivalent that encodes both the condition and the result.",
+        "No test function is named test_<function_name> with no further qualification (e.g. test_parse, test_send).",
+        "No test function is named with a numeric suffix (test_1, test_case_2) as the only differentiator.",
+        "Class-based test suites name the class after the unit under test (TestClassName) and name methods after the behaviour (test_raises_when_input_is_empty)."
+      ],
+      "anti_patterns": [
+        "def test_1(), def test_2() for two related cases.",
+        "def test_parse() with no description of what input or what outcome is expected.",
+        "def test_it_works() — too vague to diagnose on failure.",
+        "def test_user() when the test actually verifies that creating a user with a duplicate email raises ValueError."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"]
+    }
+
+  ]
+}
