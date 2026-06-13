@@ -271,6 +271,73 @@ see `docs/product/agile/05-pipeline-config.md §Session ID tokens` for available
 
 ---
 
+## Todo lists
+
+Todos for in-flight work live **in the body of the issue or PR they belong to** — never in a comment, a file, or a sub-issue. The body is the single, visible, edited-in-place source of truth for what work remains.
+
+### Runtime ephemeral vs. persistent todos
+
+| Type | Tool | Survives run? | Visible in GitHub? |
+|---|---|---|---|
+| In-session task tracking | `TodoWrite` (Claude runtime tool) | No | No |
+| Persistent issue/PR tasks | Body markers (see below) | Yes | Yes |
+
+Use `TodoWrite` freely during a run to keep your multi-step plan organised. Use body markers to record build-plan items, acceptance criteria, or open questions that other agents and humans need to see.
+
+### Body marker format
+
+Todos in issue/PR bodies live inside a delimited block:
+
+```markdown
+<!-- ai-agile/todos/v1 START -->
+## AI Agile — Tasks
+
+<!-- ai-agile/todos/build-plan/v1 START -->
+### Build plan
+
+- [ ] Do the thing (raised 2026-05-04T14:23Z by coder)
+- [x] Done thing (raised 2026-05-04T14:00Z by coder, done 2026-05-04T15:00Z by coder)
+
+<!-- ai-agile/todos/build-plan/v1 END -->
+
+_Last updated by `coder` at 2026-05-04T15:01Z_
+<!-- ai-agile/todos/v1 END -->
+```
+
+Each subsection has its own marker pair. **Only rewrite the subsection you own** — leave other subsections untouched.
+
+### Standard subsections and owners
+
+| Subsection | Owner |
+|---|---|
+| `ai-agile/todos/build-plan/v1` | `task-decomposer` (issue), `coder` (PR) |
+| `ai-agile/todos/acceptance-criteria/v1` | `prd-writer` |
+| `ai-agile/todos/open-questions/v1` | orchestrator |
+| `ai-agile/todos/standards-remediations/v1` | `standards-compliance-reviewer` (PR only) |
+| `ai-agile/todos/test-scenarios/v1` | `test-spec-writer` / `test-runner` (PR only) |
+
+A subsection with no entries is omitted entirely. Checked items are never removed — they are the audit trail.
+
+### Checkbox and annotation format
+
+```
+- [ ] {task} (raised <ts> by <actor>)
+- [x] {task} (raised <ts> by <actor>, done <ts> by <actor>)
+- [ ] {task} (raised <ts> by <actor>, blocked <ts> by <actor>: <reason>)
+```
+
+- **Timestamp**: ISO 8601 UTC, minute precision — `YYYY-MM-DDTHH:MMZ`
+- **Actor**: bare agent name (e.g. `coder`), `orchestrator`, or `@github-login` for humans
+
+### Anti-patterns
+
+- Don't track todos in comments, `.todo` files, or sub-issues
+- Don't edit human-authored prose above the marker block
+- Don't write to a subsection you don't own
+- Don't remove checked items
+
+---
+
 ## Where to look for more detail
 
 This file is the runtime distillation. The full design and reference
