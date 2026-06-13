@@ -95,6 +95,13 @@ EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 HALT_STATUSES    = {STATUS_REVIEW, STATUS_BLOCKED}
 TERMINAL_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED}
 
+# Label applied by the orchestrator when the pr-reviewer APPROVE path detects
+# unresolved human REQUEST_CHANGES reviews and triggers a free coder re-invoke.
+# Serves two purposes: (1) signals Mode B to the coder so it addresses human
+# feedback, and (2) guards against repeated free re-invokes (the edge-case check
+# in process_work_item skips a second free cycle when this label is present).
+HUMAN_REVIEW_PENDING_LABEL = "human-review-pending"
+
 STATUSES_JSON = Path(__file__).parent / "statuses.json"
 
 # Submodule root — the directory containing this repo's .github/ and
@@ -918,15 +925,26 @@ def _handle_review_loop(
     work_item: "WorkItem",
     labels: set[str],
     pipeline_map: dict[str, "AgentDef"],
+    *,
+    skip_cycle_increment: bool = False,
+    human_reviews: Optional[list] = None,
 ) -> set[str]:
     """Called when a review-loop agent completes with :review status.
 
-    If cycles < max_cycles: clears the reviewer's :review and the target
-    agent's :complete, increments the review-cycle counter, and posts a
-    comment so the next orchestrator tick re-invokes the target.
+    Normal path (skip_cycle_increment=False):
+      If cycles < max_cycles: clears the reviewer's :review and the target
+      agent's :complete, increments the review-cycle counter, and posts a
+      comment so the next orchestrator tick re-invokes the target.
+      If cycles >= max_cycles: leaves :review in place and posts a human-
+      escalation comment explaining that the loop has reached its limit.
+      Cleans up HUMAN_REVIEW_PENDING_LABEL if present from a prior free cycle.
 
-    If cycles >= max_cycles: leaves :review in place and posts a human-
-    escalation comment explaining that the loop has reached its limit.
+    Human-review free re-invoke (skip_cycle_increment=True):
+      Clears :review and target :complete (same as normal), but does NOT
+      advance the review-cycle counter. Instead, applies HUMAN_REVIEW_PENDING_LABEL
+      so the coder enters Mode B and the once-only guard is set for subsequent ticks.
+      The max_cycles limit is NOT checked — the free re-invoke is always allowed.
+      human_reviews (list of review dicts) is included in the loop comment when set.
 
     Returns the updated in-memory label set.
     """
@@ -945,7 +963,7 @@ def _handle_review_loop(
     current_cycle = _get_review_cycle(labels)
     next_cycle = current_cycle + 1
 
-    if next_cycle >= max_cycles:
+    if not skip_cycle_increment and next_cycle >= max_cycles:
         log.info(
             "  LOOP    %-38s  %d/%d cycles — escalating to human",
             agent_def.agent, next_cycle, max_cycles,
@@ -965,26 +983,55 @@ def _handle_review_loop(
             log.warning("could not post loop-escalation comment on #%d: %s", work_item.number, exc)
         return labels  # leave :review intact — human must act
 
-    log.info(
-        "  LOOP    %-38s  cycle %d/%d — re-invoking %s",
-        agent_def.agent, next_cycle, max_cycles, re_invoke_name,
-    )
+    if skip_cycle_increment:
+        log.info(
+            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s (cycle counter unchanged)",
+            agent_def.agent, re_invoke_name,
+        )
+    else:
+        log.info(
+            "  LOOP    %-38s  cycle %d/%d — re-invoking %s",
+            agent_def.agent, next_cycle, max_cycles, re_invoke_name,
+        )
 
-    # Rotate the cycle counter label
-    if current_cycle > 0:
-        old = f"review-cycle:{current_cycle}"
+    if skip_cycle_increment:
+        # Apply HUMAN_REVIEW_PENDING_LABEL instead of advancing the cycle counter.
+        # This signals Mode B to the coder and prevents a second free re-invoke.
         try:
-            gh.remove_label(work_item.number, old)
-            labels.discard(old)
+            gh.add_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
+            labels.add(HUMAN_REVIEW_PENDING_LABEL)
         except Exception as exc:
-            log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
+            log.warning(
+                "could not apply %s on #%d: %s", HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc
+            )
+    else:
+        # Rotate the cycle counter label
+        if current_cycle > 0:
+            old = f"review-cycle:{current_cycle}"
+            try:
+                gh.remove_label(work_item.number, old)
+                labels.discard(old)
+            except Exception as exc:
+                log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
 
-    new_cycle_label = f"review-cycle:{next_cycle}"
-    try:
-        gh.add_label(work_item.number, new_cycle_label)
-        labels.add(new_cycle_label)
-    except Exception as exc:
-        log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
+        new_cycle_label = f"review-cycle:{next_cycle}"
+        try:
+            gh.add_label(work_item.number, new_cycle_label)
+            labels.add(new_cycle_label)
+        except Exception as exc:
+            log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
+
+        # Clean up HUMAN_REVIEW_PENDING_LABEL if present from a prior free cycle —
+        # the normal automated review cycle supersedes it.
+        if HUMAN_REVIEW_PENDING_LABEL in labels:
+            try:
+                gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
+                labels.discard(HUMAN_REVIEW_PENDING_LABEL)
+            except Exception as exc:
+                log.debug(
+                    "could not remove %s on #%d: %s",
+                    HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
+                )
 
     # Clear reviewer's :review so the pipeline is no longer halted
     try:
@@ -1023,19 +1070,68 @@ def _handle_review_loop(
     also_suffix = (
         f" (also cleared: {', '.join(f'`{n}`' for n in also_cleared)})" if also_cleared else ""
     )
-    try:
-        gh.post_comment(
-            work_item.number,
-            (
-                f"**Review cycle {next_cycle}/{max_cycles - 1}:** "
-                f"`{agent_def.agent}` requested changes — re-invoking `{re_invoke_name}`."
-                f"{also_suffix}"
-            ),
+
+    if skip_cycle_increment:
+        reviewers = [r.get("user", {}).get("login", "") for r in (human_reviews or [])]
+        reviewer_info = (
+            f" Reviewer(s) with open REQUEST_CHANGES: "
+            f"{', '.join(f'@{r}' for r in reviewers if r)}."
+            if reviewers
+            else ""
         )
+        comment_text = (
+            f"**Human review: free re-invoke of `{re_invoke_name}`** "
+            f"(does not count toward the {max_cycles - 1}-cycle limit).{reviewer_info} "
+            f"`{agent_def.agent}` approved the code quality, but unresolved human "
+            f"`REQUEST_CHANGES` reviews remain. `{re_invoke_name}` will address them."
+            f"{also_suffix}"
+        )
+    else:
+        comment_text = (
+            f"**Review cycle {next_cycle}/{max_cycles - 1}:** "
+            f"`{agent_def.agent}` requested changes — re-invoking `{re_invoke_name}`."
+            f"{also_suffix}"
+        )
+
+    try:
+        gh.post_comment(work_item.number, comment_text)
     except Exception as exc:
         log.warning("could not post loop comment on #%d: %s", work_item.number, exc)
 
     return labels
+
+
+def _fetch_unresolved_human_review_requests(gh: "GitHubClient", pr_number: int) -> list[dict]:
+    """Return reviews where the latest review from each human (non-bot) is CHANGES_REQUESTED.
+
+    Uses the PR reviews REST endpoint. A reviewer's state is their latest review
+    ordered by submitted_at. DISMISSED reviews count as resolved. Bot accounts
+    (user.type == 'Bot') are excluded per the acceptance criteria in issue #100.
+    Returns an empty list on any API or parse error so callers can safely skip
+    the edge-case path without failing the run.
+    """
+    try:
+        reviews = gh._get(f"/repos/{gh.repo}/pulls/{pr_number}/reviews")
+    except Exception as exc:
+        log.warning("could not fetch PR reviews for #%d: %s", pr_number, exc)
+        return []
+    if not isinstance(reviews, list):
+        return []
+
+    latest_by_reviewer: dict[str, dict] = {}
+    for review in reviews:
+        user = review.get("user") or {}
+        if user.get("type", "").lower() == "bot":
+            continue
+        login = user.get("login", "")
+        if not login:
+            continue
+        existing = latest_by_reviewer.get(login)
+        submitted = review.get("submitted_at", "")
+        if existing is None or submitted > existing.get("submitted_at", ""):
+            latest_by_reviewer[login] = review
+
+    return [r for r in latest_by_reviewer.values() if r.get("state") == "CHANGES_REQUESTED"]
 
 
 def dependencies_complete(
@@ -2758,6 +2854,64 @@ def process_work_item(
                     _restore_pre_agent_branch(_pre_agent_branch)
                     break
 
+            # Edge case (issue #100): pr-reviewer APPROVEs (STATUS_COMPLETE) but
+            # unresolved human REQUEST_CHANGES reviews exist on the PR. Override
+            # final_status to STATUS_REVIEW so _handle_review_loop triggers a free
+            # coder re-invoke. HUMAN_REVIEW_PENDING_LABEL guards against a second
+            # free cycle (once-only).
+            _human_review_override = False
+            _human_review_list: list = []
+            if (
+                final_status == STATUS_COMPLETE
+                and agent_def.mark_ready_on_complete
+                and agent_def.review_loop
+                and HUMAN_REVIEW_PENDING_LABEL not in labels
+            ):
+                _hr_pr_number: Optional[int] = None
+                if work_item.kind == "pr":
+                    _hr_pr_number = work_item.number
+                elif work_item.kind == "issue":
+                    try:
+                        _hr_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+                        if _hr_pr_number is None:
+                            _hr_pr_number = gh.find_pr_by_label(
+                                f"source-issue:{work_item.number}"
+                            )
+                    except Exception as exc:
+                        log.warning(
+                            "  could not look up PR for human review check on #%d: %s",
+                            work_item.number, exc,
+                        )
+                if _hr_pr_number is not None:
+                    _human_review_list = _fetch_unresolved_human_review_requests(
+                        gh, _hr_pr_number
+                    )
+                    if _human_review_list:
+                        log.info(
+                            "  HUMAN   %-38s  %d unresolved REQUEST_CHANGES — "
+                            "overriding to :review for free re-invoke",
+                            agent_def.agent, len(_human_review_list),
+                        )
+                        final_status = STATUS_REVIEW
+                        _human_review_override = True
+            elif (
+                HUMAN_REVIEW_PENDING_LABEL in labels
+                and final_status == STATUS_COMPLETE
+                and agent_def.mark_ready_on_complete
+                and agent_def.review_loop
+            ):
+                # Free re-invoke already ran (label present) and pr-reviewer APPROVEs
+                # again — remove the label before the PR is marked ready.
+                try:
+                    gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
+                    labels.discard(HUMAN_REVIEW_PENDING_LABEL)
+                    work_item.labels = labels
+                except Exception as exc:
+                    log.debug(
+                        "  could not remove %s on #%d: %s",
+                        HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
+                    )
+
             # When an agent with a human gate completes, apply :review rather
             # than :complete. This makes the "needs human action" state visible
             # consistently — both mid-run blocks and post-completion gates use
@@ -2911,7 +3065,9 @@ def process_work_item(
                 # than waiting for human sign-off, until max_cycles is reached.
                 if applied_status == STATUS_REVIEW and agent_def.review_loop:
                     labels = _handle_review_loop(
-                        gh, agent_def, work_item, labels, pipeline_map
+                        gh, agent_def, work_item, labels, pipeline_map,
+                        skip_cycle_increment=_human_review_override,
+                        human_reviews=_human_review_list if _human_review_override else None,
                     )
                     work_item.labels = labels
                 _restore_pre_agent_branch(_pre_agent_branch)
