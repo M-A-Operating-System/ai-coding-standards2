@@ -2594,9 +2594,11 @@ class TestPriorityScheduling:
         """
         args_mock = MagicMock()
         args_mock.clear_pause = False
+        args_mock.clear_stop = False
         args_mock.verbose = False
         args_mock.repo = "test/repo"
         args_mock.issue = None
+        args_mock.kind = None
         args_mock.dry_run = False
         args_mock.pipeline = MagicMock()
         args_mock.phases = None
