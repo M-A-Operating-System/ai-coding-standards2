@@ -26,6 +26,7 @@ jobs:
 
       - name: Clear stop marker
         run: |
+          set -euo pipefail
           if [ -f .pipeline-stop ]; then
             echo "Found stop marker:"
             cat .pipeline-stop

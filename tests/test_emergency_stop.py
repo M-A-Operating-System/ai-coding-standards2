@@ -1,5 +1,5 @@
 """Tests for emergency stop functionality in pipeline_orchestrator.py."""
-import sys, os, json
+import sys, os, json, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import pytest
@@ -232,12 +232,24 @@ class TestMainStopMarkerBehavior:
 # ---------------------------------------------------------------------------
 
 class TestWorkflowProposals:
-    """Verify the workflow proposal files exist with the required inputs."""
+    """Verify the workflow proposal files exist with the required workflow_dispatch inputs."""
 
     def _read_workflow(self, name: str) -> str:
         path = Path(__file__).parent.parent / "docs/workflow-proposals" / name
         assert path.exists(), f"Workflow proposal not found at {path}"
         return path.read_text()
+
+    def _get_dispatch_inputs(self, content: str) -> list[str]:
+        """Return a list of input key names from the workflow_dispatch.inputs block."""
+        # Find the inputs: block nested under workflow_dispatch:
+        m = re.search(r'workflow_dispatch:\s+inputs:\n((?:[ \t]+\S.*\n?)+)', content)
+        if not m:
+            return []
+        # Extract top-level keys (lines at the same indentation as the first input)
+        block = m.group(1)
+        first_indent = len(block) - len(block.lstrip())
+        pattern = re.compile(r'^' + ' ' * first_indent + r'(\w+):', re.MULTILINE)
+        return pattern.findall(block)
 
     def test_emergency_stop_workflow_exists(self):
         content = self._read_workflow("pipeline-emergency-stop.yml")
@@ -245,11 +257,17 @@ class TestWorkflowProposals:
 
     def test_emergency_stop_workflow_has_reason_input(self):
         content = self._read_workflow("pipeline-emergency-stop.yml")
-        assert "reason" in content
+        inputs = self._get_dispatch_inputs(content)
+        assert "reason" in inputs, (
+            f"Expected 'reason' in workflow_dispatch.inputs; got {inputs}"
+        )
 
     def test_emergency_stop_workflow_has_cancel_runs_input(self):
         content = self._read_workflow("pipeline-emergency-stop.yml")
-        assert "cancel_runs" in content
+        inputs = self._get_dispatch_inputs(content)
+        assert "cancel_runs" in inputs, (
+            f"Expected 'cancel_runs' in workflow_dispatch.inputs; got {inputs}"
+        )
 
     def test_restart_workflow_exists(self):
         content = self._read_workflow("pipeline-restart.yml")
@@ -257,4 +275,7 @@ class TestWorkflowProposals:
 
     def test_restart_workflow_has_trigger_run_input(self):
         content = self._read_workflow("pipeline-restart.yml")
-        assert "trigger_run" in content
+        inputs = self._get_dispatch_inputs(content)
+        assert "trigger_run" in inputs, (
+            f"Expected 'trigger_run' in workflow_dispatch.inputs; got {inputs}"
+        )
