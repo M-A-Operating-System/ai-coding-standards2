@@ -223,6 +223,51 @@ class TestMainStopMarkerBehavior:
         assert not marker_path.exists(), "--clear-stop must delete the stop marker"
         assert not loaded, "--clear-stop must exit before loading the pipeline"
 
+    def test_stop_marker_detected_mid_loop(self, tmp_path, monkeypatch):
+        """Stop marker written after startup must be detected before the next work item is processed."""
+        marker_path = tmp_path / ".pipeline-stop"
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+
+        call_count = 0
+
+        def fake_is_stopped():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (False, "")   # startup check — not stopped
+            return (True, "mid-run stop")  # per-cycle check — stopped
+
+        processed = []
+
+        def fake_process(item, agents, pipeline_map, gh, dry_run, repo, **kw):
+            processed.append(item)
+            return 0
+
+        wi1 = MagicMock()
+        wi1.labels = set()
+        wi1.number = 1
+        wi2 = MagicMock()
+        wi2.labels = set()
+        wi2.number = 2
+
+        gh_mock = MagicMock()
+        gh_mock.list_open_issues.return_value = [wi1, wi2]
+
+        with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
+             patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
+             patch.object(pipeline_orchestrator, "is_pipeline_stopped", side_effect=fake_is_stopped), \
+             patch.object(pipeline_orchestrator, "load_pipeline", return_value=([], [])), \
+             patch.object(pipeline_orchestrator, "_configure_git_auth"), \
+             patch.object(pipeline_orchestrator, "GitHubClient", return_value=gh_mock), \
+             patch.object(pipeline_orchestrator, "process_work_item", side_effect=fake_process), \
+             patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
+            pipeline_orchestrator.main()
+
+        assert len(processed) == 0, (
+            "No work items should be processed once the mid-loop stop is detected; "
+            f"got {len(processed)} processed"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestWorkflowProposals

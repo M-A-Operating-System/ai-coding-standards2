@@ -799,12 +799,16 @@ def is_pipeline_stopped() -> tuple[bool, str]:
 
 
 def clear_stop() -> bool:
-    """Clear the emergency stop marker. Returns True if a marker was cleared."""
-    if STOP_MARKER_PATH.exists():
+    """Clear the emergency stop marker. Returns True if a marker was cleared.
+
+    # Mirrors clear_pause() — one call site is expected for this operator-only flag.
+    """
+    try:
         STOP_MARKER_PATH.unlink()
         log.info("Stop marker cleared.")
         return True
-    return False
+    except FileNotFoundError:
+        return False
 
 
 def detect_rate_limit(output: str) -> tuple[bool, int]:
@@ -3125,6 +3129,14 @@ def main() -> None:
 
     total_triggered = 0
     for item in work_items:
+        stopped, stop_reason = is_pipeline_stopped()
+        if stopped:
+            log.warning(
+                "Pipeline STOPPED mid-run: %s. Exiting without further agent invocations.",
+                stop_reason or "no reason recorded",
+            )
+            return
+
         if not args.dry_run and conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
             log.info(
                 "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",
