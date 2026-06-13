@@ -226,6 +226,49 @@ class TestMainStopMarkerBehavior:
         assert not marker_path.exists(), "--clear-stop must delete the stop marker"
         assert not loaded, "--clear-stop must exit before loading the pipeline"
 
+    def test_stop_marker_respected_between_loop_cycles(self, tmp_path, monkeypatch):
+        """Stop marker written mid-run is detected before the next work-item is processed."""
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", tmp_path / ".pipeline-stop")
+
+        call_count = [0]
+
+        def fake_is_stopped():
+            call_count[0] += 1
+            # call 1: startup check in main(); call 2: first loop iteration (allow processing)
+            if call_count[0] <= 2:
+                return False, ""
+            # call 3+: second loop iteration — stop detected
+            return True, "mid-run stop"
+
+        processed_items = []
+
+        def fake_process(item, *args, **kwargs):
+            processed_items.append(item)
+            return 0
+
+        fake_work_items = [
+            pipeline_orchestrator.WorkItem(number=1, kind="issue", title="A", labels=[], url=""),
+            pipeline_orchestrator.WorkItem(number=2, kind="issue", title="B", labels=[], url=""),
+        ]
+
+        with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
+             patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
+             patch.object(pipeline_orchestrator, "is_pipeline_stopped", side_effect=fake_is_stopped), \
+             patch.object(pipeline_orchestrator, "load_pipeline", return_value=([], [])), \
+             patch.object(pipeline_orchestrator, "pipeline_by_name", return_value={}), \
+             patch.object(pipeline_orchestrator, "process_work_item", side_effect=fake_process), \
+             patch.object(pipeline_orchestrator, "write_audit_log"), \
+             patch.object(pipeline_orchestrator, "GitHubClient") as MockGH, \
+             patch.object(pipeline_orchestrator, "_configure_git_auth"), \
+             patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
+            MockGH.return_value.list_open_issues.return_value = fake_work_items
+            pipeline_orchestrator.main()
+
+        assert len(processed_items) == 1, (
+            "Only the first work item should be processed; stop marker halts iteration after that"
+        )
+        assert processed_items[0].number == 1
+
 
 # ---------------------------------------------------------------------------
 # TestWorkflowProposals
