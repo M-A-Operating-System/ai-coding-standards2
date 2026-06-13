@@ -148,7 +148,7 @@
         "Creating a placeholder issue with no acceptance criteria as a way to acknowledge tech debt without fixing it."
       ],
       "adr_overridable": true,
-      "applies_to": ["coder", "pr-reviewer", "issue-classifier"]
+      "applies_to": ["coder", "pr-reviewer", "issue-classifier", "prd-writer"]
     }
 
   ]
