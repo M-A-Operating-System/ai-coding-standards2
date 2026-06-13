@@ -529,6 +529,21 @@ class GitHubClient:
         )
         return data[0]["number"] if data else None
 
+    def find_pr_by_label(self, label: str) -> Optional[int]:
+        """Return the number of the first open PR that has *label*, or None.
+
+        Uses the issues API (which includes PRs) since the pulls API does not
+        support label filtering directly.
+        """
+        data = self._get(
+            f"/repos/{self.repo}/issues",
+            params={"labels": label, "state": "open", "per_page": 100},
+        )
+        for item in data:
+            if "pull_request" in item:
+                return item["number"]
+        return None
+
     def _put(self, path: str, body: dict) -> requests.Response:
         """Issue a PUT request; returns the raw response so callers can inspect 409."""
         return self._request("PUT", path, json_body=body)
@@ -2853,8 +2868,14 @@ def process_work_item(
                     _ready_pr_number = work_item.number
                 elif work_item.kind == "issue":
                     # For issue-scoped agents, look up the PR on the issue branch.
+                    # Fall back to source-issue:{N} label for rebased branches that
+                    # don't match the canonical issue-{N} pattern.
                     try:
                         _ready_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+                        if _ready_pr_number is None:
+                            _ready_pr_number = gh.find_pr_by_label(
+                                f"source-issue:{work_item.number}"
+                            )
                     except Exception as exc:
                         log.warning(
                             "  could not look up PR for issue #%d: %s",
@@ -2865,6 +2886,7 @@ def process_work_item(
                     _ready_pr_number = None
 
                 if _ready_pr_number:
+                    # Best-effort draft→ready promotion (no-op when not supported).
                     try:
                         gh.mark_pr_ready(_ready_pr_number)
                         log.info(
