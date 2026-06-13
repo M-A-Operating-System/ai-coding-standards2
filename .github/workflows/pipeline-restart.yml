@@ -22,6 +22,7 @@ jobs:
 
       - name: Clear stop marker
         run: |
+          set -euo pipefail
           if [ -f .pipeline-stop ]; then
             echo "Found stop marker:"
             cat .pipeline-stop
@@ -41,13 +42,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           gh workflow run orchestrator.yml --repo "$REPO"
           echo "Fresh orchestrator run triggered."
 
       - name: Summary
+        env:
+          TRIGGER_RUN: ${{ github.event.inputs.trigger_run }}
+          ACTOR: ${{ github.actor }}
         run: |
+          set -euo pipefail
           echo "## Pipeline Restart" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Stop marker:** Removed" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Fresh run triggered:** ${{ github.event.inputs.trigger_run }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Fresh run triggered:** ${TRIGGER_RUN}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** ${ACTOR}" >> "$GITHUB_STEP_SUMMARY"

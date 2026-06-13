@@ -1111,7 +1111,7 @@ PAUSE_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) /
 # operator halts the pipeline manually. Unlike the rate-limit pause, this marker
 # is never auto-cleared — it persists until the pipeline-restart workflow deletes
 # it (or the operator runs --clear-stop locally).
-STOP_MARKER_PATH = SUBMODULE_ROOT / ".pipeline-stop"
+STOP_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / ".pipeline-stop"
 
 # Fixed UUID v5 namespace for deterministic session ID generation.
 # The claude CLI requires a valid UUID for --session-id; we derive one
@@ -2898,6 +2898,24 @@ def process_work_item(
 
 
 # ---------------------------------------------------------------------------
+# Helpers used by entry point
+# ---------------------------------------------------------------------------
+
+def _discover_github_token() -> str | None:
+    """Return the GitHub token from env or gh CLI; None if unavailable."""
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        return token
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3013,15 +3031,7 @@ def main() -> None:
             stop_reason or "no reason recorded",
         )
         if args.repo:
-            _stop_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-            if not _stop_token:
-                try:
-                    _stop_result = subprocess.run(
-                        ["gh", "auth", "token"], capture_output=True, text=True, check=True
-                    )
-                    _stop_token = _stop_result.stdout.strip()
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    _stop_token = None
+            _stop_token = _discover_github_token()
             if _stop_token:
                 try:
                     _stop_gh = GitHubClient(repo=args.repo, token=_stop_token)
@@ -3039,19 +3049,12 @@ def main() -> None:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
         sys.exit(1)
 
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    token = _discover_github_token()
     if not token:
-        # Fall back to gh CLI token
-        try:
-            result = subprocess.run(
-                ["gh", "auth", "token"], capture_output=True, text=True, check=True
-            )
-            token = result.stdout.strip()
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            log.error(
-                "No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`"
-            )
-            sys.exit(1)
+        log.error(
+            "No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`"
+        )
+        sys.exit(1)
 
     # Set http.extraHeader globally so all git operations in this process
     # authenticate with GITHUB_TOKEN (contents:write scope).

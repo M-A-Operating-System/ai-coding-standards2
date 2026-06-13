@@ -28,6 +28,7 @@ jobs:
         env:
           REASON: ${{ github.event.inputs.reason }}
         run: |
+          set -euo pipefail
           python3 - <<'PYEOF'
           import json, os, datetime
           marker = {
@@ -42,6 +43,7 @@ jobs:
 
       - name: Commit and push stop marker
         run: |
+          set -euo pipefail
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add .pipeline-stop
@@ -54,6 +56,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           echo "Cancelling in-progress orchestrator runs..."
           CANCELLED=0
           RUN_IDS=$(gh run list \
@@ -72,14 +75,20 @@ jobs:
           echo "CANCELLED_COUNT=$CANCELLED" >> "$GITHUB_ENV"
 
       - name: Summary
+        env:
+          REASON: ${{ github.event.inputs.reason }}
+          ACTOR: ${{ github.actor }}
+          CANCEL_RUNS: ${{ github.event.inputs.cancel_runs }}
         run: |
+          set -euo pipefail
           echo "## Pipeline Emergency Stop Applied" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Reason:** ${{ github.event.inputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ github.event.inputs.cancel_runs }}" = "true" ]; then
+          echo "**Reason:** ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** ${ACTOR}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${CANCEL_RUNS}" = "true" ]; then
             echo "**Runs cancelled:** ${CANCELLED_COUNT:-0}" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "The pipeline will not invoke any agents until the stop marker is cleared." >> "$GITHUB_STEP_SUMMARY"
           echo "Run the **Pipeline Restart** workflow to resume normal operation." >> "$GITHUB_STEP_SUMMARY"
+          echo "Note: runs starting after this workflow began are not cancelled; the stop marker prevents all subsequent agent invocations." >> "$GITHUB_STEP_SUMMARY"

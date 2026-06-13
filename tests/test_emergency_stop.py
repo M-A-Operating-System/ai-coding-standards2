@@ -131,7 +131,6 @@ class TestMainStopMarkerBehavior:
              patch.object(pipeline_orchestrator, "load_pipeline", side_effect=fake_load), \
              patch.object(pipeline_orchestrator, "write_audit_log"), \
              patch.object(pipeline_orchestrator, "GitHubClient"), \
-             patch.object(pipeline_orchestrator, "_configure_git_auth"), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             pipeline_orchestrator.main()
 
@@ -156,7 +155,6 @@ class TestMainStopMarkerBehavior:
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(pipeline_orchestrator, "write_audit_log", side_effect=capture_write), \
              patch.object(pipeline_orchestrator, "GitHubClient"), \
-             patch.object(pipeline_orchestrator, "_configure_git_auth"), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             pipeline_orchestrator.main()
 
@@ -198,7 +196,6 @@ class TestMainStopMarkerBehavior:
                  patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
                  patch.object(pipeline_orchestrator, "write_audit_log"), \
                  patch.object(pipeline_orchestrator, "GitHubClient"), \
-                 patch.object(pipeline_orchestrator, "_configure_git_auth"), \
                  patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
                 pipeline_orchestrator.main()
 
@@ -232,29 +229,38 @@ class TestMainStopMarkerBehavior:
 # ---------------------------------------------------------------------------
 
 class TestWorkflowProposals:
-    """Verify the workflow proposal files exist with the required inputs."""
+    """Verify the workflow files exist with the required workflow_dispatch inputs."""
 
-    def _read_workflow(self, name: str) -> str:
+    def _parse_workflow(self, name: str) -> dict:
+        import yaml
         path = Path(__file__).parent.parent / ".github/workflows" / name
         assert path.exists(), f"Workflow not found at {path}"
-        return path.read_text()
+        return yaml.safe_load(path.read_text())
+
+    def _on_block(self, name: str) -> dict:
+        wf = self._parse_workflow(name)
+        # PyYAML parses the bare `on:` key as Python True, not the string "on".
+        return wf.get(True, wf.get("on", {}))
+
+    def _dispatch_inputs(self, name: str) -> dict:
+        return self._on_block(name).get("workflow_dispatch", {}).get("inputs", {})
 
     def test_emergency_stop_workflow_exists(self):
-        content = self._read_workflow("pipeline-emergency-stop.yml")
-        assert "workflow_dispatch" in content
+        assert "workflow_dispatch" in self._on_block("pipeline-emergency-stop.yml"), \
+            "workflow must be triggerable via workflow_dispatch"
 
     def test_emergency_stop_workflow_has_reason_input(self):
-        content = self._read_workflow("pipeline-emergency-stop.yml")
-        assert "reason" in content
+        inputs = self._dispatch_inputs("pipeline-emergency-stop.yml")
+        assert "reason" in inputs, f"Expected 'reason' in workflow_dispatch.inputs; got {list(inputs)}"
 
     def test_emergency_stop_workflow_has_cancel_runs_input(self):
-        content = self._read_workflow("pipeline-emergency-stop.yml")
-        assert "cancel_runs" in content
+        inputs = self._dispatch_inputs("pipeline-emergency-stop.yml")
+        assert "cancel_runs" in inputs, f"Expected 'cancel_runs' in workflow_dispatch.inputs; got {list(inputs)}"
 
     def test_restart_workflow_exists(self):
-        content = self._read_workflow("pipeline-restart.yml")
-        assert "workflow_dispatch" in content
+        assert "workflow_dispatch" in self._on_block("pipeline-restart.yml"), \
+            "workflow must be triggerable via workflow_dispatch"
 
     def test_restart_workflow_has_trigger_run_input(self):
-        content = self._read_workflow("pipeline-restart.yml")
-        assert "trigger_run" in content
+        inputs = self._dispatch_inputs("pipeline-restart.yml")
+        assert "trigger_run" in inputs, f"Expected 'trigger_run' in workflow_dispatch.inputs; got {list(inputs)}"
