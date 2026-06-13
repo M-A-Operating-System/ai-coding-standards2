@@ -1277,7 +1277,7 @@ class TestPhasesFilter:
         )
 
         fake_args = argparse.Namespace(
-            verbose=False, clear_pause=False, repo="test/repo",
+            verbose=False, clear_pause=False, clear_stop=False, repo="test/repo",
             pipeline="pipeline.json", phases="01_product_docs",
             issue=None, kind=None, dry_run=True,
         )
