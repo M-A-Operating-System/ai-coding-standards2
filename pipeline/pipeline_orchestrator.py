@@ -112,20 +112,23 @@ STATUSES_JSON = Path(__file__).parent / "statuses.json"
 # which is a different directory when installed as a submodule.
 SUBMODULE_ROOT = Path(__file__).resolve().parent.parent
 
-def load_statuses() -> list[dict]:
-    """Load status definitions from statuses.json. Exits if file is missing or malformed."""
+def load_statuses() -> tuple[list[dict], list[dict]]:
+    """Load status and standalone-label definitions from statuses.json."""
     if not STATUSES_JSON.exists():
         log.error("statuses.json not found at %s — cannot start", STATUSES_JSON)
         sys.exit(1)
     try:
         with open(STATUSES_JSON) as f:
-            return json.load(f)["statuses"]
+            data = json.load(f)
+        return data["statuses"], data.get("standalone_labels", [])
     except (KeyError, json.JSONDecodeError) as e:
         log.error("statuses.json is malformed: %s", e)
         sys.exit(1)
 
-STATUSES     = load_statuses()
+STATUSES, STANDALONE_LABELS = load_statuses()
 LABEL_COLOURS = {s["status"]: s["colour"] for s in STATUSES}
+# Standalone labels (no {agent}:{suffix} pattern) keyed by full label name.
+STANDALONE_LABEL_COLOURS = {sl["label"]: sl["colour"] for sl in STANDALONE_LABELS}
 
 # Maximum wall-clock time for a single script invocation.
 SCRIPT_TIMEOUT_SECONDS = 300
@@ -504,9 +507,13 @@ class GitHubClient:
             # treating it as 404.
             if e.response is None or e.response.status_code != 404:
                 raise
-            # Determine colour from the status suffix
-            suffix = label.split(":")[-1] if ":" in label else "complete"
-            colour = LABEL_COLOURS.get(suffix, "EDEDED")
+            # Standalone labels (no colon) use their declared colour; suffix-based
+            # labels derive colour from the status name after the last colon.
+            if label in STANDALONE_LABEL_COLOURS:
+                colour = STANDALONE_LABEL_COLOURS[label]
+            else:
+                suffix = label.split(":")[-1] if ":" in label else "complete"
+                colour = LABEL_COLOURS.get(suffix, "EDEDED")
             try:
                 self._post(f"/repos/{self.repo}/labels", {
                     "name": label,

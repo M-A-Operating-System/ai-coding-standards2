@@ -2,14 +2,16 @@
 free re-invoke path in _handle_review_loop (issue #100).
 """
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from pipeline.pipeline_orchestrator import (
     _fetch_unresolved_human_review_requests,
     _handle_review_loop,
     HUMAN_REVIEW_PENDING_LABEL,
-    STATUS_COMPLETE,
-    STATUS_REVIEW,
+    process_work_item,
+    AgentDef,
+    WorkItem,
+    AgentRunResult,
 )
 
 
@@ -372,3 +374,136 @@ class TestHandleReviewLoopBackwardCompat:
         # Should have added review-cycle:1
         assert "review-cycle:1" in updated
         assert HUMAN_REVIEW_PENDING_LABEL not in updated
+
+
+# ---------------------------------------------------------------------------
+# process_work_item — HUMAN_REVIEW_PENDING_LABEL guard logic (issue #100)
+# ---------------------------------------------------------------------------
+
+class TestProcessWorkItemHumanReviewGuard:
+    """Tests for the HUMAN_REVIEW_PENDING_LABEL guard block in process_work_item.
+
+    Covers three edge cases:
+    1. Once-only guard: label already present → elif cleanup, no second free re-invoke.
+    2. PR lookup fallback: find_pr_by_branch returns None → find_pr_by_label called.
+    3. No human reviews → final_status stays :complete, PR marked ready.
+    """
+
+    def _make_pr_reviewer_def(self):
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test pr-reviewer",
+            mark_ready_on_complete=True,
+            review_loop={
+                "re_invoke": "03_execute/coder",
+                "max_cycles": 3,
+                "also_clear": [],
+            },
+        )
+
+    def _make_coder_def(self):
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "prd-writer:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test coder",
+        )
+
+    def _make_gh_for_process(
+        self,
+        find_pr_branch_return=99,
+        find_pr_label_return=None,
+        reviews=None,
+    ):
+        gh = MagicMock()
+        gh.add_label = MagicMock()
+        gh.remove_label = MagicMock()
+        gh.post_comment = MagicMock()
+        gh.get_issue_labels = MagicMock(return_value=set())
+        gh.find_pr_by_branch = MagicMock(return_value=find_pr_branch_return)
+        gh.find_pr_by_label = MagicMock(return_value=find_pr_label_return)
+        gh.mark_pr_ready = MagicMock()
+        gh.get_pr_reviews = MagicMock(return_value=reviews if reviews is not None else [])
+        return gh
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_once_only_guard_cleanup_removes_pending_label(self, mock_invoke):
+        """When HUMAN_REVIEW_PENDING_LABEL is already present and pr-reviewer emits
+        :complete, the elif cleanup path removes the label — no second free re-invoke."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process(find_pr_branch_return=77)
+        wi = WorkItem(
+            number=55, kind="issue", title="test issue",
+            labels={"merge-conflict:complete", HUMAN_REVIEW_PENDING_LABEL},
+            url="https://github.com/test/repo/issues/55",
+        )
+
+        process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        gh.remove_label.assert_any_call(55, HUMAN_REVIEW_PENDING_LABEL)
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert not any(l.startswith("review-cycle:") for l in applied), (
+            "Once-only guard must prevent a second free re-invoke"
+        )
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_pr_lookup_fallback_uses_source_issue_label(self, mock_invoke):
+        """When find_pr_by_branch returns None, find_pr_by_label is called with
+        source-issue:{number} so rebased branches are still found."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process(find_pr_branch_return=None, find_pr_label_return=88)
+        wi = WorkItem(
+            number=42, kind="issue", title="test issue",
+            labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/42",
+        )
+
+        process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        gh.find_pr_by_branch.assert_called_with("issue-42")
+        gh.find_pr_by_label.assert_called_with("source-issue:42")
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_no_human_reviews_leaves_status_complete(self, mock_invoke):
+        """When _fetch_unresolved_human_review_requests returns [], final_status stays
+        :complete — mark_pr_ready is called, no review-cycle label is applied."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process(find_pr_branch_return=77, reviews=[])
+        wi = WorkItem(
+            number=33, kind="issue", title="test issue",
+            labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/33",
+        )
+
+        process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        gh.mark_pr_ready.assert_called_once_with(77)
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert not any(l.startswith("review-cycle:") for l in applied), (
+            "Empty human reviews must not trigger a free re-invoke"
+        )
