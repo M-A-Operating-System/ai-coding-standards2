@@ -235,8 +235,8 @@ class TestWorkflowProposals:
     """Verify the workflow proposal files exist with the required inputs."""
 
     def _read_workflow(self, name: str) -> str:
-        path = Path(__file__).parent.parent / "docs/workflow-proposals" / name
-        assert path.exists(), f"Workflow proposal not found at {path}"
+        path = Path(__file__).parent.parent / ".github/workflows" / name
+        assert path.exists(), f"Workflow not found at {path}"
         return path.read_text()
 
     def test_emergency_stop_workflow_exists(self):

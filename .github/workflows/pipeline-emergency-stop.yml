@@ -1,9 +1,5 @@
 name: Pipeline Emergency Stop
 
-# NOTE: This file must be moved to .github/workflows/pipeline-emergency-stop.yml
-# by a human with a classic PAT (repo+workflow scopes). GITHUB_TOKEN cannot push
-# workflow files. See issue #23 for context.
-
 on:
   workflow_dispatch:
     inputs:
@@ -26,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
 
       - name: Write stop marker
         env:
