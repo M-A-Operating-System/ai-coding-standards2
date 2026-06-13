@@ -23,6 +23,7 @@ from pipeline_orchestrator import (
     parse_frontmatter,
     process_work_item,
     _compute_agent_session_id,
+    main,
 )
 
 
@@ -2568,4 +2569,62 @@ class TestPriorityScheduling:
         assert max(priority_indices) < min(other_indices), (
             f"All priority items must precede all non-priority items; "
             f"got order {ordered_numbers}"
+        )
+
+    # Integration test: the sort block inside main() is exercised end-to-end.
+    @patch("pipeline_orchestrator.write_audit_log")
+    @patch("pipeline_orchestrator.process_work_item")
+    @patch("pipeline_orchestrator.load_pipeline")
+    @patch("pipeline_orchestrator._configure_git_auth")
+    @patch("pipeline_orchestrator.is_pipeline_paused")
+    @patch("pipeline_orchestrator.GitHubClient")
+    @patch("pipeline_orchestrator.parse_args")
+    def test_main_dispatches_priority_before_non_priority(
+        self, mock_parse_args, mock_gh_cls, mock_is_paused,
+        mock_configure_git, mock_load_pipeline, mock_process_wi, mock_write_audit,
+    ):
+        """Integration test: main() sort block reorders API-returned items by priority.
+
+        Given gh.list_open_issues returns [non-priority #1, priority #2] (API insertion order)
+        When main() runs
+        Then process_work_item is called with priority issue #2 before non-priority issue #1.
+
+        This test exercises the sort block in main() directly — if that block were removed,
+        process_work_item would receive #1 first and the assertion would fail.
+        """
+        args_mock = MagicMock()
+        args_mock.clear_pause = False
+        args_mock.verbose = False
+        args_mock.repo = "test/repo"
+        args_mock.issue = None
+        args_mock.dry_run = False
+        args_mock.pipeline = MagicMock()
+        args_mock.phases = None
+        mock_parse_args.return_value = args_mock
+
+        agent_def = self._make_agent_for_priority()
+        mock_load_pipeline.return_value = ([agent_def], [])
+        mock_is_paused.return_value = (False, None, None)
+
+        # GitHub API returns items with non-priority (#1) first, priority (#2) second.
+        # Without the sort block in main(), #1 would be dispatched first.
+        non_priority_wi = self._eligible_wi(1, priority=False)
+        priority_wi = self._eligible_wi(2, priority=True)
+        mock_gh_instance = MagicMock()
+        mock_gh_instance.list_open_issues.return_value = [non_priority_wi, priority_wi]
+        mock_gh_cls.return_value = mock_gh_instance
+
+        mock_process_wi.return_value = 0
+
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
+            main()
+
+        assert mock_process_wi.call_count >= 2, (
+            f"process_work_item must be called for both work items; "
+            f"call count: {mock_process_wi.call_count}"
+        )
+        first_item = mock_process_wi.call_args_list[0][0][0]
+        assert first_item.number == 2, (
+            f"Priority issue #2 must be passed to process_work_item first; "
+            f"got #{first_item.number}. The sort block in main() may not be exercised."
         )

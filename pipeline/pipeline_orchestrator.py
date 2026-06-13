@@ -3014,8 +3014,8 @@ def main() -> None:
     # Two-pass priority ordering: issues carrying the `priority` label are
     # moved to the front so they receive the next available :wip slot before
     # any non-priority work item. Concurrency limits apply unchanged to both
-    # passes. Python's sort is stable, so relative order within each group
-    # is preserved from the GitHub API response.
+    # passes. List comprehensions iterate in source order, so relative order
+    # within each group is preserved from the GitHub API response.
     _priority_items = [wi for wi in work_items if "priority" in wi.labels]
     _other_items    = [wi for wi in work_items if "priority" not in wi.labels]
     if _priority_items:
