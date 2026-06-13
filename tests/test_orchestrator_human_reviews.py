@@ -8,6 +8,8 @@ from pipeline.pipeline_orchestrator import (
     _fetch_unresolved_human_review_requests,
     _handle_review_loop,
     HUMAN_REVIEW_PENDING_LABEL,
+    STANDALONE_LABEL_COLOURS,
+    GitHubClient,
     process_work_item,
     AgentDef,
     WorkItem,
@@ -507,3 +509,52 @@ class TestProcessWorkItemHumanReviewGuard:
         assert not any(l.startswith("review-cycle:") for l in applied), (
             "Empty human reviews must not trigger a free re-invoke"
         )
+
+
+# ---------------------------------------------------------------------------
+# _ensure_label_exists — standalone label colour (SC-002)
+# ---------------------------------------------------------------------------
+
+class TestEnsureLabelExistsStandaloneColour:
+    """Verifies that human-review-pending is created with amber (FBCA04)."""
+
+    def test_human_review_pending_declared_amber(self):
+        assert STANDALONE_LABEL_COLOURS.get(HUMAN_REVIEW_PENDING_LABEL) == "FBCA04"
+
+    def test_ensure_label_creates_with_amber_colour(self):
+        gh = MagicMock(spec=GitHubClient)
+        gh.repo = "owner/repo"
+        import requests
+        not_found = requests.HTTPError(response=MagicMock(status_code=404))
+        gh._get.side_effect = not_found
+        gh._post = MagicMock()
+        GitHubClient._ensure_label_exists(gh, HUMAN_REVIEW_PENDING_LABEL)
+        gh._post.assert_called_once()
+        payload = gh._post.call_args[0][1] if gh._post.call_args[0] else gh._post.call_args[1]
+        assert payload.get("color") == "FBCA04"
+
+
+# ---------------------------------------------------------------------------
+# _handle_review_loop — add_label failure aborts free re-invoke (DP-001)
+# ---------------------------------------------------------------------------
+
+class TestHandleReviewLoopAddLabelFailure:
+    """Verifies that a transient add_label failure returns without re-invoking."""
+
+    def test_returns_labels_unchanged_when_add_label_raises(self):
+        gh = _make_gh()
+        gh.add_label.side_effect = RuntimeError("API timeout")
+        coder_def = MagicMock()
+        coder_def.complete_label = "03_execute/coder:complete"
+        labels = {"pr-reviewer:complete"}
+        result = _handle_review_loop(
+            gh,
+            _make_agent_def(),
+            _make_work_item(),
+            labels,
+            pipeline_map={"03_execute/coder": coder_def},
+            skip_cycle_increment=True,
+            human_reviews=[{"user": {"login": "alice"}, "body": "fix it"}],
+        )
+        assert HUMAN_REVIEW_PENDING_LABEL not in result
+        gh.post_comment.assert_not_called()
