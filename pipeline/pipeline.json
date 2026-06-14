@@ -20,29 +20,15 @@
     },
 
     {
-      "agent": "01_product_docs/sizer",
+      "agent": "01_product_docs/prd-writer",
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
         "label": "issue-classifier:complete"
       },
-      "human_gate_after": false,
-      "dependencies": ["01_product_docs/issue-classifier"],
-      "max_retries": 1,
-      "session": { "scope": "per_issue" },
-      "description": "Evaluates whether the issue fits a single development cycle. Small issues pass through immediately (sizer:complete) so prd-writer starts. Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and exits the pipeline (sizer:skipped) so each sub-issue runs its own full pipeline."
-    },
-
-    {
-      "agent": "01_product_docs/prd-writer",
-      "phase": "01_product_docs",
-      "object": ["issue"],
-      "trigger": {
-        "label": "sizer:complete"
-      },
       "human_gate_after": true,
       "human_gate_label": "prd-writer:approved",
-      "dependencies": ["01_product_docs/sizer"],
+      "dependencies": ["01_product_docs/issue-classifier"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
       "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate."
@@ -170,6 +156,20 @@
       "max_retries": 1,
       "session": { "scope": "global" },
       "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
+    },
+
+    {
+      "agent": "00_ondemand/sizer",
+      "phase": "00_ondemand",
+      "object": ["issue"],
+      "trigger": {
+        "label": "sizer:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic (sizer:review) so the human can inspect and edit the breakdown before confirming. On re-invocation after the human removes the review label, emits sizer:skipped (terminal). Triggered by applying the sizer:requested label to any issue."
     }
 
   ]
