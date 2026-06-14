@@ -296,8 +296,7 @@ AI_AGILE_STATUS: skipped "Parent epic — implementation tracked via sub-issues.
 
 ## Behaviour rules
 
-- **Do not write code.** Do not read source files. You analyse issue
-  bodies only.
+- **Do not write code.** Do not read source files. Analyse issue bodies only.
 - **Do not infer scope beyond what the issue states.** If the issue
   body is vague about what a phase covers, make a conservative split
   and note the ambiguity in the sub-issue body.
