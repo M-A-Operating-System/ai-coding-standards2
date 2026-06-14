@@ -165,11 +165,13 @@
       "trigger": {
         "label": "sizer:requested"
       },
-      "human_gate_after": false,
+      "human_gate_after": true,
+      "human_gate_label": "sizer:review",
+      "auto_approve_on_complete": true,
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic (sizer:review) so the human can inspect and edit the breakdown before confirming. On re-invocation after the human removes the review label, emits sizer:skipped (terminal). Triggered by applying the sizer:requested label to any issue."
+      "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete — auto-approved). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
     }
 
   ]

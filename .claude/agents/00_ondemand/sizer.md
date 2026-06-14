@@ -9,10 +9,10 @@ description: >
   sub-issues, each independently deliverable to production. Posts a
   decomposition plan comment and emits review so the human can inspect
   and edit sub-issues before committing to the split. On re-invocation
-  after the human removes the review label, emits skipped (terminal) so
-  the parent issue exits the pipeline and each sub-issue runs its own
-  full pipeline from issue-classifier onward. Triggered by applying the
-  sizer:requested label to any issue.
+  after the human removes the review label, emits complete (terminal for
+  the parent) so each sub-issue runs its own full pipeline from
+  issue-classifier onward. Triggered by applying the sizer:requested
+  label to any issue.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 30
@@ -40,7 +40,7 @@ decomposed by a prior sizer run.
 # Has the sizer already posted a decomposition artefact on this issue?
 PRIOR_DECOMP=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
   --jq '[.comments[]
-        | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/sizer"))
+        | select(.body | contains("ai-agile/artefact/v1 by 00_ondemand/sizer"))
         ] | length')
 ```
 
@@ -95,11 +95,10 @@ Post a brief sizing note and emit complete.
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
-<!-- ai-agile/artefact/v1 by 01_product_docs/sizer -->
+<!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
 ## Sizing: fits one development cycle
 
 This issue is appropriately sized for a single development cycle.
-\`prd-writer\` will run next.
 EOF
 )"
 ```
@@ -199,10 +198,10 @@ gh api \
   --method POST \
   -H "Accept: application/vnd.github+json" \
   "/repos/${REPO}/issues/${ISSUE_NUMBER}/sub_issues" \
-  -f sub_issue_id="$SUB_ISSUE_ID"
+  -f sub_issue_id="$SUB_NODE_ID"
 ```
 
-Where `SUB_ISSUE_ID` is the **node ID** (not the number) of the
+Where `SUB_NODE_ID` is the **node ID** (not the number) of the
 newly-created sub-issue:
 
 ```bash
@@ -224,7 +223,7 @@ issue is a tracking epic and should not proceed to `prd-writer`,
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
-<!-- ai-agile/artefact/v1 by 01_product_docs/sizer -->
+<!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
 ## Sizing: decomposed into {TOTAL} sub-issues
 
 This issue is too large for a single development cycle. It has been
@@ -274,7 +273,7 @@ Emit the terminal skipped sentinel:
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
-<!-- ai-agile/artefact/v1 by 01_product_docs/sizer -->
+<!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
 ## Sizing: decomposition confirmed
 
 Sub-issue breakdown accepted. Each sub-issue will run its own
@@ -289,7 +288,7 @@ EOF
 Then emit:
 
 ```
-AI_AGILE_STATUS: skipped "Parent epic — implementation tracked via sub-issues."
+AI_AGILE_STATUS: complete
 ```
 
 ---
