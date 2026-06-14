@@ -4,13 +4,13 @@ description: >
   Ad-hoc issue sizer. Evaluates whether a given issue fits a single
   development cycle. If it does, posts a sizing note and exits. If the
   issue is too large, it decomposes the issue into ordered,
-  independently-deliverable sub-issues, updates the parent body with a
-  live tracking table, labels the parent epic and blocked-by-children,
-  and posts a decomposition plan. The parent remains open and blocked
-  until all sub-issues close — a GitHub Action then auto-closes the
-  parent. On re-invocation after the human confirms the breakdown,
-  emits complete. Triggered by applying the sizer:requested label to
-  any issue.
+  independently-deliverable sub-issues linked to the parent via
+  GitHub's sub-issue API, updates the parent body with a live tracking
+  table, labels the parent epic, and posts a decomposition plan. The
+  parent remains open until all sub-issues close — a GitHub Action
+  auto-closes it. On re-invocation after the human confirms the
+  breakdown, emits complete. Triggered by applying the sizer:requested
+  label to any issue.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 30
@@ -35,10 +35,16 @@ Before doing anything else, check whether this issue has already been
 decomposed by a prior sizer run.
 
 ```bash
-# Has the sizer already posted a decomposition artefact on this issue?
+# Has the sizer already posted a *decomposition* artefact on this issue?
+# Match specifically on "Sizing: decomposed into" so a prior pass-through
+# comment ("fits one development cycle") does not incorrectly trigger Step 5.
 PRIOR_DECOMP=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
   --jq '[.comments[]
-        | select(.body | contains("ai-agile/artefact/v1 by 00_ondemand/sizer"))
+        | select(
+            (.body | contains("ai-agile/artefact/v1 by 00_ondemand/sizer"))
+            and
+            (.body | contains("Sizing: decomposed into"))
+          )
         ] | length')
 ```
 
@@ -140,14 +146,19 @@ an epic. More than 6 suggests the sub-issues need further grouping.
 
 ### 4b — Create sub-issues
 
-For each sub-issue, create a GitHub issue with this exact body
-structure:
+Before the loop, initialise two accumulator arrays:
 
 ```bash
-gh issue create --repo "$REPO" \
-  --title "[PART {N}/{TOTAL}] {PARENT_TITLE}: {SUB_SCOPE}" \
-  --label "sub-issue,parent-issue:{ISSUE_NUMBER}" \
-  --body "$(cat <<'BODY'
+SUB_ISSUE_NUMBERS=()
+SUB_ISSUE_TITLES=()
+```
+
+For each sub-issue, write the body to a temp file (avoids heredoc/variable
+quoting collisions), create the issue, and capture the number:
+
+```bash
+BODY_FILE=$(mktemp /tmp/sizer-body-XXXXXX.md)
+cat > "$BODY_FILE" <<BODY
 ## Context
 
 Implements part {N} of #{PARENT_NUMBER}: {PARENT_TITLE}.
@@ -178,13 +189,19 @@ system must work as follows:
 - [ ] ...
 - [ ] ...
 BODY
-)"
-```
 
-Capture the new issue number from each creation:
+SUB_ISSUE_URL=$(gh issue create --repo "$REPO" \
+  --title "[PART {N}/{TOTAL}] {PARENT_TITLE}: {SUB_SCOPE}" \
+  --label "sub-issue,parent-issue:${ISSUE_NUMBER}" \
+  --body-file "$BODY_FILE")
+rm -f "$BODY_FILE"
 
-```bash
-SUB_ISSUE_N=$(gh issue create ... --json number --jq '.number')
+# gh issue create outputs the URL: https://github.com/org/repo/issues/N
+SUB_ISSUE_N=$(echo "$SUB_ISSUE_URL" | grep -oE '[0-9]+$')
+
+# Accumulate for use in Step 4e
+SUB_ISSUE_NUMBERS+=("$SUB_ISSUE_N")
+SUB_ISSUE_TITLES+=("{SUB_SCOPE}")   # the short scope string you chose for this sub-issue
 ```
 
 ### 4c — Link sub-issues to the parent
@@ -207,7 +224,7 @@ SUB_NODE_ID=$(gh issue view "$SUB_ISSUE_N" --repo "$REPO" \
   --json id --jq '.id')
 ```
 
-### 4d — Label the parent as epic and create blocked-by issue links
+### 4d — Label the parent as epic
 
 ```bash
 gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "epic"
@@ -216,42 +233,32 @@ gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "epic"
 `epic` signals downstream pipeline agents that the parent must not proceed
 to `prd-writer` or `coder`.
 
-Then create a native GitHub `blocked-by` issue link from the parent to each
-sub-issue. This is the canonical cross-issue dependency mechanism per
-`docs/product/agile/02-principles.md` and `13-todos.md`. The orchestrator
-reads these links as unmet dependencies:
-
-```bash
-# For each sub-issue created in 4b:
-gh api \
-  --method POST \
-  -H "Accept: application/vnd.github+json" \
-  "/repos/${REPO}/issues/${ISSUE_NUMBER}/issue_links" \
-  -f link_type="is_blocked_by" \
-  -f linked_issue_number="${SUB_ISSUE_N}"
-```
-
-These links show on the parent issue sidebar as "Blocked by #N" and are
-removed automatically when the sub-issues close.
+The structural dependency is already established in Step 4c via GitHub's
+native sub-issue relationship. The tracking table (Step 4e) and the
+decomposition comment (Step 4f) make the blocking relationship visible
+to humans. No additional API call is needed here.
 
 ### 4e — Update the parent issue body with a live tracking table
 
 Prepend a tracking section to the parent issue body so traceability is
 visible in the issue itself (not just in comments):
 
+Write the new body to a temp file to avoid shell quoting issues with
+special characters in the original body:
+
 ```bash
-# Build the tracking rows
+ORIG_BODY=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body --jq '.body')
+
+# SUB_ISSUE_NUMBERS and SUB_ISSUE_TITLES were populated during 4b (0-indexed)
 TRACKER_ROWS=""
-for I in $(seq 1 $TOTAL); do
-  SUB_N="${SUB_ISSUE_NUMBERS[$I]}"   # array populated during 4b
-  SUB_TITLE="${SUB_ISSUE_TITLES[$I]}"
-  TRACKER_ROWS+="| ${I}/${TOTAL} | #${SUB_N} | ${SUB_TITLE} | open |
+for I in "${!SUB_ISSUE_NUMBERS[@]}"; do
+  PART=$((I + 1))
+  TRACKER_ROWS+="| ${PART}/${TOTAL} | #${SUB_ISSUE_NUMBERS[$I]} | ${SUB_ISSUE_TITLES[$I]} | open |
 "
 done
 
-ORIG_BODY=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body --jq '.body')
-
-NEW_BODY=$(cat <<EOF
+BODY_FILE=$(mktemp /tmp/sizer-epic-body-XXXXXX.md)
+cat > "$BODY_FILE" <<BODY
 <!-- ai-agile/epic-tracker/v1 START -->
 ## Decomposition tracker
 
@@ -267,10 +274,10 @@ _Tracked by the sizer agent. Each sub-issue runs its own full pipeline._
 ---
 
 ${ORIG_BODY}
-EOF
-)
+BODY
 
-gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body "$NEW_BODY"
+gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body-file "$BODY_FILE"
+rm -f "$BODY_FILE"
 ```
 
 ### 4f — Post the decomposition plan
@@ -324,10 +331,9 @@ The human removed `sizer:review`, confirming the breakdown is
 acceptable. The sub-issues are now live and will each start their own
 pipeline when `issue-classifier` picks them up.
 
-The native GitHub `blocked-by` links created in Step 4d now accurately
-describe the parent's state. As each sub-issue closes, GitHub resolves
-the corresponding blocked-by link. No further changes are needed to the
-parent body.
+The sub-issue relationships created in Step 4c and the tracking table
+in the parent body accurately describe the parent's state. No further
+changes are needed to the parent body.
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'

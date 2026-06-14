@@ -38,9 +38,11 @@ jobs:
             echo "Issue #$ISSUE_NUMBER is a sub-issue of #$PARENT_NUMBER"
 
             # Find all siblings (issues with the same parent-issue:{N} label)
+            # --limit 500 guards against the default 30-item pagination cap
             SIBLINGS=$(gh issue list --repo "$REPO" \
               --label "$PARENT_LABEL" \
               --state all \
+              --limit 500 \
               --json number,state \
               --jq '.[]')
 
