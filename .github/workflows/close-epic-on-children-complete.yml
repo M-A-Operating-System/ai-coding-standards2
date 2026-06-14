@@ -2,7 +2,8 @@ name: Close epic when all sub-issues are done
 
 # When any issue is closed, check whether it is a sub-issue of an epic.
 # If it is, and every other sibling sub-issue is also closed, close the
-# parent epic and remove the blocked-by-children label.
+# parent epic. Siblings are found via the parent-issue:{N} label applied
+# to each sub-issue by the sizer agent.
 
 on:
   issues:
@@ -59,9 +60,6 @@ jobs:
 All ${TOTAL} sub-issues have been closed. Closing this epic.
 EOF
 )"
-
-              gh issue edit "$PARENT_NUMBER" --repo "$REPO" \
-                --remove-label "blocked-by-children" 2>/dev/null || true
 
               gh issue close "$PARENT_NUMBER" --repo "$REPO" \
                 --reason completed

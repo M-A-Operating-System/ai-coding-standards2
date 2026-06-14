@@ -207,17 +207,32 @@ SUB_NODE_ID=$(gh issue view "$SUB_ISSUE_N" --repo "$REPO" \
   --json id --jq '.id')
 ```
 
-### 4d — Label the parent as epic and blocked-by-children
+### 4d — Label the parent as epic and create blocked-by issue links
 
 ```bash
-gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
-  --add-label "epic,blocked-by-children"
+gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "epic"
 ```
 
 `epic` signals downstream pipeline agents that the parent must not proceed
-to `prd-writer` or `coder`. `blocked-by-children` communicates the
-dependency relationship visibly and is removed by the auto-close workflow
-when all children are done.
+to `prd-writer` or `coder`.
+
+Then create a native GitHub `blocked-by` issue link from the parent to each
+sub-issue. This is the canonical cross-issue dependency mechanism per
+`docs/product/agile/02-principles.md` and `13-todos.md`. The orchestrator
+reads these links as unmet dependencies:
+
+```bash
+# For each sub-issue created in 4b:
+gh api \
+  --method POST \
+  -H "Accept: application/vnd.github+json" \
+  "/repos/${REPO}/issues/${ISSUE_NUMBER}/issue_links" \
+  -f link_type="is_blocked_by" \
+  -f linked_issue_number="${SUB_ISSUE_N}"
+```
+
+These links show on the parent issue sidebar as "Blocked by #N" and are
+removed automatically when the sub-issues close.
 
 ### 4e — Update the parent issue body with a live tracking table
 
@@ -309,9 +324,10 @@ The human removed `sizer:review`, confirming the breakdown is
 acceptable. The sub-issues are now live and will each start their own
 pipeline when `issue-classifier` picks them up.
 
-The `blocked-by-children` label now accurately describes the parent's
-state — it stays until the auto-close workflow removes it when all
-sub-issues close. No further changes are needed to the parent body.
+The native GitHub `blocked-by` links created in Step 4d now accurately
+describe the parent's state. As each sub-issue closes, GitHub resolves
+the corresponding blocked-by link. No further changes are needed to the
+parent body.
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
