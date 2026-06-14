@@ -87,6 +87,39 @@ find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/
 
 ---
 
+## Step 1.5a — Detect sub-issue
+
+Check whether this issue is a sub-issue created by the sizer:
+
+```bash
+IS_SUB_ISSUE=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+  --jq '[.labels[].name | select(startswith("parent-issue:"))] | length')
+```
+
+If `$IS_SUB_ISSUE` is **non-zero**, this issue is a sizer-created sub-issue
+of a larger epic. The sizer has already written a structured body containing
+a Problem Statement, Backward-compatibility contract, and Acceptance Criteria.
+This content is the source of truth — do **not** overwrite it.
+
+**Sub-issue handling:**
+1. Skip Steps 1.5, 2, 3, and 4 entirely.
+2. Go directly to **Step 3A (Augmentation mode)**, treating the existing body
+   as fully pre-specified.
+3. In Step 3A-4 (rewrite title and body): **do not change the title** — the
+   sizer already set a canonical title in the form `[#PARENT - N/TOTAL] scope`.
+   Only add the governance header comment to the body.
+4. After updating the body, go to **Step 5** to signal review.
+
+**Rationale:** Sub-issues exist because a human approved a sizer decomposition.
+Their scope and acceptance criteria were explicitly reviewed. Rewriting them
+into a generic PRD template discards that reviewed content and confuses the
+coder, which reads the issue body as its specification.
+
+If `$IS_SUB_ISSUE` is **zero**, this is a standalone issue. Continue to
+**Step 1.5** normally.
+
+---
+
 ## Step 1.5 — Detect pre-existing specification
 
 Before drafting anything, assess whether the issue body already contains a
@@ -287,9 +320,18 @@ BODY_EOF
 Apply the title prefix from the Step 4b table. Do **not** rephrase the
 existing title text — only prepend the `[CATEGORY]` prefix if absent.
 
+**Exception — sub-issues:** If this is a sub-issue (detected in Step 1.5a),
+skip the title change entirely. The sizer-assigned title `[#PARENT - N/TOTAL]
+scope` is canonical and must not be altered. Only update the body.
+
 ```bash
+# For standalone issues: update both title and body
 gh issue edit $ISSUE_NUMBER --repo $REPO \
   --title "${NEW_TITLE}" \
+  --body  "${NEW_BODY}"
+
+# For sub-issues: body only
+gh issue edit $ISSUE_NUMBER --repo $REPO \
   --body  "${NEW_BODY}"
 ```
 
