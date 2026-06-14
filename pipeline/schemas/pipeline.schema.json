@@ -162,6 +162,14 @@
           },
           "description": "Skip this agent when the issue classification matches any value in this list. Classification is read from a 'classification: {type}' label or a '[TYPE]' title prefix applied by issue-classifier."
         },
+        "exclude_labels": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "Skip this agent when any of these labels is present on the work item. Use to prevent pipeline stages running on epics ('epic') or issues blocked by sub-issues ('blocked')."
+        },
         "review_loop": {
           "type": "object",
           "description": "Automatic retry loop: when this agent emits :review, the orchestrator re-invokes a target agent (up to max_cycles times) before escalating to human sign-off. Only applies to agents that emit :review.",
