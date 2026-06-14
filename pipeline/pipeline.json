@@ -20,18 +20,32 @@
     },
 
     {
-      "agent": "01_product_docs/prd-writer",
+      "agent": "01_product_docs/sizer",
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
         "label": "issue-classifier:complete"
       },
+      "human_gate_after": false,
+      "dependencies": ["01_product_docs/issue-classifier"],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "description": "Evaluates whether the issue fits a single development cycle. Small issues pass through immediately (sizer:complete) so prd-writer starts. Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and exits the pipeline (sizer:skipped) so each sub-issue runs its own full pipeline."
+    },
+
+    {
+      "agent": "01_product_docs/prd-writer",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "sizer:complete"
+      },
       "human_gate_after": true,
       "human_gate_label": "prd-writer:approved",
-      "dependencies": ["01_product_docs/issue-classifier"],
+      "dependencies": ["01_product_docs/sizer"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
-      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Set-blocks oversized issues with a decomposition note rather than drafting a sprawling PRD."
+      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate."
     },
 
     {
