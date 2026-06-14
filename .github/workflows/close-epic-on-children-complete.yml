@@ -54,6 +54,10 @@ jobs:
             if [ "$OPEN" -eq 0 ]; then
               echo "All $TOTAL sub-issues of #$PARENT_NUMBER are closed — closing epic."
 
+              # Remove blocked label before closing so the state is clean
+              gh issue edit "$PARENT_NUMBER" --repo "$REPO" \
+                --remove-label "blocked" 2>/dev/null || true
+
               gh issue comment "$PARENT_NUMBER" --repo "$REPO" \
                 --body "$(cat <<EOF
 <!-- ai-agile/announcement/v1 by close-epic-on-children-complete -->

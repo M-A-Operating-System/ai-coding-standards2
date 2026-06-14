@@ -165,6 +165,7 @@ class AgentDef:
     mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
     commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
+    exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
     max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
@@ -284,6 +285,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
                 commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
+                exclude_labels=list(entry.get("exclude_labels", [])),
                 review_loop=entry.get("review_loop"),
                 max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
@@ -2571,6 +2573,18 @@ def process_work_item(
                 log.debug(
                     "  skip %-40s  [classification '%s' excluded]",
                     agent_def.agent, _classification,
+                )
+                continue
+
+        # Skip if any of the agent's exclude_labels are present on the work item
+        if agent_def.exclude_labels:
+            _blocking_label = next(
+                (lbl for lbl in agent_def.exclude_labels if lbl in labels), None
+            )
+            if _blocking_label:
+                log.debug(
+                    "  skip %-40s  [label '%s' excludes this agent]",
+                    agent_def.agent, _blocking_label,
                 )
                 continue
 

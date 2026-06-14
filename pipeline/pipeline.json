@@ -31,7 +31,8 @@
       "dependencies": ["01_product_docs/issue-classifier"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
-      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate."
+      "exclude_labels": ["epic", "blocked"],
+      "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked."
     },
 
     {
@@ -46,7 +47,8 @@
       "human_gate_after": false,
       "dependencies": ["01_product_docs/prd-writer"],
       "exclude_classifications": ["spike"],
-      "description": "Scripted step: creates the shared issue branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Applies source-issue:{N} label via link-pr-to-issue.sh. All subsequent agent commits (docs, code) accumulate in this PR. Idempotent — exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues — spikes produce no code to ship."
+      "exclude_labels": ["epic", "blocked"],
+      "description": "Scripted step: creates the shared issue branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Applies source-issue:{N} label via link-pr-to-issue.sh. All subsequent agent commits (docs, code) accumulate in this PR. Idempotent — exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues — spikes produce no code to ship. Skipped for epic/blocked issues."
     },
 
     {
@@ -65,7 +67,8 @@
         "commit_after": true
       },
       "exclude_classifications": ["spike"],
-      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes using its Write tool and emits complete — the orchestrator then stages, commits, and pushes those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts. Skipped for spike issues."
+      "exclude_labels": ["epic", "blocked"],
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes using its Write tool and emits complete — the orchestrator then stages, commits, and pushes those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts. Skipped for spike issues. Skipped for epic/blocked issues."
     },
 
     {
@@ -83,7 +86,8 @@
         "commit_after": true
       },
       "exclude_classifications": ["spike"],
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator stages, commits, and pushes all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues — spikes produce research findings, not code."
+      "exclude_labels": ["epic", "blocked"],
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator stages, commits, and pushes all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues — spikes produce research findings, not code. Skipped for epic/blocked issues."
     },
 
     {
@@ -99,8 +103,9 @@
       "dependencies": ["03_execute/coder"],
       "max_retries": 1,
       "exclude_classifications": ["spike"],
+      "exclude_labels": ["epic", "blocked"],
       "script_timeout_seconds": 900,
-      "description": "Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks pass (emits complete), any check fails (emits review — the orchestrator re-invokes the coder up to 3 cycles), or the 14-minute timeout expires (emits blocked for human intervention). Posts a summary comment listing check outcomes before signalling status."
+      "description": "Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks pass (emits complete), any check fails (emits review — the orchestrator re-invokes the coder up to 3 cycles), or the 14-minute timeout expires (emits blocked for human intervention). Posts a summary comment listing check outcomes before signalling status. Skipped for epic/blocked issues."
     },
 
     {
@@ -117,7 +122,8 @@
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "exclude_classifications": ["spike"],
-      "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the orchestrator auto-applies merge-conflict:approved so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review — the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions."
+      "exclude_labels": ["epic", "blocked"],
+      "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the orchestrator auto-applies merge-conflict:approved so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review — the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues."
     },
 
     {
@@ -132,6 +138,7 @@
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "exclude_classifications": ["spike"],
+      "exclude_labels": ["epic", "blocked"],
       "review_loop": {
         "re_invoke": "03_execute/coder",
         "max_cycles": 3,
@@ -141,7 +148,7 @@
         "commit_after": false,
         "mark_ready_on_complete": true
       },
-      "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues APPROVE only when all findings are Low or Informational severity. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR — this is a hard block regardless of automated findings. On APPROVE with no unresolved human reviews, emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required."
+      "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues APPROVE only when all findings are Low or Informational severity. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR — this is a hard block regardless of automated findings. On APPROVE with no unresolved human reviews, emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
     },
 
     {

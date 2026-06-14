@@ -191,7 +191,7 @@ system must work as follows:
 BODY
 
 SUB_ISSUE_URL=$(gh issue create --repo "$REPO" \
-  --title "[PART {N}/{TOTAL}] {PARENT_TITLE}: {SUB_SCOPE}" \
+  --title "[#${ISSUE_NUMBER} - {N}/{TOTAL}] {SUB_SCOPE}" \
   --label "sub-issue,parent-issue:${ISSUE_NUMBER}" \
   --body-file "$BODY_FILE")
 rm -f "$BODY_FILE"
@@ -224,14 +224,16 @@ SUB_NODE_ID=$(gh issue view "$SUB_ISSUE_N" --repo "$REPO" \
   --json id --jq '.id')
 ```
 
-### 4d — Label the parent as epic
+### 4d — Label the parent as epic and blocked
 
 ```bash
-gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "epic"
+gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "epic,blocked"
 ```
 
-`epic` signals downstream pipeline agents that the parent must not proceed
-to `prd-writer` or `coder`.
+`epic` and `blocked` together cause the orchestrator to skip all pipeline
+stages (prd-writer, coder, pr-reviewer, etc.) for this parent issue.
+The `blocked` label is removed automatically by the close-epic workflow
+when all sub-issues are closed.
 
 The structural dependency is already established in Step 4c via GitHub's
 native sub-issue relationship. The tracking table (Step 4e) and the
@@ -257,18 +259,22 @@ for I in "${!SUB_ISSUE_NUMBERS[@]}"; do
 "
 done
 
+BLOCKED_BY_LIST=$(printf '#%s ' "${SUB_ISSUE_NUMBERS[@]}")
+
 BODY_FILE=$(mktemp /tmp/sizer-epic-body-XXXXXX.md)
 cat > "$BODY_FILE" <<BODY
 <!-- ai-agile/epic-tracker/v1 START -->
 ## Decomposition tracker
 
-This issue has been split into ${TOTAL} independently-deliverable parts.
-It closes automatically when all sub-issues are closed.
+This epic is **blocked by** the sub-issues below and will close automatically
+when all of them are closed.
+
+**Blocked by:** ${BLOCKED_BY_LIST}
 
 | Part | Issue | Scope | Status |
 |------|-------|-------|--------|
 ${TRACKER_ROWS}
-_Tracked by the sizer agent. Each sub-issue runs its own full pipeline._
+_Each sub-issue runs its own full pipeline (classifier → prd-writer → coder → review → merge)._
 <!-- ai-agile/epic-tracker/v1 END -->
 
 ---
