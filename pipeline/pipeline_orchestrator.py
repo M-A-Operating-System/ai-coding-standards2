@@ -2332,19 +2332,33 @@ def _run_post_steps(
             "  post_steps: invoking %s for %s on #%d",
             script_path, agent_def.agent, work_item.number,
         )
+        # post_steps scripts must NOT emit AI_AGILE_STATUS: sentinel text to
+        # stdout — the orchestrator reads its own stdout for the sentinel; a
+        # stray echo in a future script would produce a spurious terminal signal.
         try:
             result = subprocess.run(
                 ["bash", str(script_file)],
                 env=step_env,
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
+        except subprocess.TimeoutExpired:
+            log.error(
+                "  post_steps: %s timed out after 300s for %s on #%d",
+                script_path, agent_def.agent, work_item.number,
+            )
+            return False
         except FileNotFoundError:
             log.error("  post_steps: bash not found in PATH")
             return False
 
         if result.returncode != 0:
+            failure_output = (result.stderr or result.stdout)[:2000]
             log.error(
-                "  post_steps: %s exited %d for %s on #%d",
+                "  post_steps: %s exited %d for %s on #%d\n%s",
                 script_path, result.returncode, agent_def.agent, work_item.number,
+                failure_output,
             )
             return False
 

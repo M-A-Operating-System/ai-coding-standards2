@@ -1,5 +1,6 @@
 """Tests for core pipeline-state logic in pipeline_orchestrator.py."""
 import sys, os
+import subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import base64
@@ -2509,6 +2510,123 @@ class TestCommitAgentWorkScript:
             result = orch._run_post_steps(agent, self._work_item(), "test/repo")
 
         assert result is False
+
+    def test_run_post_steps_returns_false_when_script_times_out(self, tmp_path):
+        """When the post_steps script exceeds the 300s timeout, _run_post_steps returns False."""
+        import pipeline_orchestrator as orch
+
+        script = tmp_path / ".github" / "scripts" / "commit-agent-work.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text("#!/bin/bash\nsleep 9999\n")
+
+        with patch.object(orch, "SUBMODULE_ROOT", tmp_path), \
+             patch("pipeline_orchestrator.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired(["bash"], 300)):
+            result = orch._run_post_steps(
+                self._agent_with_post_steps(), self._work_item(), "test/repo"
+            )
+
+        assert result is False
+
+    def test_commit_agent_work_script_creates_correct_commit_message(self, tmp_path):
+        """Scenario: New script stages, commits, and pushes agent work.
+
+        Given a local git repo with branch issue-42 tracking a local bare origin,
+        And a dirty working tree with an untracked file,
+        When commit-agent-work.sh is invoked with AGENT_NAME=03_execute/coder
+             and ISSUE_NUMBER=42,
+        Then a commit is created on issue-42 with message
+             '[agent] 03_execute/coder — issue #42'
+        And that commit is present in the origin bare repo.
+        """
+        import pipeline_orchestrator as orch
+
+        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "commit-agent-work.sh"
+
+        git_env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        }
+
+        # Create a local bare repo to act as "origin"
+        origin = tmp_path / "origin.git"
+        origin.mkdir()
+        subprocess.run(
+            ["git", "init", "--bare", str(origin)],
+            check=True, capture_output=True, env=git_env,
+        )
+
+        # Create a working repo and point it at the bare origin
+        work = tmp_path / "work"
+        work.mkdir()
+        subprocess.run(["git", "init", str(work)], check=True, capture_output=True, env=git_env)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(origin)],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+
+        # Establish a base branch with an initial commit and push to origin
+        (work / "init.txt").write_text("init")
+        subprocess.run(["git", "add", "init.txt"], cwd=str(work), check=True, capture_output=True, env=git_env)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=str(work), check=True, capture_output=True, env=git_env)
+        # Discover the default branch name (git 2.28+ defaults to 'main'; older to 'master')
+        default_branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(work), check=True, capture_output=True, text=True, env=git_env,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "push", "origin", f"HEAD:{default_branch}"],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+
+        # Create issue-42 branch on origin so the script can fetch and check it out
+        subprocess.run(
+            ["git", "checkout", "-b", "issue-42"],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+        subprocess.run(
+            ["git", "push", "origin", "issue-42:issue-42"],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+
+        # Return to the default branch so commit-agent-work.sh can switch to issue-42
+        subprocess.run(
+            ["git", "checkout", default_branch],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+
+        # Write an untracked file to create a dirty working tree
+        (work / "agent_output.txt").write_text("agent wrote this")
+
+        # Invoke the script — no GITHUB_TOKEN needed for local filesystem push
+        result = subprocess.run(
+            ["bash", str(script_path)],
+            cwd=str(work),
+            env={
+                **git_env,
+                "AGENT_NAME": "03_execute/coder",
+                "ISSUE_NUMBER": "42",
+            },
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"commit-agent-work.sh exited {result.returncode}:\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        # Verify the commit message pushed to origin/issue-42
+        log_result = subprocess.run(
+            ["git", "log", "--format=%s", "issue-42", "-1"],
+            cwd=str(origin),
+            capture_output=True, text=True, check=True, env=git_env,
+        )
+        assert log_result.stdout.strip() == "[agent] 03_execute/coder — issue #42", (
+            f"Unexpected commit message: {log_result.stdout.strip()!r}"
+        )
 
     def test_run_post_steps_returns_true_when_no_steps(self):
         """When post_steps is empty, _run_post_steps returns True (nothing to run)."""
