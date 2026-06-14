@@ -63,6 +63,7 @@ The GitHub Actions workflow that invokes it lives at:
 |---|---|---|
 | `pipeline.json` | Repo file | Loaded once per run; defines agent graph, dependencies, triggers, and gates |
 | GitHub labels on the work item | GitHub REST API | Determines current agent statuses and which gate labels are present |
+| `priority` label on issues | GitHub REST API | When present on an open issue, that issue is selected ahead of non-priority issues in the work item iteration order |
 | GitHub event payload | Actions `GITHUB_EVENT_PATH` | Narrows which work item to process; identifies the triggering event type |
 | `GITHUB_TOKEN` | Actions secret | Authenticates all GitHub API calls; must have `issues:write` and `pull-requests:write` |
 | `ANTHROPIC_API_KEY` | Actions secret | Passed through to the Claude CLI when invoking agents |
@@ -95,8 +96,15 @@ default).
 
 On every invocation, the orchestrator runs the same loop:
 
+Work items are evaluated in two passes: open issues carrying the `priority`
+label are iterated first, then all remaining open work items. Within each
+pass the per-agent logic is identical. This means a `priority`-labeled issue
+will receive the next available `:wip` slot before any non-priority issue,
+while the existing concurrency limits apply unchanged to both passes.
+
 ```
-for each work item (issue or PR):
+# Pass 1: priority-labeled issues; Pass 2: all other work items
+for each work item (issue or PR), priority-labeled issues first:
     labels = read_labels(work_item)
 
     for each agent_def in pipeline.json (in declaration order):
