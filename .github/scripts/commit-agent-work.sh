@@ -25,7 +25,7 @@ BRANCH="issue-${ISSUE_NUMBER}"
 # GitHub git transport uses HTTP Basic auth; format: base64("x-access-token:TOKEN").
 # ---------------------------------------------------------------------------
 _GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-if [ -z "$_GITHUB_TOKEN" ]; then
+if [[ -z "$_GITHUB_TOKEN" ]]; then
     echo "WARNING: no GITHUB_TOKEN or GH_TOKEN — git push may fail" >&2
 else
     # base64 -w 0 (GNU) suppresses line-wrapping; macOS base64 has no -w flag.
@@ -45,7 +45,7 @@ fi
 # Check for working-tree changes
 # ---------------------------------------------------------------------------
 DIRTY=$(git status --porcelain)
-if [ -z "$DIRTY" ]; then
+if [[ -z "$DIRTY" ]]; then
     echo "commit-agent-work: no working-tree changes — skipping commit for ${AGENT_NAME} on issue #${ISSUE_NUMBER}"
     exit 0
 fi
@@ -64,7 +64,7 @@ STASHED=0
 
 _cleanup() {
     git checkout "${CURRENT_BRANCH}" 2>/dev/null || true
-    if [ "${STASHED}" -eq 1 ]; then
+    if [[ "${STASHED}" -eq 1 ]]; then
         git stash drop 2>/dev/null || true
     fi
 }
@@ -91,12 +91,25 @@ git stash pop
 STASHED=0
 
 # ---------------------------------------------------------------------------
+# Remove gitignored files that were inadvertently tracked on this branch.
+# Runs after stash pop so the full index state is visible. Silently no-ops
+# when no such files exist.
+# ---------------------------------------------------------------------------
+GITIGNORED_TRACKED=$(git ls-files --cached -i --exclude-standard 2>/dev/null || true)
+if [[ -n "$GITIGNORED_TRACKED" ]]; then
+    echo "commit-agent-work: removing gitignored tracked files"
+    while IFS= read -r ignored_file; do
+        [[ -n "$ignored_file" ]] && git rm --cached -- "$ignored_file"
+    done <<< "$GITIGNORED_TRACKED"
+fi
+
+# ---------------------------------------------------------------------------
 # Stage agent-written files
 # ---------------------------------------------------------------------------
-if [ -n "$STASH_FILES" ]; then
+if [[ -n "$STASH_FILES" ]]; then
     # Read file list line-by-line to handle names with spaces correctly.
     while IFS= read -r stash_file; do
-        [ -n "$stash_file" ] && git add -- "$stash_file"
+        [[ -n "$stash_file" ]] && git add -- "$stash_file"
     done <<< "$STASH_FILES"
 else
     git add -A
@@ -108,8 +121,8 @@ fi
 # ---------------------------------------------------------------------------
 WORKFLOW_FILES=$(git diff --cached --name-only -- .github/workflows/ 2>/dev/null || true)
 _BOT_TOKEN="${AI_AGILE_BOT_TOKEN:-}"
-if [ -n "$WORKFLOW_FILES" ]; then
-    if [ -z "$_BOT_TOKEN" ]; then
+if [[ -n "$WORKFLOW_FILES" ]]; then
+    if [[ -z "$_BOT_TOKEN" ]]; then
         echo "ERROR: agent wrote .github/workflows/ files but AI_AGILE_BOT_TOKEN is not set." >&2
         echo "GITHUB_TOKEN cannot push workflow files — add AI_AGILE_BOT_TOKEN as a classic PAT with repo+workflow scopes." >&2
         exit 1
@@ -135,7 +148,7 @@ git commit -m "${COMMIT_MSG}"
 # workflow scope that GITHUB_TOKEN lacks), otherwise use the default auth set
 # up above.
 # ---------------------------------------------------------------------------
-if [ -n "$WORKFLOW_FILES" ] && [ -n "$_BOT_TOKEN" ]; then
+if [[ -n "$WORKFLOW_FILES" ]] && [[ -n "$_BOT_TOKEN" ]]; then
     _PUSH_ENCODED=$(printf 'x-access-token:%s' "$_BOT_TOKEN" \
         | base64 -w 0 2>/dev/null \
         || printf 'x-access-token:%s' "$_BOT_TOKEN" | base64)

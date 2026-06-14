@@ -2657,6 +2657,95 @@ class TestCommitAgentWorkScript:
                 f"but post_steps={agent_def.post_steps!r} — should be {expected}"
             )
 
+    def test_clean_working_tree_exits_zero_with_no_commit(self, tmp_path):
+        """Scenario: commit-agent-work.sh exits 0 without creating a commit when working tree is clean.
+
+        Given a local git repo with branch issue-42 tracking a local bare origin,
+        And a clean working tree (no untracked or modified files),
+        When commit-agent-work.sh is invoked with AGENT_NAME=03_execute/coder
+             and ISSUE_NUMBER=42,
+        Then the script exits 0
+        And git log on issue-42 in the bare origin contains no '[agent]' commit.
+        """
+        import pipeline_orchestrator as orch
+
+        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "commit-agent-work.sh"
+
+        git_env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Test",
+            "GIT_AUTHOR_EMAIL": "test@example.com",
+            "GIT_COMMITTER_NAME": "Test",
+            "GIT_COMMITTER_EMAIL": "test@example.com",
+        }
+
+        origin = tmp_path / "origin.git"
+        origin.mkdir()
+        subprocess.run(
+            ["git", "init", "--bare", str(origin)],
+            check=True, capture_output=True, env=git_env,
+        )
+
+        work = tmp_path / "work"
+        work.mkdir()
+        subprocess.run(["git", "init", str(work)], check=True, capture_output=True, env=git_env)
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(origin)],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+
+        (work / "init.txt").write_text("init")
+        subprocess.run(["git", "add", "init.txt"], cwd=str(work), check=True, capture_output=True, env=git_env)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=str(work), check=True, capture_output=True, env=git_env)
+        default_branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(work), check=True, capture_output=True, text=True, env=git_env,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "push", "origin", f"HEAD:{default_branch}"],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-b", "issue-42"],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+        subprocess.run(
+            ["git", "push", "origin", "issue-42:issue-42"],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+        # Return to default branch without writing any files — clean working tree
+        subprocess.run(
+            ["git", "checkout", default_branch],
+            cwd=str(work), check=True, capture_output=True, env=git_env,
+        )
+
+        result = subprocess.run(
+            ["bash", str(script_path)],
+            cwd=str(work),
+            env={
+                **git_env,
+                "AGENT_NAME": "03_execute/coder",
+                "ISSUE_NUMBER": "42",
+            },
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"commit-agent-work.sh exited {result.returncode}:\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        # No [agent] commit should appear on issue-42 in the origin
+        log_result = subprocess.run(
+            ["git", "log", "--format=%s", "issue-42"],
+            cwd=str(origin),
+            capture_output=True, text=True, check=True, env=git_env,
+        )
+        assert "[agent]" not in log_result.stdout, (
+            f"Expected no [agent] commit on issue-42 but found:\n{log_result.stdout}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestPriorityScheduling — Gherkin-traced tests for issue #119
