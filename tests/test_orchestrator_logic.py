@@ -1297,9 +1297,9 @@ class TestPhasesFilter:
         with patch.object(orch, "parse_args", return_value=fake_args), \
              patch.object(orch, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(orch, "load_pipeline", return_value=([in_phase, out_phase], [])), \
-             patch.object(orch, "_configure_git_auth"), \
              patch.object(orch, "GitHubClient", return_value=gh_mock), \
              patch.object(orch, "process_work_item", side_effect=_capture_process), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "x"}), \
              patch("time.sleep"):
             orch.main()
@@ -2362,14 +2362,18 @@ class TestMarkReadyOnComplete:
 
 
 # ---------------------------------------------------------------------------
-# TestRunCommitAfter — orchestrator-driven git commit_after step
+# TestCommitAgentWorkScript — Gherkin-traced tests for issue #151
 # ---------------------------------------------------------------------------
 
-class TestRunCommitAfter:
-    """Tests for _run_commit_after covering the no-changes happy path and the
-    'workflow files staged without AI_AGILE_BOT_TOKEN' failure branch."""
+class TestCommitAgentWorkScript:
+    """Tests for the commit-agent-work.sh shell script and _run_post_steps().
 
-    def _agent(self) -> AgentDef:
+    Scenario: New script stages, commits, and pushes agent work
+    Scenario: Python orchestrator contains no git logic
+    Scenario: Post-steps entry drives commits for affected agents
+    """
+
+    def _agent_with_post_steps(self) -> AgentDef:
         return AgentDef(
             agent="03_execute/coder",
             phase="03_execute",
@@ -2379,7 +2383,7 @@ class TestRunCommitAfter:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            commit_after=True,
+            post_steps=[".github/scripts/commit-agent-work.sh"],
         )
 
     def _work_item(self) -> WorkItem:
@@ -2388,61 +2392,152 @@ class TestRunCommitAfter:
             url="https://github.com/test/repo/issues/42",
         )
 
-    def test_no_working_tree_changes_returns_true(self):
-        """Clean working tree (git status --porcelain empty) → True, no commit."""
+    def test_commit_agent_work_script_exists(self):
+        """Scenario: New script stages, commits, and pushes agent work.
+
+        Given .github/scripts/commit-agent-work.sh exists
+        Then the file is a bash script with the correct shebang.
+        """
         import pipeline_orchestrator as orch
-
-        def _run(cmd, *args, **kwargs):
-            r = MagicMock()
-            if cmd[:2] == ["git", "status"]:
-                r.stdout = ""        # clean tree
-            else:
-                r.stdout = ""
-            r.returncode = 0
-            return r
-
-        with patch("subprocess.run", side_effect=_run) as mock_run:
-            ok = orch._run_commit_after(self._agent(), self._work_item())
-
-        assert ok is True
-        # Only the status check should have run — no commit/push.
-        commands = [c.args[0][:2] for c in mock_run.call_args_list]
-        assert ["git", "status"] in commands
-        assert ["git", "commit"] not in commands
-
-    def test_workflow_files_without_bot_token_returns_false(self, monkeypatch):
-        """Workflow files staged but AI_AGILE_BOT_TOKEN unset → False (GITHUB_TOKEN
-        cannot push workflow files)."""
-        import pipeline_orchestrator as orch
-
-        monkeypatch.delenv("AI_AGILE_BOT_TOKEN", raising=False)
-
-        def _run(cmd, *args, **kwargs):
-            r = MagicMock()
-            r.returncode = 0
-            r.stdout = ""
-            head = cmd[:2]
-            if head == ["git", "status"]:
-                r.stdout = " M foo.txt"  # dirty tree
-            elif head == ["git", "rev-parse"]:
-                r.stdout = "main"
-            elif cmd[:3] == ["git", "stash", "show"]:
-                r.stdout = ".github/workflows/ci.yml"
-            elif cmd[:3] == ["git", "diff", "--cached"] and "--name-only" in cmd:
-                # workflow-file detection diff
-                r.stdout = ".github/workflows/ci.yml"
-            return r
-
-        with patch("subprocess.run", side_effect=_run) as mock_run:
-            ok = orch._run_commit_after(self._agent(), self._work_item())
-
-        assert ok is False, (
-            "Staging workflow files without AI_AGILE_BOT_TOKEN must fail the "
-            "commit_after step (GITHUB_TOKEN lacks the workflow scope)."
+        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "commit-agent-work.sh"
+        assert script_path.exists(), (
+            f"commit-agent-work.sh must exist at {script_path}"
         )
-        # Must not have attempted a commit after the early failure.
-        commands = [c.args[0][:2] for c in mock_run.call_args_list]
-        assert ["git", "commit"] not in commands
+        first_line = script_path.read_text().splitlines()[0]
+        assert first_line.startswith("#!/"), (
+            f"commit-agent-work.sh must start with a shebang; got: {first_line!r}"
+        )
+
+    def test_python_orchestrator_has_no_run_commit_after(self):
+        """Scenario: Python orchestrator contains no git logic.
+
+        Given the changes in this issue have been applied
+        When pipeline_orchestrator.py is reviewed
+        Then _run_commit_after() is not present in the file.
+        """
+        import pipeline_orchestrator as orch
+        assert not hasattr(orch, "_run_commit_after"), (
+            "_run_commit_after must be removed from pipeline_orchestrator.py"
+        )
+
+    def test_python_orchestrator_has_no_configure_git_auth(self):
+        """Scenario: Python orchestrator contains no git logic.
+
+        Given the changes in this issue have been applied
+        When pipeline_orchestrator.py is reviewed
+        Then _configure_git_auth() is not present in the file.
+        """
+        import pipeline_orchestrator as orch
+        assert not hasattr(orch, "_configure_git_auth"), (
+            "_configure_git_auth must be removed from pipeline_orchestrator.py"
+        )
+
+    def test_pipeline_json_uses_post_steps_not_commit_after(self):
+        """Scenario: Post-steps entry drives commits for affected agents.
+
+        Given an agent previously configured with git_ops.commit_after: true
+        When the updated pipeline.json is reviewed
+        Then that agent uses post_steps invoking commit-agent-work.sh and
+             not git_ops.commit_after: true.
+        """
+        import json
+        import pipeline_orchestrator as orch
+        pipeline_path = orch.PIPELINE_PATH
+        with open(pipeline_path) as f:
+            raw = json.load(f)
+
+        commit_after_agents = []
+        post_steps_agents = []
+        for entry in raw["pipeline"]:
+            if entry.get("git_ops", {}).get("commit_after"):
+                commit_after_agents.append(entry["agent"])
+            if entry.get("post_steps"):
+                post_steps_agents.append(entry["agent"])
+
+        assert not commit_after_agents, (
+            f"No agent should use git_ops.commit_after — found: {commit_after_agents}"
+        )
+        assert "01_product_docs/prd-docs-updater" in post_steps_agents, (
+            "prd-docs-updater must have a post_steps entry invoking commit-agent-work.sh"
+        )
+        assert "03_execute/coder" in post_steps_agents, (
+            "coder must have a post_steps entry invoking commit-agent-work.sh"
+        )
+
+    def test_run_post_steps_returns_true_when_script_exits_zero(self, tmp_path):
+        """When the post_steps script exits 0, _run_post_steps returns True."""
+        import pipeline_orchestrator as orch
+
+        script = tmp_path / ".github" / "scripts" / "commit-agent-work.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text("#!/bin/bash\nexit 0\n")
+
+        with patch.object(orch, "SUBMODULE_ROOT", tmp_path):
+            result = orch._run_post_steps(self._agent_with_post_steps(), self._work_item(), "test/repo")
+
+        assert result is True
+
+    def test_run_post_steps_returns_false_when_script_exits_nonzero(self, tmp_path):
+        """When the post_steps script exits non-zero, _run_post_steps returns False."""
+        import pipeline_orchestrator as orch
+
+        script = tmp_path / ".github" / "scripts" / "commit-agent-work.sh"
+        script.parent.mkdir(parents=True)
+        script.write_text("#!/bin/bash\nexit 1\n")
+
+        with patch.object(orch, "SUBMODULE_ROOT", tmp_path):
+            result = orch._run_post_steps(self._agent_with_post_steps(), self._work_item(), "test/repo")
+
+        assert result is False
+
+    def test_run_post_steps_returns_false_when_script_not_found(self, tmp_path):
+        """When the post_steps script path does not exist, _run_post_steps returns False."""
+        import pipeline_orchestrator as orch
+
+        agent = AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            post_steps=[".github/scripts/nonexistent.sh"],
+        )
+        with patch.object(orch, "SUBMODULE_ROOT", tmp_path):
+            result = orch._run_post_steps(agent, self._work_item(), "test/repo")
+
+        assert result is False
+
+    def test_run_post_steps_returns_true_when_no_steps(self):
+        """When post_steps is empty, _run_post_steps returns True (nothing to run)."""
+        import pipeline_orchestrator as orch
+
+        agent = AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            post_steps=[],
+        )
+        result = orch._run_post_steps(agent, self._work_item(), "test/repo")
+        assert result is True
+
+    def test_commit_after_derived_from_post_steps_in_pipeline(self):
+        """Agents with post_steps set commit_after=True; agents without set commit_after=False."""
+        import pipeline_orchestrator as orch
+        agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
+        for agent_def in agents:
+            expected = bool(agent_def.post_steps)
+            assert agent_def.commit_after == expected, (
+                f"{agent_def.agent}: commit_after={agent_def.commit_after} "
+                f"but post_steps={agent_def.post_steps!r} — should be {expected}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -2656,13 +2751,12 @@ class TestPriorityScheduling:
     @patch("pipeline_orchestrator.write_audit_log")
     @patch("pipeline_orchestrator.process_work_item")
     @patch("pipeline_orchestrator.load_pipeline")
-    @patch("pipeline_orchestrator._configure_git_auth")
     @patch("pipeline_orchestrator.is_pipeline_paused")
     @patch("pipeline_orchestrator.GitHubClient")
     @patch("pipeline_orchestrator.parse_args")
     def test_main_dispatches_priority_before_non_priority(
         self, mock_parse_args, mock_gh_cls, mock_is_paused,
-        mock_configure_git, mock_load_pipeline, mock_process_wi, mock_write_audit,
+        mock_load_pipeline, mock_process_wi, mock_write_audit,
     ):
         """Integration test: main() sort block reorders API-returned items by priority.
 
@@ -2699,7 +2793,8 @@ class TestPriorityScheduling:
 
         mock_process_wi.return_value = 0
 
-        with patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)), \
+             patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
             main()
 
         assert mock_process_wi.call_count >= 2, (

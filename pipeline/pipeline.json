@@ -63,12 +63,10 @@
       "dependencies": ["01_product_docs/create-pr"],
       "max_retries": 2,
       "session": { "scope": "per_issue" },
-      "git_ops": {
-        "commit_after": true
-      },
+      "post_steps": [".github/scripts/commit-agent-work.sh"],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
-      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes using its Write tool and emits complete — the orchestrator then stages, commits, and pushes those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts. Skipped for spike issues. Skipped for epic/blocked issues."
+      "description": "Cross-checks the approved PRD against existing product documentation in docs/product/. If any docs need updating, writes the changes using its Write tool and emits complete — the orchestrator then invokes commit-agent-work.sh to stage, commit, and push those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. Gates on prd-docs-updater:approved before the build agent starts. Skipped for spike issues. Skipped for epic/blocked issues."
     },
 
     {
@@ -82,12 +80,10 @@
       "dependencies": ["01_product_docs/prd-docs-updater"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "git_ops": {
-        "commit_after": true
-      },
+      "post_steps": [".github/scripts/commit-agent-work.sh"],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator stages, commits, and pushes all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues — spikes produce research findings, not code. Skipped for epic/blocked issues."
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator then invokes commit-agent-work.sh to stage, commit, and push all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues — spikes produce research findings, not code. Skipped for epic/blocked issues."
     },
 
     {
@@ -145,7 +141,6 @@
         "also_clear": ["03_execute/ci-gate", "03_execute/merge-conflict"]
       },
       "git_ops": {
-        "commit_after": false,
         "mark_ready_on_complete": true
       },
       "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues APPROVE only when all findings are Low or Informational severity. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR — this is a hard block regardless of automated findings. On APPROVE with no unresolved human reviews, emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
