@@ -3,16 +3,14 @@ name: 00_ondemand/sizer
 description: >
   Ad-hoc issue sizer. Evaluates whether a given issue fits a single
   development cycle. If it does, posts a sizing note and exits. If the
-  issue is too large — multiple independent subsystems, six or more
-  acceptance criteria, explicit phases, or estimated size that would
-  overflow a single coder context — it decomposes it into ordered
-  sub-issues, each independently deliverable to production. Posts a
-  decomposition plan comment and emits review so the human can inspect
-  and edit sub-issues before committing to the split. On re-invocation
-  after the human removes the review label, emits complete (terminal for
-  the parent) so each sub-issue runs its own full pipeline from
-  issue-classifier onward. Triggered by applying the sizer:requested
-  label to any issue.
+  issue is too large, it decomposes the issue into ordered,
+  independently-deliverable sub-issues, updates the parent body with a
+  live tracking table, labels the parent epic and blocked-by-children,
+  and posts a decomposition plan. The parent remains open and blocked
+  until all sub-issues close — a GitHub Action then auto-closes the
+  parent. On re-invocation after the human confirms the breakdown,
+  emits complete. Triggered by applying the sizer:requested label to
+  any issue.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 30
@@ -209,17 +207,58 @@ SUB_NODE_ID=$(gh issue view "$SUB_ISSUE_N" --repo "$REPO" \
   --json id --jq '.id')
 ```
 
-### 4d — Apply the epic label to the parent
+### 4d — Label the parent as epic and blocked-by-children
 
 ```bash
-gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "epic"
+gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
+  --add-label "epic,blocked-by-children"
 ```
 
-This label signals to downstream pipeline agents that the parent
-issue is a tracking epic and should not proceed to `prd-writer`,
-`coder`, or any implementation step.
+`epic` signals downstream pipeline agents that the parent must not proceed
+to `prd-writer` or `coder`. `blocked-by-children` communicates the
+dependency relationship visibly and is removed by the auto-close workflow
+when all children are done.
 
-### 4e — Post the decomposition plan
+### 4e — Update the parent issue body with a live tracking table
+
+Prepend a tracking section to the parent issue body so traceability is
+visible in the issue itself (not just in comments):
+
+```bash
+# Build the tracking rows
+TRACKER_ROWS=""
+for I in $(seq 1 $TOTAL); do
+  SUB_N="${SUB_ISSUE_NUMBERS[$I]}"   # array populated during 4b
+  SUB_TITLE="${SUB_ISSUE_TITLES[$I]}"
+  TRACKER_ROWS+="| ${I}/${TOTAL} | #${SUB_N} | ${SUB_TITLE} | open |
+"
+done
+
+ORIG_BODY=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body --jq '.body')
+
+NEW_BODY=$(cat <<EOF
+<!-- ai-agile/epic-tracker/v1 START -->
+## Decomposition tracker
+
+This issue has been split into ${TOTAL} independently-deliverable parts.
+It closes automatically when all sub-issues are closed.
+
+| Part | Issue | Scope | Status |
+|------|-------|-------|--------|
+${TRACKER_ROWS}
+_Tracked by the sizer agent. Each sub-issue runs its own full pipeline._
+<!-- ai-agile/epic-tracker/v1 END -->
+
+---
+
+${ORIG_BODY}
+EOF
+)
+
+gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body "$NEW_BODY"
+```
+
+### 4f — Post the decomposition plan
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
@@ -240,15 +279,17 @@ waiting for later parts. Later parts assume earlier ones are already
 merged to the base branch.
 
 **What to do:**
-1. Review each sub-issue. Edit titles, scope, or acceptance criteria
-   if the split is wrong.
+1. Review each sub-issue (see the tracking table at the top of this
+   issue body). Edit titles, scope, or acceptance criteria if the
+   split is wrong.
 2. Delete any sub-issue you want to merge back into another.
 3. When the breakdown looks right, remove the `sizer:review` label
    from this issue (#${ISSUE_NUMBER}) to confirm.
 
-This parent issue is now an epic tracking issue. It will not proceed
-through `prd-writer` or `coder` — each sub-issue runs its own full
-pipeline.
+This parent issue is now blocked by its sub-issues. It will close
+automatically when all sub-issues are closed. Each sub-issue runs its
+own full pipeline — this parent will not proceed through `prd-writer`
+or `coder`.
 EOF
 )"
 ```
@@ -268,19 +309,21 @@ The human removed `sizer:review`, confirming the breakdown is
 acceptable. The sub-issues are now live and will each start their own
 pipeline when `issue-classifier` picks them up.
 
-The parent issue should not proceed to `prd-writer` or `coder`.
-Emit the terminal skipped sentinel:
+The `blocked-by-children` label now accurately describes the parent's
+state — it stays until the auto-close workflow removes it when all
+sub-issues close. No further changes are needed to the parent body.
 
 ```bash
 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
 ## Sizing: decomposition confirmed
 
-Sub-issue breakdown accepted. Each sub-issue will run its own
-full pipeline (classifier → prd-writer → coder → review → merge).
+Sub-issue breakdown accepted. Each sub-issue will run its own full
+pipeline (classifier → prd-writer → coder → review → merge).
 
-This parent epic (#${ISSUE_NUMBER}) is now a tracking issue.
-It will be closed automatically when all sub-issues are merged.
+This parent epic (#${ISSUE_NUMBER}) remains open and blocked by its
+sub-issues. It will be closed automatically once all sub-issues are
+closed.
 EOF
 )"
 ```
