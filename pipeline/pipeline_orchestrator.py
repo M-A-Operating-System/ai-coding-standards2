@@ -1963,15 +1963,9 @@ def invoke_agent(
             if proc.stdout is None:
                 raise RuntimeError("subprocess stdout pipe unexpectedly None")
             for line in proc.stdout:
-                # Mirror to our stderr so the subprocess log is visible in the
-                # orchestrator's CI output. Skip type=system events (thinking
-                # token progress ticks) — they are pure noise in the log.
-                try:
-                    _ev = json.loads(line)
-                    if _ev.get("type") != "system":
-                        sys.stderr.write(line)
-                except (json.JSONDecodeError, AttributeError):
-                    sys.stderr.write(line)  # non-JSON lines always shown
+                # Mirror to our stderr so the subprocess log is visible
+                # in the orchestrator's CI output.
+                sys.stderr.write(line)
                 if len(captured_lines) < MAX_CAPTURED_LINES:
                     captured_lines.append(line)
                 # Shared with _accumulate_stream_text so tests cover this path.
