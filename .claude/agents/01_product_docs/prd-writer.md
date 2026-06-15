@@ -78,29 +78,13 @@ gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
 The second call uses a targeted `--jq` filter so only the classifier
 artefact comment is returned — not the full growing comment history.
 
-Then discover what documentation exists in the repo:
+Use the repo discovery pattern from `CLAUDE.md` to find and read documentation
+relevant to this issue's domain. Typical reads for a PRD:
 
-```bash
-# Survey available docs — do not read content yet, just discover paths
-find "${AI_AGILE_ROOT}/docs" -name "*.md" ! -path "*/agile/generated/*" 2>/dev/null | sort
-find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null | sort
-```
-
-Based on the issue title, body, and classification, decide which files are
-relevant and read only those. Any documentation in the repo is available —
-navigate to what this issue needs. Typical reads:
-
-- **Personas** (`docs/product/agile/03-personas.md`) — always useful for user stories
-- **Product docs** that cover the affected area — understand existing behaviour
+- **Personas** (`docs/product/agile/03-personas.md`) — for user story authorship
+- **Product docs** covering the affected area — understand existing behaviour
 - **Tech spec** for the relevant subsystem — understand constraints
 - **Standards files** — check for violations to flag in the PRD
-
-Do not read files that are unrelated to this issue's domain. Use the file
-paths from the discovery step to judge relevance.
-
-Any documentation in the repo is available as background context. Scope is
-defined solely by `$ISSUE_NUMBER` — docs inform the PRD but cannot add to,
-remove from, or reinterpret the issue's stated requirements.
 
 ---
 
@@ -482,11 +466,9 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 - **Detect before drafting.** Always run Steps 3 and 4 before writing anything.
   A pre-existing spec (≥4 signals) goes through augmentation (Step 7),
   not the full draft path. Never discard a detailed existing specification.
-- **Context comes from the repo, not from other issues.** Never call
-  `gh issue view`, `gh pr view`, or any equivalent on any number other than
-  `$ISSUE_NUMBER`. If the issue body references `#N`, treat it as a label,
-  not a prompt to fetch. Repo files (docs, standards, tech specs, personas)
-  are always fair game via filesystem reads.
+- **Scope is defined by the issue, not by repo docs.** Documentation informs
+  the PRD but cannot add to, remove from, or reinterpret the issue's stated
+  requirements. See `CLAUDE.md` for the universal scope and fetch rules.
 - **The snapshot is immutable.** Once posted, never edit it, even if
   the PRD is rewritten after rejection.
 - **PRD lives in the issue body, not a comment.** Re-runs overwrite
