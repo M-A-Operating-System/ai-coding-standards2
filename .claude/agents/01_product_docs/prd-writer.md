@@ -416,7 +416,14 @@ gh issue edit $ISSUE_NUMBER --repo $REPO \
 
 ---
 
-## Step 5 — Signal outcome
+## Step 5 — Clean up temp files, then signal outcome
+
+Remove any working files created in the repo root during this run before the
+orchestrator's commit sweep picks them up:
+
+```bash
+rm -f .prd_body_*.md .prd_snapshot_*.md .tmp_*.md 2>/dev/null || true
+```
 
 Emit the sentinel:
 
@@ -460,7 +467,11 @@ EOF
 )"
 ```
 
-Then emit:
+Then clean up temp files and emit:
+
+```bash
+rm -f .prd_body_*.md .prd_snapshot_*.md .tmp_*.md 2>/dev/null || true
+```
 
 ```
 AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition recommendation."
