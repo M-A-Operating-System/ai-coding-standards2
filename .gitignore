@@ -25,3 +25,4 @@ venv/
 
 # Claude Code agent worktrees (temporary checkouts used by background agents)
 .claude/worktrees/
+aicodingstandardsandprocess.zip
