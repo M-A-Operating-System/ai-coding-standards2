@@ -148,7 +148,7 @@ context, 1–3 weeks of one engineer's time.
 - Acceptance criteria listable in <10 lines
 - Touches one service, screen, or data domain
 
-**Decompose (go to Step 10) when:**
+**Decompose (go to Step 9) when:**
 - Multiple distinct user outcomes
 - Spans multiple bounded contexts or services
 - Body uses "rebuild", "redesign", "platform", "rewrite", "across the codebase"
@@ -409,20 +409,7 @@ gh issue edit $ISSUE_NUMBER --repo $REPO \
 
 ---
 
-## Step 9 — Signal outcome
-
-Emit the sentinel:
-
-```
-AI_AGILE_STATUS: review "PRD written into issue body; awaiting prd-writer:approved."
-```
-
-The orchestrator applies `:review`, posts the closing announcement, and
-prompts the stakeholder to apply `prd-writer:approved`.
-
----
-
-## Step 10 — Decomposition path (too-big issue)
+## Step 9 — Decomposition path (too-big issue)
 
 Do **not** draft a PRD. Post a decomposition recommendation:
 
@@ -483,5 +470,3 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 - Don't fabricate a module. If no clear bounded context emerges, omit
   the module segment.
 - When in doubt about size, decompose.
-- Do not call `status.sh` — the orchestrator handles all label
-  transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
