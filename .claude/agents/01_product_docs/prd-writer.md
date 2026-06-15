@@ -97,8 +97,11 @@ find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/
 ```
 
 Skip any path that does not exist. Read what is there; do not error if a
-directory is absent. This repo context is your background knowledge for
-drafting — it does not expand the issue's scope.
+directory is absent.
+
+Any documentation in the repo is available as background context. Scope is
+defined solely by `$ISSUE_NUMBER` — repo docs inform the PRD but cannot add
+to, remove from, or reinterpret the issue's stated requirements.
 
 ---
 
