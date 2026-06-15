@@ -64,8 +64,12 @@ STASHED=0
 
 _cleanup() {
     git checkout "${CURRENT_BRANCH}" 2>/dev/null || true
+    # Preserve the stash on failure so agent work is not silently lost.
+    # If STASHED is still 1 here, an intermediate step failed before STASHED=0
+    # was reached (line after stash pop). The stash entry holds the agent's
+    # uncommitted work; drop it only on clean success (STASHED set to 0 by caller).
     if [[ "${STASHED}" -eq 1 ]]; then
-        git stash drop 2>/dev/null || true
+        echo "commit-agent-work: WARNING: exiting with stash entry preserved — agent work is in stash 'commit_after:${AGENT_NAME}:${BRANCH}'. Inspect with 'git stash list'; drop manually after investigation." >&2
     fi
 }
 trap _cleanup EXIT
