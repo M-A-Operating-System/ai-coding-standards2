@@ -89,7 +89,12 @@ git checkout -B "${BRANCH}" "origin/${BRANCH}"
 
 # Capture which files the agent wrote before popping the stash, so we add
 # only those files rather than any unrelated working-tree noise.
-STASH_FILES=$(git stash show --name-only -u 2>/dev/null || true)
+_stash_show_out=$(git stash show --name-only -u 2>/dev/null)
+_stash_show_rc=$?
+STASH_FILES="$_stash_show_out"
+if [[ $_stash_show_rc -ne 0 && -z "$STASH_FILES" ]]; then
+    echo "commit-agent-work: WARNING: git stash show failed (rc=$_stash_show_rc) — falling back to git add -A" >&2
+fi
 
 git stash pop
 STASHED=0
