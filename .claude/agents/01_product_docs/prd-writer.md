@@ -78,7 +78,7 @@ gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
 The second call uses a targeted `--jq` filter so only the classifier
 artefact comment is returned — not the full growing comment history.
 
-Use the repo discovery pattern from `CLAUDE.md` to find and read documentation
+Use the repo discovery pattern from `.claude/AGENTS.md` to find and read documentation
 relevant to this issue's domain. Typical reads for a PRD:
 
 - **Personas** (`docs/product/agile/03-personas.md`) — for user story authorship
@@ -468,7 +468,7 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
   not the full draft path. Never discard a detailed existing specification.
 - **Scope is defined by the issue, not by repo docs.** Documentation informs
   the PRD but cannot add to, remove from, or reinterpret the issue's stated
-  requirements. See `CLAUDE.md` for the universal scope and fetch rules.
+  requirements. See `.claude/AGENTS.md` for the universal scope and fetch rules.
 - **The snapshot is immutable.** Once posted, never edit it, even if
   the PRD is rewritten after rejection.
 - **PRD lives in the issue body, not a comment.** Re-runs overwrite
