@@ -9,7 +9,7 @@ document wins. If anything you are about to do violates one of the
 rules below, stop and emit `AI_AGILE_STATUS: blocked` with the reason.
 
 The full design lives in
-[`docs/product/agile/`](../docs/product/agile/README.md). This file
+[`docs/product/orchestrator/`](../docs/product/orchestrator/README.md). This file
 is the **distilled** version every agent reads at runtime.
 
 ---
@@ -17,7 +17,7 @@ is the **distilled** version every agent reads at runtime.
 ## Core principles you must follow
 
 Distilled from
-[`docs/product/agile/02-principles.md`](../docs/product/agile/02-principles.md);
+[`docs/product/orchestrator/02-principles.md`](../docs/product/orchestrator/02-principles.md);
 full statements and rationale live there.
 
 | ID | What it means for you |
@@ -32,7 +32,7 @@ full statements and rationale live there.
 | **P-11** Resumable by default | Be idempotent. On re-run, edit your previous artefact comment in place — don't post duplicates. |
 | **P-12** Transparent over clever | Post a comment when something halts. Use the named markers. Don't infer state silently. |
 | **P-14** Deterministic Python orchestrator | The orchestrator decides who runs next. **You do not invoke other agents.** Do your one job and exit. |
-| **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`02-principles.md#p-15`](../docs/product/agile/02-principles.md#p-15). |
+| **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`02-principles.md#p-15`](../docs/product/orchestrator/02-principles.md#p-15). |
 
 ---
 
@@ -81,7 +81,7 @@ Five marker types:
 |---|---|
 | `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
 | `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
-| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/agile/09-human-interaction.md) §2) |
+| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2) |
 | `claim/v1` | The mutex claim you post during P-4 acquisition |
 | `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
 
@@ -110,7 +110,7 @@ If they disagree, the JSON wins.
 |---|---|
 | Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author` |
 | Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
-| Standards | JSON under `standards/*.json` (see [`05-pipeline-config.md`](../docs/product/agile/05-pipeline-config.md)) |
+| Standards | JSON under `standards/*.json` (see [`05-pipeline-config.md`](../docs/product/orchestrator/05-pipeline-config.md)) |
 | Pipeline graph | Don't read it. The orchestrator routes work; focus on your task. |
 | Prior runs of yourself | Edit-in-place: re-runs find the prior comment, edit it (P-11). Don't post duplicates. |
 
@@ -140,7 +140,7 @@ multi-step tasks, not as a substitute for GitHub artefacts.
 For persistent todos in issue/PR bodies (build plans, acceptance
 criteria, open questions) — only write these if your specific prompt
 instructs you to. Format and protocol: see
-[`docs/product/agile/13-todos.md`](../docs/product/agile/13-todos.md).
+[`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md).
 
 ---
 
@@ -215,13 +215,13 @@ A subsection with no entries is omitted entirely. Checked items are never remove
 
 | Topic | Location |
 |---|---|
-| Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, todos, roadmap, orchestrator design, agent spec) | [`docs/product/agile/`](../docs/product/agile/README.md) — start with the README |
+| Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, todos, roadmap, orchestrator design, agent spec) | [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md) — start with the README |
 | Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you generally shouldn't need to |
 | Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
 | Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` |
 | ADRs (architecture decisions of record) | `standards/adrs.json` |
-| Question Card schema | [`docs/product/agile/09-human-interaction.md`](../docs/product/agile/09-human-interaction.md) §2 |
-| Todos in issue/PR bodies (read protocol, write protocol, marker conventions) | [`docs/product/agile/13-todos.md`](../docs/product/agile/13-todos.md) |
+| Question Card schema | [`docs/product/orchestrator/09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2 |
+| Todos in issue/PR bodies (read protocol, write protocol, marker conventions) | [`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md) |
 
 When referencing a standard in a comment or commit, use its stable
 `STD` ID, not the prose:
