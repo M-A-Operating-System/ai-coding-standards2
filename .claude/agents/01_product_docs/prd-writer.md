@@ -78,30 +78,29 @@ gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
 The second call uses a targeted `--jq` filter so only the classifier
 artefact comment is returned — not the full growing comment history.
 
-Then read the repo context that informs every PRD:
+Then discover what documentation exists in the repo:
 
 ```bash
-# Personas — required for user story authorship
-cat "${AI_AGILE_ROOT}/docs/product/agile/03-personas.md" 2>/dev/null
-
-# Existing product documentation — understand what is already built
-find "${AI_AGILE_ROOT}/docs/product" -name "*.md" ! -path "*/agile/generated/*" 2>/dev/null \
-  | sort | xargs -I{} sh -c 'echo "=== {} ===" && cat "{}"'
-
-# Technical constraints — understand platform boundaries
-find "${AI_AGILE_ROOT}/docs/tech-spec" -name "*.md" 2>/dev/null \
-  | sort | xargs -I{} sh -c 'echo "=== {} ===" && cat "{}"'
-
-# Product-layer standards — flag violations in the PRD
-find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null
+# Survey available docs — do not read content yet, just discover paths
+find "${AI_AGILE_ROOT}/docs" -name "*.md" ! -path "*/agile/generated/*" 2>/dev/null | sort
+find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null | sort
 ```
 
-Skip any path that does not exist. Read what is there; do not error if a
-directory is absent.
+Based on the issue title, body, and classification, decide which files are
+relevant and read only those. Any documentation in the repo is available —
+navigate to what this issue needs. Typical reads:
+
+- **Personas** (`docs/product/agile/03-personas.md`) — always useful for user stories
+- **Product docs** that cover the affected area — understand existing behaviour
+- **Tech spec** for the relevant subsystem — understand constraints
+- **Standards files** — check for violations to flag in the PRD
+
+Do not read files that are unrelated to this issue's domain. Use the file
+paths from the discovery step to judge relevance.
 
 Any documentation in the repo is available as background context. Scope is
-defined solely by `$ISSUE_NUMBER` — repo docs inform the PRD but cannot add
-to, remove from, or reinterpret the issue's stated requirements.
+defined solely by `$ISSUE_NUMBER` — docs inform the PRD but cannot add to,
+remove from, or reinterpret the issue's stated requirements.
 
 ---
 
