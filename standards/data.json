@@ -1,7 +1,7 @@
 {
   "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
   "version": "1.0",
-  "scope": "project",
+  "scope": "org",
   "category": "data",
   "description": "Project-specific data and migration standards for master-model-maven (table/column/key naming, primary and foreign keys, CDC, three-schema migrations, schemas-as-modules, Display-ID format, regulated-data gate). Migration-safety and CDC rules are non-overridable; naming, metadata, and the regulated-data gate are ADR-overridable.",
   "standards": [
@@ -268,7 +268,6 @@
       ],
       "adr_overridable": false,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-SEC-001",
       "source": "Migrated from standards/security.json"
     },
     {

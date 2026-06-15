@@ -1,7 +1,7 @@
 {
   "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
   "version": "1.0",
-  "scope": "project",
+  "scope": "org",
   "category": "ux-design",
   "description": "Project-specific UX and design-system standards for the DDA platform (semantic tokens, shared component library, accessibility to WCAG 2.1 AA, mobile-first responsive behaviour, async loading/empty/error states). Checked by the pr-reviewer agent against every diff that touches UI.",
   "standards": [

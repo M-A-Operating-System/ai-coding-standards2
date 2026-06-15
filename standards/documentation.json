@@ -1,7 +1,7 @@
 {
   "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
   "version": "1.0",
-  "scope": "project",
+  "scope": "org",
   "category": "documentation",
   "description": "Project-specific documentation standards for master-model-maven (settled-decision stability, claim traceability, specification intent voice, coverage via BDD .feature evidence, MAOS spec codification, canonical AI-first structure). Checked by the pr-reviewer agent against documentation changes.",
   "standards": [

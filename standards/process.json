@@ -1,7 +1,7 @@
 {
   "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
   "version": "1.0",
-  "scope": "project",
+  "scope": "org",
   "category": "process",
   "description": "Project-specific process standards for master-model-maven — the AI-first product-led working model (linear chain Product Spec → Capability → BDD → Test → Implementation → Evidence; humans define intent, AI executes, evidence proves; backward traceability; capability as the canonical unit; calculated roadmap; capability-gap vs technical-debt gap) plus git/PR workflow (no work without a ticket; 1:1:1 issue:branch:PR; naming; confirmation gates) and decision recording. The foundation the technical/engineering standards reference. Checked by the pr-reviewer agent and applied by the coder agent.",
   "standards": [
@@ -401,7 +401,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-ARCH-001",
       "source": "Migrated from standards/architecture.json"
     },
     {
@@ -422,7 +421,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-ARCH-002",
       "source": "Migrated from standards/architecture.json"
     },
     {
@@ -444,7 +442,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-ARCH-003",
       "source": "Migrated from standards/architecture.json"
     },
     {
@@ -464,7 +461,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-ARCH-005",
       "source": "Migrated from standards/architecture.json"
     },
     {
@@ -486,7 +482,6 @@
       ],
       "adr_overridable": false,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-SEC-002",
       "source": "Migrated from standards/security.json"
     },
     {
@@ -508,7 +503,6 @@
       ],
       "adr_overridable": false,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-SEC-003",
       "source": "Migrated from standards/security.json"
     },
     {
@@ -529,7 +523,6 @@
       ],
       "adr_overridable": false,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-SEC-004",
       "source": "Migrated from standards/security.json"
     },
     {
@@ -551,7 +544,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-SEC-005",
       "source": "Migrated from standards/security.json"
     },
     {
@@ -573,7 +565,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-TEST-001",
       "source": "Migrated from standards/testing.json"
     },
     {
@@ -596,7 +587,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-TEST-002",
       "source": "Migrated from standards/testing.json"
     },
     {
@@ -618,7 +608,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-TEST-003",
       "source": "Migrated from standards/testing.json"
     },
     {
@@ -640,7 +629,6 @@
       ],
       "adr_overridable": true,
       "applies_to": ["coder", "pr-reviewer"],
-      "instantiates": "STD-TEST-004",
       "source": "Migrated from standards/testing.json"
     }
   ]
