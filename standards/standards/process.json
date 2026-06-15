@@ -1,0 +1,388 @@
+{
+  "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "project",
+  "category": "process",
+  "description": "Project-specific process standards for master-model-maven — the AI-first product-led working model (linear chain Product Spec → Capability → BDD → Test → Implementation → Evidence; humans define intent, AI executes, evidence proves; backward traceability; capability as the canonical unit; calculated roadmap; capability-gap vs technical-debt gap) plus git/PR workflow (no work without a ticket; 1:1:1 issue:branch:PR; naming; confirmation gates) and decision recording. The foundation the technical/engineering standards reference. Checked by the pr-reviewer agent and applied by the coder agent.",
+  "standards": [
+    {
+      "id": "STD-PROC-001",
+      "title": "No work without a ticket: one issue = one branch = one draft PR (1:1:1)",
+      "description": "No work begins without a GitHub issue (ticket). Every distinct piece of work — including small fixes — traces 1:1:1 to exactly one issue: one issue → one branch (cut from main) → one draft PR. Never combine multiple issues into one branch or PR, never open more than one PR per issue, and never stack new work onto an existing open PR or reuse a feature branch from a prior session.",
+      "rationale": "A ticket-first, one-to-one issue/branch/PR mapping makes every change traceable to its rationale and reviewable; unticketed or stacked work entangles unrelated changes and loses traceability. Source: CLAUDE.md §Git & PR Workflow; docs/AI_INSTRUCTIONS.md; .github/copilot-instructions.md.",
+      "acceptance_criteria": [
+        "The change under review traces to exactly one GitHub issue (ticket); no unticketed work.",
+        "The branch was cut from main for that single issue, not reused from a prior session's feature branch.",
+        "There is exactly one open PR for the issue, and the diff does not bundle changes belonging to a separate issue."
+      ],
+      "anti_patterns": [
+        "Starting work or opening a PR with no GitHub issue behind it.",
+        "Adding a second issue's fix as extra commits on an existing open PR.",
+        "Reusing last session's `claude/...` branch for new, unrelated work.",
+        "Two open PRs both claiming to close the same issue."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from CLAUDE.md — Git & PR Workflow"
+    },
+    {
+      "id": "STD-PROC-002",
+      "title": "Open a draft PR before the second commit",
+      "description": "The sequence is: create branch from main → first commit → open a draft PR → continue work. A multi-commit session must not proceed without a live draft PR. Lift out of draft only when CI is green and review is clean.",
+      "rationale": "An early draft PR makes work visible and CI-checked from the first commit; deferring the PR hides in-progress work from review and CI. Source: CLAUDE.md §Git & PR Workflow; docs/AI_INSTRUCTIONS.md.",
+      "acceptance_criteria": [
+        "A PR exists in draft state by the time the branch has more than one commit.",
+        "The PR was opened as a draft, not as ready-for-review, while work was ongoing.",
+        "The PR is taken out of draft only after CI is green."
+      ],
+      "anti_patterns": [
+        "Pushing five commits to a branch with no PR open.",
+        "Opening a non-draft PR before CI has run."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from CLAUDE.md — Git & PR Workflow"
+    },
+    {
+      "id": "STD-PROC-003",
+      "title": "Branches and PRs follow an issue-traceable naming convention",
+      "description": "Branch and PR names trace to their issue: the branch name includes the issue number and a short slug; the PR title follows a conventional `type(scope): description (#<N>)`; the PR body includes `Closes #<N>` so GitHub auto-links and closes the issue on merge. In this project the branch form is `claude/issue-<N>-<short-slug>`.",
+      "rationale": "Consistent, issue-traceable naming and the Closes link create a durable git relationship between branch, PR, and issue. Source: CLAUDE.md §Git & PR Workflow.",
+      "acceptance_criteria": [
+        "The branch name in the diff includes the issue number and a short slug (this project: `claude/issue-<N>-<slug>`), unless a session assigned a specific branch name.",
+        "The PR title follows `type(scope): description (#<N>)`.",
+        "The PR body contains `Closes #<N>` referencing the issue."
+      ],
+      "anti_patterns": [
+        "A branch name with no issue number.",
+        "A PR body with no `Closes #N`, leaving the issue unlinked."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from CLAUDE.md — Git & PR Workflow"
+    },
+    {
+      "id": "STD-PROC-004",
+      "title": "Confirm before destructive or shared-infra operations",
+      "description": "The project uses a permissive, implement-directly workflow, except that operations which are destructive (deleting files, dropping database objects, force-pushing) or affect shared infrastructure (Supabase migrations, GitHub Actions workflows) require explicit confirmation before proceeding, as does any case where context is insufficient to proceed safely.",
+      "rationale": "Permissive flow keeps velocity high while still gating the irreversible and the shared-blast-radius operations. Source: .github/copilot-instructions.md §Project-Specific Exceptions (Exception 3).",
+      "acceptance_criteria": [
+        "Destructive operations (file deletion, dropping DB objects, force-push) in the diff were explicitly confirmed before execution.",
+        "Changes to Supabase migrations or GitHub Actions workflows in the diff were confirmed before being made.",
+        "Where context was insufficient to proceed safely, the work paused for clarification rather than guessing."
+      ],
+      "anti_patterns": [
+        "Force-pushing or dropping a table without explicit confirmation.",
+        "Editing a CI workflow as an incidental side effect with no confirmation."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from .github/copilot-instructions.md — Project-Specific Exceptions (Exception 3)"
+    },
+    {
+      "id": "STD-PROC-005",
+      "related": [
+        "STD-PROC-009",
+        "STD-DOC-002",
+        "STD-PROC-008"
+      ],
+      "title": "Express intent in specs, coverage via the BDD .feature, gaps in the roadmap — one place each",
+      "description": "Every behaviour has three expressions, each in exactly one place: a Product/Capability Specification (docs/product/) states what must be true (future/invariant voice); the BDD .feature (generated from the capability) and its test evidence state what is proven now; the roadmap and GitHub issues own the gap between intent and coverage. No hand-maintained coverage table exists (DOC-004), and no single artefact mixes intent, coverage, and gap.",
+      "rationale": "Separating intent, coverage, and gap keeps each artefact trustworthy and lets a reader answer 'what does it do?' vs 'what's proven?' without inference; mixing them, or hand-maintaining coverage, makes all three rot. Source: docs/_process/02_product-led-design.md.",
+      "acceptance_criteria": [
+        "A behaviour change in the diff updates a Product/Capability Specification (future/invariant voice), not a 'we test that…' claim.",
+        "A coverage change in the diff is reflected in the BDD .feature's executable test / evidence, not a hand-maintained coverage doc.",
+        "A gap (missing/flaky/failing test, known regression) is recorded in the roadmap / a GitHub issue, not a markdown gap table."
+      ],
+      "anti_patterns": [
+        "A specification that says 'we test that X' instead of stating the invariant 'X'.",
+        "A hand-maintained markdown coverage/gap table duplicating what should be the test evidence or the roadmap/issues."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/02_product-led-design.md"
+    },
+    {
+      "id": "STD-PROC-006",
+      "related": [
+        "STD-PROC-009",
+        "STD-PROC-001",
+        "STD-PROC-005"
+      ],
+      "title": "Every PR touches the artefacts its change type requires",
+      "description": "Before opening a PR, answer three questions: does it change behaviour? → a Product/Capability Specification (and its BDD .feature) changes; does it change what is proven? → the BDD .feature and/or its executable test changes; does it create or close a gap? → the roadmap and/or a GitHub issue changes state. A PR that answers no to all three is a pure refactor and says so. The PR description makes intent (spec changes), coverage (.feature/test changes), and gap (roadmap/issue state) explicit.",
+      "rationale": "Tying each change type to the artefacts it must touch keeps specs, tests, and backlog in lockstep with code. Source: docs/_process/ (the AI-first working model — PR obligations).",
+      "acceptance_criteria": [
+        "A behaviour-changing PR in the diff updates the relevant Product/Capability Specification.",
+        "A coverage-changing PR updates the BDD .feature and/or lands the executable test.",
+        "The PR description states intent, coverage, and gap, or marks itself a pure refactor."
+      ],
+      "anti_patterns": [
+        "A feature PR that adds behaviour with no product-doc change.",
+        "A bug-fix PR with no regression test and no `closes #N`."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/ (working model — PR obligations)"
+    },
+    {
+      "id": "STD-PROC-007",
+      "related": [
+        "STD-PROC-009",
+        "STD-PROC-005"
+      ],
+      "title": "Every issue carries one type, one area, and one feature label",
+      "description": "Every GitHub issue carries exactly one label from each of three orthogonal dimensions: type (type:enhancement | type:debt | type:bug), area (area:testing|docs|security|data-model|performance|ux|infra), and feature (feature:entity-crud|mcp|workflow-engine|frontend|ai-chat|exports). The issue states the gap it closes and its acceptance, not just a title. The portable rule is exactly one label per dimension; the specific area/feature label values are this project's.",
+      "rationale": "A consistent three-dimensional taxonomy keeps the backlog searchable and triage-able long after filing. Source: docs/_process/ (the AI-first working model — issue taxonomy).",
+      "acceptance_criteria": [
+        "An issue created in the PR carries exactly one type:, one area:, and one feature: label.",
+        "The issue states the gap it closes and its acceptance, not just a title.",
+        "type/area/feature are chosen per the taxonomy (enhancement adds, bug fixes, debt cleans up)."
+      ],
+      "anti_patterns": [
+        "An issue with no type label, or two area labels.",
+        "A one-line issue with no acceptance criteria or gap description."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/ (working model — issue taxonomy)"
+    },
+    {
+      "id": "STD-PROC-008",
+      "related": [
+        "STD-PROC-013",
+        "STD-PROC-012",
+        "STD-TEST-007",
+        "STD-TEST-010",
+        "STD-PROC-005"
+      ],
+      "title": "BDD is the authoritative testable spec, generated from the capability",
+      "description": "Each capability (STD-PROC-013) generates a BDD specification — a Gherkin .feature that is the authoritative testable specification of the capability's behaviour and acceptance criteria. The BDD .feature is realised by executable step definitions (playwright-bdd) which produce evidence; the test code realises the .feature and is not itself the source of truth. The chain is capability → BDD .feature → test → evidence. Applies to both API/edge and web behaviour; pure unit tests are out of scope.",
+      "rationale": "A BDD spec generated from the capability keeps the testable specification traceable to product intent and authoritative for verification; tests realise it rather than defining behaviour. Source: docs/_process/04_ai-agile-implementation.md (BDD as the implementation contract); MAOS BDD Specification.",
+      "acceptance_criteria": [
+        "A capability delivered in the diff has a BDD .feature generated from it that specifies its behaviour/acceptance.",
+        "The BDD .feature in the diff is the authoritative testable spec; step definitions/tests realise it and are not treated as the source of truth.",
+        "The chain capability → BDD .feature → test → evidence is intact for the change; pure unit tests are exempt."
+      ],
+      "anti_patterns": [
+        "Writing test automation with no BDD .feature generated from a capability.",
+        "Treating the test code as the behaviour source of truth instead of the BDD .feature.",
+        "A BDD .feature with no upstream capability."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/04_ai-agile-implementation.md; MAOS BDD Specification"
+    },
+    {
+      "id": "STD-PROC-009",
+      "related": [
+        "STD-PROC-005",
+        "STD-PROC-006",
+        "STD-PROC-007",
+        "STD-PROC-008",
+        "STD-PROC-012",
+        "STD-PROC-013",
+        "STD-PROC-014"
+      ],
+      "title": "Work is product-led and AI-first: humans define intent, AI executes, evidence proves",
+      "description": "All work flows in one direction along the linear chain: Product Specification → Capability → BDD Specification → Test → Implementation → Evidence. Humans define intent and govern — approving product intent, capabilities, BDD, architecture, security, evidence, and releases; AI performs the decomposition, generation, implementation, verification, and reporting. Product specifications are the desired state; code + verified evidence are the current state; the roadmap (STD-PROC-014) is the calculated gap. Work never starts from code or tests — it starts from the product specification.",
+      "rationale": "A single product-led, AI-first direction keeps intent authoritative and execution traceable; starting from code or tests divorces delivery from intent and lets the two drift. Source: docs/_process/01_ai-first-product-engineering.md; 04_ai-agile-implementation.md.",
+      "acceptance_criteria": [
+        "New behaviour in the diff originates from a Product/Capability Specification (intended state) and flows capability → BDD → test → implementation → evidence, not from code/tests authored first.",
+        "Human approval control points are honoured for the change (intent, capability, BDD, architecture, security, evidence, release).",
+        "The gap between desired state (specs) and current state (code + evidence) is reflected in the calculated roadmap (STD-PROC-014), not declared manually."
+      ],
+      "anti_patterns": [
+        "Implementing code with no product/capability specification source.",
+        "Treating the code or current tests as the definition of intended behaviour.",
+        "Hand-maintaining roadmap/status instead of deriving it from evidence."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/01_ai-first-product-engineering.md / 04_ai-agile-implementation.md"
+    },
+    {
+      "id": "STD-PROC-010",
+      "related": [
+        "STD-DOC-001",
+        "STD-PROC-009"
+      ],
+      "title": "Record significant decisions as ADRs; waive standards only via an ADR citing the STD ID",
+      "description": "Significant or cross-cutting decisions — architecture, security posture, data-model, or process choices future work must respect — are recorded as Architecture Decision Records in docs/adr/ (NNNN-title.md with status, context, decision, consequences). A waiver of an adr_overridable standard is itself a decision: it is recorded in standards/adrs.json with authorises_exception_to citing the STD ID. Soft-wording a standard to dodge it, or reversing a recorded decision without a superseding ADR, is not permitted.",
+      "rationale": "ADRs keep the rationale behind durable decisions discoverable and prevent silent re-litigation; routing standard waivers through ADRs makes every exception explicit and auditable. Source: docs/adr/ (ADR practice); standards/README.md (waiver convention).",
+      "acceptance_criteria": [
+        "A significant/cross-cutting decision in the diff is recorded as an ADR in docs/adr/ (status, context, decision, consequences).",
+        "A waiver of an adr_overridable standard in the diff is recorded in standards/adrs.json citing the STD ID in authorises_exception_to, not by softening the standard text.",
+        "The diff does not reverse a decision an ADR already records without a superseding ADR (STD-DOC-001)."
+      ],
+      "anti_patterns": [
+        "Making a cross-cutting architectural choice with no ADR capturing the rationale.",
+        "Bypassing an adr_overridable standard by rewording it instead of filing an ADR waiver."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/adr/ (ADR practice); standards/README.md (waiver convention)"
+    },
+    {
+      "id": "STD-PROC-011",
+      "related": [
+        "STD-ARCH-006",
+        "STD-ARCH-007",
+        "STD-ARCH-004",
+        "STD-PROC-009"
+      ],
+      "title": "Fix small in-scope problems now; raise a ticket only when out of scope or too large",
+      "description": "When a defect, inconsistency, or small improvement is visible while working the current ticket and is simple and within that ticket's scope/mandate, fix it now — do not defer it. Raise a new GitHub issue only when the work is outside the current ticket's scope/mandate or too large to fix inline. Deferring solvable, in-scope work into a new ticket is not permitted. (Process-scoped instance of org STD-ARCH-006 fix-now and STD-ARCH-007 don't-open-issues-for-current-PR-work, framed by the ticket's scope.)",
+      "rationale": "Fixing simple in-scope problems immediately keeps the codebase from accumulating debt and avoids backlog clutter from issues that are statistically unlikely to be actioned; raising a ticket is reserved for genuinely out-of-scope or large work. Source: org STD-ARCH-006 / STD-ARCH-007; product-led process decision.",
+      "acceptance_criteria": [
+        "A simple defect/improvement within the current ticket's scope is fixed in the diff, not deferred to a new issue.",
+        "A new issue raised in the diff/PR is justified as outside the current ticket's scope/mandate or too large to fix inline.",
+        "No TODO/FIXME or placeholder issue substitutes for an in-scope fix that could be made now."
+      ],
+      "anti_patterns": [
+        "Filing a follow-up issue for a one-line fix that is in scope and simple.",
+        "Leaving a TODO for a defect that could be fixed within the current ticket.",
+        "Splitting an in-scope coherent change into a separate ticket to shrink the current run."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from org STD-ARCH-006 / STD-ARCH-007 (fix-now / no-issues); product-led process decision"
+    },
+    {
+      "id": "STD-PROC-012",
+      "related": [
+        "STD-PROC-009",
+        "STD-PROC-013",
+        "STD-DOC-006"
+      ],
+      "title": "Every artefact has an upstream source and is backward-traceable (the knowledge graph)",
+      "description": "Every artefact is generated from, linked to, or traceable back to the artefact that precedes it in the chain (Product Spec → Capability → BDD → Test → Implementation → Evidence). Each major artefact carries a stable identifier and explicit links to its adjacent artefacts, forming a product knowledge graph traversable forward (what realises this intent?) and backward (why does this code/test/failure exist?). No artefact appears without a clear upstream source.",
+      "rationale": "Linear generation plus backward traceability let AI execute without losing product context and let reviewers reason about impact (which capability does this test verify? which outcome does this failure block?). Source: docs/_process/01_ai-first-product-engineering.md.",
+      "acceptance_criteria": [
+        "A capability/BDD/test/implementation/evidence artefact added in the diff links to its upstream source by id (capability→spec, BDD→capability, test→BDD, code→capability).",
+        "Each major artefact in the diff has a stable identifier and explicit links to adjacent artefacts.",
+        "No artefact in the diff appears without a traceable upstream source."
+      ],
+      "anti_patterns": [
+        "A BDD .feature with no linked capability, or a test with no linked BDD.",
+        "Code that cannot be traced back to a capability."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/01_ai-first-product-engineering.md"
+    },
+    {
+      "id": "STD-PROC-013",
+      "related": [
+        "STD-PROC-009",
+        "STD-PROC-014",
+        "STD-DOC-006"
+      ],
+      "title": "The capability is the canonical unit of product, roadmap, and delivery",
+      "description": "Capabilities are the primary unit of AI-first delivery and the bridge between product design, roadmap planning, and verification. A product is a collection of capabilities, each a discrete business outcome named in business language. Work enters delivery as a capability — with a stable id, product source, business description, linked outcome, BDD status, and dependencies — not as a vague task; a capability missing these is flagged before implementation. Capabilities are defined once (a Capability Specification, STD-DOC-006) and referenced by id from product specs, the roadmap, BDD specs, and evidence, never duplicated.",
+      "rationale": "Centring delivery on capabilities keeps product intent, planning, and verification on one shared unit humans and AI can reason over; task-centric work loses that thread. Source: docs/_process/02_product-led-design.md, 03_roadmap-specification.md; MAOS taxonomy.",
+      "acceptance_criteria": [
+        "Work entering implementation in the diff is a capability (stable id, source, description, linked outcome, BDD status, dependencies), not a vague task.",
+        "Capabilities in the diff are defined once and referenced by id elsewhere, not redefined across roadmap/spec/tests.",
+        "PRs/commits in the diff reference the capability id(s) they deliver."
+      ],
+      "anti_patterns": [
+        "Implementing a 'task' with no capability behind it.",
+        "Duplicating capability details across roadmap, product spec, and tests instead of referencing the capability id."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/02 / 03; MAOS Specification Framework"
+    },
+    {
+      "id": "STD-PROC-014",
+      "related": [
+        "STD-PROC-009",
+        "STD-PROC-013",
+        "STD-DOC-005"
+      ],
+      "title": "The roadmap is calculated from evidence: Phase → Outcome → Capability",
+      "description": "The roadmap (docs/product/roadmap.yaml) is a calculated representation of the gap between desired and current-verified state, structured Phase → Outcome → Capability. It references capabilities by id; it does not redefine modules/components or duplicate capability detail. Status is derived, never hand-maintained: capability status (Not Defined / Defined / Specified / In Progress / Verified / Failed / Blocked) rolls up to outcome progress (verified required capabilities / total) and then to phase progress. Human-readable roadmap views may be generated from the YAML but are not the source of truth.",
+      "rationale": "Deriving roadmap status from capability evidence keeps it truthful and current; manually maintained status drifts. Source: docs/_process/03_roadmap-specification.md; MAOS Roadmap Specification.",
+      "acceptance_criteria": [
+        "Roadmap changes in the diff are made in docs/product/roadmap.yaml as Phase → Outcome → Capability, referencing capabilities by id.",
+        "Capability/outcome/phase status in the diff is derived from verification evidence, not hand-set.",
+        "Any human-readable roadmap doc in the diff is generated, not a hand-maintained source of truth."
+      ],
+      "anti_patterns": [
+        "Hand-setting a capability/outcome/phase to 'done' independent of its evidence.",
+        "Redefining modules/components or duplicating capability detail inside the roadmap."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/03_roadmap-specification.md; MAOS Roadmap Specification"
+    },
+    {
+      "id": "STD-PROC-015",
+      "related": [
+        "STD-PROC-014",
+        "STD-ARCH-006"
+      ],
+      "title": "Measure undelivered-capability gap and technical-debt gap separately",
+      "description": "The total product gap has two distinct parts: the undelivered-capability gap (capabilities the roadmap requires that are not yet verified) and the technical-debt gap (delivered, verified capabilities that do not meet the required engineering, quality, security, reliability, or maintainability standard). They are tracked separately. A technical-debt item is linked to its capability, the technical standard it violates, and a remediation recommendation; it is identified during implementation/review and explicitly accepted or scheduled, never silently carried.",
+      "rationale": "A product can be functionally complete yet carry heavy technical debt; conflating the two hides real risk. Separating them lets humans make informed trade-offs. Source: docs/_process/01 / 03 / 05 (Technical Debt); aligns with org STD-ARCH-006.",
+      "acceptance_criteria": [
+        "Undelivered capabilities in the diff are tracked as roadmap gap (STD-PROC-014), not conflated with technical debt.",
+        "A technical-debt item in the diff is linked to its capability, the technical standard it violates, and a remediation recommendation, and is explicitly accepted or scheduled.",
+        "A verified capability carrying known debt records that debt rather than presenting as fully complete."
+      ],
+      "anti_patterns": [
+        "Recording a delivered-but-substandard capability as simply 'done' with the debt unrecorded.",
+        "Mixing undelivered-capability gap and technical-debt gap in one untyped metric."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/ (Technical Debt); aligns with org STD-ARCH-006"
+    }
+  ]
+}

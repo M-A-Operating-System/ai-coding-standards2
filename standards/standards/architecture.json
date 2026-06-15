@@ -1,0 +1,389 @@
+{
+  "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "project",
+  "category": "architecture",
+  "description": "Project-specific code architecture and design standards for master-model-maven (schema-driven UI, three-schema database, entityCrud, Edge Functions, Display-ID boundary, URL/route slugs, state-management boundary, fail-closed, type-truth). Applied by the coder agent during implementation and checked by the pr-reviewer agent against every diff.",
+  "standards": [
+    {
+      "id": "STD-ARCH-008",
+      "title": "Database is the single source of truth — no hardcoded schemas in the frontend",
+      "description": "Entity schemas, field definitions, labels, and data types must be derived from the database schema at runtime (via useTableSchema / columnsToFieldConfigs and the cached tableSchemas). Frontend code must not hardcode field lists, column names, or type mappings for entity forms.",
+      "rationale": "The system dynamically generates UI from PostgreSQL schemas; hardcoded field definitions diverge from the database and silently break schema-driven forms. Source: docs/AI_INSTRUCTIONS.md §1 (Database is the Single Source of Truth).",
+      "acceptance_criteria": [
+        "No diff introduces a literal array of field/column definitions (e.g. `[{ name, type, label }, ...]`) for an entity that already has a database schema.",
+        "Form field configuration in the diff is produced from useTableSchema/columnsToFieldConfigs (or fieldOverrides on the registry), not assembled by hand.",
+        "Field type, label, and validation come from the schema or entityRegistry fieldOverrides, not from inline literals."
+      ],
+      "anti_patterns": [
+        "`const fields = [{ name: 'domain_name', type: 'input', label: 'Name' }]` in a page or component.",
+        "Re-declaring column names as string literals to build a form instead of reading them from the schema."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Critical Architectural Rules §1"
+    },
+    {
+      "id": "STD-ARCH-009",
+      "related": ["STD-ARCH-017"],
+      "title": "Never access the dm schema directly",
+      "description": "Frontend and Edge Function client code never reference the dm schema directly; `supabase.from('dm.*')` is forbidden. The three-schema pattern is dm (base tables, RLS + grants) → public (security_invoker views) → shared (reference data). Entity data is accessed through public views or entityCrud (STD-ARCH-017), which resolve to dm base tables under the caller's RLS.",
+      "rationale": "The dm schema is the storage layer; reaching it directly bypasses the view/grant abstraction and the generated types, and couples client code to base-table structure. Source: docs/AI_INSTRUCTIONS.md §2; docs/LOVABLE_KNOWLEDGE.md §17.",
+      "acceptance_criteria": [
+        "No diff references the `dm.` schema prefix from frontend or Edge Function client code.",
+        "Entity reads and writes in the diff target a public view or entityCrud, never a dm base table.",
+        "No cast (e.g. `(supabase as any).from('dm...')`) is used to reach a dm base table."
+      ],
+      "anti_patterns": [
+        "`supabase.from('dm.data_domains').select('*')`.",
+        "`(supabase as any).from('dm.data_domains').insert(payload)`."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Critical Architectural Rules §2"
+    },
+    {
+      "id": "STD-ARCH-010",
+      "instantiates": "STD-ARCH-001",
+      "title": "Reuse UnifiedModelPage and entityRegistry for standard CRUD",
+      "description": "Standard entity CRUD pages must be implemented as `<UnifiedModelPage entityType=\"...\" />` against an entity registered in `src/config/entityRegistry.ts`. Do not hand-roll local state, fetch, save, edit, and delete logic for a standard entity page.",
+      "rationale": "UnifiedModelPage already implements the tested CRUD surface; bespoke implementations duplicate hundreds of lines and drift from the shared behaviour. Project-specific instance of STD-ARCH-001 (reuse before writing new code). Source: docs/AI_INSTRUCTIONS.md §4–§5 and Common Mistakes.",
+      "acceptance_criteria": [
+        "A new standard entity management page in the diff renders UnifiedModelPage rather than declaring its own useState/useEffect CRUD handlers.",
+        "Any new entity surfaced in the UI is first registered in src/config/entityRegistry.ts.",
+        "Field customisation is done via entityRegistry fieldOverrides, not by forking UnifiedModelPage."
+      ],
+      "anti_patterns": [
+        "A page component with local `const [data, setData] = useState([])` plus `handleSave`/`handleEdit`/`handleDelete` duplicating UnifiedModelPage.",
+        "Rendering a custom data table + edit dialog for an entity that could use UnifiedModelPage."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Critical Architectural Rules §4–§5"
+    },
+    {
+      "id": "STD-ARCH-012",
+      "related": ["STD-ARCH-022", "STD-ARCH-026", "STD-DATA-012"],
+      "title": "Carry Display-ID strings end-to-end; format outbound, parse inbound",
+      "description": "The React layer carries Display-ID strings everywhere; raw numeric PKs exist only server-side. Values read back from entityCrud are already Display-ID strings — do not re-format them. Raw numeric values (e.g. from useAuth/context) must be formatted with formatDisplayId before going outbound; a Display-ID string consumed as a numeric key or comparison must be parsed with parseDisplayId first.",
+      "rationale": "enrichRecords rewrites every PK/FK to its Display-ID form before the response body reaches the client, so a field typed `: number` is a Display-ID string at runtime. Re-formatting double-formats ('SUBSUB…') and using a Display-ID string as a numeric Map key silently misses. Source: CLAUDE.md §Defensive Programmer Review.",
+      "acceptance_criteria": [
+        "Outbound entityCrud filters/payloads in the diff carry Display-ID strings; raw numeric values (e.g. from useAuth) are wrapped in formatDisplayId.",
+        "Values read from an entityCrud response are not passed through formatDisplayId again in the diff.",
+        "A Display-ID string used as a numeric map key or numeric comparison is first parsed with parseDisplayId.",
+        "Public hook return types for entity identifiers are Display-ID strings, not `number`."
+      ],
+      "anti_patterns": [
+        "`formatDisplayId(submission_id, 'SUB…')` where submission_id was read back from entityCrud (already a string).",
+        "`map.get(submission_id)` where map is keyed by number and submission_id is a Display-ID string."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from CLAUDE.md — Defensive Programmer Review checklist. See also STD-ARCH-022 (Display IDs at user surfaces), STD-ARCH-026 (type-truth), STD-DATA-012 (format authority)."
+    },
+    {
+      "id": "STD-ARCH-013",
+      "related": ["STD-ARCH-020"],
+      "title": "Satisfy a declared return/interface contract completely on every path",
+      "description": "When a function or handler has a declared return/interface contract, every return path — including error and early-return paths — produces the complete required shape, never a partial or bare value. In this project, workflow task handlers return a complete InstanceStepState (always startedAt, completedAt, status), and error paths return a well-formed failure InstanceStepState.",
+      "rationale": "Consumers rely on the full contract; a path that returns a partial shape produces a silently-incomplete result downstream (e.g. an incomplete workflow state transition). Source: CLAUDE.md §Architecture Rules.",
+      "acceptance_criteria": [
+        "Every return path of a function/handler with a declared contract in the diff produces the complete required shape (all required fields set).",
+        "Error and early-return paths in the diff satisfy the same contract (e.g. a failure-status object), not a bare/undefined/partial value.",
+        "In this project, workflow task handlers return InstanceStepState with startedAt, completedAt, and status on every path."
+      ],
+      "anti_patterns": [
+        "`return { status: 'completed' }` from a handler whose contract requires startedAt/completedAt.",
+        "An early `return` that yields undefined or a partial object where a full contract object is required."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from CLAUDE.md — Architecture Rules"
+    },
+    {
+      "id": "STD-ARCH-014",
+      "title": "Fail closed on errors",
+      "description": "On an error in Edge Function or server code — a database query error, a failed external call, or any operation that did not succeed — fail closed: surface or throw the error. Do not silently swallow it and emit a degraded, partial, or success-shaped result as if it succeeded. A database query error is the primary case.",
+      "rationale": "Silently swallowing an error produces a degraded result that looks valid downstream, hiding integrity and availability failures. Source: CLAUDE.md §Architecture Rules.",
+      "acceptance_criteria": [
+        "Every fallible operation in the diff (Supabase query, fetch, etc.) checks its error/result and stops/throws on failure rather than continuing with empty/partial data.",
+        "No catch block in the diff swallows an error and returns a success-shaped or default value without re-raising or recording failure.",
+        "A degraded result is only emitted where an explicit, documented fallback is required by the issue."
+      ],
+      "anti_patterns": [
+        "`const { data } = await supabase...; return data ?? []` with the `error` destructure dropped.",
+        "`try { ... } catch { return defaultResult }` that hides the failure.",
+        "Ignoring a non-OK fetch response and proceeding with empty data."
+      ],
+      "adr_overridable": false,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from CLAUDE.md — Architecture Rules"
+    },
+    {
+      "id": "STD-ARCH-015",
+      "title": "Verify framework APIs and conventions against existing usage before relying on them",
+      "description": "Before using a framework or library API, parameter, fixture shape, or naming/interpolation convention that is not already established in the codebase, confirm it against the framework's types or an existing usage — do not reason from first principles that it 'must work this way'. If there is no precedent and no type to back it, verify before shipping.",
+      "rationale": "Assuming an API or convention exists in a particular form, without checking, ships runtime-breaking code that type-checking and review miss. For example, the workflow engine names steps by ${type}_${count} (e.g. composeAlertBody_1), not ${id}_${count}; an id-based alias resolves to undefined at runtime. Source: CLAUDE.md §Defensive Programmer Review; §Step Alias Convention.",
+      "acceptance_criteria": [
+        "A framework API/parameter/convention used in the diff that has no precedent in the codebase is confirmed against the framework's types or a documented existing usage.",
+        "Identifier/alias/interpolation conventions in the diff match the framework's actual convention (e.g. workflow step aliases use ${type}_${count}, not ${id}_${count}).",
+        "The diff does not rely on a framework value/parameter inferred from first principles with no precedent or type to back it."
+      ],
+      "anti_patterns": [
+        "Interpolating a workflow step via ${id}_${count} instead of the engine's ${type}_${count} alias.",
+        "Using a parameter or fixture shape 'because the framework probably supports it' with no existing usage or type confirming it."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from CLAUDE.md — Defensive Programmer Review checklist; Step Alias Convention"
+    },
+    {
+      "id": "STD-ARCH-016",
+      "related": ["STD-ARCH-003"],
+      "title": "Calibrate severity to ADR-0001; do not build speculative V1 concurrency guards",
+      "description": "Calibrate new code and review findings to ADR-0001's V1 operational profile (<20 concurrent users, single-tenant-mostly, auth-gated, no public write surface). Multi-tab races, stale-closure edge cases, refetch-mid-edit reconciliation, and server-side set-once/state-machine guards are V1-deferrable and must not be built speculatively or flagged as merge-blockers. Runtime-breaking bugs (e.g. a double-format that throws for returning users) are never V1-deferrable.",
+      "rationale": "Speculative concurrency machinery adds surface area the V1 profile does not need, while genuinely broken paths must still block. Source: CLAUDE.md §Architecture Rules and §Defensive Programmer Review; docs/adr/0001.",
+      "acceptance_criteria": [
+        "New code in the diff does not add multi-tab race handling, optimistic-lock retries, or set-once DB guards unless the issue's acceptance criteria require them.",
+        "A code path in the diff that does not work for a normal user (throws, or returns wrong data) is fixed in the diff, not deferred as a follow-up."
+      ],
+      "anti_patterns": [
+        "Adding a multi-tab write-conflict resolver to a low-volume auth-gated form.",
+        "Blocking a PR solely because a stale-closure edge case is theoretically possible under the V1 profile.",
+        "Down-grading a double-format runtime exception to a deferrable follow-up."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from CLAUDE.md — Architecture Rules / Defensive Programmer Review (ADR-0001)"
+    },
+    {
+      "id": "STD-ARCH-017",
+      "related": ["STD-ARCH-009", "STD-SEC-011"],
+      "title": "Route standard CRUD through the unified entityCrud function",
+      "description": "All create, read, readOne, update, and delete operations on registry entities go through the single entityCrud Edge Function (routed by `object` + `action`). This holds regardless of the client: writes performed under the service role also go through entityCrud — for the per-field allowlist and audit trail — not raw PostgREST; the only exception is the narrow server-only columns entityCrud's allowlist refuses, which must be justified inline. Specialised Edge Functions are reserved for multi-table transactions, custom query logic, background services, and operations with significant side-effects.",
+      "rationale": "A single metadata-driven CRUD function (backed by _shared/crud.ts + entityMeta.ts) keeps validation, sanitisation, Display-ID enrichment, and entitlements uniform; per-entity bespoke CRUD functions and direct `supabase.from` reads fragment that. Source: docs/LOVABLE_KNOWLEDGE.md §29 (Edge Function Architecture); CLAUDE.md §Survey Data Access.",
+      "acceptance_criteria": [
+        "Standard CRUD on a registered entity in the diff is performed via entityCrud (object/action), not a new entity-specific CRUD Edge Function.",
+        "Entity CRUD in the diff uses entityCrud, not direct `supabase.from(view)` reads/writes.",
+        "A new specialised Edge Function in the diff is justified by a multi-table, custom-query, background-service, or side-effecting operation.",
+        "Read-only entities (readOnly in entityMeta) are not given create/update/delete paths in the diff.",
+        "Service-role writes to a registry entity in the diff go through entityCrud, not a raw `supabase.from(...)` insert/update (except documented server-only columns with an inline justification)."
+      ],
+      "anti_patterns": [
+        "Adding `supabase/functions/conceptsCrud/index.ts` duplicating entityCrud for one entity.",
+        "Performing a registry-entity update through a hand-written function instead of `entityCrud` action: 'update'."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §29 — Edge Function Architecture"
+    },
+    {
+      "id": "STD-ARCH-018",
+      "title": "Change state through a dedicated validated transition, not a generic update",
+      "description": "Lifecycle/status fields change only through a dedicated, validated state-transition path — never an ad-hoc field update — so transitions are checked against the allowed set, fire their side-effects, and are audited distinctly. In this project, workflow status changes go through the entityCrud `statusChange` action (validated against shared.state_transitions, integrates workflow triggers), never a regular `update`.",
+      "rationale": "Mutating state via a generic update bypasses transition validation, side-effects (triggers), and the distinct audit trail, and allows invalid states. Source: docs/LOVABLE_KNOWLEDGE.md §29 (statusChange Action).",
+      "acceptance_criteria": [
+        "Lifecycle/status fields in the diff change through the dedicated transition path, not a generic update payload.",
+        "In this project, status transitions use entityCrud `action: 'statusChange'`; status fields are absent from regular update payloads.",
+        "An invalid/unlisted transition is rejected, not written."
+      ],
+      "anti_patterns": [
+        "`entityCrud({ object, action: 'update', data: { concept_status: 'APPROVED' } })`.",
+        "Patching a status column through a direct update path."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §29 — statusChange Action"
+    },
+    {
+      "id": "STD-ARCH-019",
+      "title": "Edge functions use the shared helpers and generated entityMeta",
+      "description": "Every Edge Function uses the shared helpers in supabase/functions/_shared/ — cors.ts, auth.ts (authenticateRequest/requireRole), response.ts, and crud.ts — and resolves entity table names, primary keys, and Display-ID formats via the generated entityMeta.ts (getEntityMeta). Never hand-roll CORS headers, construct JSON envelopes manually, or hardcode entity metadata. entityMeta.ts is auto-generated and must not be hand-edited (regenerate via `npm run generate:entity-meta`).",
+      "rationale": "Centralised helpers and generated metadata keep auth, CORS, envelopes, and entity resolution consistent and CI-validated; inline copies drift and bypass validation. Source: docs/LOVABLE_KNOWLEDGE.md §25 and §29.",
+      "acceptance_criteria": [
+        "New Edge Function code in the diff imports CORS/auth/response/crud from ../_shared/ rather than defining them inline.",
+        "Entity table names, primary keys, and Display-ID formats in the diff are resolved via getEntityMeta(), not hardcoded.",
+        "The diff does not hand-edit _shared/entityMeta.ts; metadata changes flow from regenerating it."
+      ],
+      "anti_patterns": [
+        "Defining `const corsHeaders = { 'Access-Control-Allow-Origin': '*' }` inline in a function.",
+        "Hardcoding `tableName = 'data_concepts'` instead of `getEntityMeta('concepts')`.",
+        "Editing _shared/entityMeta.ts by hand."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §25 / §29 — Edge Function Standards"
+    },
+    {
+      "id": "STD-ARCH-020",
+      "title": "Use the standardised JSON response envelope",
+      "description": "Edge Function and client-export responses use the shared envelope from _shared/response.ts: success responses carry `success: true`, an integer `count`, and a dynamic entity key matching the EntityRegistry key (e.g. `concepts`, `workflowInstances`); error responses are always `{ success: false, error: string }`. No redundant `objectType`/`type`/`fields` wrappers; `header` only for exports/reports.",
+      "rationale": "A uniform envelope lets every consumer parse responses the same way; ad-hoc shapes break clients and leak structure. Source: docs/LOVABLE_KNOWLEDGE.md §25 (JSON Response Envelope).",
+      "acceptance_criteria": [
+        "Success responses in the diff use successResponse()/buildEnvelope() with `success`, `count`, and a dynamic entity key.",
+        "Error responses in the diff are `{ success: false, error: <string> }` via errorResponse(), with no stack trace or SQL.",
+        "No diff adds redundant `objectType`/`type`/`fields` wrappers around the payload."
+      ],
+      "anti_patterns": [
+        "`return new Response(JSON.stringify(rows))` with a bespoke shape.",
+        "`{ success: true, data: { type: 'concepts', items: [...] } }` instead of the dynamic-key envelope."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §25 — JSON Response Envelope"
+    },
+    {
+      "id": "STD-ARCH-021",
+      "title": "One index.ts per Edge Function; camelCase dir is the invocation name; never import from src/",
+      "description": "Each Edge Function lives in a single supabase/functions/<name>/index.ts with no subdirectories of its own code; the camelCase directory name IS the invocation name (e.g. entityCrud, workflowTriggerNew). Edge Functions run in Deno and must never import from the React app's src/.",
+      "rationale": "The flat single-file convention and the dir-name-as-invocation contract keep functions discoverable and deployable; importing from src/ breaks because Deno cannot resolve the React build. Source: docs/LOVABLE_KNOWLEDGE.md §25 and §29.",
+      "acceptance_criteria": [
+        "A new Edge Function in the diff is a single index.ts under supabase/functions/<camelCaseName>/ (shared code only under _shared/).",
+        "No Edge Function file in the diff imports from `src/` or `@/`.",
+        "The function directory name matches the camelCase invocation name used to call it."
+      ],
+      "anti_patterns": [
+        "`import { x } from '../../../src/utils/...'` inside an Edge Function.",
+        "Splitting a function's logic across `supabase/functions/myFn/handlers/*.ts` subdirectories.",
+        "A kebab-case function directory invoked under a different name."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §25 / §29 — Directory Convention"
+    },
+    {
+      "id": "STD-ARCH-022",
+      "related": ["STD-ARCH-012", "STD-ARCH-026", "STD-DATA-012"],
+      "title": "Never expose raw database IDs (web, API, logs); always expose Display IDs",
+      "description": "Raw database primary and foreign keys (e.g. concept_id: 5) are never exposed by the application through any channel — web UI, API/Edge Function responses, exports, workflow context, MCP tool input/output, or logs. Every such surface uses the entity's Display ID: a synthetic identifier formed by concatenating the entity's prefix with the zero-padded, fixed-length database ID (e.g. DMC00000005). Use createIdField in EntityRegistry and formatDisplayId/injectDisplayIds server-side, reading the format from displayIDFormat (STD-DATA-012) — never hardcode it.",
+      "rationale": "Display IDs give stable, human-readable, rename-safe references; raw IDs leak internal structure, are not portable, and — in logs — let records be correlated across systems. Companion to STD-ARCH-012 (runtime boundary handling) and STD-DATA-012 (format authority). Source: docs/LOVABLE_KNOWLEDGE.md §2 (Display IDs Only) and §18.",
+      "acceptance_criteria": [
+        "No diff surfaces a raw numeric primary or foreign key through any channel — web UI, API/Edge Function response, export, workflow context, MCP output, or log line.",
+        "PK/FK values in the diff are emitted as Display IDs (prefix + fixed-length padded id) via createIdField / formatDisplayId / injectDisplayIds.",
+        "No log or error message in the diff writes a raw numeric entity id; it logs the Display ID.",
+        "Display-ID prefix/padding in the diff comes from entityRegistry.displayIDFormat (STD-DATA-012), not hardcoded string literals."
+      ],
+      "anti_patterns": [
+        "Rendering or returning `concept_id` (5) in a table cell, URL, or API response.",
+        "`console.error('failed for concept', concept_id)` logging the raw numeric id instead of the Display ID.",
+        "Hardcoding `'DMC' + id` instead of reading displayIDFormat."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §2 / §18 — Display IDs. See also STD-ARCH-012 (runtime boundary handling), STD-DATA-012 (format authority)."
+    },
+    {
+      "id": "STD-ARCH-023",
+      "title": "Do not use deprecated language or DSL constructs; use the current supported form",
+      "description": "Code and DSL/expression authoring use the current, supported syntax/APIs — not deprecated ones that emit warnings or are scheduled for removal. In this project, rules-engine expressions use `+` for string concatenation; the deprecated `||` concatenation operator must not be introduced.",
+      "rationale": "Deprecated constructs warn now and break later; using the current form keeps code forward-compatible. Source: docs/LOVABLE_KNOWLEDGE.md §5 (String Concatenation).",
+      "acceptance_criteria": [
+        "The diff does not introduce a deprecated language/DSL construct where a current supported form exists.",
+        "In this project, new rules expressions use `+` for concatenation, not `||`.",
+        "Deprecated constructs in expressions/code touched by the diff are migrated to the current form."
+      ],
+      "anti_patterns": [
+        "`#{Master.MasterType} || ' - ' || #{Master.MasterName}` (deprecated `||` concatenation).",
+        "Introducing an API/operator the framework marks deprecated when a supported replacement exists."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §5 — String Concatenation"
+    },
+    {
+      "id": "STD-ARCH-024",
+      "title": "Prefer React Query for new data hooks and invalidate on mutation",
+      "description": "New data-fetching hooks use React Query (@tanstack/react-query) with an appropriate staleTime; mutations invalidate the related query keys on success.",
+      "rationale": "React Query provides caching, request deduplication, and background refresh; missing invalidation leaves stale UI after writes. Source: docs/LOVABLE_KNOWLEDGE.md §26 (Performance & Caching).",
+      "acceptance_criteria": [
+        "A new data-fetching hook in the diff uses useQuery with a defined queryKey and staleTime rather than raw useState+useEffect.",
+        "Mutations introduced in the diff call queryClient.invalidateQueries for the affected query keys on success.",
+        "Reference-data hooks in the diff use a longer staleTime than operational-data hooks."
+      ],
+      "anti_patterns": [
+        "A new `useThing` hook built on useState+useEffect+manual fetch when React Query is available.",
+        "A create/update/delete mutation that does not invalidate the list query it affects."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §26 — Performance & Caching Patterns"
+    },
+    {
+      "id": "STD-ARCH-025",
+      "title": "Avoid N+1 queries and unbounded reads; respect platform query limits",
+      "description": "Avoid N+1 query patterns — bulk-fetch related data by deduplicating IDs into a single query rather than one query per record — and bound large reads with pagination, respecting the data platform's default row cap. In this project, Supabase returns at most 1,000 rows by default, so reads over potentially-large tables use explicit .range()/pagination and related data is fetched via a single .in(...) query.",
+      "rationale": "Per-record fetches produce N+1 query storms, and a silent default row cap truncates large reads. Source: docs/LOVABLE_KNOWLEDGE.md §26 (Supabase Query Limits / Bulk Data Fetching).",
+      "acceptance_criteria": [
+        "Related-data fetches in the diff collect and deduplicate IDs and issue a single bulk query, not one per record.",
+        "Reads in the diff against potentially-large tables use pagination/.range() rather than relying on the platform's default cap.",
+        "No diff issues a query inside a per-record loop where a single bulk query would suffice."
+      ],
+      "anti_patterns": [
+        "`.select('*')` on a large table with no .range(), silently capped at 1,000 rows.",
+        "`records.forEach(r => supabase.from('icons').select('*').eq('icon_id', r.icon))` (N+1)."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §26 — Supabase Query Limits / Bulk Data Fetching"
+    },
+    {
+      "id": "STD-ARCH-026",
+      "related": ["STD-ARCH-012", "STD-ARCH-022"],
+      "title": "Do not use `as any`/non-null assertions to silence the type system at the data boundary",
+      "description": "Type assertions that defeat the compiler — `as any`, double casts (`as unknown as T`), and non-null assertions (`!`) — must not be used to force values across the entityCrud / Supabase data boundary. Where a read-returned value's runtime shape differs from a generated type (notably Display-ID PK/FK fields typed `: number` that are Display-ID strings at runtime), correct the type or parse the value explicitly rather than asserting it away.",
+      "rationale": "Assertions that defeat the compiler hide real shape mismatches — notably at the Display-ID boundary, where a field typed `: number` is a Display-ID string at runtime. Correcting the type or parsing the value preserves the type system's guarantee instead of suppressing it. Source: CLAUDE.md §Defensive Programmer Review ('Trace the value's origin, not its type annotation').",
+      "acceptance_criteria": [
+        "No diff introduces `as any` (or `as unknown as T`) to push a value across the entityCrud/Supabase boundary.",
+        "No diff adds a non-null assertion (`!`) to suppress a nullability or shape error on a read-returned value instead of handling it.",
+        "Where a generated type mismatches the runtime shape, the diff fixes the type or parses the value (e.g. parseDisplayId) rather than casting."
+      ],
+      "anti_patterns": [
+        "`(record as any).submission_id` to bypass a type error on a read-returned Display-ID string.",
+        "`(supabase as any).from(...)` to reach a table the generated types do not expose.",
+        "`profile!.profile_id` to silence a possibly-undefined error instead of guarding it."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from CLAUDE.md — Defensive Programmer Review checklist (type-truth)"
+    },
+    {
+      "id": "STD-ARCH-027",
+      "title": "Global state uses React Context; do not introduce a new state library or framework",
+      "description": "Global/shared client state is managed with React Context (e.g. ChatContext, ErrorContext). Do not add a new state-management library (Redux, Zustand, MobX, Recoil) or migrate the app framework (e.g. to Next.js); the stack is React + Vite with Context. Local component state uses useState/useReducer.",
+      "rationale": "A single agreed state pattern keeps the codebase consistent and avoids competing paradigms; adding a parallel store or migrating frameworks is a large architectural change outside normal feature work. Source: .github/copilot-instructions.md §Project-Specific Exceptions (Exception 2).",
+      "acceptance_criteria": [
+        "New global/shared state in the diff is provided via a React Context provider, not a new store library.",
+        "The diff does not add a dependency on Redux/Zustand/MobX/Recoil or Next.js, or introduce their patterns.",
+        "Local-only state in the diff uses useState/useReducer rather than a global store."
+      ],
+      "anti_patterns": [
+        "Adding `@reduxjs/toolkit` or `zustand` to manage a piece of global state.",
+        "Introducing a Next.js app-router/page under the Vite app."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from .github/copilot-instructions.md — Project-Specific Exceptions (Exception 2)"
+    },
+    {
+      "id": "STD-ARCH-028",
+      "related": ["STD-ARCH-022"],
+      "title": "Build entity URLs as /module/:objectSlug/:displayId, with /new for create",
+      "description": "Entity URLs have three segments — the module, the object slug, and the Display ID: a specific record opens at /module/:objectSlug/:displayId, and creation uses /module/:objectSlug/new — the route handler creates the object and redirects (navigate replace) to the canonical /module/:objectSlug/:displayId URL. The :objectSlug segment comes from entityRegistry.slug (kebab-case, e.g. attribute-types); the instance segment is the Display-ID string. Raw numeric PKs and UUIDs never appear in URLs (STD-ARCH-022).",
+      "rationale": "A consistent module/objectSlug/Display-ID route makes intent explicit in the URL (no server-side state inference at route entry), gives meaningful bookmark/back-button semantics, and is shared across modules (EntityEditPage, survey runner). Source: docs/adr/0005-module-route-display-id-new-slug.md; docs/LOVABLE_KNOWLEDGE.md §18.",
+      "acceptance_criteria": [
+        "New entity routes in the diff follow /module/:objectSlug/:displayId for opening a record and /module/:objectSlug/new for creation.",
+        "The create route in the diff creates the object then redirects (navigate replace) to the canonical Display-ID URL.",
+        "The :objectSlug segment in the diff comes from entityRegistry.slug (kebab-case), not a hardcoded ad-hoc string.",
+        "No route in the diff carries a raw numeric PK or UUID; the instance segment is a Display ID (STD-ARCH-022)."
+      ],
+      "anti_patterns": [
+        "A static route like `/survey/view-survey` that infers intent from server state instead of `/survey/view/:displayId` + `/survey/view/new`.",
+        "`/models/concepts/5` (raw numeric id) instead of `/models/concepts/DMC00000005`.",
+        "Hardcoding a route slug that diverges from the entity's entityRegistry.slug."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/adr/0005-module-route-display-id-new-slug.md; docs/LOVABLE_KNOWLEDGE.md §18"
+    }
+  ]
+}
