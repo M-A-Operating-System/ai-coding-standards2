@@ -25,7 +25,7 @@
     },
     {
       "id": "STD-UX-002",
-      "instantiates": "STD-ARCH-001",
+      "related": ["STD-PROC-016"],
       "title": "Build from the shared DDA component library; no new primitives without approval",
       "description": "All interactive UI is built from the existing DDA component library (shadcn/ui base + DDA theme: shared DataTable, DynamicEditDialog, Layout, platform nav, form controls). Custom components are a last resort. A new font, icon set, spacing scale, or colour token requires a product decision record and platform approval before introduction.",
       "rationale": "One visual language across modules means users experience no context switch; ad-hoc primitives fragment it. Project-specific instance of STD-ARCH-001 (reuse). Source: design-system §Principles and §Component library.",
