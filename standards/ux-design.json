@@ -156,7 +156,6 @@
     },
     {
       "id": "STD-UX-009",
-      "related": ["STD-SEC-018"],
       "title": "Render entity icons via the two-tier fallback hierarchy",
       "description": "Entity icons follow a strict two-tier fallback: (1) the binary icon_image data-URI from the record's {prefix}_icon FK into the icons table, decoded from PostgREST's hex `\\x` encoding and validated to start with `data:`; (2) the EntityRegistry defaultIcon (a kebab-case Lucide name) rendered dynamically. Do not fall back to icon_filename or local SVGs in public/icons/. Fetch icons in bulk selecting only icon_id, icon_image.",
       "rationale": "A single consistent icon hierarchy keeps rendering uniform across tables, cards, and report headers; skipping the bytea decode yields broken images and local-SVG fallbacks diverge from the data-driven model. Source: docs/LOVABLE_KNOWLEDGE.md §21 (Icon Rendering Pattern).",
@@ -175,7 +174,6 @@
     },
     {
       "id": "STD-UX-010",
-      "related": ["STD-SEC-009", "STD-ARCH-014"],
       "title": "Every async surface handles loading, empty, and error states",
       "description": "Any surface that fetches data presents explicit loading, empty, and error states — never a blank or frozen UI: a loading indicator while fetching, a clear empty state when there is no data, and a user-safe error state on failure (rendering errors caught by an ErrorBoundary). Error text shown to users is the translated, safe message (STD-SEC-009), never a raw error.",
       "rationale": "Unhandled async states leave users with blank screens or stack traces; explicit loading/empty/error states are a baseline of a usable, trustworthy UI. Source: docs/LOVABLE_KNOWLEDGE.md §23 (Error Handling — ErrorBoundary / toast).",

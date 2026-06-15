@@ -7,7 +7,7 @@
   "standards": [
     {
       "id": "STD-DATA-001",
-      "related": ["STD-SEC-002"],
+      "related": ["STD-PROC-020"],
       "title": "Follow the three-schema migration checklist for every new entity",
       "description": "A new entity migration must: create the base table in the dm schema; ENABLE ROW LEVEL SECURITY on it; add a SELECT policy for authenticated users and INSERT/UPDATE/DELETE policies gated by has_role(); create a passthrough view (security_invoker = true) in the public schema; grant SELECT on the public view and INSERT/UPDATE/DELETE on the dm base table; and register the entity in entityRegistry.ts.",
       "rationale": "Skipping any step (RLS, view, grants, registry) yields an entity that is either inaccessible, unguarded, or invisible to the schema-driven UI. Source: docs/AI_INSTRUCTIONS.md §Migration Checklist and Common Tasks (Adding a New Entity).",
@@ -175,7 +175,6 @@
     },
     {
       "id": "STD-DATA-012",
-      "related": ["STD-ARCH-012", "STD-ARCH-022"],
       "title": "entityRegistry.displayIDFormat is the single source of truth for Display-ID format",
       "description": "Each entity's Display-ID format — uppercase prefix plus zero-padded digits (e.g. DMD00000000, DMC00000000, DLT00000000) — is defined once by displayIDFormat in src/config/entityRegistry.ts and flows to generated entityMeta.ts. Code reads the prefix and padding from that config (via formatDisplayId / displayIDFormat) and never hardcodes prefix strings or padding widths. entityRegistry.displayIDFormat is the single source of truth for Display-ID format.",
       "rationale": "A single authoritative format source keeps UI, Edge Functions, exports, and MCP consistent; hardcoded prefixes and widths drift from the registry. Source: src/config/entityRegistry.ts; docs/LOVABLE_KNOWLEDGE.md §18. See also STD-ARCH-022 (Display IDs at user surfaces), STD-ARCH-012 (runtime boundary handling).",
@@ -272,7 +271,7 @@
     },
     {
       "id": "STD-DATA-016",
-      "related": ["STD-SEC-001", "STD-SEC-002"],
+      "related": ["STD-DATA-017", "STD-PROC-020"],
       "title": "Name database roles {module}_{tier} (ro / rw / wf / ad)",
       "description": "Application database roles follow the pattern {module}_{tier}, where module is the application module (STD-DATA-015) and tier is one of the fixed access tiers: _ro (read-only), _rw (read-write), _ad (admin: create/delete/configure), _wf (workflow engine) — e.g. data_model_ro, data_model_rw, data_model_ad, data_model_wf, survey_ad. Roles are values of the app_role enum, assigned to users via the user_roles table, and enforced only through has_role() in RLS policies (STD-SEC-001, STD-SEC-002). A new module adds its own {module}_{tier} family; roles are kept minimal — no ad-hoc names, no per-table roles, and no new tier beyond the established set without a deliberate decision.",
       "rationale": "A consistent {module}_{tier} role taxonomy keeps RLS policies, edge-function entitlements, and grants legible and auditable per module and per tier; ad-hoc or per-table roles fragment authorization and make access impossible to reason about. Source: docs/AI_INSTRUCTIONS.md §Role-Based Access Control; docs/LOVABLE_KNOWLEDGE.md §6; app_role enum in the real schema.",

@@ -173,8 +173,6 @@
       "related": [
         "STD-PROC-013",
         "STD-PROC-012",
-        "STD-TEST-007",
-        "STD-TEST-010",
         "STD-PROC-005"
       ],
       "title": "BDD is the authoritative testable spec, generated from the capability",
@@ -256,10 +254,8 @@
     {
       "id": "STD-PROC-011",
       "related": [
-        "STD-ARCH-006",
-        "STD-ARCH-007",
-        "STD-ARCH-004",
-        "STD-PROC-009"
+        "STD-PROC-009",
+        "STD-PROC-006"
       ],
       "title": "Fix small in-scope problems now; raise a ticket only when out of scope or too large",
       "description": "When a defect, inconsistency, or small improvement is visible while working the current ticket and is simple and within that ticket's scope/mandate, fix it now — do not defer it. Raise a new GitHub issue only when the work is outside the current ticket's scope/mandate or too large to fix inline. Deferring solvable, in-scope work into a new ticket is not permitted. (Process-scoped instance of org STD-ARCH-006 fix-now and STD-ARCH-007 don't-open-issues-for-current-PR-work, framed by the ticket's scope.)",
@@ -363,7 +359,7 @@
       "id": "STD-PROC-015",
       "related": [
         "STD-PROC-014",
-        "STD-ARCH-006"
+        "STD-PROC-011"
       ],
       "title": "Measure undelivered-capability gap and technical-debt gap separately",
       "description": "The total product gap has two distinct parts: the undelivered-capability gap (capabilities the roadmap requires that are not yet verified) and the technical-debt gap (delivered, verified capabilities that do not meet the required engineering, quality, security, reliability, or maintainability standard). They are tracked separately. A technical-debt item is linked to its capability, the technical standard it violates, and a remediation recommendation; it is identified during implementation/review and explicitly accepted or scheduled, never silently carried.",

@@ -29,7 +29,6 @@
     {
       "id": "STD-DOC-002",
       "related": [
-        "STD-TEST-007",
         "STD-DOC-004"
       ],
       "title": "Every product-doc claim is traceable to a test or an open issue",
@@ -82,8 +81,7 @@
       "related": [
         "STD-DOC-002",
         "STD-PROC-008",
-        "STD-PROC-014",
-        "STD-TEST-010"
+        "STD-PROC-014"
       ],
       "title": "Coverage is the BDD .feature's test evidence, not a hand-maintained doc",
       "description": "Coverage — what is proven now — is the evidence status of the BDD specification: each BDD .feature scenario (generated from a capability) is either realised by a passing executable test (tests/features) or is an open gap tracked in the roadmap / a GitHub issue. Coverage is derived from the test evidence, not hand-maintained in a separate doc. A scenario with no passing test, or a failing one, signals an open gap (STD-PROC-005, STD-PROC-014).",
