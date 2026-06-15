@@ -2367,25 +2367,12 @@ class TestMarkReadyOnComplete:
 # ---------------------------------------------------------------------------
 
 class TestCommitAgentWorkScript:
-    """Tests for the commit-agent-work.sh shell script and _run_post_steps().
+    """Tests for the commit-agent-work.sh shell script and commit_after wiring.
 
     Scenario: New script stages, commits, and pushes agent work
     Scenario: Python orchestrator contains no git logic
-    Scenario: Post-steps entry drives commits for affected agents
+    Scenario: git_ops.commit_after drives commits for affected agents
     """
-
-    def _agent_with_post_steps(self) -> AgentDef:
-        return AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            post_steps=[".github/scripts/commit-agent-work.sh"],
-        )
 
     def _work_item(self) -> WorkItem:
         return WorkItem(
@@ -2433,13 +2420,13 @@ class TestCommitAgentWorkScript:
             "_configure_git_auth must be removed from pipeline_orchestrator.py"
         )
 
-    def test_pipeline_json_uses_post_steps_not_commit_after(self):
-        """Scenario: Post-steps entry drives commits for affected agents.
+    def test_pipeline_json_uses_git_ops_commit_after(self):
+        """Scenario: git_ops.commit_after drives commits for affected agents.
 
-        Given an agent previously configured with git_ops.commit_after: true
-        When the updated pipeline.json is reviewed
-        Then that agent uses post_steps invoking commit-agent-work.sh and
-             not git_ops.commit_after: true.
+        Given pipeline.json with agents that must commit their work
+        When the pipeline.json is reviewed
+        Then prd-docs-updater and coder use git_ops.commit_after: true
+             and no agent uses a post_steps field.
         """
         import json
         import pipeline_orchestrator as orch
@@ -2455,78 +2442,15 @@ class TestCommitAgentWorkScript:
             if entry.get("post_steps"):
                 post_steps_agents.append(entry["agent"])
 
-        assert not commit_after_agents, (
-            f"No agent should use git_ops.commit_after — found: {commit_after_agents}"
+        assert "01_product_docs/prd-docs-updater" in commit_after_agents, (
+            "prd-docs-updater must use git_ops.commit_after: true"
         )
-        assert "01_product_docs/prd-docs-updater" in post_steps_agents, (
-            "prd-docs-updater must have a post_steps entry invoking commit-agent-work.sh"
+        assert "03_execute/coder" in commit_after_agents, (
+            "coder must use git_ops.commit_after: true"
         )
-        assert "03_execute/coder" in post_steps_agents, (
-            "coder must have a post_steps entry invoking commit-agent-work.sh"
+        assert not post_steps_agents, (
+            f"No agent should use post_steps — found: {post_steps_agents}"
         )
-
-    def test_run_post_steps_returns_true_when_script_exits_zero(self, tmp_path):
-        """When the post_steps script exits 0, _run_post_steps returns True."""
-        import pipeline_orchestrator as orch
-
-        script = tmp_path / ".github" / "scripts" / "commit-agent-work.sh"
-        script.parent.mkdir(parents=True)
-        script.write_text("#!/bin/bash\nexit 0\n")
-
-        with patch.object(orch, "SUBMODULE_ROOT", tmp_path):
-            result = orch._run_post_steps(self._agent_with_post_steps(), self._work_item(), "test/repo")
-
-        assert result is True
-
-    def test_run_post_steps_returns_false_when_script_exits_nonzero(self, tmp_path):
-        """When the post_steps script exits non-zero, _run_post_steps returns False."""
-        import pipeline_orchestrator as orch
-
-        script = tmp_path / ".github" / "scripts" / "commit-agent-work.sh"
-        script.parent.mkdir(parents=True)
-        script.write_text("#!/bin/bash\nexit 1\n")
-
-        with patch.object(orch, "SUBMODULE_ROOT", tmp_path):
-            result = orch._run_post_steps(self._agent_with_post_steps(), self._work_item(), "test/repo")
-
-        assert result is False
-
-    def test_run_post_steps_returns_false_when_script_not_found(self, tmp_path):
-        """When the post_steps script path does not exist, _run_post_steps returns False."""
-        import pipeline_orchestrator as orch
-
-        agent = AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            post_steps=[".github/scripts/nonexistent.sh"],
-        )
-        with patch.object(orch, "SUBMODULE_ROOT", tmp_path):
-            result = orch._run_post_steps(agent, self._work_item(), "test/repo")
-
-        assert result is False
-
-    def test_run_post_steps_returns_false_when_script_times_out(self, tmp_path):
-        """When the post_steps script exceeds the 300s timeout, _run_post_steps returns False."""
-        import pipeline_orchestrator as orch
-
-        script = tmp_path / ".github" / "scripts" / "commit-agent-work.sh"
-        script.parent.mkdir(parents=True)
-        script.write_text("#!/bin/bash\nsleep 9999\n")
-
-        with patch.object(orch, "SUBMODULE_ROOT", tmp_path), \
-             patch("pipeline_orchestrator.subprocess.run",
-                   side_effect=subprocess.TimeoutExpired(["bash"], 300)):
-            result = orch._run_post_steps(
-                self._agent_with_post_steps(), self._work_item(), "test/repo"
-            )
-
-        assert result is False
 
     def test_commit_agent_work_script_creates_correct_commit_message(self, tmp_path):
         """Scenario: New script stages, commits, and pushes agent work.
@@ -2628,33 +2552,20 @@ class TestCommitAgentWorkScript:
             f"Unexpected commit message: {log_result.stdout.strip()!r}"
         )
 
-    def test_run_post_steps_returns_true_when_no_steps(self):
-        """When post_steps is empty, _run_post_steps returns True (nothing to run)."""
-        import pipeline_orchestrator as orch
-
-        agent = AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            post_steps=[],
-        )
-        result = orch._run_post_steps(agent, self._work_item(), "test/repo")
-        assert result is True
-
-    def test_commit_after_derived_from_post_steps_in_pipeline(self):
-        """Agents with post_steps set commit_after=True; agents without set commit_after=False."""
+    def test_commit_after_derived_from_git_ops_in_pipeline(self):
+        """Agents with git_ops.commit_after: true set commit_after=True; others False."""
+        import json
         import pipeline_orchestrator as orch
         agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
+        with open(orch.PIPELINE_PATH) as f:
+            raw = json.load(f)
+        raw_by_agent = {e["agent"]: e for e in raw["pipeline"]}
         for agent_def in agents:
-            expected = bool(agent_def.post_steps)
+            entry = raw_by_agent.get(agent_def.agent, {})
+            expected = bool(entry.get("git_ops", {}).get("commit_after", False))
             assert agent_def.commit_after == expected, (
                 f"{agent_def.agent}: commit_after={agent_def.commit_after} "
-                f"but post_steps={agent_def.post_steps!r} — should be {expected}"
+                f"but git_ops.commit_after={expected!r} in pipeline.json"
             )
 
     def test_clean_working_tree_exits_zero_with_no_commit(self, tmp_path):

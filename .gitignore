@@ -28,6 +28,5 @@ venv/
 
 # prd-writer agent temp artefacts — must never be committed to source (STD-ARCH-006)
 .tmp_*
-
-# One-shot cleanup scripts produced during agent runs
-_cleanup_temps.py
+.prd_body_*.md
+.prd_snapshot_*.md

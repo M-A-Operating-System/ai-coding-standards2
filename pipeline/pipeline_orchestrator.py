@@ -163,8 +163,7 @@ class AgentDef:
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
     mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
-    commit_after: bool = False            # True when post_steps is non-empty; drives pre-agent branch checkout
-    post_steps: list = field(default_factory=list)  # scripts invoked after agent signals complete
+    commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
@@ -284,8 +283,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 session_scope=entry.get("session", {}).get("scope", "per_issue"),
                 session_id_pattern=entry.get("session", {}).get("id_pattern"),
                 mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
-                post_steps=list(entry.get("post_steps", [])),
-                commit_after=bool(entry.get("post_steps", [])),
+                commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
                 review_loop=entry.get("review_loop"),
@@ -2293,83 +2291,6 @@ def _apply_failed(
 
 
 # ---------------------------------------------------------------------------
-# Post-steps invocation (post_steps agents)
-# ---------------------------------------------------------------------------
-
-def _run_post_steps(
-    agent_def: "AgentDef",
-    work_item: "WorkItem",
-    repo: str,
-) -> bool:
-    """Invoke each script listed in agent_def.post_steps after the agent completes.
-
-    Each script receives the standard orchestrator environment variables plus
-    AGENT_NAME, AGENT_LABEL_KEY, and AGENT_PHASE so it can identify the agent
-    that just ran.  Scripts exit 0 on success; any non-zero exit causes this
-    function to return False so the caller can mark the step :failed.
-
-    Returns True when all scripts succeed (or when post_steps is empty).
-    """
-    for script_path in agent_def.post_steps:
-        script_file = SUBMODULE_ROOT / script_path
-        if not script_file.exists():
-            log.error("  post_steps: script not found: %s", script_file)
-            return False
-
-        step_env = {
-            **os.environ,
-            "REPO":             repo,
-            "AGENT_NAME":       agent_def.agent,
-            "AGENT_LABEL_KEY":  agent_def.label_key,
-            "AGENT_PHASE":      agent_def.phase,
-            "WORK_ITEM_KIND":   work_item.kind,
-            "WORK_ITEM_NUMBER": str(work_item.number),
-        }
-        if work_item.kind == "issue":
-            step_env["ISSUE_NUMBER"] = str(work_item.number)
-
-        log.info(
-            "  post_steps: invoking %s for %s on #%d",
-            script_path, agent_def.agent, work_item.number,
-        )
-        # post_steps scripts must NOT emit AI_AGILE_STATUS: sentinel text to
-        # stdout — the orchestrator reads its own stdout for the sentinel; a
-        # stray echo in a future script would produce a spurious terminal signal.
-        try:
-            result = subprocess.run(
-                ["bash", str(script_file)],
-                env=step_env,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-        except subprocess.TimeoutExpired:
-            log.error(
-                "  post_steps: %s timed out after 300s for %s on #%d",
-                script_path, agent_def.agent, work_item.number,
-            )
-            return False
-        except FileNotFoundError:
-            log.error("  post_steps: bash not found in PATH")
-            return False
-
-        if result.returncode != 0:
-            failure_output = (result.stderr or result.stdout)[:2000]
-            log.error(
-                "  post_steps: %s exited %d for %s on #%d\n%s",
-                script_path, result.returncode, agent_def.agent, work_item.number,
-                failure_output,
-            )
-            return False
-
-        log.info(
-            "  post_steps: %s completed for %s on #%d",
-            script_path, agent_def.agent, work_item.number,
-        )
-    return True
-
-
-# ---------------------------------------------------------------------------
 # Core orchestration logic
 # ---------------------------------------------------------------------------
 
@@ -2583,10 +2504,10 @@ def process_work_item(
             _agent_file_path.read_text() if _agent_file_path.exists() else None
         )
 
-        # For agents with post_steps, check out the issue branch before
+        # For agents with commit_after, check out the issue branch before
         # invoking the agent so it reads accumulated state (e.g. docs committed
         # by prd-docs-updater, code from a prior coder run). The branch is
-        # restored after the agent completes. The post_steps scripts handle the
+        # restored after the agent completes. commit-agent-work.sh handles the
         # actual staging, commit, and push.
         _pre_agent_branch: str = ""
         if not dry_run and agent_def.commit_after and work_item.kind == "issue":
@@ -2724,22 +2645,79 @@ def process_work_item(
                 _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
-            # post_steps: invoke each configured script after the agent signals
-            # complete. If any script exits non-zero, mark the step :failed so
-            # the next orchestrator run retries cleanly.
-            if final_status == STATUS_COMPLETE and agent_def.post_steps:
-                if not _run_post_steps(agent_def, work_item, repo):
-                    _apply_failed(
-                        gh, agent_def, work_item, result,
-                        reason=(
-                            "_The agent completed successfully (exit 0, sentinel present) but a "
-                            "post_steps script failed. Check the orchestrator CI log for the "
-                            "specific error. Remove the failed label to retry._"
-                        ),
+            # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
+            # The script stages, commits, and pushes agent-written files to the issue branch.
+            if final_status == STATUS_COMPLETE and agent_def.commit_after:
+                _commit_script = SUBMODULE_ROOT / ".github/scripts/commit-agent-work.sh"
+                _commit_env = {
+                    **os.environ,
+                    "AGENT_NAME": agent_def.agent,
+                }
+                if work_item.kind == "issue":
+                    _commit_env["ISSUE_NUMBER"] = str(work_item.number)
+                log.info(
+                    "  commit-after: invoking commit-agent-work.sh for %s on #%d",
+                    agent_def.agent, work_item.number,
+                )
+                _commit_ok = True
+                _commit_fail_reason = ""
+                if not _commit_script.exists():
+                    log.error("  commit-after: commit-agent-work.sh not found at %s", _commit_script)
+                    _commit_ok = False
+                    _commit_fail_reason = (
+                        "_commit-agent-work.sh not found. Check that .github/scripts/commit-agent-work.sh "
+                        "exists on the orchestrator branch. Remove the failed label to retry._"
                     )
+                else:
+                    try:
+                        _commit_result = subprocess.run(
+                            ["bash", str(_commit_script)],
+                            env=_commit_env,
+                            capture_output=True,
+                            text=True,
+                            timeout=300,
+                        )
+                    except subprocess.TimeoutExpired:
+                        log.error(
+                            "  commit-after: commit-agent-work.sh timed out for %s on #%d",
+                            agent_def.agent, work_item.number,
+                        )
+                        _commit_ok = False
+                        _commit_fail_reason = (
+                            "_commit-agent-work.sh timed out after 300s. "
+                            "Remove the failed label to retry._"
+                        )
+                    except FileNotFoundError:
+                        log.error("  commit-after: bash not found in PATH")
+                        _commit_ok = False
+                        _commit_fail_reason = (
+                            "_bash not found in PATH; commit-agent-work.sh could not run. "
+                            "Remove the failed label to retry._"
+                        )
+                    else:
+                        if _commit_result.returncode != 0:
+                            _failure_output = (_commit_result.stderr or _commit_result.stdout)[:2000]
+                            log.error(
+                                "  commit-after: commit-agent-work.sh exited %d for %s on #%d\n%s",
+                                _commit_result.returncode, agent_def.agent, work_item.number,
+                                _failure_output,
+                            )
+                            _commit_ok = False
+                            _commit_fail_reason = (
+                                "_The agent completed successfully but commit-agent-work.sh failed. "
+                                "Check the orchestrator CI log for the specific error. "
+                                "Remove the failed label to retry._"
+                            )
+                        else:
+                            log.info(
+                                "  commit-after: commit-agent-work.sh completed for %s on #%d",
+                                agent_def.agent, work_item.number,
+                            )
+                if not _commit_ok:
+                    _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
                     final_status = STATUS_FAILED
                     log.error(
-                        "  FAILED  %-38s  post_steps failed on #%d",
+                        "  FAILED  %-38s  commit-after failed on #%d",
                         agent_def.agent, work_item.number,
                     )
                     _restore_pre_agent_branch(_pre_agent_branch)
@@ -3133,8 +3111,8 @@ def main() -> None:
     # this process authenticate with GITHUB_TOKEN (contents:write scope).
     # The token is passed via env vars, never embedded in a URL, keeping it
     # out of `git remote -v`, `ps`, and CI logs.
-    # NOTE: GITHUB_TOKEN cannot push .github/workflows/ files; post_steps
-    # scripts that need workflow-scope pushes must read AI_AGILE_BOT_TOKEN.
+    # NOTE: GITHUB_TOKEN cannot push .github/workflows/ files; commit-agent-work.sh
+    # reads AI_AGILE_BOT_TOKEN when workflow-scope pushes are needed.
     _git_auth_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if _git_auth_token:
         try:
