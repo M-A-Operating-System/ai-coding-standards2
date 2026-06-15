@@ -249,6 +249,29 @@
       "source": "Project design decision — schemas represent modules, kept minimal"
     },
     {
+      "id": "STD-DATA-017",
+      "title": "No plaintext secrets in source",
+      "description": "Credentials, API keys, tokens, private keys, and passwords must never appear in source files, test fixtures, or commit messages. All secrets must be injected via environment variables, a secrets manager, or a CI/CD vault at runtime.",
+      "rationale": "Plaintext secrets committed to source are exposed to every person with repo access, every CI runner log, and every fork. They are the leading cause of supply-chain compromise and are effectively permanent once in git history.",
+      "acceptance_criteria": [
+        "No string literal in the diff matches the pattern of a known secret format (AWS key, GitHub PAT, private key PEM block, bearer token, connection string with embedded password).",
+        "No test fixture file in the diff contains a real credential — synthetic values like 'test-secret-placeholder' are acceptable; real-looking tokens are not.",
+        "Configuration that requires a secret uses an environment variable reference (e.g. os.environ['API_KEY']) or a named secrets-manager path — never a hardcoded value.",
+        "Any file added in the diff whose name suggests secret content (.env, *.pem, *.p12, *_key.json, credentials.*) is absent from tracked source and present in .gitignore."
+      ],
+      "anti_patterns": [
+        "API_KEY = 'sk-live-abc123...' in any source file.",
+        "A test that creates a real token and stores it in a fixture file.",
+        "A connection string like 'postgresql://user:password@host/db' hardcoded in config.",
+        "A private key PEM block embedded in a YAML or JSON config file.",
+        "Logging a full Authorization header value at DEBUG level."
+      ],
+      "adr_overridable": false,
+      "applies_to": ["coder", "pr-reviewer"],
+      "instantiates": "STD-SEC-001",
+      "source": "Migrated from standards/security.json"
+    },
+    {
       "id": "STD-DATA-016",
       "related": ["STD-SEC-001", "STD-SEC-002"],
       "title": "Name database roles {module}_{tier} (ro / rw / wf / ad)",
