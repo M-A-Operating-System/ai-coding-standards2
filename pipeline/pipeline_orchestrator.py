@@ -2647,14 +2647,14 @@ def process_work_item(
 
             # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
             # The script stages, commits, and pushes agent-written files to the issue branch.
-            if final_status == STATUS_COMPLETE and agent_def.commit_after:
+            # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
+            if final_status == STATUS_COMPLETE and agent_def.commit_after and work_item.kind == "issue":
                 _commit_script = SUBMODULE_ROOT / ".github/scripts/commit-agent-work.sh"
                 _commit_env = {
                     **os.environ,
                     "AGENT_NAME": agent_def.agent,
+                    "ISSUE_NUMBER": str(work_item.number),
                 }
-                if work_item.kind == "issue":
-                    _commit_env["ISSUE_NUMBER"] = str(work_item.number)
                 log.info(
                     "  commit-after: invoking commit-agent-work.sh for %s on #%d",
                     agent_def.agent, work_item.number,

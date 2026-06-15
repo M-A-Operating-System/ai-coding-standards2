@@ -30,3 +30,6 @@ venv/
 .tmp_*
 .prd_body_*.md
 .prd_snapshot_*.md
+
+# one-off agent cleanup scripts (not source, never committed)
+cleanup_temp_files.py

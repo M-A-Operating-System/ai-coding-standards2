@@ -2468,6 +2468,24 @@ class TestCommitAgentWorkScript:
                 f"but git_ops.commit_after={expected!r} in pipeline.json"
             )
 
+    def test_commit_after_outer_guard_requires_issue_kind(self):
+        """Scenario: commit-after is not invoked for PR work items.
+
+        Given commit-agent-work.sh requires ISSUE_NUMBER
+        When the orchestrator source is reviewed
+        Then the commit_after invoke block is guarded by work_item.kind == 'issue'
+             so the script is never called for PR-scoped work items.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        guard = 'agent_def.commit_after and work_item.kind == "issue"'
+        assert guard in source, (
+            "commit_after invoke block must include 'work_item.kind == \"issue\"' "
+            "in the outer guard — commit-agent-work.sh requires ISSUE_NUMBER and "
+            "must not be invoked for PR work items (DP-001)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestPriorityScheduling — Gherkin-traced tests for issue #119
