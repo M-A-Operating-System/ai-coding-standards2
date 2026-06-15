@@ -179,6 +179,24 @@
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete — auto-approved). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
+    },
+
+    {
+      "agent": "00_ondemand/new-agent",
+      "phase": "00_ondemand",
+      "object": ["issue"],
+      "trigger": {
+        "label": "new-agent:requested"
+      },
+      "human_gate_after": true,
+      "human_gate_label": "new-agent:approved",
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "git_ops": {
+        "commit_after": true
+      },
+      "description": "On-demand agent scaffolder. Reads an issue describing a new pipeline agent, creates the agent prompt file and pipeline.json entry, then gates on new-agent:approved before committing. Enforces clean sequential step numbering in all generated agent files. Triggered by applying the new-agent:requested label to any issue."
     }
 
   ]
