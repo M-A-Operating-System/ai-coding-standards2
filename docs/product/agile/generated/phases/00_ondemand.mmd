@@ -1,8 +1,5 @@
 flowchart TD
     n_00_ondemand__codebase_reviewer["codebase-reviewer"]
     n_00_ondemand__sizer["sizer"]
-    n_00_ondemand__new_agent["new-agent"]
     gate__n_00_ondemand__sizer{"sizer:review"}
-    gate__n_00_ondemand__new_agent{"new-agent:approved"}
     n_00_ondemand__sizer --> gate__n_00_ondemand__sizer
-    n_00_ondemand__new_agent --> gate__n_00_ondemand__new_agent
