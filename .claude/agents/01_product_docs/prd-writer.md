@@ -59,9 +59,9 @@ normally from Step 2.
 
 ---
 
-## Step 2 — Read the issue and classification
+## Step 2 — Read the issue and repo context
 
-Fetch issue metadata and the classifier artefact in two calls:
+Fetch issue metadata and the classifier artefact:
 
 ```bash
 gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author
@@ -78,12 +78,27 @@ gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
 The second call uses a targeted `--jq` filter so only the classifier
 artefact comment is returned — not the full growing comment history.
 
-If any product-layer standards exist in `${AI_AGILE_ROOT}/standards/`, read
-them so you can flag inline violations in the PRD:
+Then read the repo context that informs every PRD:
 
 ```bash
+# Personas — required for user story authorship
+cat "${AI_AGILE_ROOT}/docs/product/agile/03-personas.md" 2>/dev/null
+
+# Existing product documentation — understand what is already built
+find "${AI_AGILE_ROOT}/docs/product" -name "*.md" ! -path "*/agile/generated/*" 2>/dev/null \
+  | sort | xargs -I{} sh -c 'echo "=== {} ===" && cat "{}"'
+
+# Technical constraints — understand platform boundaries
+find "${AI_AGILE_ROOT}/docs/tech-spec" -name "*.md" 2>/dev/null \
+  | sort | xargs -I{} sh -c 'echo "=== {} ===" && cat "{}"'
+
+# Product-layer standards — flag violations in the PRD
 find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null
 ```
+
+Skip any path that does not exist. Read what is there; do not error if a
+directory is absent. This repo context is your background knowledge for
+drafting — it does not expand the issue's scope.
 
 ---
 
@@ -99,13 +114,10 @@ PARENT_NUMBER=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
   --jq '[.labels[].name | select(startswith("parent-issue:"))] | .[0] | ltrimstr("parent-issue:") // ""')
 ```
 
-If `$IS_SUB_ISSUE` is **non-zero**, note `$PARENT_NUMBER` for use in Step 8
-and apply the following scope fence for the rest of this run:
-
-**CRITICAL — scope fence for sub-issues:** Do NOT fetch or read the parent
-issue `#${PARENT_NUMBER}`. Your scope is defined entirely by this sub-issue's
-body. Do not expand, infer, or import anything from the parent. The
-`parent-issue:N` label records the lineage — that is all you need from it.
+If `$IS_SUB_ISSUE` is **non-zero**, note `$PARENT_NUMBER` for use in Step 8.
+The sub-issue body is the complete scope boundary — the general repo-context
+rule (Behaviour rules) already prevents reading `#${PARENT_NUMBER}` or any
+other issue.
 
 Continue to Step 4 normally regardless of whether this is a sub-issue or not.
 
@@ -468,8 +480,11 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 - **Detect before drafting.** Always run Steps 3 and 4 before writing anything.
   A pre-existing spec (≥4 signals) goes through augmentation (Step 7),
   not the full draft path. Never discard a detailed existing specification.
-- **Sub-issue scope fence.** If `$IS_SUB_ISSUE` is non-zero, never read the
-  parent issue. The sub-issue body is the complete scope boundary.
+- **Context comes from the repo, not from other issues.** Never call
+  `gh issue view`, `gh pr view`, or any equivalent on any number other than
+  `$ISSUE_NUMBER`. If the issue body references `#N`, treat it as a label,
+  not a prompt to fetch. Repo files (docs, standards, tech specs, personas)
+  are always fair game via filesystem reads.
 - **The snapshot is immutable.** Once posted, never edit it, even if
   the PRD is rewritten after rejection.
 - **PRD lives in the issue body, not a comment.** Re-runs overwrite
