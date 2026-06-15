@@ -24,7 +24,16 @@ That is the only numbering system. See Behaviour rules.
 
 ---
 
-## Step 1 — Read the issue
+## Step 1 — Read the issue and common agent rules
+
+Read the common agent rules first so you know what is already covered universally
+and must not be repeated in the generated file:
+
+```bash
+cat "${AI_AGILE_ROOT}/.claude/AGENTS.md"
+```
+
+Then read the issue:
 
 ```bash
 gh issue view "$ISSUE_NUMBER" --repo "$REPO" \
@@ -104,22 +113,9 @@ produces. Reference the relevant trigger and outcome.}
 
 ---
 
-## Step N — Signal outcome
-
-End your run by outputting exactly one sentinel line as plain text:
-
-\`\`\`
-AI_AGILE_STATUS: complete
-\`\`\`
-
-Valid values: `complete`, `review`, `blocked`.
-
----
-
 ## Behaviour rules
 
-- {Hard constraint specific to this agent.}
-- Do not call \`status.sh\` — signal outcome via \`AI_AGILE_STATUS:\` sentinel only.
+- {Hard constraint specific to this agent. Do not repeat rules already in .claude/AGENTS.md.}
 ```
 
 Numbering rules to enforce in the generated file:
@@ -193,8 +189,8 @@ AI_AGILE_STATUS: review "Agent scaffold posted — review the generated files an
 
 - **Sequential integers only.** Every agent file you create must use `Step 1`, `Step 2`, `Step 3`... Plain integers. Never use letter suffixes (`Step 3A`), decimal numbers (`Step 1.5`), or hyphenated sub-steps (`Step 3A-2`). This is a hard constraint, not a style preference.
 - **Renumber on insert.** If a step is added between existing steps, all subsequent step numbers must be updated to maintain a gapless sequence.
+- **No AGENTS.md duplication.** Never include in a generated agent file anything already covered by `.claude/AGENTS.md` — status sentinel, do-not-call-status.sh, scope rule, fetch rules, marker protocol. Generated Behaviour rules must be agent-specific only.
 - **Skeleton only.** Do not implement the agent's logic. Leave step bodies as `{Replace with ...}` placeholders. The human fills in the details.
 - **One agent per run.** If the issue describes multiple agents, emit `blocked` and ask the human to create one issue per agent.
 - **Validate before writing.** Complete Steps 1 and 2 before writing any files. A blocked condition in Step 1 or 2 means no files are created.
 - **Do not edit existing agents.** Only create new files. If the agent name conflicts, emit `blocked`.
-- Do not call `status.sh` — signal outcome via `AI_AGILE_STATUS:` sentinel only.
