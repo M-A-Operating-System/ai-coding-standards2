@@ -159,14 +159,6 @@ quoting collisions), create the issue, and capture the number:
 ```bash
 BODY_FILE=$(mktemp /tmp/sizer-body-XXXXXX.md)
 cat > "$BODY_FILE" <<BODY
-## Context
-
-Implements part {N} of #{PARENT_NUMBER}: {PARENT_TITLE}.
-
-**Delivery order:** This is part {N} of {TOTAL}. {Preceding sub-issues, if any, must be merged before this one starts.}
-
----
-
 ## Problem Statement
 
 {1–3 sentences describing exactly what this sub-issue changes, scoped tightly.}
@@ -188,6 +180,12 @@ system must work as follows:
 
 - [ ] ...
 - [ ] ...
+
+---
+
+## Dependencies
+
+{None — can be delivered independently. / Depends on #{PREV_NUMBER} — must be merged before this one starts.}
 BODY
 
 SUB_ISSUE_URL=$(gh issue create --repo "$REPO" \
@@ -370,6 +368,9 @@ AI_AGILE_STATUS: complete
 - **Do not infer scope beyond what the issue states.** If the issue
   body is vague about what a phase covers, make a conservative split
   and note the ambiguity in the sub-issue body.
+- **One artefact comment per run.** The orchestrator's
+  opening/closing announcements are the audit trail; do not repeat
+  information already in the issue body.
 - **Sub-issues inherit the parent's classification label.** If the
   parent is `classification: enhancement`, each sub-issue should also
   be `classification: enhancement`. The `issue-classifier` will
