@@ -38,10 +38,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          git add docs/product/agile/generated/phases/
+          if git diff --cached --quiet; then
             echo "Diagrams are already up-to-date — nothing to commit."
           else
-            git add docs/product/agile/generated/phases/
             git commit -m "chore: regenerate pipeline diagrams [skip ci]"
             git push
           fi
