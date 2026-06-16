@@ -163,7 +163,7 @@ class AgentDef:
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
     mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
-    commit_after: bool = False            # orchestrator stages + commits + pushes on :complete
+    commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
@@ -2291,225 +2291,6 @@ def _apply_failed(
 
 
 # ---------------------------------------------------------------------------
-# Git authentication setup
-# ---------------------------------------------------------------------------
-
-def _configure_git_auth() -> None:
-    """Ensure all git operations use GITHUB_TOKEN for the lifetime of this process.
-
-    Sets http.https://github.com/.extraHeader globally so every git operation
-    in this process authenticates with GITHUB_TOKEN (contents:write scope).
-    The token is never embedded in a URL, keeping it out of `git remote -v`,
-    `ps`, and CI logs.
-
-    NOTE: GITHUB_TOKEN cannot push .github/workflows/ files — that requires
-    a classic PAT with `repo` + `workflow` scopes. _run_commit_after detects
-    staged workflow files and uses AI_AGILE_BOT_TOKEN via GIT_CONFIG env vars
-    for those pushes.
-    """
-    github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if not github_token:
-        log.warning("git auth: no GITHUB_TOKEN found — git push may fail")
-        return
-
-    try:
-        # Set via process env vars rather than writing to ~/.gitconfig — env vars
-        # are not visible in `git config --list` or GIT_TRACE output, unlike the
-        # --global extraHeader approach which writes the token to disk and leaks
-        # it in verbose git traces.
-        # GitHub git transport uses HTTP Basic auth, not Bearer.
-        # Format: base64("x-access-token:TOKEN") — identical to actions/checkout.
-        _encoded = base64.b64encode(f"x-access-token:{github_token}".encode()).decode()
-        # Remove any extraHeader written by actions/checkout into .git/config.
-        # Without this, git collects both the local-config entry and our env-var
-        # entry and sends two Authorization headers, causing HTTP 400.
-        subprocess.run(
-            ["git", "config", "--local", "--unset-all",
-             "http.https://github.com/.extraHeader"],
-            check=False,
-            capture_output=True,
-        )
-        os.environ["GIT_CONFIG_COUNT"] = "1"
-        os.environ["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
-        os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_encoded}"
-        log.info("git auth: configured http.extraHeader via GIT_CONFIG env vars (contents:write scope)")
-
-        bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
-        if not bot_token:
-            log.warning(
-                "git auth: AI_AGILE_BOT_TOKEN is not set — "
-                "coder-generated .github/workflows/ files cannot be pushed automatically. "
-                "Update AI_AGILE_BOT_TOKEN to a classic PAT with repo+workflow scopes."
-            )
-        else:
-            log.info(
-                "git auth: AI_AGILE_BOT_TOKEN is present — "
-                "will be used via GIT_CONFIG env vars for pushes that include .github/workflows/ files."
-            )
-    except Exception as exc:
-        log.warning("git auth: could not configure http.extraHeader — %s", exc)
-
-
-# ---------------------------------------------------------------------------
-# Orchestrator-driven git commit (commit_after: true agents)
-# ---------------------------------------------------------------------------
-
-def _run_commit_after(agent_def: "AgentDef", work_item: "WorkItem") -> bool:
-    """Stage, commit, and push any file changes left by a commit_after agent.
-
-    The agent wrote files using its Write tool; the orchestrator now commits
-    them to the shared issue branch so the agent never needs git credentials.
-
-    Returns True on success (including the no-changes case), False if any
-    git operation fails. On False the caller should mark the step :failed.
-    """
-    branch = f"issue-{work_item.number}"
-
-    try:
-        # Check working tree for any changes (untracked or modified).
-        dirty = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        if not dirty:
-            log.info(
-                "  commit_after: no working-tree changes — skipping commit for %s on #%d",
-                agent_def.agent, work_item.number,
-            )
-            return True
-
-        log.info(
-            "  commit_after: staging changes for %s on #%d → branch %s",
-            agent_def.agent, work_item.number, branch,
-        )
-
-        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-        subprocess.run(["git", "config", "user.name",  "github-actions[bot]"], check=True)
-
-        # Stash all working-tree changes (staged + unstaged + untracked),
-        # switch to the issue branch, pop the stash, then commit and push.
-        current = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-
-        stashed = False
-        try:
-            subprocess.run(["git", "stash", "push", "--include-untracked", "-m",
-                     f"commit_after:{agent_def.agent}:issue-{work_item.number}"], check=True)
-            stashed = True
-            log.info("  commit_after: stashed working-tree changes")
-
-            subprocess.run(["git", "fetch", "origin", branch], check=True)
-            # Reset local branch to exactly match remote so that git push is
-            # always a fast-forward. Without this, a stale local branch (e.g.
-            # one that pre-dates commits from an earlier agent like prd-docs-
-            # updater) causes a rejected non-fast-forward push.
-            subprocess.run(["git", "checkout", "-B", branch, f"origin/{branch}"], check=True)
-
-            # Identify which files the agent wrote before popping the stash,
-            # so we add only those files (not any unrelated working-tree noise).
-            stash_files = subprocess.run(
-                ["git", "stash", "show", "--name-only", "-u"],
-                capture_output=True, text=True, check=True,
-            ).stdout.strip().splitlines()
-            subprocess.run(["git", "stash", "pop"], check=True)
-            stashed = False  # entry consumed; finally must not drop
-
-            if stash_files:
-                subprocess.run(["git", "add", "--"] + stash_files, check=True)
-            else:
-                subprocess.run(["git", "add", "-A"], check=True)
-
-            # Detect workflow files — GITHUB_TOKEN cannot push them.
-            # If AI_AGILE_BOT_TOKEN is available (classic PAT with repo+workflow
-            # scope), pass it via GIT_CONFIG env vars for this push only.
-            workflow_files = subprocess.run(
-                ["git", "diff", "--cached", "--name-only", "--", ".github/workflows/"],
-                capture_output=True, text=True, check=True,
-            ).stdout.strip()
-            bot_token = os.environ.get("AI_AGILE_BOT_TOKEN")
-            if workflow_files:
-                if bot_token:
-                    log.info(
-                        "  commit_after: workflow files staged (%s) — "
-                        "using AI_AGILE_BOT_TOKEN via GIT_CONFIG env vars for this push",
-                        workflow_files.replace("\n", ", "),
-                    )
-                else:
-                    log.error(
-                        "  commit_after: agent wrote .github/workflows/ files (%s) but "
-                        "AI_AGILE_BOT_TOKEN is not set. GITHUB_TOKEN cannot push workflow "
-                        "files (GitHub enforces this). Add AI_AGILE_BOT_TOKEN to your "
-                        "repository secrets as a classic PAT with repo+workflow scopes. "
-                        "Failing early — remove :failed to retry after adding the secret.",
-                        workflow_files.replace("\n", ", "),
-                    )
-                    return False
-
-            # Guard: nothing staged → skip (agent found nothing to update).
-            staged = subprocess.run(["git", "diff", "--cached", "--quiet"])
-            if staged.returncode == 0:
-                log.info(
-                    "  commit_after: stash popped but staging area empty — skipping commit for %s",
-                    agent_def.agent,
-                )
-                return True
-
-            _phase_prefix = {
-                "01_product_docs": "docs",
-                "02_design": "docs",
-                "03_execute": "feat",
-            }.get(agent_def.phase, "chore")
-            msg = f"{_phase_prefix}: {agent_def.label_key} changes for issue #{work_item.number}"
-            subprocess.run(["git", "commit", "-m", msg], check=True)
-
-            # Use AI_AGILE_BOT_TOKEN for the push when workflow files are staged,
-            # since GITHUB_TOKEN lacks the workflow scope required by GitHub.
-            push_token = bot_token if (workflow_files and bot_token) else None
-            if push_token:
-                # Pass the token via GIT_CONFIG env vars — never embedded in
-                # a URL (which would appear in `git remote -v`, `ps`, CI logs).
-                _push_encoded = base64.b64encode(
-                    f"x-access-token:{push_token}".encode()
-                ).decode()
-                push_env = {
-                    **os.environ,
-                    "GIT_CONFIG_COUNT": "1",
-                    "GIT_CONFIG_KEY_0": "http.https://github.com/.extraHeader",
-                    "GIT_CONFIG_VALUE_0": f"Authorization: Basic {_push_encoded}",
-                }
-                subprocess.run(["git", "push", "origin", branch], check=True, env=push_env)
-            else:
-                subprocess.run(["git", "push", "origin", branch], check=True)
-
-            log.info("  commit_after: pushed commit to %s", branch)
-            return True
-
-        finally:
-            # Always return to the original branch so the orchestrator's
-            # subsequent git operations (if any) run in the expected state.
-            try:
-                subprocess.run(["git", "checkout", current], check=False)
-            except Exception:
-                pass
-            # Drop any stash entry that is still on the stack (i.e. if
-            # git stash pop was never reached due to an earlier exception).
-            if stashed:
-                try:
-                    subprocess.run(["git", "stash", "drop"], check=False)
-                except Exception:
-                    pass
-
-    except subprocess.CalledProcessError as exc:
-        log.error(
-            "  commit_after: git operation failed for %s on #%d: %s",
-            agent_def.agent, work_item.number, exc,
-        )
-        return False
-
-
-# ---------------------------------------------------------------------------
 # Core orchestration logic
 # ---------------------------------------------------------------------------
 
@@ -2723,11 +2504,11 @@ def process_work_item(
             _agent_file_path.read_text() if _agent_file_path.exists() else None
         )
 
-        # For commit_after agents working on an issue, check out the issue
-        # branch before invoking the agent so it reads accumulated state
-        # (e.g. docs committed by prd-docs-updater, code from a prior coder
-        # run). The branch is restored after the agent completes via the
-        # try/finally below. _run_commit_after handles the actual commit/push.
+        # For agents with commit_after, check out the issue branch before
+        # invoking the agent so it reads accumulated state (e.g. docs committed
+        # by prd-docs-updater, code from a prior coder run). The branch is
+        # restored after the agent completes. commit-agent-work.sh handles the
+        # actual staging, commit, and push.
         _pre_agent_branch: str = ""
         if not dry_run and agent_def.commit_after and work_item.kind == "issue":
             try:
@@ -2864,24 +2645,79 @@ def process_work_item(
                 _restore_pre_agent_branch(_pre_agent_branch)
                 break
 
-            # commit_after: stage + commit + push the agent's file changes to
-            # the issue branch before marking :complete. If git ops fail, the
-            # step is marked :failed instead so the next run retries cleanly.
-            if final_status == STATUS_COMPLETE and agent_def.commit_after:
-                if not _run_commit_after(agent_def, work_item):
-                    _apply_failed(
-                        gh, agent_def, work_item, result,
-                        reason=(
-                            "_The agent completed successfully (exit 0, sentinel present) but the "
-                            "orchestrator's post-run `commit_after` git operations failed — "
-                            "stash, checkout, commit, or push to the issue branch. "
-                            "Check the orchestrator CI log for the specific git error. "
-                            "Remove the failed label to retry._"
-                        ),
+            # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
+            # The script stages, commits, and pushes agent-written files to the issue branch.
+            # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
+            if final_status == STATUS_COMPLETE and agent_def.commit_after and work_item.kind == "issue":
+                _commit_script = SUBMODULE_ROOT / ".github/scripts/commit-agent-work.sh"
+                _commit_env = {
+                    **os.environ,
+                    "AGENT_NAME": agent_def.agent,
+                    "ISSUE_NUMBER": str(work_item.number),
+                }
+                log.info(
+                    "  commit-after: invoking commit-agent-work.sh for %s on #%d",
+                    agent_def.agent, work_item.number,
+                )
+                _commit_ok = True
+                _commit_fail_reason = ""
+                if not _commit_script.exists():
+                    log.error("  commit-after: commit-agent-work.sh not found at %s", _commit_script)
+                    _commit_ok = False
+                    _commit_fail_reason = (
+                        "_commit-agent-work.sh not found. Check that .github/scripts/commit-agent-work.sh "
+                        "exists on the orchestrator branch. Remove the failed label to retry._"
                     )
+                else:
+                    try:
+                        _commit_result = subprocess.run(
+                            ["bash", str(_commit_script)],
+                            env=_commit_env,
+                            capture_output=True,
+                            text=True,
+                            timeout=300,
+                        )
+                    except subprocess.TimeoutExpired:
+                        log.error(
+                            "  commit-after: commit-agent-work.sh timed out for %s on #%d",
+                            agent_def.agent, work_item.number,
+                        )
+                        _commit_ok = False
+                        _commit_fail_reason = (
+                            "_commit-agent-work.sh timed out after 300s. "
+                            "Remove the failed label to retry._"
+                        )
+                    except FileNotFoundError:
+                        log.error("  commit-after: bash not found in PATH")
+                        _commit_ok = False
+                        _commit_fail_reason = (
+                            "_bash not found in PATH; commit-agent-work.sh could not run. "
+                            "Remove the failed label to retry._"
+                        )
+                    else:
+                        if _commit_result.returncode != 0:
+                            _failure_output = (_commit_result.stderr or _commit_result.stdout)[:2000]
+                            log.error(
+                                "  commit-after: commit-agent-work.sh exited %d for %s on #%d\n%s",
+                                _commit_result.returncode, agent_def.agent, work_item.number,
+                                _failure_output,
+                            )
+                            _commit_ok = False
+                            _commit_fail_reason = (
+                                "_The agent completed successfully but commit-agent-work.sh failed. "
+                                "Check the orchestrator CI log for the specific error. "
+                                "Remove the failed label to retry._"
+                            )
+                        else:
+                            log.info(
+                                "  commit-after: commit-agent-work.sh completed for %s on #%d",
+                                agent_def.agent, work_item.number,
+                            )
+                if not _commit_ok:
+                    _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
                     final_status = STATUS_FAILED
                     log.error(
-                        "  FAILED  %-38s  commit_after git ops failed on #%d",
+                        "  FAILED  %-38s  commit-after failed on #%d",
                         agent_def.agent, work_item.number,
                     )
                     _restore_pre_agent_branch(_pre_agent_branch)
@@ -3271,9 +3107,32 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Set http.extraHeader globally so all git operations in this process
-    # authenticate with GITHUB_TOKEN (contents:write scope).
-    _configure_git_auth()
+    # Set GIT_CONFIG env vars so that git fetch / git checkout operations in
+    # this process authenticate with GITHUB_TOKEN (contents:write scope).
+    # The token is passed via env vars, never embedded in a URL, keeping it
+    # out of `git remote -v`, `ps`, and CI logs.
+    # NOTE: GITHUB_TOKEN cannot push .github/workflows/ files; commit-agent-work.sh
+    # reads AI_AGILE_BOT_TOKEN when workflow-scope pushes are needed.
+    _git_auth_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if _git_auth_token:
+        try:
+            _git_auth_encoded = base64.b64encode(
+                f"x-access-token:{_git_auth_token}".encode()
+            ).decode()
+            subprocess.run(
+                ["git", "config", "--local", "--unset-all",
+                 "http.https://github.com/.extraHeader"],
+                check=False,
+                capture_output=True,
+            )
+            os.environ["GIT_CONFIG_COUNT"] = "1"
+            os.environ["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
+            os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_git_auth_encoded}"
+            log.info("git auth: GIT_CONFIG env vars set (contents:write scope)")
+        except Exception as exc:
+            log.warning("git auth: could not set GIT_CONFIG env vars — %s", exc)
+    else:
+        log.warning("git auth: no GITHUB_TOKEN found — git fetch/checkout may fail")
 
     agents, default_extra_tools = load_pipeline(args.pipeline)
 

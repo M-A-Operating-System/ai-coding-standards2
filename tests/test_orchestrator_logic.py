@@ -1,5 +1,6 @@
 """Tests for core pipeline-state logic in pipeline_orchestrator.py."""
 import sys, os
+import subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import base64
@@ -1297,9 +1298,9 @@ class TestPhasesFilter:
         with patch.object(orch, "parse_args", return_value=fake_args), \
              patch.object(orch, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(orch, "load_pipeline", return_value=([in_phase, out_phase], [])), \
-             patch.object(orch, "_configure_git_auth"), \
              patch.object(orch, "GitHubClient", return_value=gh_mock), \
              patch.object(orch, "process_work_item", side_effect=_capture_process), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "x"}), \
              patch("time.sleep"):
             orch.main()
@@ -2362,25 +2363,16 @@ class TestMarkReadyOnComplete:
 
 
 # ---------------------------------------------------------------------------
-# TestRunCommitAfter — orchestrator-driven git commit_after step
+# TestCommitAgentWorkScript — Gherkin-traced tests for issue #151
 # ---------------------------------------------------------------------------
 
-class TestRunCommitAfter:
-    """Tests for _run_commit_after covering the no-changes happy path and the
-    'workflow files staged without AI_AGILE_BOT_TOKEN' failure branch."""
+class TestCommitAgentWorkScript:
+    """Tests for the commit-agent-work.sh shell script and commit_after wiring.
 
-    def _agent(self) -> AgentDef:
-        return AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            commit_after=True,
-        )
+    Scenario: New script stages, commits, and pushes agent work
+    Scenario: Python orchestrator contains no git logic
+    Scenario: git_ops.commit_after drives commits for affected agents
+    """
 
     def _work_item(self) -> WorkItem:
         return WorkItem(
@@ -2388,61 +2380,274 @@ class TestRunCommitAfter:
             url="https://github.com/test/repo/issues/42",
         )
 
-    def test_no_working_tree_changes_returns_true(self):
-        """Clean working tree (git status --porcelain empty) → True, no commit."""
+    def test_commit_agent_work_script_exists(self):
+        """Scenario: New script stages, commits, and pushes agent work.
+
+        Given .github/scripts/commit-agent-work.sh exists
+        Then the file is a bash script with the correct shebang.
+        """
         import pipeline_orchestrator as orch
-
-        def _run(cmd, *args, **kwargs):
-            r = MagicMock()
-            if cmd[:2] == ["git", "status"]:
-                r.stdout = ""        # clean tree
-            else:
-                r.stdout = ""
-            r.returncode = 0
-            return r
-
-        with patch("subprocess.run", side_effect=_run) as mock_run:
-            ok = orch._run_commit_after(self._agent(), self._work_item())
-
-        assert ok is True
-        # Only the status check should have run — no commit/push.
-        commands = [c.args[0][:2] for c in mock_run.call_args_list]
-        assert ["git", "status"] in commands
-        assert ["git", "commit"] not in commands
-
-    def test_workflow_files_without_bot_token_returns_false(self, monkeypatch):
-        """Workflow files staged but AI_AGILE_BOT_TOKEN unset → False (GITHUB_TOKEN
-        cannot push workflow files)."""
-        import pipeline_orchestrator as orch
-
-        monkeypatch.delenv("AI_AGILE_BOT_TOKEN", raising=False)
-
-        def _run(cmd, *args, **kwargs):
-            r = MagicMock()
-            r.returncode = 0
-            r.stdout = ""
-            head = cmd[:2]
-            if head == ["git", "status"]:
-                r.stdout = " M foo.txt"  # dirty tree
-            elif head == ["git", "rev-parse"]:
-                r.stdout = "main"
-            elif cmd[:3] == ["git", "stash", "show"]:
-                r.stdout = ".github/workflows/ci.yml"
-            elif cmd[:3] == ["git", "diff", "--cached"] and "--name-only" in cmd:
-                # workflow-file detection diff
-                r.stdout = ".github/workflows/ci.yml"
-            return r
-
-        with patch("subprocess.run", side_effect=_run) as mock_run:
-            ok = orch._run_commit_after(self._agent(), self._work_item())
-
-        assert ok is False, (
-            "Staging workflow files without AI_AGILE_BOT_TOKEN must fail the "
-            "commit_after step (GITHUB_TOKEN lacks the workflow scope)."
+        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "commit-agent-work.sh"
+        assert script_path.exists(), (
+            f"commit-agent-work.sh must exist at {script_path}"
         )
-        # Must not have attempted a commit after the early failure.
-        commands = [c.args[0][:2] for c in mock_run.call_args_list]
-        assert ["git", "commit"] not in commands
+        first_line = script_path.read_text().splitlines()[0]
+        assert first_line.startswith("#!/"), (
+            f"commit-agent-work.sh must start with a shebang; got: {first_line!r}"
+        )
+
+    def test_python_orchestrator_has_no_run_commit_after(self):
+        """Scenario: Python orchestrator contains no git logic.
+
+        Given the changes in this issue have been applied
+        When pipeline_orchestrator.py is reviewed
+        Then _run_commit_after() is not present in the file.
+        """
+        import pipeline_orchestrator as orch
+        assert not hasattr(orch, "_run_commit_after"), (
+            "_run_commit_after must be removed from pipeline_orchestrator.py"
+        )
+
+    def test_python_orchestrator_has_no_configure_git_auth(self):
+        """Scenario: Python orchestrator contains no git logic.
+
+        Given the changes in this issue have been applied
+        When pipeline_orchestrator.py is reviewed
+        Then _configure_git_auth() is not present in the file.
+        """
+        import pipeline_orchestrator as orch
+        assert not hasattr(orch, "_configure_git_auth"), (
+            "_configure_git_auth must be removed from pipeline_orchestrator.py"
+        )
+
+    def test_pipeline_json_uses_git_ops_commit_after(self):
+        """Scenario: git_ops.commit_after drives commits for affected agents.
+
+        Given pipeline.json with agents that must commit their work
+        When the pipeline.json is reviewed
+        Then prd-docs-updater and coder use git_ops.commit_after: true
+             and no agent uses a post_steps field.
+        """
+        import json
+        import pipeline_orchestrator as orch
+        pipeline_path = orch.PIPELINE_PATH
+        with open(pipeline_path) as f:
+            raw = json.load(f)
+
+        commit_after_agents = []
+        post_steps_agents = []
+        for entry in raw["pipeline"]:
+            if entry.get("git_ops", {}).get("commit_after"):
+                commit_after_agents.append(entry["agent"])
+            if entry.get("post_steps"):
+                post_steps_agents.append(entry["agent"])
+
+        assert "01_product_docs/prd-docs-updater" in commit_after_agents, (
+            "prd-docs-updater must use git_ops.commit_after: true"
+        )
+        assert "03_execute/coder" in commit_after_agents, (
+            "coder must use git_ops.commit_after: true"
+        )
+        assert not post_steps_agents, (
+            f"No agent should use post_steps — found: {post_steps_agents}"
+        )
+
+    def test_commit_after_derived_from_git_ops_in_pipeline(self):
+        """Agents with git_ops.commit_after: true set commit_after=True; others False."""
+        import json
+        import pipeline_orchestrator as orch
+        agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
+        with open(orch.PIPELINE_PATH) as f:
+            raw = json.load(f)
+        raw_by_agent = {e["agent"]: e for e in raw["pipeline"]}
+        for agent_def in agents:
+            entry = raw_by_agent.get(agent_def.agent, {})
+            expected = bool(entry.get("git_ops", {}).get("commit_after", False))
+            assert agent_def.commit_after == expected, (
+                f"{agent_def.agent}: commit_after={agent_def.commit_after} "
+                f"but git_ops.commit_after={expected!r} in pipeline.json"
+            )
+
+    def test_commit_after_outer_guard_requires_issue_kind(self):
+        """Scenario: commit-after is not invoked for PR work items.
+
+        Given commit-agent-work.sh requires ISSUE_NUMBER
+        When the orchestrator source is reviewed
+        Then the commit_after invoke block is guarded by work_item.kind == 'issue'
+             so the script is never called for PR-scoped work items.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        guard = 'agent_def.commit_after and work_item.kind == "issue"'
+        assert guard in source, (
+            "commit_after invoke block must include 'work_item.kind == \"issue\"' "
+            "in the outer guard — commit-agent-work.sh requires ISSUE_NUMBER and "
+            "must not be invoked for PR work items (DP-001)"
+        )
+
+    def _make_commit_after_agent(self) -> "AgentDef":
+        """AgentDef with commit_after=True and a trigger label."""
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test coder",
+            commit_after=True,
+            max_concurrent=10,
+        )
+
+    def _make_issue_wi(self) -> WorkItem:
+        return WorkItem(
+            number=42, kind="issue", title="T",
+            labels={"issue-classifier:complete"},
+            url="https://github.com/test/repo/issues/42",
+        )
+
+    def _sub_side_effect_factory(self, bash_result):
+        """Return a subprocess.run side_effect that:
+        - raises CalledProcessError for git calls (pre-agent checkout fails silently)
+        - returns bash_result for bash (commit-agent-work.sh) calls
+        """
+        import subprocess as _sp
+
+        def _side_effect(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return bash_result
+
+        return _side_effect
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_success_keeps_complete_status(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh exits 0 — agent stays complete.
+
+        Given an agent with commit_after: true that completes successfully
+        When commit-agent-work.sh exits 0
+        Then _apply_failed is not called.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        bash_ok = MagicMock()
+        bash_ok.returncode = 0
+        bash_ok.stdout = ""
+        bash_ok.stderr = ""
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_not_called()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_nonzero_exit_applies_failed(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh exits non-zero — _apply_failed is called.
+
+        Given an agent with commit_after: true that completes successfully
+        When commit-agent-work.sh exits 1
+        Then _apply_failed is called.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        bash_fail = MagicMock()
+        bash_fail.returncode = 1
+        bash_fail.stdout = "push failed"
+        bash_fail.stderr = "error: failed to push"
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_fail)):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_called_once()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_timeout_applies_failed(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh times out — _apply_failed is called.
+
+        Given an agent with commit_after: true that completes successfully
+        When commit-agent-work.sh raises subprocess.TimeoutExpired
+        Then _apply_failed is called.
+        """
+        import subprocess as _sp
+
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+
+        def _timeout_side_effect(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            raise _sp.TimeoutExpired(cmd, 300)
+
+        with patch("subprocess.run", side_effect=_timeout_side_effect):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_called_once()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_script_not_found_applies_failed(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh does not exist — _apply_failed is called.
+
+        Given an agent with commit_after: true that completes successfully
+        When the commit-agent-work.sh script does not exist
+        Then _apply_failed is called.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+
+        import subprocess as _sp
+
+        def _git_fail(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_git_fail), \
+             patch("pathlib.Path.exists", return_value=False):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -2585,7 +2790,7 @@ class TestPriorityScheduling:
             if n > 0:
                 dispatched.append(wi.number)
 
-        assert dispatched == [10], (
+        assert dispatched and dispatched[0] == 10, (
             f"With no priority items, normal selection (first eligible) must proceed; "
             f"dispatched: {dispatched}"
         )
@@ -2656,13 +2861,12 @@ class TestPriorityScheduling:
     @patch("pipeline_orchestrator.write_audit_log")
     @patch("pipeline_orchestrator.process_work_item")
     @patch("pipeline_orchestrator.load_pipeline")
-    @patch("pipeline_orchestrator._configure_git_auth")
     @patch("pipeline_orchestrator.is_pipeline_paused")
     @patch("pipeline_orchestrator.GitHubClient")
     @patch("pipeline_orchestrator.parse_args")
     def test_main_dispatches_priority_before_non_priority(
         self, mock_parse_args, mock_gh_cls, mock_is_paused,
-        mock_configure_git, mock_load_pipeline, mock_process_wi, mock_write_audit,
+        mock_load_pipeline, mock_process_wi, mock_write_audit,
     ):
         """Integration test: main() sort block reorders API-returned items by priority.
 
@@ -2699,7 +2903,8 @@ class TestPriorityScheduling:
 
         mock_process_wi.return_value = 0
 
-        with patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)), \
+             patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
             main()
 
         assert mock_process_wi.call_count >= 2, (

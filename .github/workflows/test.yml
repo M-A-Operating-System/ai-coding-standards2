@@ -25,3 +25,5 @@ jobs:
         run: pip install pytest requests pyyaml
       - name: Run tests
         run: pytest tests/ -v
+      - name: Run integration tests
+        run: pytest tests/integration/ -v

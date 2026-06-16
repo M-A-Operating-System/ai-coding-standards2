@@ -178,7 +178,7 @@ class TestMainStopMarkerBehavior:
              patch.object(pipeline_orchestrator, "load_pipeline", side_effect=fake_load), \
              patch.object(pipeline_orchestrator, "write_audit_log"), \
              patch.object(pipeline_orchestrator, "GitHubClient") as MockGH, \
-             patch.object(pipeline_orchestrator, "_configure_git_auth"), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             MockGH.return_value.list_open_issues.return_value = []
             pipeline_orchestrator.main()
@@ -257,9 +257,9 @@ class TestMainStopMarkerBehavior:
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(pipeline_orchestrator, "is_pipeline_stopped", side_effect=fake_is_stopped), \
              patch.object(pipeline_orchestrator, "load_pipeline", return_value=([], [])), \
-             patch.object(pipeline_orchestrator, "_configure_git_auth"), \
              patch.object(pipeline_orchestrator, "GitHubClient", return_value=gh_mock), \
              patch.object(pipeline_orchestrator, "process_work_item", side_effect=fake_process), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             pipeline_orchestrator.main()
 
