@@ -25,7 +25,7 @@ The orchestrator owns exactly these responsibilities:
 | Gate promotion | When a human applies a gate label, remove `:review` and apply `:complete` |
 | PR ready-for-review | Call `gh pr ready` when an agent with `git_ops.mark_ready_on_complete: true` completes — agents never do this themselves |
 | Git commit + push | Stage, commit, and push agent file changes to `issue-{N}` after any `commit_after: true` agent signals `complete` |
-| Audit log emission | Append one JSONL event per transition to the `ai-agile/log` branch |
+| Audit log emission | Emit one JSONL event per transition to stdout |
 
 It owns none of these:
 
@@ -86,7 +86,7 @@ default).
 | `{agent}:review` → `{agent}:complete` transition | GitHub REST API | When human applies the gate label (gate promotion) |
 | Gate prompt comment | GitHub Issues API | After a non-gated agent completes and the next step requires a gate label |
 | `:failed` recovery comment | GitHub Issues API | When an agent crashes; names the label to remove and the label to skip |
-| Audit log JSONL event | Append to `ai-agile/log` branch | Once per status transition, agent run, or gate approval |
+| Audit log JSONL event | Print to stdout | Once per status transition, agent run, or gate approval |
 | Git commit + push | `git` subprocess | After an agent signals `complete` (`git_ops.commit_after: true`) |
 | PR push (existing branch, Mode B) | `git` subprocess | After a code-writing agent addresses review feedback |
 
@@ -595,12 +595,12 @@ AND {agent}:complete ∉ labels:
 
 ## Audit log emission
 
-Every status transition emits one event to the `ai-agile/log` orphan
-branch (P-3). Events are written as JSONL appended to
-`events/{YYYY}/{MM}/{DD}.jsonl` and batched into one commit per day.
+Every status transition emits one JSON line to stdout. GitHub Actions
+captures stdout natively; the run log is the persistent record. See
+[`08-audit-log.md`](08-audit-log.md) for the full schema and how to
+query the log.
 
-The orchestrator is the **only writer** to the audit log branch. Agents do
-not write to it. Events emitted by the orchestrator:
+Events emitted by the orchestrator:
 
 | Event type | Emitted when |
 |---|---|
@@ -613,12 +613,10 @@ not write to it. Events emitted by the orchestrator:
 | `lock.reclaimed` | Stale `:wip` was force-reclaimed |
 | `system.emergency_stop` | Stop marker detected at run start; orchestrator exited without invoking agents |
 
-Each event carries: `session_id`, `event`, `actor.kind` (human or agent),
-`actor.login`, `object.kind`, `object.number`, `agent`, `timestamp`,
-and `outcome.detail` (bounded length, redacted of secrets). For
-`agent.invoked` and terminal events, `outcome.detail` includes
-`mode=agent` or `mode=script` so operators can confirm which invocation
-mode ran for any given step.
+Each event carries at minimum: `ts` (ISO-8601), `event`, `agent`,
+`issue`, and `status`. For `agent.invoked` and terminal events,
+additional fields may include `mode` (`agent` or `script`) so
+operators can confirm which invocation mode ran for any given step.
 
 ---
 
@@ -663,7 +661,7 @@ on:
         default: false
 
 permissions:
-  contents: write          # audit log branch appends
+  contents: write          # git commit + push for commit_after agents
   issues: write
   pull-requests: write
 
