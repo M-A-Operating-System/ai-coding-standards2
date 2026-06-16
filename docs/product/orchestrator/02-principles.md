@@ -74,27 +74,17 @@ off the moment a fact would otherwise have drifted across two documents.
 
 ### P-3 — Immutable audit log branch
 
-**Statement.** Every event across every session is appended to a protected
+**Status: retired.** Superseded by [ADR-0001](../../adr/0001-retire-p3-audit-log-branch.md).
+
+~~**Statement.** Every event across every session is appended to a protected
 branch (`ai-agile/log`). The branch is orphan, force-push and delete
 protected, and append-only. It is the cross-session, cross-issue timeline
-of everything that happened.
+of everything that happened.~~
 
-**Consequences.**
-
-- The orchestrator emits one event per status transition, agent run, gate
-  approval, claim, and session lifecycle change.
-- Events are written as JSONL, one file per UTC day:
-  `events/YYYY/MM/DD.jsonl`.
-- One commit per day batches the day's events; the per-event timestamp
-  is in the JSON, the commit signature covers the day's batch.
-- Replay (reconstruct a session's history) is `grep` on JSONL plus the
-  session ID.
-- The live state (P-1) and the historical timeline (P-3) are
-  complementary, not redundant — issues and PRs answer "what's the state
-  now?", the log branch answers "what happened?".
-
-**Tradeoff.** A second writeable Git target per agent run. Mitigated by
-batching and by the orchestrator (not agents) being the only writer.
+The orchestrator now emits one structured JSON line per audit event to stdout.
+GitHub Actions captures stdout natively; the workflow run log is the persistent
+audit record. See [`08-audit-log.md`](08-audit-log.md) and ADR-0001 for the
+current mechanism.
 
 ### P-4 — `:wip` is the mutex
 

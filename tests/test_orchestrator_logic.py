@@ -2810,8 +2810,9 @@ class TestPriorityScheduling:
     @patch("pipeline_orchestrator.is_pipeline_paused")
     @patch("pipeline_orchestrator.GitHubClient")
     @patch("pipeline_orchestrator.parse_args")
+    @patch("pipeline_orchestrator._emit_audit_event")
     def test_main_dispatches_priority_before_non_priority(
-        self, mock_parse_args, mock_gh_cls, mock_is_paused,
+        self, mock_emit_audit, mock_parse_args, mock_gh_cls, mock_is_paused,
         mock_load_pipeline, mock_process_wi,
     ):
         """Integration test: main() sort block reorders API-returned items by priority.

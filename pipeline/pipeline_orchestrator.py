@@ -588,10 +588,10 @@ def _make_audit_event(
         "session_id": session_id,
         "issue": obj["id"] if obj and obj.get("kind") == "issue" else None,
         "status": outcome_status,
+        "detail": outcome_detail,
         "object": obj,
         "agent": agent,
         "actor": {"kind": "orchestrator", "id": "github-actions", "human": None},
-        "outcome": {"status": outcome_status, "detail": outcome_detail},
         "ref": None,
         "duration_ms": duration_ms,
     }

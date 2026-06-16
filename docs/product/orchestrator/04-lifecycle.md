@@ -117,7 +117,7 @@ For each work item it:
 A halted pipeline (`review`, `blocked`, `failed`) resumes the moment a
 human removes the offending label. There is no separate "retry" button.
 
-Every transition emits one event to the audit log branch
+Every transition emits one JSON event to stdout
 (see [`08-audit-log.md`](08-audit-log.md)).
 
 In the **Execute** phase the `create-pr` script step opens a draft PR

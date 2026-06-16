@@ -41,8 +41,19 @@ Every line is one JSON object:
 | `ts` | ISO-8601 string | Timestamp of the event |
 | `event` | string | Event type (see below) |
 | `agent` | string | Agent name from `pipeline.json` |
-| `issue` | number | Work item number |
-| `status` | string | Resulting status (`complete`, `review`, `blocked`, `failed`) |
+| `issue` | number or null | Work item number (null for PR work items and global events) |
+| `status` | string | Resulting status (`complete`, `review`, `blocked`, `failed`, or internal state) |
+
+**Extended fields.** Emitted alongside required fields; may be null:
+
+| Field | Type | Description |
+|---|---|---|
+| `detail` | string or null | Human-readable detail for the event (stop reason, exit code, mode, etc.) |
+| `session_id` | string | Deterministic session identifier for this (object, agent) pair |
+| `object` | object or null | `{"kind": "issue"|"pr", "id": number, "repo": "owner/repo"}` |
+| `actor` | object | Always `{"kind": "orchestrator", "id": "github-actions", "human": null}` |
+| `ref` | string or null | Reserved; always null in current implementation |
+| `duration_ms` | integer or null | Wall-clock duration of the agent run in milliseconds |
 
 ---
 
