@@ -5,6 +5,7 @@ on:
     paths:
       - 'pipeline/pipeline.json'
       - 'pipeline/generators/generate_phase_mermaid.py'
+  workflow_dispatch:
 
 permissions:
   contents: write
