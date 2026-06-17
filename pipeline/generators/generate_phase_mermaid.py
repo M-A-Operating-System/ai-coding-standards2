@@ -85,6 +85,8 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
         if entry.get("human_gate_after"):
             gid = _gate_node_id(entry["agent"])
             gate_label = _safe_label(entry.get("human_gate_label", "human-gate"))
+            if entry.get("auto_approve_on_complete"):
+                gate_label += " (auto)"
             lines.append(f'    {gid}{{"{gate_label}"}}')
 
     # Edges: agent → gate
@@ -103,6 +105,19 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
                 lines.append(f"    {_gate_node_id(dep)} --> {aid}")
             else:
                 lines.append(f"    {_node_id(dep)} --> {aid}")
+
+    # Review loop: dashed feedback arrows (REQUEST_CHANGES → re-invoke target)
+    for entry in entries:
+        review_loop = entry.get("review_loop")
+        if not review_loop:
+            continue
+        re_invoke = review_loop.get("re_invoke")
+        max_cycles = review_loop.get("max_cycles")
+        if re_invoke and re_invoke in phase_entry_map:
+            source_id = _node_id(entry["agent"])
+            target_id = _node_id(re_invoke)
+            cycle_text = f" ≤{max_cycles}" if max_cycles else ""
+            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
 
     return "\n".join(lines) + "\n"
 

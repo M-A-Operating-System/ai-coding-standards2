@@ -238,6 +238,101 @@ def test_build_chart_duplicate_node_ids_raises():
     assert "n_ph_x__foo_bar" in str(exc_info.value)
 
 
+# --- build_chart: review_loop ---
+
+_LOOP_ENTRIES = [
+    {
+        "agent": "ph_c/worker",
+        "phase": "ph_c",
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+    {
+        "agent": "ph_c/reviewer",
+        "phase": "ph_c",
+        "dependencies": ["ph_c/worker"],
+        "human_gate_after": False,
+        "review_loop": {
+            "re_invoke": "ph_c/worker",
+            "max_cycles": 3,
+        },
+    },
+]
+
+_AUTO_ENTRIES = [
+    {
+        "agent": "ph_d/gated",
+        "phase": "ph_d",
+        "dependencies": [],
+        "human_gate_after": True,
+        "human_gate_label": "gated:approved",
+        "auto_approve_on_complete": True,
+    },
+]
+
+
+def _has_dashed_edge(chart: str, src: str, dst: str) -> bool:
+    """Return True if there is any dashed arrow from src to dst."""
+    for line in chart.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(src) and ".->" in stripped and dst in stripped:
+            return True
+    return False
+
+
+def test_build_chart_review_loop_dashed_edge():
+    chart = build_chart("ph_c", _LOOP_ENTRIES)
+    assert _has_dashed_edge(chart, "n_ph_c__reviewer", "n_ph_c__worker")
+
+
+def test_build_chart_review_loop_max_cycles_label():
+    chart = build_chart("ph_c", _LOOP_ENTRIES)
+    assert "REQUEST_CHANGES ≤3" in chart
+
+
+def test_build_chart_no_review_loop_no_dashed_edge():
+    chart = build_chart("ph_a", _ENTRIES)
+    assert ".->" not in chart
+
+
+def test_build_chart_review_loop_cross_phase_not_rendered():
+    # re_invoke targets outside the current phase should produce no dashed edge.
+    entries = [
+        {
+            "agent": "ph_e/reviewer",
+            "phase": "ph_e",
+            "dependencies": [],
+            "human_gate_after": False,
+            "review_loop": {
+                "re_invoke": "other_phase/worker",
+                "max_cycles": 2,
+            },
+        },
+        {
+            "agent": "other_phase/worker",
+            "phase": "other_phase",
+            "dependencies": [],
+            "human_gate_after": False,
+        },
+    ]
+    chart = build_chart("ph_e", entries)
+    assert ".->" not in chart
+
+
+# --- build_chart: auto_approve_on_complete ---
+
+def test_build_chart_auto_approve_annotates_gate():
+    chart = build_chart("ph_d", _AUTO_ENTRIES)
+    line = _node_line(chart, "gate__n_ph_d__gated")
+    assert line is not None, "gate node missing"
+    assert "(auto)" in line
+
+
+def test_build_chart_no_auto_approve_no_annotation():
+    chart = build_chart("ph_a", _ENTRIES)
+    assert "(auto)" not in chart
+
+
 # --- _safe_label ---
 
 def test_safe_label_replaces_double_quotes():
