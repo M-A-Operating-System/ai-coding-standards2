@@ -13,6 +13,7 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 build_chart = _mod.build_chart
+build_lifecycle_chart = _mod.build_lifecycle_chart
 main = _mod.main
 load_pipeline = _mod.load_pipeline
 _safe_label = _mod._safe_label
@@ -84,8 +85,10 @@ def patched(tmp_path, monkeypatch):
     pipeline_file.parent.mkdir(parents=True)
     pipeline_file.write_text(json.dumps({"pipeline": _ENTRIES}), encoding="utf-8")
     output_dir = tmp_path / "docs" / "product" / "agile" / "generated" / "phases"
+    lifecycle_file = tmp_path / "docs" / "product" / "agile" / "generated" / "pipeline.mmd"
     monkeypatch.setattr(_mod, "PIPELINE_JSON", pipeline_file)
     monkeypatch.setattr(_mod, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(_mod, "LIFECYCLE_FILE", lifecycle_file)
     monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
     return output_dir
 
@@ -433,3 +436,154 @@ def test_load_pipeline_malformed_json_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(_mod, "PIPELINE_JSON", pipeline_file)
     with pytest.raises(json.JSONDecodeError):
         load_pipeline()
+
+
+# --- build_lifecycle_chart ---
+
+# Shared fixture entries for lifecycle tests.
+_LC_ENTRIES = [
+    {
+        "agent": "ph_z/entry-agent",
+        "phase": "ph_z",
+        "trigger": {"event": "issue.opened"},
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+    {
+        "agent": "ph_z/gated-agent",
+        "phase": "ph_z",
+        "trigger": {"label": "entry-agent:complete"},
+        "dependencies": ["ph_z/entry-agent"],
+        "human_gate_after": True,
+        "human_gate_label": "gated-agent:approved",
+        "auto_approve_on_complete": False,
+    },
+    {
+        "agent": "ph_z/looper",
+        "phase": "ph_z",
+        "trigger": {"label": "gated-agent:complete"},
+        "dependencies": ["ph_z/gated-agent"],
+        "human_gate_after": False,
+        "review_loop": {"re_invoke": "ph_z/entry-agent", "max_cycles": 2},
+    },
+    {
+        "agent": "ph_z/on-demand",
+        "phase": "ph_z",
+        "trigger": {"label": "on-demand:requested"},
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+    {
+        "agent": "ph_z/auto-gated",
+        "phase": "ph_z",
+        "trigger": {"label": "on-demand:complete"},
+        "dependencies": ["ph_z/on-demand"],
+        "human_gate_after": True,
+        "human_gate_label": "auto-gated:approved",
+        "auto_approve_on_complete": True,
+    },
+]
+
+
+def test_lifecycle_starts_with_flowchart_td():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert chart.startswith("flowchart TD\n")
+
+
+def test_lifecycle_entry_node_for_issue_opened():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert 'issue.opened' in chart
+
+
+def test_lifecycle_entry_node_for_requested_trigger():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert 'on-demand:requested' in chart
+
+
+def test_lifecycle_entry_to_agent_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "entry_n_ph_z__entry_agent", "n_ph_z__entry_agent")
+
+
+def test_lifecycle_on_demand_entry_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "entry_n_ph_z__on_demand", "n_ph_z__on_demand")
+
+
+def test_lifecycle_dependency_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "n_ph_z__entry_agent", "n_ph_z__gated_agent")
+
+
+def test_lifecycle_dependency_routes_through_gate():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    # looper depends on gated-agent which has a gate → edge goes gate → looper
+    assert _has_edge(chart, "gate__n_ph_z__gated_agent", "n_ph_z__looper")
+
+
+def test_lifecycle_agent_to_gate_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "n_ph_z__gated_agent", "gate__n_ph_z__gated_agent")
+
+
+def test_lifecycle_auto_gate_annotated():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    line = _node_line(chart, "gate__n_ph_z__auto_gated")
+    assert line is not None
+    assert "· auto" in line
+
+
+def test_lifecycle_review_loop_dashed_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_dashed_edge(chart, "n_ph_z__looper", "n_ph_z__entry_agent")
+
+
+def test_lifecycle_review_loop_cycle_count_in_label():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert "≤2" in chart
+
+
+def test_lifecycle_hand_curated_loop_absent_when_agent_missing():
+    # _LIFECYCLE_LOOPS refers to 03_execute/ci-gate — not in _LC_ENTRIES
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    # No spurious edges from the hand-curated map should appear.
+    assert "ci_gate" not in chart
+
+
+def test_lifecycle_hand_curated_terminal_absent_when_agent_missing():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    # Terminals require their source agent to be present.
+    assert "term_rejected" not in chart
+
+
+def test_lifecycle_classDef_term_present():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert "classDef term" in chart
+
+
+# --- main: lifecycle file ---
+
+def test_main_writes_lifecycle_file(patched):
+    lifecycle_file = _mod.LIFECYCLE_FILE
+    assert main([]) == 0
+    assert lifecycle_file.exists()
+
+
+def test_main_check_detects_stale_lifecycle(patched):
+    main([])
+    _mod.LIFECYCLE_FILE.write_text("hand-edited\n", encoding="utf-8")
+    assert main(["--check"]) != 0
+
+
+def test_main_check_fails_when_lifecycle_missing(patched):
+    # Write phase charts only (not lifecycle), then check should catch the gap.
+    main([])
+    _mod.LIFECYCLE_FILE.unlink()
+    assert main(["--check"]) != 0
+
+
+def test_main_check_leaves_lifecycle_unmodified(patched):
+    main([])
+    _mod.LIFECYCLE_FILE.write_text("hand-edited\n", encoding="utf-8")
+    main(["--check"])
+    assert _mod.LIFECYCLE_FILE.read_text(encoding="utf-8") == "hand-edited\n"
