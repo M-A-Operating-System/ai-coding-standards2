@@ -4,10 +4,12 @@ on:
     branches: [main]
     paths:
       - 'pipeline/pipeline_orchestrator.py'
+      - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
   pull_request:
     paths:
       - 'pipeline/pipeline_orchestrator.py'
+      - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
 permissions:
   contents: read
