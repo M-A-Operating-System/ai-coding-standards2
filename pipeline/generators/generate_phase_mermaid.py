@@ -21,8 +21,8 @@ LIFECYCLE_FILE = REPO_ROOT / "docs" / "product" / "agile" / "generated" / "pipel
 
 # ---------------------------------------------------------------------------
 # Hand-curated outcome branches not yet expressible as structured JSON fields.
-# Step 2 (GitHub issue #TODO) replaces these with a declarative `outcomes`
-# field per agent so the lifecycle chart generates without any hard-coding.
+# Issue #170 replaces these with a declarative `outcomes` field per agent so
+# the lifecycle chart generates entirely from pipeline.json without hard-coding.
 # ---------------------------------------------------------------------------
 
 # Extra labeled solid edges: agent_path → [(edge_label, "terminal:<key>")]
@@ -191,7 +191,7 @@ def build_lifecycle_chart(all_entries: list[dict]) -> str:
             gid = _gate_node_id(entry["agent"])
             gate_label = _safe_label(entry.get("human_gate_label", "human-gate"))
             if entry.get("auto_approve_on_complete"):
-                gate_label += " · auto"
+                gate_label += " (auto)"
             lines.append(f'    {gid}{{"{gate_label}"}}')
 
     # Terminal nodes — only declare terminals whose source agent is present

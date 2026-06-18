@@ -14,8 +14,8 @@ flowchart TD
     n_00_ondemand__sizer["sizer"]
     gate__n_01_product_docs__prd_writer{"prd-writer:approved"}
     gate__n_01_product_docs__prd_docs_updater{"prd-docs-updater:approved"}
-    gate__n_03_execute__merge_conflict{"merge-conflict:approved · auto"}
-    gate__n_00_ondemand__sizer{"sizer:review · auto"}
+    gate__n_03_execute__merge_conflict{"merge-conflict:approved (auto)"}
+    gate__n_00_ondemand__sizer{"sizer:review (auto)"}
     term_blocked(["blocked — human"]):::term
     term_cr_done(["review issue created"]):::term
     term_epic(["epic — sub-issues"]):::term

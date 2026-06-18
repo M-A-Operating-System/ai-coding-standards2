@@ -530,7 +530,7 @@ def test_lifecycle_auto_gate_annotated():
     chart = build_lifecycle_chart(_LC_ENTRIES)
     line = _node_line(chart, "gate__n_ph_z__auto_gated")
     assert line is not None
-    assert "· auto" in line
+    assert "(auto)" in line
 
 
 def test_lifecycle_review_loop_dashed_edge():

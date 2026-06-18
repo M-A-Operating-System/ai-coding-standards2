@@ -944,19 +944,20 @@ def _handle_review_loop(
     """Called when a review-loop agent completes with :review status.
 
     Normal path (skip_cycle_increment=False):
-      If cycles < max_cycles: clears the reviewer's :review and the target
-      agent's :complete, increments the review-cycle counter, and posts a
-      comment so the next orchestrator tick re-invokes the target.
-      If cycles >= max_cycles: leaves :review in place and posts a human-
+      If next_cycle <= max_cycles: clears the reviewer's :review and the target
+      agent's :complete, cleans up HUMAN_REVIEW_PENDING_LABEL if present, and
+      posts a comment so the next orchestrator tick re-invokes the target.
+      The review-cycle counter is NOT rotated here — it is set atomically with
+      :wip at dispatch time in process_work_item.
+      If next_cycle > max_cycles: leaves :review in place and posts a human-
       escalation comment explaining that the loop has reached its limit.
-      Cleans up HUMAN_REVIEW_PENDING_LABEL if present from a prior free cycle.
 
     Human-review free re-invoke (skip_cycle_increment=True):
-      Clears :review and target :complete (same as normal), but does NOT
-      advance the review-cycle counter. Instead, applies HUMAN_REVIEW_PENDING_LABEL
-      so the coder enters Mode B and the once-only guard is set for subsequent ticks.
-      The max_cycles limit is NOT checked — the free re-invoke is always allowed.
-      human_reviews (list of review dicts) is included in the loop comment when set.
+      Clears :review and target :complete (same as normal), but applies
+      HUMAN_REVIEW_PENDING_LABEL so the coder enters Mode B and the once-only
+      guard is set for subsequent ticks. The max_cycles limit is NOT checked —
+      the free re-invoke is always allowed. human_reviews (list of review dicts)
+      is included in the loop comment when set.
 
     Returns the updated in-memory label set.
     """
@@ -2325,6 +2326,14 @@ def process_work_item(
         )
         work_item.labels = labels
 
+    # Precompute the set of agents that are re_invoke targets of any review_loop.
+    # Used at dispatch time to know whether to set the review-cycle:N counter.
+    _reinvoke_targets: set[str] = {
+        ad.review_loop["re_invoke"]
+        for ad in pipeline_map.values()
+        if ad.review_loop and ad.review_loop.get("re_invoke")
+    }
+
     for agent_def in agents:
 
         # Skip if this agent doesn't operate on this kind of work item
@@ -2431,10 +2440,12 @@ def process_work_item(
                         "  could not remove :requested for %s on #%d: %s",
                         agent_def.agent, work_item.number, exc,
                     )
+            _wip_applied = False
             try:
                 gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 labels.add(agent_def.status_label(STATUS_WIP))
                 work_item.labels = labels
+                _wip_applied = True
                 # Increment only on successful label application — a failed
                 # add_label means no :wip was set so no slot is consumed.
                 if concurrency is not None:
@@ -2447,46 +2458,43 @@ def process_work_item(
                     "  could not apply :wip for %s on #%d: %s",
                     agent_def.agent, work_item.number, exc,
                 )
-            try:
-                # Use the agent's own deterministic session ID (not the
-                # orchestrator's timestamped ID) so the announcement matches
-                # what the agent prints in its own start comment.
-                _agent_sid = _compute_agent_session_id(agent_def, work_item, repo)
-                gh.post_comment(
-                    work_item.number,
-                    _build_opening_announcement(agent_def, work_item, _agent_sid),
-                )
-            except Exception as exc:
-                log.warning(
-                    "  could not post opening announcement for %s on #%d: %s",
-                    agent_def.agent, work_item.number, exc,
-                )
-            # Increment review-cycle:N at dispatch for review_loop re_invoke targets.
-            _is_reinvoke_target = any(
-                ad.review_loop and ad.review_loop.get("re_invoke") == agent_def.agent
-                for ad in pipeline_map.values()
-            )
-            if _is_reinvoke_target:
-                _rc_cur = _get_review_cycle(labels)
-                _rc_next = _rc_cur + 1
-                if _rc_cur > 0:
-                    try:
-                        gh.remove_label(work_item.number, f"review-cycle:{_rc_cur}")
-                        labels.discard(f"review-cycle:{_rc_cur}")
-                    except Exception as exc:
-                        log.debug(
-                            "could not remove review-cycle:%d on #%d: %s",
-                            _rc_cur, work_item.number, exc,
-                        )
+            if _wip_applied:
                 try:
-                    gh.add_label(work_item.number, f"review-cycle:{_rc_next}")
-                    labels.add(f"review-cycle:{_rc_next}")
-                    log.info("  CYCLE   %-38s  review-cycle:%d", agent_def.agent, _rc_next)
+                    # Use the agent's own deterministic session ID (not the
+                    # orchestrator's timestamped ID) so the announcement matches
+                    # what the agent prints in its own start comment.
+                    _agent_sid = _compute_agent_session_id(agent_def, work_item, repo)
+                    gh.post_comment(
+                        work_item.number,
+                        _build_opening_announcement(agent_def, work_item, _agent_sid),
+                    )
                 except Exception as exc:
                     log.warning(
-                        "could not apply review-cycle:%d on #%d: %s",
-                        _rc_next, work_item.number, exc,
+                        "  could not post opening announcement for %s on #%d: %s",
+                        agent_def.agent, work_item.number, exc,
                     )
+                # Increment review-cycle:N at dispatch for review_loop re_invoke targets.
+                if agent_def.agent in _reinvoke_targets:
+                    _rc_cur = _get_review_cycle(labels)
+                    _rc_next = _rc_cur + 1
+                    if _rc_cur > 0:
+                        try:
+                            gh.remove_label(work_item.number, f"review-cycle:{_rc_cur}")
+                            labels.discard(f"review-cycle:{_rc_cur}")
+                        except Exception as exc:
+                            log.debug(
+                                "could not remove review-cycle:%d on #%d: %s",
+                                _rc_cur, work_item.number, exc,
+                            )
+                    try:
+                        gh.add_label(work_item.number, f"review-cycle:{_rc_next}")
+                        labels.add(f"review-cycle:{_rc_next}")
+                        log.info("  CYCLE   %-38s  review-cycle:%d", agent_def.agent, _rc_next)
+                    except Exception as exc:
+                        log.warning(
+                            "could not apply review-cycle:%d on #%d: %s",
+                            _rc_next, work_item.number, exc,
+                        )
         else:
             # dry_run: :wip ceremony is skipped, but counters still advance so
             # the simulated output respects per-agent and aggregate ceilings.
