@@ -200,11 +200,15 @@ class TestHandleReviewLoopFreeReInvoke:
         assert HUMAN_REVIEW_PENDING_LABEL in labels
         gh.add_label.assert_any_call(42, HUMAN_REVIEW_PENDING_LABEL)
 
-    def test_advances_review_cycle_counter(self):
+    def test_does_not_set_review_cycle_label(self):
+        """review-cycle:N is set at dispatch time, not in _handle_review_loop."""
         gh, labels = self._run_free_reinvoke()
         review_cycle_labels = [l for l in labels if l.startswith("review-cycle:")]
-        assert review_cycle_labels == ["review-cycle:1"]
-        gh.add_label.assert_any_call(42, "review-cycle:1")
+        assert review_cycle_labels == []
+        for call_args in gh.add_label.call_args_list:
+            assert not call_args[0][1].startswith("review-cycle:"), (
+                "review_loop must not set review-cycle:N — counter is set at dispatch"
+            )
 
     def test_clears_reviewer_review_label(self):
         gh, labels = self._run_free_reinvoke()
@@ -238,7 +242,7 @@ class TestHandleReviewLoopFreeReInvoke:
         agent_def = _make_agent_def()
         agent_def.review_loop = {
             "re_invoke": "03_execute/coder",
-            "max_cycles": 1,  # Would normally block at next_cycle=1 >= max_cycles=1
+            "max_cycles": 0,  # Would normally block at next_cycle=1 > max_cycles=0
             "also_clear": [],
         }
         coder_def = MagicMock()
@@ -259,7 +263,7 @@ class TestHandleReviewLoopFreeReInvoke:
         agent_def = _make_agent_def()
         agent_def.review_loop = {
             "re_invoke": "03_execute/coder",
-            "max_cycles": 1,
+            "max_cycles": 0,  # Would normally block at next_cycle=1 > max_cycles=0
             "also_clear": [],
         }
         coder_def = MagicMock()
@@ -369,8 +373,8 @@ class TestHandleReviewLoopBackwardCompat:
         labels = set()
 
         updated = _handle_review_loop(gh, agent_def, wi, labels, pipeline_map)
-        # Should have added review-cycle:1
-        assert "review-cycle:1" in updated
+        # review-cycle:N is now set at dispatch time, not in _handle_review_loop
+        assert not any(l.startswith("review-cycle:") for l in updated)
         assert HUMAN_REVIEW_PENDING_LABEL not in updated
 
 

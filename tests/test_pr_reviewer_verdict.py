@@ -64,8 +64,8 @@ def _find_pr_reviewer_entry(pipeline: dict) -> dict:
 
 
 def _extract_verdict_section(text: str) -> str:
-    match = re.search(r"## Step 8 — Verdict\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
-    assert match, "Step 8 — Verdict section not found in pr-reviewer.md"
+    match = re.search(r"## Step 10 — Verdict\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    assert match, "Step 10 — Verdict section not found in pr-reviewer.md"
     return match.group(1)
 
 
@@ -82,7 +82,7 @@ def _request_changes_rule_line(section: str) -> str:
         for l in section.splitlines()
         if "REQUEST CHANGES" in l or "REQUEST_CHANGES" in l
     ]
-    assert lines, "No REQUEST CHANGES line found in Step 8"
+    assert lines, "No REQUEST CHANGES line found in Step 10"
     # The threshold rule is the line that enumerates the blocking severities; pick
     # the one mentioning the highest severity so we test the rule, not prose.
     rule = next((l for l in lines if "Critical" in l), lines[0])
@@ -92,7 +92,7 @@ def _request_changes_rule_line(section: str) -> str:
 def _approve_rule_line(section: str) -> str:
     """Return the single APPROVE rule line from the verdict section."""
     lines = [l.strip() for l in section.splitlines() if "APPROVE" in l]
-    assert lines, "No APPROVE line found in Step 8"
+    assert lines, "No APPROVE line found in Step 10"
     rule = next(
         (l for l in lines if "Low" in l or "Informational" in l),
         lines[0],
@@ -170,7 +170,7 @@ class TestSeverityVerdictPartition:
 class TestAdrDowngradeCarveOut:
     """The trickiest verdict branch: ADR-downgraded findings never block APPROVE.
 
-    pr-reviewer.md Step 8 carries a carve-out line stating that findings an ADR
+    pr-reviewer.md Step 10 carries a carve-out line stating that findings an ADR
     downgrades to Informational do not count toward the REQUEST_CHANGES
     threshold. This branch is otherwise untested.
     """
@@ -183,7 +183,7 @@ class TestAdrDowngradeCarveOut:
             if "ADR" in l and "Informational" in l
         ]
         assert adr_lines, (
-            "Step 8 must carry an ADR-downgrade carve-out line mentioning "
+            "Step 10 must carry an ADR-downgrade carve-out line mentioning "
             "Informational (e.g. 'ADR-covered findings downgraded to "
             "Informational never block APPROVE')"
         )
@@ -203,11 +203,11 @@ class TestScenarioVerdictInClosingAnnouncement:
 
     def test_verdict_field_present_in_step10(self):
         text = _load_pr_reviewer_text()
-        step10_match = re.search(r"## Step 10 — Close(.+?)(?=\n---|\Z)", text, re.DOTALL)
-        assert step10_match, "Step 10 — Close section not found in pr-reviewer.md"
+        step10_match = re.search(r"## Step 12 — Close(.+?)(?=\n---|\Z)", text, re.DOTALL)
+        assert step10_match, "Step 12 — Close section not found in pr-reviewer.md"
         step10 = step10_match.group(1)
         assert '"verdict"' in step10, (
-            'Step 10 closing JSON must contain a "verdict" field'
+            'Step 12 closing JSON must contain a "verdict" field'
         )
 
     def test_verdict_field_bound_to_a_variable(self):
@@ -215,12 +215,12 @@ class TestScenarioVerdictInClosingAnnouncement:
         # Here we only assert the field is bound to *some* shell variable, without
         # coupling to the exact variable name (which is an implementation detail).
         text = _load_pr_reviewer_text()
-        step10_match = re.search(r"## Step 10 — Close(.+?)(?=\n---|\Z)", text, re.DOTALL)
+        step10_match = re.search(r"## Step 12 — Close(.+?)(?=\n---|\Z)", text, re.DOTALL)
         assert step10_match
         step10 = step10_match.group(1)
         assert re.search(r'"verdict":\s*"\$\{?\w+\}?"', step10), (
             'verdict field must be bound to a shell variable (e.g. "$VERDICT") '
-            "in the Step 10 closing JSON"
+            "in the Step 12 closing JSON"
         )
 
 

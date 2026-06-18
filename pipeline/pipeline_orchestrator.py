@@ -975,7 +975,7 @@ def _handle_review_loop(
     current_cycle = _get_review_cycle(labels)
     next_cycle = current_cycle + 1
 
-    if not skip_cycle_increment and next_cycle >= max_cycles:
+    if not skip_cycle_increment and next_cycle > max_cycles:
         log.info(
             "  LOOP    %-38s  %d/%d cycles — escalating to human",
             agent_def.agent, next_cycle, max_cycles,
@@ -997,13 +997,13 @@ def _handle_review_loop(
 
     if skip_cycle_increment:
         log.info(
-            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s (cycle %d)",
-            agent_def.agent, re_invoke_name, next_cycle,
+            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s",
+            agent_def.agent, re_invoke_name,
         )
     else:
         log.info(
-            "  LOOP    %-38s  cycle %d/%d — re-invoking %s",
-            agent_def.agent, next_cycle, max_cycles, re_invoke_name,
+            "  LOOP    %-38s  re-invoking %s (counter advances at dispatch)",
+            agent_def.agent, re_invoke_name,
         )
 
     if skip_cycle_increment:
@@ -1017,26 +1017,7 @@ def _handle_review_loop(
                 "could not apply %s on #%d: %s", HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc
             )
             return labels  # guard not set; abort free re-invoke to preserve once-only semantics
-
-    # Always rotate the review-cycle counter so review-cycle:N reflects every
-    # coder re-invocation — both automated REQUEST_CHANGES loops and human-review
-    # free re-invokes.
-    if current_cycle > 0:
-        old = f"review-cycle:{current_cycle}"
-        try:
-            gh.remove_label(work_item.number, old)
-            labels.discard(old)
-        except Exception as exc:
-            log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
-
-    new_cycle_label = f"review-cycle:{next_cycle}"
-    try:
-        gh.add_label(work_item.number, new_cycle_label)
-        labels.add(new_cycle_label)
-    except Exception as exc:
-        log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
-
-    if not skip_cycle_increment:
+    else:
         # Clean up HUMAN_REVIEW_PENDING_LABEL if present from a prior free cycle —
         # the normal automated review cycle supersedes it.
         if HUMAN_REVIEW_PENDING_LABEL in labels:
@@ -2699,6 +2680,38 @@ def process_work_item(
                     "  could not post opening announcement for %s on #%d: %s",
                     agent_def.agent, work_item.number, exc,
                 )
+
+            # Increment review-cycle:N at dispatch for review_loop re_invoke targets.
+            # The counter reflects the number of times this agent has started —
+            # every run (initial and re-invocations) increments it.
+            _is_reinvoke_target = any(
+                ad.review_loop and ad.review_loop.get("re_invoke") == agent_def.agent
+                for ad in pipeline_map.values()
+            )
+            if _is_reinvoke_target:
+                _rc_cur = _get_review_cycle(labels)
+                _rc_next = _rc_cur + 1
+                if _rc_cur > 0:
+                    try:
+                        gh.remove_label(work_item.number, f"review-cycle:{_rc_cur}")
+                        labels.discard(f"review-cycle:{_rc_cur}")
+                    except Exception as exc:
+                        log.debug(
+                            "could not remove review-cycle:%d on #%d: %s",
+                            _rc_cur, work_item.number, exc,
+                        )
+                try:
+                    gh.add_label(work_item.number, f"review-cycle:{_rc_next}")
+                    labels.add(f"review-cycle:{_rc_next}")
+                    log.info(
+                        "  CYCLE   %-38s  review-cycle:%d", agent_def.agent, _rc_next
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "could not apply review-cycle:%d on #%d: %s",
+                        _rc_next, work_item.number, exc,
+                    )
+
         else:
             # dry_run: :wip ceremony is skipped, but counters still advance so
             # the simulated output respects per-agent and aggregate ceilings.
