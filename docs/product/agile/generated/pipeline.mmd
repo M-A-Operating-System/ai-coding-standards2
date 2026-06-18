@@ -1,0 +1,47 @@
+flowchart TD
+    entry_n_01_product_docs__issue_classifier(["issue.opened"])
+    entry_n_00_ondemand__codebase_reviewer(["codebase-reviewer:requested"])
+    entry_n_00_ondemand__sizer(["sizer:requested"])
+    n_01_product_docs__issue_classifier["issue-classifier"]
+    n_01_product_docs__prd_writer["prd-writer"]
+    n_01_product_docs__create_pr("create-pr")
+    n_01_product_docs__prd_docs_updater["prd-docs-updater"]
+    n_03_execute__coder["coder"]
+    n_03_execute__ci_gate("ci-gate")
+    n_03_execute__merge_conflict["merge-conflict"]
+    n_03_execute__pr_reviewer["pr-reviewer"]
+    n_00_ondemand__codebase_reviewer["codebase-reviewer"]
+    n_00_ondemand__sizer["sizer"]
+    gate__n_01_product_docs__prd_writer{"prd-writer:approved"}
+    gate__n_01_product_docs__prd_docs_updater{"prd-docs-updater:approved"}
+    gate__n_03_execute__merge_conflict{"merge-conflict:approved · auto"}
+    gate__n_00_ondemand__sizer{"sizer:review · auto"}
+    term_blocked(["blocked — human"]):::term
+    term_cr_done(["review issue created"]):::term
+    term_epic(["epic — sub-issues"]):::term
+    term_ready(["ready for human review"]):::term
+    term_rejected(["rejected"]):::term
+    term_sized(["sized"]):::term
+    entry_n_01_product_docs__issue_classifier --> n_01_product_docs__issue_classifier
+    entry_n_00_ondemand__codebase_reviewer --> n_00_ondemand__codebase_reviewer
+    entry_n_00_ondemand__sizer --> n_00_ondemand__sizer
+    n_01_product_docs__issue_classifier --> n_01_product_docs__prd_writer
+    gate__n_01_product_docs__prd_writer --> n_01_product_docs__create_pr
+    n_01_product_docs__create_pr --> n_01_product_docs__prd_docs_updater
+    gate__n_01_product_docs__prd_docs_updater --> n_03_execute__coder
+    n_03_execute__coder --> n_03_execute__ci_gate
+    n_03_execute__ci_gate --> n_03_execute__merge_conflict
+    gate__n_03_execute__merge_conflict --> n_03_execute__pr_reviewer
+    n_01_product_docs__prd_writer --> gate__n_01_product_docs__prd_writer
+    n_01_product_docs__prd_docs_updater --> gate__n_01_product_docs__prd_docs_updater
+    n_03_execute__merge_conflict --> gate__n_03_execute__merge_conflict
+    n_00_ondemand__sizer --> gate__n_00_ondemand__sizer
+    n_03_execute__pr_reviewer -. REQUEST_CHANGES ≤3 .-> n_03_execute__coder
+    n_03_execute__ci_gate -. fail ≤3 .-> n_03_execute__coder
+    n_01_product_docs__issue_classifier -->|malformed| term_rejected
+    n_03_execute__ci_gate -->|timeout| term_blocked
+    n_03_execute__pr_reviewer -->|APPROVE| term_ready
+    n_00_ondemand__sizer -->|small · auto| term_sized
+    n_00_ondemand__sizer -->|large| term_epic
+    n_00_ondemand__codebase_reviewer -->|complete| term_cr_done
+    classDef term fill:#f0f0f0,stroke:#999,stroke-dasharray:3

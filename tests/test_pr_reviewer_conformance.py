@@ -23,9 +23,9 @@ def _load_pr_reviewer_text() -> str:
     return PR_REVIEWER_MD.read_text()
 
 
-def _extract_step_1_5(text: str) -> str:
+def _extract_step_2(text: str) -> str:
     match = re.search(
-        r"## Step 1\.5 — Check for unresolved human reviews(.+?)(?=\n---\n|\Z)",
+        r"## Step 2 — Check for unresolved human reviews(.+?)(?=\n---\n|\Z)",
         text,
         re.DOTALL,
     )
@@ -33,57 +33,57 @@ def _extract_step_1_5(text: str) -> str:
 
 
 def _extract_verdict_section(text: str) -> str:
-    match = re.search(r"## Step 8 — Verdict\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    match = re.search(r"## Step 10 — Verdict\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
 class TestPrReviewerHumanReviewStep:
-    """Scenario: pr-reviewer reads human review comments (Step 1.5 exists)"""
+    """Scenario: pr-reviewer reads human review comments (Step 2 exists)"""
 
-    def test_step_1_5_exists(self):
+    def test_step_2_exists(self):
         text = _load_pr_reviewer_text()
-        assert "## Step 1.5" in text, (
-            "pr-reviewer.md must contain Step 1.5 — Check for unresolved human reviews. "
+        assert "## Step 2" in text, (
+            "pr-reviewer.md must contain Step 2 — Check for unresolved human reviews. "
             "Run: python3 scripts/update_agent_files.py"
         )
 
-    def test_step_1_5_fetches_pr_reviews_via_api(self):
+    def test_step_2_fetches_pr_reviews_via_api(self):
         text = _load_pr_reviewer_text()
-        step = _extract_step_1_5(text)
-        assert step, "Step 1.5 section is missing"
+        step = _extract_step_2(text)
+        assert step, "Step 2 section is missing"
         assert "gh api" in step, (
-            "Step 1.5 must use 'gh api' to fetch PR reviews. "
+            "Step 2 must use 'gh api' to fetch PR reviews. "
             "Run: python3 scripts/update_agent_files.py"
         )
         assert "reviews" in step, (
-            "Step 1.5 must reference the reviews endpoint. "
+            "Step 2 must reference the reviews endpoint. "
             "Run: python3 scripts/update_agent_files.py"
         )
 
-    def test_step_1_5_excludes_bots(self):
+    def test_step_2_excludes_bots(self):
         text = _load_pr_reviewer_text()
-        step = _extract_step_1_5(text)
-        assert step, "Step 1.5 section is missing"
+        step = _extract_step_2(text)
+        assert step, "Step 2 section is missing"
         assert "Bot" in step, (
-            "Step 1.5 must exclude bot accounts (user.type == 'Bot'). "
+            "Step 2 must exclude bot accounts (user.type == 'Bot'). "
             "Run: python3 scripts/update_agent_files.py"
         )
 
-    def test_step_1_5_defines_human_block_variable(self):
+    def test_step_2_defines_human_block_variable(self):
         text = _load_pr_reviewer_text()
-        step = _extract_step_1_5(text)
-        assert step, "Step 1.5 section is missing"
+        step = _extract_step_2(text)
+        assert step, "Step 2 section is missing"
         assert "HUMAN_BLOCK_REVIEWERS" in step, (
-            "Step 1.5 must define HUMAN_BLOCK_REVIEWERS variable. "
+            "Step 2 must define HUMAN_BLOCK_REVIEWERS variable. "
             "Run: python3 scripts/update_agent_files.py"
         )
 
-    def test_step_1_5_sets_verdict_on_block(self):
+    def test_step_2_sets_verdict_on_block(self):
         text = _load_pr_reviewer_text()
-        step = _extract_step_1_5(text)
-        assert step, "Step 1.5 section is missing"
+        step = _extract_step_2(text)
+        assert step, "Step 2 section is missing"
         assert "REQUEST CHANGES" in step or "REQUEST_CHANGES" in step, (
-            "Step 1.5 must set VERDICT=REQUEST CHANGES when human reviews block. "
+            "Step 2 must set VERDICT=REQUEST CHANGES when human reviews block. "
             "Run: python3 scripts/update_agent_files.py"
         )
 
@@ -94,7 +94,7 @@ class TestPrReviewerVerdictHumanBlock:
     def test_verdict_section_has_human_block_rule(self):
         text = _load_pr_reviewer_text()
         section = _extract_verdict_section(text)
-        assert section, "Step 8 — Verdict section not found"
+        assert section, "Step 10 — Verdict section not found"
         assert "HUMAN_BLOCK_REVIEWERS" in section, (
             "Step 8 verdict must check HUMAN_BLOCK_REVIEWERS for the hard block. "
             "Run: python3 scripts/update_agent_files.py"
@@ -103,7 +103,7 @@ class TestPrReviewerVerdictHumanBlock:
     def test_verdict_human_block_listed_before_automated_findings(self):
         text = _load_pr_reviewer_text()
         section = _extract_verdict_section(text)
-        assert section, "Step 8 — Verdict section not found"
+        assert section, "Step 10 — Verdict section not found"
         lines = [l.strip() for l in section.splitlines() if l.strip().startswith("-")]
         human_block_idx = next(
             (i for i, l in enumerate(lines) if "HUMAN_BLOCK_REVIEWERS" in l), None
@@ -125,7 +125,7 @@ class TestPrReviewerVerdictHumanBlock:
     def test_approve_requires_empty_human_block_reviewers(self):
         text = _load_pr_reviewer_text()
         section = _extract_verdict_section(text)
-        assert section, "Step 8 — Verdict section not found"
+        assert section, "Step 10 — Verdict section not found"
         approve_lines = [l for l in section.splitlines() if "APPROVE" in l]
         assert any("HUMAN_BLOCK_REVIEWERS" in l for l in approve_lines), (
             "The APPROVE rule in Step 8 must require HUMAN_BLOCK_REVIEWERS to be empty. "

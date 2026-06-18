@@ -100,7 +100,7 @@ before merge` but do not skip remaining review steps.
 
 ---
 
-## Step 1.5 — Check for unresolved human reviews
+## Step 2 — Check for unresolved human reviews
 
 Fetch PR reviews and determine whether any human reviewer (non-bot) has an
 unresolved `CHANGES_REQUESTED` state. A reviewer's current state is their
@@ -141,7 +141,7 @@ combined report is useful to the coder.
 
 ---
 
-## Step 2 — Read the spec
+## Step 3 — Read the spec
 
 ```bash
 gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body,comments \
@@ -154,7 +154,7 @@ If no spec exists, note the absence and review against general standards.
 
 ---
 
-## Step 3 — Defensive Programmer (DP)
+## Step 4 — Defensive Programmer (DP)
 
 You are reading this code for the first time. You have never seen it. You
 assume nothing works until you verify it.
@@ -170,7 +170,7 @@ Record each finding as `DP-NNN`.
 
 ---
 
-## Step 4 — Security Analyst (SA)
+## Step 5 — Security Analyst (SA)
 
 You treat every byte from outside the process as adversarial. Risk calibration
 for this system: code execution in Actions = full repo write; sentinel injection
@@ -190,7 +190,7 @@ Record each finding as `SA-NNN`. Append `[ADR: {id}]` where an ADR authorises th
 
 ---
 
-## Step 5 — QA Engineer (QA)
+## Step 6 — QA Engineer (QA)
 
 The users of this system are pipeline operators and agents, not end users.
 Relevant edge cases: stale GitHub label state, concurrent orchestrator runs,
@@ -207,7 +207,7 @@ Record each finding as `QA-NNN`.
 
 ---
 
-## Step 6 — Standards Compliance (SC)
+## Step 7 — Standards Compliance (SC)
 
 You are the Standards Owner. Load all standards, then check the diff.
 
@@ -238,9 +238,60 @@ Record each finding as `SC-NNN`.
 
 ---
 
-## Step 7 — Consolidate
+## Step 8 — Cross-artefact consistency (CA)
 
-Assemble all findings from Steps 3–6 into `FINDING_BODY`.
+This step catches issues that single-persona review misses because they require
+reasoning across multiple parts of the diff simultaneously. Record each finding
+as `CA-NNN`.
+
+**8a — Doc claims must match what the diff does.**
+Read every prose claim in new or updated documentation. Verify the claim is
+accurate against what the diff actually adds and removes. Flag any claim that
+contradicts or overstates the diff.
+
+Common failure modes:
+- A new doc says a feature "was never implemented" when the same diff removes
+  an implementation of it.
+- A doc describes a field as always a string when the same diff shows an
+  `Optional[str]` or nullable signature.
+- An ADR documents a consequence that the diff does not actually produce.
+
+**8b — Structured file entries must conform to their schema.**
+For any entry added to a structured JSON file (`standards/adrs.json`,
+`pipeline/pipeline.json`, `standards/*.json`, etc.), locate and read the
+corresponding schema:
+
+```bash
+find pipeline/schemas -name "*.schema.json" | sort
+```
+
+Manually check that every required field is present, no disallowed extra fields
+exist, and field values match declared types and patterns.
+
+**8c — Pre-existing context must be consistent with new docs.**
+For each file where the diff updates documentation, check whether any surrounding
+unchanged code, headings, or comments now contradict the new documentation.
+Read the full file at the PR head to see context outside the diff hunks:
+
+```bash
+gh api "/repos/${REPO}/contents/{path}?ref=$(gh pr view "$PR_NUMBER" \
+  --repo "$REPO" --json headRefOid --jq '.headRefOid')" \
+  --jq '.content' | base64 -d
+```
+
+Flag pre-existing content that was not updated by the diff but is now stale.
+
+**8d — Cross-file type and nullability alignment.**
+For every field added or renamed in a schema table, API contract, or doc, find
+the corresponding emitting or consuming code in the diff and verify the
+documented type, nullability, and name match exactly. A field documented as
+`string` that the code emits as `string or null` is a finding.
+
+---
+
+## Step 9 — Consolidate
+
+Assemble all findings from Steps 4–8 into `FINDING_BODY`.
 
 **Cross-persona agreement**: where two or more personas flagged the same
 `file:line` flaw, merge into one entry tagged with both personas (e.g.
@@ -265,7 +316,7 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ---
 
-## Step 8 — Verdict
+## Step 10 — Verdict
 
 - `$HUMAN_BLOCK_REVIEWERS` is non-empty → **REQUEST CHANGES** (hard block; takes priority over all other findings)
 - Any Critical, High, or Medium finding → **REQUEST CHANGES**
@@ -274,7 +325,7 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 
 ---
 
-## Step 9 — Post artefact
+## Step 11 — Post artefact
 
 ```bash
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<REVIEW_EOF
@@ -295,7 +346,7 @@ REVIEW_EOF
 
 ---
 
-## Step 10 — Close
+## Step 12 — Close
 
 ```bash
 gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
