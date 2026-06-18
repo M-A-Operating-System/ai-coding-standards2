@@ -564,7 +564,7 @@ class GitHubClient:
 
 
 # ---------------------------------------------------------------------------
-# Audit log (ai-agile/log orphan branch)
+# Audit event emission (stdout JSON lines)
 # ---------------------------------------------------------------------------
 
 def _make_audit_event(

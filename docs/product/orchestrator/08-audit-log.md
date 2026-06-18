@@ -40,7 +40,7 @@ Every line is one JSON object:
 |---|---|---|
 | `ts` | ISO-8601 string | Timestamp of the event |
 | `event` | string | Event type (see below) |
-| `agent` | string | Agent name from `pipeline.json` |
+| `agent` | string or null | Agent name from `pipeline.json`. null for system-level events with no associated agent (e.g. `system.tick`, `system.emergency_stop`) |
 | `issue` | number or null | Work item number (null for PR work items and global events) |
 | `status` | string | Resulting status (`complete`, `review`, `blocked`, `failed`, or internal state) |
 

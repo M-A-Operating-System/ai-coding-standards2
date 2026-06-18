@@ -10,13 +10,12 @@ P-3 ("Immutable audit log branch") defined a protected orphan branch (`ai-agile/
 as the durable cross-session event timeline. Events were appended as JSONL files
 keyed by UTC day (`events/YYYY/MM/DD.jsonl`), batched into one commit per day.
 
-This mechanism introduced a second writeable Git target on every orchestrator run,
-requiring additional credentials, branch-protection configuration, and a non-trivial
-write protocol (fetch → append → commit → push to orphan). In practice the
-`ai-agile/log` branch was never implemented in the Python orchestrator — all audit
-writes were performed via `print()` to stdout. The branch-based design also violates
-the spirit of P-1 (Git is authoritative for pipeline *state*, not for audit retention)
-and adds I/O complexity the GitHub Actions run log already handles for free.
+The branch mechanism was implemented in the Python orchestrator but added significant
+complexity (branch creation, retry-on-conflict, base64 encoding, credential requirements)
+with limited operational benefit. It was never deployed to production. GitHub Actions
+already captures stdout natively, making the branch write redundant. The branch-based
+design also violates the spirit of P-1 (Git is authoritative for pipeline *state*, not
+for audit retention).
 
 ## Decision
 

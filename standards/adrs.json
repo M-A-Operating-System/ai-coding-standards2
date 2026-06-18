@@ -3,14 +3,5 @@
   "version": "1.0",
   "scope": "org",
   "description": "Approved Architecture Decision Records. Each ADR authorises a specific design choice that would otherwise violate a standard marked adr_overridable: true. Cite the ADR ID inline where the authorised pattern appears and in any pr-reviewer finding to downgrade the severity to Informational.",
-  "adrs": [
-    {
-      "id": "ADR-0001",
-      "title": "Retire P-3: Replace audit log branch with stdout JSON lines",
-      "status": "accepted",
-      "summary": "Retires the ai-agile/log orphan branch mechanism. The orchestrator now emits one structured JSON line per audit event to stdout. GitHub Actions captures stdout natively; the workflow run log is the persistent audit record. Removes write_audit_log(), _ensure_audit_log_branch(), and all audit_log accumulator parameters.",
-      "replaces_principle": "P-3",
-      "file": "docs/adr/0001-retire-p3-audit-log-branch.md"
-    }
-  ]
+  "adrs": []
 }
