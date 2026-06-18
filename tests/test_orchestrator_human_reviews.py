@@ -200,15 +200,11 @@ class TestHandleReviewLoopFreeReInvoke:
         assert HUMAN_REVIEW_PENDING_LABEL in labels
         gh.add_label.assert_any_call(42, HUMAN_REVIEW_PENDING_LABEL)
 
-    def test_does_not_advance_review_cycle_counter(self):
+    def test_advances_review_cycle_counter(self):
         gh, labels = self._run_free_reinvoke()
         review_cycle_labels = [l for l in labels if l.startswith("review-cycle:")]
-        assert review_cycle_labels == []
-        for call_args in gh.add_label.call_args_list:
-            applied_label = call_args[0][1]
-            assert not applied_label.startswith("review-cycle:"), (
-                "review-cycle label should not be applied on free re-invoke"
-            )
+        assert review_cycle_labels == ["review-cycle:1"]
+        gh.add_label.assert_any_call(42, "review-cycle:1")
 
     def test_clears_reviewer_review_label(self):
         gh, labels = self._run_free_reinvoke()

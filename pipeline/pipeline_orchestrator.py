@@ -997,8 +997,8 @@ def _handle_review_loop(
 
     if skip_cycle_increment:
         log.info(
-            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s (cycle counter unchanged)",
-            agent_def.agent, re_invoke_name,
+            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s (cycle %d)",
+            agent_def.agent, re_invoke_name, next_cycle,
         )
     else:
         log.info(
@@ -1007,8 +1007,8 @@ def _handle_review_loop(
         )
 
     if skip_cycle_increment:
-        # Apply HUMAN_REVIEW_PENDING_LABEL instead of advancing the cycle counter.
-        # This signals Mode B to the coder and prevents a second free re-invoke.
+        # Apply HUMAN_REVIEW_PENDING_LABEL to signal Mode B to the coder and
+        # prevent a second free re-invoke.
         try:
             gh.add_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
             labels.add(HUMAN_REVIEW_PENDING_LABEL)
@@ -1017,23 +1017,26 @@ def _handle_review_loop(
                 "could not apply %s on #%d: %s", HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc
             )
             return labels  # guard not set; abort free re-invoke to preserve once-only semantics
-    else:
-        # Rotate the cycle counter label
-        if current_cycle > 0:
-            old = f"review-cycle:{current_cycle}"
-            try:
-                gh.remove_label(work_item.number, old)
-                labels.discard(old)
-            except Exception as exc:
-                log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
 
-        new_cycle_label = f"review-cycle:{next_cycle}"
+    # Always rotate the review-cycle counter so review-cycle:N reflects every
+    # coder re-invocation — both automated REQUEST_CHANGES loops and human-review
+    # free re-invokes.
+    if current_cycle > 0:
+        old = f"review-cycle:{current_cycle}"
         try:
-            gh.add_label(work_item.number, new_cycle_label)
-            labels.add(new_cycle_label)
+            gh.remove_label(work_item.number, old)
+            labels.discard(old)
         except Exception as exc:
-            log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
+            log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
 
+    new_cycle_label = f"review-cycle:{next_cycle}"
+    try:
+        gh.add_label(work_item.number, new_cycle_label)
+        labels.add(new_cycle_label)
+    except Exception as exc:
+        log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
+
+    if not skip_cycle_increment:
         # Clean up HUMAN_REVIEW_PENDING_LABEL if present from a prior free cycle —
         # the normal automated review cycle supersedes it.
         if HUMAN_REVIEW_PENDING_LABEL in labels:
