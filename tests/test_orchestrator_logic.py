@@ -1003,6 +1003,7 @@ class TestInvokeAgentTimeout:
         import time
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
 
         # Stdout blocks until the process is killed.
@@ -1051,6 +1052,7 @@ class TestInvokeAgentTimeout:
         import time
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
 
         # Stdout yields lines until the process is killed, then stops.

@@ -194,6 +194,11 @@
             }
           }
         },
+        "extra_allowedTools": {
+          "type": "array",
+          "description": "Additional tools allowed for this agent beyond the pipeline defaults. Merged with defaults.extra_allowedTools at invocation time.",
+          "items": { "type": "string" }
+        },
         "script_timeout_seconds": {
           "type": "integer",
           "minimum": 60,
