@@ -148,7 +148,7 @@ def check_adrs(
                         f"{filename}: {adr_id}: authorises_exception_to {std_id!r} "
                         f"— ID not found in any loaded standards file"
                     )
-                elif not id_map[std_id].get("adr_overridable", True):
+                elif not id_map[std_id].get("adr_overridable", False):
                     errors.append(
                         f"{filename}: {adr_id}: authorises_exception_to {std_id!r} "
                         f"— that standard is adr_overridable: false and cannot be waived by an ADR"

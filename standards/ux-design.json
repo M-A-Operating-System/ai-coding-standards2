@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "org",
   "category": "ux-design",
-  "description": "Project-specific UX and design-system standards for the DDA platform (semantic tokens, shared component library, accessibility to WCAG 2.1 AA, mobile-first responsive behaviour, async loading/empty/error states). Checked by the pr-reviewer agent against every diff that touches UI.",
+  "description": "Org-wide UX and design-system standards for the DDA platform (semantic tokens, shared component library, accessibility to WCAG 2.1 AA, mobile-first responsive behaviour, async loading/empty/error states). Checked by the pr-reviewer agent against every diff that touches UI.",
   "standards": [
     {
       "id": "STD-UX-001",
@@ -28,7 +28,7 @@
       "related": ["STD-PROC-016"],
       "title": "Build from the shared DDA component library; no new primitives without approval",
       "description": "All interactive UI is built from the existing DDA component library (shadcn/ui base + DDA theme: shared DataTable, DynamicEditDialog, Layout, platform nav, form controls). Custom components are a last resort. A new font, icon set, spacing scale, or colour token requires a product decision record and platform approval before introduction.",
-      "rationale": "One visual language across modules means users experience no context switch; ad-hoc primitives fragment it. Project-specific instance of STD-ARCH-001 (reuse). Source: design-system §Principles and §Component library.",
+      "rationale": "One visual language across modules means users experience no context switch; ad-hoc primitives fragment it. Source: design-system §Principles and §Component library.",
       "acceptance_criteria": [
         "New UI in the diff composes existing DDA/shadcn components rather than reimplementing buttons, inputs, dialogs, tables, or cards from scratch.",
         "The diff introduces no new font family, icon set, spacing scale, or colour token without a referenced decision record.",

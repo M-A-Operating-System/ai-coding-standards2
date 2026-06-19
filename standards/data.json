@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "org",
   "category": "data",
-  "description": "Project-specific data and migration standards for master-model-maven (table/column/key naming, primary and foreign keys, CDC, three-schema migrations, schemas-as-modules, Display-ID format, regulated-data gate). Migration-safety and CDC rules are non-overridable; naming, metadata, and the regulated-data gate are ADR-overridable.",
+  "description": "Org-wide data and migration standards for master-model-maven (table/column/key naming, primary and foreign keys, CDC, three-schema migrations, schemas-as-modules, Display-ID format, regulated-data gate). Migration-safety and CDC rules are non-overridable; naming, metadata, and the regulated-data gate are ADR-overridable.",
   "standards": [
     {
       "id": "STD-DATA-001",
@@ -177,7 +177,7 @@
       "id": "STD-DATA-012",
       "title": "entityRegistry.displayIDFormat is the single source of truth for Display-ID format",
       "description": "Each entity's Display-ID format — uppercase prefix plus zero-padded digits (e.g. DMD00000000, DMC00000000, DLT00000000) — is defined once by displayIDFormat in src/config/entityRegistry.ts and flows to generated entityMeta.ts. Code reads the prefix and padding from that config (via formatDisplayId / displayIDFormat) and never hardcodes prefix strings or padding widths. entityRegistry.displayIDFormat is the single source of truth for Display-ID format.",
-      "rationale": "A single authoritative format source keeps UI, Edge Functions, exports, and MCP consistent; hardcoded prefixes and widths drift from the registry. Source: src/config/entityRegistry.ts; docs/LOVABLE_KNOWLEDGE.md §18. See also STD-ARCH-022 (Display IDs at user surfaces), STD-ARCH-012 (runtime boundary handling).",
+      "rationale": "A single authoritative format source keeps UI, Edge Functions, exports, and MCP consistent; hardcoded prefixes and widths drift from the registry. Source: src/config/entityRegistry.ts; docs/LOVABLE_KNOWLEDGE.md §18.",
       "acceptance_criteria": [
         "Display-ID formatting in the diff reads prefix/padding from entityRegistry.displayIDFormat (or formatDisplayId), not hardcoded literals.",
         "No diff introduces a Display-ID prefix or padding width that disagrees with the entity's entityRegistry.displayIDFormat.",

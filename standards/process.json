@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "org",
   "category": "process",
-  "description": "Project-specific process standards for master-model-maven — the AI-first product-led working model (linear chain Product Spec → Capability → BDD → Test → Implementation → Evidence; humans define intent, AI executes, evidence proves; backward traceability; capability as the canonical unit; calculated roadmap; capability-gap vs technical-debt gap) plus git/PR workflow (no work without a ticket; 1:1:1 issue:branch:PR; naming; confirmation gates) and decision recording. The foundation the technical/engineering standards reference. Checked by the pr-reviewer agent and applied by the coder agent.",
+  "description": "Org-wide process standards for master-model-maven — the AI-first product-led working model (linear chain Product Spec → Capability → BDD → Test → Implementation → Evidence; humans define intent, AI executes, evidence proves; backward traceability; capability as the canonical unit; calculated roadmap; capability-gap vs technical-debt gap) plus git/PR workflow (no work without a ticket; 1:1:1 issue:branch:PR; naming; confirmation gates) and decision recording. The foundation the technical/engineering standards reference. Checked by the pr-reviewer agent and applied by the coder agent.",
   "standards": [
     {
       "id": "STD-PROC-001",
@@ -538,9 +538,9 @@
         "Using a * or latest version specifier for any production dependency.",
         "Omitting a transitive dependency from the lock file after adding a new direct dependency."
       ],
-      "adr_overridable": true,
+      "adr_overridable": false,
       "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from standards/security.json"
+      "source": "Migrated from standards/security.json; restores non-overridable gate (was adr_overridable: false in security.json)"
     },
     {
       "id": "STD-PROC-024",

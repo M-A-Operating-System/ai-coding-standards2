@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "org",
   "category": "documentation",
-  "description": "Project-specific documentation standards for master-model-maven (settled-decision stability, claim traceability, specification intent voice, coverage via BDD .feature evidence, MAOS spec codification, canonical AI-first structure). Checked by the pr-reviewer agent against documentation changes.",
+  "description": "Org-wide documentation standards for master-model-maven (settled-decision stability, claim traceability, specification intent voice, coverage via BDD .feature evidence, MAOS spec codification, canonical AI-first structure). Checked by the pr-reviewer agent against documentation changes.",
   "standards": [
     {
       "id": "STD-DOC-001",
