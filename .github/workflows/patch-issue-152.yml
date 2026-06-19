@@ -1,1 +1,57 @@
-bmFtZTogInBhdGNoLWlzc3VlLTE1MjogRFAtMDAxICsgU0MtMDAxIgpvbjoKICB3b3JrZmxvd19kaXNwYXRjaDoKCmpvYnM6CiAgcGF0Y2g6CiAgICBydW5zLW9uOiB1YnVudHUtbGF0ZXN0CiAgICBwZXJtaXNzaW9uczoKICAgICAgY29udGVudHM6IHdyaXRlCiAgICBzdGVwczoKICAgICAgLSB1c2VzOiBhY3Rpb25zL2NoZWNrb3V0QHY0CiAgICAgICAgd2l0aDoKICAgICAgICAgIHJlZjogaXNzdWUtMTUyCiAgICAgICAgICB0b2tlbjogJHt7IHNlY3JldHMuR0lUSFVCX1RPS0VOIH19CgogICAgICAtIG5hbWU6IEFwcGx5IHBhdGNoZXMKICAgICAgICBydW46IHwKICAgICAgICAgIHB5dGhvbjMgLSA8PCAnUFlFT0YnCiAgICAgICAgICBwYXRoID0gInBpcGVsaW5lL3BpcGVsaW5lX29yY2hlc3RyYXRvci5weSIKICAgICAgICAgIHdpdGggb3BlbihwYXRoLCAiciIsIGVuY29kaW5nPSJ1dGYtOCIpIGFzIGY6CiAgICAgICAgICAgICAgc3JjID0gZi5yZWFkKCkKCiAgICAgICAgICAjIFNDLTAwMTogZml4IGRvYyBwYXRoCiAgICAgICAgICBvbGRfc2MgPSAnIiIiQnVpbGQgb25lIGF1ZGl0IGV2ZW50IHBlciB0aGUgc2NoZW1hIGluIGRvY3MvcHJvZHVjdC9hZ2lsZS8wOC1hdWRpdC1sb2cubWQuIiIiJwogICAgICAgICAgbmV3X3NjID0gJyIiIkJ1aWxkIG9uZSBhdWRpdCBldmVudCBwZXIgdGhlIHNjaGVtYSBpbiBkb2NzL3Byb2R1Y3Qvb3JjaGVzdHJhdG9yLzA4LWF1ZGl0LWxvZy5tZC4iIiInCiAgICAgICAgICBhc3NlcnQgb2xkX3NjIGluIHNyYywgIlNDLTAwMSB0YXJnZXQgbm90IGZvdW5kIgogICAgICAgICAgc3JjID0gc3JjLnJlcGxhY2Uob2xkX3NjLCBuZXdfc2MsIDEpCgogICAgICAgICAgIyBEUC0wMDE6IHdyYXAgcHJpbnQgaW4gdHJ5L2V4Y2VwdAogICAgICAgICAgb2xkX2RwID0gJyAgICBwcmludChqc29uLmR1bXBzKGV2ZW50LCBzZXBhcmF0b3JzPSgiLCIsICI6IikpLCBmbHVzaD1UcnVlKVxuJwogICAgICAgICAgbmV3X2RwID0gKAogICAgICAgICAgICAgICcgICAgdHJ5OlxuJwogICAgICAgICAgICAgICcgICAgICAgIHByaW50KGpzb24uZHVtcHMoZXZlbnQsIHNlcGFyYXRvcnM9KCIsIiwgIjoiKSksIGZsdXNoPVRydWUpXG4nCiAgICAgICAgICAgICAgJyAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGV4YzpcbicKICAgICAgICAgICAgICAnICAgICAgICBsb2cud2FybmluZygiY291bGQgbm90IGVtaXQgYXVkaXQgZXZlbnQ6ICVzIiwgZXhjKVxuJwogICAgICAgICAgKQogICAgICAgICAgIyBPbmx5IHJlcGxhY2UgaW5zaWRlIF9lbWl0X2F1ZGl0X2V2ZW50ICh0aGUgb25lIGFmdGVyIHRoZSBkZWYgbGluZSkKICAgICAgICAgIG1hcmtlciA9ICdkZWYgX2VtaXRfYXVkaXRfZXZlbnQoZXZlbnQ6IGRpY3QpIC0+IE5vbmU6XG4nCiAgICAgICAgICBpZHggPSBzcmMuaW5kZXgobWFya2VyKQogICAgICAgICAgYWZ0ZXIgPSBzcmNbaWR4Ol0KICAgICAgICAgIGFzc2VydCBvbGRfZHAgaW4gYWZ0ZXIsICJEUC0wMDEgdGFyZ2V0IG5vdCBmb3VuZCIKICAgICAgICAgIGFmdGVyID0gYWZ0ZXIucmVwbGFjZShvbGRfZHAsIG5ld19kcCwgMSkKICAgICAgICAgIHNyYyA9IHNyY1s6aWR4XSArIGFmdGVyCgogICAgICAgICAgd2l0aCBvcGVuKHBhdGgsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IikgYXMgZjoKICAgICAgICAgICAgICBmLndyaXRlKHNyYykKICAgICAgICAgIHByaW50KCJwYXRjaGVzIGFwcGxpZWQiKQogICAgICAgICAgUFlFT0YKCiAgICAgIC0gbmFtZTogQ29tbWl0IGFuZCBwdXNoCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBnaXQgY29uZmlnIHVzZXIubmFtZSAiZ2l0aHViLWFjdGlvbnNbYm90XSIKICAgICAgICAgIGdpdCBjb25maWcgdXNlci5lbWFpbCAiZ2l0aHViLWFjdGlvbnNbYm90XUB1c2Vycy5ub3JlcGx5LmdpdGh1Yi5jb20iCiAgICAgICAgICBnaXQgYWRkIHBpcGVsaW5lL3BpcGVsaW5lX29yY2hlc3RyYXRvci5weQogICAgICAgICAgZ2l0IGRpZmYgLS1zdGFnZWQgLS1xdWlldCAmJiBlY2hvICJub3RoaW5nIHRvIGNvbW1pdCIgJiYgZXhpdCAwCiAgICAgICAgICBnaXQgY29tbWl0IC1tICJmaXg6IERQLTAwMStTQy0wMDEgYXVkaXQgZXZlbnQgaGFyZGVuaW5nIChkb2MgcGF0aCArIEJyb2tlblBpcGUgZ3VhcmQpIgogICAgICAgICAgZ2l0IHB1c2ggb3JpZ2luIGlzc3VlLTE1Mgo=
+name: "patch-issue-152: DP-001 + SC-001"
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: issue-152
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply patches
+        run: |
+          python3 - << 'PYEOF'
+          path = "pipeline/pipeline_orchestrator.py"
+          with open(path, "r", encoding="utf-8") as f:
+              src = f.read()
+
+          # SC-001: fix doc path
+          old_sc = '"""Build one audit event per the schema in docs/product/agile/08-audit-log.md."""'
+          new_sc = '"""Build one audit event per the schema in docs/product/orchestrator/08-audit-log.md."""'
+          assert old_sc in src, "SC-001 target not found"
+          src = src.replace(old_sc, new_sc, 1)
+
+          # DP-001: wrap print in try/except
+          old_dp = '    print(json.dumps(event, separators=(",", ":")), flush=True)\n'
+          new_dp = (
+              '    try:\n'
+              '        print(json.dumps(event, separators=(",", ":")), flush=True)\n'
+              '    except Exception as exc:\n'
+              '        log.warning("could not emit audit event: %s", exc)\n'
+          )
+          # Only replace inside _emit_audit_event (the one after the def line)
+          marker = 'def _emit_audit_event(event: dict) -> None:\n'
+          idx = src.index(marker)
+          after = src[idx:]
+          assert old_dp in after, "DP-001 target not found"
+          after = after.replace(old_dp, new_dp, 1)
+          src = src[:idx] + after
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(src)
+          print("patches applied")
+          PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline/pipeline_orchestrator.py
+          git diff --staged --quiet && echo "nothing to commit" && exit 0
+          git commit -m "fix: DP-001+SC-001 audit event hardening (doc path + BrokenPipe guard)"
+          git push origin issue-152
