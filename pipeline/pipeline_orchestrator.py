@@ -1717,6 +1717,10 @@ def invoke_agent(
     num_var = "ISSUE_NUMBER" if work_item.kind == "issue" else "PR_NUMBER"
     kind_label = "Issue" if work_item.kind == "issue" else "PR"
 
+    # Build the claude session ID before the prompt so its resolved value can
+    # be embedded directly — agents must not shell out to read it.
+    agent_session_id = _compute_agent_session_id(agent_def, work_item, repo)
+
     prompt = (
         f"{agents_md}\n\n"
         f"---\n\n"
@@ -1727,8 +1731,14 @@ def invoke_agent(
         f"Agent: {agent_def.agent}\n"
         f"{kind_label}: #{work_item.number} in {repo}\n"
         f"URL: {work_item.url}\n\n"
-        f"Env vars: $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT "
-        f"$SESSION_ID $SESSION_SCOPE\n\n"
+        f"## Runtime context\n\n"
+        f"REPO={repo.strip()}\n"
+        f"{num_var}={work_item.number}\n"
+        f"WORK_ITEM_KIND={work_item.kind}\n"
+        f"SESSION_ID={agent_session_id.strip()}\n"
+        f"SESSION_SCOPE={agent_def.session_scope.strip()}\n"
+        f"AI_AGILE_ROOT={os.environ.get('AI_AGILE_ROOT', str(SUBMODULE_ROOT)).strip()}\n"
+        f"AI_AGILE_CONTEXT={str(AI_AGILE_CONTEXT).strip()}\n\n"
         f"Print exactly one of these as the last line before exiting:\n"
         f"AI_AGILE_STATUS: complete\n"
         f"AI_AGILE_STATUS: review \"short message\"\n"
@@ -1736,10 +1746,6 @@ def invoke_agent(
         f"(No leading spaces — the orchestrator's regex matches only at line start.)\n"
         f"The orchestrator reads this sentinel, applies the label, and posts the closing announcement."
     )
-
-    # Build the claude session ID using the shared helper so the value is
-    # identical to what the orchestrator advertises in the opening announcement.
-    agent_session_id = _compute_agent_session_id(agent_def, work_item, repo)
 
     if dry_run:
         log.info(

@@ -1093,6 +1093,196 @@ class TestInvokeAgentTimeout:
         )
 
 
+class TestInvokeAgentRuntimeContext:
+    """Tests for the resolved ## Runtime context block injected into invoke_agent() prompts.
+
+    Acceptance criteria (issue #172):
+    - Prompt contains a pre-resolved KEY=value block, not $VAR shell references.
+    - Values in the prompt match what is exported to the subprocess environment.
+    - String values are stripped of leading/trailing whitespace before injection.
+    - Subprocess env still carries the same variables for bash-snippet compatibility.
+    """
+
+    def _make_agent_def(self, name: str = "03_execute/coder") -> "AgentDef":
+        import pipeline_orchestrator as orch
+        return orch.AgentDef(
+            agent=name,
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="Test agent",
+            session_scope="per_issue",
+        )
+
+    def _make_work_item(self, number: int = 42, kind: str = "issue") -> "WorkItem":
+        import pipeline_orchestrator as orch
+        return orch.WorkItem(
+            number=number,
+            kind=kind,
+            title="Test issue",
+            labels=set(),
+            url=f"https://github.com/test/repo/{kind}s/{number}",
+        )
+
+    def _capture_prompt(self, cmd_args: list) -> str:
+        """Extract the -p prompt argument from the claude CLI args list."""
+        try:
+            idx = cmd_args.index("-p")
+            return cmd_args[idx + 1]
+        except (ValueError, IndexError):
+            return ""
+
+    def _fake_popen_capturing_cmd(self, captured_cmd: list):
+        def fake_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+        return fake_popen
+
+    def _fake_popen_capturing_env(self, captured_env: dict):
+        def fake_popen(cmd, env=None, **kwargs):
+            if env is not None:
+                captured_env.update(env)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+        return fake_popen
+
+    def test_runtime_context_block_replaces_shell_var_references_for_issue(self, monkeypatch):
+        """Prompt must contain ## Runtime context with resolved KEY=value pairs (not $VAR syntax)."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        captured_cmd: list = []
+
+        with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_cmd(captured_cmd)):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=42, kind="issue"),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        assert "## Runtime context" in prompt, "Prompt must contain '## Runtime context' section"
+        assert "REPO=test-org/test-repo" in prompt
+        assert "ISSUE_NUMBER=42" in prompt
+        assert "WORK_ITEM_KIND=issue" in prompt
+        # The old "Env vars: $REPO $ISSUE_NUMBER ..." line must be gone.
+        assert "Env vars: $REPO" not in prompt, "Old shell-variable 'Env vars' line must be replaced"
+
+    def test_runtime_context_uses_pr_number_key_for_pr_work_items(self, monkeypatch):
+        """When work_item.kind is 'pr', context block uses PR_NUMBER, not ISSUE_NUMBER."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        captured_cmd: list = []
+
+        with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_cmd(captured_cmd)):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=77, kind="pr"),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        assert "PR_NUMBER=77" in prompt, "Prompt must contain resolved PR_NUMBER for PR work items"
+        # ISSUE_NUMBER=N must not appear as a KEY=value assignment for PR work items.
+        assert "ISSUE_NUMBER=" not in prompt, "PR work items must not expose ISSUE_NUMBER= in context"
+
+    def test_string_values_are_stripped_before_injection(self, monkeypatch):
+        """String values with surrounding whitespace are stripped to prevent prompt line injection."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setenv("AI_AGILE_ROOT", "  /padded/path  ")
+        captured_cmd: list = []
+
+        with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_cmd(captured_cmd)):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=5),
+                dry_run=False,
+                repo="  test-org/test-repo  ",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        assert "REPO=test-org/test-repo\n" in prompt, "REPO value must be stripped of whitespace"
+        assert "AI_AGILE_ROOT=/padded/path\n" in prompt, "AI_AGILE_ROOT must be stripped"
+        assert "REPO=  test-org/test-repo  " not in prompt, "Unstripped REPO must not appear"
+
+    def test_subprocess_env_still_exports_vars_for_bash_snippet_compatibility(self, monkeypatch):
+        """Subprocess env must still carry REPO, ISSUE_NUMBER, WORK_ITEM_KIND, SESSION_ID."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        captured_env: dict = {}
+
+        with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_env(captured_env)):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=42, kind="issue"),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        assert captured_env.get("REPO") == "test-org/test-repo", "REPO must be in subprocess env"
+        assert captured_env.get("ISSUE_NUMBER") == "42", "ISSUE_NUMBER must be in subprocess env"
+        assert captured_env.get("WORK_ITEM_KIND") == "issue", "WORK_ITEM_KIND must be in subprocess env"
+        assert "SESSION_ID" in captured_env, "SESSION_ID must be in subprocess env"
+
+    def test_prompt_session_id_matches_subprocess_env_session_id(self, monkeypatch):
+        """SESSION_ID in the prompt must match SESSION_ID exported to subprocess."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        captured_cmd: list = []
+        captured_env: dict = {}
+
+        def fake_popen(cmd, env=None, **kwargs):
+            captured_cmd.extend(cmd)
+            if env is not None:
+                captured_env.update(env)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=42),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        env_session_id = captured_env.get("SESSION_ID", "")
+        assert env_session_id, "SESSION_ID must be exported to subprocess env"
+        assert f"SESSION_ID={env_session_id}" in prompt, (
+            f"SESSION_ID in prompt must match subprocess env. "
+            f"Expected SESSION_ID={env_session_id!r} in prompt."
+        )
+
+
 class TestPromoteGatedAgents:
     """Tests for promote_gated_agents covering all label-state transitions."""
 
