@@ -291,6 +291,12 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
             ))
+            if "mark_ready_on_complete" in entry:
+                log.warning(
+                    "pipeline.json: agent %r uses deprecated 'mark_ready_on_complete'; "
+                    "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",
+                    entry.get("agent", "<unknown>"),
+                )
 
         _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
         default_extra_tools: list[str] = (
@@ -2887,6 +2893,11 @@ def process_work_item(
             # post_steps: run per-agent completion hooks after the agent signals :complete.
             # Each hook is a repo-relative path to a bash script. Scripts receive context
             # via environment variables. A non-zero exit removes :complete and applies :failed.
+            # Unlike the deprecated mark_ready_on_complete, post_steps are hard-fail: a
+            # non-zero exit transitions the work item to :failed and halts the pipeline.
+            # TOCTOU note: :complete is applied before this block runs. A concurrent
+            # orchestrator tick could advance the pipeline during hook execution. This
+            # window is intentionally accepted — hooks must complete within one cycle.
             if applied_status == STATUS_COMPLETE and agent_def.post_steps:
                 _ps_env = {
                     **os.environ,
@@ -2895,11 +2906,26 @@ def process_work_item(
                     "WORK_ITEM_NUMBER": str(work_item.number),
                     "AGENT_NAME": agent_def.agent,
                 }
+                if work_item.kind == "issue":
+                    _ps_env["ISSUE_NUMBER"] = str(work_item.number)
+                else:
+                    _ps_env["PR_NUMBER"] = str(work_item.number)
                 for _ps_path_str in agent_def.post_steps:
                     _ps_file = SUBMODULE_ROOT / _ps_path_str
                     _ps_ok = True
                     _ps_fail_reason = ""
-                    if not _ps_file.exists():
+                    if not _ps_file.resolve().is_relative_to(SUBMODULE_ROOT.resolve()):
+                        log.error(
+                            "  post_steps: path %s escapes repo root — blocked (agent %s on #%d)",
+                            _ps_path_str, agent_def.agent, work_item.number,
+                        )
+                        _ps_ok = False
+                        _ps_fail_reason = (
+                            f"_post_steps path `{_ps_path_str}` escapes the repository root. "
+                            f"This is a configuration error in pipeline.json. "
+                            f"Remove the failed label to retry._"
+                        )
+                    elif not _ps_file.exists():
                         log.error(
                             "  post_steps: %s not found at %s (agent %s on #%d)",
                             _ps_path_str, _ps_file, agent_def.agent, work_item.number,

@@ -10,9 +10,9 @@ pr_number=""
 if [ "${WORK_ITEM_KIND}" = "pr" ]; then
     pr_number="${WORK_ITEM_NUMBER}"
 elif [ "${WORK_ITEM_KIND}" = "issue" ]; then
-    pr_number=$(gh pr list --repo "${REPO}" --head "issue-${WORK_ITEM_NUMBER}" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+    pr_number=$(gh pr list --repo "${REPO}" --head "issue-${WORK_ITEM_NUMBER}" --state open --json number --jq '.[0].number // empty')
     if [ -z "${pr_number}" ]; then
-        pr_number=$(gh pr list --repo "${REPO}" --state open --label "source-issue:${WORK_ITEM_NUMBER}" --json number --jq '.[0].number // empty' 2>/dev/null || true)
+        pr_number=$(gh pr list --repo "${REPO}" --state open --label "source-issue:${WORK_ITEM_NUMBER}" --json number --jq '.[0].number // empty')
     fi
 fi
 
