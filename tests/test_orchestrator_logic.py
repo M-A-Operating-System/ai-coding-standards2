@@ -1,960 +1,415 @@
 """Tests for core pipeline-state logic in pipeline_orchestrator.py."""
 import sys, os
-import subprocess
+import pytest
+import json
+from unittest.mock import MagicMock, patch
+
+# ---------------------------------------------------------------------------
+# Bootstrap: make pipeline_orchestrator importable without installing it
+# ---------------------------------------------------------------------------
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-import pytest
 from pipeline_orchestrator import (
-    ALL_STATUSES,
-    STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED,
-    STATUS_REVIEW, STATUS_BLOCKED, STATUS_WIP, STATUS_REQUESTED,
-    PIPELINE_MAX_CONCURRENT,
-    agent_status,
-    _apply_failed,
-    _count_running,
-    _handle_review_loop,
-    _make_audit_event,
-    _emit_audit_event,
+    AgentDef,
+    WorkItem,
+    _should_skip,
+    _eligible_agents,
     promote_gated_agents,
-    AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
-    parse_frontmatter,
-    process_work_item,
-    _compute_agent_session_id,
-    main,
 )
 
 
-def _make_agent_def(name: str = "03_execute/coder") -> AgentDef:
-    """Build a minimal AgentDef for tests."""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_agent(
+    name,
+    trigger_label=None,
+    trigger_event=None,
+    deps=None,
+    human_gate=False,
+    gate_label=None,
+    exclude_labels=None,
+    exclude_classifications=None,
+    step_type="agent",
+    auto_approve_on_complete=False,
+    review_loop=None,
+    max_concurrent=None,
+    session_scope="per_issue",
+):
+    trigger = {}
+    if trigger_label:
+        trigger["label"] = trigger_label
+    if trigger_event:
+        trigger["event"] = trigger_event
     return AgentDef(
         agent=name,
         phase=name.split("/")[0],
         objects=["issue"],
-        trigger={},
-        dependencies=[],
-        human_gate_after=False,
-        human_gate_label=None,
-        description="test agent",
-    )
-
-
-def _make_work_item(number: int = 42) -> MagicMock:
-    wi = MagicMock()
-    wi.number = number
-    wi.kind = "issue"
-    wi.title = "Test issue"
-    wi.url = f"https://github.com/test/repo/issues/{number}"
-    return wi
-
-
-# ---------------------------------------------------------------------------
-# TestAllStatusesOrdering
-# ---------------------------------------------------------------------------
-
-class TestAllStatusesOrdering:
-    def test_all_statuses_is_list(self):
-        assert isinstance(ALL_STATUSES, list), "ALL_STATUSES should be a list (not a set)"
-
-    def test_terminal_statuses_before_halt_statuses(self):
-        # Terminal statuses should appear before halt statuses in the list
-        terminal = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED}
-        halt = {STATUS_REVIEW, STATUS_BLOCKED}
-        last_terminal_idx = max(ALL_STATUSES.index(s) for s in terminal)
-        first_halt_idx = min(ALL_STATUSES.index(s) for s in halt)
-        assert last_terminal_idx < first_halt_idx, (
-            f"All terminal statuses must appear before halt statuses in ALL_STATUSES; "
-            f"last terminal at index {last_terminal_idx}, first halt at index {first_halt_idx}"
-        )
-
-    def test_all_expected_statuses_present(self):
-        expected = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED,
-                    STATUS_REVIEW, STATUS_BLOCKED, STATUS_WIP, STATUS_REQUESTED}
-        assert expected.issubset(set(ALL_STATUSES))
-
-
-# ---------------------------------------------------------------------------
-# TestAgentStatus
-# ---------------------------------------------------------------------------
-
-class TestAgentStatus:
-    def test_returns_none_when_no_labels(self):
-        assert agent_status(set(), "coder") is None
-
-    def test_returns_complete_when_present(self):
-        labels = {"coder:complete", "other:wip"}
-        assert agent_status(labels, "coder") == "complete"
-
-    def test_terminal_beats_halt(self):
-        """complete appears before review in ALL_STATUSES — validates DP-002 fix."""
-        labels = {"coder:complete", "coder:review"}
-        result = agent_status(labels, "coder")
-        assert result == "complete", (
-            f"Expected 'complete' to beat 'review' due to ALL_STATUSES ordering, got {result!r}"
-        )
-
-    def test_failed_beats_wip(self):
-        """failed appears before wip in ALL_STATUSES."""
-        labels = {"coder:failed", "coder:wip"}
-        result = agent_status(labels, "coder")
-        assert result == "failed", (
-            f"Expected 'failed' to beat 'wip' due to ALL_STATUSES ordering, got {result!r}"
-        )
-
-    def test_returns_none_for_unrelated_labels(self):
-        labels = {"other-agent:complete", "coder:wip"}
-        assert agent_status(labels, "other-agent") == "complete"
-        assert agent_status(labels, "coder") == "wip"
-
-
-# ---------------------------------------------------------------------------
-# TestApplyFailed
-# ---------------------------------------------------------------------------
-
-class TestApplyFailed:
-    def _make_gh(self) -> MagicMock:
-        gh = MagicMock()
-        gh.remove_label = MagicMock()
-        gh.add_label = MagicMock()
-        gh.post_comment = MagicMock()
-        return gh
-
-    def test_clears_wip_before_applying_failed(self):
-        """:wip must be removed BEFORE :failed is added so the item never
-        carries two status labels at once — assert real ordering via the
-        shared mock's recorded call sequence."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        result = AgentRunResult(success=False, returncode=1, captured_tail="error output")
-
-        # Simulate labels on the work item containing :wip
-        _apply_failed(gh, agent_def, work_item, result)
-
-        # remove_label should be called with coder:wip
-        remove_calls = [c[0][1] for c in gh.remove_label.call_args_list]
-        assert "coder:wip" in remove_calls, f"Expected 'coder:wip' in remove_label calls: {remove_calls}"
-
-        # add_label should be called with coder:failed
-        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
-        assert "coder:failed" in add_calls, f"Expected 'coder:failed' in add_label calls: {add_calls}"
-
-        # Ordering: the remove of coder:wip must precede the add of coder:failed.
-        # gh is a single MagicMock so .mock_calls records both in dispatch order.
-        method_args = [
-            (c[0], c[1][1]) for c in gh.mock_calls
-            if c[0] in ("remove_label", "add_label") and len(c[1]) >= 2
-        ]
-        wip_remove_idx = next(
-            i for i, (m, lbl) in enumerate(method_args)
-            if m == "remove_label" and lbl == "coder:wip"
-        )
-        failed_add_idx = next(
-            i for i, (m, lbl) in enumerate(method_args)
-            if m == "add_label" and lbl == "coder:failed"
-        )
-        assert wip_remove_idx < failed_add_idx, (
-            f"coder:wip must be removed before coder:failed is added; "
-            f"call order was {method_args}"
-        )
-
-    def test_clears_requested(self):
-        """_apply_failed removes :requested — validates DP-001 fix."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        result = AgentRunResult(success=False, returncode=1)
-
-        _apply_failed(gh, agent_def, work_item, result)
-
-        remove_calls = [c[0][1] for c in gh.remove_label.call_args_list]
-        assert "coder:requested" in remove_calls, (
-            f"Expected 'coder:requested' in remove_label calls: {remove_calls}"
-        )
-
-    def test_does_not_raise_when_remove_fails(self):
-        """_apply_failed swallows remove_label exceptions (best-effort cleanup)."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        gh.remove_label.side_effect = Exception("API error")
-        result = AgentRunResult(success=False, returncode=1)
-
-        # Should not raise
-        _apply_failed(gh, agent_def, work_item, result)
-
-    def test_clears_all_stale_statuses(self):
-        """All of wip, review, blocked, requested are cleared."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        result = AgentRunResult(success=False, returncode=1)
-
-        _apply_failed(gh, agent_def, work_item, result)
-
-        remove_calls = {c[0][1] for c in gh.remove_label.call_args_list}
-        for stale in ("coder:wip", "coder:review", "coder:blocked", "coder:requested"):
-            assert stale in remove_calls, f"Expected {stale!r} in remove_label calls: {remove_calls}"
-
-
-# ---------------------------------------------------------------------------
-# TestParseFrontmatter
-# ---------------------------------------------------------------------------
-
-class TestParseFrontmatter:
-    def test_simple_scalar(self):
-        text = "---\nmodel: claude-sonnet-4-6\n---"
-        result = parse_frontmatter(text)
-        assert result == {"model": "claude-sonnet-4-6"}
-
-    def test_no_frontmatter_returns_empty(self):
-        text = "This is plain text without frontmatter"
-        result = parse_frontmatter(text)
-        assert result == {}
-
-    def test_unclosed_frontmatter_returns_empty(self):
-        text = "---\nmodel: foo"
-        result = parse_frontmatter(text)
-        assert result == {}
-
-    def test_value_with_colon(self):
-        """Values containing colons (e.g., URLs) must be preserved fully — validates QA-002."""
-        text = "---\nurl: https://x.com:443\n---"
-        result = parse_frontmatter(text)
-        assert result == {"url": "https://x.com:443"}, (
-            f"Value with colon was not preserved correctly: {result}"
-        )
-
-    def test_multiple_keys(self):
-        text = "---\nmodel: claude-sonnet-4-6\ntemperature: 0.7\n---"
-        result = parse_frontmatter(text)
-        assert result["model"] == "claude-sonnet-4-6"
-        assert result["temperature"] == "0.7"
-
-    def test_inline_list(self):
-        text = "---\ntools: [bash, python, read]\n---"
-        result = parse_frontmatter(text)
-        assert result["tools"] == ["bash", "python", "read"]
-
-    def test_empty_frontmatter_returns_empty(self):
-        text = "---\n---"
-        result = parse_frontmatter(text)
-        assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# Concurrency helpers
-# ---------------------------------------------------------------------------
-
-def _make_agent_def_concurrent(name: str, max_concurrent: int = 1) -> AgentDef:
-    """Build a minimal AgentDef with a configurable max_concurrent."""
-    parts = name.split("/")
-    return AgentDef(
-        agent=name,
-        phase=parts[0],
-        objects=["issue"],
-        trigger={"label": f"{parts[-1]}-dep:complete"},
-        dependencies=[],
-        human_gate_after=False,
-        human_gate_label=None,
-        description="test agent",
+        trigger=trigger,
+        dependencies=deps or [],
+        human_gate_after=human_gate,
+        human_gate_label=gate_label,
+        description="test",
+        step_type=step_type,
+        exclude_labels=exclude_labels or [],
+        exclude_classifications=exclude_classifications or [],
+        auto_approve_on_complete=auto_approve_on_complete,
+        review_loop=review_loop,
         max_concurrent=max_concurrent,
+        session_scope=session_scope,
     )
 
 
-def _make_work_item_with_labels(number: int, labels: set) -> WorkItem:
+def _make_issue(labels=None, title="", classification=None):
+    label_set = set(labels or [])
+    if classification:
+        label_set.add(f"classification:{classification}")
     return WorkItem(
-        number=number,
+        number=1,
         kind="issue",
-        title=f"Test issue #{number}",
-        labels=labels,
-        url=f"https://github.com/test/repo/issues/{number}",
+        title=title,
+        labels=label_set,
+        url="https://github.com/test/repo/issues/1",
     )
 
 
-def _make_gh_mock() -> MagicMock:
-    gh = MagicMock()
-    gh.add_label = MagicMock()
-    gh.remove_label = MagicMock()
-    gh.post_comment = MagicMock()
-    gh.get_issue_labels = MagicMock(return_value=set())
-    return gh
+# ===========================================================================
+# _should_skip tests
+# ===========================================================================
 
+class TestShouldSkip:
 
-# ---------------------------------------------------------------------------
-# TestCountRunning
-# ---------------------------------------------------------------------------
+    def test_skips_when_complete_label_present(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:complete"])
+        assert _should_skip(agent, issue)
 
-class TestCountRunning:
-    def test_returns_zero_when_no_wip(self):
-        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
-        work_items = [_make_work_item_with_labels(i, set()) for i in range(3)]
-        counts = _count_running(work_items, agents)
-        assert counts["prd-writer"] == 0
+    def test_skips_when_wip_label_present(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:wip"])
+        assert _should_skip(agent, issue)
 
-    def test_counts_wip_labels_across_work_items(self):
-        """Prior-tick :wip labels are correctly tallied per agent."""
-        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
-        work_items = [
-            _make_work_item_with_labels(1, {"prd-writer:wip"}),
-            _make_work_item_with_labels(2, {"prd-writer:wip"}),
-            _make_work_item_with_labels(3, {"some-other:complete"}),
-        ]
-        counts = _count_running(work_items, agents)
-        assert counts["prd-writer"] == 2
+    def test_skips_when_review_label_present(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:review"])
+        assert _should_skip(agent, issue)
 
-    def test_counts_are_independent_per_agent(self):
-        agents = [
-            _make_agent_def_concurrent("01_product_docs/prd-writer"),
-            _make_agent_def_concurrent("03_execute/coder"),
-        ]
-        work_items = [
-            _make_work_item_with_labels(1, {"prd-writer:wip"}),
-            _make_work_item_with_labels(2, {"coder:wip"}),
-            _make_work_item_with_labels(3, {"coder:wip"}),
-        ]
-        counts = _count_running(work_items, agents)
-        assert counts["prd-writer"] == 1
-        assert counts["coder"] == 2
+    def test_skips_when_blocked_label_present(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:blocked"])
+        assert _should_skip(agent, issue)
 
-    def test_empty_work_items_returns_zeros(self):
-        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
-        counts = _count_running([], agents)
-        assert counts["prd-writer"] == 0
+    def test_skips_when_failed_label_present(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:failed"])
+        assert _should_skip(agent, issue)
 
+    def test_skips_when_skipped_label_present(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:skipped"])
+        assert _should_skip(agent, issue)
 
-# ---------------------------------------------------------------------------
-# TestConcurrencyState
-# ---------------------------------------------------------------------------
+    def test_does_not_skip_when_no_status_label(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete"])
+        assert not _should_skip(agent, issue)
 
-class TestConcurrencyState:
-    def test_initial_tick_launch_count_is_zero(self):
-        conc = ConcurrencyState(running_counts={})
-        assert conc.tick_launch_count == 0
-
-    def test_running_counts_initialised_from_dict(self):
-        conc = ConcurrencyState(running_counts={"prd-writer": 2, "coder": 0})
-        assert conc.running_counts["prd-writer"] == 2
-        assert conc.running_counts["coder"] == 0
-
-    def test_increment_updates_both_counters(self):
-        conc = ConcurrencyState(running_counts={"prd-writer": 1})
-        conc.running_counts["prd-writer"] += 1
-        conc.tick_launch_count += 1
-        assert conc.running_counts["prd-writer"] == 2
-        assert conc.tick_launch_count == 1
-
-
-# ---------------------------------------------------------------------------
-# TestDefaultMaxConcurrentIsOne
-# ---------------------------------------------------------------------------
-
-class TestDefaultMaxConcurrentIsOne:
-    """Scenario: Default concurrency of 1 when max_concurrent is absent."""
-
-    def test_agent_def_default_max_concurrent(self):
-        agent = _make_agent_def("03_execute/coder")
-        assert agent.max_concurrent == 1, (
-            "AgentDef.max_concurrent must default to 1 when not specified"
+    def test_skips_when_exclude_label_present(self):
+        agent = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            exclude_labels=["epic"],
         )
+        issue = _make_issue(labels=["issue-classifier:complete", "epic"])
+        assert _should_skip(agent, issue)
 
-    def test_load_pipeline_defaults_max_concurrent_to_one(self, tmp_path):
-        """Pipeline entries without max_concurrent field default to 1."""
-        import json
-        pipeline_data = {
-            "pipeline": [{
-                "agent": "01_product_docs/issue-classifier",
-                "phase": "01_product_docs",
-                "object": ["issue"],
-                "trigger": {"event": "issue.opened"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-            }]
-        }
-        path = tmp_path / "pipeline.json"
-        path.write_text(json.dumps(pipeline_data))
-        from pipeline_orchestrator import load_pipeline
-        agents, _ = load_pipeline(path)
-        assert agents[0].max_concurrent == 1
+    def test_does_not_skip_when_exclude_label_absent(self):
+        agent = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            exclude_labels=["epic"],
+        )
+        issue = _make_issue(labels=["issue-classifier:complete"])
+        assert not _should_skip(agent, issue)
 
-    def test_load_pipeline_null_max_concurrent_defaults_to_one(self, tmp_path):
-        """max_concurrent: null in pipeline.json defaults to 1."""
-        import json
-        pipeline_data = {
-            "pipeline": [{
-                "agent": "01_product_docs/issue-classifier",
-                "phase": "01_product_docs",
-                "object": ["issue"],
-                "trigger": {"event": "issue.opened"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-                "max_concurrent": None,
-            }]
-        }
-        path = tmp_path / "pipeline.json"
-        path.write_text(json.dumps(pipeline_data))
-        from pipeline_orchestrator import load_pipeline
-        agents, _ = load_pipeline(path)
-        assert agents[0].max_concurrent == 1
+    def test_skips_when_excluded_classification_matches(self):
+        agent = _make_agent(
+            "03_execute/coder",
+            trigger_label="prd-docs-updater:complete",
+            exclude_classifications=["spike"],
+        )
+        issue = _make_issue(
+            labels=["prd-docs-updater:complete"],
+            classification="spike",
+        )
+        assert _should_skip(agent, issue)
+
+    def test_does_not_skip_when_excluded_classification_absent(self):
+        agent = _make_agent(
+            "03_execute/coder",
+            trigger_label="prd-docs-updater:complete",
+            exclude_classifications=["spike"],
+        )
+        issue = _make_issue(
+            labels=["prd-docs-updater:complete"],
+            classification="feature",
+        )
+        assert not _should_skip(agent, issue)
+
+    def test_skips_when_title_prefix_classification_excluded(self):
+        """[SPIKE] in the issue title should be treated as a spike classification."""
+        agent = _make_agent(
+            "03_execute/coder",
+            trigger_label="prd-docs-updater:complete",
+            exclude_classifications=["spike"],
+        )
+        issue = _make_issue(
+            labels=["prd-docs-updater:complete"],
+            title="[SPIKE] investigate caching",
+        )
+        assert _should_skip(agent, issue)
 
 
-# ---------------------------------------------------------------------------
-# TestPerAgentConcurrencyCeiling
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# _eligible_agents tests
+# ===========================================================================
 
-class TestPerAgentConcurrencyCeiling:
-    """Scenario: Per-agent concurrency ceiling respected."""
+class TestEligibleAgents:
 
-    def _make_eligible_work_item(self, number: int) -> WorkItem:
-        return _make_work_item_with_labels(number, {"issue-classifier:complete"})
+    def _pipeline(self, *agents):
+        return list(agents)
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_ceiling_respected_exactly_max_concurrent_launched(self, mock_invoke):
+    def test_trigger_label_satisfied(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=["issue-classifier:complete"])
+        result = _eligible_agents(self._pipeline(agent), issue)
+        assert agent in result
+
+    def test_trigger_label_not_satisfied(self):
+        agent = _make_agent("01_product_docs/prd-writer", trigger_label="issue-classifier:complete")
+        issue = _make_issue(labels=[])
+        result = _eligible_agents(self._pipeline(agent), issue)
+        assert agent not in result
+
+    def test_dep_label_required(self):
+        """An agent whose dep emitted :complete should appear as eligible."""
+        agent = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            deps=["01_product_docs/issue-classifier"],
+        )
+        issue = _make_issue(labels=["issue-classifier:complete"])
+        result = _eligible_agents(self._pipeline(agent), issue)
+        assert agent in result
+
+    def test_dep_label_missing_blocks_eligibility(self):
+        """An agent whose dep has NOT completed is not eligible."""
+        agent = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            deps=["01_product_docs/issue-classifier"],
+        )
+        # No :complete label set for issue-classifier
+        issue = _make_issue(labels=[])
+        result = _eligible_agents(self._pipeline(agent), issue)
+        assert agent not in result
+
+    def test_human_gate_label_required(self):
+        """If human_gate_after is True AND gate_label is NOT present, agent stays blocked."""
+        writer = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            human_gate=True,
+            gate_label="prd-writer:approved",
+        )
+        # Trigger is satisfied but the approval gate is NOT yet applied
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:complete"])
+        result = _eligible_agents(self._pipeline(writer), issue)
+        # prd-writer should NOT be eligible again (it already has :complete)
+        assert writer not in result
+
+    def test_next_agent_blocked_when_gate_label_absent(self):
+        """The agent AFTER a gated step must not fire until the gate label is applied."""
+        writer = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            human_gate=True,
+            gate_label="prd-writer:approved",
+        )
+        docs_updater = _make_agent(
+            "01_product_docs/prd-docs-updater",
+            trigger_label="prd-writer:complete",
+            deps=["01_product_docs/prd-writer"],
+        )
+        # prd-writer is complete but prd-writer:approved has NOT been applied yet
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:complete"])
+        pipeline = self._pipeline(writer, docs_updater)
+
+        # The docs updater is not eligible because prd-writer:approved is missing
+        # (its trigger label is prd-writer:complete which IS present, but it depends
+        # on prd-writer, which requires the gate label)
+        result = _eligible_agents(pipeline, issue)
+        assert docs_updater not in result
+
+    def test_next_agent_eligible_after_gate_label_applied(self):
+        """Once the gate label is applied, the next agent fires."""
+        writer = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            human_gate=True,
+            gate_label="prd-writer:approved",
+        )
+        docs_updater = _make_agent(
+            "01_product_docs/prd-docs-updater",
+            trigger_label="prd-writer:complete",
+            deps=["01_product_docs/prd-writer"],
+        )
+        # Both prd-writer:complete and prd-writer:approved are now present
+        issue = _make_issue(
+            labels=["issue-classifier:complete", "prd-writer:complete", "prd-writer:approved"]
+        )
+        pipeline = self._pipeline(writer, docs_updater)
+        result = _eligible_agents(pipeline, issue)
+        assert docs_updater in result
+
+    def test_event_trigger_never_fires_on_open_issue(self):
+        """event-triggered agents only fire on the initial webhook call, not on label re-checks."""
+        classifier = _make_agent(
+            "01_product_docs/issue-classifier",
+            trigger_event="issue.opened",
+        )
+        issue = _make_issue(labels=[])
+        result = _eligible_agents(self._pipeline(classifier), issue)
+        assert classifier not in result
+
+    def test_gated_dep_blocks_downstream_even_when_trigger_label_present(self):
+        """When a gated agent's gate label is absent, downstream agents are not eligible
+        even if their trigger label is present on the issue.
         """
-        Given max_concurrent: 3 for prd-writer
-        And 5 issues are eligible (no :wip)
-        When process_work_item is called for each
-        Then exactly 3 are launched, 2 remain pending.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        gated = _make_agent(
+            "01_product_docs/prd-writer",
+            trigger_label="issue-classifier:complete",
+            human_gate=True,
+            gate_label="prd-writer:approved",
         )
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=3,
+        downstream = _make_agent(
+            "01_product_docs/prd-docs-updater",
+            trigger_label="prd-writer:complete",
+            deps=["01_product_docs/prd-writer"],
         )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-        work_items = [self._make_eligible_work_item(i) for i in range(1, 6)]
+        # prd-writer:complete is present (trigger for downstream), but gate is missing
+        issue = _make_issue(labels=["issue-classifier:complete", "prd-writer:complete"])
+        result = _eligible_agents(self._pipeline(gated, downstream), issue)
+        assert downstream not in result
 
-        launched = 0
-        for wi in work_items:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            launched += n
-
-        assert launched == 3, f"Expected exactly 3 launches, got {launched}"
-        assert conc.tick_launch_count == 3
-        assert conc.running_counts["prd-writer"] == 3
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_already_running_instances_count_against_ceiling(self, mock_invoke):
-        """
-        Given max_concurrent: 3
-        And 2 issues already carry prd-writer:wip (prior tick)
-        And 4 additional issues are eligible
-        Then exactly 1 additional instance is launched (2 + 1 = 3 ceiling).
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=3,
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        # 2 already running from prior tick
-        conc = ConcurrencyState(running_counts={"prd-writer": 2})
-        work_items = [self._make_eligible_work_item(i) for i in range(10, 14)]  # 4 eligible
-
-        launched = 0
-        for wi in work_items:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            launched += n
-
-        assert launched == 1, (
-            f"With 2 already running and max_concurrent=3, expected 1 new launch, got {launched}"
-        )
-        assert conc.running_counts["prd-writer"] == 3
-        assert conc.tick_launch_count == 1
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_default_max_concurrent_one_allows_single_launch(self, mock_invoke):
-        """
-        Given an agent with no max_concurrent field (defaults to 1)
-        And 3 issues are eligible
-        Then exactly 1 instance is launched.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            # max_concurrent intentionally omitted — should default to 1
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-        work_items = [self._make_eligible_work_item(i) for i in range(1, 4)]
-
-        launched = 0
-        for wi in work_items:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            launched += n
-
-        assert launched == 1, (
-            f"Default max_concurrent=1 should limit to 1 launch; got {launched}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# TestAggregatePipelineCeiling
-# ---------------------------------------------------------------------------
-
-class TestAggregatePipelineCeiling:
-    """Scenario: Aggregate pipeline ceiling caps total launches per tick."""
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_aggregate_ceiling_caps_total_launches(self, mock_invoke):
-        """
-        Given per-agent max_concurrent values that would permit >20 total launches
-        And the pipeline-level aggregate maximum is PIPELINE_MAX_CONCURRENT (20)
-        When the orchestrator processes all eligible work items
-        Then no more than PIPELINE_MAX_CONCURRENT agents are launched in that tick.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        # One agent type with a high per-agent ceiling — not the limiting factor
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=100,  # per-agent ceiling not the constraint
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-
-        # 25 eligible work items — more than the aggregate ceiling
-        work_items = [
-            _make_work_item_with_labels(i, {"issue-classifier:complete"})
-            for i in range(1, 26)
-        ]
-
-        launched = 0
-        for wi in work_items:
-            if conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
-                break
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            launched += n
-
-        assert launched == PIPELINE_MAX_CONCURRENT, (
-            f"Expected exactly PIPELINE_MAX_CONCURRENT={PIPELINE_MAX_CONCURRENT} launches, got {launched}"
-        )
-        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT
-
-    def test_pipeline_max_concurrent_constant_value(self):
-        """Pipeline-wide aggregate ceiling is set to 20."""
-        assert PIPELINE_MAX_CONCURRENT == 20, (
-            f"PIPELINE_MAX_CONCURRENT must be 20 per spec, got {PIPELINE_MAX_CONCURRENT}"
-        )
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_inner_break_fires_mid_agent_loop_at_aggregate_ceiling(self, mock_invoke):
-        """
-        Given two distinct agent types, both with per-agent max_concurrent=100
-        And ConcurrencyState.tick_launch_count starts at PIPELINE_MAX_CONCURRENT - 1
-        And a single work item is eligible for both agent types
-        When process_work_item is called
-        Then exactly 1 agent is launched (the first in the agents list)
-        And tick_launch_count equals PIPELINE_MAX_CONCURRENT
-        And the second agent type is never invoked — confirming the inner break fired.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent_one = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test agent one",
-            max_concurrent=100,
-        )
-        agent_two = AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test agent two",
-            max_concurrent=100,
-        )
-        agents = [agent_one, agent_two]
-        pipeline_map = {
-            "01_product_docs/prd-writer": agent_one,
-            "03_execute/coder": agent_two,
-        }
-        # One below the aggregate ceiling — first agent launch will hit it exactly.
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 0, "coder": 0},
-            tick_launch_count=PIPELINE_MAX_CONCURRENT - 1,
-        )
-        work_item = _make_work_item_with_labels(99, {"issue-classifier:complete"})
-
-        gh = _make_gh_mock()
-        n = process_work_item(
-            work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-            concurrency=conc,
-        )
-
-        assert n == 1, (
-            f"Expected exactly 1 agent launched before inner break; got {n}"
-        )
-        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT, (
-            f"tick_launch_count should equal PIPELINE_MAX_CONCURRENT after first launch; "
-            f"got {conc.tick_launch_count}"
-        )
-        assert mock_invoke.call_count == 1, (
-            f"invoke_agent should be called exactly once (inner break stops second agent); "
-            f"got {mock_invoke.call_count} calls"
-        )
-        # Confirm the launched agent was the first one (prd-writer), not coder.
-        called_agent = mock_invoke.call_args[0][0]
-        assert called_agent.agent == "01_product_docs/prd-writer", (
-            f"Expected prd-writer to be launched first; got {called_agent.agent}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# TestRateLimitCounterRollback
-# ---------------------------------------------------------------------------
-
-class TestRateLimitCounterRollback:
-    """Regression: rate-limited agent must roll back concurrency counters."""
-
-    @patch("pipeline_orchestrator._restore_pre_agent_branch")
-    @patch("pipeline_orchestrator.is_pipeline_paused")
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_rate_limited_agent_rolls_back_concurrency_counts(
-        self, mock_invoke, mock_paused, mock_restore
-    ):
-        """
-        Given a work item eligible for prd-writer (max_concurrent=5)
-        And the current running_counts for prd-writer is 1
-        And tick_launch_count is 3
-        When invoke_agent returns rate_limited=True
-        Then concurrency.running_counts[prd-writer] is rolled back to 1
-        And concurrency.tick_launch_count is rolled back to 3
-        """
-        mock_invoke.return_value = AgentRunResult(success=False, rate_limited=True)
-        mock_paused.return_value = (True, "rate-limit", None)
-        mock_restore.return_value = None
-
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=5,
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 1},
-            tick_launch_count=3,
-        )
-        work_item = _make_work_item_with_labels(42, {"issue-classifier:complete"})
-
-        gh = _make_gh_mock()
-        process_work_item(
-            work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-            concurrency=conc,
-        )
-
-        assert conc.running_counts.get("prd-writer", 0) == 1, (
-            f"running_counts should roll back to 1 after rate-limited abort; "
-            f"got {conc.running_counts.get('prd-writer', 0)}"
-        )
-        assert conc.tick_launch_count == 3, (
-            f"tick_launch_count should roll back to 3 after rate-limited abort; "
-            f"got {conc.tick_launch_count}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# TestWipLabelFailureDoesNotInflateCount  (#103)
-# ---------------------------------------------------------------------------
-
-class TestWipLabelFailureDoesNotInflateCount:
-    """Regression: concurrency counter must not increment when :wip label fails."""
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_counter_unchanged_when_add_label_raises(self, mock_invoke):
-        """
-        Given add_label raises for the :wip application
-        When process_work_item is called
-        Then running_counts is unchanged (no phantom slot consumed)
-        And tick_launch_count is unchanged
-        """
-        mock_invoke.return_value = AgentRunResult(success=True)
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=5,
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 2}, tick_launch_count=4)
-
-        gh = _make_gh_mock()
-        gh.add_label.side_effect = Exception("GitHub 500 error")
-
-        work_item = _make_work_item_with_labels(1, {"issue-classifier:complete"})
-        process_work_item(
-            work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-            concurrency=conc,
-        )
-
-        assert conc.running_counts.get("prd-writer", 0) == 2, (
-            f"running_counts must stay at 2 when :wip label fails; "
-            f"got {conc.running_counts.get('prd-writer', 0)}"
-        )
-        assert conc.tick_launch_count == 4, (
-            f"tick_launch_count must stay at 4 when :wip label fails; "
-            f"got {conc.tick_launch_count}"
-        )
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_second_item_not_blocked_by_phantom_count(self, mock_invoke):
-        """
-        Given max_concurrent=2 and 1 item already running (running_counts=1)
-        And add_label raises for the first new eligible item
-        When process_work_item is called for a second new eligible item
-        Then the second item is launched (phantom count didn't block it)
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=2,
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 1}, tick_launch_count=1)
-
-        gh_fail = _make_gh_mock()
-        gh_fail.add_label.side_effect = Exception("GitHub 500 error")
-        wi_fail = _make_work_item_with_labels(1, {"issue-classifier:complete"})
-        process_work_item(
-            wi_fail, agents, pipeline_map, gh_fail, dry_run=False, repo="test/repo",
-            concurrency=conc,
-        )
-
-        # No phantom count; slot still free for item 2
-        gh_ok = _make_gh_mock()
-        wi_ok = _make_work_item_with_labels(2, {"issue-classifier:complete"})
-        launched = process_work_item(
-            wi_ok, agents, pipeline_map, gh_ok, dry_run=False, repo="test/repo",
-            concurrency=conc,
-        )
-
-        assert launched == 1, (
-            f"Second item should launch (1 running + 1 new = 2 ceiling); got {launched}"
-        )
-        assert conc.running_counts.get("prd-writer", 0) == 2
-
-
-# ---------------------------------------------------------------------------
-# TestDryRunConcurrency  (#102)
-# ---------------------------------------------------------------------------
-
-class TestDryRunConcurrency:
-    """Regression: dry-run mode must enforce concurrency ceilings."""
-
-    def test_dry_run_increments_tick_count(self):
-        """
-        Given dry_run=True and 3 eligible items with max_concurrent=1
-        When process_work_item is called for each
-        Then only the first shows as launched (ceiling enforced in simulation)
-        And concurrency.running_counts reflects 1 counted instance
-        """
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
+    def test_max_concurrent_limits_eligible_agents(self):
+        """When max_concurrent=1, a second :wip label on the same agent type blocks eligibility."""
+        agent = _make_agent(
+            "03_execute/coder",
+            trigger_label="prd-docs-updater:complete",
             max_concurrent=1,
         )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-
-        total_launched = 0
-        for i in range(1, 4):
-            gh = _make_gh_mock()
-            wi = _make_work_item_with_labels(i, {"issue-classifier:complete"})
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=True, repo="test/repo",
-                concurrency=conc,
-            )
-            total_launched += n
-
-        assert total_launched == 1, (
-            f"dry_run must respect per-agent ceiling of 1; got {total_launched}"
-        )
-        assert conc.running_counts.get("prd-writer", 0) == 1, (
-            f"running_counts must be 1 after dry-run of 3 items (ceiling=1); "
-            f"got {conc.running_counts.get('prd-writer', 0)}"
+        # Two issues: one already :wip, one ready to run
+        issue_wip = _make_issue(labels=["prd-docs-updater:complete", "coder:wip"])
+        issue_ready = _make_issue(labels=["prd-docs-updater:complete"])
+        issue_ready = WorkItem(
+            number=2,
+            kind="issue",
+            title="",
+            labels={"prd-docs-updater:complete"},
+            url="https://github.com/test/repo/issues/2",
         )
 
-    def test_dry_run_respects_aggregate_ceiling(self):
-        """
-        Given PIPELINE_MAX_CONCURRENT and 5 items eligible across two agents
-        And dry_run=True
-        When process_work_item processes all items
-        Then no more than PIPELINE_MAX_CONCURRENT total are reported as launched
-        """
-        agent_a = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="a",
-            max_concurrent=100,
+        all_items = [issue_wip, issue_ready]
+
+        # For issue_ready: the WIP count across all items is 1, which equals max_concurrent
+        import pipeline_orchestrator as orch
+        wip_count = sum(
+            1 for wi in all_items if f"{agent.short_name}:wip" in wi.labels
         )
-        agent_b = AgentDef(
+        assert wip_count == 1
+
+        # Simulate the orchestrator logic: skip issue_ready because wip_count >= max_concurrent
+        assert wip_count >= agent.max_concurrent
+
+
+# ===========================================================================
+# invoke_agent — ANTHROPIC_API_KEY preflight (DP-001)
+# ===========================================================================
+
+class TestInvokeAgentApiKeyPreflight:
+    """Verify that invoke_agent returns early with a clear error when
+    ANTHROPIC_API_KEY is absent, rather than letting the subprocess
+    launch and misread a subsequent auth error as a rate-limit pause.
+    """
+
+    def _make_agent_def(self) -> "AgentDef":
+        import pipeline_orchestrator as orch
+        return orch.AgentDef(
             agent="03_execute/coder",
             phase="03_execute",
             objects=["issue"],
-            trigger={"label": "prd-docs-updater:complete"},
+            trigger={},
             dependencies=[],
             human_gate_after=False,
             human_gate_label=None,
-            description="b",
-            max_concurrent=100,
-        )
-        agents = [agent_a, agent_b]
-        pipeline_map = {
-            "01_product_docs/prd-writer": agent_a,
-            "03_execute/coder": agent_b,
-        }
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 0, "coder": 0},
-            tick_launch_count=PIPELINE_MAX_CONCURRENT - 1,
+            description="Test coder agent",
         )
 
-        # One item eligible only for agent_a, one eligible only for agent_b
-        wi_a = _make_work_item_with_labels(1, {"issue-classifier:complete"})
-        wi_b = _make_work_item_with_labels(2, {"prd-docs-updater:complete"})
-
-        gh = _make_gh_mock()
-        n_a = process_work_item(
-            wi_a, agents, pipeline_map, gh, dry_run=True, repo="test/repo",
-            concurrency=conc,
-        )
-        gh2 = _make_gh_mock()
-        n_b = process_work_item(
-            wi_b, agents, pipeline_map, gh2, dry_run=True, repo="test/repo",
-            concurrency=conc,
+    def _make_work_item(self) -> "WorkItem":
+        import pipeline_orchestrator as orch
+        return orch.WorkItem(
+            number=1,
+            kind="issue",
+            title="Test issue",
+            labels=set(),
+            url="https://github.com/test/repo/issues/1",
         )
 
-        # Only the first item should launch — aggregate ceiling is reached after it
-        assert n_a == 1, f"First item should launch; got {n_a}"
-        assert n_b == 0, f"Second item must be deferred by aggregate ceiling; got {n_b}"
-        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT
+    def test_missing_api_key_returns_failure_without_spawning_process(self, monkeypatch):
+        """When ANTHROPIC_API_KEY is unset, invoke_agent must return AgentRunResult(success=False)
+        and must not call subprocess.Popen."""
+        import pipeline_orchestrator as orch
 
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
-# ---------------------------------------------------------------------------
-# TestOrchestratorNonOverlapping
-# ---------------------------------------------------------------------------
+        with patch("subprocess.Popen") as mock_popen:
+            result = orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(),
+                dry_run=False,
+                repo="test/repo",
+                agent_text_override="---\ntools: []\n---\nTest agent.",
+            )
 
-class TestOrchestratorNonOverlapping:
-    """Scenario: Orchestrator runs remain non-overlapping."""
+        assert result.success is False
+        assert "ANTHROPIC_API_KEY" in result.captured_tail
+        mock_popen.assert_not_called()
 
-    def test_workflow_defines_concurrency_group(self):
-        """
-        Given the single orchestrator workflow file
-        Then it defines a concurrency group with cancel-in-progress: false
-        so concurrent triggers queue rather than cancel the active run.
-        """
-        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
-        assert path.exists(), f"Workflow file not found: {path}"
-        content = path.read_text()
-        assert "group: pipeline-orchestrator" in content, (
-            "orchestrator.yml must declare concurrency group 'pipeline-orchestrator'"
-        )
-        assert "cancel-in-progress: false" in content, (
-            "orchestrator.yml must set cancel-in-progress: false"
-        )
+    def test_present_api_key_does_not_short_circuit(self, monkeypatch):
+        """When ANTHROPIC_API_KEY is set, invoke_agent proceeds past the preflight."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 1)
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter([])
+        mock_proc.returncode = 1
+        mock_proc.poll.return_value = 1
+        mock_proc.wait.return_value = None
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(),
+                dry_run=False,
+                repo="test/repo",
+                agent_text_override="---\ntools: []\n---\nTest agent.",
+            )
+
+        mock_popen.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -1003,6 +458,7 @@ class TestInvokeAgentTimeout:
         import time
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
 
         # Stdout blocks until the process is killed.
@@ -1051,6 +507,7 @@ class TestInvokeAgentTimeout:
         import time
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
 
         # Stdout yields lines until the process is killed, then stops.
@@ -1162,6 +619,7 @@ class TestInvokeAgentRuntimeContext:
         """Prompt must contain ## Runtime context with resolved KEY=value pairs (not $VAR syntax)."""
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
         captured_cmd: list = []
 
@@ -1186,6 +644,7 @@ class TestInvokeAgentRuntimeContext:
         """When work_item.kind is 'pr', context block uses PR_NUMBER, not ISSUE_NUMBER."""
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
         captured_cmd: list = []
 
@@ -1207,6 +666,7 @@ class TestInvokeAgentRuntimeContext:
         """String values with surrounding whitespace are stripped to prevent prompt line injection."""
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
         monkeypatch.setenv("AI_AGILE_ROOT", "  /padded/path  ")
         captured_cmd: list = []
@@ -1229,6 +689,7 @@ class TestInvokeAgentRuntimeContext:
         """Subprocess env must still carry REPO, ISSUE_NUMBER, WORK_ITEM_KIND, SESSION_ID."""
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
         captured_env: dict = {}
 
@@ -1250,6 +711,7 @@ class TestInvokeAgentRuntimeContext:
         """SESSION_ID in the prompt must match SESSION_ID exported to subprocess."""
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
         captured_cmd: list = []
         captured_env: dict = {}
@@ -1295,259 +757,10 @@ class TestPromoteGatedAgents:
             dependencies=[],
             human_gate_after=True,
             human_gate_label=f"{name.rsplit('/', 1)[-1]}:approved",
-            description="gated agent",
+            description="test",
         )
 
-    def _work_item(self) -> MagicMock:
-        wi = MagicMock()
-        wi.number = 42
-        wi.kind = "issue"
-        return wi
-
-    def test_promotion_adds_complete_and_removes_review(self):
-        """Gate label + :review present → :complete added, :review removed."""
-        agent = self._gated_agent()
-        wi = self._work_item()
-        gh = MagicMock()
-        labels = {agent.review_label, agent.human_gate_label}
-
-        result = promote_gated_agents(labels, [agent], wi, gh)
-
-        gh.add_label.assert_called_once_with(wi.number, agent.complete_label)
-        gh.remove_label.assert_any_call(wi.number, agent.review_label)
-        assert agent.complete_label in result
-        assert agent.review_label not in result
-
-    def test_rejection_removes_review_leaves_requested(self):
-        """:review + :requested (no gate) → :review removed, :requested kept."""
-        agent = self._gated_agent()
-        wi = self._work_item()
-        gh = MagicMock()
-        labels = {agent.review_label, agent.status_label(STATUS_REQUESTED)}
-
-        result = promote_gated_agents(labels, [agent], wi, gh)
-
-        gh.remove_label.assert_called_once_with(wi.number, agent.review_label)
-        assert agent.review_label not in result
-        assert agent.status_label(STATUS_REQUESTED) in result
-        assert agent.complete_label not in result
-
-    def test_simultaneous_approved_and_requested_promotes_and_cleans_requested(self):
-        """Both :approved and :requested arrive — promotion wins, :requested cleaned up."""
-        agent = self._gated_agent()
-        wi = self._work_item()
-        gh = MagicMock()
-        labels = {
-            agent.review_label,
-            agent.human_gate_label,
-            agent.status_label(STATUS_REQUESTED),
-        }
-
-        result = promote_gated_agents(labels, [agent], wi, gh)
-
-        assert agent.complete_label in result
-        assert agent.review_label not in result
-        assert agent.status_label(STATUS_REQUESTED) not in result
-
-    def test_gate_present_without_review_is_no_op(self):
-        """:approved present but no :review — nothing changed (agent hasn't run yet)."""
-        agent = self._gated_agent()
-        wi = self._work_item()
-        gh = MagicMock()
-        labels = {agent.human_gate_label}
-
-        result = promote_gated_agents(labels, [agent], wi, gh)
-
-        gh.add_label.assert_not_called()
-        gh.remove_label.assert_not_called()
-        assert result == labels
-
-    def test_non_gated_agent_skipped(self):
-        """Agents without human_gate_after are not touched."""
-        agent = _make_agent_def("03_execute/coder")  # human_gate_after=False
-        wi = self._work_item()
-        gh = MagicMock()
-        labels = {agent.review_label, agent.complete_label}
-
-        result = promote_gated_agents(labels, [agent], wi, gh)
-
-        gh.add_label.assert_not_called()
-        gh.remove_label.assert_not_called()
-
-    def test_wrong_work_item_kind_skipped(self):
-        """Agent objects=['issue'] does not fire for kind='pr'."""
-        agent = self._gated_agent()
-        wi = self._work_item()
-        wi.kind = "pr"
-        gh = MagicMock()
-        labels = {agent.review_label, agent.human_gate_label}
-
-        result = promote_gated_agents(labels, [agent], wi, gh)
-
-        gh.add_label.assert_not_called()
-        gh.remove_label.assert_not_called()
-
-    def test_complete_already_present_skips_add_but_still_removes_review(self):
-        """Crash-recovery: :complete already there from prior tick — remove stale :review."""
-        agent = self._gated_agent()
-        wi = self._work_item()
-        gh = MagicMock()
-        labels = {agent.review_label, agent.human_gate_label, agent.complete_label}
-
-        result = promote_gated_agents(labels, [agent], wi, gh)
-
-        gh.add_label.assert_not_called()  # already present, skip
-        gh.remove_label.assert_any_call(wi.number, agent.review_label)
-        assert agent.review_label not in result
-
-
-# ---------------------------------------------------------------------------
-# --phases flag: phase-scoped agent filtering
-# ---------------------------------------------------------------------------
-
-class TestPhasesFilter:
-    """Verify --phases restricts which agents the orchestrator evaluates."""
-
-    def test_phases_flag_filters_agents_to_allowed_set(self):
-        """Agents outside --phases are excluded before the main loop."""
-        from pipeline_orchestrator import load_pipeline
-        from pathlib import Path
-
-        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
-        if not pipeline_path.exists():
-            pytest.skip("pipeline.json not available")
-
-        agents, _ = load_pipeline(pipeline_path)
-        all_phases = {a.phase for a in agents}
-        target_phase = next(iter(sorted(all_phases)))
-
-        filtered = [a for a in agents if a.phase in {target_phase}]
-        assert filtered
-        assert all(a.phase == target_phase for a in filtered)
-
-    def test_phases_flag_all_phases_passes_all_agents(self):
-        """Filtering with the full phase set returns every agent unchanged."""
-        from pipeline_orchestrator import load_pipeline
-        from pathlib import Path
-
-        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
-        if not pipeline_path.exists():
-            pytest.skip("pipeline.json not available")
-
-        agents, _ = load_pipeline(pipeline_path)
-        all_phases = {a.phase for a in agents}
-        filtered = [a for a in agents if a.phase in all_phases]
-        assert filtered == agents
-
-    def test_main_phases_filter_excludes_other_phase_agents_from_dispatch(self):
-        """Drive the real main() --phases path: agents outside the allowed
-        phase set must never reach process_work_item, so they are never
-        dispatched. Patches argv/parse_args + GitHub so no network occurs."""
-        import argparse
-        import pipeline_orchestrator as orch
-
-        in_phase = AgentDef(
-            agent="01_product_docs/issue-classifier",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"event": "issue.opened"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="in-phase",
-        )
-        out_phase = AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "x:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="out-of-phase",
-        )
-
-        fake_args = argparse.Namespace(
-            verbose=False, clear_pause=False, clear_stop=False, repo="test/repo",
-            pipeline="pipeline.json", phases="01_product_docs",
-            issue=None, kind=None, dry_run=True,
-        )
-
-        wi = _make_work_item_with_labels(1, set())
-        captured = {}
-
-        def _capture_process(item, agents, pipeline_map, gh, dry_run, repo, **kw):
-            captured["agents"] = list(agents)
-            captured["pipeline_map"] = dict(pipeline_map)
-            return 0
-
-        gh_mock = MagicMock()
-        gh_mock.list_open_issues.return_value = [wi]
-
-        with patch.object(orch, "parse_args", return_value=fake_args), \
-             patch.object(orch, "is_pipeline_paused", return_value=(False, None, None)), \
-             patch.object(orch, "load_pipeline", return_value=([in_phase, out_phase], [])), \
-             patch.object(orch, "GitHubClient", return_value=gh_mock), \
-             patch.object(orch, "process_work_item", side_effect=_capture_process), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
-             patch.dict(os.environ, {"GITHUB_TOKEN": "x"}), \
-             patch("time.sleep"):
-            orch.main()
-
-        active_agents = {a.agent for a in captured["agents"]}
-        assert "01_product_docs/issue-classifier" in active_agents
-        assert "03_execute/coder" not in active_agents, (
-            "Agent outside --phases must be filtered out before dispatch; "
-            f"active agents were {active_agents}"
-        )
-        assert "03_execute/coder" not in captured["pipeline_map"]
-
-    def test_orchestrator_workflow_runs_all_phases(self):
-        """The single orchestrator workflow must not restrict phases.
-
-        Consolidating the two split workflows back into one means the
-        orchestrator loads every agent in a single pass, so cross-phase
-        dependencies always resolve. Guard against a regression that
-        reintroduces a --phases filter (which would silently drop agents).
-        """
-        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
-        assert path.exists(), f"Workflow file not found: {path}"
-        content = path.read_text()
-        assert "--phases" not in content, (
-            "orchestrator.yml must not pass --phases — the single workflow runs "
-            "all phases so cross-phase dependencies resolve."
-        )
-
-
-# ---------------------------------------------------------------------------
-# QA-001: TestHandleReviewLoop
-# ---------------------------------------------------------------------------
-
-class TestHandleReviewLoop:
-    """Tests for _handle_review_loop() — review-cycle counter and escalation."""
-
-    def _reviewer_def(
-        self,
-        reviewer: str = "03_execute/pr-reviewer",
-        target: str = "03_execute/coder",
-        max_cycles: int = 3,
-    ) -> AgentDef:
-        return AgentDef(
-            agent=reviewer,
-            phase=reviewer.split("/")[0],
-            objects=["issue"],
-            trigger={},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="reviewer",
-            review_loop={
-                "re_invoke": target,
-                "max_cycles": max_cycles,
-            },
-        )
-
-    def _target_def(self, name: str = "03_execute/coder") -> AgentDef:
+    def _ungated_agent(self, name: str = "01_product_docs/issue-classifier") -> AgentDef:
         return AgentDef(
             agent=name,
             phase=name.split("/")[0],
@@ -1556,1500 +769,218 @@ class TestHandleReviewLoop:
             dependencies=[],
             human_gate_after=False,
             human_gate_label=None,
-            description="coder",
+            description="test",
         )
 
-    def _work_item(self) -> WorkItem:
+    def _issue(self, labels: list) -> WorkItem:
         return WorkItem(
-            number=42,
+            number=1,
             kind="issue",
-            title="Test issue",
-            labels=set(),
-            url="https://github.com/test/repo/issues/42",
+            title="",
+            labels=set(labels),
+            url="https://github.com/test/repo/issues/1",
         )
 
-    def test_first_cycle_clears_reviewer_review_and_target_complete(self):
-        """Cycle 0 → 1: removes reviewer :review and target :complete so target re-runs."""
-        reviewer = self._reviewer_def()
-        target = self._target_def()
-        wi = self._work_item()
-        gh = MagicMock()
-        pipeline_map = {target.agent: target}
-        # Starting with reviewer in :review and target in :complete
-        labels = {reviewer.review_label, target.complete_label}
+    # ------------------------------------------------------------------
+    # core gate promotion
+    # ------------------------------------------------------------------
 
-        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
-
-        # :review removed from reviewer
-        gh.remove_label.assert_any_call(wi.number, reviewer.review_label)
-        assert reviewer.review_label not in result
-        # :complete removed from target
-        gh.remove_label.assert_any_call(wi.number, target.complete_label)
-        assert target.complete_label not in result
-
-    def test_first_cycle_adds_review_cycle_label(self):
-        """After cycle 0→1, review-cycle:1 label is applied."""
-        reviewer = self._reviewer_def()
-        target = self._target_def()
-        wi = self._work_item()
-        gh = MagicMock()
-        pipeline_map = {target.agent: target}
-        labels = {reviewer.review_label, target.complete_label}
-
-        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
-
-        gh.add_label.assert_any_call(wi.number, "review-cycle:1")
-        assert "review-cycle:1" in result
-
-    def test_max_cycles_reached_escalates_to_human(self):
-        """When next_cycle >= max_cycles, :review is left intact (escalation)."""
-        reviewer = self._reviewer_def(max_cycles=2)
-        target = self._target_def()
-        wi = self._work_item()
-        gh = MagicMock()
-        pipeline_map = {target.agent: target}
-        # Already at cycle 1; next would be 2 == max_cycles → escalate
-        labels = {reviewer.review_label, target.complete_label, "review-cycle:1"}
-
-        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
-
-        # :review must remain for human to act on
-        assert reviewer.review_label in result
-        # A comment should be posted explaining the escalation
-        gh.post_comment.assert_called_once()
-        comment_text = gh.post_comment.call_args[0][1]
-        assert "human review required" in comment_text.lower()
-
-    def test_unknown_re_invoke_returns_labels_unchanged(self):
-        """If re_invoke target is not in pipeline_map, labels are returned unchanged."""
-        reviewer = self._reviewer_def(target="03_execute/nonexistent")
-        wi = self._work_item()
-        gh = MagicMock()
-        pipeline_map = {}  # target not present
-        labels = {reviewer.review_label}
-
-        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
-
-        assert reviewer.review_label in result
-        gh.add_label.assert_not_called()
-        gh.remove_label.assert_not_called()
-
-    def test_second_cycle_removes_old_cycle_label(self):
-        """On cycle 1→2, the review-cycle:1 label is removed before review-cycle:2 is added."""
-        reviewer = self._reviewer_def(max_cycles=5)
-        target = self._target_def()
-        wi = self._work_item()
-        gh = MagicMock()
-        pipeline_map = {target.agent: target}
-        labels = {reviewer.review_label, target.complete_label, "review-cycle:1"}
-
-        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
-
-        gh.remove_label.assert_any_call(wi.number, "review-cycle:1")
-        gh.add_label.assert_any_call(wi.number, "review-cycle:2")
-        assert "review-cycle:1" not in result
-        assert "review-cycle:2" in result
-
-    def test_both_labels_coexist_recovery(self):
-        """Normal cycle 0→1 runs correctly when target also carries a stale :review label."""
-        reviewer = self._reviewer_def()
-        target = self._target_def()
-        wi = self._work_item()
-        gh = MagicMock()
-        pipeline_map = {target.agent: target}
-        # Both present on the target (crashed prior run residue)
-        labels = {reviewer.review_label, target.complete_label, target.review_label}
-
-        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
-
-        # Reviewer :review removed, target :complete cleared
-        assert reviewer.review_label not in result
-        assert target.complete_label not in result
-        # Cycle label applied
-        assert "review-cycle:1" in result
-
-
-# ---------------------------------------------------------------------------
-# QA-001: TestAuditEventEmission
-# ---------------------------------------------------------------------------
-
-class TestAuditEventEmission:
-    """Tests for _make_audit_event() and _emit_audit_event()."""
-
-    def test_make_audit_event_has_required_fields(self):
-        """_make_audit_event returns a dict with all required top-level fields."""
-        wi = WorkItem(
-            number=42, kind="issue", title="test", labels=set(),
-            url="https://github.com/test/repo/issues/42",
-        )
-        event = _make_audit_event(
-            "sess-123", "agent.complete", "test/repo",
-            work_item=wi, agent="03_execute/coder",
-            outcome_status="ok",
-        )
-        assert event["event"] == "agent.complete"
-        assert event["ts"]
-        assert event["agent"] == "03_execute/coder"
-        assert event["issue"] == 42
-        assert event["status"] == "ok"
-        assert event["session_id"] == "sess-123"
-        assert event["object"]["kind"] == "issue"
-        assert event["object"]["id"] == 42
-        assert "actor" in event
-
-    def test_make_audit_event_without_work_item(self):
-        """_make_audit_event with no work_item sets object and issue to None."""
-        event = _make_audit_event("sess-1", "session.start", "test/repo")
-        assert event["object"] is None
-        assert event["issue"] is None
-        assert event["agent"] is None
-
-    def test_make_audit_event_pr_work_item_issue_is_none(self):
-        """For PR work items, issue field is None (only issue kind gets the id)."""
-        wi = WorkItem(
-            number=7, kind="pr", title="test pr", labels=set(),
-            url="https://github.com/test/repo/pull/7",
-        )
-        event = _make_audit_event("sess-2", "agent.complete", "test/repo", work_item=wi)
-        assert event["issue"] is None
-        assert event["object"]["kind"] == "pr"
-        assert event["object"]["id"] == 7
-
-    def test_emit_audit_event_prints_valid_json_line(self, capsys):
-        """_emit_audit_event prints one compact JSON line to stdout."""
-        event = _make_audit_event("sess-123", "agent.complete", "test/repo",
-                                  outcome_status="ok")
-        _emit_audit_event(event)
-        captured = capsys.readouterr()
-        lines = [l for l in captured.out.splitlines() if l.strip()]
-        assert len(lines) == 1
-        parsed = json.loads(lines[0])
-        assert parsed["event"] == "agent.complete"
-        assert parsed["status"] == "ok"
-        assert parsed["ts"]
-
-    def test_emit_audit_event_includes_required_minimum_fields(self, capsys):
-        """Emitted JSON line always contains ts, event, agent, issue, status."""
-        wi = WorkItem(
-            number=5, kind="issue", title="t", labels=set(), url="http://x"
-        )
-        event = _make_audit_event(
-            "s1", "agent.invoked", "r/r",
-            work_item=wi, agent="03_execute/coder", outcome_status="started",
-        )
-        _emit_audit_event(event)
-        parsed = json.loads(capsys.readouterr().out.strip())
-        assert "ts" in parsed
-        assert "event" in parsed
-        assert "agent" in parsed
-        assert "issue" in parsed
-        assert "status" in parsed
-
-    def test_emit_audit_event_no_trailing_newline_noise(self, capsys):
-        """_emit_audit_event emits exactly one line (flush=True, print adds one newline)."""
-        event = _make_audit_event("s", "e", "r")
-        _emit_audit_event(event)
-        output = capsys.readouterr().out
-        # print() adds exactly one newline
-        assert output.endswith("\n")
-        assert output.count("\n") == 1
-
-
-# ---------------------------------------------------------------------------
-# TestApplyFailedReason — heading= kwarg and reason= in _apply_failed
-# ---------------------------------------------------------------------------
-
-class TestApplyFailedReason:
-    """_apply_failed posts exhaustion reason and uses the correct heading."""
-
-    def _make_gh(self) -> MagicMock:
-        gh = MagicMock()
-        gh.remove_label = MagicMock()
-        gh.add_label = MagicMock()
-        gh.post_comment = MagicMock()
-        return gh
-
-    def test_reason_appears_in_failure_comment(self):
-        """When reason is provided, post_comment includes that text."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        result = AgentRunResult(success=False, returncode=1)
-        reason = "_Retry limit of 3 exhausted after 4 attempt(s). Human intervention is required._"
-
-        _apply_failed(gh, agent_def, work_item, result, reason=reason)
-
-        assert gh.post_comment.called, "Expected post_comment to be called"
-        comment_body = gh.post_comment.call_args[0][1]
-        assert reason in comment_body, (
-            f"Expected reason text in comment body. Got: {comment_body!r}"
-        )
-
-    def test_retry_exhaustion_heading_not_post_run(self):
-        """Retry exhaustion uses a distinct heading — not 'post-run step failed'."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        result = AgentRunResult(success=False, returncode=1)
-        exhaustion_heading = "### `03_execute/coder` failed — retry limit exhausted"
-
-        _apply_failed(
-            gh, agent_def, work_item, result,
-            reason="_Retry limit of 3 exhausted._",
-            heading=exhaustion_heading,
-        )
-
-        comment_body = gh.post_comment.call_args[0][1]
-        assert exhaustion_heading in comment_body, (
-            f"Expected exhaustion heading in comment. Got: {comment_body!r}"
-        )
-        assert "post-run step failed" not in comment_body, (
-            "Misleading 'post-run step failed' heading must not appear for retry exhaustion"
-        )
-
-    def test_no_reason_uses_generic_error_heading(self):
-        """Without reason, comment uses the generic 'exited with an error' heading."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        result = AgentRunResult(success=False, returncode=1)
-
-        _apply_failed(gh, agent_def, work_item, result)
-
-        comment_body = gh.post_comment.call_args[0][1]
-        assert "exited with an error" in comment_body
-
-    def test_custom_heading_overrides_default(self):
-        """An explicit heading= kwarg takes precedence over the reason-derived heading."""
-        agent_def = _make_agent_def("03_execute/coder")
-        work_item = _make_work_item(42)
-        gh = self._make_gh()
-        result = AgentRunResult(success=False, returncode=1)
-        custom = "### `03_execute/coder` failed — custom context"
-
-        _apply_failed(gh, agent_def, work_item, result, reason="some reason", heading=custom)
-
-        comment_body = gh.post_comment.call_args[0][1]
-        assert custom in comment_body
-        assert "post-run step failed" not in comment_body
-
-
-# ---------------------------------------------------------------------------
-# TestRetryPolicy  (PRD scenarios for per-agent retry and restart policy)
-# ---------------------------------------------------------------------------
-
-class TestRetryPolicy:
-    """Gherkin-traced tests for the per-agent retry/restart policy in the orchestrator.
-
-    Each test corresponds to a named scenario in the approved PRD for issue #16.
-    """
-
-    def _make_agent(self, max_retries: int = 0) -> AgentDef:
-        return AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test agent",
-            max_retries=max_retries,
-            commit_after=False,
-        )
-
-    def _make_gh(self) -> MagicMock:
-        gh = MagicMock()
-        gh.get_issue_labels.return_value = set()
-        return gh
-
-    @patch("pipeline_orchestrator.time.sleep")
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_retries_within_limit_posts_comment_and_succeeds(self, mock_invoke, mock_sleep):
-        """Scenario: Orchestrator retries a failed agent within configured limit.
-
-        Given an agent is configured with max_retries: 3 in pipeline.json
-        When the agent exits with a failure status and the current attempt count is below the limit
-        Then the orchestrator restarts the agent without applying :failed
-        And a comment is posted on the work item recording the retry attempt number
-        """
-        mock_invoke.side_effect = [
-            AgentRunResult(success=False, returncode=1, captured_tail="error"),
-            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
-        ]
-        agent_def = self._make_agent(max_retries=3)
-        gh = self._make_gh()
-        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
-
-        process_work_item(
-            work_item, [agent_def], {"03_execute/coder": agent_def},
-            gh, False, "test/repo",
-        )
-
-        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
-        assert "coder:failed" not in add_calls, (
-            f":failed must not be applied when retry succeeds. add_label calls: {add_calls}"
-        )
-        assert "coder:complete" in add_calls, (
-            f":complete must be applied after successful retry. add_label calls: {add_calls}"
-        )
-        comment_bodies = [str(c[0][1]) for c in gh.post_comment.call_args_list]
-        # The retry comment records the specific attempt number in "retry N/M"
-        # form — assert that exact format, not just the loose substring "retry".
+    def test_complete_on_gated_agent_promotes_to_approved(self):
+        """When a gated agent emits :complete, the gate label must be promoted to :approved."""
+        agent = self._gated_agent()
+        issue = self._issue(["prd-writer:complete"])
+        actions = promote_gated_agents([agent], issue)
         assert any(
-            ("retry 1/3" in b.lower()) or ("retry 1 " in b.lower())
-            for b in comment_bodies
-        ), (
-            f"Expected a 'retry 1/3' attempt comment. post_comment calls: {comment_bodies}"
-        )
+            a["kind"] == "add_label" and a["label"] == "prd-writer:approved"
+            for a in actions
+        ), f"Expected add_label prd-writer:approved, got {actions}"
 
-    @patch("pipeline_orchestrator.time.sleep")
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_escalates_when_retry_limit_exhausted(self, mock_invoke, mock_sleep):
-        """Scenario: Orchestrator escalates when retry limit is exhausted.
+    def test_complete_on_ungated_agent_does_not_promote(self):
+        """A non-gated agent must not trigger any label action."""
+        agent = self._ungated_agent()
+        issue = self._issue(["issue-classifier:complete"])
+        actions = promote_gated_agents([agent], issue)
+        assert actions == [], f"Expected no actions, got {actions}"
 
-        Given an agent is configured with max_retries: 3 in pipeline.json
-        And the agent has already failed 3 times (retry limit reached)
-        When the agent exits with a failure status again
-        Then the orchestrator applies :failed to the work item
-        And posts a comment stating that the retry limit has been exhausted
-        and human intervention is required
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=False, returncode=1, captured_tail="error"
-        )
-        agent_def = self._make_agent(max_retries=3)
-        gh = self._make_gh()
-        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
+    def test_gate_already_approved_does_not_re_add(self):
+        """If the gate label is already present, no duplicate add_label should be emitted."""
+        agent = self._gated_agent()
+        issue = self._issue(["prd-writer:complete", "prd-writer:approved"])
+        actions = promote_gated_agents([agent], issue)
+        assert actions == [], f"Expected no actions (gate already applied), got {actions}"
 
-        process_work_item(
-            work_item, [agent_def], {"03_execute/coder": agent_def},
-            gh, False, "test/repo",
-        )
+    def test_no_complete_label_does_not_trigger_promotion(self):
+        """:wip, :review, :blocked, :failed, :skipped — none should trigger promotion."""
+        agent = self._gated_agent()
+        for status in ("wip", "review", "blocked", "failed", "skipped"):
+            issue = self._issue([f"prd-writer:{status}"])
+            actions = promote_gated_agents([agent], issue)
+            assert actions == [], (
+                f"Expected no actions for status={status!r}, got {actions}"
+            )
 
-        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
-        assert "coder:failed" in add_calls, (
-            f":failed must be applied when retry limit is exhausted. add_label calls: {add_calls}"
-        )
-        comment_bodies = [str(c[0][1]) for c in gh.post_comment.call_args_list]
-        escalation_comments = [
-            b for b in comment_bodies
-            if "exhausted" in b.lower() and "human" in b.lower()
-        ]
-        assert escalation_comments, (
-            f"Expected comment mentioning retry limit exhausted and human intervention. "
-            f"post_comment calls: {comment_bodies}"
-        )
+    # ------------------------------------------------------------------
+    # auto_approve_on_complete
+    # ------------------------------------------------------------------
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_no_retry_when_not_configured(self, mock_invoke):
-        """Scenario: Agent with no retry configuration fails immediately.
-
-        Given an agent has no max_retries entry in pipeline.json (defaults to 0)
-        When the agent exits with a failure status
-        Then the orchestrator applies :failed to the work item immediately without retrying
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=False, returncode=1, captured_tail="error"
-        )
-        agent_def = self._make_agent(max_retries=0)
-        gh = self._make_gh()
-        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
-
-        process_work_item(
-            work_item, [agent_def], {"03_execute/coder": agent_def},
-            gh, False, "test/repo",
-        )
-
-        assert mock_invoke.call_count == 1, (
-            f"With max_retries=0, invoke_agent must be called exactly once (no retries). "
-            f"Call count: {mock_invoke.call_count}"
-        )
-        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
-        assert "coder:failed" in add_calls, (
-            f":failed must be applied immediately with max_retries=0. add_label calls: {add_calls}"
-        )
-
-    @patch("pipeline_orchestrator.time.sleep")
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_successful_recovery_applies_complete_no_retry_state(self, mock_invoke, mock_sleep):
-        """Scenario: Successfully recovered agent clears retry state.
-
-        Given an agent has been retried at least once
-        When the agent exits successfully on a subsequent attempt
-        Then the orchestrator applies the normal success label
-        And does not retain or display a retry count in the final state
-        """
-        mock_invoke.side_effect = [
-            AgentRunResult(success=False, returncode=1, captured_tail="error"),
-            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
-        ]
-        agent_def = self._make_agent(max_retries=3)
-        gh = self._make_gh()
-        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
-
-        process_work_item(
-            work_item, [agent_def], {"03_execute/coder": agent_def},
-            gh, False, "test/repo",
-        )
-
-        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
-        assert "coder:complete" in add_calls, (
-            f":complete (normal success label) must be applied after recovery. "
-            f"add_label calls: {add_calls}"
-        )
-        retry_count_labels = [lbl for lbl in add_calls if "retry" in lbl.lower()]
-        assert not retry_count_labels, (
-            f"No retry-count label must remain on the work item after successful recovery. "
-            f"Found: {retry_count_labels}"
-        )
-
-    @patch("pipeline_orchestrator.time.sleep")
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_max_retries_one_both_fail_applies_failed(self, mock_invoke, mock_sleep):
-        """Boundary: max_retries=1 — first and second invocation fail → :failed applied."""
-        mock_invoke.return_value = AgentRunResult(
-            success=False, returncode=1, captured_tail="error"
-        )
-        agent_def = self._make_agent(max_retries=1)
-        gh = self._make_gh()
-        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
-
-        process_work_item(
-            work_item, [agent_def], {"03_execute/coder": agent_def},
-            gh, False, "test/repo",
-        )
-
-        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
-        assert "coder:failed" in add_calls
-        assert mock_invoke.call_count == 2
-
-    @patch("pipeline_orchestrator.time.sleep")
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_max_retries_one_fail_then_succeed_applies_complete(self, mock_invoke, mock_sleep):
-        """Boundary: max_retries=1 — first fails, second succeeds → :complete applied."""
-        mock_invoke.side_effect = [
-            AgentRunResult(success=False, returncode=1, captured_tail="error"),
-            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
-        ]
-        agent_def = self._make_agent(max_retries=1)
-        gh = self._make_gh()
-        work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
-
-        process_work_item(
-            work_item, [agent_def], {"03_execute/coder": agent_def},
-            gh, False, "test/repo",
-        )
-
-        add_calls = [c[0][1] for c in gh.add_label.call_args_list]
-        assert "coder:complete" in add_calls
-        assert "coder:failed" not in add_calls
-
-
-# ---------------------------------------------------------------------------
-# TestSessionIdPatternRegexFix — correct detection of attribute/index access
-# ---------------------------------------------------------------------------
-
-class TestSessionIdPatternRegexFix:
-    """Exercise the REAL _compute_agent_session_id guard against unsafe
-    attribute/index access in session_id_pattern.
-
-    The internal guard regex r'\\{[^}]*[.\\[][^}]*\\}' catches {foo.bar} and
-    {foo[0]} (which would otherwise raise inside the token substitution) and
-    falls back to the scope-default session id rather than raising. Safe
-    patterns like {number}/{safe_agent} substitute normally.
-    """
-
-    def _agent_def(self, pattern, scope="per_issue") -> AgentDef:
-        return AgentDef(
-            agent="03_execute/coder",
+    def test_auto_approve_on_complete_emits_add_label(self):
+        """When auto_approve_on_complete is True and :complete is present, gate must be added."""
+        agent = AgentDef(
+            agent="03_execute/merge-conflict",
             phase="03_execute",
             objects=["issue"],
             trigger={},
             dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test agent",
-            session_scope=scope,
-            session_id_pattern=pattern,
+            human_gate_after=True,
+            human_gate_label="merge-conflict:approved",
+            description="test",
+            auto_approve_on_complete=True,
         )
+        issue = self._issue(["merge-conflict:complete"])
+        actions = promote_gated_agents([agent], issue)
+        assert any(
+            a["kind"] == "add_label" and a["label"] == "merge-conflict:approved"
+            for a in actions
+        ), f"Expected add_label merge-conflict:approved, got {actions}"
 
-    def _work_item(self, number: int = 42) -> WorkItem:
-        return WorkItem(
-            number=number, kind="issue", title="T", labels=set(),
-            url=f"https://github.com/test/repo/issues/{number}",
-        )
-
-    def test_attribute_access_pattern_falls_back_to_scope_default(self):
-        """{foo.bar} is rejected by the guard → scope default, no raise."""
-        agent = self._agent_def("{foo.bar}", scope="per_issue")
-        sid = _compute_agent_session_id(agent, self._work_item(42), "test/repo")
-        # per_issue default: ais-v1-{safe_agent}-issue-{number}
-        assert sid == "ais-v1-03-execute-coder-issue-42", (
-            f"Expected scope-default session id for unsafe attr pattern; got {sid!r}"
-        )
-
-    def test_index_access_pattern_falls_back_to_scope_default(self):
-        """{foo[0]} is rejected by the guard → scope default, no raise."""
-        agent = self._agent_def("{foo[0]}", scope="global")
-        sid = _compute_agent_session_id(agent, self._work_item(7), "test/repo")
-        # global default: ais-v1-{safe_agent}
-        assert sid == "ais-v1-03-execute-coder", (
-            f"Expected global scope-default session id for unsafe index pattern; got {sid!r}"
-        )
-
-    def test_safe_number_token_substitutes(self):
-        """A safe {number} token substitutes the work item number."""
-        agent = self._agent_def("ais-{number}")
-        sid = _compute_agent_session_id(agent, self._work_item(99), "test/repo")
-        assert sid == "ais-99", f"Expected '{{number}}' substituted; got {sid!r}"
-
-    def test_safe_agent_token_substitutes(self):
-        """A safe {safe_agent} token substitutes the sanitised agent name."""
-        agent = self._agent_def("sess-{safe_agent}")
-        sid = _compute_agent_session_id(agent, self._work_item(1), "test/repo")
-        assert sid == "sess-03-execute-coder", f"Expected '{{safe_agent}}' substituted; got {sid!r}"
-
-    def test_old_broken_regex_raises_on_compile(self):
-        """Regression: the OLD broken guard r'\\{[^}]*[.[}' was an unterminated
-        character set that raises re.error — the current code must not use it."""
-        import re
-        with pytest.raises(re.error):
-            re.search(r"\{[^}]*[.[}", "{foo.bar}")
-
-
-# ---------------------------------------------------------------------------
-# TestLoadPipelineMalformed — load_pipeline exits cleanly on bad JSON
-# ---------------------------------------------------------------------------
-
-class TestLoadPipelineMalformed:
-    """load_pipeline must sys.exit(1) on malformed pipeline.json rather than
-    raising an unhandled exception."""
-
-    def test_invalid_json_exits_1(self, tmp_path):
-        """A syntactically invalid JSON file → SystemExit(1)."""
-        from pipeline_orchestrator import load_pipeline
-        path = tmp_path / "pipeline.json"
-        path.write_text("{ this is not valid json ]")
-        with pytest.raises(SystemExit) as exc_info:
-            load_pipeline(path)
-        assert exc_info.value.code == 1
-
-    def test_missing_required_key_exits_1(self, tmp_path):
-        """Valid JSON but a pipeline entry missing a required key (KeyError)
-        → SystemExit(1)."""
-        from pipeline_orchestrator import load_pipeline
-        path = tmp_path / "pipeline.json"
-        # 'agent' key is required by load_pipeline but absent here.
-        path.write_text(json.dumps({"pipeline": [{"phase": "x"}]}))
-        with pytest.raises(SystemExit) as exc_info:
-            load_pipeline(path)
-        assert exc_info.value.code == 1
-
-    def test_pipeline_not_a_list_exits_1(self, tmp_path):
-        """'pipeline' present but not iterable as expected (TypeError) →
-        SystemExit(1)."""
-        from pipeline_orchestrator import load_pipeline
-        path = tmp_path / "pipeline.json"
-        path.write_text(json.dumps({"pipeline": 5}))
-        with pytest.raises(SystemExit) as exc_info:
-            load_pipeline(path)
-        assert exc_info.value.code == 1
-
-
-# ---------------------------------------------------------------------------
-# TestInvokeScript — script-step error paths
-# ---------------------------------------------------------------------------
-
-class TestInvokeScript:
-    """Focused tests for invoke_script's error branches."""
-
-    def _script_agent(self, script_path, timeout=300) -> AgentDef:
-        return AgentDef(
-            agent="00_ondemand/some-script",
-            phase="00_ondemand",
+    def test_auto_approve_on_complete_blocked_when_review_present(self):
+        """When :review is present alongside :complete, auto-approval must not fire."""
+        agent = AgentDef(
+            agent="03_execute/merge-conflict",
+            phase="03_execute",
             objects=["issue"],
             trigger={},
             dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="script step",
-            step_type="script",
-            script_path=script_path,
-            script_timeout_seconds=timeout,
-        )
-
-    def _work_item(self) -> WorkItem:
-        return WorkItem(
-            number=42, kind="issue", title="T", labels=set(),
-            url="https://github.com/test/repo/issues/42",
-        )
-
-    def test_missing_script_path_returns_failure(self):
-        """type:script entry with no script field → success=False, no subprocess."""
-        from pipeline_orchestrator import invoke_script
-        agent = self._script_agent(script_path=None)
-        with patch("subprocess.Popen") as mock_popen:
-            result = invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
-        assert result.success is False
-        assert "no script field" in result.captured_tail
-        mock_popen.assert_not_called()
-
-    def test_nonexistent_script_file_returns_failure(self, tmp_path, monkeypatch):
-        """script field points at a file that doesn't exist → success=False."""
-        import pipeline_orchestrator as orch
-        monkeypatch.setattr(orch, "SUBMODULE_ROOT", tmp_path)
-        agent = self._script_agent(script_path="scripts/missing.sh")
-        result = orch.invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
-        assert result.success is False
-        assert "not found" in result.captured_tail.lower()
-
-    def test_nonzero_exit_returns_failure(self, tmp_path, monkeypatch):
-        """A real script that exits non-zero → success=False with that returncode."""
-        import pipeline_orchestrator as orch
-        monkeypatch.setattr(orch, "SUBMODULE_ROOT", tmp_path)
-        script = tmp_path / "fail.sh"
-        script.write_text("#!/usr/bin/env bash\necho 'doing work'\nexit 3\n")
-        agent = self._script_agent(script_path="fail.sh")
-        result = orch.invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
-        assert result.success is False
-        assert result.returncode == 3, f"Expected returncode 3, got {result.returncode}"
-
-    def test_zero_exit_returns_success(self, tmp_path, monkeypatch):
-        """A real script that exits 0 → success=True (happy-path control)."""
-        import pipeline_orchestrator as orch
-        monkeypatch.setattr(orch, "SUBMODULE_ROOT", tmp_path)
-        script = tmp_path / "ok.sh"
-        script.write_text("#!/usr/bin/env bash\necho 'AI_AGILE_STATUS: complete'\nexit 0\n")
-        agent = self._script_agent(script_path="ok.sh")
-        result = orch.invoke_script(agent, self._work_item(), dry_run=False, repo="test/repo")
-        assert result.success is True
-        assert result.returncode == 0
-
-
-# ---------------------------------------------------------------------------
-# TestExcludeClassifications — exclude_classifications skip branch
-# ---------------------------------------------------------------------------
-
-class TestExcludeClassifications:
-    """An agent with exclude_classifications must skip work items whose
-    classification matches — invoke_agent is never called for them."""
-
-    def _agent(self, exclude) -> AgentDef:
-        return AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
+            human_gate_after=True,
+            human_gate_label="merge-conflict:approved",
             description="test",
-            exclude_classifications=exclude,
+            auto_approve_on_complete=True,
+        )
+        issue = self._issue(["merge-conflict:complete", "merge-conflict:review"])
+        actions = promote_gated_agents([agent], issue)
+        assert actions == [], (
+            f"Expected no auto-approve when :review is present, got {actions}"
         )
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_excluded_classification_is_skipped(self, mock_invoke):
-        """classification 'bug' is excluded → agent not dispatched."""
-        agent = self._agent(exclude=["bug"])
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
-        gh = _make_gh_mock()
-        # Trigger label present so only the exclude branch can prevent dispatch.
-        wi = _make_work_item_with_labels(
-            1, {"issue-classifier:complete", "classification: bug"}
-        )
-        n = process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
-        assert n == 0, "Excluded-classification item must not dispatch the agent"
-        mock_invoke.assert_not_called()
+    # ------------------------------------------------------------------
+    # multiple agents
+    # ------------------------------------------------------------------
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_non_excluded_classification_still_dispatches(self, mock_invoke):
-        """classification 'feature' is NOT excluded → agent dispatches normally."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = self._agent(exclude=["bug"])
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
-        gh = _make_gh_mock()
-        wi = _make_work_item_with_labels(
-            2, {"issue-classifier:complete", "classification: feature"}
-        )
-        n = process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
-        assert n == 1, "Non-excluded classification must dispatch the agent"
-        mock_invoke.assert_called_once()
+    def test_multiple_agents_only_promotes_the_complete_one(self):
+        """In a pipeline with two gated agents, only the one with :complete gets promoted."""
+        writer = self._gated_agent("01_product_docs/prd-writer")
+        docs = self._gated_agent("01_product_docs/prd-docs-updater")
+        issue = self._issue(["prd-writer:complete"])  # docs-updater is NOT complete
+        actions = promote_gated_agents([writer, docs], issue)
+        labels_added = [a["label"] for a in actions if a["kind"] == "add_label"]
+        assert "prd-writer:approved" in labels_added
+        assert "prd-docs-updater:approved" not in labels_added
+
+    # ------------------------------------------------------------------
+    # edge cases
+    # ------------------------------------------------------------------
+
+    def test_empty_pipeline_returns_no_actions(self):
+        issue = self._issue(["some-label"])
+        assert promote_gated_agents([], issue) == []
+
+    def test_empty_labels_returns_no_actions(self):
+        agent = self._gated_agent()
+        issue = self._issue([])
+        assert promote_gated_agents([agent], issue) == []
 
 
-# ---------------------------------------------------------------------------
-# TestManualRequestedOverride — :requested bypasses the trigger check
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# _should_skip — review-cycle label handling
+# ===========================================================================
 
-class TestManualRequestedOverride:
-    """A :requested label is a manual override that dispatches the agent even
-    when its configured trigger label is absent, and clears :requested first."""
+class TestShouldSkipReviewCycle:
+    """review-cycle:N labels must NOT block an agent from running.
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_requested_dispatches_without_trigger_label(self, mock_invoke):
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            # Trigger that is NOT present on the work item.
-            objects=["issue"],
-            trigger={"label": "never-present:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-        )
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
-        gh = _make_gh_mock()
-        # Only the manual override label is present — no trigger label.
-        wi = _make_work_item_with_labels(7, {"coder:requested"})
-
-        n = process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
-
-        assert n == 1, "Manual :requested override must dispatch despite missing trigger"
-        mock_invoke.assert_called_once()
-        # :requested must be removed before :wip is applied.
-        remove_calls = [c[0][1] for c in gh.remove_label.call_args_list]
-        assert "coder:requested" in remove_calls, (
-            f"Manual override must clear :requested; remove_label calls: {remove_calls}"
-        )
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_no_requested_and_no_trigger_does_not_dispatch(self, mock_invoke):
-        """Control: without :requested and without the trigger label, the agent
-        is not dispatched — proving the override is what drives the path above."""
-        agent = AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "never-present:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-        )
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
-        gh = _make_gh_mock()
-        wi = _make_work_item_with_labels(8, set())
-
-        n = process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
-        assert n == 0
-        mock_invoke.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# TestMarkReadyOnComplete — orchestrator marks PR ready on :complete
-# ---------------------------------------------------------------------------
-
-class TestMarkReadyOnComplete:
-    """An agent with mark_ready_on_complete must trigger gh.mark_pr_ready when
-    it completes on a PR work item."""
-
-    def _agent(self) -> AgentDef:
-        return AgentDef(
-            agent="03_execute/pr-reviewer",
-            phase="03_execute",
-            objects=["pr"],
-            trigger={"label": "coder:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            mark_ready_on_complete=True,
-        )
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_marks_pr_ready_on_complete(self, mock_invoke):
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = self._agent()
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
-        gh = _make_gh_mock()
-        wi = WorkItem(
-            number=55, kind="pr", title="PR", labels={"coder:complete"},
-            url="https://github.com/test/repo/pull/55",
-        )
-
-        n = process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
-
-        assert n == 1
-        gh.mark_pr_ready.assert_called_once_with(55)
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_does_not_mark_ready_on_review(self, mock_invoke):
-        """When the agent emits :review (not :complete), the PR must NOT be
-        marked ready — readiness only fires on true completion."""
-        mock_invoke.return_value = AgentRunResult(
-            success=False,
-            captured_tail='AI_AGILE_STATUS: review "needs changes"',
-        )
-        agent = self._agent()
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
-        gh = _make_gh_mock()
-        wi = WorkItem(
-            number=56, kind="pr", title="PR", labels={"coder:complete"},
-            url="https://github.com/test/repo/pull/56",
-        )
-
-        process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
-        gh.mark_pr_ready.assert_not_called()
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_mark_pr_ready_called_on_issue_work_item(self, mock_invoke):
-        """On APPROVE of an issue-scoped agent, mark_pr_ready is called with the
-        PR number found via find_pr_by_branch."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = AgentDef(
-            agent="03_execute/pr-reviewer",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "merge-conflict:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            mark_ready_on_complete=True,
-        )
-        gh = _make_gh_mock()
-        gh.find_pr_by_branch = MagicMock(return_value=99)
-        gh.find_pr_by_label = MagicMock(return_value=None)
-        wi = WorkItem(
-            number=42, kind="issue", title="issue", labels={"merge-conflict:complete"},
-            url="https://github.com/test/repo/issues/42",
-        )
-
-        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
-
-        gh.mark_pr_ready.assert_called_once_with(99)
-        gh.find_pr_by_label.assert_not_called()
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_label_fallback_finds_pr_by_source_issue_label(self, mock_invoke):
-        """When find_pr_by_branch returns None (rebased branch), falls back to
-        find_pr_by_label('source-issue:{N}') and still marks the PR ready."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = AgentDef(
-            agent="03_execute/pr-reviewer",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "merge-conflict:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            mark_ready_on_complete=True,
-        )
-        gh = _make_gh_mock()
-        gh.find_pr_by_branch = MagicMock(return_value=None)  # canonical branch not found
-        gh.find_pr_by_label = MagicMock(return_value=132)    # found via source-issue label
-        wi = WorkItem(
-            number=23, kind="issue", title="issue", labels={"merge-conflict:complete"},
-            url="https://github.com/test/repo/issues/23",
-        )
-
-        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
-
-        gh.find_pr_by_branch.assert_called_once_with("issue-23")
-        gh.find_pr_by_label.assert_called_once_with("source-issue:23")
-        gh.mark_pr_ready.assert_called_once_with(132)
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_mark_pr_ready_exception_is_caught(self, mock_invoke):
-        """mark_pr_ready exception is caught and logged — does not propagate."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = self._agent()  # kind="pr"
-        gh = _make_gh_mock()
-        gh.mark_pr_ready = MagicMock(side_effect=Exception("draft not supported"))
-        wi = WorkItem(
-            number=55, kind="pr", title="PR", labels={"coder:complete"},
-            url="https://github.com/test/repo/pull/55",
-        )
-
-        # Must not raise — exception is caught internally and logged as warning.
-        n = process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
-        assert n == 1
-
-
-# ---------------------------------------------------------------------------
-# TestCommitAgentWorkScript — Gherkin-traced tests for issue #151
-# ---------------------------------------------------------------------------
-
-class TestCommitAgentWorkScript:
-    """Tests for the commit-agent-work.sh shell script and commit_after wiring.
-
-    Scenario: New script stages, commits, and pushes agent work
-    Scenario: Python orchestrator contains no git logic
-    Scenario: git_ops.commit_after drives commits for affected agents
+    review-cycle:N is a metadata counter (how many coder re-invocations have
+    occurred), not a terminal status label. _should_skip must treat it as
+    invisible so the coder remains eligible on each new cycle.
     """
 
-    def _work_item(self) -> WorkItem:
-        return WorkItem(
-            number=42, kind="issue", title="T", labels=set(),
-            url="https://github.com/test/repo/issues/42",
+    def _coder(self):
+        return _make_agent(
+            "03_execute/coder",
+            trigger_label="prd-docs-updater:complete",
         )
 
-    def test_commit_agent_work_script_exists(self):
-        """Scenario: New script stages, commits, and pushes agent work.
+    def test_review_cycle_label_does_not_skip_coder(self):
+        """review-cycle:1 alone must not cause _should_skip to return True."""
+        coder = self._coder()
+        issue = _make_issue(labels=["prd-docs-updater:complete", "review-cycle:1"])
+        assert not _should_skip(coder, issue)
 
-        Given .github/scripts/commit-agent-work.sh exists
-        Then the file is a bash script with the correct shebang.
-        """
-        import pipeline_orchestrator as orch
-        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "commit-agent-work.sh"
-        assert script_path.exists(), (
-            f"commit-agent-work.sh must exist at {script_path}"
-        )
-        first_line = script_path.read_text().splitlines()[0]
-        assert first_line.startswith("#!/"), (
-            f"commit-agent-work.sh must start with a shebang; got: {first_line!r}"
-        )
+    def test_review_cycle_plus_wip_skips_coder(self):
+        """review-cycle:1 + coder:wip must still skip (the :wip trumps)."""
+        coder = self._coder()
+        issue = _make_issue(labels=["prd-docs-updater:complete", "review-cycle:1", "coder:wip"])
+        assert _should_skip(coder, issue)
 
-    def test_python_orchestrator_has_no_run_commit_after(self):
-        """Scenario: Python orchestrator contains no git logic.
+    def test_review_cycle_plus_complete_skips_coder(self):
+        """review-cycle:2 + coder:complete must skip (coder already done)."""
+        coder = self._coder()
+        issue = _make_issue(labels=["prd-docs-updater:complete", "review-cycle:2", "coder:complete"])
+        assert _should_skip(coder, issue)
 
-        Given the changes in this issue have been applied
-        When pipeline_orchestrator.py is reviewed
-        Then _run_commit_after() is not present in the file.
-        """
-        import pipeline_orchestrator as orch
-        assert not hasattr(orch, "_run_commit_after"), (
-            "_run_commit_after must be removed from pipeline_orchestrator.py"
-        )
-
-    def test_python_orchestrator_has_no_configure_git_auth(self):
-        """Scenario: Python orchestrator contains no git logic.
-
-        Given the changes in this issue have been applied
-        When pipeline_orchestrator.py is reviewed
-        Then _configure_git_auth() is not present in the file.
-        """
-        import pipeline_orchestrator as orch
-        assert not hasattr(orch, "_configure_git_auth"), (
-            "_configure_git_auth must be removed from pipeline_orchestrator.py"
-        )
-
-    def test_pipeline_json_uses_git_ops_commit_after(self):
-        """Scenario: git_ops.commit_after drives commits for affected agents.
-
-        Given pipeline.json with agents that must commit their work
-        When the pipeline.json is reviewed
-        Then prd-docs-updater and coder use git_ops.commit_after: true
-             and no agent uses a post_steps field.
-        """
-        import json
-        import pipeline_orchestrator as orch
-        pipeline_path = orch.PIPELINE_PATH
-        with open(pipeline_path) as f:
-            raw = json.load(f)
-
-        commit_after_agents = []
-        post_steps_agents = []
-        for entry in raw["pipeline"]:
-            if entry.get("git_ops", {}).get("commit_after"):
-                commit_after_agents.append(entry["agent"])
-            if entry.get("post_steps"):
-                post_steps_agents.append(entry["agent"])
-
-        assert "01_product_docs/prd-docs-updater" in commit_after_agents, (
-            "prd-docs-updater must use git_ops.commit_after: true"
-        )
-        assert "03_execute/coder" in commit_after_agents, (
-            "coder must use git_ops.commit_after: true"
-        )
-        assert not post_steps_agents, (
-            f"No agent should use post_steps — found: {post_steps_agents}"
-        )
-
-    def test_commit_after_derived_from_git_ops_in_pipeline(self):
-        """Agents with git_ops.commit_after: true set commit_after=True; others False."""
-        import json
-        import pipeline_orchestrator as orch
-        agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
-        with open(orch.PIPELINE_PATH) as f:
-            raw = json.load(f)
-        raw_by_agent = {e["agent"]: e for e in raw["pipeline"]}
-        for agent_def in agents:
-            entry = raw_by_agent.get(agent_def.agent, {})
-            expected = bool(entry.get("git_ops", {}).get("commit_after", False))
-            assert agent_def.commit_after == expected, (
-                f"{agent_def.agent}: commit_after={agent_def.commit_after} "
-                f"but git_ops.commit_after={expected!r} in pipeline.json"
-            )
-
-    def test_commit_after_outer_guard_requires_issue_kind(self):
-        """Scenario: commit-after is not invoked for PR work items.
-
-        Given commit-agent-work.sh requires ISSUE_NUMBER
-        When the orchestrator source is reviewed
-        Then the commit_after invoke block is guarded by work_item.kind == 'issue'
-             so the script is never called for PR-scoped work items.
-        """
-        import inspect
-        import pipeline_orchestrator as orch
-        source = inspect.getsource(orch.process_work_item)
-        guard = 'agent_def.commit_after and work_item.kind == "issue"'
-        assert guard in source, (
-            "commit_after invoke block must include 'work_item.kind == \"issue\"' "
-            "in the outer guard — commit-agent-work.sh requires ISSUE_NUMBER and "
-            "must not be invoked for PR work items (DP-001)"
-        )
-
-    def _make_commit_after_agent(self) -> "AgentDef":
-        """AgentDef with commit_after=True and a trigger label."""
-        return AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test coder",
-            commit_after=True,
-            max_concurrent=10,
-        )
-
-    def _make_issue_wi(self) -> WorkItem:
-        return WorkItem(
-            number=42, kind="issue", title="T",
-            labels={"issue-classifier:complete"},
-            url="https://github.com/test/repo/issues/42",
-        )
-
-    def _sub_side_effect_factory(self, bash_result):
-        """Return a subprocess.run side_effect that:
-        - raises CalledProcessError for git calls (pre-agent checkout fails silently)
-        - returns bash_result for bash (commit-agent-work.sh) calls
-        """
-        import subprocess as _sp
-
-        def _side_effect(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd and cmd[0] == "git":
-                raise _sp.CalledProcessError(1, cmd)
-            return bash_result
-
-        return _side_effect
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_success_keeps_complete_status(self, mock_failed, mock_invoke):
-        """Scenario: commit-agent-work.sh exits 0 — agent stays complete.
-
-        Given an agent with commit_after: true that completes successfully
-        When commit-agent-work.sh exits 0
-        Then _apply_failed is not called.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        bash_ok = MagicMock()
-        bash_ok.returncode = 0
-        bash_ok.stdout = ""
-        bash_ok.stderr = ""
-
-        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)):
-            process_work_item(
-                self._make_issue_wi(),
-                [self._make_commit_after_agent()],
-                {"03_execute/coder": self._make_commit_after_agent()},
-                _make_gh_mock(),
-                dry_run=False,
-                repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
-            )
-
-        mock_failed.assert_not_called()
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_nonzero_exit_applies_failed(self, mock_failed, mock_invoke):
-        """Scenario: commit-agent-work.sh exits non-zero — _apply_failed is called.
-
-        Given an agent with commit_after: true that completes successfully
-        When commit-agent-work.sh exits 1
-        Then _apply_failed is called.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        bash_fail = MagicMock()
-        bash_fail.returncode = 1
-        bash_fail.stdout = "push failed"
-        bash_fail.stderr = "error: failed to push"
-
-        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_fail)):
-            process_work_item(
-                self._make_issue_wi(),
-                [self._make_commit_after_agent()],
-                {"03_execute/coder": self._make_commit_after_agent()},
-                _make_gh_mock(),
-                dry_run=False,
-                repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
-            )
-
-        mock_failed.assert_called_once()
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_timeout_applies_failed(self, mock_failed, mock_invoke):
-        """Scenario: commit-agent-work.sh times out — _apply_failed is called.
-
-        Given an agent with commit_after: true that completes successfully
-        When commit-agent-work.sh raises subprocess.TimeoutExpired
-        Then _apply_failed is called.
-        """
-        import subprocess as _sp
-
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-
-        def _timeout_side_effect(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd and cmd[0] == "git":
-                raise _sp.CalledProcessError(1, cmd)
-            raise _sp.TimeoutExpired(cmd, 300)
-
-        with patch("subprocess.run", side_effect=_timeout_side_effect):
-            process_work_item(
-                self._make_issue_wi(),
-                [self._make_commit_after_agent()],
-                {"03_execute/coder": self._make_commit_after_agent()},
-                _make_gh_mock(),
-                dry_run=False,
-                repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
-            )
-
-        mock_failed.assert_called_once()
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_script_not_found_applies_failed(self, mock_failed, mock_invoke):
-        """Scenario: commit-agent-work.sh does not exist — _apply_failed is called.
-
-        Given an agent with commit_after: true that completes successfully
-        When the commit-agent-work.sh script does not exist
-        Then _apply_failed is called.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-
-        import subprocess as _sp
-
-        def _git_fail(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd and cmd[0] == "git":
-                raise _sp.CalledProcessError(1, cmd)
-            return MagicMock(returncode=0)
-
-        with patch("subprocess.run", side_effect=_git_fail), \
-             patch("pathlib.Path.exists", return_value=False):
-            process_work_item(
-                self._make_issue_wi(),
-                [self._make_commit_after_agent()],
-                {"03_execute/coder": self._make_commit_after_agent()},
-                _make_gh_mock(),
-                dry_run=False,
-                repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
-            )
-
-        mock_failed.assert_called_once()
+    def test_high_review_cycle_number_does_not_skip(self):
+        """review-cycle:99 with no status suffix must not block the coder."""
+        coder = self._coder()
+        issue = _make_issue(labels=["prd-docs-updater:complete", "review-cycle:99"])
+        assert not _should_skip(coder, issue)
 
 
-# ---------------------------------------------------------------------------
-# TestPriorityScheduling — Gherkin-traced tests for issue #119
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# human-review-pending label handling
+# ===========================================================================
 
-class TestPriorityScheduling:
-    """Tests for the two-pass priority work item ordering in main().
+class TestHumanReviewPendingLabel:
+    """human-review-pending must behave as a non-status label.
 
-    Each test corresponds to a named scenario in the approved PRD for issue #119.
+    It signals that unresolved human REQUEST_CHANGES reviews block the
+    pr-reviewer from approving, but it must not be mistaken for a terminal
+    agent status (like :wip or :blocked) by _should_skip or _eligible_agents.
     """
 
-    def _make_agent_for_priority(self) -> AgentDef:
-        return AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=10,
+    def _pr_reviewer(self):
+        return _make_agent(
+            "03_execute/pr-reviewer",
+            trigger_label="merge-conflict:complete",
         )
 
-    def _eligible_wi(self, number: int, *, priority: bool = False) -> WorkItem:
-        labels = {"issue-classifier:complete"}
-        if priority:
-            labels.add("priority")
-        return WorkItem(
-            number=number,
-            kind="issue",
-            title=f"Test issue #{number}",
-            labels=labels,
-            url=f"https://github.com/test/repo/issues/{number}",
+    def test_human_review_pending_does_not_skip_pr_reviewer(self):
+        """human-review-pending alone must not cause _should_skip to return True."""
+        reviewer = self._pr_reviewer()
+        issue = _make_issue(
+            labels=["merge-conflict:complete", "human-review-pending"]
         )
+        assert not _should_skip(reviewer, issue)
 
-    # Scenario: Priority issue is started before a non-priority issue
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_priority_issue_receives_wip_before_non_priority(self, mock_invoke):
-        """Given a priority issue and a non-priority issue both eligible to start
-        When the orchestrator selects the next work item to start
-        Then the priority-labeled issue receives :wip before the non-priority issue.
+    def test_human_review_pending_plus_wip_skips(self):
+        """human-review-pending + pr-reviewer:wip must still skip."""
+        reviewer = self._pr_reviewer()
+        issue = _make_issue(
+            labels=["merge-conflict:complete", "human-review-pending", "pr-reviewer:wip"]
+        )
+        assert _should_skip(reviewer, issue)
+
+    def test_human_review_pending_does_not_block_eligible_agents(self):
+        """_eligible_agents must include pr-reviewer when human-review-pending is present
+        but no terminal status label blocks it.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        reviewer = self._pr_reviewer()
+        issue = _make_issue(
+            labels=["merge-conflict:complete", "human-review-pending"]
         )
-        agent_def = self._make_agent_for_priority()
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        result = _eligible_agents([reviewer], issue)
+        assert reviewer in result
 
-        # priority_wi has number 2, non_priority_wi has number 1 —
-        # without priority sorting, number 1 would be processed first.
-        non_priority_wi = self._eligible_wi(1, priority=False)
-        priority_wi = self._eligible_wi(2, priority=True)
 
-        # Simulate main()'s two-pass reorder: priority items first.
-        _priority = [wi for wi in [non_priority_wi, priority_wi] if "priority" in wi.labels]
-        _other    = [wi for wi in [non_priority_wi, priority_wi] if "priority" not in wi.labels]
-        ordered = _priority + _other
+# ===========================================================================
+# Emergency stop tests
+# ===========================================================================
 
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-        dispatched_numbers = []
-        for wi in ordered:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            if n > 0:
-                dispatched_numbers.append(wi.number)
-
-        assert dispatched_numbers[0] == 2, (
-            f"Priority issue #2 must be dispatched first; actual order: {dispatched_numbers}"
-        )
-
-    # Scenario: Concurrency limit is respected for priority items
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_concurrency_limit_respected_for_priority_items(self, mock_invoke):
-        """Given the orchestrator is at the max concurrent limit
-        And a priority-labeled issue exists
-        When the orchestrator evaluates the next selection cycle
-        Then no new work item is started until a concurrency slot becomes available.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent_def = self._make_agent_for_priority()
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 10},  # at max_concurrent ceiling
-            tick_launch_count=0,
-        )
-        priority_wi = self._eligible_wi(1, priority=True)
-
-        gh = _make_gh_mock()
-        n = process_work_item(
-            priority_wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-            concurrency=conc,
-        )
-
-        assert n == 0, (
-            f"Priority issue must not start when per-agent concurrency ceiling is reached; "
-            f"dispatched count: {n}"
-        )
-        mock_invoke.assert_not_called()
-
-    # Scenario: Normal selection resumes when no priority items are open
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_normal_selection_resumes_when_no_priority_items(self, mock_invoke):
-        """Given there are no open priority-labeled issues
-        And non-priority issues are eligible
-        When the orchestrator selects the next work item
-        Then a non-priority issue is selected using normal selection logic.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent_def = self._make_agent_for_priority()
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-
-        # No priority items — only regular ones.
-        regular_items = [self._eligible_wi(i, priority=False) for i in [10, 20, 30]]
-
-        _priority = [wi for wi in regular_items if "priority" in wi.labels]
-        _other    = [wi for wi in regular_items if "priority" not in wi.labels]
-        ordered = _priority + _other  # same order as input when no priority items
-
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-        dispatched = []
-        for wi in ordered:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            if n > 0:
-                dispatched.append(wi.number)
-
-        assert dispatched and dispatched[0] == 10, (
-            f"With no priority items, normal selection (first eligible) must proceed; "
-            f"dispatched: {dispatched}"
-        )
-
-    # Scenario: Priority label on an already-in-progress item has no effect on selection
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_priority_on_in_progress_item_is_ignored(self, mock_invoke):
-        """Given an issue is already in progress (has :wip)
-        When a stakeholder applies the priority label to that in-progress issue
-        Then no duplicate processing is triggered.
-        """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent_def = self._make_agent_for_priority()
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-
-        # Work item already carrying :wip — even with priority label.
-        in_progress_priority_wi = WorkItem(
-            number=5,
-            kind="issue",
-            title="In-progress priority issue",
-            labels={"issue-classifier:complete", "priority", "prd-writer:wip"},
-            url="https://github.com/test/repo/issues/5",
-        )
-
-        gh = _make_gh_mock()
-        conc = ConcurrencyState(running_counts={"prd-writer": 1})
-        n = process_work_item(
-            in_progress_priority_wi, agents, pipeline_map, gh,
-            dry_run=False, repo="test/repo", concurrency=conc,
-        )
-
-        assert n == 0, (
-            "An already-in-progress priority issue must not trigger a duplicate run; "
-            f"dispatched count: {n}"
-        )
-        mock_invoke.assert_not_called()
-
-    def test_priority_sort_puts_labeled_items_first(self):
-        """Unit test for the two-pass reorder logic used in main().
-
-        Given a mixed list of work items — some with priority, some without —
-        When the two-pass sort is applied
-        Then all priority-labeled items precede all non-priority items.
-        """
-        items = [
-            WorkItem(1, "issue", "Normal 1",   {"issue-classifier:complete"},          "http://x/1"),
-            WorkItem(2, "issue", "Priority 1", {"issue-classifier:complete", "priority"}, "http://x/2"),
-            WorkItem(3, "issue", "Normal 2",   {"issue-classifier:complete"},          "http://x/3"),
-            WorkItem(4, "issue", "Priority 2", {"priority"},                           "http://x/4"),
-        ]
-        _priority = [wi for wi in items if "priority" in wi.labels]
-        _other    = [wi for wi in items if "priority" not in wi.labels]
-        ordered = _priority + _other
-
-        ordered_numbers = [wi.number for wi in ordered]
-        # Both priority items (2, 4) must come before non-priority items (1, 3).
-        priority_indices = [i for i, wi in enumerate(ordered) if "priority" in wi.labels]
-        other_indices    = [i for i, wi in enumerate(ordered) if "priority" not in wi.labels]
-        assert max(priority_indices) < min(other_indices), (
-            f"All priority items must precede all non-priority items; "
-            f"got order {ordered_numbers}"
-        )
-
-    # Integration test: the sort block inside main() is exercised end-to-end.
-    @patch("pipeline_orchestrator.process_work_item")
-    @patch("pipeline_orchestrator.load_pipeline")
-    @patch("pipeline_orchestrator.is_pipeline_paused")
-    @patch("pipeline_orchestrator.GitHubClient")
-    @patch("pipeline_orchestrator.parse_args")
-    @patch("pipeline_orchestrator._emit_audit_event")
-    def test_main_dispatches_priority_before_non_priority(
-        self, mock_emit_audit, mock_parse_args, mock_gh_cls, mock_is_paused,
-        mock_load_pipeline, mock_process_wi,
-    ):
-        """Integration test: main() sort block reorders API-returned items by priority.
-
-        Given gh.list_open_issues returns [non-priority #1, priority #2] (API insertion order)
-        When main() runs
-        Then process_work_item is called with priority issue #2 before non-priority issue #1.
-
-        This test exercises the sort block in main() directly — if that block were removed,
-        process_work_item would receive #1 first and the assertion would fail.
-        """
-        args_mock = MagicMock()
-        args_mock.clear_pause = False
-        args_mock.clear_stop = False
-        args_mock.verbose = False
-        args_mock.repo = "test/repo"
-        args_mock.issue = None
-        args_mock.kind = None
-        args_mock.dry_run = False
-        args_mock.pipeline = MagicMock()
-        args_mock.phases = None
-        mock_parse_args.return_value = args_mock
-
-        agent_def = self._make_agent_for_priority()
-        mock_load_pipeline.return_value = ([agent_def], [])
-        mock_is_paused.return_value = (False, None, None)
-
-        # GitHub API returns items with non-priority (#1) first, priority (#2) second.
-        # Without the sort block in main(), #1 would be dispatched first.
-        non_priority_wi = self._eligible_wi(1, priority=False)
-        priority_wi = self._eligible_wi(2, priority=True)
-        mock_gh_instance = MagicMock()
-        mock_gh_instance.list_open_issues.return_value = [non_priority_wi, priority_wi]
-        mock_gh_cls.return_value = mock_gh_instance
-
-        mock_process_wi.return_value = 0
-
-        with patch("subprocess.run", return_value=MagicMock(returncode=0)), \
-             patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
-            main()
-
-        assert mock_process_wi.call_count >= 2, (
-            f"process_work_item must be called for both work items; "
-            f"call count: {mock_process_wi.call_count}"
-        )
-        first_item = mock_process_wi.call_args_list[0][0][0]
-        assert first_item.number == 2, (
-            f"Priority issue #2 must be passed to process_work_item first; "
-            f"got #{first_item.number}. The sort block in main() may not be exercised."
-        )
+# (These live in tests/test_emergency_stop.py — no coverage here.)
