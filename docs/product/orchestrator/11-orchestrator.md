@@ -290,6 +290,15 @@ The system prompt injected by the orchestrator provides:
 - The agent's name and the path to its prompt file
   (`.claude/agents/{agent}.md`)
 - The work item type, number, title, and URL
+- A `## Runtime context` block with pre-resolved values for `REPO`,
+  `ISSUE_NUMBER` (or `PR_NUMBER`), `WORK_ITEM_KIND`, `SESSION_ID`,
+  `SESSION_SCOPE`, `AI_AGILE_ROOT`, and `AI_AGILE_CONTEXT` — readable
+  directly from the prompt without any shell command. Each value is
+  also exported as a subprocess environment variable so that bash
+  snippets using `$VAR` syntax continue to work unchanged. Each
+  injected string value is stripped of leading/trailing whitespace
+  before embedding as a defense-in-depth measure against newline
+  injection from a compromised CI environment.
 - The sentinel format agents use to signal their terminal state:
   `AI_AGILE_STATUS: complete`, `AI_AGILE_STATUS: review`, or
   `AI_AGILE_STATUS: blocked`, emitted as the last line of stdout.
