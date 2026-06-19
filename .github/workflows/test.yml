@@ -9,6 +9,8 @@ on:
   pull_request:
     paths:
       - 'pipeline/pipeline_orchestrator.py'
+      - 'pipeline/validate_standards.py'
+      - 'standards/**'
       - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
 permissions:
@@ -24,7 +26,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install pytest requests pyyaml
+        run: pip install pytest requests pyyaml jsonschema
       - name: Run tests
         run: pytest tests/ -v
       - name: Run integration tests

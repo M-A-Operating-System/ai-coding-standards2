@@ -65,7 +65,7 @@ Every entry in a `standards` array must conform to this shape:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | yes | `STD-{CATEGORY}-{NNN}` — stable, never reused. Org standards use `STD-`. |
-| `title` | string | yes | Short imperative phrase, ≤80 chars. |
+| `title` | string | yes | Short imperative phrase, ≤100 chars. |
 | `description` | string | yes | One or two sentences stating precisely what is required or forbidden. |
 | `rationale` | string | yes | One or two sentences explaining why. May cite a source file or section. |
 | `acceptance_criteria` | string[] | yes | Concrete, diff-checkable statements. Each starts with a subject and verb. |

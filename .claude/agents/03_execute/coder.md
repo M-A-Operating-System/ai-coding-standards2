@@ -13,7 +13,7 @@ description: >
   PR lifecycle (create, ready, labels). Triggered by build:requested.
 tools: [Bash, Read, Edit, Write, Grep, Glob]
 model: claude-sonnet-4-6
-max_turns: 120
+max_turns: 60
 # Bash is scoped to known build/test/file operations.
 # Network egress tools (curl, wget, nc, ssh, rsync) and secret-printing
 # commands (env, printenv, base64) are intentionally excluded to raise

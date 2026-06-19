@@ -80,6 +80,7 @@
       "dependencies": ["01_product_docs/prd-docs-updater"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
+      "extra_allowedTools": ["Bash(test -f *)"],
       "git_ops": { "commit_after": true },
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],

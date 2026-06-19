@@ -862,7 +862,7 @@ def _handle_review_loop(
     current_cycle = _get_review_cycle(labels)
     next_cycle = current_cycle + 1
 
-    if not skip_cycle_increment and next_cycle >= max_cycles:
+    if not skip_cycle_increment and next_cycle > max_cycles:
         log.info(
             "  LOOP    %-38s  %d/%d cycles — escalating to human",
             agent_def.agent, next_cycle, max_cycles,
@@ -884,18 +884,18 @@ def _handle_review_loop(
 
     if skip_cycle_increment:
         log.info(
-            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s (cycle counter unchanged)",
+            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s",
             agent_def.agent, re_invoke_name,
         )
     else:
         log.info(
-            "  LOOP    %-38s  cycle %d/%d — re-invoking %s",
-            agent_def.agent, next_cycle, max_cycles, re_invoke_name,
+            "  LOOP    %-38s  re-invoking %s (counter advances at dispatch)",
+            agent_def.agent, re_invoke_name,
         )
 
     if skip_cycle_increment:
-        # Apply HUMAN_REVIEW_PENDING_LABEL instead of advancing the cycle counter.
-        # This signals Mode B to the coder and prevents a second free re-invoke.
+        # Apply HUMAN_REVIEW_PENDING_LABEL to signal Mode B to the coder and
+        # prevent a second free re-invoke.
         try:
             gh.add_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
             labels.add(HUMAN_REVIEW_PENDING_LABEL)
@@ -905,22 +905,6 @@ def _handle_review_loop(
             )
             return labels  # guard not set; abort free re-invoke to preserve once-only semantics
     else:
-        # Rotate the cycle counter label
-        if current_cycle > 0:
-            old = f"review-cycle:{current_cycle}"
-            try:
-                gh.remove_label(work_item.number, old)
-                labels.discard(old)
-            except Exception as exc:
-                log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
-
-        new_cycle_label = f"review-cycle:{next_cycle}"
-        try:
-            gh.add_label(work_item.number, new_cycle_label)
-            labels.add(new_cycle_label)
-        except Exception as exc:
-            log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
-
         # Clean up HUMAN_REVIEW_PENDING_LABEL if present from a prior free cycle —
         # the normal automated review cycle supersedes it.
         if HUMAN_REVIEW_PENDING_LABEL in labels:
@@ -1819,6 +1803,23 @@ def invoke_agent(
     else:
         agent_env["PR_NUMBER"] = str(work_item.number)
 
+    # Preflight: a missing ANTHROPIC_API_KEY produces an auth-error response
+    # that the stream-json parser may misread as a rate-limit pause, masking
+    # the real cause and leaving the work item stuck in :wip indefinitely.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        log.error(
+            "  invoke_agent: ANTHROPIC_API_KEY is not set — cannot launch %s "
+            "on %s #%d; add the key to CI secrets and retry.",
+            agent_def.agent, work_item.kind, work_item.number,
+        )
+        return AgentRunResult(
+            success=False,
+            captured_tail=(
+                "Configuration error: ANTHROPIC_API_KEY is not set. "
+                "Add the key to CI secrets and retry."
+            ),
+        )
+
     # Capture the stream-json output line-by-line. Each line is a JSON event;
     # we parse it immediately to extract agent text (for sentinel/rate-limit
     # detection) and token usage (from the result event). We also retain the
@@ -2362,6 +2363,38 @@ def process_work_item(
                     "  could not post opening announcement for %s on #%d: %s",
                     agent_def.agent, work_item.number, exc,
                 )
+
+            # Increment review-cycle:N at dispatch for review_loop re_invoke targets.
+            # The counter reflects the number of times this agent has started —
+            # every run (initial and re-invocations) increments it.
+            _is_reinvoke_target = any(
+                ad.review_loop and ad.review_loop.get("re_invoke") == agent_def.agent
+                for ad in pipeline_map.values()
+            )
+            if _is_reinvoke_target:
+                _rc_cur = _get_review_cycle(labels)
+                _rc_next = _rc_cur + 1
+                if _rc_cur > 0:
+                    try:
+                        gh.remove_label(work_item.number, f"review-cycle:{_rc_cur}")
+                        labels.discard(f"review-cycle:{_rc_cur}")
+                    except Exception as exc:
+                        log.debug(
+                            "could not remove review-cycle:%d on #%d: %s",
+                            _rc_cur, work_item.number, exc,
+                        )
+                try:
+                    gh.add_label(work_item.number, f"review-cycle:{_rc_next}")
+                    labels.add(f"review-cycle:{_rc_next}")
+                    log.info(
+                        "  CYCLE   %-38s  review-cycle:%d", agent_def.agent, _rc_next
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "could not apply review-cycle:%d on #%d: %s",
+                        _rc_next, work_item.number, exc,
+                    )
+
         else:
             # dry_run: :wip ceremony is skipped, but counters still advance so
             # the simulated output respects per-agent and aggregate ceilings.
