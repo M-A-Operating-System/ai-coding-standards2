@@ -13,3 +13,4 @@ Tracks all open issues and their pipeline state. Updated as work is delivered.
 | [#22](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/22) | Agents fetch only fields they need | `issue-classifier:failed` — needs re-run | PRD |
 | [#23](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/23) | Emergency stop and pipeline restart workflows | `issue-classifier:failed` — needs re-run | PRD |
 | [#24](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/24) | Move pipeline ceremony to orchestrator; stdout sentinel | `prd-writer:failed` | PRD |
+| [#174](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/174) | Reduce CI Log Verbosity | `prd-docs-updater:wip` | Implement |

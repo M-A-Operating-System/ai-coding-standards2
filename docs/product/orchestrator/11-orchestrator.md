@@ -702,6 +702,7 @@ jobs:
             ARGS="$ARGS --issue ${{ github.event.pull_request.number }} --kind pr"
           fi
           [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          [ "${{ github.event.inputs.verbose }}" = "true" ] && ARGS="$ARGS --verbose"
           echo "args=$ARGS" >> "$GITHUB_OUTPUT"
 
       - name: Run orchestrator
@@ -714,7 +715,6 @@ jobs:
         run: |
           python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
-            --verbose \
             ${{ steps.args.outputs.args }}
 ```
 
@@ -813,7 +813,10 @@ Options:
                         in Rate limit handling)
   --clear-stop          Clear the emergency stop marker if set, then exit
                         (manual override for operators; see "Emergency stop")
-  --verbose, -v         Debug-level output
+  --verbose, -v         Emit all non-system agent stream-json events to stderr.
+                        Default (without this flag): emit only the result-type
+                        summary event per agent invocation. Non-JSON lines are
+                        always forwarded regardless of this flag.
 ```
 
 ---
