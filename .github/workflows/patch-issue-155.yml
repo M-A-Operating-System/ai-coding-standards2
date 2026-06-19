@@ -1,0 +1,23 @@
+name: patch-issue-155
+on:
+  workflow_dispatch:
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: issue-155
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply patches
+        run: python3 .github/scripts/patch_issue_155.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline/pipeline_orchestrator.py .github/scripts/mark-pr-ready.sh tests/test_orchestrator_logic.py
+          git diff --cached --stat
+          git commit -m "fix: apply PR #168 review findings (DP-001/002, SA-001, SC-001, DP-003, QA-001/002)"
+          git push origin issue-155
