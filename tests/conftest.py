@@ -1,2 +1,1 @@
-# pytest configuration
-# This file intentionally left minimal.
+# pytest session configuration
