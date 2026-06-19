@@ -577,7 +577,7 @@ def _make_audit_event(
     outcome_detail: Optional[str] = None,
     duration_ms: Optional[int] = None,
 ) -> dict:
-    """Build one audit event per the schema in docs/product/agile/08-audit-log.md."""
+    """Build one audit event per the schema in docs/product/orchestrator/08-audit-log.md."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     obj: Optional[dict] = None
     if work_item is not None:
@@ -599,7 +599,10 @@ def _make_audit_event(
 
 def _emit_audit_event(event: dict) -> None:
     """Print one audit event as a compact JSON line to stdout."""
-    print(json.dumps(event, separators=(",", ":")), flush=True)
+    try:
+        print(json.dumps(event, separators=(",", ":")), flush=True)
+    except Exception as exc:
+        log.warning("could not emit audit event: %s", exc)
 
 
 # ---------------------------------------------------------------------------
