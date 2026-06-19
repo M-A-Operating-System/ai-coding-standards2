@@ -26,3 +26,11 @@ venv/
 # Claude Code agent worktrees (temporary checkouts used by background agents)
 .claude/worktrees/
 aicodingstandardsandprocess.zip
+
+# prd-writer agent temp artefacts — must never be committed to source (STD-ARCH-006)
+.tmp_*
+.prd_body_*.md
+.prd_snapshot_*.md
+
+# one-off agent cleanup scripts (not source, never committed)
+cleanup_temp_files.py

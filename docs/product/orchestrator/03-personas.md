@@ -157,7 +157,7 @@ authorisation, RLS, secret handling, PII, and regulatory compliance.
 - The `standards-compliance-reviewer` raises violations against
   `security`-layer standards as issues, with the STD ID and proposed
   fix.
-- The audit log (`ai-agile/log`) provides timestamped evidence of
+- The orchestrator emits structured JSON audit events to stdout; the GitHub Actions run log provides timestamped evidence of
   every security-related approval and change for compliance purposes.
 - `migration-validator` blocks SQL migrations that disable RLS,
   expose PII columns, or weaken existing access controls.

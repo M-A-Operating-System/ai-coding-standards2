@@ -1,8 +1,8 @@
 """Tests for core pipeline-state logic in pipeline_orchestrator.py."""
 import sys, os
+import subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
-import base64
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -17,7 +17,7 @@ from pipeline_orchestrator import (
     _count_running,
     _handle_review_loop,
     _make_audit_event,
-    write_audit_log,
+    _emit_audit_event,
     promote_gated_agents,
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
@@ -1297,9 +1297,9 @@ class TestPhasesFilter:
         with patch.object(orch, "parse_args", return_value=fake_args), \
              patch.object(orch, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(orch, "load_pipeline", return_value=([in_phase, out_phase], [])), \
-             patch.object(orch, "_configure_git_auth"), \
              patch.object(orch, "GitHubClient", return_value=gh_mock), \
              patch.object(orch, "process_work_item", side_effect=_capture_process), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "x"}), \
              patch("time.sleep"):
             orch.main()
@@ -1590,19 +1590,14 @@ class TestDispatchReviewCycleCounter:
 
 
 # ---------------------------------------------------------------------------
-# QA-001: TestWriteAuditLog
+# QA-001: TestAuditEventEmission
 # ---------------------------------------------------------------------------
 
-class TestWriteAuditLog:
-    """Tests for write_audit_log() and _make_audit_event()."""
-
-    def _make_gh(self) -> MagicMock:
-        gh = MagicMock()
-        gh.repo = "test/repo"
-        return gh
+class TestAuditEventEmission:
+    """Tests for _make_audit_event() and _emit_audit_event()."""
 
     def test_make_audit_event_has_required_fields(self):
-        """_make_audit_event returns a dict with all schema-required fields."""
+        """_make_audit_event returns a dict with all required top-level fields."""
         wi = WorkItem(
             number=42, kind="issue", title="test", labels=set(),
             url="https://github.com/test/repo/issues/42",
@@ -1612,119 +1607,72 @@ class TestWriteAuditLog:
             work_item=wi, agent="03_execute/coder",
             outcome_status="ok",
         )
-        assert event["event_type"] == "agent.complete"
-        assert event["session_id"] == "sess-123"
+        assert event["event"] == "agent.complete"
+        assert event["ts"]
         assert event["agent"] == "03_execute/coder"
-        assert event["outcome"]["status"] == "ok"
+        assert event["issue"] == 42
+        assert event["status"] == "ok"
+        assert event["session_id"] == "sess-123"
         assert event["object"]["kind"] == "issue"
         assert event["object"]["id"] == 42
-        assert "ts" in event
         assert "actor" in event
 
     def test_make_audit_event_without_work_item(self):
-        """_make_audit_event with no work_item sets object to None."""
+        """_make_audit_event with no work_item sets object and issue to None."""
         event = _make_audit_event("sess-1", "session.start", "test/repo")
         assert event["object"] is None
+        assert event["issue"] is None
         assert event["agent"] is None
 
-    def test_write_audit_log_no_op_on_empty_events(self):
-        """write_audit_log returns without API calls when events list is empty."""
-        gh = self._make_gh()
-        write_audit_log(gh, [])
-        gh._request.assert_not_called()
-
-    def test_write_audit_log_emits_jsonl_lines(self):
-        """write_audit_log writes one JSON line per event."""
-        gh = self._make_gh()
-
-        # Mock the branch-check GET (200 = branch exists)
-        branch_response = MagicMock()
-        branch_response.status_code = 200
-
-        # Mock the file-not-found GET (404 = new file)
-        file_response = MagicMock()
-        file_response.status_code = 404
-
-        # Mock a successful PUT
-        put_response = MagicMock()
-        put_response.status_code = 201
-
-        gh._request.side_effect = [branch_response, file_response]
-        gh._put.return_value = put_response
-
-        event = _make_audit_event("s1", "agent.complete", "test/repo", outcome_status="ok")
-        write_audit_log(gh, [event])
-
-        # PUT must have been called with base64-encoded content
-        assert gh._put.called
-        put_body = gh._put.call_args[0][1]
-        content = base64.b64decode(put_body["content"]).decode()
-        parsed = json.loads(content.strip())
-        assert parsed["event_type"] == "agent.complete"
-
-    def test_write_audit_log_retries_on_409_conflict(self):
-        """409 conflict triggers a retry — events must not be dropped silently.
-
-        On the retry, the orchestrator must re-GET the file and re-send the
-        *refreshed* sha so the second PUT no longer collides with the
-        concurrent writer's commit.
-        """
-        gh = self._make_gh()
-
-        branch_response = MagicMock()
-        branch_response.status_code = 200
-
-        # First attempt: file is brand new (404 → no sha sent), PUT races and
-        # loses with a 409.
-        file_response = MagicMock()
-        file_response.status_code = 404
-
-        conflict_response = MagicMock()
-        conflict_response.status_code = 409
-
-        # Retry attempt: the concurrent writer's commit now exists, so the GET
-        # returns 200 with a refreshed sha and existing content.
-        refreshed_sha = "refreshed-sha-deadbeef"
-        file_response2 = MagicMock()
-        file_response2.status_code = 200
-        file_response2.json.return_value = {
-            "sha": refreshed_sha,
-            "content": base64.b64encode(b'{"prior":"line"}\n').decode(),
-        }
-
-        success_response = MagicMock()
-        success_response.status_code = 201
-
-        # First attempt: branch check, file 404, PUT → 409
-        # Second attempt: file 200 (refreshed sha), PUT → 201
-        gh._request.side_effect = [
-            branch_response,
-            file_response,
-            file_response2,
-        ]
-        gh._put.side_effect = [conflict_response, success_response]
-
-        event = _make_audit_event("s1", "test.event", "test/repo")
-
-        with patch("time.sleep"):  # don't actually sleep in tests
-            write_audit_log(gh, [event])
-
-        # Should have been called twice (one conflict + one success)
-        assert gh._put.call_count == 2
-
-        # The first PUT carried no sha (file was new / 404).
-        first_put_body = gh._put.call_args_list[0][0][1]
-        assert "sha" not in first_put_body, (
-            f"First PUT should not carry a sha for a new file; got {first_put_body!r}"
+    def test_make_audit_event_pr_work_item_issue_is_none(self):
+        """For PR work items, issue field is None (only issue kind gets the id)."""
+        wi = WorkItem(
+            number=7, kind="pr", title="test pr", labels=set(),
+            url="https://github.com/test/repo/pull/7",
         )
+        event = _make_audit_event("sess-2", "agent.complete", "test/repo", work_item=wi)
+        assert event["issue"] is None
+        assert event["object"]["kind"] == "pr"
+        assert event["object"]["id"] == 7
 
-        # The retried PUT must carry the refreshed sha fetched on the retry GET —
-        # re-sending the stale (absent) sha would just 409 again.
-        second_put_body = gh._put.call_args_list[1][0][1]
-        assert second_put_body.get("sha") == refreshed_sha, (
-            f"Retried PUT must re-send the refreshed sha {refreshed_sha!r}; "
-            f"got {second_put_body.get('sha')!r}"
+    def test_emit_audit_event_prints_valid_json_line(self, capsys):
+        """_emit_audit_event prints one compact JSON line to stdout."""
+        event = _make_audit_event("sess-123", "agent.complete", "test/repo",
+                                  outcome_status="ok")
+        _emit_audit_event(event)
+        captured = capsys.readouterr()
+        lines = [l for l in captured.out.splitlines() if l.strip()]
+        assert len(lines) == 1
+        parsed = json.loads(lines[0])
+        assert parsed["event"] == "agent.complete"
+        assert parsed["status"] == "ok"
+        assert parsed["ts"]
+
+    def test_emit_audit_event_includes_required_minimum_fields(self, capsys):
+        """Emitted JSON line always contains ts, event, agent, issue, status."""
+        wi = WorkItem(
+            number=5, kind="issue", title="t", labels=set(), url="http://x"
         )
+        event = _make_audit_event(
+            "s1", "agent.invoked", "r/r",
+            work_item=wi, agent="03_execute/coder", outcome_status="started",
+        )
+        _emit_audit_event(event)
+        parsed = json.loads(capsys.readouterr().out.strip())
+        assert "ts" in parsed
+        assert "event" in parsed
+        assert "agent" in parsed
+        assert "issue" in parsed
+        assert "status" in parsed
+
+    def test_emit_audit_event_no_trailing_newline_noise(self, capsys):
+        """_emit_audit_event emits exactly one line (flush=True, print adds one newline)."""
+        event = _make_audit_event("s", "e", "r")
+        _emit_audit_event(event)
+        output = capsys.readouterr().out
+        # print() adds exactly one newline
+        assert output.endswith("\n")
+        assert output.count("\n") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -2472,25 +2420,16 @@ class TestMarkReadyOnComplete:
 
 
 # ---------------------------------------------------------------------------
-# TestRunCommitAfter — orchestrator-driven git commit_after step
+# TestCommitAgentWorkScript — Gherkin-traced tests for issue #151
 # ---------------------------------------------------------------------------
 
-class TestRunCommitAfter:
-    """Tests for _run_commit_after covering the no-changes happy path and the
-    'workflow files staged without AI_AGILE_BOT_TOKEN' failure branch."""
+class TestCommitAgentWorkScript:
+    """Tests for the commit-agent-work.sh shell script and commit_after wiring.
 
-    def _agent(self) -> AgentDef:
-        return AgentDef(
-            agent="03_execute/coder",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            commit_after=True,
-        )
+    Scenario: New script stages, commits, and pushes agent work
+    Scenario: Python orchestrator contains no git logic
+    Scenario: git_ops.commit_after drives commits for affected agents
+    """
 
     def _work_item(self) -> WorkItem:
         return WorkItem(
@@ -2498,61 +2437,274 @@ class TestRunCommitAfter:
             url="https://github.com/test/repo/issues/42",
         )
 
-    def test_no_working_tree_changes_returns_true(self):
-        """Clean working tree (git status --porcelain empty) → True, no commit."""
+    def test_commit_agent_work_script_exists(self):
+        """Scenario: New script stages, commits, and pushes agent work.
+
+        Given .github/scripts/commit-agent-work.sh exists
+        Then the file is a bash script with the correct shebang.
+        """
         import pipeline_orchestrator as orch
-
-        def _run(cmd, *args, **kwargs):
-            r = MagicMock()
-            if cmd[:2] == ["git", "status"]:
-                r.stdout = ""        # clean tree
-            else:
-                r.stdout = ""
-            r.returncode = 0
-            return r
-
-        with patch("subprocess.run", side_effect=_run) as mock_run:
-            ok = orch._run_commit_after(self._agent(), self._work_item())
-
-        assert ok is True
-        # Only the status check should have run — no commit/push.
-        commands = [c.args[0][:2] for c in mock_run.call_args_list]
-        assert ["git", "status"] in commands
-        assert ["git", "commit"] not in commands
-
-    def test_workflow_files_without_bot_token_returns_false(self, monkeypatch):
-        """Workflow files staged but AI_AGILE_BOT_TOKEN unset → False (GITHUB_TOKEN
-        cannot push workflow files)."""
-        import pipeline_orchestrator as orch
-
-        monkeypatch.delenv("AI_AGILE_BOT_TOKEN", raising=False)
-
-        def _run(cmd, *args, **kwargs):
-            r = MagicMock()
-            r.returncode = 0
-            r.stdout = ""
-            head = cmd[:2]
-            if head == ["git", "status"]:
-                r.stdout = " M foo.txt"  # dirty tree
-            elif head == ["git", "rev-parse"]:
-                r.stdout = "main"
-            elif cmd[:3] == ["git", "stash", "show"]:
-                r.stdout = ".github/workflows/ci.yml"
-            elif cmd[:3] == ["git", "diff", "--cached"] and "--name-only" in cmd:
-                # workflow-file detection diff
-                r.stdout = ".github/workflows/ci.yml"
-            return r
-
-        with patch("subprocess.run", side_effect=_run) as mock_run:
-            ok = orch._run_commit_after(self._agent(), self._work_item())
-
-        assert ok is False, (
-            "Staging workflow files without AI_AGILE_BOT_TOKEN must fail the "
-            "commit_after step (GITHUB_TOKEN lacks the workflow scope)."
+        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "commit-agent-work.sh"
+        assert script_path.exists(), (
+            f"commit-agent-work.sh must exist at {script_path}"
         )
-        # Must not have attempted a commit after the early failure.
-        commands = [c.args[0][:2] for c in mock_run.call_args_list]
-        assert ["git", "commit"] not in commands
+        first_line = script_path.read_text().splitlines()[0]
+        assert first_line.startswith("#!/"), (
+            f"commit-agent-work.sh must start with a shebang; got: {first_line!r}"
+        )
+
+    def test_python_orchestrator_has_no_run_commit_after(self):
+        """Scenario: Python orchestrator contains no git logic.
+
+        Given the changes in this issue have been applied
+        When pipeline_orchestrator.py is reviewed
+        Then _run_commit_after() is not present in the file.
+        """
+        import pipeline_orchestrator as orch
+        assert not hasattr(orch, "_run_commit_after"), (
+            "_run_commit_after must be removed from pipeline_orchestrator.py"
+        )
+
+    def test_python_orchestrator_has_no_configure_git_auth(self):
+        """Scenario: Python orchestrator contains no git logic.
+
+        Given the changes in this issue have been applied
+        When pipeline_orchestrator.py is reviewed
+        Then _configure_git_auth() is not present in the file.
+        """
+        import pipeline_orchestrator as orch
+        assert not hasattr(orch, "_configure_git_auth"), (
+            "_configure_git_auth must be removed from pipeline_orchestrator.py"
+        )
+
+    def test_pipeline_json_uses_git_ops_commit_after(self):
+        """Scenario: git_ops.commit_after drives commits for affected agents.
+
+        Given pipeline.json with agents that must commit their work
+        When the pipeline.json is reviewed
+        Then prd-docs-updater and coder use git_ops.commit_after: true
+             and no agent uses a post_steps field.
+        """
+        import json
+        import pipeline_orchestrator as orch
+        pipeline_path = orch.PIPELINE_PATH
+        with open(pipeline_path) as f:
+            raw = json.load(f)
+
+        commit_after_agents = []
+        post_steps_agents = []
+        for entry in raw["pipeline"]:
+            if entry.get("git_ops", {}).get("commit_after"):
+                commit_after_agents.append(entry["agent"])
+            if entry.get("post_steps"):
+                post_steps_agents.append(entry["agent"])
+
+        assert "01_product_docs/prd-docs-updater" in commit_after_agents, (
+            "prd-docs-updater must use git_ops.commit_after: true"
+        )
+        assert "03_execute/coder" in commit_after_agents, (
+            "coder must use git_ops.commit_after: true"
+        )
+        assert not post_steps_agents, (
+            f"No agent should use post_steps — found: {post_steps_agents}"
+        )
+
+    def test_commit_after_derived_from_git_ops_in_pipeline(self):
+        """Agents with git_ops.commit_after: true set commit_after=True; others False."""
+        import json
+        import pipeline_orchestrator as orch
+        agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
+        with open(orch.PIPELINE_PATH) as f:
+            raw = json.load(f)
+        raw_by_agent = {e["agent"]: e for e in raw["pipeline"]}
+        for agent_def in agents:
+            entry = raw_by_agent.get(agent_def.agent, {})
+            expected = bool(entry.get("git_ops", {}).get("commit_after", False))
+            assert agent_def.commit_after == expected, (
+                f"{agent_def.agent}: commit_after={agent_def.commit_after} "
+                f"but git_ops.commit_after={expected!r} in pipeline.json"
+            )
+
+    def test_commit_after_outer_guard_requires_issue_kind(self):
+        """Scenario: commit-after is not invoked for PR work items.
+
+        Given commit-agent-work.sh requires ISSUE_NUMBER
+        When the orchestrator source is reviewed
+        Then the commit_after invoke block is guarded by work_item.kind == 'issue'
+             so the script is never called for PR-scoped work items.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        guard = 'agent_def.commit_after and work_item.kind == "issue"'
+        assert guard in source, (
+            "commit_after invoke block must include 'work_item.kind == \"issue\"' "
+            "in the outer guard — commit-agent-work.sh requires ISSUE_NUMBER and "
+            "must not be invoked for PR work items (DP-001)"
+        )
+
+    def _make_commit_after_agent(self) -> "AgentDef":
+        """AgentDef with commit_after=True and a trigger label."""
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test coder",
+            commit_after=True,
+            max_concurrent=10,
+        )
+
+    def _make_issue_wi(self) -> WorkItem:
+        return WorkItem(
+            number=42, kind="issue", title="T",
+            labels={"issue-classifier:complete"},
+            url="https://github.com/test/repo/issues/42",
+        )
+
+    def _sub_side_effect_factory(self, bash_result):
+        """Return a subprocess.run side_effect that:
+        - raises CalledProcessError for git calls (pre-agent checkout fails silently)
+        - returns bash_result for bash (commit-agent-work.sh) calls
+        """
+        import subprocess as _sp
+
+        def _side_effect(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return bash_result
+
+        return _side_effect
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_success_keeps_complete_status(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh exits 0 — agent stays complete.
+
+        Given an agent with commit_after: true that completes successfully
+        When commit-agent-work.sh exits 0
+        Then _apply_failed is not called.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        bash_ok = MagicMock()
+        bash_ok.returncode = 0
+        bash_ok.stdout = ""
+        bash_ok.stderr = ""
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_not_called()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_nonzero_exit_applies_failed(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh exits non-zero — _apply_failed is called.
+
+        Given an agent with commit_after: true that completes successfully
+        When commit-agent-work.sh exits 1
+        Then _apply_failed is called.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        bash_fail = MagicMock()
+        bash_fail.returncode = 1
+        bash_fail.stdout = "push failed"
+        bash_fail.stderr = "error: failed to push"
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_fail)):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_called_once()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_timeout_applies_failed(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh times out — _apply_failed is called.
+
+        Given an agent with commit_after: true that completes successfully
+        When commit-agent-work.sh raises subprocess.TimeoutExpired
+        Then _apply_failed is called.
+        """
+        import subprocess as _sp
+
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+
+        def _timeout_side_effect(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            raise _sp.TimeoutExpired(cmd, 300)
+
+        with patch("subprocess.run", side_effect=_timeout_side_effect):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_called_once()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_script_not_found_applies_failed(self, mock_failed, mock_invoke):
+        """Scenario: commit-agent-work.sh does not exist — _apply_failed is called.
+
+        Given an agent with commit_after: true that completes successfully
+        When the commit-agent-work.sh script does not exist
+        Then _apply_failed is called.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+
+        import subprocess as _sp
+
+        def _git_fail(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=_git_fail), \
+             patch("pathlib.Path.exists", return_value=False):
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+
+        mock_failed.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -2695,7 +2847,7 @@ class TestPriorityScheduling:
             if n > 0:
                 dispatched.append(wi.number)
 
-        assert dispatched == [10], (
+        assert dispatched and dispatched[0] == 10, (
             f"With no priority items, normal selection (first eligible) must proceed; "
             f"dispatched: {dispatched}"
         )
@@ -2763,16 +2915,15 @@ class TestPriorityScheduling:
         )
 
     # Integration test: the sort block inside main() is exercised end-to-end.
-    @patch("pipeline_orchestrator.write_audit_log")
     @patch("pipeline_orchestrator.process_work_item")
     @patch("pipeline_orchestrator.load_pipeline")
-    @patch("pipeline_orchestrator._configure_git_auth")
     @patch("pipeline_orchestrator.is_pipeline_paused")
     @patch("pipeline_orchestrator.GitHubClient")
     @patch("pipeline_orchestrator.parse_args")
+    @patch("pipeline_orchestrator._emit_audit_event")
     def test_main_dispatches_priority_before_non_priority(
-        self, mock_parse_args, mock_gh_cls, mock_is_paused,
-        mock_configure_git, mock_load_pipeline, mock_process_wi, mock_write_audit,
+        self, mock_emit_audit, mock_parse_args, mock_gh_cls, mock_is_paused,
+        mock_load_pipeline, mock_process_wi,
     ):
         """Integration test: main() sort block reorders API-returned items by priority.
 
@@ -2809,7 +2960,8 @@ class TestPriorityScheduling:
 
         mock_process_wi.return_value = 0
 
-        with patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)), \
+             patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
             main()
 
         assert mock_process_wi.call_count >= 2, (

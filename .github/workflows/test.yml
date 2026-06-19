@@ -4,12 +4,14 @@ on:
     branches: [main]
     paths:
       - 'pipeline/pipeline_orchestrator.py'
+      - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
   pull_request:
     paths:
       - 'pipeline/pipeline_orchestrator.py'
       - 'pipeline/validate_standards.py'
       - 'standards/**'
+      - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
 permissions:
   contents: read
@@ -27,3 +29,5 @@ jobs:
         run: pip install pytest requests pyyaml jsonschema
       - name: Run tests
         run: pytest tests/ -v
+      - name: Run integration tests
+        run: pytest tests/integration/ -v
