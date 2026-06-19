@@ -50,7 +50,7 @@ Every line is one JSON object:
 |---|---|---|
 | `detail` | string or null | Human-readable detail for the event (stop reason, exit code, mode, etc.) |
 | `session_id` | string | Deterministic session identifier for this (object, agent) pair |
-| `object` | object or null | `{"kind": "issue"|"pr", "id": number, "repo": "owner/repo"}` |
+| `object` | object or null | `{"kind": "issue"\|"pr", "id": number, "repo": "owner/repo"}` |
 | `actor` | object | Always `{"kind": "orchestrator", "id": "github-actions", "human": null}` |
 | `ref` | string or null | Reserved; always null in current implementation |
 | `duration_ms` | integer or null | Wall-clock duration of the agent run in milliseconds |
@@ -80,13 +80,13 @@ on its own line, they can be extracted from a captured log:
 
 ```bash
 # Show all audit events
-cat run-log.txt | grep '^{' | jq .
+cat run-log.txt | grep '"event":' | jq .
 
 # Filter by event type
-cat run-log.txt | grep '^{' | jq 'select(.event == "agent.failed")'
+cat run-log.txt | grep '"event":' | jq 'select(.event == "agent.failed")'
 
 # Filter by issue
-cat run-log.txt | grep '^{' | jq 'select(.issue == 42)'
+cat run-log.txt | grep '"event":' | jq 'select(.issue == 42)'
 ```
 
 GitHub Actions retains run logs per the repository's log retention
