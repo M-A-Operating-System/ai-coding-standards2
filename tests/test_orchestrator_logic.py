@@ -2217,149 +2217,176 @@ class TestManualRequestedOverride:
 
 
 # ---------------------------------------------------------------------------
-# TestMarkReadyOnComplete — orchestrator marks PR ready on :complete
+# TestPostSteps — orchestrator runs post_steps scripts on :complete
 # ---------------------------------------------------------------------------
 
 class TestMarkReadyOnComplete:
-    """An agent with mark_ready_on_complete must trigger gh.mark_pr_ready when
-    it completes on a PR work item."""
+    """An agent with post_steps runs its completion scripts when it signals :complete."""
 
-    def _agent(self) -> AgentDef:
+    def _agent(self, *, kind: str = "pr") -> AgentDef:
         return AgentDef(
             agent="03_execute/pr-reviewer",
             phase="03_execute",
-            objects=["pr"],
-            trigger={"label": "coder:complete"},
+            objects=[kind],
+            trigger={"label": "merge-conflict:complete"},
             dependencies=[],
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            mark_ready_on_complete=True,
+            post_steps=[".github/scripts/mark-pr-ready.sh"],
         )
 
+    def _sub_side_effect_factory(self, bash_result):
+        """Return a subprocess.run side_effect that raises CalledProcessError for
+        git calls (branch restore) and returns bash_result for all other calls."""
+        import subprocess as _sp
+
+        def _side_effect(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return bash_result
+
+        return _side_effect
+
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_marks_pr_ready_on_complete(self, mock_invoke):
+    def test_post_steps_script_runs_on_complete(self, mock_invoke):
+        """post_steps script is invoked via subprocess.run when the agent signals :complete."""
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
+        bash_ok = MagicMock()
+        bash_ok.returncode = 0
+        bash_ok.stdout = ""
+        bash_ok.stderr = ""
         agent = self._agent()
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
         gh = _make_gh_mock()
         wi = WorkItem(
-            number=55, kind="pr", title="PR", labels={"coder:complete"},
+            number=55, kind="pr", title="PR", labels={"merge-conflict:complete"},
             url="https://github.com/test/repo/pull/55",
         )
 
-        n = process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)) as mock_sub:
+            n = process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
         assert n == 1
-        gh.mark_pr_ready.assert_called_once_with(55)
+        bash_calls = [
+            c for c in mock_sub.call_args_list
+            if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+        ]
+        assert len(bash_calls) == 1
+        assert "mark-pr-ready.sh" in bash_calls[0].args[0][-1]
 
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_does_not_mark_ready_on_review(self, mock_invoke):
-        """When the agent emits :review (not :complete), the PR must NOT be
-        marked ready — readiness only fires on true completion."""
+    def test_does_not_run_post_steps_on_review(self, mock_invoke):
+        """When the agent emits :review, post_steps must NOT run — they only fire on :complete."""
         mock_invoke.return_value = AgentRunResult(
             success=False,
             captured_tail='AI_AGILE_STATUS: review "needs changes"',
         )
         agent = self._agent()
-        agents = [agent]
-        pipeline_map = {agent.agent: agent}
         gh = _make_gh_mock()
         wi = WorkItem(
-            number=56, kind="pr", title="PR", labels={"coder:complete"},
+            number=56, kind="pr", title="PR", labels={"merge-conflict:complete"},
             url="https://github.com/test/repo/pull/56",
         )
 
-        process_work_item(
-            wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-        )
-        gh.mark_pr_ready.assert_not_called()
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(MagicMock(returncode=0))) as mock_sub:
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        bash_calls = [
+            c for c in mock_sub.call_args_list
+            if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+        ]
+        assert len(bash_calls) == 0
 
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_mark_pr_ready_called_on_issue_work_item(self, mock_invoke):
-        """On APPROVE of an issue-scoped agent, mark_pr_ready is called with the
-        PR number found via find_pr_by_branch."""
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_post_steps_nonzero_exit_applies_failed(self, mock_failed, mock_invoke):
+        """When a post_steps script exits non-zero, _apply_failed is called."""
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
-        agent = AgentDef(
-            agent="03_execute/pr-reviewer",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "merge-conflict:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            mark_ready_on_complete=True,
-        )
+        bash_fail = MagicMock()
+        bash_fail.returncode = 1
+        bash_fail.stdout = "error output"
+        bash_fail.stderr = ""
+        agent = self._agent()
         gh = _make_gh_mock()
-        gh.find_pr_by_branch = MagicMock(return_value=99)
-        gh.find_pr_by_label = MagicMock(return_value=None)
         wi = WorkItem(
-            number=42, kind="issue", title="issue", labels={"merge-conflict:complete"},
-            url="https://github.com/test/repo/issues/42",
-        )
-
-        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
-
-        gh.mark_pr_ready.assert_called_once_with(99)
-        gh.find_pr_by_label.assert_not_called()
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_label_fallback_finds_pr_by_source_issue_label(self, mock_invoke):
-        """When find_pr_by_branch returns None (rebased branch), falls back to
-        find_pr_by_label('source-issue:{N}') and still marks the PR ready."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = AgentDef(
-            agent="03_execute/pr-reviewer",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "merge-conflict:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            mark_ready_on_complete=True,
-        )
-        gh = _make_gh_mock()
-        gh.find_pr_by_branch = MagicMock(return_value=None)  # canonical branch not found
-        gh.find_pr_by_label = MagicMock(return_value=132)    # found via source-issue label
-        wi = WorkItem(
-            number=23, kind="issue", title="issue", labels={"merge-conflict:complete"},
-            url="https://github.com/test/repo/issues/23",
-        )
-
-        process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
-
-        gh.find_pr_by_branch.assert_called_once_with("issue-23")
-        gh.find_pr_by_label.assert_called_once_with("source-issue:23")
-        gh.mark_pr_ready.assert_called_once_with(132)
-
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_mark_pr_ready_exception_is_caught(self, mock_invoke):
-        """mark_pr_ready exception is caught and logged — does not propagate."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
-        agent = self._agent()  # kind="pr"
-        gh = _make_gh_mock()
-        gh.mark_pr_ready = MagicMock(side_effect=Exception("draft not supported"))
-        wi = WorkItem(
-            number=55, kind="pr", title="PR", labels={"coder:complete"},
+            number=55, kind="pr", title="PR", labels={"merge-conflict:complete"},
             url="https://github.com/test/repo/pull/55",
         )
 
-        # Must not raise — exception is caught internally and logged as warning.
-        n = process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
-        assert n == 1
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_fail)):
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        mock_failed.assert_called_once()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_post_steps_timeout_applies_failed(self, mock_failed, mock_invoke):
+        """When a post_steps script times out, _apply_failed is called."""
+        import subprocess as _sp
+
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+
+        def _timeout_side_effect(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            raise _sp.TimeoutExpired(cmd, 300)
+
+        agent = self._agent()
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=55, kind="pr", title="PR", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/pull/55",
+        )
+
+        with patch("subprocess.run", side_effect=_timeout_side_effect):
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        mock_failed.assert_called_once()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_post_steps_script_not_found_applies_failed(self, mock_failed, mock_invoke):
+        """When a post_steps script does not exist on disk, _apply_failed is called."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        import subprocess as _sp
+
+        def _git_fail(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return MagicMock(returncode=0)
+
+        agent = self._agent()
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=55, kind="pr", title="PR", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/pull/55",
+        )
+
+        with patch("subprocess.run", side_effect=_git_fail), \
+             patch("pathlib.Path.exists", return_value=False):
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        mock_failed.assert_called_once()
+
+    def test_mark_pr_ready_script_exists(self):
+        """mark-pr-ready.sh must exist at .github/scripts/mark-pr-ready.sh with a shebang."""
+        import pipeline_orchestrator as orch
+        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "mark-pr-ready.sh"
+        assert script_path.exists(), (
+            f"mark-pr-ready.sh must exist at {script_path}"
+        )
+        first_line = script_path.read_text().splitlines()[0]
+        assert first_line.startswith("#!/"), (
+            f"mark-pr-ready.sh must start with a shebang; got: {first_line!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2421,12 +2448,12 @@ class TestCommitAgentWorkScript:
         )
 
     def test_pipeline_json_uses_git_ops_commit_after(self):
-        """Scenario: git_ops.commit_after drives commits for affected agents.
+        """Scenario: git_ops.commit_after drives commits; post_steps drives pr-ready promotion.
 
         Given pipeline.json with agents that must commit their work
         When the pipeline.json is reviewed
         Then prd-docs-updater and coder use git_ops.commit_after: true
-             and no agent uses a post_steps field.
+             and pr-reviewer (only) uses post_steps.
         """
         import json
         import pipeline_orchestrator as orch
@@ -2448,8 +2475,12 @@ class TestCommitAgentWorkScript:
         assert "03_execute/coder" in commit_after_agents, (
             "coder must use git_ops.commit_after: true"
         )
-        assert not post_steps_agents, (
-            f"No agent should use post_steps — found: {post_steps_agents}"
+        assert "03_execute/pr-reviewer" in post_steps_agents, (
+            "pr-reviewer must use post_steps to trigger mark-pr-ready.sh"
+        )
+        unexpected = [a for a in post_steps_agents if a != "03_execute/pr-reviewer"]
+        assert not unexpected, (
+            f"Only pr-reviewer should use post_steps — also found: {unexpected}"
         )
 
     def test_commit_after_derived_from_git_ops_in_pipeline(self):

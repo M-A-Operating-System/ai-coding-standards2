@@ -162,7 +162,7 @@ class AgentDef:
     max_retries: int = 0               # how many times to re-invoke after :failed before giving up
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
-    mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
+    post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
@@ -282,7 +282,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 max_retries=int(entry.get("max_retries", 0)),
                 session_scope=entry.get("session", {}).get("scope", "per_issue"),
                 session_id_pattern=entry.get("session", {}).get("id_pattern"),
-                mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
+                post_steps=list(entry.get("post_steps", [])),
                 commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
@@ -2732,7 +2732,7 @@ def process_work_item(
             _human_review_list: list = []
             if (
                 final_status == STATUS_COMPLETE
-                and agent_def.mark_ready_on_complete
+                and bool(agent_def.post_steps)
                 and agent_def.review_loop
                 and HUMAN_REVIEW_PENDING_LABEL not in labels
             ):
@@ -2766,7 +2766,7 @@ def process_work_item(
             elif (
                 HUMAN_REVIEW_PENDING_LABEL in labels
                 and final_status == STATUS_COMPLETE
-                and agent_def.mark_ready_on_complete
+                and bool(agent_def.post_steps)
                 and agent_def.review_loop
             ):
                 # Free re-invoke already ran (label present) and pr-reviewer APPROVEs
@@ -2884,48 +2884,98 @@ def process_work_item(
                     duration_ms=int((time.monotonic() - _invoked_at) * 1000),
                 ))
 
-            # Mark the PR ready-for-review if the agent declares it (P-16).
-            # Only fires on true completion — not when awaiting a human gate.
-            if applied_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
-                if work_item.kind == "pr":
-                    _ready_pr_number = work_item.number
-                elif work_item.kind == "issue":
-                    # For issue-scoped agents, look up the PR on the issue branch.
-                    # Fall back to source-issue:{N} label for rebased branches that
-                    # don't match the canonical issue-{N} pattern.
-                    try:
-                        _ready_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
-                        if _ready_pr_number is None:
-                            _ready_pr_number = gh.find_pr_by_label(
-                                f"source-issue:{work_item.number}"
-                            )
-                    except Exception as exc:
-                        log.warning(
-                            "  could not look up PR for issue #%d: %s",
-                            work_item.number, exc,
+            # post_steps: run per-agent completion hooks after the agent signals :complete.
+            # Each hook is a repo-relative path to a bash script. Scripts receive context
+            # via environment variables. A non-zero exit removes :complete and applies :failed.
+            if applied_status == STATUS_COMPLETE and agent_def.post_steps:
+                _ps_env = {
+                    **os.environ,
+                    "REPO": repo or gh.repo,
+                    "WORK_ITEM_KIND": work_item.kind,
+                    "WORK_ITEM_NUMBER": str(work_item.number),
+                    "AGENT_NAME": agent_def.agent,
+                }
+                for _ps_path_str in agent_def.post_steps:
+                    _ps_file = SUBMODULE_ROOT / _ps_path_str
+                    _ps_ok = True
+                    _ps_fail_reason = ""
+                    if not _ps_file.exists():
+                        log.error(
+                            "  post_steps: %s not found at %s (agent %s on #%d)",
+                            _ps_path_str, _ps_file, agent_def.agent, work_item.number,
                         )
-                        _ready_pr_number = None
-                else:
-                    _ready_pr_number = None
-
-                if _ready_pr_number:
-                    # Best-effort draft→ready promotion (no-op when not supported).
-                    try:
-                        gh.mark_pr_ready(_ready_pr_number)
+                        _ps_ok = False
+                        _ps_fail_reason = (
+                            f"_post_steps script `{_ps_path_str}` not found. "
+                            f"Check that the script exists on the orchestrator branch. "
+                            f"Remove the failed label to retry._"
+                        )
+                    else:
                         log.info(
-                            "  READY   %-38s  marked PR #%d ready for review",
-                            agent_def.agent, _ready_pr_number,
+                            "  post_steps: running %s for %s on #%d",
+                            _ps_path_str, agent_def.agent, work_item.number,
                         )
-                    except Exception as exc:
-                        log.warning(
-                            "  could not mark PR #%d ready after %s: %s",
-                            _ready_pr_number, agent_def.agent, exc,
+                        try:
+                            _ps_result = subprocess.run(
+                                ["bash", str(_ps_file)],
+                                env=_ps_env,
+                                capture_output=True,
+                                text=True,
+                                timeout=300,
+                            )
+                        except subprocess.TimeoutExpired:
+                            log.error(
+                                "  post_steps: %s timed out for %s on #%d",
+                                _ps_path_str, agent_def.agent, work_item.number,
+                            )
+                            _ps_ok = False
+                            _ps_fail_reason = (
+                                f"_post_steps script `{_ps_path_str}` timed out after 300s. "
+                                f"Remove the failed label to retry._"
+                            )
+                        except FileNotFoundError:
+                            log.error("  post_steps: bash not found in PATH")
+                            _ps_ok = False
+                            _ps_fail_reason = (
+                                "_bash not found in PATH; post_steps script could not run. "
+                                "Remove the failed label to retry._"
+                            )
+                        else:
+                            if _ps_result.returncode != 0:
+                                _ps_output = (_ps_result.stderr or _ps_result.stdout)[:2000]
+                                log.error(
+                                    "  post_steps: %s exited %d for %s on #%d\n%s",
+                                    _ps_path_str, _ps_result.returncode,
+                                    agent_def.agent, work_item.number, _ps_output,
+                                )
+                                _ps_ok = False
+                                _ps_fail_reason = (
+                                    f"_post_steps script `{_ps_path_str}` exited "
+                                    f"{_ps_result.returncode}. "
+                                    f"Check the orchestrator CI log for details. "
+                                    f"Remove the failed label to retry._"
+                                )
+                            else:
+                                log.info(
+                                    "  post_steps: %s completed for %s on #%d",
+                                    _ps_path_str, agent_def.agent, work_item.number,
+                                )
+                    if not _ps_ok:
+                        # :complete was already applied — remove it before transitioning to :failed.
+                        try:
+                            gh.remove_label(work_item.number, agent_def.complete_label)
+                        except Exception as exc:
+                            log.debug(
+                                "  could not remove %s before post_steps failure on #%d: %s",
+                                agent_def.complete_label, work_item.number, exc,
+                            )
+                        _apply_failed(gh, agent_def, work_item, result, reason=_ps_fail_reason)
+                        applied_status = STATUS_FAILED
+                        log.error(
+                            "  FAILED  %-38s  post_steps failed on #%d",
+                            agent_def.agent, work_item.number,
                         )
-                elif agent_def.mark_ready_on_complete:
-                    log.warning(
-                        "  mark_ready_on_complete set on %s but no PR found for #%d — skipped",
-                        agent_def.agent, work_item.number,
-                    )
+                        break
 
             # Halt if blocked or awaiting review — do not trigger further
             # steps on this item this run.

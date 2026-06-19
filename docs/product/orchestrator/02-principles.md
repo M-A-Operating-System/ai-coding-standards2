@@ -439,8 +439,8 @@ short-lived: deleted automatically on merge or close.
 - Force-push within a PR's branch (rebase, fixup) is allowed; pushing
   a different branch's history into the PR's branch is not.
 - The `pr.draft_ready` transition is triggered by the **orchestrator**
-  when `pr-reviewer` signals complete and `git_ops.mark_ready_on_complete`
-  is set — not by the coder or any agent. Agents never call `gh pr ready`.
+  when `pr-reviewer` signals complete, via the `post_steps` hook
+  (`mark-pr-ready.sh`) — not by the coder or any agent. Agents never call `gh pr ready`.
 - The linked issue closes automatically on PR merge via the
   "Closes #{N}" trailer that `create-pr` writes into the PR body.
 

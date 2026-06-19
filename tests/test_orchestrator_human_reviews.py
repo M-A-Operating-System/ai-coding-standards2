@@ -401,7 +401,7 @@ class TestProcessWorkItemHumanReviewGuard:
             human_gate_after=False,
             human_gate_label=None,
             description="test pr-reviewer",
-            mark_ready_on_complete=True,
+            post_steps=[".github/scripts/mark-pr-ready.sh"],
             review_loop={
                 "re_invoke": "03_execute/coder",
                 "max_cycles": 3,
@@ -455,7 +455,8 @@ class TestProcessWorkItemHumanReviewGuard:
             url="https://github.com/test/repo/issues/55",
         )
 
-        process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
 
         gh.remove_label.assert_any_call(55, HUMAN_REVIEW_PENDING_LABEL)
         applied = [c.args[1] for c in gh.add_label.call_args_list]
@@ -480,7 +481,8 @@ class TestProcessWorkItemHumanReviewGuard:
             url="https://github.com/test/repo/issues/42",
         )
 
-        process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
 
         gh.find_pr_by_branch.assert_called_with("issue-42")
         gh.find_pr_by_label.assert_called_with("source-issue:42")
@@ -488,7 +490,7 @@ class TestProcessWorkItemHumanReviewGuard:
     @patch("pipeline.pipeline_orchestrator.invoke_agent")
     def test_no_human_reviews_leaves_status_complete(self, mock_invoke):
         """When _fetch_unresolved_human_review_requests returns [], final_status stays
-        :complete — mark_pr_ready is called, no review-cycle label is applied."""
+        :complete — the post_steps script runs, no review-cycle label is applied."""
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -502,9 +504,15 @@ class TestProcessWorkItemHumanReviewGuard:
             url="https://github.com/test/repo/issues/33",
         )
 
-        process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_sub:
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
 
-        gh.mark_pr_ready.assert_called_once_with(77)
+        bash_calls = [
+            c for c in mock_sub.call_args_list
+            if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+        ]
+        assert len(bash_calls) == 1, "post_steps script must run when status stays :complete"
+        assert "mark-pr-ready.sh" in bash_calls[0].args[0][-1]
         applied = [c.args[1] for c in gh.add_label.call_args_list]
         assert not any(l.startswith("review-cycle:") for l in applied), (
             "Empty human reviews must not trigger a free re-invoke"
