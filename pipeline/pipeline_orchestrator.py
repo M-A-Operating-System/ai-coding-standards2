@@ -1916,6 +1916,23 @@ def invoke_agent(
     else:
         agent_env["PR_NUMBER"] = str(work_item.number)
 
+    # Preflight: a missing ANTHROPIC_API_KEY produces an auth-error response
+    # that the stream-json parser may misread as a rate-limit pause, masking
+    # the real cause and leaving the work item stuck in :wip indefinitely.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        log.error(
+            "  invoke_agent: ANTHROPIC_API_KEY is not set — cannot launch %s "
+            "on %s #%d; add the key to CI secrets and retry.",
+            agent_def.agent, work_item.kind, work_item.number,
+        )
+        return AgentRunResult(
+            success=False,
+            captured_tail=(
+                "Configuration error: ANTHROPIC_API_KEY is not set. "
+                "Add the key to CI secrets and retry."
+            ),
+        )
+
     # Capture the stream-json output line-by-line. Each line is a JSON event;
     # we parse it immediately to extract agent text (for sentinel/rate-limit
     # detection) and token usage (from the result event). We also retain the
