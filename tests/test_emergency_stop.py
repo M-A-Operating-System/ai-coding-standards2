@@ -129,15 +129,15 @@ class TestMainStopMarkerBehavior:
         with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(pipeline_orchestrator, "load_pipeline", side_effect=fake_load), \
-             patch.object(pipeline_orchestrator, "write_audit_log"), \
+             patch.object(pipeline_orchestrator, "_emit_audit_event"), \
              patch.object(pipeline_orchestrator, "GitHubClient"), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             pipeline_orchestrator.main()
 
         assert not load_called, "load_pipeline must not be called when stop marker is set"
 
-    def test_main_emits_emergency_stop_audit_event(self, tmp_path, monkeypatch):
-        """When stop marker is detected, a system.emergency_stop audit event is emitted."""
+    def test_main_emits_emergency_stop_audit_event(self, tmp_path, monkeypatch, capsys):
+        """When stop marker is detected, a system.emergency_stop audit event is printed."""
         marker_path = tmp_path / ".pipeline-stop"
         marker_path.write_text(json.dumps({
             "stopped_at": "2026-06-01T12:00:00Z",
@@ -146,21 +146,22 @@ class TestMainStopMarkerBehavior:
         }))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
 
-        written_events = []
-
-        def capture_write(gh, events):
-            written_events.extend(events)
-
         with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
-             patch.object(pipeline_orchestrator, "write_audit_log", side_effect=capture_write), \
              patch.object(pipeline_orchestrator, "GitHubClient"), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             pipeline_orchestrator.main()
 
-        event_types = [e.get("event_type") for e in written_events]
+        import json as _json
+        lines = [l for l in capsys.readouterr().out.splitlines() if l.strip()]
+        event_types = []
+        for line in lines:
+            try:
+                event_types.append(_json.loads(line).get("event"))
+            except _json.JSONDecodeError:
+                pass
         assert "system.emergency_stop" in event_types, (
-            f"Expected system.emergency_stop audit event; got {event_types}"
+            f"Expected system.emergency_stop audit event in stdout; got {event_types}"
         )
 
     def test_main_proceeds_when_not_stopped(self, tmp_path, monkeypatch):
@@ -176,7 +177,7 @@ class TestMainStopMarkerBehavior:
         with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(pipeline_orchestrator, "load_pipeline", side_effect=fake_load), \
-             patch.object(pipeline_orchestrator, "write_audit_log"), \
+             patch.object(pipeline_orchestrator, "_emit_audit_event"), \
              patch.object(pipeline_orchestrator, "GitHubClient") as MockGH, \
              patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
@@ -194,7 +195,7 @@ class TestMainStopMarkerBehavior:
         for _ in range(2):
             with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
                  patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
-                 patch.object(pipeline_orchestrator, "write_audit_log"), \
+                 patch.object(pipeline_orchestrator, "_emit_audit_event"), \
                  patch.object(pipeline_orchestrator, "GitHubClient"), \
                  patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
                 pipeline_orchestrator.main()

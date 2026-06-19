@@ -3,7 +3,6 @@ import sys, os
 import subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
-import base64
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -18,7 +17,7 @@ from pipeline_orchestrator import (
     _count_running,
     _handle_review_loop,
     _make_audit_event,
-    write_audit_log,
+    _emit_audit_event,
     promote_gated_agents,
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
@@ -1481,19 +1480,14 @@ class TestHandleReviewLoop:
 
 
 # ---------------------------------------------------------------------------
-# QA-001: TestWriteAuditLog
+# QA-001: TestAuditEventEmission
 # ---------------------------------------------------------------------------
 
-class TestWriteAuditLog:
-    """Tests for write_audit_log() and _make_audit_event()."""
-
-    def _make_gh(self) -> MagicMock:
-        gh = MagicMock()
-        gh.repo = "test/repo"
-        return gh
+class TestAuditEventEmission:
+    """Tests for _make_audit_event() and _emit_audit_event()."""
 
     def test_make_audit_event_has_required_fields(self):
-        """_make_audit_event returns a dict with all schema-required fields."""
+        """_make_audit_event returns a dict with all required top-level fields."""
         wi = WorkItem(
             number=42, kind="issue", title="test", labels=set(),
             url="https://github.com/test/repo/issues/42",
@@ -1503,119 +1497,72 @@ class TestWriteAuditLog:
             work_item=wi, agent="03_execute/coder",
             outcome_status="ok",
         )
-        assert event["event_type"] == "agent.complete"
-        assert event["session_id"] == "sess-123"
+        assert event["event"] == "agent.complete"
+        assert event["ts"]
         assert event["agent"] == "03_execute/coder"
-        assert event["outcome"]["status"] == "ok"
+        assert event["issue"] == 42
+        assert event["status"] == "ok"
+        assert event["session_id"] == "sess-123"
         assert event["object"]["kind"] == "issue"
         assert event["object"]["id"] == 42
-        assert "ts" in event
         assert "actor" in event
 
     def test_make_audit_event_without_work_item(self):
-        """_make_audit_event with no work_item sets object to None."""
+        """_make_audit_event with no work_item sets object and issue to None."""
         event = _make_audit_event("sess-1", "session.start", "test/repo")
         assert event["object"] is None
+        assert event["issue"] is None
         assert event["agent"] is None
 
-    def test_write_audit_log_no_op_on_empty_events(self):
-        """write_audit_log returns without API calls when events list is empty."""
-        gh = self._make_gh()
-        write_audit_log(gh, [])
-        gh._request.assert_not_called()
-
-    def test_write_audit_log_emits_jsonl_lines(self):
-        """write_audit_log writes one JSON line per event."""
-        gh = self._make_gh()
-
-        # Mock the branch-check GET (200 = branch exists)
-        branch_response = MagicMock()
-        branch_response.status_code = 200
-
-        # Mock the file-not-found GET (404 = new file)
-        file_response = MagicMock()
-        file_response.status_code = 404
-
-        # Mock a successful PUT
-        put_response = MagicMock()
-        put_response.status_code = 201
-
-        gh._request.side_effect = [branch_response, file_response]
-        gh._put.return_value = put_response
-
-        event = _make_audit_event("s1", "agent.complete", "test/repo", outcome_status="ok")
-        write_audit_log(gh, [event])
-
-        # PUT must have been called with base64-encoded content
-        assert gh._put.called
-        put_body = gh._put.call_args[0][1]
-        content = base64.b64decode(put_body["content"]).decode()
-        parsed = json.loads(content.strip())
-        assert parsed["event_type"] == "agent.complete"
-
-    def test_write_audit_log_retries_on_409_conflict(self):
-        """409 conflict triggers a retry — events must not be dropped silently.
-
-        On the retry, the orchestrator must re-GET the file and re-send the
-        *refreshed* sha so the second PUT no longer collides with the
-        concurrent writer's commit.
-        """
-        gh = self._make_gh()
-
-        branch_response = MagicMock()
-        branch_response.status_code = 200
-
-        # First attempt: file is brand new (404 → no sha sent), PUT races and
-        # loses with a 409.
-        file_response = MagicMock()
-        file_response.status_code = 404
-
-        conflict_response = MagicMock()
-        conflict_response.status_code = 409
-
-        # Retry attempt: the concurrent writer's commit now exists, so the GET
-        # returns 200 with a refreshed sha and existing content.
-        refreshed_sha = "refreshed-sha-deadbeef"
-        file_response2 = MagicMock()
-        file_response2.status_code = 200
-        file_response2.json.return_value = {
-            "sha": refreshed_sha,
-            "content": base64.b64encode(b'{"prior":"line"}\n').decode(),
-        }
-
-        success_response = MagicMock()
-        success_response.status_code = 201
-
-        # First attempt: branch check, file 404, PUT → 409
-        # Second attempt: file 200 (refreshed sha), PUT → 201
-        gh._request.side_effect = [
-            branch_response,
-            file_response,
-            file_response2,
-        ]
-        gh._put.side_effect = [conflict_response, success_response]
-
-        event = _make_audit_event("s1", "test.event", "test/repo")
-
-        with patch("time.sleep"):  # don't actually sleep in tests
-            write_audit_log(gh, [event])
-
-        # Should have been called twice (one conflict + one success)
-        assert gh._put.call_count == 2
-
-        # The first PUT carried no sha (file was new / 404).
-        first_put_body = gh._put.call_args_list[0][0][1]
-        assert "sha" not in first_put_body, (
-            f"First PUT should not carry a sha for a new file; got {first_put_body!r}"
+    def test_make_audit_event_pr_work_item_issue_is_none(self):
+        """For PR work items, issue field is None (only issue kind gets the id)."""
+        wi = WorkItem(
+            number=7, kind="pr", title="test pr", labels=set(),
+            url="https://github.com/test/repo/pull/7",
         )
+        event = _make_audit_event("sess-2", "agent.complete", "test/repo", work_item=wi)
+        assert event["issue"] is None
+        assert event["object"]["kind"] == "pr"
+        assert event["object"]["id"] == 7
 
-        # The retried PUT must carry the refreshed sha fetched on the retry GET —
-        # re-sending the stale (absent) sha would just 409 again.
-        second_put_body = gh._put.call_args_list[1][0][1]
-        assert second_put_body.get("sha") == refreshed_sha, (
-            f"Retried PUT must re-send the refreshed sha {refreshed_sha!r}; "
-            f"got {second_put_body.get('sha')!r}"
+    def test_emit_audit_event_prints_valid_json_line(self, capsys):
+        """_emit_audit_event prints one compact JSON line to stdout."""
+        event = _make_audit_event("sess-123", "agent.complete", "test/repo",
+                                  outcome_status="ok")
+        _emit_audit_event(event)
+        captured = capsys.readouterr()
+        lines = [l for l in captured.out.splitlines() if l.strip()]
+        assert len(lines) == 1
+        parsed = json.loads(lines[0])
+        assert parsed["event"] == "agent.complete"
+        assert parsed["status"] == "ok"
+        assert parsed["ts"]
+
+    def test_emit_audit_event_includes_required_minimum_fields(self, capsys):
+        """Emitted JSON line always contains ts, event, agent, issue, status."""
+        wi = WorkItem(
+            number=5, kind="issue", title="t", labels=set(), url="http://x"
         )
+        event = _make_audit_event(
+            "s1", "agent.invoked", "r/r",
+            work_item=wi, agent="03_execute/coder", outcome_status="started",
+        )
+        _emit_audit_event(event)
+        parsed = json.loads(capsys.readouterr().out.strip())
+        assert "ts" in parsed
+        assert "event" in parsed
+        assert "agent" in parsed
+        assert "issue" in parsed
+        assert "status" in parsed
+
+    def test_emit_audit_event_no_trailing_newline_noise(self, capsys):
+        """_emit_audit_event emits exactly one line (flush=True, print adds one newline)."""
+        event = _make_audit_event("s", "e", "r")
+        _emit_audit_event(event)
+        output = capsys.readouterr().out
+        # print() adds exactly one newline
+        assert output.endswith("\n")
+        assert output.count("\n") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -2858,15 +2805,15 @@ class TestPriorityScheduling:
         )
 
     # Integration test: the sort block inside main() is exercised end-to-end.
-    @patch("pipeline_orchestrator.write_audit_log")
     @patch("pipeline_orchestrator.process_work_item")
     @patch("pipeline_orchestrator.load_pipeline")
     @patch("pipeline_orchestrator.is_pipeline_paused")
     @patch("pipeline_orchestrator.GitHubClient")
     @patch("pipeline_orchestrator.parse_args")
+    @patch("pipeline_orchestrator._emit_audit_event")
     def test_main_dispatches_priority_before_non_priority(
-        self, mock_parse_args, mock_gh_cls, mock_is_paused,
-        mock_load_pipeline, mock_process_wi, mock_write_audit,
+        self, mock_emit_audit, mock_parse_args, mock_gh_cls, mock_is_paused,
+        mock_load_pipeline, mock_process_wi,
     ):
         """Integration test: main() sort block reorders API-returned items by priority.
 

@@ -7,7 +7,7 @@ shared script `.github/scripts/status.sh`.
 
 The canonical definition is in `pipeline/statuses.json`
 (see [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
-Every transition also emits an event to the audit log branch
+Every transition also emits a JSON event to stdout
 (see [`08-audit-log.md`](08-audit-log.md)) so that the cross-session
 timeline is intact even after labels are mutated. This document describes
 the model in product terms.
