@@ -2541,6 +2541,71 @@ class TestPostSteps:
         mock_failed.assert_called_once()
         assert call_count["n"] == 1, f"Expected only 1 bash call before break, got {call_count['n']}"
 
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_post_steps_path_traversal_blocked(self, mock_failed, mock_invoke):
+        """A post_steps path that resolves outside the repo root is blocked and applies :failed."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["pr"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            post_steps=["../../etc/shadow"],
+        )
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=55, kind="pr", title="PR", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/pull/55",
+        )
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(MagicMock(returncode=0))) as mock_sub:
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        mock_failed.assert_called_once()
+        bash_calls = [
+            c for c in mock_sub.call_args_list
+            if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+        ]
+        assert len(bash_calls) == 0, "Traversal path must not reach subprocess.run"
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_post_steps_issue_kind_sets_issue_number_env(self, mock_invoke):
+        """When work item kind is 'issue', ISSUE_NUMBER is set in _ps_env (not PR_NUMBER)."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        bash_ok = MagicMock()
+        bash_ok.returncode = 0
+        bash_ok.stdout = ""
+        bash_ok.stderr = ""
+        agent = self._agent(kind="issue")
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=42, kind="issue", title="T", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/42",
+        )
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)) as mock_sub, \
+             patch("pathlib.Path.exists", lambda p: "mark-pr-ready.sh" in str(p)):
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        bash_calls = [
+            c for c in mock_sub.call_args_list
+            if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+        ]
+        assert len(bash_calls) == 1
+        env_passed = bash_calls[0].kwargs["env"]
+        assert env_passed["WORK_ITEM_KIND"] == "issue"
+        assert env_passed["ISSUE_NUMBER"] == "42"
+        assert "PR_NUMBER" not in env_passed
+
     def test_mark_pr_ready_script_exists(self):
         """mark-pr-ready.sh must exist at .github/scripts/mark-pr-ready.sh with a shebang."""
         import pipeline_orchestrator as orch

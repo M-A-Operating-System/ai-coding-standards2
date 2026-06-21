@@ -278,7 +278,8 @@ array of repo-relative script paths in the `post_steps` field:
    not on `:review`, `:blocked`, or `:failed`.
 2. Scripts run in declaration order. Each receives the same environment
    variables as agent steps: `$REPO`, `$ISSUE_NUMBER` (or `$PR_NUMBER`),
-   `$WORK_ITEM_KIND`, `$WORK_ITEM_NUMBER`, `$AI_AGILE_ROOT`, `$GITHUB_TOKEN`.
+   `$WORK_ITEM_KIND`, `$WORK_ITEM_NUMBER`, `$AGENT_NAME`, `$AI_AGILE_ROOT`,
+   `$GITHUB_TOKEN`.
 3. A script that exits non-zero aborts the remaining `post_steps`; the
    orchestrator applies `{agent}:failed` and posts a recovery comment.
 4. `post_steps` is only valid on agent steps. It is ignored on script steps.

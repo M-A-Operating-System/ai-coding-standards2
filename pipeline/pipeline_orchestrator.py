@@ -2917,7 +2917,7 @@ def process_work_item(
                     _ps_file = SUBMODULE_ROOT / _ps_path_str
                     _ps_ok = True
                     _ps_fail_reason = ""
-                    if not _ps_file.resolve().is_relative_to(SUBMODULE_ROOT.resolve()):
+                    if not _ps_file.resolve().is_relative_to(SUBMODULE_ROOT.resolve()):  # requires Python 3.9+
                         log.error(
                             "  post_steps: path %s escapes repo root — blocked (agent %s on #%d)",
                             _ps_path_str, agent_def.agent, work_item.number,
