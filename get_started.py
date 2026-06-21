@@ -504,6 +504,38 @@ def install_local_settings(
     return write_file(dst, json.dumps(payload, indent=2) + "\n", force, dry_run)
 
 
+def install_requirements(
+    consuming_root: Path,
+    dry_run: bool,
+) -> bool:
+    """Seed requirements.txt in the consuming repo if it does not already exist.
+
+    The orchestrator workflow does `pip install -r requirements.txt` on every
+    run.  In this submodule's own CI that file lists the full test stack
+    (pytest, pyyaml, etc.).  In consuming repos the orchestrator only needs
+    `requests`; project teams extend the file via PR for anything their own
+    coder agents need at runtime.
+
+    This file is never overwritten once created — project additions are
+    preserved across syncs.  When the submodule gains new runtime orchestrator
+    dependencies, check {SUBMODULE_NAME}/requirements.txt and mirror any
+    additions to this file manually.
+    """
+    dst = consuming_root / "requirements.txt"
+    if dst.exists():
+        print(f"  SKIP   requirements.txt  (exists; add packages there directly)")
+        return False
+    content = (
+        "# Runtime dependencies for the AI Agile pipeline orchestrator.\n"
+        f"# Seeded from {SUBMODULE_NAME}/requirements.txt — never overwritten by sync.\n"
+        "# When the submodule adds new runtime deps, mirror them here manually.\n"
+        "# Add project-specific packages below.\n"
+        "requests\n"
+    )
+    print(f"  Requirements: → {dst}")
+    return write_file(dst, content, force=True, dry_run=dry_run)
+
+
 def _managed_standards_files() -> list[str]:
     """Return 'standards/<name>.json' for every submodule-managed base standard.
 
@@ -731,6 +763,7 @@ def main() -> int:
     install_agents(consuming_root, args.force, args.dry_run)
     install_slash_commands(consuming_root, args.force, args.dry_run)
     install_local_settings(consuming_root, args.force, args.dry_run)
+    install_requirements(consuming_root, args.dry_run)
     add_gitignore_entries(consuming_root, args.dry_run)
     untrack_managed_paths(consuming_root, args.dry_run)
 
