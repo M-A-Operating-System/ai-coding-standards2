@@ -1003,6 +1003,7 @@ class TestInvokeAgentTimeout:
         import time
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
 
         # Stdout blocks until the process is killed.
@@ -1051,6 +1052,7 @@ class TestInvokeAgentTimeout:
         import time
         import pipeline_orchestrator as orch
 
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
 
         # Stdout yields lines until the process is killed, then stops.
@@ -1592,8 +1594,8 @@ class TestHandleReviewLoop:
         gh.remove_label.assert_any_call(wi.number, target.complete_label)
         assert target.complete_label not in result
 
-    def test_first_cycle_adds_review_cycle_label(self):
-        """After cycle 0→1, review-cycle:1 label is applied."""
+    def test_review_loop_does_not_set_review_cycle_label(self):
+        """review-cycle:N is set at dispatch time, not in the review loop itself."""
         reviewer = self._reviewer_def()
         target = self._target_def()
         wi = self._work_item()
@@ -1603,18 +1605,25 @@ class TestHandleReviewLoop:
 
         result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
 
-        gh.add_label.assert_any_call(wi.number, "review-cycle:1")
-        assert "review-cycle:1" in result
+        for call_args in gh.add_label.call_args_list:
+            assert not call_args[0][1].startswith("review-cycle:"), (
+                "review_loop must not set review-cycle:N — counter is set at dispatch"
+            )
+        assert not any(l.startswith("review-cycle:") for l in result)
 
     def test_max_cycles_reached_escalates_to_human(self):
-        """When next_cycle >= max_cycles, :review is left intact (escalation)."""
+        """When next_cycle > max_cycles, :review is left intact (escalation).
+
+        review-cycle:N is set at dispatch, so after two coder runs the label is
+        review-cycle:2. With max_cycles=2, next_cycle=3 > 2 → escalate.
+        """
         reviewer = self._reviewer_def(max_cycles=2)
         target = self._target_def()
         wi = self._work_item()
         gh = MagicMock()
         pipeline_map = {target.agent: target}
-        # Already at cycle 1; next would be 2 == max_cycles → escalate
-        labels = {reviewer.review_label, target.complete_label, "review-cycle:1"}
+        # Two coder runs completed (counter set at dispatch); next would be 3 > 2 → escalate
+        labels = {reviewer.review_label, target.complete_label, "review-cycle:2"}
 
         result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
 
@@ -1639,20 +1648,23 @@ class TestHandleReviewLoop:
         gh.add_label.assert_not_called()
         gh.remove_label.assert_not_called()
 
-    def test_second_cycle_removes_old_cycle_label(self):
-        """On cycle 1→2, the review-cycle:1 label is removed before review-cycle:2 is added."""
+    def test_review_loop_preserves_existing_cycle_label(self):
+        """review_loop does not touch review-cycle:N; counter survives unchanged."""
         reviewer = self._reviewer_def(max_cycles=5)
         target = self._target_def()
         wi = self._work_item()
         gh = MagicMock()
         pipeline_map = {target.agent: target}
-        labels = {reviewer.review_label, target.complete_label, "review-cycle:1"}
+        labels = {reviewer.review_label, target.complete_label, "review-cycle:2"}
 
         result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
 
-        gh.remove_label.assert_any_call(wi.number, "review-cycle:1")
-        gh.add_label.assert_any_call(wi.number, "review-cycle:2")
-        assert "review-cycle:1" not in result
+        # review_loop must not remove or add any review-cycle label
+        for c in gh.add_label.call_args_list:
+            assert not c[0][1].startswith("review-cycle:")
+        for c in gh.remove_label.call_args_list:
+            assert not c[0][1].startswith("review-cycle:")
+        # Existing label untouched
         assert "review-cycle:2" in result
 
     def test_both_labels_coexist_recovery(self):
@@ -1670,8 +1682,108 @@ class TestHandleReviewLoop:
         # Reviewer :review removed, target :complete cleared
         assert reviewer.review_label not in result
         assert target.complete_label not in result
-        # Cycle label applied
-        assert "review-cycle:1" in result
+        # review_loop does not set review-cycle:N (dispatch does)
+        assert not any(l.startswith("review-cycle:") for l in result)
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchReviewCycleCounter — review-cycle:N set at coder dispatch time
+# ---------------------------------------------------------------------------
+
+class TestDispatchReviewCycleCounter:
+    """review-cycle:N is incremented in process_work_item when a review_loop
+    re_invoke target is dispatched, not in _handle_review_loop."""
+
+    def _make_coder_def(self):
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "prd-docs-updater:approved"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="coder",
+        )
+
+    def _make_reviewer_def(self):
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="reviewer",
+            review_loop={"re_invoke": "03_execute/coder", "max_cycles": 3},
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_initial_dispatch_sets_review_cycle_1(self, mock_invoke):
+        """First coder dispatch sets review-cycle:1 — counter starts counting from run 1."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        coder = self._make_coder_def()
+        reviewer = self._make_reviewer_def()
+        pipeline_map = {coder.agent: coder, reviewer.agent: reviewer}
+        gh = _make_gh_mock()
+        wi = _make_work_item_with_labels(42, {"prd-docs-updater:approved"})
+
+        process_work_item(wi, [coder], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "review-cycle:1" in applied, (
+            f"First coder dispatch must set review-cycle:1. Labels applied: {applied}"
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_reinvoke_dispatch_increments_counter(self, mock_invoke):
+        """Second coder dispatch (re-invoke) increments review-cycle:1 → review-cycle:2."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        coder = self._make_coder_def()
+        reviewer = self._make_reviewer_def()
+        pipeline_map = {coder.agent: coder, reviewer.agent: reviewer}
+        gh = _make_gh_mock()
+        # re-invoke: review-cycle:1 already in labels from first dispatch
+        wi = _make_work_item_with_labels(42, {"prd-docs-updater:approved", "review-cycle:1"})
+
+        process_work_item(wi, [coder], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        removed = [c.args[1] for c in gh.remove_label.call_args_list]
+        assert "review-cycle:2" in applied, f"Expected review-cycle:2 applied; got: {applied}"
+        assert "review-cycle:1" in removed, f"Expected review-cycle:1 removed; got: {removed}"
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_non_reinvoke_target_does_not_get_counter(self, mock_invoke):
+        """Agents not targeted by any review_loop do not get a review-cycle label."""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        prd_writer = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="prd-writer",
+        )
+        pipeline_map = {prd_writer.agent: prd_writer}
+        gh = _make_gh_mock()
+        wi = _make_work_item_with_labels(10, {"issue-classifier:complete"})
+
+        process_work_item(wi, [prd_writer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert not any(l.startswith("review-cycle:") for l in applied), (
+            f"Non-reinvoke targets must not get a review-cycle label. Applied: {applied}"
+        )
 
 
 # ---------------------------------------------------------------------------
