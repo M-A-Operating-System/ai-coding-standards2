@@ -2,7 +2,7 @@
 """
 pipeline_orchestrator.py
 
-Reads pipeline.json and orchestrates agent execution by inspecting GitHub
+Reads pipeline.json and orchestrates agent execution  by inspecting GitHub
 issue and PR labels of the form:
 
     {agent-name}:complete     — agent finished successfully
