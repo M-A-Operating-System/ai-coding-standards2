@@ -1,8 +1,11 @@
 name: Restore test file on issue-172
+
 on:
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   restore:
     runs-on: ubuntu-latest
@@ -12,24 +15,31 @@ jobs:
           ref: issue-172
           fetch-depth: 0
           token: ${{ secrets.AI_AGILE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
       - name: Restore correct test file from coder commit
         run: |
           git show 2c446af:tests/test_orchestrator_logic.py > tests/test_orchestrator_logic.py
           wc -l tests/test_orchestrator_logic.py
+
       - name: Apply ANTHROPIC_API_KEY mock to 5 TestInvokeAgentRuntimeContext tests
         run: |
           python3 - << 'PYEOF'
           with open("tests/test_orchestrator_logic.py") as f:
               content = f.read()
+
+          # The 5 target tests all call setattr with value 5 (timeout tests use 0.1)
           old = '        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)'
           new = '        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")\n        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)'
+
           new_content = content.replace(old, new)
           count = new_content.count('monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")')
           print(f"Insertions made: {count}")
           assert count == 5, f"Expected 5 insertions, got {count}"
+
           with open("tests/test_orchestrator_logic.py", "w") as f:
               f.write(new_content)
           PYEOF
+
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
