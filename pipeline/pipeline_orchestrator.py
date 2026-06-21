@@ -163,6 +163,7 @@ class AgentDef:
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
     post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
+    review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
@@ -283,6 +284,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 session_scope=entry.get("session", {}).get("scope", "per_issue"),
                 session_id_pattern=entry.get("session", {}).get("id_pattern"),
                 post_steps=list(entry.get("post_steps", [])),
+                review_gate=bool(entry.get("review_gate", False)),
                 commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
@@ -2738,7 +2740,7 @@ def process_work_item(
             _human_review_list: list = []
             if (
                 final_status == STATUS_COMPLETE
-                and bool(agent_def.post_steps)
+                and agent_def.review_gate
                 and agent_def.review_loop
                 and HUMAN_REVIEW_PENDING_LABEL not in labels
             ):
@@ -2772,7 +2774,7 @@ def process_work_item(
             elif (
                 HUMAN_REVIEW_PENDING_LABEL in labels
                 and final_status == STATUS_COMPLETE
-                and bool(agent_def.post_steps)
+                and agent_def.review_gate
                 and agent_def.review_loop
             ):
                 # Free re-invoke already ran (label present) and pr-reviewer APPROVEs
@@ -2910,6 +2912,7 @@ def process_work_item(
                     _ps_env["ISSUE_NUMBER"] = str(work_item.number)
                 else:
                     _ps_env["PR_NUMBER"] = str(work_item.number)
+                _ps_env["AI_AGILE_ROOT"] = os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
                 for _ps_path_str in agent_def.post_steps:
                     _ps_file = SUBMODULE_ROOT / _ps_path_str
                     _ps_ok = True

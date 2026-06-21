@@ -2220,7 +2220,7 @@ class TestManualRequestedOverride:
 # TestPostSteps — orchestrator runs post_steps scripts on :complete
 # ---------------------------------------------------------------------------
 
-class TestMarkReadyOnComplete:
+class TestPostSteps:
     """An agent with post_steps runs its completion scripts when it signals :complete."""
 
     def _agent(self, *, kind: str = "pr") -> AgentDef:
@@ -2234,6 +2234,7 @@ class TestMarkReadyOnComplete:
             human_gate_label=None,
             description="test",
             post_steps=[".github/scripts/mark-pr-ready.sh"],
+            review_gate=True,
         )
 
     def _sub_side_effect_factory(self, bash_result):
@@ -2275,6 +2276,12 @@ class TestMarkReadyOnComplete:
         ]
         assert len(bash_calls) == 1
         assert "mark-pr-ready.sh" in bash_calls[0].args[0][-1]
+        env_passed = bash_calls[0].kwargs["env"]
+        assert env_passed["WORK_ITEM_KIND"] == "pr"
+        assert env_passed["WORK_ITEM_NUMBER"] == "55"
+        assert env_passed["PR_NUMBER"] == "55"
+        assert "REPO" in env_passed
+        assert "AI_AGILE_ROOT" in env_passed
 
     @patch("pipeline_orchestrator.invoke_agent")
     def test_does_not_run_post_steps_on_review(self, mock_invoke):
@@ -2406,8 +2413,11 @@ class TestMarkReadyOnComplete:
             url="https://github.com/test/repo/pull/55",
         )
 
+        def _exists_for_scripts(self_path):
+            return any(s in str(self_path) for s in ("mark-pr-ready.sh", "other-hook.sh"))
+
         with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)) as mock_sub, \
-             patch("pathlib.Path.exists", return_value=True):
+             patch("pathlib.Path.exists", _exists_for_scripts):
             process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
         bash_calls = [
@@ -2457,8 +2467,11 @@ class TestMarkReadyOnComplete:
             url="https://github.com/test/repo/pull/55",
         )
 
+        def _exists_for_scripts(self_path):
+            return any(s in str(self_path) for s in ("mark-pr-ready.sh", "other-hook.sh"))
+
         with patch("subprocess.run", side_effect=_side_effect), \
-             patch("pathlib.Path.exists", return_value=True):
+             patch("pathlib.Path.exists", _exists_for_scripts):
             process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
         mock_failed.assert_called_once()
