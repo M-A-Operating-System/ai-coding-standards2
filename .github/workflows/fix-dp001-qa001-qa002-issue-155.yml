@@ -1,0 +1,138 @@
+name: Fix DP-001 QA-001 QA-002 on issue-155
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: issue-155
+          fetch-depth: 0
+          token: ${{ secrets.AI_AGILE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Fix DP-001 — deprecation warning checks wrong key level
+        run: |
+          python3 - << 'PYEOF'
+          with open('pipeline/pipeline_orchestrator.py') as f:
+              src = f.read()
+          old = '            if "mark_ready_on_complete" in entry:\n                log.warning(\n                    "pipeline.json: agent %r uses deprecated \'mark_ready_on_complete\'; "\n                    "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",\n                    entry.get("agent", "<unknown>"),\n                )'
+          new = '            if entry.get("git_ops", {}).get("mark_ready_on_complete"):\n                log.warning(\n                    "pipeline.json: agent %r uses deprecated git_ops.mark_ready_on_complete; "\n                    "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",\n                    entry.get("agent", "<unknown>"),\n                )'
+          assert old in src, f'Target string not found. Snippet around mark_ready: {src[src.find("mark_ready_on_complete")-100:src.find("mark_ready_on_complete")+200]}'
+          src = src.replace(old, new, 1)
+          with open('pipeline/pipeline_orchestrator.py', 'w') as f:
+              f.write(src)
+          print('pipeline_orchestrator.py patched OK')
+          PYEOF
+      - name: Add QA-001 and QA-002 tests
+        run: |
+          python3 - << 'PYEOF'
+          with open('tests/test_orchestrator_logic.py') as f:
+              src = f.read()
+
+          anchor = '''    def test_load_pipeline_null_max_concurrent_defaults_to_one(self, tmp_path):
+        """max_concurrent: null in pipeline.json defaults to 1."""
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "01_product_docs/issue-classifier",
+                "phase": "01_product_docs",
+                "object": ["issue"],
+                "trigger": {"event": "issue.opened"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+                "max_concurrent": None,
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        agents, _ = load_pipeline(path)
+        assert agents[0].max_concurrent == 1'''
+
+          new_tests = '''
+
+    def test_load_pipeline_loads_review_gate(self, tmp_path):
+        """review_gate: true in pipeline.json sets AgentDef.review_gate=True."""
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "03_execute/pr-reviewer",
+                "phase": "03_execute",
+                "object": ["issue"],
+                "trigger": {"label": "merge-conflict:complete"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+                "review_gate": True,
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        agents, _ = load_pipeline(path)
+        assert agents[0].review_gate is True
+
+    def test_load_pipeline_review_gate_defaults_false(self, tmp_path):
+        """Entries without review_gate produce AgentDef.review_gate=False."""
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "01_product_docs/issue-classifier",
+                "phase": "01_product_docs",
+                "object": ["issue"],
+                "trigger": {"event": "issue.opened"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        agents, _ = load_pipeline(path)
+        assert agents[0].review_gate is False
+
+    def test_load_pipeline_warns_on_deprecated_mark_ready_on_complete(self, tmp_path):
+        """git_ops.mark_ready_on_complete triggers a log.warning deprecation notice."""
+        import json
+        import logging
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "03_execute/pr-reviewer",
+                "phase": "03_execute",
+                "object": ["issue"],
+                "trigger": {"label": "merge-conflict:complete"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+                "git_ops": {"commit_after": False, "mark_ready_on_complete": True},
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        logger = logging.getLogger("orchestrator")
+        with patch.object(logger, "warning") as mock_warn:
+            load_pipeline(path)
+        mock_warn.assert_called_once()
+        assert "mark_ready_on_complete" in mock_warn.call_args[0][0]'''
+
+          assert anchor in src, 'Anchor test not found'
+          src = src.replace(anchor, anchor + new_tests, 1)
+          with open('tests/test_orchestrator_logic.py', 'w') as f:
+              f.write(src)
+          print('test_orchestrator_logic.py patched OK')
+          PYEOF
+      - name: Verify tests pass
+        run: pip install pytest pyyaml jsonschema requests && pytest tests/ -q --tb=short 2>&1 | tail -5
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline/pipeline_orchestrator.py tests/test_orchestrator_logic.py
+          git diff --cached --stat
+          git commit -m "fix(post_steps): correct deprecation check to git_ops level; add review_gate and deprecation tests"
+          git push origin issue-155
