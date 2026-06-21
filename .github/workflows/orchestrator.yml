@@ -67,14 +67,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install dependencies
-        env:
-          AI_AGILE_ROOT: ${{ github.workspace }}
-          AI_AGILE_STANDARDS_ROOT: ${{ github.workspace }}
-        run: |
-          pip install -r "$AI_AGILE_STANDARDS_ROOT/requirements.txt"
-          if [ "$AI_AGILE_ROOT" != "$AI_AGILE_STANDARDS_ROOT" ] && [ -f "$AI_AGILE_ROOT/requirements.txt" ]; then
-            pip install -r "$AI_AGILE_ROOT/requirements.txt"
-          fi
+        run: pip install -r requirements.txt
 
       - name: Install Claude Code CLI
         run: npm install -g @anthropic-ai/claude-code
