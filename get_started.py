@@ -506,7 +506,6 @@ def install_local_settings(
 
 def install_requirements(
     consuming_root: Path,
-    force: bool,
     dry_run: bool,
 ) -> bool:
     """Seed requirements.txt in the consuming repo if it does not already exist.
@@ -517,8 +516,10 @@ def install_requirements(
     `requests`; project teams extend the file via PR for anything their own
     coder agents need at runtime.
 
-    We intentionally never overwrite an existing file (even with --force) so
-    project additions are not lost on sync.
+    This file is never overwritten once created — project additions are
+    preserved across syncs.  When the submodule gains new runtime orchestrator
+    dependencies, check {SUBMODULE_NAME}/requirements.txt and mirror any
+    additions to this file manually.
     """
     dst = consuming_root / "requirements.txt"
     if dst.exists():
@@ -526,7 +527,9 @@ def install_requirements(
         return False
     content = (
         "# Runtime dependencies for the AI Agile pipeline orchestrator.\n"
-        "# Add project-specific packages below — this file is never overwritten by sync.\n"
+        f"# Seeded from {SUBMODULE_NAME}/requirements.txt — never overwritten by sync.\n"
+        "# When the submodule adds new runtime deps, mirror them here manually.\n"
+        "# Add project-specific packages below.\n"
         "requests\n"
     )
     print(f"  Requirements: → {dst}")
@@ -760,7 +763,7 @@ def main() -> int:
     install_agents(consuming_root, args.force, args.dry_run)
     install_slash_commands(consuming_root, args.force, args.dry_run)
     install_local_settings(consuming_root, args.force, args.dry_run)
-    install_requirements(consuming_root, args.force, args.dry_run)
+    install_requirements(consuming_root, args.dry_run)
     add_gitignore_entries(consuming_root, args.dry_run)
     untrack_managed_paths(consuming_root, args.dry_run)
 
