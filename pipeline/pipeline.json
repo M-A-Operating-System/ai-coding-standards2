@@ -142,9 +142,10 @@
         "also_clear": ["03_execute/ci-gate", "03_execute/merge-conflict"]
       },
       "git_ops": {
-        "commit_after": false,
-        "mark_ready_on_complete": true
+        "commit_after": false
       },
+      "post_steps": [".github/scripts/mark-pr-ready.sh"],
+      "review_gate": true,
       "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues APPROVE only when all findings are Low or Informational severity. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR — this is a hard block regardless of automated findings. On APPROVE with no unresolved human reviews, emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
     },
 

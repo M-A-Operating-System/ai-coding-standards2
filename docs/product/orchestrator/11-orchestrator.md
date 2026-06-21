@@ -23,7 +23,7 @@ The orchestrator owns exactly these responsibilities:
 | Mutex management | Acquire and release the `:wip` label lock per (object, agent) |
 | Agent invocation | Spawn the agent subprocess; set `:failed` if it crashes without a terminal status |
 | Gate promotion | When a human applies a gate label, remove `:review` and apply `:complete` |
-| PR ready-for-review | Call `gh pr ready` when an agent with `git_ops.mark_ready_on_complete: true` completes — agents never do this themselves |
+| post_steps execution | Execute scripts listed in the agent's `post_steps` array after it signals `:complete`; scripts perform post-run actions such as marking a PR ready for review — agents never call `gh pr ready` themselves |
 | Git commit + push | Stage, commit, and push agent file changes to `issue-{N}` after any `commit_after: true` agent signals `complete` |
 | Audit log emission | Emit one JSONL event per transition to stdout |
 
@@ -399,8 +399,11 @@ if final_status == complete:
     emit agent.complete to audit log
     # complete + human_gate_after does NOT post a gate prompt — the agent
     # chose complete meaning "automated path, no human needed this cycle"
-    if git_ops.mark_ready_on_complete == true AND work_item is a PR:
-        call `gh pr ready {number}`
+    for each script in post_steps (declaration order):
+        execute script
+        if script exits non-zero:
+            apply :failed, post recovery comment
+            break item loop
 
 if final_status == review AND step has human_gate_after:
     post gate prompt comment: "Apply {gate_label} to advance"

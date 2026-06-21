@@ -146,12 +146,17 @@
             "pr_lifecycle": {
               "type": "boolean",
               "description": "When true the orchestrator opens a draft PR before invoking the agent (on the branch identified by branch_prefix)."
-            },
-            "mark_ready_on_complete": {
-              "type": "boolean",
-              "description": "When true the orchestrator marks the draft PR ready for review after the agent signals completion. Requires pr_lifecycle: true. Omit (or set false) when the PR should stay as a draft until a later pipeline stage."
             }
           }
+        },
+        "post_steps": {
+          "type": "array",
+          "description": "Ordered list of repo-relative paths to bash scripts the orchestrator runs after the agent signals :complete. Each script runs with REPO, WORK_ITEM_KIND, WORK_ITEM_NUMBER, AGENT_NAME, ISSUE_NUMBER (or PR_NUMBER), and AI_AGILE_ROOT set. A non-zero exit transitions the work item from :complete to :failed.",
+          "items": { "type": "string" }
+        },
+        "review_gate": {
+          "type": "boolean",
+          "description": "Set true only on the agent that acts as the final automated review gate before human merge approval (currently pr-reviewer). Controls whether unresolved human REQUEST_CHANGES reviews trigger a free coder re-invoke. Independent of post_steps."
         },
         "exclude_classifications": {
           "type": "array",
