@@ -293,9 +293,9 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
             ))
-            if "mark_ready_on_complete" in entry:
+            if entry.get("git_ops", {}).get("mark_ready_on_complete"):
                 log.warning(
-                    "pipeline.json: agent %r uses deprecated 'mark_ready_on_complete'; "
+                    "pipeline.json: agent %r uses deprecated git_ops.mark_ready_on_complete; "
                     "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",
                     entry.get("agent", "<unknown>"),
                 )

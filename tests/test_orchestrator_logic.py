@@ -402,6 +402,70 @@ class TestDefaultMaxConcurrentIsOne:
         agents, _ = load_pipeline(path)
         assert agents[0].max_concurrent == 1
 
+    def test_load_pipeline_loads_review_gate(self, tmp_path):
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "03_execute/pr-reviewer",
+                "phase": "03_execute",
+                "object": ["issue"],
+                "trigger": {"label": "merge-conflict:complete"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+                "review_gate": True,
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        agents, _ = load_pipeline(path)
+        assert agents[0].review_gate is True
+
+    def test_load_pipeline_review_gate_defaults_false(self, tmp_path):
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "01_product_docs/issue-classifier",
+                "phase": "01_product_docs",
+                "object": ["issue"],
+                "trigger": {"event": "issue.opened"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        agents, _ = load_pipeline(path)
+        assert agents[0].review_gate is False
+
+    def test_load_pipeline_warns_on_deprecated_mark_ready_on_complete(self, tmp_path):
+        import json
+        import logging
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "03_execute/pr-reviewer",
+                "phase": "03_execute",
+                "object": ["issue"],
+                "trigger": {"label": "merge-conflict:complete"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+                "git_ops": {"commit_after": False, "mark_ready_on_complete": True},
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        from pipeline_orchestrator import load_pipeline
+        logger = logging.getLogger("orchestrator")
+        with patch.object(logger, "warning") as mock_warn:
+            load_pipeline(path)
+        mock_warn.assert_called_once()
+        assert "mark_ready_on_complete" in mock_warn.call_args[0][0]
+
+
 
 # ---------------------------------------------------------------------------
 # TestPerAgentConcurrencyCeiling
