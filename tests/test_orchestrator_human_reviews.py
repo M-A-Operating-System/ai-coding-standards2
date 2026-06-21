@@ -402,6 +402,7 @@ class TestProcessWorkItemHumanReviewGuard:
             human_gate_label=None,
             description="test pr-reviewer",
             post_steps=[".github/scripts/mark-pr-ready.sh"],
+            review_gate=True,
             review_loop={
                 "re_invoke": "03_execute/coder",
                 "max_cycles": 3,
