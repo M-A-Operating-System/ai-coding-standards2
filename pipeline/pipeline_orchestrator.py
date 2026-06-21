@@ -165,6 +165,7 @@ class AgentDef:
     max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
+    extra_allowedTools: list = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults and frontmatter
 
     @property
     def label_key(self) -> str:
@@ -285,6 +286,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
+                extra_allowedTools=list(entry.get("extra_allowedTools", [])),
             ))
 
         _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
@@ -1685,8 +1687,12 @@ def invoke_agent(
         if isinstance(_extra, str)
         else list(_extra)
     )
-    # Merge defaults (first) with agent-specific tools; deduplicate preserving order.
-    extra_tools = list(dict.fromkeys(list(default_extra_tools or []) + _agent_extra))
+    # Merge: defaults → pipeline.json per-agent → frontmatter (all deduplicated, order preserved).
+    extra_tools = list(dict.fromkeys(
+        list(default_extra_tools or []) +
+        list(agent_def.extra_allowedTools) +
+        _agent_extra
+    ))
     try:
         max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))
     except (ValueError, TypeError):

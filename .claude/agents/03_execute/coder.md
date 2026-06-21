@@ -14,94 +14,10 @@ description: >
 tools: [Bash, Read, Edit, Write, Grep, Glob]
 model: claude-sonnet-4-6
 max_turns: 60
-# Bash is scoped to known build/test/file operations.
-# Network egress tools (curl, wget, nc, ssh, rsync) and secret-printing
-# commands (env, printenv, base64) are intentionally excluded to raise
-# the bar against prompt-injection exfiltration.
-# Residual risk: interpreter invocations (python *, node *) can still
-# execute arbitrary code indirectly. This list blocks the most common
-# direct exfiltration paths; it is not a complete sandbox.
-extra_allowedTools:
-  - Edit
-  - Write
-  # Version control
-  - Bash(git *)
-  # Python
-  - Bash(python *)
-  - Bash(python3 *)
-  - Bash(pip *)
-  - Bash(pip3 *)
-  - Bash(uv *)
-  - Bash(pytest *)
-  - Bash(tox *)
-  # Node / JS
-  - Bash(npm *)
-  - Bash(npx *)
-  - Bash(node *)
-  - Bash(yarn *)
-  - Bash(pnpm *)
-  - Bash(bun *)
-  # Rust / Go / JVM / Ruby
-  - Bash(cargo *)
-  - Bash(rustc *)
-  - Bash(go *)
-  - Bash(mvn *)
-  - Bash(mvnw *)
-  - Bash(gradle *)
-  - Bash(gradlew *)
-  - Bash(ruby *)
-  - Bash(gem *)
-  - Bash(bundle *)
-  # Build systems
-  - Bash(make *)
-  - Bash(cmake *)
-  - Bash(ninja *)
-  # Shell scripts
-  - Bash(bash *)
-  - Bash(sh *)
-  # File operations
-  - Bash(mkdir *)
-  - Bash(cp *)
-  - Bash(mv *)
-  - Bash(rm *)
-  - Bash(chmod *)
-  - Bash(chown *)
-  - Bash(ln *)
-  - Bash(touch *)
-  # Inspection / text processing
-  - Bash(ls *)
-  - Bash(echo *)
-  - Bash(printf *)
-  - Bash(head *)
-  - Bash(tail *)
-  - Bash(wc *)
-  - Bash(du *)
-  - Bash(sed *)
-  - Bash(awk *)
-  - Bash(tr *)
-  - Bash(cut *)
-  - Bash(sort *)
-  - Bash(uniq *)
-  - Bash(xargs *)
-  - Bash(tee *)
-  - Bash(diff *)
-  - Bash(patch *)
-  - Bash(jq *)
-  # Archives
-  - Bash(tar *)
-  - Bash(gzip *)
-  - Bash(gunzip *)
-  - Bash(zip *)
-  - Bash(unzip *)
-  # Discovery
-  - Bash(which *)
-  - Bash(type *)
-  # Shell built-ins / conditionals
-  - Bash(true)
-  - Bash(false)
-  - Bash(test *)
-  - Bash(export *)
-  - Bash(unset *)
+# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
+# Network egress (curl, wget, nc, ssh, rsync) and secret-printing commands
+# (env, printenv, base64) are intentionally absent to raise the bar against
+# prompt-injection exfiltration.
 ---
 
 # 03_execute/coder

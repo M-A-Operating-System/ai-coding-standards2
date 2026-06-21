@@ -11,7 +11,7 @@ description: >
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 80
-extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh issue create *), Bash(gh issue comment *), Bash(gh issue view *)]
+# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 00_ondemand/codebase-reviewer

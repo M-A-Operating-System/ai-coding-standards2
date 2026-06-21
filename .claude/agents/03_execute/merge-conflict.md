@@ -10,7 +10,7 @@ description: >
 tools: [Bash, Read, Glob, Grep]
 model: claude-haiku-4-5-20251001
 max_turns: 60
-extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh pr view *), Bash(gh pr diff *), Bash(gh pr comment *), Bash(gh issue view *), Bash(gh api *)]
+# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 03_execute/merge-conflict

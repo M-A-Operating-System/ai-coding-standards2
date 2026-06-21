@@ -136,15 +136,18 @@ class TestPrReviewerVerdictHumanBlock:
 class TestPrReviewerExtraAllowedToolsForApi:
     """pr-reviewer must allow 'gh api *' to fetch PR reviews."""
 
-    def test_frontmatter_allows_gh_api(self):
-        text = _load_pr_reviewer_text()
-        # Look for gh api in the frontmatter extra_allowedTools line
-        frontmatter_match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
-        assert frontmatter_match, "No frontmatter found in pr-reviewer.md"
-        frontmatter = frontmatter_match.group(1)
-        assert "gh api" in frontmatter or "Bash(gh api *)" in frontmatter, (
-            "pr-reviewer.md frontmatter extra_allowedTools must include Bash(gh api *) "
-            "to allow fetching PR reviews. Run: python3 scripts/update_agent_files.py"
+    def test_pipeline_json_allows_gh_api(self):
+        import json
+        pipeline = json.loads(PIPELINE_JSON.read_text())
+        pr_reviewer = next(
+            (a for a in pipeline["pipeline"] if a["agent"] == "03_execute/pr-reviewer"),
+            None,
+        )
+        assert pr_reviewer is not None, "03_execute/pr-reviewer not found in pipeline.json"
+        tools = pr_reviewer.get("extra_allowedTools", [])
+        assert "Bash(gh api *)" in tools, (
+            "pipeline.json 03_execute/pr-reviewer extra_allowedTools must include "
+            "Bash(gh api *) to allow fetching PR reviews"
         )
 
 
