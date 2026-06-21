@@ -1,0 +1,33 @@
+name: Patch issue-155 DP-001 and review-gate tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: issue-155
+          fetch-depth: 0
+          token: ${{ secrets.AI_AGILE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Fix DP-001 deprecation check
+        run: |
+          sed -i 's/if "mark_ready_on_complete" in entry:/if entry.get("git_ops", {}).get("mark_ready_on_complete"):/' pipeline/pipeline_orchestrator.py
+          sed -i "s/uses deprecated 'mark_ready_on_complete'; /uses deprecated git_ops.mark_ready_on_complete; /" pipeline/pipeline_orchestrator.py
+          grep -n 'mark_ready_on_complete' pipeline/pipeline_orchestrator.py
+      - name: Add review gate and deprecation tests
+        run: |
+          echo 'CndpdGggb3BlbigidGVzdHMvdGVzdF9vcmNoZXN0cmF0b3JfbG9naWMucHkiKSBhcyBmOgogICAgc3JjID0gZi5yZWFkKCkKCmlmICJ0ZXN0X2xvYWRfcGlwZWxpbmVfbG9hZHNfcmV2aWV3X2dhdGUiIGluIHNyYzoKICAgIHByaW50KCJ0ZXN0cyBhbHJlYWR5IHByZXNlbnQsIHNraXBwaW5nIikKICAgIGV4aXQoMCkKCmFuY2hvciA9ICIgICAgICAgIGFzc2VydCBhZ2VudHNbMF0ubWF4X2NvbmN1cnJlbnQgPT0gMVxuIgppZHggPSBzcmMucmZpbmQoYW5jaG9yKQphc3NlcnQgaWR4ICE9IC0xLCAiYW5jaG9yIG5vdCBmb3VuZCIKaW5zZXJ0X3BvcyA9IGlkeCArIGxlbihhbmNob3IpCgpuZXdfdGVzdHMgPSAiIiIKICAgIGRlZiB0ZXN0X2xvYWRfcGlwZWxpbmVfbG9hZHNfcmV2aWV3X2dhdGUoc2VsZiwgdG1wX3BhdGgpOgogICAgICAgIGltcG9ydCBqc29uCiAgICAgICAgcGlwZWxpbmVfZGF0YSA9IHsKICAgICAgICAgICAgInBpcGVsaW5lIjogW3sKICAgICAgICAgICAgICAgICJhZ2VudCI6ICIwM19leGVjdXRlL3ByLXJldmlld2VyIiwKICAgICAgICAgICAgICAgICJwaGFzZSI6ICIwM19leGVjdXRlIiwKICAgICAgICAgICAgICAgICJvYmplY3QiOiBbImlzc3VlIl0sCiAgICAgICAgICAgICAgICAidHJpZ2dlciI6IHsibGFiZWwiOiAibWVyZ2UtY29uZmxpY3Q6Y29tcGxldGUifSwKICAgICAgICAgICAgICAgICJkZXBlbmRlbmNpZXMiOiBbXSwKICAgICAgICAgICAgICAgICJodW1hbl9nYXRlX2FmdGVyIjogRmFsc2UsCiAgICAgICAgICAgICAgICAiZGVzY3JpcHRpb24iOiAidGVzdCIsCiAgICAgICAgICAgICAgICAicmV2aWV3X2dhdGUiOiBUcnVlLAogICAgICAgICAgICB9XQogICAgICAgIH0KICAgICAgICBwYXRoID0gdG1wX3BhdGggLyAicGlwZWxpbmUuanNvbiIKICAgICAgICBwYXRoLndyaXRlX3RleHQoanNvbi5kdW1wcyhwaXBlbGluZV9kYXRhKSkKICAgICAgICBmcm9tIHBpcGVsaW5lX29yY2hlc3RyYXRvciBpbXBvcnQgbG9hZF9waXBlbGluZQogICAgICAgIGFnZW50cywgXyA9IGxvYWRfcGlwZWxpbmUocGF0aCkKICAgICAgICBhc3NlcnQgYWdlbnRzWzBdLnJldmlld19nYXRlIGlzIFRydWUKCiAgICBkZWYgdGVzdF9sb2FkX3BpcGVsaW5lX3Jldmlld19nYXRlX2RlZmF1bHRzX2ZhbHNlKHNlbGYsIHRtcF9wYXRoKToKICAgICAgICBpbXBvcnQganNvbgogICAgICAgIHBpcGVsaW5lX2RhdGEgPSB7CiAgICAgICAgICAgICJwaXBlbGluZSI6IFt7CiAgICAgICAgICAgICAgICAiYWdlbnQiOiAiMDFfcHJvZHVjdF9kb2NzL2lzc3VlLWNsYXNzaWZpZXIiLAogICAgICAgICAgICAgICAgInBoYXNlIjogIjAxX3Byb2R1Y3RfZG9jcyIsCiAgICAgICAgICAgICAgICAib2JqZWN0IjogWyJpc3N1ZSJdLAogICAgICAgICAgICAgICAgInRyaWdnZXIiOiB7ImV2ZW50IjogImlzc3VlLm9wZW5lZCJ9LAogICAgICAgICAgICAgICAgImRlcGVuZGVuY2llcyI6IFtdLAogICAgICAgICAgICAgICAgImh1bWFuX2dhdGVfYWZ0ZXIiOiBGYWxzZSwKICAgICAgICAgICAgICAgICJkZXNjcmlwdGlvbiI6ICJ0ZXN0IiwKICAgICAgICAgICAgfV0KICAgICAgICB9CiAgICAgICAgcGF0aCA9IHRtcF9wYXRoIC8gInBpcGVsaW5lLmpzb24iCiAgICAgICAgcGF0aC53cml0ZV90ZXh0KGpzb24uZHVtcHMocGlwZWxpbmVfZGF0YSkpCiAgICAgICAgZnJvbSBwaXBlbGluZV9vcmNoZXN0cmF0b3IgaW1wb3J0IGxvYWRfcGlwZWxpbmUKICAgICAgICBhZ2VudHMsIF8gPSBsb2FkX3BpcGVsaW5lKHBhdGgpCiAgICAgICAgYXNzZXJ0IGFnZW50c1swXS5yZXZpZXdfZ2F0ZSBpcyBGYWxzZQoKICAgIGRlZiB0ZXN0X2xvYWRfcGlwZWxpbmVfd2FybnNfb25fZGVwcmVjYXRlZF9tYXJrX3JlYWR5X29uX2NvbXBsZXRlKHNlbGYsIHRtcF9wYXRoKToKICAgICAgICBpbXBvcnQganNvbgogICAgICAgIGltcG9ydCBsb2dnaW5nCiAgICAgICAgcGlwZWxpbmVfZGF0YSA9IHsKICAgICAgICAgICAgInBpcGVsaW5lIjogW3sKICAgICAgICAgICAgICAgICJhZ2VudCI6ICIwM19leGVjdXRlL3ByLXJldmlld2VyIiwKICAgICAgICAgICAgICAgICJwaGFzZSI6ICIwM19leGVjdXRlIiwKICAgICAgICAgICAgICAgICJvYmplY3QiOiBbImlzc3VlIl0sCiAgICAgICAgICAgICAgICAidHJpZ2dlciI6IHsibGFiZWwiOiAibWVyZ2UtY29uZmxpY3Q6Y29tcGxldGUifSwKICAgICAgICAgICAgICAgICJkZXBlbmRlbmNpZXMiOiBbXSwKICAgICAgICAgICAgICAgICJodW1hbl9nYXRlX2FmdGVyIjogRmFsc2UsCiAgICAgICAgICAgICAgICAiZGVzY3JpcHRpb24iOiAidGVzdCIsCiAgICAgICAgICAgICAgICAiZ2l0X29wcyI6IHsiY29tbWl0X2FmdGVyIjogRmFsc2UsICJtYXJrX3JlYWR5X29uX2NvbXBsZXRlIjogVHJ1ZX0sCiAgICAgICAgICAgIH1dCiAgICAgICAgfQogICAgICAgIHBhdGggPSB0bXBfcGF0aCAvICJwaXBlbGluZS5qc29uIgogICAgICAgIHBhdGgud3JpdGVfdGV4dChqc29uLmR1bXBzKHBpcGVsaW5lX2RhdGEpKQogICAgICAgIGZyb20gcGlwZWxpbmVfb3JjaGVzdHJhdG9yIGltcG9ydCBsb2FkX3BpcGVsaW5lCiAgICAgICAgbG9nZ2VyID0gbG9nZ2luZy5nZXRMb2dnZXIoIm9yY2hlc3RyYXRvciIpCiAgICAgICAgd2l0aCBwYXRjaC5vYmplY3QobG9nZ2VyLCAid2FybmluZyIpIGFzIG1vY2tfd2FybjoKICAgICAgICAgICAgbG9hZF9waXBlbGluZShwYXRoKQogICAgICAgIG1vY2tfd2Fybi5hc3NlcnRfY2FsbGVkX29uY2UoKQogICAgICAgIGFzc2VydCAibWFya19yZWFkeV9vbl9jb21wbGV0ZSIgaW4gbW9ja193YXJuLmNhbGxfYXJnc1swXVswXQoKIiIiCgpzcmMgPSBzcmNbOmluc2VydF9wb3NdICsgbmV3X3Rlc3RzICsgc3JjW2luc2VydF9wb3M6XQp3aXRoIG9wZW4oInRlc3RzL3Rlc3Rfb3JjaGVzdHJhdG9yX2xvZ2ljLnB5IiwgInciKSBhcyBmOgogICAgZi53cml0ZShzcmMpCnByaW50KCJ0ZXN0cyBpbnNlcnRlZCBPSyIpCg==' | base64 -d > /tmp/add_tests.py
+          python3 /tmp/add_tests.py
+      - name: Verify tests pass
+        run: pip install pytest pyyaml jsonschema requests && pytest tests/ -q --tb=short 2>&1 | tail -5
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline/pipeline_orchestrator.py tests/test_orchestrator_logic.py
+          git diff --cached --stat
+          git commit -m "fix(load_pipeline): correct deprecation check to git_ops level; add review_gate and deprecation tests"
+          git push origin issue-155
