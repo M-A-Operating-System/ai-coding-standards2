@@ -87,6 +87,8 @@ default).
 | Gate prompt comment | GitHub Issues API | After a non-gated agent completes and the next step requires a gate label |
 | `:failed` recovery comment | GitHub Issues API | When an agent crashes; names the label to remove and the label to skip |
 | Audit log JSONL event | Print to stdout | Once per status transition, agent run, or gate approval |
+| Metrics comment | GitHub Issues API | After every agent cycle (success or error); contains session context (`session_id`, `model`, `cwd`, `permission_mode`, `tools_available`, `mcp_servers`), token usage, cost, duration, and retry events |
+| Metrics record on `ai-agile/metrics` | `git` push to long-running branch | After every agent cycle; flat JSON record with full schema including `timestamp`, `github_issue_number`, `agent_id`, `branch_id`, `pr_id`, `cycle_id`, and all session/result/retry fields |
 | Git commit + push | `git` subprocess | After an agent signals `complete` (`git_ops.commit_after: true`) |
 | PR push (existing branch, Mode B) | `git` subprocess | After a code-writing agent addresses review feedback |
 
@@ -363,7 +365,10 @@ depending on the step type:
 **Agent steps** — the orchestrator reads the sentinel and applies the label:
 ```
 parse AI_AGILE_STATUS: from stream-json event stream text events
-extract token usage (input_tokens, output_tokens) from stream-json result event
+capture session context from system/init event (session_id, model, cwd, permission_mode, tools_available, mcp_servers)
+accumulate retry_count and retry_errors from system/api_retry events during cycle
+extract full usage and result fields from terminal result event
+post metrics comment on the triggering issue; append metrics record to ai-agile/metrics branch
 
 if sentinel found:
     remove :wip, apply matching label ({agent}:complete / :review / :blocked)
