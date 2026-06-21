@@ -154,6 +154,10 @@
           "description": "Ordered list of repo-relative paths to bash scripts the orchestrator runs after the agent signals :complete. Each script runs with REPO, WORK_ITEM_KIND, WORK_ITEM_NUMBER, and AGENT_NAME set. A non-zero exit transitions the work item from :complete to :failed.",
           "items": { "type": "string" }
         },
+        "review_gate": {
+          "type": "boolean",
+          "description": "Set true only on the agent that acts as the final automated review gate before human merge approval (currently pr-reviewer). Controls whether unresolved human REQUEST_CHANGES reviews trigger a free coder re-invoke. Independent of post_steps."
+        },
         "exclude_classifications": {
           "type": "array",
           "uniqueItems": true,
