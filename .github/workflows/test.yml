@@ -25,8 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
-        run: pip install pytest requests pyyaml jsonschema
+        run: pip install -r requirements.txt
       - name: Run tests
         run: pytest tests/ -v
       - name: Run integration tests
