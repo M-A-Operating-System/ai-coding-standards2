@@ -145,13 +145,18 @@
       "extra_allowedTools": [
         "Bash(gh api *)",
         "Bash(gh pr checks *)",
+        "Bash(gh pr comment *)",
         "Bash(gh run view *)",
         "Bash(gh run list *)",
         "Bash(git fetch *)",
         "Bash(git checkout *)",
         "Bash(git merge *)",
+        "Bash(git rebase *)",
+        "Bash(git push *)",
+        "Bash(git log *)",
         "Bash(git diff *)",
-        "Bash(git branch *)"
+        "Bash(git branch *)",
+        "Bash(git config *)"
       ],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
