@@ -82,7 +82,44 @@ echo "AI_AGILE_STATUS: complete"
 exit 0
 ```
 
-**If `CONFLICTING`:** continue to Step 2.
+**If `CONFLICTING`:** continue to Step 1.5.
+
+---
+
+## Step 1.5 — Attempt rebase-first resolution
+
+Before analysing individual conflicts, attempt a rebase of the PR branch onto
+the base branch. Most "conflicting" PRs are simply diverged from main — a clean
+rebase resolves them automatically with no human input required.
+
+```bash
+git config user.email "github-actions[bot]@users.noreply.github.com"
+git config user.name "github-actions[bot]"
+git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
+git checkout -B _rebase_attempt "origin/${HEAD_BRANCH}"
+
+if git rebase "origin/${BASE_BRANCH}"; then
+    # Rebase succeeded — push and complete without human gate
+    git push --force-with-lease origin "_rebase_attempt:${HEAD_BRANCH}"
+    git checkout - 2>/dev/null || true
+    git branch -D _rebase_attempt 2>/dev/null || true
+
+    gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+<!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
+> **merge-conflict:** PR branch rebased onto `${BASE_BRANCH}` automatically — no conflicts remain. Advancing to pr-reviewer.
+EOF
+)"
+    echo "AI_AGILE_STATUS: complete"
+    exit 0
+fi
+
+# Rebase had conflicts itself — abort and fall through to manual analysis
+git rebase --abort 2>/dev/null || true
+git checkout - 2>/dev/null || true
+git branch -D _rebase_attempt 2>/dev/null || true
+```
+
+If the rebase itself conflicted, continue to Step 2 for manual conflict analysis.
 
 ---
 
@@ -148,6 +185,12 @@ needed) and assess:
      reconciled line-by-line; provide a suggested merged form.
    - `Delete (generated)` — the file is auto-generated; re-running the
      generator after merge will produce the correct output.
+
+**Hard rule — never discard the primary deliverable:** If a file is central to
+what this PR was created to deliver (new functions, refactored logic, the core
+change described in the issue), `Accept Theirs` on that file would silently
+erase the PR's work. In that case, always choose `Manual merge` — reconcile
+both sides line-by-line and provide the merged form explicitly.
 
 Assign a **priority** to each conflict:
 
