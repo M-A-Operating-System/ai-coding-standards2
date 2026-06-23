@@ -13,7 +13,7 @@ description: >
 tools: [Bash, Read, Write, Grep, Glob]
 model: claude-sonnet-4-6
 max_turns: 200
-extra_allowedTools: [Bash(find *), Bash(cat *), Bash(grep *), Bash(ls *), Bash(gh issue comment *), Bash(gh issue view *), Bash(gh issue create *), Bash(python3 *)]
+# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 00_ondemand/standards-migrator

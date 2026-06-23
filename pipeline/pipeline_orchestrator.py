@@ -166,6 +166,7 @@ class AgentDef:
     max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
+    extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults and frontmatter
 
     @property
     def label_key(self) -> str:
@@ -252,12 +253,34 @@ class ConcurrencyState:
 # Pipeline loader
 # ---------------------------------------------------------------------------
 
+def _coerce_tools(val: object) -> list[str]:
+    """Coerce an extra_allowedTools value to a list of strings.
+
+    Accepts a JSON array (list), a comma-separated string (same format as
+    defaults.extra_allowedTools), or None/missing (returns []).
+    Raises TypeError for any other type so pipeline.json errors surface early.
+    """
+    if val is None or val == []:
+        return []
+    if isinstance(val, str):
+        return [t.strip() for t in val.split(",") if t.strip()]
+    if isinstance(val, list):
+        for t in val:
+            if not isinstance(t, str):
+                raise TypeError(
+                    f"extra_allowedTools list elements must be strings, got {type(t).__name__}: {t!r}"
+                )
+        return [t.strip() for t in val if t.strip()]
+    raise TypeError(f"extra_allowedTools must be a list or comma-separated string, got {type(val).__name__}")
+
+
 def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     """Parse pipeline.json once and return (agents, default_extra_tools).
 
     default_extra_tools comes from defaults.extra_allowedTools and is
     prepended to every agent's own extra_allowedTools at invocation time.
     """
+    entry: dict = {}  # sentinel so the except block can report agent name
     try:
         with open(path) as f:
             raw = json.load(f)
@@ -287,6 +310,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
+                extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
             ))
             if entry.get("git_ops", {}).get("mark_ready_on_complete"):
                 log.warning(
@@ -295,16 +319,13 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                     entry.get("agent", "<unknown>"),
                 )
 
-        _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
-        default_extra_tools: list[str] = (
-            [t.strip() for t in _raw_defaults.split(",") if t.strip()]
-            if isinstance(_raw_defaults, str)
-            else list(_raw_defaults)
+        default_extra_tools: list[str] = _coerce_tools(
+            raw.get("defaults", {}).get("extra_allowedTools")
         )
 
         return agents, default_extra_tools
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        log.error("pipeline.json is malformed — cannot start: %s", exc)
+        log.error("pipeline.json is malformed (agent: %s) — cannot start: %s", entry.get("agent", "<unknown>"), exc)
         sys.exit(1)
 
 
@@ -1687,14 +1708,15 @@ def invoke_agent(
 
     frontmatter = parse_frontmatter(agent_text)
     agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
-    _extra: object = frontmatter.get("extra_allowedTools", [])
-    _agent_extra: list[str] = (
-        [t.strip() for t in _extra.split(",") if t.strip()]
-        if isinstance(_extra, str)
-        else list(_extra)
-    )
-    # Merge defaults (first) with agent-specific tools; deduplicate preserving order.
-    extra_tools = list(dict.fromkeys(list(default_extra_tools or []) + _agent_extra))
+    # Frontmatter extra_allowedTools is a deprecated fallback; canonical config lives in
+    # pipeline.json. All registered agents now have an empty frontmatter entry (comment only).
+    _frontmatter_extra: list[str] = _coerce_tools(frontmatter.get("extra_allowedTools"))
+    # Merge: defaults → pipeline.json per-agent → frontmatter fallback (deduplicated, order preserved).
+    extra_tools = list(dict.fromkeys(
+        list(default_extra_tools or []) +
+        list(agent_def.extra_allowedTools) +
+        _frontmatter_extra
+    ))
     try:
         max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))
     except (ValueError, TypeError):
