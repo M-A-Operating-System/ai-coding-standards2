@@ -269,7 +269,7 @@ def _coerce_tools(val: object) -> list[str]:
                 raise TypeError(
                     f"extra_allowedTools list elements must be strings, got {type(t).__name__}: {t!r}"
                 )
-        return list(val)
+        return [t.strip() for t in val if t.strip()]
     raise TypeError(f"extra_allowedTools must be a list or comma-separated string, got {type(val).__name__}")
 
 
