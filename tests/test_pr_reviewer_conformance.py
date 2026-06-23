@@ -8,6 +8,7 @@ Gherkin scenarios traced:
   - scenario_pr_reviewer_reads_human_review_comments
   - scenario_pr_reviewer_description_reflects_human_review_block
 """
+import json
 import re
 from pathlib import Path
 
@@ -137,7 +138,6 @@ class TestPrReviewerExtraAllowedToolsForApi:
     """pr-reviewer must allow 'gh api *' to fetch PR reviews."""
 
     def test_pipeline_json_allows_gh_api(self):
-        import json
         pipeline = json.loads(PIPELINE_JSON.read_text())
         pr_reviewer = next(
             (a for a in pipeline["pipeline"] if a["agent"] == "03_execute/pr-reviewer"),

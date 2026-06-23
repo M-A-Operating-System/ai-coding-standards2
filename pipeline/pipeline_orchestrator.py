@@ -252,6 +252,22 @@ class ConcurrencyState:
 # Pipeline loader
 # ---------------------------------------------------------------------------
 
+def _coerce_tools(val: object) -> list[str]:
+    """Coerce an extra_allowedTools value to a list of strings.
+
+    Accepts a JSON array (list), a comma-separated string (same format as
+    defaults.extra_allowedTools), or None/missing (returns []).
+    Raises TypeError for any other type so pipeline.json errors surface early.
+    """
+    if val is None or val == []:
+        return []
+    if isinstance(val, str):
+        return [t.strip() for t in val.split(",") if t.strip()]
+    if isinstance(val, list):
+        return [str(t) for t in val]
+    raise TypeError(f"extra_allowedTools must be a list or comma-separated string, got {type(val).__name__}")
+
+
 def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     """Parse pipeline.json once and return (agents, default_extra_tools).
 
@@ -286,14 +302,11 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
-                extra_allowedTools=list(entry.get("extra_allowedTools", [])),
+                extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
             ))
 
-        _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
-        default_extra_tools: list[str] = (
-            [t.strip() for t in _raw_defaults.split(",") if t.strip()]
-            if isinstance(_raw_defaults, str)
-            else list(_raw_defaults)
+        default_extra_tools: list[str] = _coerce_tools(
+            raw.get("defaults", {}).get("extra_allowedTools")
         )
 
         return agents, default_extra_tools
@@ -1681,17 +1694,14 @@ def invoke_agent(
 
     frontmatter = parse_frontmatter(agent_text)
     agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
-    _extra: object = frontmatter.get("extra_allowedTools", [])
-    _agent_extra: list[str] = (
-        [t.strip() for t in _extra.split(",") if t.strip()]
-        if isinstance(_extra, str)
-        else list(_extra)
-    )
-    # Merge: defaults → pipeline.json per-agent → frontmatter (all deduplicated, order preserved).
+    # Frontmatter extra_allowedTools is a deprecated fallback; canonical config lives in
+    # pipeline.json. All registered agents now have an empty frontmatter entry (comment only).
+    _frontmatter_extra: list[str] = _coerce_tools(frontmatter.get("extra_allowedTools"))
+    # Merge: defaults → pipeline.json per-agent → frontmatter fallback (deduplicated, order preserved).
     extra_tools = list(dict.fromkeys(
         list(default_extra_tools or []) +
         list(agent_def.extra_allowedTools) +
-        _agent_extra
+        _frontmatter_extra
     ))
     try:
         max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))

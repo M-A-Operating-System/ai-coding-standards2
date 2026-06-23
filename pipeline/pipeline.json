@@ -99,6 +99,10 @@
         "Bash(diff *)", "Bash(patch *)", "Bash(jq *)",
         "Bash(tar *)", "Bash(gzip *)", "Bash(gunzip *)",
         "Bash(zip *)", "Bash(unzip *)",
+        "Bash(ls *)", "Bash(echo *)", "Bash(printf *)",
+        "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(du *)",
+        "Bash(which *)", "Bash(type *)",
+        "Bash(true)", "Bash(false)",
         "Bash(export *)", "Bash(unset *)", "Bash(test *)"
       ],
       "git_ops": { "commit_after": true },
