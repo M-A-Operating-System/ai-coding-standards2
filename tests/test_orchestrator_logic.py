@@ -14,10 +14,13 @@ from pipeline_orchestrator import (
     PIPELINE_MAX_CONCURRENT,
     agent_status,
     _apply_failed,
+    _apply_result,
     _count_running,
     _handle_review_loop,
     _make_audit_event,
     _emit_audit_event,
+    _run_agent,
+    _should_run,
     promote_gated_agents,
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
@@ -2990,15 +2993,17 @@ class TestCommitAgentWorkScript:
         When the orchestrator source is reviewed
         Then the commit_after invoke block is guarded by work_item.kind == 'issue'
              so the script is never called for PR-scoped work items.
+        After the process_work_item() refactor the guard lives in _apply_result().
         """
         import inspect
         import pipeline_orchestrator as orch
-        source = inspect.getsource(orch.process_work_item)
+        source = inspect.getsource(orch._apply_result)
         guard = 'agent_def.commit_after and work_item.kind == "issue"'
         assert guard in source, (
             "commit_after invoke block must include 'work_item.kind == \"issue\"' "
             "in the outer guard — commit-agent-work.sh requires ISSUE_NUMBER and "
-            "must not be invoked for PR work items (DP-001)"
+            "must not be invoked for PR work items (DP-001). "
+            "After the process_work_item() refactor this guard lives in _apply_result()."
         )
 
     def _make_commit_after_agent(self) -> "AgentDef":
@@ -3430,4 +3435,202 @@ class TestPriorityScheduling:
         assert first_item.number == 2, (
             f"Priority issue #2 must be passed to process_work_item first; "
             f"got #{first_item.number}. The sort block in main() may not be exercised."
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestProcessWorkItemDecomposition  (PRD issue #156)
+# ---------------------------------------------------------------------------
+
+class TestProcessWorkItemDecomposition:
+    """Gherkin scenarios from PRD issue #156.
+
+    Verifies that process_work_item() is decomposed into _should_run(),
+    _run_agent(), and _apply_result() with no logic duplication and no
+    observable behaviour change.
+    """
+
+    # ------------------------------------------------------------------
+    # Scenario: process_work_item becomes a thin orchestration wrapper
+    # ------------------------------------------------------------------
+
+    def test_process_work_item_calls_should_run(self):
+        """
+        Given the orchestrator has been updated per issue #156
+        When process_work_item() is invoked
+        Then its body calls _should_run() — eligibility is not inlined.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        assert "_should_run(" in source, (
+            "process_work_item must delegate eligibility checking to _should_run(); "
+            "no eligibility logic should be inlined in the wrapper."
+        )
+
+    def test_process_work_item_calls_run_agent(self):
+        """
+        Given the orchestrator has been updated per issue #156
+        When process_work_item() is invoked
+        Then its body calls _run_agent() — agent invocation is not inlined.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        assert "_run_agent(" in source, (
+            "process_work_item must delegate agent invocation to _run_agent(); "
+            "no invocation logic should be inlined in the wrapper."
+        )
+
+    def test_process_work_item_calls_apply_result(self):
+        """
+        Given the orchestrator has been updated per issue #156
+        When process_work_item() is invoked
+        Then its body calls _apply_result() — result handling is not inlined.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        assert "_apply_result(" in source, (
+            "process_work_item must delegate result handling to _apply_result(); "
+            "no result-handling logic should be inlined in the wrapper."
+        )
+
+    # ------------------------------------------------------------------
+    # Scenario: each concern lives in exactly one place
+    # ------------------------------------------------------------------
+
+    def test_eligibility_logic_only_in_should_run(self):
+        """
+        Given the three focused functions have been implemented
+        When the codebase is reviewed for duplication
+        Then dependencies_complete() is called only from _should_run(),
+             not from _run_agent() or _apply_result().
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        assert "dependencies_complete(" in inspect.getsource(orch._should_run), (
+            "_should_run must contain the dependencies_complete() call."
+        )
+        assert "dependencies_complete(" not in inspect.getsource(orch._run_agent), (
+            "_run_agent must not duplicate the dependencies_complete() check."
+        )
+        assert "dependencies_complete(" not in inspect.getsource(orch._apply_result), (
+            "_apply_result must not duplicate the dependencies_complete() check."
+        )
+
+    def test_result_handling_only_in_apply_result(self):
+        """
+        Given the three focused functions have been implemented
+        When the codebase is reviewed for duplication
+        Then _apply_terminal_status() is called only from _apply_result(),
+             not from _should_run() or _run_agent().
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        assert "_apply_terminal_status(" in inspect.getsource(orch._apply_result), (
+            "_apply_result must contain the _apply_terminal_status() call."
+        )
+        assert "_apply_terminal_status(" not in inspect.getsource(orch._should_run), (
+            "_should_run must not duplicate the _apply_terminal_status() call."
+        )
+        assert "_apply_terminal_status(" not in inspect.getsource(orch._run_agent), (
+            "_run_agent must not duplicate the _apply_terminal_status() call."
+        )
+
+    # ------------------------------------------------------------------
+    # Scenario: CI passes with no observable behaviour change
+    # ------------------------------------------------------------------
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_process_work_item_dispatches_eligible_agent(self, mock_invoke):
+        """
+        Given an eligible agent (trigger met, no :wip, no :complete)
+        When process_work_item() is called
+        Then the agent is triggered exactly once (behaviour preserved).
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent",
+            max_concurrent=10,
+        )
+        wi = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        gh = _make_gh_mock()
+        n = process_work_item(
+            wi, [agent_def], {agent_def.agent: agent_def},
+            gh, dry_run=False, repo="test/repo",
+        )
+        assert n == 1, f"Expected 1 agent triggered; got {n}"
+        mock_invoke.assert_called_once()
+
+    def test_should_run_returns_false_for_terminal_status(self):
+        """
+        Given an agent that is already :complete on the work item
+        When _should_run() is called
+        Then it returns False (skip).
+        """
+        agent_def = _make_agent_def("01_product_docs/prd-writer")
+        wi = _make_work_item_with_labels(1, {"prd-writer:complete"})
+        result = _should_run(agent_def, wi, wi.labels, {}, None)
+        assert result is False, (
+            f"_should_run must return False for a terminal :complete status; got {result!r}"
+        )
+
+    def test_should_run_returns_none_at_aggregate_ceiling(self):
+        """
+        Given the aggregate concurrency ceiling is already reached
+        When _should_run() is called for an otherwise-eligible agent
+        Then it returns None (stop the agent loop).
+        """
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=100,
+        )
+        wi = _make_work_item_with_labels(1, set())
+        conc = ConcurrencyState(
+            running_counts={"prd-writer": 0},
+            tick_launch_count=PIPELINE_MAX_CONCURRENT,
+        )
+        result = _should_run(agent_def, wi, wi.labels, {}, conc)
+        assert result is None, (
+            f"_should_run must return None when the aggregate ceiling is hit; got {result!r}"
+        )
+
+    def test_should_run_returns_true_for_eligible_agent(self):
+        """
+        Given an agent whose trigger is met and has no blocking conditions
+        When _should_run() is called
+        Then it returns True (dispatch).
+        """
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=10,
+        )
+        wi = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        result = _should_run(agent_def, wi, wi.labels, {agent_def.agent: agent_def}, None)
+        assert result is True, (
+            f"_should_run must return True for a fully eligible agent; got {result!r}"
         )
