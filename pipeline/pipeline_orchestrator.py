@@ -165,7 +165,7 @@ class AgentDef:
     max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
-    extra_allowedTools: list = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults and frontmatter
+    extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults and frontmatter
 
     @property
     def label_key(self) -> str:
@@ -264,7 +264,12 @@ def _coerce_tools(val: object) -> list[str]:
     if isinstance(val, str):
         return [t.strip() for t in val.split(",") if t.strip()]
     if isinstance(val, list):
-        return [str(t) for t in val]
+        for t in val:
+            if not isinstance(t, str):
+                raise TypeError(
+                    f"extra_allowedTools list elements must be strings, got {type(t).__name__}: {t!r}"
+                )
+        return list(val)
     raise TypeError(f"extra_allowedTools must be a list or comma-separated string, got {type(val).__name__}")
 
 
@@ -274,6 +279,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     default_extra_tools comes from defaults.extra_allowedTools and is
     prepended to every agent's own extra_allowedTools at invocation time.
     """
+    entry: dict = {}  # sentinel so the except block can report agent name
     try:
         with open(path) as f:
             raw = json.load(f)
@@ -311,7 +317,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
 
         return agents, default_extra_tools
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        log.error("pipeline.json is malformed — cannot start: %s", exc)
+        log.error("pipeline.json is malformed (agent: %s) — cannot start: %s", entry.get("agent", "<unknown>"), exc)
         sys.exit(1)
 
 

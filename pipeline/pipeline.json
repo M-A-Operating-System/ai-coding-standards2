@@ -146,7 +146,12 @@
         "Bash(gh api *)",
         "Bash(gh pr checks *)",
         "Bash(gh run view *)",
-        "Bash(gh run list *)"
+        "Bash(gh run list *)",
+        "Bash(git fetch *)",
+        "Bash(git checkout *)",
+        "Bash(git merge *)",
+        "Bash(git diff *)",
+        "Bash(git branch *)"
       ],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
@@ -197,7 +202,8 @@
       "max_retries": 1,
       "session": { "scope": "global" },
       "extra_allowedTools": [
-        "Bash(gh issue create *)"
+        "Bash(gh issue create *)",
+        "Bash(git log *)"
       ],
       "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
     },
@@ -233,6 +239,7 @@
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
+      "git_ops": { "commit_after": true },
       "description": "On-demand agent that scaffolds a new pipeline agent from a GitHub issue description. Reads the issue to determine the agent's name, phase, trigger, and purpose, then creates the agent prompt file and registers it in pipeline.json. Triggered by applying the new-agent:requested label to an issue."
     },
 
@@ -246,7 +253,7 @@
       "human_gate_after": false,
       "dependencies": [],
       "max_retries": 1,
-      "session": { "scope": "global" },
+      "session": { "scope": "per_issue" },
       "extra_allowedTools": [
         "Bash(gh issue create *)",
         "Bash(python3 *)"
