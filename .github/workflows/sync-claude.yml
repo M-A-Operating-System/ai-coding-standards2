@@ -41,7 +41,7 @@ jobs:
     name: Sync .claude from ai-coding-standards2 submodule
     # This workflow is designed for consuming repos that have ai-coding-standards2
     # as a submodule. Skip when running in the source repo itself.
-    if: github.repository != 'm-a-operating-system/ai-coding-standards2'
+    if: github.repository != 'M-A-Operating-System/ai-coding-standards2'
     runs-on: ubuntu-latest
 
     steps:
