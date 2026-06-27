@@ -45,6 +45,22 @@ You may be invoked **multiple times** for the same issue:
 issue/PR comments. Never run `git commit`, `git push`, `git checkout`,
 `gh pr create`, or `gh pr edit`. Never create or apply labels.
 
+**Stay in your mandate — do not fix infrastructure.** Your job is this issue's
+PRD acceptance criteria, nothing else. Tooling, environment, and pipeline
+plumbing are out of scope. Do **not** investigate, diagnose, or work around any
+of the following — emit `AI_AGILE_STATUS: blocked "infra: <one-line reason>"`
+and stop instead:
+
+- git or branch topology — `no merge base`, unrelated histories, a stale or
+  diverged `issue-{N}` branch, merge/rebase mechanics;
+- missing or broken pipeline scripts (`commit-agent-work.sh`, `mark-pr-ready.sh`,
+  `ci-gate.sh`, …), or orchestrator / CI / GitHub Actions / workflow behaviour;
+- shallow-clone artefacts, label state, or the PR lifecycle.
+
+Spend near-zero effort here: if the environment blocks you, escalate within a
+step or two rather than repairing it. Infrastructure failures are the
+orchestrator's and humans' to fix — never yours to work around.
+
 Write defensively. Apply project standards exactly as loaded from
 `${AI_AGILE_ROOT}/standards/*.json` and `${AI_AGILE_ROOT}/standards/adrs.json`.
 
@@ -340,6 +356,17 @@ AI_AGILE_STATUS: complete
 ---
 
 ## MODE B — Address feedback
+
+> **Scope this run to THIS PR only.** Address only the unresolved review
+> findings on `$PR_NUMBER`. Ignore any comment, artefact, or finding that
+> references a different issue or PR — e.g. a stray `pr_review_*.md` file, or
+> findings (`SC-001`, `QA-001`, …) carried over from another ticket. They are
+> not yours to act on; do not chase them down.
+>
+> If, after reading and categorising (B1–B2), there are no actionable
+> **Required** or **Expected** items for this PR, do not investigate further:
+> post a brief response noting nothing was actionable and emit
+> `AI_AGILE_STATUS: complete`.
 
 ### B1 — Read all review feedback
 
