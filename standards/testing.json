@@ -1,0 +1,238 @@
+{
+  "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "project",
+  "category": "testing",
+  "description": "Project-specific testing standards for master-model-maven — BDD behaviour testing (capability → BDD .feature → test → evidence), contract-first assertions, real-endpoint integration over mocks, reproducibility, fixture hygiene, stable selectors, production-shaped fixtures. Checked by the pr-reviewer agent against test code in every diff.",
+  "standards": [
+    {
+      "id": "STD-TEST-001",
+      "title": "Do not mock what you can hit directly",
+      "description": "Integration and end-to-end tests exercise the real dependency the test tier can reach, rather than a stub of it; mock doubles are reserved for pure unit tests of logic with no reachable dependency. In this project, edge-function/integration tests call real Supabase endpoints (ephemeral for pre-merge, shared-staging for regression, production for live).",
+      "rationale": "Mocking a reachable endpoint tests the mock, not the contract. Source: docs/product/_testing/01-overview.md §1.4.",
+      "acceptance_criteria": [
+        "Integration/E2E tests in the diff call the real dependency the tier provisions rather than stubbing it.",
+        "Mock doubles introduced in the diff are confined to pure-unit tests of logic with no reachable dependency.",
+        "No diff adds a hand-rolled stub for an endpoint/service the test tier can reach directly (e.g. a Supabase table/function)."
+      ],
+      "anti_patterns": [
+        "Mocking `supabase.from(...)` in an edge-function integration test that runs against an ephemeral DB.",
+        "A fake HTTP layer standing in for a real endpoint the tier already provisions."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/product/_testing/01-overview.md §1.4"
+    },
+    {
+      "id": "STD-TEST-002",
+      "title": "Tests pin observable contracts, not implementation detail",
+      "description": "Tests assert observable behaviour — status codes, response shapes, redirects, authorization outcomes — not internal implementation. A refactor that preserves the contract must not require test changes. Do not write tests that assert framework behaviour (React, Radix, Supabase client libraries are trusted dependencies).",
+      "rationale": "Contract-first tests survive refactors and catch real regressions; implementation-coupled tests are churn. Source: docs/product/_testing/01-overview.md §1.1 and §1.4.",
+      "acceptance_criteria": [
+        "New tests in the diff assert observable outputs (status, response shape, redirect, authorization result), not private internals.",
+        "No test in the diff asserts behaviour owned by React/Radix/Supabase client libraries.",
+        "Tests in the diff would still pass after a contract-preserving refactor of the unit under test."
+      ],
+      "anti_patterns": [
+        "Asserting on a component's internal state variable instead of rendered output.",
+        "A test that re-verifies that Radix opens a dialog (framework behaviour)."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/product/_testing/01-overview.md §1.1 / §1.4"
+    },
+    {
+      "id": "STD-TEST-003",
+      "title": "Tests are reproducible locally",
+      "description": "Any CI failure must reproduce locally with a documented command. Tests must not depend on CI-only state, ordering, or wall-clock; no 'only fails in CI' mysteries.",
+      "rationale": "Reproducibility is a testing principle; non-reproducible failures cannot be diagnosed or fixed reliably. Source: docs/product/_testing/01-overview.md §1.1.",
+      "acceptance_criteria": [
+        "New tests in the diff run deterministically given a documented local command.",
+        "Tests in the diff do not depend on execution order, ambient CI environment, or real current time without a fixed/injected clock.",
+        "Any environment a test needs is provisioned by the test or documented, not assumed to exist only in CI."
+      ],
+      "anti_patterns": [
+        "A test that passes locally only because of leftover state from a previous test.",
+        "Asserting against `Date.now()` without a controlled clock."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/product/_testing/01-overview.md §1.1"
+    },
+    {
+      "id": "STD-TEST-004",
+      "title": "Each test seeds and cleans up its own fixtures; shared live data is read-only",
+      "description": "Every test seeds its own fixtures and either cleans them up or uses idempotent guards. Shared live data is treated as read-only and must not be mutated by a test.",
+      "rationale": "Self-contained fixtures keep tests isolated and re-runnable; mutating shared data causes cross-test interference and pollutes live environments. Source: docs/product/_testing/01-overview.md §1.6.",
+      "acceptance_criteria": [
+        "New tests in the diff create the data they need and remove it (or use idempotent upsert/guard) rather than relying on pre-existing rows.",
+        "No test in the diff writes to or deletes shared/live data it did not create.",
+        "Authenticated tests in the diff use the designated test identities (TEST_USER_EMAIL/TEST_USER_PASSWORD or the restricted-group/synthetic users), not arbitrary real accounts."
+      ],
+      "anti_patterns": [
+        "A test that depends on a specific row already existing in a shared database.",
+        "A test that updates a shared fixture and leaves it mutated for the next test."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/product/_testing/01-overview.md §1.6"
+    },
+    {
+      "id": "STD-TEST-005",
+      "related": [
+        "STD-TEST-009"
+      ],
+      "title": "Prefer stable selectors and named timeout constants",
+      "description": "E2E/component tests select elements by stable, semantic locators — role, label/placeholder, or data-testid — never brittle CSS/nth-child paths. Timeouts use named constants, not inline numeric literals. The project's data-testid contract is STD-TEST-009.",
+      "rationale": "Stable, conventional selectors and named timeouts keep the suite resilient and readable; brittle CSS selectors and magic-number timeouts cause flake and churn. Source: docs/product/_testing/01-overview.md §1.6.",
+      "acceptance_criteria": [
+        "New tests in the diff select by role, label/placeholder, or data-testid, not brittle CSS or nth-child paths.",
+        "Timeouts in the diff reference named constants, not inline numeric literals."
+      ],
+      "anti_patterns": [
+        "`page.locator('div > button:nth-child(3)')` instead of a role/test-id selector.",
+        "`await expect(...).toBeVisible({ timeout: 15000 })` with an inline literal instead of a named constant."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/product/_testing/01-overview.md §1.6"
+    },
+    {
+      "id": "STD-TEST-006",
+      "title": "Fixtures must mirror the production data shape",
+      "description": "Mock fixtures and test doubles return the same shape production returns; a green test on a fixture whose shape differs from production does not constitute coverage of the production path. In this project, entityCrud reads return Display-ID strings (e.g. 'SUB00000001'), not raw integers — fixtures must match.",
+      "rationale": "If a fixture's shape differs from production (e.g. raw integers vs enriched Display-ID strings), the production path is untested and CI is green on a real break. Source: CLAUDE.md §Defensive Programmer Review ('Green CI ≠ covered').",
+      "acceptance_criteria": [
+        "Fixtures in the diff return the same shape as production for the path under test (e.g. Display-ID strings for PK/FK fields from entityCrud, matching enrichRecords output).",
+        "No new fixture in the diff returns a raw integer where production returns a Display-ID string (or vice-versa).",
+        "A test covering a Display-ID-sensitive path uses a fixture whose shape matches the enriched production body."
+      ],
+      "anti_patterns": [
+        "A fixture returning `{ submission_id: 1 }` for a path that, in production, receives `{ submission_id: 'SUB00000001' }`.",
+        "Relying on integer-keyed fixtures to 'prove' a Display-ID parsing path works."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from CLAUDE.md — Defensive Programmer Review checklist ('Green CI ≠ covered')"
+    },
+    {
+      "id": "STD-TEST-007",
+      "related": [
+        "STD-TEST-002",
+        "STD-DOC-002",
+        "STD-TEST-010",
+        "STD-PROC-008"
+      ],
+      "title": "Behaviour tests realise the BDD .feature (no automation without a spec)",
+      "description": "Testing-side facet of the BDD lifecycle (STD-PROC-008). Behaviour/E2E tests — both API/edge-function and web, but not pure unit tests — realise an authoritative BDD .feature (Gherkin, generated from a capability, STD-PROC-013). The test code (step definitions, playwright-bdd) realises that spec and is never the source of truth. Do not hand-write or auto-scaffold automation divorced from a BDD .feature; every automated behaviour test traces back to a .feature and its capability.",
+      "rationale": "Realising tests from a capability-generated BDD .feature keeps automation traceable to product intent and prevents drift between intent and tests. Source: docs/_process/04_ai-agile-implementation.md; MAOS BDD Specification.",
+      "acceptance_criteria": [
+        "A behaviour/E2E test added in the diff realises a BDD .feature that traces to a capability (STD-PROC-013).",
+        "The test code realises the .feature; the .feature is the authoritative testable spec, not the test code.",
+        "The diff does not auto-scaffold or hand-write E2E automation with no corresponding BDD .feature; pure unit tests are exempt."
+      ],
+      "anti_patterns": [
+        "Committing automation for a feature with no BDD .feature / capability behind it.",
+        "Treating a test/step-definition as the source of truth instead of the .feature.",
+        "Auto-generating E2E specs divorced from a capability."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/04_ai-agile-implementation.md; MAOS BDD Specification"
+    },
+    {
+      "id": "STD-TEST-008",
+      "title": "Write idempotent CRUD/E2E tests",
+      "description": "CRUD and E2E tests must be idempotent so re-runs do not fail on unique-constraint violations: before creating a record, check whether it already exists (from a previous run) and, if so, verify and pass rather than re-creating. Tests clean up or use idempotent guards.",
+      "rationale": "The suite runs repeatedly (scheduled and on PRs) against shared environments; non-idempotent create steps fail on the second run. Source: docs/LOVABLE_KNOWLEDGE.md §8 (Writing Idempotent CRUD Tests).",
+      "acceptance_criteria": [
+        "Create-flow tests in the diff check for the record's existence before creating and short-circuit to verification if present.",
+        "Tests in the diff do not assume a clean database and do not fail on re-run due to unique constraints.",
+        "Test data created in the diff is cleaned up or guarded so repeated runs stay green."
+      ],
+      "anti_patterns": [
+        "A test that always creates `code = 'TEST'` and fails the second run on a unique violation.",
+        "Assuming an empty table at the start of an E2E create scenario."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §8 — Writing Idempotent CRUD Tests"
+    },
+    {
+      "id": "STD-TEST-009",
+      "related": [
+        "STD-TEST-005"
+      ],
+      "title": "Use the EntityRegistry-derived test-ID contract and scope to the active dialog",
+      "description": "Tests select UI via the stable data-testid contract derived from EntityRegistry naming: dialog-{entityType}, field-{field.name}, save-{entityType}, save-add-{entityType}. Locators are scoped to the active dialog (getByTestId('dialog-...')), not selected globally. Prefer test IDs over fragile role/text/CSS selectors.",
+      "rationale": "The schema-driven form generator emits these stable IDs; using them (scoped to the dialog) yields resilient tests, while global role/text selectors match multiple elements and flake. Source: docs/LOVABLE_KNOWLEDGE.md §8 (Test-ID Contract / Dialog Handling).",
+      "acceptance_criteria": [
+        "New tests in the diff target dialogs/fields/save controls via dialog-{entityType}/field-{name}/save-{entityType} test IDs.",
+        "Form interactions in the diff are scoped to the active dialog locator, not selected from the whole page.",
+        "New tests in the diff avoid fragile nth-child/role-last/placeholder-global selectors when a test ID exists."
+      ],
+      "anti_patterns": [
+        "`page.getByRole('dialog').last()` instead of `page.getByTestId('dialog-concepts')`.",
+        "`page.getByRole('button', { name: /save/i })` matching multiple unscoped buttons."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §8 — Test-ID Contract Pattern"
+    },
+    {
+      "id": "STD-TEST-010",
+      "related": [
+        "STD-TEST-007",
+        "STD-PROC-008",
+        "STD-PROC-013"
+      ],
+      "title": "Test artefacts live in their canonical locations; the BDD .feature is the testable spec",
+      "description": "Test artefacts have a single home. BDD specifications are Gherkin .feature under tests/features/playwright/ (web E2E) and tests/features/deno/ (API/edge), each generated from a capability (STD-PROC-013) and the authoritative testable spec. Step definitions live in tests/step-definitions/*.steps.ts (per the playwright-bdd config); shared fixtures in tests/fixtures/. Pure unit/component tests are not BDD: frontend units are colocated in src/**/*.{test,spec}.{ts,tsx} (Vitest); edge-function unit tests are deno tests beside the function or _shared.",
+      "rationale": "A single home for behaviour specs, each linked to a capability, keeps the suite discoverable and the playwright-bdd wiring valid; a source-of-truth-in-test-code artefact breaks traceability. Source: playwright.config.ts (defineBddConfig); vitest.config.ts; MAOS BDD Specification.",
+      "acceptance_criteria": [
+        "BDD .feature specs in the diff live under tests/features/playwright/ (web) or tests/features/deno/ (API/edge), each linked to a capability.",
+        "Step definitions in the diff live in tests/step-definitions/*.steps.ts; fixtures in tests/fixtures/.",
+        "Frontend unit/component tests in the diff are colocated in src/** as *.{test,spec}.{ts,tsx}; edge-function unit tests are deno tests beside the function or _shared.",
+        "New E2E behaviour in the diff is a BDD .feature (+ step definition) linked to a capability, not an ad-hoc .spec.ts."
+      ],
+      "anti_patterns": [
+        "A BDD .feature with no linked capability.",
+        "Adding a .feature outside tests/features/ where the playwright-bdd config will not pick it up.",
+        "A standalone Playwright .spec.ts E2E divorced from the BDD structure."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Derived from playwright.config.ts / vitest.config.ts; MAOS BDD Specification"
+    }
+  ]
+}
