@@ -252,18 +252,26 @@ class TestCheckProseReferences:
         errors = check_prose_references(loaded, id_map)
         assert errors and "STD-SEC-002" in errors[0]
 
-    def test_dangling_reference_in_source_reported(self):
+    def test_source_provenance_not_scanned(self):
+        # `source` is provenance, not a resolvable reference — a dangling ID
+        # there must NOT be flagged (it may name a retired or cross-tier std).
         std = _make_std(
             "STD-PROC-011",
             source="Migrated from org STD-ARCH-006 / STD-ARCH-007 (fix-now / no-issues).",
         )
         loaded = [("process.json", _make_file(category="process", standards=[std]))]
         id_map, _ = collect_all_standards(loaded)
-        errors = check_prose_references(loaded, id_map)
-        # Both dangling IDs reported, once each.
-        assert len(errors) == 2
-        assert any("STD-ARCH-006" in e for e in errors)
-        assert any("STD-ARCH-007" in e for e in errors)
+        assert check_prose_references(loaded, id_map) == []
+
+    def test_unanchored_partial_match_not_flagged(self):
+        # A 4-digit typo or a glued mid-word occurrence must not match a real 3-digit ID.
+        std = _make_std(
+            "STD-DATA-001",
+            description="Bad ref STD-ARCH-0091 and glued fooSTD-SEC-002 should not match.",
+        )
+        loaded = [("data.json", _make_file(category="data", standards=[std]))]
+        id_map, _ = collect_all_standards(loaded)
+        assert check_prose_references(loaded, id_map) == []
 
     def test_self_reference_not_flagged(self):
         std = _make_std(
