@@ -51,42 +51,24 @@ without touching surrounding content.
 
 ## The todos block
 
+The block is structured as an outer marker pair (`ai-agile/todos/v1`)
+wrapping the whole block, a `## AI Agile — Tasks` heading, one or more
+subsections (each with its own marker pair so agents can update one
+subsection without parsing or rewriting the others), and a
+`_Last updated_` footer. For example, the open-questions subsection:
+
 ```markdown
-<!-- ai-agile/todos/v1 START -->
-## AI Agile — Tasks
-
-<!-- ai-agile/todos/build-plan/v1 START -->
-### Build plan
-
-- [x] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z by task-decomposer, done 2026-05-05T09:11Z by coder)
-- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z by task-decomposer)
-- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z by task-decomposer)
-
-<!-- ai-agile/todos/build-plan/v1 END -->
-
-<!-- ai-agile/todos/acceptance-criteria/v1 START -->
-### Acceptance criteria
-
-- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z by prd-writer)
-- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z by prd-writer)
-- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z by prd-writer)
-
-<!-- ai-agile/todos/acceptance-criteria/v1 END -->
-
 <!-- ai-agile/todos/open-questions/v1 START -->
 ### Open questions
 
 - [ ] Q-ais-v1-iss-42-architect-001 — schema choice (raised 2026-05-04T14:23Z by orchestrator, asked of: engineer)
 
 <!-- ai-agile/todos/open-questions/v1 END -->
-
-_Last updated by `task-decomposer` at 2026-05-04T14:23:11Z_
-<!-- ai-agile/todos/v1 END -->
 ```
 
-The outer marker pair (`ai-agile/todos/v1`) wraps the whole block. Each
-subsection has its own marker pair so agents can update one subsection
-without parsing or rewriting the others.
+See the [PR body example](#pr-body-example) below for a complete block
+showing the outer markers, heading, multiple subsections, and footer
+together.
 
 ---
 
@@ -116,26 +98,14 @@ authoritative:
 | `- [ ]` | Pending |
 | `- [x]` | Done |
 
-Every entry carries the timestamp and actor for each state change.
-The full annotation grammar is defined in "Timestamp and actor format"
-below.
-
-| Annotation | Meaning |
-|---|---|
-| `(raised <ts> by <actor>)` | Required on every entry; when and by whom the task was added |
-| `(done <ts> by <actor>)` | Added when an item is checked off |
-| `(blocked <ts> by <actor>: <reason>)` | Cannot proceed; reference a Question Card or `:blocked` agent if applicable |
-| `(skipped <ts> by <actor>: <reason>)` | Intentionally not done; the actor takes responsibility |
-
-Multiple events on the same entry are concatenated with commas in the
-order they occurred. GitHub renders the checkbox regardless of
-annotation, so the visual state stays accurate. Examples:
-
-```markdown
-- [ ] Wire up middleware (raised 2026-05-04T14:23Z by task-decomposer, blocked 2026-05-04T16:02Z by architect: waiting on Q-ais-v1-iss-42-architect-001)
-- [x] Add migration (raised 2026-05-04T14:23Z by task-decomposer, done 2026-05-05T09:11Z by coder)
-- [ ] ~~Add legacy auth path~~ (raised 2026-05-04T14:23Z by task-decomposer, skipped 2026-05-05T08:00Z by @alice: ADR-0019 retires legacy auth)
-```
+Every entry carries the timestamp and actor for each state change,
+annotated as `(raised …)`, `(done …)`, `(blocked …: <reason>)`, or
+`(skipped …: <reason>)`. Multiple events on the same entry are
+concatenated with commas in the order they occurred; GitHub renders the
+checkbox regardless of annotation, so the visual state stays accurate.
+The full annotation grammar — event formats, timestamp grammar, and
+actor grammar — is defined in
+[Timestamp and actor format](#timestamp-and-actor-format) below.
 
 ---
 
@@ -202,43 +172,13 @@ PR that includes a body change.
 
 ## Issue body example
 
-A typical issue body after the product-docs phase has run:
-
-```markdown
-# Track last-login timestamp on user records
-
-We need to know when each user last successfully authenticated, so that
-we can show "last seen" in the admin UI and prune stale accounts.
-
-The admin UI mock is in #38.
-
-<!-- ai-agile/todos/v1 START -->
-## AI Agile — Tasks
-
-<!-- ai-agile/todos/acceptance-criteria/v1 START -->
-### Acceptance criteria
-
-- [ ] Login updates `last_login_at` within 1 second (raised 2026-05-04T11:08Z by prd-writer)
-- [ ] `last_login_at` survives session expiry (raised 2026-05-04T11:08Z by prd-writer)
-- [ ] Every update produces an audit log entry (raised 2026-05-04T11:08Z by prd-writer)
-
-<!-- ai-agile/todos/acceptance-criteria/v1 END -->
-
-<!-- ai-agile/todos/build-plan/v1 START -->
-### Build plan
-
-- [ ] Add `last_login_at` column to `users` table (#43) (raised 2026-05-04T14:23Z by task-decomposer)
-- [ ] Wire up middleware to update on each request (#44) (raised 2026-05-04T14:23Z by task-decomposer)
-- [ ] Add Gherkin scenarios and tests (#45) (raised 2026-05-04T14:23Z by task-decomposer)
-
-<!-- ai-agile/todos/build-plan/v1 END -->
-
-_Last updated by `task-decomposer` at 2026-05-04T14:23:11Z_
-<!-- ai-agile/todos/v1 END -->
-```
-
-The prose above the marker block is the stakeholder's original issue.
-Agents never modify it.
+After the product-docs phase, an issue body carries the stakeholder's
+original prose followed by the todos block with the
+`acceptance-criteria` and `build-plan` subsections (acceptance-criteria
+first, then build-plan, each populated as shown in the [PR body
+example](#pr-body-example) below but with all items unchecked). The
+prose above the marker block is the stakeholder's original issue; agents
+never modify it.
 
 ---
 
@@ -455,23 +395,11 @@ not present or does not match one of the three forms.
 
 ### Why every event carries an actor
 
-- **Self-contained line.** A reviewer scanning a closed issue can see
-  who did what without scrolling through the issue history or audit
-  log.
-- **Multi-writer clarity.** The build-plan section is owned by
-  `task-decomposer` on the issue side and `coder` on the PR side. A
-  ticked-off entry shows which one ticked it. A human override shows
-  as `by @alice`, distinct from both.
-- **Audit-log alignment.** Every body change emits an audit event
-  (`body.updated`) that names the actor. The line-level annotation is
-  the human-readable mirror of that machine-readable event.
+The actor makes each line self-contained (a reviewer sees who did what without scrolling history or the audit log), disambiguates multi-writer sections (e.g. build-plan, owned by `task-decomposer` on the issue side and `coder` on the PR side, with human overrides showing `by @alice`), and mirrors the `body.updated` audit event that names the same actor.
 
 ### Footer
 
-The `_Last updated by <actor> at <timestamp>_` footer at the bottom of
-the todos block names the most recent writer to the block as a whole.
-It is informational; the line-level annotations are the source of
-truth for per-entry history.
+The `_Last updated by <actor> at <timestamp>_` footer at the bottom of the block names the most recent writer to the block as a whole; it is informational, while the line-level annotations are the source of truth for per-entry history.
 
 ---
 

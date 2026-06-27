@@ -29,25 +29,19 @@ evolve them as the system matures.
 | 12 | [Agent specification](12-agent-spec.md) | Required shape of an agent prompt file: frontmatter, body sections, tool allowlist |
 | 13 | [Todos](13-todos.md) | How tasks are stored in issue/PR bodies, with ISO 8601 timestamps |
 | 14 | [Standards](14-standards.md) | Two-tier standards structure, category taxonomy, enforcement model, ADR scoping |
-| 15 | [Backlog](15-backlog.md) | Known gaps, deferred features, and tech-debt items |
+| 15 | [Backlog](15-backlog.md) | Point-in-time snapshot of open issues and their pipeline state (GitHub is authoritative) |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires the submodule; Linux symlink vs Windows copy; Windows two-step bootstrap; daily sync workflow |
 
 ## Generated views
 
 Authoritative facts about the pipeline are declared once in
-`pipeline/pipeline.json` and rendered for human reading at:
-
-| File | Description |
-|---|---|
-| `generated/phases/{phase}.mmd` | Per-phase mermaid flowchart (one file per phase) |
-
-These files are produced by `pipeline/generators/generate_phase_mermaid.py`
-and committed in the same PR as any change to the source JSON. They are not
-hand-edited. See [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
-
-Full pipeline-level views (agents catalogue, gates list, pipeline mermaid)
-are planned but not yet generated. Track progress in
-[`backlog.md`](15-backlog.md).
+`pipeline/pipeline.json` and rendered for human reading by
+`pipeline/generators/generate_phase_mermaid.py`. These files are never
+hand-edited and are committed in the same PR as any change to the source
+JSON (see [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
+The currently generated file and the planned views are listed in
+[`generated/README.md`](generated/README.md); whole-pipeline catalogues
+(agents, gates) are tracked in [`backlog.md`](15-backlog.md).
 
 ---
 
