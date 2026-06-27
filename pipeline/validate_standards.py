@@ -13,6 +13,8 @@ Checks:
   4. No duplicate STD IDs across all files
   5. instantiates and related IDs resolve to a known standard in the loaded set
   6. ADR authorises_exception_to IDs exist and are adr_overridable: true
+  7. STD IDs cited in prose (description, rationale, acceptance_criteria,
+     anti_patterns, source) resolve to a known standard
 
 Exits 0 if all checks pass, 1 if any error is found.
 Prints findings to stderr, summary to stdout.
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -128,6 +131,53 @@ def check_references(
     return errors
 
 
+# Matches an STD ID token (e.g. STD-ARCH-009) wherever it appears in prose.
+_STD_TOKEN_RE = re.compile(r"STD-[A-Z]+-\d{3}")
+
+# Prose fields scanned for STD references: plain-string fields and list-of-string fields.
+_PROSE_STRING_FIELDS = ("description", "rationale", "source")
+_PROSE_LIST_FIELDS = ("acceptance_criteria", "anti_patterns")
+
+
+def check_prose_references(
+    loaded: list[tuple[str, dict]],
+    id_map: dict[str, dict],
+) -> list[str]:
+    """Check STD IDs mentioned in prose fields resolve to a known standard.
+
+    The structured ``instantiates``/``related`` fields are validated by
+    check_references. This catches the same dangling-reference class in
+    human-readable prose — e.g. a description that says "enforced via
+    STD-SEC-002" or a source note "Migrated from org STD-ARCH-006" — where a
+    cited standard that no longer exists would otherwise pass validation
+    silently. A standard citing its own ID is not flagged.
+    """
+    errors: list[str] = []
+    known = set(id_map)
+    for filename, data in loaded:
+        for std in data.get("standards", []):
+            std_id = std.get("id", "?")
+            parts: list[str] = []
+            for field in _PROSE_STRING_FIELDS:
+                value = std.get(field)
+                if isinstance(value, str):
+                    parts.append(value)
+            for field in _PROSE_LIST_FIELDS:
+                for item in std.get(field, []) or []:
+                    if isinstance(item, str):
+                        parts.append(item)
+            blob = " ".join(parts)
+            missing = sorted(
+                {t for t in _STD_TOKEN_RE.findall(blob) if t != std_id and t not in known}
+            )
+            for tok in missing:
+                errors.append(
+                    f"{filename}: {std_id}: prose references {tok!r} "
+                    f"— ID not found in any loaded standards file"
+                )
+    return errors
+
+
 def check_adrs(
     loaded: list[tuple[str, dict]],
     id_map: dict[str, dict],
@@ -183,6 +233,7 @@ def validate(standards_dir: Path, schema_path: Path) -> tuple[list[str], int, in
     id_map, dup_errors = collect_all_standards(loaded)
     all_errors += dup_errors
     all_errors += check_references(loaded, id_map)
+    all_errors += check_prose_references(loaded, id_map)
     all_errors += check_adrs(loaded, id_map)
 
     std_count = sum(len(d.get("standards", [])) for _, d in loaded)
