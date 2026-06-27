@@ -12,6 +12,7 @@ from validate_standards import (
     check_id_prefix,
     collect_all_standards,
     check_references,
+    check_prose_references,
     check_adrs,
     validate,
     CATEGORY_TO_PREFIX,
@@ -212,6 +213,94 @@ class TestCheckReferences:
         loaded = [a, b]
         id_map, _ = collect_all_standards(loaded)
         assert check_references(loaded, id_map) == []
+
+
+# ---------------------------------------------------------------------------
+# check_prose_references
+# ---------------------------------------------------------------------------
+
+class TestCheckProseReferences:
+    def test_resolved_prose_reference_no_error(self):
+        target = _make_std("STD-SEC-002")
+        citing = _make_std(
+            "STD-DATA-016",
+            description="Roles are enforced through has_role() (STD-SEC-002).",
+        )
+        loaded = [("s.json", _make_file(standards=[target, citing]))]
+        id_map, _ = collect_all_standards(loaded)
+        assert check_prose_references(loaded, id_map) == []
+
+    def test_dangling_reference_in_description_reported(self):
+        std = _make_std(
+            "STD-DATA-016",
+            description="Roles are enforced through has_role() (STD-SEC-002).",
+        )
+        loaded = [("data.json", _make_file(category="data", standards=[std]))]
+        id_map, _ = collect_all_standards(loaded)
+        errors = check_prose_references(loaded, id_map)
+        assert len(errors) == 1
+        assert "STD-SEC-002" in errors[0]
+        assert "STD-DATA-016" in errors[0]
+
+    def test_dangling_reference_in_anti_patterns_reported(self):
+        std = _make_std(
+            "STD-DATA-016",
+            anti_patterns=["Granting write access without a has_role() check (see STD-SEC-002)."],
+        )
+        loaded = [("data.json", _make_file(category="data", standards=[std]))]
+        id_map, _ = collect_all_standards(loaded)
+        errors = check_prose_references(loaded, id_map)
+        assert errors and "STD-SEC-002" in errors[0]
+
+    def test_source_provenance_not_scanned(self):
+        # `source` is provenance, not a resolvable reference — a dangling ID
+        # there must NOT be flagged (it may name a retired or cross-tier std).
+        std = _make_std(
+            "STD-PROC-011",
+            source="Migrated from org STD-ARCH-006 / STD-ARCH-007 (fix-now / no-issues).",
+        )
+        loaded = [("process.json", _make_file(category="process", standards=[std]))]
+        id_map, _ = collect_all_standards(loaded)
+        assert check_prose_references(loaded, id_map) == []
+
+    def test_unanchored_partial_match_not_flagged(self):
+        # A 4-digit typo or a glued mid-word occurrence must not match a real 3-digit ID.
+        std = _make_std(
+            "STD-DATA-001",
+            description="Bad ref STD-ARCH-0091 and glued fooSTD-SEC-002 should not match.",
+        )
+        loaded = [("data.json", _make_file(category="data", standards=[std]))]
+        id_map, _ = collect_all_standards(loaded)
+        assert check_prose_references(loaded, id_map) == []
+
+    def test_self_reference_not_flagged(self):
+        std = _make_std(
+            "STD-PROC-001",
+            description="This rule (STD-PROC-001) supersedes ad-hoc practice.",
+        )
+        loaded = [("p.json", _make_file(standards=[std]))]
+        id_map, _ = collect_all_standards(loaded)
+        assert check_prose_references(loaded, id_map) == []
+
+    def test_duplicate_mention_reported_once(self):
+        std = _make_std(
+            "STD-UX-010",
+            description="Error text is translated/safe (STD-SEC-009).",
+            anti_patterns=["Raw error shown to users instead of a safe message (STD-SEC-009)."],
+        )
+        loaded = [("ux-design.json", _make_file(category="ux-design", standards=[std]))]
+        id_map, _ = collect_all_standards(loaded)
+        errors = check_prose_references(loaded, id_map)
+        assert len(errors) == 1
+        assert "STD-SEC-009" in errors[0]
+
+    def test_cross_file_prose_reference_resolves(self):
+        defn = ("sec.json", _make_file(category="security", standards=[_make_std("STD-SEC-009")]))
+        citing = _make_std("STD-UX-010", description="Error text is safe (STD-SEC-009).")
+        ux = ("ux-design.json", _make_file(category="ux-design", standards=[citing]))
+        loaded = [defn, ux]
+        id_map, _ = collect_all_standards(loaded)
+        assert check_prose_references(loaded, id_map) == []
 
 
 # ---------------------------------------------------------------------------
