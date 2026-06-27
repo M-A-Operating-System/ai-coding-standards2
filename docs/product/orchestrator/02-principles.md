@@ -4,6 +4,12 @@ These are the rules AI Agile is built on. They are referenced by ID
 (`P-1`, `P-2`, …) from code, agents, design docs, and reviews. A change to
 any principle is a significant architectural decision and goes through an ADR.
 
+> **New here?** This is the canonical rulebook other docs cite by ID — it
+> rewards reference more than a cover-to-cover read. To grasp the system,
+> P-1 (Git is authoritative), P-4 (`:wip` is the mutex), P-10 (agents draft,
+> humans decide), and P-14 (deterministic orchestrator) are the load-bearing
+> four; come back for the rest when a doc points you here.
+
 The principles fall into three groups:
 
 - **Architectural** (P-1 to P-4, P-14, P-16) — commitments about how the system is built.

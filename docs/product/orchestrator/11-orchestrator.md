@@ -9,6 +9,11 @@ This document covers: inputs, outputs, decision logic, the mutex protocol,
 gate label handling, failure recovery, and the GitHub Actions workflows that
 host it.
 
+> **New here?** This is a deep reference on the orchestrator's internals —
+> safe to skip on a first pass. For how the pipeline *behaves*, read
+> [`04-lifecycle.md`](04-lifecycle.md) and [`06-status-model.md`](06-status-model.md)
+> first; return here when you need to change or operate the orchestrator.
+
 ---
 
 ## Role and scope
