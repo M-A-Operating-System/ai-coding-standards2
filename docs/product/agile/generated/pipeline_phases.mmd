@@ -1,25 +1,31 @@
 flowchart TD
     entry_n_01_product_docs__issue_classifier(["issue.opened"])
-    entry_n_00_ondemand__codebase_reviewer(["codebase-reviewer:requested"])
-    entry_n_00_ondemand__sizer(["sizer:requested"])
-    entry_n_00_ondemand__new_agent(["new-agent:requested"])
-    entry_n_00_ondemand__standards_migrator(["standards-migrator:requested"])
-    n_01_product_docs__issue_classifier["issue-classifier"]
-    n_01_product_docs__prd_writer["prd-writer"]
-    n_01_product_docs__create_pr("create-pr")
-    n_01_product_docs__prd_docs_updater["prd-docs-updater"]
-    n_03_execute__coder["coder"]
-    n_03_execute__ci_gate("ci-gate")
-    n_03_execute__merge_conflict["merge-conflict"]
-    n_03_execute__pr_reviewer["pr-reviewer"]
-    n_00_ondemand__codebase_reviewer["codebase-reviewer"]
-    n_00_ondemand__sizer["sizer"]
-    n_00_ondemand__new_agent["new-agent"]
-    n_00_ondemand__standards_migrator["standards-migrator"]
-    gate__n_01_product_docs__prd_writer{"prd-writer:approved"}
-    gate__n_01_product_docs__prd_docs_updater{"prd-docs-updater:approved"}
-    gate__n_03_execute__merge_conflict{"merge-conflict:approved · auto"}
-    gate__n_00_ondemand__sizer{"sizer:review · auto"}
+    subgraph 01_product_docs["01 Product Docs"]
+        n_01_product_docs__issue_classifier["issue-classifier"]
+        n_01_product_docs__prd_writer["prd-writer"]
+        n_01_product_docs__create_pr("create-pr")
+        n_01_product_docs__prd_docs_updater["prd-docs-updater"]
+        gate__n_01_product_docs__prd_writer{"prd-writer:approved"}
+        gate__n_01_product_docs__prd_docs_updater{"prd-docs-updater:approved"}
+    end
+    subgraph 03_execute["03 Execute"]
+        n_03_execute__coder["coder"]
+        n_03_execute__ci_gate("ci-gate")
+        n_03_execute__merge_conflict["merge-conflict"]
+        n_03_execute__pr_reviewer["pr-reviewer"]
+        gate__n_03_execute__merge_conflict{"merge-conflict:approved · auto"}
+    end
+    subgraph 00_ondemand["00 Ondemand"]
+        entry_n_00_ondemand__codebase_reviewer(["codebase-reviewer:requested"])
+        entry_n_00_ondemand__sizer(["sizer:requested"])
+        entry_n_00_ondemand__new_agent(["new-agent:requested"])
+        entry_n_00_ondemand__standards_migrator(["standards-migrator:requested"])
+        n_00_ondemand__codebase_reviewer["codebase-reviewer"]
+        n_00_ondemand__sizer["sizer"]
+        n_00_ondemand__new_agent["new-agent"]
+        n_00_ondemand__standards_migrator["standards-migrator"]
+        gate__n_00_ondemand__sizer{"sizer:review · auto"}
+    end
     term_blocked(["blocked — human"]):::term
     term_cr_done(["review issue created"]):::term
     term_epic(["epic — sub-issues"]):::term
@@ -31,6 +37,10 @@ flowchart TD
     entry_n_00_ondemand__sizer --> n_00_ondemand__sizer
     entry_n_00_ondemand__new_agent --> n_00_ondemand__new_agent
     entry_n_00_ondemand__standards_migrator --> n_00_ondemand__standards_migrator
+    n_01_product_docs__prd_writer --> gate__n_01_product_docs__prd_writer
+    n_01_product_docs__prd_docs_updater --> gate__n_01_product_docs__prd_docs_updater
+    n_03_execute__merge_conflict --> gate__n_03_execute__merge_conflict
+    n_00_ondemand__sizer --> gate__n_00_ondemand__sizer
     n_01_product_docs__issue_classifier --> n_01_product_docs__prd_writer
     gate__n_01_product_docs__prd_writer --> n_01_product_docs__create_pr
     n_01_product_docs__create_pr --> n_01_product_docs__prd_docs_updater
@@ -38,10 +48,6 @@ flowchart TD
     n_03_execute__coder --> n_03_execute__ci_gate
     n_03_execute__ci_gate --> n_03_execute__merge_conflict
     gate__n_03_execute__merge_conflict --> n_03_execute__pr_reviewer
-    n_01_product_docs__prd_writer --> gate__n_01_product_docs__prd_writer
-    n_01_product_docs__prd_docs_updater --> gate__n_01_product_docs__prd_docs_updater
-    n_03_execute__merge_conflict --> gate__n_03_execute__merge_conflict
-    n_00_ondemand__sizer --> gate__n_00_ondemand__sizer
     n_03_execute__pr_reviewer -. REQUEST_CHANGES ≤3 .-> n_03_execute__coder
     n_03_execute__ci_gate -. fail ≤3 .-> n_03_execute__coder
     n_01_product_docs__issue_classifier -->|malformed| term_rejected
