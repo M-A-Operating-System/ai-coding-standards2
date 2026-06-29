@@ -99,9 +99,24 @@ default).
 
 ## Decision loop
 
-On every invocation, the orchestrator runs the same loop:
+`main()` reads as a three-phase sequence — **wake up → do the work → close down**:
 
-Work items are evaluated in two passes: open issues carrying the `priority`
+- **`_wake(args)`** — honour `--clear-pause`/`--clear-stop`, evaluate the single
+  pause/stop control guard (`_check_controls`), authenticate, load and
+  phase-filter the pipeline, then fetch and priority-order the work. Returns a
+  `RunContext` (the transient, run-scoped working set) or `None` to abort the
+  run (a `--clear-*` invocation, or an active pause/stop).
+- **`_do_work(ctx)`** — iterate the work items, honouring the aggregate
+  concurrency ceiling, calling `process_work_item` for each.
+- **`_close_down(ctx, n)`** — emit the run summary.
+
+`process_work_item` is itself a thin per-agent loop calling `_should_run`,
+`_run_agent`, and `_apply_result` in sequence; per-agent behaviour lives in
+`pipeline.json` (`post_steps`), not as special cases in the loop. State is read
+from labels each tick — the orchestrator keeps no persisted per-agent state
+(P-1, P-11).
+
+Within `_do_work`, work items are evaluated in two passes: open issues carrying the `priority`
 label are iterated first, then all remaining open work items. Within each
 pass the per-agent logic is identical. This means a `priority`-labeled issue
 will receive the next available `:wip` slot before any non-priority issue,

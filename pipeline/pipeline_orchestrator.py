@@ -3310,19 +3310,40 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
+@dataclass
+class RunContext:
+    """Everything one orchestrator tick needs to do its work.
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    Built once during _wake() from GitHub + pipeline config; consumed by
+    _do_work() and _close_down(). Run-scoped and transient — it is NOT
+    persisted between runs (P-1: GitHub labels remain the source of truth).
+    """
+    gh: "GitHubClient"
+    agents: list
+    pipeline_map: dict
+    work_items: list
+    concurrency: ConcurrencyState
+    repo: str
+    session_id: str
+    dry_run: bool
+    default_extra_tools: Optional[list]
 
+
+def _wake(args) -> "Optional[RunContext]":
+    """Wake up: honour control flags, evaluate pause/stop, authenticate, load
+    the pipeline, then fetch and priority-order the work.
+
+    Returns a RunContext to act on, or None if this run should not proceed
+    (a --clear-* invocation, or an active pause/stop). Exits the process on a
+    fatal misconfiguration (missing --repo or token).
+    """
     # Manual pause clear — short-circuit before doing anything else.
     if args.clear_pause:
         if clear_pause():
             log.info("Pause marker cleared. Re-run without --clear-pause to resume work.")
         else:
             log.info("No pause marker was set.")
-        return
+        return None
 
     # Manual stop clear — short-circuit before doing anything else.
     if args.clear_stop:
@@ -3330,7 +3351,7 @@ def main() -> None:
             log.info("Stop marker cleared. Re-run without --clear-stop to resume work.")
         else:
             log.info("No stop marker was set.")
-        return
+        return None
 
     # If a previous run hit an Anthropic rate limit and wrote the pause
     # marker, exit early. The scheduled tick will retry once the marker
@@ -3343,7 +3364,7 @@ def main() -> None:
             until.isoformat() if until else "<unknown>",
             reason or "no reason recorded",
         )
-        return
+        return None
 
     # Emergency stop: an operator has halted the pipeline indefinitely.
     # Unlike the rate-limit pause, the stop marker is never auto-cleared.
@@ -3360,7 +3381,7 @@ def main() -> None:
             outcome_status="stopped",
             outcome_detail=stop_reason or "no reason recorded",
         ))
-        return
+        return None
 
     if not args.repo:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
@@ -3477,34 +3498,61 @@ def main() -> None:
     if _active:
         log.info("Running at tick start (prior-tick :wip): %s", _active)
 
+    return RunContext(
+        gh=gh, agents=agents, pipeline_map=pipeline_map, work_items=work_items,
+        concurrency=conc, repo=args.repo, session_id=session_id,
+        dry_run=args.dry_run, default_extra_tools=default_extra_tools,
+    )
+
+
+def _do_work(ctx: "RunContext") -> int:
+    """Do the work: evaluate each work item, honouring the pipeline-wide
+    aggregate concurrency ceiling. Returns the number of agents triggered."""
     total_triggered = 0
-    for item in work_items:
-        if not args.dry_run and conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+    for item in ctx.work_items:
+        if not ctx.dry_run and ctx.concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
             log.info(
                 "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",
                 PIPELINE_MAX_CONCURRENT,
             )
             break
         n = process_work_item(
-            item, agents, pipeline_map, gh, args.dry_run, args.repo,
-            session_id=session_id,
-            default_extra_tools=default_extra_tools,
-            concurrency=conc,
+            item, ctx.agents, ctx.pipeline_map, ctx.gh, ctx.dry_run, ctx.repo,
+            session_id=ctx.session_id,
+            default_extra_tools=ctx.default_extra_tools,
+            concurrency=ctx.concurrency,
         )
         total_triggered += n
         if n > 0:
             # Brief pause between agent invocations to avoid rate limits
             time.sleep(2)
+    return total_triggered
 
+
+def _close_down(ctx: "RunContext", total_triggered: int) -> None:
+    """Close down: emit the run summary."""
     log.info("─" * 60)
     log.info("Complete. Agents triggered this run: %d", total_triggered)
-
-    if not args.dry_run:
+    if not ctx.dry_run:
         _emit_audit_event(_make_audit_event(
-            session_id, "system.tick", args.repo,
+            ctx.session_id, "system.tick", ctx.repo,
             outcome_status="complete",
             outcome_detail=f"{total_triggered} agent(s) triggered",
         ))
+
+
+def main() -> None:
+    # Wake up -> do the work -> close down.
+    args = parse_args()
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    ctx = _wake(args)
+    if ctx is None:
+        return
+
+    total_triggered = _do_work(ctx)
+    _close_down(ctx, total_triggered)
 
 
 if __name__ == "__main__":
