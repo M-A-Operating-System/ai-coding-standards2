@@ -50,7 +50,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import requests
 
@@ -759,6 +759,25 @@ def clear_stop() -> bool:
         return True
     except FileNotFoundError:
         return False
+
+
+def _check_controls(repo: str) -> Literal["run", "pause", "stop"]:
+    """Check repository-level pause and stop signals.
+
+    Called once per work item at the entry of process_work_item(). Returns
+    "stop" if an emergency stop marker is active, "pause" if a rate-limit
+    pause marker is active, or "run" if the pipeline should proceed.
+
+    repo is accepted for future multi-repo extensibility but unused in the
+    current file-based implementation.
+    """
+    stopped, _stop_reason = is_pipeline_stopped()
+    if stopped:
+        return "stop"
+    paused, _pause_reason, _until = is_pipeline_paused()
+    if paused:
+        return "pause"
+    return "run"
 
 
 def detect_rate_limit(output: str) -> tuple[bool, int]:
@@ -3124,6 +3143,14 @@ def process_work_item(
     calls _should_run(), _run_agent(), and _apply_result() in sequence.
     Returns the number of agents triggered.
     """
+    ctrl = _check_controls(repo)
+    if ctrl != "run":
+        log.warning(
+            "  CTRL    pipeline %s — skipping work item #%d",
+            ctrl, work_item.number,
+        )
+        return 0
+
     triggered = 0
     labels = work_item.labels
 
@@ -3155,11 +3182,13 @@ def process_work_item(
         )
 
         if not dry_run:
+            # Rate-limit short-circuit: the pause marker was written.
+            # Do NOT mark :failed — the agent never got a fair run.
+            # The next tick's _check_controls() call will detect the pause marker.
             if result.rate_limited:
-                paused, _reason, until = is_pipeline_paused()
                 log.warning(
-                    "  PAUSED  %-38s  rate-limited; resuming after %s",
-                    agent_def.agent, until.isoformat() if until else "?"
+                    "  PAUSED  %-38s  rate-limited; next tick will check pause status",
+                    agent_def.agent,
                 )
                 # Remove :wip so the next tick sees a clean state
                 try:
@@ -3450,14 +3479,6 @@ def main() -> None:
 
     total_triggered = 0
     for item in work_items:
-        stopped, stop_reason = is_pipeline_stopped()
-        if stopped:
-            log.warning(
-                "Pipeline STOPPED mid-run: %s. Exiting without further agent invocations.",
-                stop_reason or "no reason recorded",
-            )
-            return
-
         if not args.dry_run and conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
             log.info(
                 "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",

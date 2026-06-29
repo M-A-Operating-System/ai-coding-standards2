@@ -758,7 +758,7 @@ class TestRateLimitCounterRollback:
         And concurrency.tick_launch_count is rolled back to 3
         """
         mock_invoke.return_value = AgentRunResult(success=False, rate_limited=True)
-        mock_paused.return_value = (True, "rate-limit", None)
+        mock_paused.return_value = (False, None, None)
         mock_restore.return_value = None
 
         agent_def = AgentDef(
