@@ -28,6 +28,24 @@ leakage are Critical here; web-app vulnerabilities are not applicable.
 ADRs in `${AI_AGILE_ROOT}/standards/adrs.json` are authoritative exceptions — cite
 the ADR ID and downgrade any covered finding to Informational.
 
+**Execution context — do NOT trust the local working tree.** You may be invoked
+two ways: by the orchestrator (which checks out the PR branch first) **or
+interactively from Claude Code** (e.g. via `/maos-pr-reviewer`), where the local
+checkout is whatever branch the developer happens to have — usually **not** this
+PR's head, and missing this PR's changes. Therefore:
+
+- **The unified diff (`gh pr diff`) and the PR head ref are the only sources of
+  truth** for what this PR changes. Read any file content from GitHub *at the PR
+  head ref* (see `read_pr_file` in Step 1) — never from local disk.
+- **Never** conclude a symbol is "missing", "undefined", "dead code", "not
+  introduced", or "doesn't exist" by reading a file from the local working tree.
+  That tree does not contain this PR's changes: a symbol the diff *adds* exists
+  in the PR even if it is absent on disk, and code the diff *removes* is gone
+  even if it is still on disk. Verify every such claim against the diff / PR
+  head, not the ambient checkout.
+- `Read`/`Grep`/`Glob` on local files are for understanding the *base* repo only
+  — never to confirm or refute the PR's own additions or removals.
+
 ---
 
 ## Step 0 — Orient and find the PR
@@ -78,6 +96,18 @@ gh pr view "$PR_NUMBER" --repo "$REPO" \
 gh pr diff "$PR_NUMBER" --repo "$REPO"
 gh pr view "$PR_NUMBER" --repo "$REPO" --json commits \
   --jq '.commits[] | "\(.oid[0:8]) \(.messageHeadline)"'
+```
+
+Capture the PR head once, and use `read_pr_file` whenever you need a file's
+contents beyond the diff hunks — it reads the file **at the PR's version**, not
+the local working tree (which may be a different branch entirely):
+
+```bash
+HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')
+
+read_pr_file() {  # usage: read_pr_file path/to/file
+  gh api "/repos/${REPO}/contents/$1?ref=${HEAD_SHA}" --jq '.content' | base64 -d
+}
 ```
 
 Check whether the branch has unresolved merge conflicts against its base
@@ -271,12 +301,11 @@ exist, and field values match declared types and patterns.
 **8c — Pre-existing context must be consistent with new docs.**
 For each file where the diff updates documentation, check whether any surrounding
 unchanged code, headings, or comments now contradict the new documentation.
-Read the full file at the PR head to see context outside the diff hunks:
+Read the full file **at the PR head** (via `read_pr_file` from Step 1) to see
+context outside the diff hunks — not the local working tree:
 
 ```bash
-gh api "/repos/${REPO}/contents/{path}?ref=$(gh pr view "$PR_NUMBER" \
-  --repo "$REPO" --json headRefOid --jq '.headRefOid')" \
-  --jq '.content' | base64 -d
+read_pr_file path/to/file
 ```
 
 Flag pre-existing content that was not updated by the diff but is now stale.
@@ -375,6 +404,7 @@ EOF
 
 ## Rules
 
+- **The diff and the PR head ref are the only source of truth — never the local working tree.** Do not raise "missing/undefined symbol", "dead code", "not introduced", or "X doesn't exist" from a local-disk read; the local checkout may be a different branch that lacks this PR's changes. Confirm against `gh pr diff` and `read_pr_file` (PR head) before any such finding. A false finding of this kind is itself a review defect.
 - **Read-only.** Never write or modify source files, even for trivial fixes.
 - **Output via `gh pr comment` only.** Never write findings to stdout.
 - **Findings describe fixes; never apply them.**

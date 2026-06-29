@@ -368,6 +368,37 @@ AI_AGILE_STATUS: complete
 > post a brief response noting nothing was actionable and emit
 > `AI_AGILE_STATUS: complete`.
 
+**Execution context — the PR, not the local working tree, defines the code under
+review.** You may be invoked by the orchestrator (which checks out the PR branch
+first) **or interactively from Claude Code** (e.g. via `/maos-coder`), where the
+local checkout is whatever branch the developer happens to have — possibly **not**
+this PR's head, and missing this PR's changes. Before you edit anything, confirm
+the working tree actually matches the PR head:
+
+```bash
+HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')
+
+read_pr_file() {  # usage: read_pr_file path/to/file  — reads the file at the PR's version
+  gh api "/repos/${REPO}/contents/$1?ref=${HEAD_SHA}" --jq '.content' | base64 -d
+}
+
+# Does local HEAD match the PR head? If not, the local tree is NOT this PR.
+LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+[ "$LOCAL_SHA" = "$HEAD_SHA" ] && echo "working tree == PR head" \
+  || echo "WARNING: working tree ($LOCAL_SHA) != PR head ($HEAD_SHA)"
+```
+
+If the working tree does **not** match the PR head, you cannot safely edit code —
+the orchestrator (or a human running you interactively) must check out the PR
+branch first. This is git/branch topology, which is out of your mandate: emit
+`AI_AGILE_STATUS: blocked "infra: local working tree is not checked out to PR
+head ${HEAD_SHA}; cannot edit safely"` and stop. **Do not** try to reconcile,
+checkout, or re-create the branch yourself.
+
+When the tree does match, the diff (`gh pr diff "$PR_NUMBER"`) and `read_pr_file`
+remain the authority on what this PR actually changed — see B3 before acting on
+any "missing"/"dead code" finding.
+
 ### B1 — Read all review feedback
 
 `$PR_NUMBER` was discovered in Step 0. Read all feedback from the PR.
@@ -440,6 +471,17 @@ Use these documents to decide whether each piece of feedback is valid:
   `AI_AGILE_STATUS: blocked`.
 - If a reviewer requests something that contradicts an ADR, do not implement
   it — cite the ADR ID in your B6 response explaining why.
+
+**Verify "missing symbol / dead code / X doesn't exist" findings against the PR,
+not the local disk.** A reviewer (or you) reading the ambient working tree —
+which may be a different branch that lacks this PR's changes — can falsely report
+that a function is missing, undefined, dead, or "never called". Before you delete
+code or "fix" such a finding, confirm it against the PR itself: check
+`gh pr diff "$PR_NUMBER"` and `read_pr_file path/to/file` (PR head, from the
+block above). If the symbol *is* present at the PR head, the finding is a
+stale-working-tree false positive — do **not** act on it; note in your B6
+response that it could not be reproduced against the PR head and move on.
+Deleting code to satisfy a false "dead code" finding is a regression, not a fix.
 
 Only re-read a file if you have a specific reason to believe it changed
 between your Mode A run and now (e.g. another PR merged a standards update
