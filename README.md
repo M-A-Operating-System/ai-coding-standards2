@@ -48,28 +48,26 @@ git submodule update --init --recursive
 The submodule lives at `ai-coding-standards2/` in your repo. Pin to a
 tag or specific commit when you're ready to control upgrades.
 
-### 2. Run `get_started.py`
+### 2. Run `get_started.py --seed`
 
 ```bash
-python ai-coding-standards2/get_started.py
+python ai-coding-standards2/get_started.py --seed
 ```
 
-This script does the local wiring — dropping workflows, creating the symlink
-or copies, and writing `.gitignore` entries. On Windows a second step (triggering
-`sync-claude.yml`) is needed to finish building and committing the managed paths
-via a Linux runner. See
-[`docs/product/agile/16-onboarding.md`](docs/product/agile/16-onboarding.md)
-for the full two-step breakdown.
+This drops a single file — `orchestrator.yml` — into `.github/workflows/`
+and adds `.gitignore` entries. That is all you need to commit locally.
+The workflow itself handles all remaining setup on a Linux runner (symlinks,
+slash commands, standards, remaining workflows).
 
-### 3. Bootstrap the labels
+### 3. Commit and push
 
 ```bash
-bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \
-     ai-coding-standards2/pipeline/pipeline.json
+git add .gitmodules ai-coding-standards2 \
+        .github/workflows/orchestrator.yml \
+        .gitignore
+git commit -m "Add ai-coding-standards2 submodule"
+git push
 ```
-
-This creates every `{agent}:{status}` label and every gate label in
-your repo so the orchestrator can apply them later.
 
 ### 4. Set up the bot account and secrets
 
@@ -131,28 +129,22 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 > for the full rationale and the planned migration path to a GitHub
 > App.
 
-### 5. Commit and open a test issue
+### 5. Run the first-time setup
 
-Commit only the seed files — `.claude/agents` and other managed paths are
-gitignored and will be set up by the sync workflow on Linux (see
-[16-onboarding.md](docs/product/agile/16-onboarding.md#windows-bootstrap-two-step-process)):
+Go to: **Actions → Pipeline Orchestrator → Run workflow → ✓ First-time setup → Run**.
 
-```bash
-git add .gitmodules ai-coding-standards2 \
-        .github/workflows/ \
-        .gitignore
-git commit -m "Wire up ai-coding-standards2 orchestrator"
-git push
-```
+The workflow checks out the repo with its submodule on a Linux runner, runs
+`get_started.py --force`, creates the `.claude/agents` symlink, copies slash
+commands and standards, drops the remaining workflow files (`sync-claude.yml`,
+`bootstrap-labels.yml`, `label-cleanup.yml`), and commits everything.
 
-Open an issue with a problem statement and acceptance criteria. The
-workflow fires on `issues.opened`; expect labels
-`01_product_docs/issue-classifier:wip` → `:complete`, plus a
-classification comment from the agent.
+After it completes, open an issue with a problem statement and acceptance
+criteria. The workflow fires on `issues.opened`; expect labels
+`01_product_docs/issue-classifier:wip` → `:complete`, plus a classification
+comment from the agent.
 
 If the issue is missing required fields, you'll see
-`01_product_docs/issue-classifier:blocked` and a corrective comment
-instead.
+`01_product_docs/issue-classifier:blocked` and a corrective comment instead.
 
 ---
 

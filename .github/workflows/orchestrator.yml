@@ -30,6 +30,10 @@ on:
 
   workflow_dispatch:
     inputs:
+      setup:
+        description: 'First-time setup — wire up agents, commands, and workflows from the submodule'
+        type: boolean
+        default: false
       issue_number:
         description: 'Process a single issue/PR number (leave blank for all)'
         required: false
@@ -50,8 +54,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ─── First-time setup ────────────────────────────────────────────────────────
+  # Run this job once after adding ai-coding-standards2 as a submodule:
+  #   Actions → Pipeline Orchestrator → Run workflow → ✓ First-time setup
+  # It calls get_started.py --force on a Linux runner, which creates the
+  # .claude/agents symlink, copies slash commands and standards, and drops all
+  # remaining workflow files — then commits and pushes everything.
+  # After this job completes, trigger it again (without setup checked) or open
+  # an issue to start the normal pipeline.
+  setup:
+    name: First-time setup
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.setup == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          submodules: true
+          token: ${{ secrets.AI_AGILE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+
+      - name: Run full setup
+        # Creates .claude/agents symlink, copies commands + standards,
+        # writes sync-claude.yml, bootstrap-labels.yml, label-cleanup.yml,
+        # seeds requirements.txt, and updates .gitignore.
+        run: python ai-coding-standards2/get_started.py --force
+
+      - name: Stage and commit managed files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Force-stage gitignored managed paths. Workflow files are not
+          # gitignored but included so any updates are committed too.
+          git add -f \
+            standards/ \
+            .claude/agents \
+            .claude/commands/ \
+            .gitignore \
+            .github/workflows/sync-claude.yml \
+            .github/workflows/bootstrap-labels.yml \
+            .github/workflows/label-cleanup.yml
+
+          # requirements.txt is project-owned, not gitignored.
+          git add requirements.txt 2>/dev/null || true
+
+          if git diff --cached --quiet; then
+            echo "✓ Already fully set up — nothing to commit."
+          else
+            git commit -m "chore: AI first-time setup — wire up ai-coding-standards2"
+            git push origin HEAD
+          fi
+
+  # ─── Normal pipeline operation ───────────────────────────────────────────────
   orchestrate:
     name: Evaluate pipeline state
+    if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.setup == 'true')"
     runs-on: ubuntu-latest
     timeout-minutes: 120
 

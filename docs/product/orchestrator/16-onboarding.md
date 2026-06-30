@@ -7,10 +7,21 @@ automatically.
 
 ---
 
-## What get_started.py does
+## Modes
 
-Running `python ai-coding-standards2/get_started.py` from the consuming repo
-root performs the following steps:
+### `--seed` (recommended for new installs)
+
+Drops only `orchestrator.yml` into the consuming repo's `.github/workflows/`
+and adds `.gitignore` entries. The developer commits those two things and pushes.
+The orchestrator workflow then does the rest on a Linux runner (see below).
+
+```bash
+python ai-coding-standards2/get_started.py --seed
+```
+
+### Full run (default)
+
+Running without `--seed` performs all wiring locally:
 
 | Step | What happens |
 |---|---|
@@ -25,6 +36,10 @@ root performs the following steps:
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
+
+The `--force` flag is also how the orchestrator's built-in setup job and the daily
+`sync-claude.yml` workflow call this script — they run `get_started.py --force`
+on a Linux runner to keep managed paths in sync.
 
 ---
 
