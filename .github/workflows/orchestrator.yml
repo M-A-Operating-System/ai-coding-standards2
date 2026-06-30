@@ -16,7 +16,7 @@ name: Pipeline Orchestrator
 # Security note: if you are running this pipeline on a public repository, an
 # attacker who can open issues may be able to craft a prompt-injection payload
 # that reaches the coder agent after gates are approved. See
-# docs/product/agile/README.md for the full security guidance.
+# docs/product/orchestrator/README.md for the full security guidance.
 
 on:
   issues:

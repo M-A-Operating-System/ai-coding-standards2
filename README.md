@@ -19,8 +19,8 @@ The consuming repo provides:
 - The `ANTHROPIC_API_KEY` secret
 - Optional repo-specific agents and standards
 
-The full design is in `docs/product/agile/`. Start with
-[`docs/product/agile/README.md`](docs/product/agile/README.md).
+The full design is in `docs/product/orchestrator/`. Start with
+[`docs/product/orchestrator/README.md`](docs/product/orchestrator/README.md).
 
 ---
 
@@ -125,7 +125,7 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 > A dedicated bot user gives the AI Agile pipeline its own avatar
 > and login so reviewers can see at a glance which actions are
 > agent-driven vs human-driven. See
-> [`docs/product/agile/09-human-interaction.md`](docs/product/agile/09-human-interaction.md#4-agent-identity)
+> [`docs/product/orchestrator/09-human-interaction.md`](docs/product/orchestrator/09-human-interaction.md#4-agent-identity)
 > for the full rationale and the planned migration path to a GitHub
 > App.
 
@@ -241,10 +241,10 @@ workflow nor any slash command changed, no re-run is required.
 .
 ├── README.md                                # this file
 ├── get_started.py                           # one-shot wiring script for consuming repos
-├── docs/product/agile/                      # full design (target state) + roadmap
+├── docs/product/orchestrator/               # full design + roadmap
 │   ├── README.md                            # reading order
-│   ├── 01-vision.md ... 13-todos.md
-│   └── 10-roadmap.md                        # MVP scope and rollout phases
+│   ├── 01-vision.md ... 16-onboarding.md
+│   └── glossary.md
 ├── .github/
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # this repo's own CI (does not run from a consuming repo)
@@ -255,7 +255,7 @@ workflow nor any slash command changed, no re-run is required.
 │       ├── 00_ondemand/                     # human-triggered agents (codebase-reviewer, standards-migrator)
 │       ├── 01_product_docs/
 │       │   └── issue-classifier.md
-│       ├── 02_design/                       # added in future Phase 1 slices
+│       ├── 02_design/
 │       ├── 03_execute/
 │       ├── 04_evaluate/
 │       ├── 05_continuous/
@@ -295,8 +295,8 @@ repos.
 
 ## Documentation
 
-- [`docs/product/agile/README.md`](docs/product/agile/README.md) — the full design index
-- [`docs/product/agile/10-roadmap.md`](docs/product/agile/10-roadmap.md) — MVP scope and rollout phases
-- [`docs/product/agile/11-orchestrator.md`](docs/product/agile/11-orchestrator.md) — orchestrator technical design
-- [`docs/product/agile/12-agent-spec.md`](docs/product/agile/12-agent-spec.md) — agent prompt-file spec
-- [`docs/product/agile/13-todos.md`](docs/product/agile/13-todos.md) — todos in issue/PR bodies
+- [`docs/product/orchestrator/README.md`](docs/product/orchestrator/README.md) — the full design index
+- [`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md) — MVP scope and rollout phases
+- [`docs/product/orchestrator/11-orchestrator.md`](docs/product/orchestrator/11-orchestrator.md) — orchestrator technical design
+- [`docs/product/orchestrator/12-agent-spec.md`](docs/product/orchestrator/12-agent-spec.md) — agent prompt-file spec
+- [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md) — onboarding a consuming repo
