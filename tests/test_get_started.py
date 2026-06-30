@@ -1090,12 +1090,10 @@ class TestPrintFollowup:
         get_started.print_followup(tmp_path)
         out = capsys.readouterr().out
 
-        # Step 4: bootstrap labels guidance.
-        assert "Bootstrap the" in out
-        assert "labels:" in out
-        # The local status.sh bootstrap-all invocation.
-        assert "status.sh" in out
-        assert "bootstrap-all" in out
+        assert "ANTHROPIC_API_KEY" in out
+        assert "AI_AGILE_BOT_TOKEN" in out
+        assert "2. Commit the seed files" in out
+        assert "3. Open a test issue" in out
 
     def test_references_single_orchestrator_workflow(self, tmp_path, capsys):
         """A SINGLE orchestrator.yml workflow is installed — the old split
@@ -1108,16 +1106,13 @@ class TestPrintFollowup:
         assert "pre-execute" not in out
         assert "execute.yml" not in out
 
-    def test_emits_two_step_windows_bootstrap(self, tmp_path, capsys):
-        """The Windows flow is two-step: commit seed files (step 2), then run
-        the sync workflow on a Linux runner (step 3)."""
+    def test_emits_requirements_txt_in_git_add(self, tmp_path, capsys):
+        """requirements.txt must appear in the git add list so the first
+        pipeline run's 'pip install -r requirements.txt' does not fail."""
         get_started.print_followup(tmp_path)
         out = capsys.readouterr().out
 
-        assert "2. Commit the seed files" in out
-        assert "3. Run the sync workflow" in out
-        # Step 2 explicitly calls out Windows committing only the seed files.
-        assert "On Windows" in out
+        assert "requirements.txt" in out
 
 
 # ---------------------------------------------------------------------------

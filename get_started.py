@@ -36,6 +36,9 @@ commands, and workflow changes. The sync-claude.yml workflow does this
 automatically every day.
 
 Options:
+    --seed       Minimal bootstrap: copy only orchestrator.yml + .gitignore.
+                 Commit those two files, push, then run the workflow with the
+                 "First-time setup" option to finish wiring on a Linux runner.
     --force      Overwrite existing files in the consuming repo
     --dry-run    Print what would be created/modified without writing
 """
@@ -525,15 +528,23 @@ def install_requirements(
     if dst.exists():
         print(f"  SKIP   requirements.txt  (exists; add packages there directly)")
         return False
+    src = SUBMODULE_ROOT / "requirements.txt"
+    if src.exists():
+        runtime_deps = "\n".join(
+            ln for ln in src.read_text().splitlines()
+            if ln.strip() and not ln.strip().startswith("pytest")
+        ) + "\n"
+    else:
+        runtime_deps = "requests\n"
     content = (
         "# Runtime dependencies for the AI Agile pipeline orchestrator.\n"
         f"# Seeded from {SUBMODULE_NAME}/requirements.txt — never overwritten by sync.\n"
         "# When the submodule adds new runtime deps, mirror them here manually.\n"
         "# Add project-specific packages below.\n"
-        "requests\n"
+        f"{runtime_deps}"
     )
     print(f"  Requirements: → {dst}")
-    return write_file(dst, content, force=True, dry_run=dry_run)
+    return write_file(dst, content, force=False, dry_run=dry_run)
 
 
 def _managed_standards_files() -> list[str]:
@@ -555,6 +566,7 @@ def _managed_standards_files() -> list[str]:
 def add_gitignore_entries(
     consuming_root: Path,
     dry_run: bool,
+    include_standards: bool = True,
 ) -> int:
     """Append .gitignore entries for get_started-managed files.
 
@@ -567,6 +579,11 @@ def add_gitignore_entries(
         (project-owned adrs.json is intentionally excluded so it remains
          committed)
 
+    ``include_standards`` should be False in --seed mode because
+    install_standards() has not run yet; listing gitignore entries for
+    files that do not exist yet confuses developers who try to manually
+    place standards files before the setup workflow runs.
+
     Idempotent: patterns already present in .gitignore are not re-added.
     Returns the number of new entries written (or that would be written).
     """
@@ -576,7 +593,7 @@ def add_gitignore_entries(
         ".claude/agents",
         ".claude/commands/",
         ".claude/settings.local.json",
-        *_managed_standards_files(),
+        *(_managed_standards_files() if include_standards else []),
     ]
 
     existing_lines = set(gitignore.read_text().splitlines()) if gitignore.exists() else set()
@@ -669,6 +686,33 @@ def untrack_managed_paths(consuming_root: Path, dry_run: bool) -> int:
     return removed
 
 
+def print_followup_seed() -> None:
+    print()
+    print("Done. Two steps to finish:")
+    print()
+    print(f"  1. Commit and push the seed files:")
+    print(f"     git add .gitmodules \\")
+    print(f"             {SUBMODULE_NAME} \\")
+    print(f"             .github/workflows/orchestrator.yml \\")
+    print(f"             .gitignore")
+    print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
+    print(f"     git push")
+    print()
+    print(f"  2. Add secrets, then run the setup workflow:")
+    print(f"     Settings → Secrets → Actions:")
+    print(f"       ANTHROPIC_API_KEY  — your Anthropic API key")
+    print(f"       AI_AGILE_BOT_TOKEN — a GitHub PAT for the bot account")
+    print()
+    print(f"     Then: GitHub → Actions → 'Pipeline Orchestrator' → Run workflow")
+    print(f"     → check 'First-time setup' → Run.")
+    print()
+    print(f"     The workflow creates the .claude/agents symlink, copies slash")
+    print(f"     commands and standards, drops sync-claude.yml and other workflows,")
+    print(f"     and commits everything. After it completes, open a test issue.")
+    print()
+    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
+
+
 def print_followup(consuming_root: Path) -> None:
     print()
     print("Done. Next steps:")
@@ -678,9 +722,6 @@ def print_followup(consuming_root: Path) -> None:
     print(f"       AI_AGILE_BOT_TOKEN — a GitHub PAT for the bot account")
     print()
     print(f"  2. Commit the seed files (workflows + .gitignore only).")
-    print(f"     On Windows these are the only files to commit — the sync")
-    print(f"     workflow (step 3) will create and commit everything else")
-    print(f"     from a Linux runner automatically.")
     print()
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
@@ -688,7 +729,8 @@ def print_followup(consuming_root: Path) -> None:
     print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
-    print(f"             .gitignore")
+    print(f"             .gitignore \\")
+    print(f"             requirements.txt")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
     print(f"     git push")
     print()
@@ -697,41 +739,25 @@ def print_followup(consuming_root: Path) -> None:
     print(f"     'git rm --cached' — include those staged deletions in")
     print(f"     this commit too.")
     print()
-    print(f"  3. Run the sync workflow to build the full Linux environment.")
-    print(f"     Go to: GitHub → Actions → 'Sync AI Agile .claude directory'")
-    print(f"     → Run workflow.")
-    print()
-    print(f"     This runs get_started.py on a Linux runner, which creates:")
-    print(f"       .claude/agents      — symlink → submodule agents dir")
-    print(f"       .claude/commands/   — copies with path rewrites")
-    print(f"       standards/          — copies with schema path rewrites")
-    print(f"     and commits them all. After this step the repo is fully set up.")
-    print()
-    print(f"     The sync workflow also runs daily at 06:00 UTC so these")
-    print(f"     files are kept in sync as the submodule is updated.")
-    print()
-    print(f"     NOTE: .claude/settings.local.json is never committed —")
-    print(f"     it is developer-local. Run get_started.py locally to")
-    print(f"     regenerate it after a fresh clone.")
-    print()
-    print(f"  4. Bootstrap the {{agent}}:{{status}} labels:")
-    print(f"     Actions → 'Pipeline Orchestrator' → Run workflow.")
-    print(f"     The bootstrap-labels job runs automatically on workflow_dispatch")
-    print(f"     and creates all required labels in one step.")
-    print()
-    print(f"     (Or run locally: bash {SUBMODULE_NAME}/.github/scripts/status.sh")
-    print(f"      bootstrap-all {SUBMODULE_NAME}/pipeline/pipeline.json)")
-    print()
-    print(f"  5. Open a test issue with a problem statement and acceptance criteria.")
+    print(f"  3. Open a test issue with a problem statement and acceptance criteria.")
     print(f"     The orchestrator workflow fires on issue-opened; expect")
     print(f"     `01_product_docs/issue-classifier:wip` then `:complete` labels.")
     print()
-    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/agile/.")
+    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Wire ai-coding-standards2 into a consuming repo."
+    )
+    p.add_argument(
+        "--seed",
+        action="store_true",
+        help=(
+            "Minimal bootstrap: copy only orchestrator.yml + .gitignore. "
+            "Commit those two files, push, then trigger the workflow with "
+            "'First-time setup' to finish wiring on a Linux runner."
+        ),
     )
     p.add_argument(
         "--force",
@@ -754,6 +780,20 @@ def main() -> int:
     if args.dry_run:
         print("(dry run — no files will be written)")
     print()
+
+    if args.seed:
+        # Minimal bootstrap: drop only the orchestrator workflow so the
+        # developer can commit and push a single file. The workflow's
+        # built-in "First-time setup" mode handles everything else on a
+        # Linux runner (symlinks, commands, standards, remaining workflows).
+        # Skip standards gitignore entries — install_standards() hasn't run
+        # yet, so listing gitignore paths for non-existent files confuses
+        # developers who try to place standards files manually before setup.
+        install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
+        add_gitignore_entries(consuming_root, args.dry_run, include_standards=False)
+        untrack_managed_paths(consuming_root, args.dry_run)
+        print_followup_seed()
+        return 0
 
     install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
     install_bootstrap_labels_workflow(consuming_root, args.force, args.dry_run)

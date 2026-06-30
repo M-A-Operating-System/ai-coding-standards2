@@ -90,6 +90,9 @@ jobs:
             .github/workflows/label-cleanup.yml \
             .github/workflows/sync-claude.yml
 
+          # requirements.txt is project-owned and not gitignored; add without -f.
+          git add requirements.txt 2>/dev/null || true
+
           if git diff --cached --quiet; then
             echo "✓ .claude is already in sync with the submodule — nothing to commit."
           else

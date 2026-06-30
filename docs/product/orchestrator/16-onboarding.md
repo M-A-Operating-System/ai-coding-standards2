@@ -7,10 +7,22 @@ automatically.
 
 ---
 
-## What get_started.py does
+## Modes
 
-Running `python ai-coding-standards2/get_started.py` from the consuming repo
-root performs the following steps:
+### `--seed` (recommended for new installs)
+
+Drops `orchestrator.yml` into the consuming repo's `.github/workflows/` and
+adds `.gitignore` entries. The developer commits those two things and pushes.
+The orchestrator workflow's built-in setup job then does the rest on a Linux
+runner (see Bootstrap flow below).
+
+```bash
+python ai-coding-standards2/get_started.py --seed
+```
+
+### Full run (default)
+
+Running without `--seed` performs all wiring locally:
 
 | Step | What happens |
 |---|---|
@@ -26,62 +38,79 @@ root performs the following steps:
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
 
+The `--force` flag is also how the orchestrator's built-in setup job and the daily
+`sync-claude.yml` workflow call this script — they run `get_started.py --force`
+on a Linux runner to keep managed paths in sync.
+
 ---
 
 ## Platform behaviour: Linux vs Windows
 
 | Aspect | Linux / macOS | Windows |
 |---|---|---|
-| `.claude/agents` | Relative directory symlink — committed via sync-claude.yml as a tiny git blob | Individual file copies — gitignored |
-| `.claude/commands/` | Gitignored — committed via sync-claude.yml | Gitignored — committed via sync-claude.yml |
+| `.claude/agents` | Relative directory symlink — committed by the setup job as a tiny git blob | Individual file copies — gitignored |
+| `.claude/commands/` | Gitignored — committed by the setup job and kept current by sync-claude.yml | Gitignored — committed by the setup job and kept current by sync-claude.yml |
 | `standards/` | Base files gitignored (`adrs.json` stays committed) | Base files gitignored (`adrs.json` stays committed) |
-| Bootstrap path | Two-step: seed commit on Linux, then trigger sync-claude.yml | Two-step: seed commit on Windows, then trigger sync-claude.yml |
+| Bootstrap path | `--seed` commit → trigger setup job | `--seed` commit → trigger setup job |
 
 ### Why the split?
 
 Creating directory symlinks on Windows requires elevated privileges that most
-developers and VS builds do not have. Committing the symlink blob on Linux means
-developers who clone on any platform get agent visibility in Claude Code without
-running `get_started.py` again. The sync workflow rebuilds the symlink on every
-Linux runner run.
+developers and VS builds do not have. Committing the symlink blob from a Linux
+runner means developers who clone the consuming repo on any platform get agent
+visibility in Claude Code without running `get_started.py` again. The daily
+sync-claude.yml workflow rebuilds the symlink on every Linux runner run.
 
 ---
 
-## Windows bootstrap (two-step process)
+## Bootstrap flow (all platforms)
 
-When a developer first adds the submodule on a Windows machine (e.g. via Visual
-Studio), the full environment cannot be built locally. The recommended workflow:
+The recommended path is identical on Windows, macOS, and Linux because the
+heavy lifting happens on a GitHub-hosted Linux runner, not locally.
 
-**Step 1 — Seed commit from Windows**
+**Step 1 — Local seed commit**
 
-Run `get_started.py` on Windows. It will:
-- Copy workflow files into `.github/workflows/` (these are **not** gitignored)
-- Add `.gitignore` entries
-- Create local copies of agents, commands, and standards (all gitignored)
+Run `get_started.py --seed`. It writes one file (`orchestrator.yml`) and
+updates `.gitignore`, then exits.
 
-Commit only the seed files:
-```
+```bash
+python ai-coding-standards2/get_started.py --seed
 git add .gitmodules ai-coding-standards2 \
-        .github/workflows/ \
+        .github/workflows/orchestrator.yml \
         .gitignore
-git commit -m "chore: add ai-coding-standards2 submodule and seed workflows"
+git commit -m "Add ai-coding-standards2 submodule"
 git push
 ```
 
-**Step 2 — Trigger sync workflow (Linux runner)**
+**Step 2 — Add secrets**
 
-Go to Actions → **Sync AI Agile .claude directory** → Run workflow.
+In the consuming repo: Settings → Secrets and variables → Actions → New repository secret.
 
-The `sync-claude.yml` workflow runs `get_started.py --force` on a Linux runner,
-which creates the directory symlink for `.claude/agents` and force-stages all
-managed paths. It then commits and pushes the result. After this run, the repo
-has the full environment and the daily sync keeps it up to date.
+| Secret | Value |
+|---|---|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key |
+| `AI_AGILE_BOT_TOKEN` | A GitHub PAT for the bot account (see README.md §4) |
+
+**Step 3 — Trigger the setup job**
+
+Go to: **Actions → Pipeline Orchestrator → Run workflow → ✓ First-time setup → Run**.
+
+The job checks out the repo with its submodule on a Linux runner, runs
+`get_started.py --force`, creates the `.claude/agents` symlink, copies slash
+commands and standards, drops the remaining workflow files (`sync-claude.yml`,
+`bootstrap-labels.yml`, `label-cleanup.yml`), and commits everything directly
+to the default branch (or to an `ai-standards-setup` branch if branch
+protection rules block a direct push — in that case, open a PR from that
+branch).
+
+After the job completes, open a test issue with a problem statement and
+acceptance criteria to confirm the pipeline is live.
 
 ---
 
 ## sync-claude.yml — daily sync workflow
 
-The `sync-claude.yml` workflow (installed by `get_started.py` into the consuming
+The `sync-claude.yml` workflow (installed by the setup job into the consuming
 repo's `.github/workflows/`) runs daily at 06:00 UTC and on demand:
 
 1. Checks out the consuming repo **with submodules**
@@ -90,8 +119,10 @@ repo's `.github/workflows/`) runs daily at 06:00 UTC and on demand:
    paths are listed in `.gitignore` to protect Windows developers)
 4. Commits and pushes if anything changed
 
-This ensures the consuming repo tracks submodule updates automatically and
+This keeps the consuming repo in sync with submodule updates automatically and
 recovers from any drift between the committed symlink blob and the submodule.
+It is not used for initial onboarding — the setup job in `orchestrator.yml`
+handles first-time wiring.
 
 The workflow uses `AI_AGILE_BOT_TOKEN` (falls back to `GITHUB_TOKEN`) so the
 commit is attributed to the bot account and branch-protection rules that block
