@@ -193,6 +193,10 @@ class AgentDef:
     def blocked_label(self) -> str:
         return f"{self.label_key}:{STATUS_BLOCKED}"
 
+    @property
+    def skipped_label(self) -> str:
+        return f"{self.label_key}:{STATUS_SKIPPED}"
+
     def status_label(self, status: str) -> str:
         return f"{self.label_key}:{status}"
 
@@ -1068,6 +1072,15 @@ def _fetch_unresolved_human_review_requests(gh: "GitHubClient", pr_number: int) 
     return [r for r in latest_by_reviewer.values() if r.get("state") == "CHANGES_REQUESTED"]
 
 
+def _label_satisfied(label: str, labels: set[str]) -> bool:
+    """Return True if label is present, or its :skipped equivalent is (for :complete triggers)."""
+    if label in labels:
+        return True
+    if label.endswith(f":{STATUS_COMPLETE}"):
+        return label.removesuffix(f":{STATUS_COMPLETE}") + f":{STATUS_SKIPPED}" in labels
+    return False
+
+
 def dependencies_complete(
     labels: set[str],
     agent_def: AgentDef,
@@ -1084,7 +1097,7 @@ def dependencies_complete(
             log.warning("Unknown dependency: %s (required by %s)", dep_name, agent_def.agent)
             return False
 
-        dep_skipped = dep.status_label(STATUS_SKIPPED) in labels
+        dep_skipped = dep.skipped_label in labels
         if dep.complete_label not in labels and not dep_skipped:
             return False
 
@@ -1103,16 +1116,9 @@ def dependencies_complete(
 
 def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     """Return True if the label trigger for this agent is satisfied."""
-    trigger = agent_def.trigger
-    if "label" in trigger:
-        label = trigger["label"]
-        if label in labels:
-            return True
-        # A :complete trigger is also satisfied when the agent was :skipped,
-        # so downstream agents fire even when an upstream step is bypassed.
-        if label.endswith(f":{STATUS_COMPLETE}"):
-            return label[: -len(STATUS_COMPLETE)] + STATUS_SKIPPED in labels
-        return False
+    label = agent_def.trigger.get("label")
+    if label is not None:
+        return _label_satisfied(label, labels)
     # Event and schedule triggers are handled externally (GitHub Actions).
     # When running interactively, treat them as always-eligible.
     return True

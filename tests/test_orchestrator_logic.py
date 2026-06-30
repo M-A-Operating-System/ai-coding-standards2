@@ -17,6 +17,7 @@ from pipeline_orchestrator import (
     _apply_result,
     _count_running,
     _handle_review_loop,
+    _label_satisfied,
     _make_audit_event,
     _emit_audit_event,
     _run_agent,
@@ -26,6 +27,8 @@ from pipeline_orchestrator import (
     parse_frontmatter,
     process_work_item,
     _compute_agent_session_id,
+    dependencies_complete,
+    trigger_label_present,
     main,
 )
 
@@ -3774,3 +3777,125 @@ class TestCommitAfterExactlyOnce:
             f"ran {len(commit_calls)}x (double-execution regression)"
         )
         mock_failed.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestLabelSatisfied
+# ---------------------------------------------------------------------------
+
+class TestLabelSatisfied:
+    def test_label_present(self):
+        assert _label_satisfied("foo:complete", {"foo:complete"}) is True
+
+    def test_label_absent(self):
+        assert _label_satisfied("foo:complete", set()) is False
+
+    def test_complete_satisfied_by_skipped(self):
+        assert _label_satisfied("foo:complete", {"foo:skipped"}) is True
+
+    def test_non_complete_not_satisfied_by_skipped(self):
+        # Only :complete triggers accept :skipped substitution
+        assert _label_satisfied("foo:failed", {"foo:skipped"}) is False
+
+    def test_non_complete_satisfied_only_by_exact(self):
+        assert _label_satisfied("foo:failed", {"foo:failed"}) is True
+
+    def test_skipped_label_not_matched_by_complete(self):
+        assert _label_satisfied("foo:skipped", {"foo:complete"}) is False
+
+
+# ---------------------------------------------------------------------------
+# TestDependenciesComplete
+# ---------------------------------------------------------------------------
+
+def _make_pipeline_map(*names: str) -> dict[str, AgentDef]:
+    return {n: _make_agent_def(n) for n in names}
+
+
+class TestDependenciesComplete:
+    def test_no_dependencies_always_true(self):
+        agent = _make_agent_def("03_execute/coder")
+        assert dependencies_complete(set(), agent, {}) is True
+
+    def test_dep_complete_passes(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        assert dependencies_complete({"prd-writer:complete"}, agent, pipeline_map) is True
+
+    def test_dep_missing_blocks(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        assert dependencies_complete(set(), agent, pipeline_map) is False
+
+    def test_dep_skipped_unblocks(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        assert dependencies_complete({"prd-writer:skipped"}, agent, pipeline_map) is True
+
+    def test_unknown_dep_blocks(self):
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["nonexistent/agent"]
+        assert dependencies_complete(set(), agent, {}) is False
+
+    def test_human_gate_required_when_dep_complete(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        dep.human_gate_after = True
+        dep.human_gate_label = "prd-writer:approved"
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        # complete but gate not applied → blocked
+        assert dependencies_complete({"prd-writer:complete"}, agent, pipeline_map) is False
+        # complete + gate applied → passes
+        assert dependencies_complete({"prd-writer:complete", "prd-writer:approved"}, agent, pipeline_map) is True
+
+    def test_human_gate_bypassed_when_dep_skipped(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        dep.human_gate_after = True
+        dep.human_gate_label = "prd-writer:approved"
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        # skipped dep → gate doesn't block (agent never ran, gate never applied)
+        assert dependencies_complete({"prd-writer:skipped"}, agent, pipeline_map) is True
+
+
+# ---------------------------------------------------------------------------
+# TestTriggerLabelPresent
+# ---------------------------------------------------------------------------
+
+class TestTriggerLabelPresent:
+    def _agent_with_trigger(self, trigger: dict) -> AgentDef:
+        agent = _make_agent_def()
+        agent.trigger = trigger
+        return agent
+
+    def test_no_label_trigger_always_true(self):
+        agent = self._agent_with_trigger({})
+        assert trigger_label_present(set(), agent) is True
+
+    def test_label_trigger_present(self):
+        agent = self._agent_with_trigger({"label": "prd-writer:complete"})
+        assert trigger_label_present({"prd-writer:complete"}, agent) is True
+
+    def test_label_trigger_absent(self):
+        agent = self._agent_with_trigger({"label": "prd-writer:complete"})
+        assert trigger_label_present(set(), agent) is False
+
+    def test_complete_trigger_satisfied_by_skipped(self):
+        agent = self._agent_with_trigger({"label": "prd-docs-updater:complete"})
+        assert trigger_label_present({"prd-docs-updater:skipped"}, agent) is True
+
+    def test_non_complete_trigger_not_satisfied_by_skipped(self):
+        agent = self._agent_with_trigger({"label": "prd-writer:approved"})
+        assert trigger_label_present({"prd-writer:skipped"}, agent) is False
+
+    def test_event_trigger_always_true(self):
+        agent = self._agent_with_trigger({"event": "pull_request.closed"})
+        assert trigger_label_present(set(), agent) is True
