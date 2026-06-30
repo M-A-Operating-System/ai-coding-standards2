@@ -978,10 +978,9 @@ def _handle_review_loop(
             "could not remove %s on #%d: %s", agent_def.review_label, work_item.number, exc
         )
 
-    # Clear target's :complete (or :skipped if it was bypassed) so it can be re-triggered
+    # Clear target's :complete (or :skipped if it was bypassed) so it can be re-triggered.
+    # Always attempt both removals — remove_label swallows 404, so a missing label is safe.
     for lbl in (target_def.complete_label, target_def.skipped_label):
-        if lbl not in labels:
-            continue
         try:
             gh.remove_label(work_item.number, lbl)
             labels.discard(lbl)
@@ -997,20 +996,15 @@ def _handle_review_loop(
         if also_def is None:
             log.warning("review_loop also_clear '%s' not found in pipeline — skipping", also_name)
             continue
-        cleared_any = False
         for lbl in (also_def.complete_label, also_def.skipped_label):
-            if lbl not in labels:
-                continue
             try:
                 gh.remove_label(work_item.number, lbl)
                 labels.discard(lbl)
-                cleared_any = True
             except Exception as exc:
                 log.warning(
                     "could not remove %s on #%d: %s", lbl, work_item.number, exc
                 )
-        if cleared_any:
-            also_cleared.append(also_name)
+        also_cleared.append(also_name)
 
     also_suffix = (
         f" (also cleared: {', '.join(f'`{n}`' for n in also_cleared)})" if also_cleared else ""
@@ -1109,7 +1103,10 @@ def dependencies_complete(
         if not _label_satisfied(dep.complete_label, labels):
             return False
 
-        dep_skipped = dep.skipped_label in labels
+        # True when dep was satisfied only via :skipped (not via :complete).
+        # Derive from the absence of :complete rather than presence of :skipped so that
+        # stale :skipped debris coexisting with :complete doesn't bypass the human gate.
+        dep_skipped = dep.complete_label not in labels
         # Human gate only applies when the dep actually ran and completed —
         # a skipped dep never ran, so its gate label was never applied.
         if not dep_skipped and dep.human_gate_after and dep.human_gate_label:
@@ -2248,7 +2245,7 @@ def _apply_failed(
         "",
         "**To recover:**",
         f"- Fix the underlying error, then **remove** the `{agent_def.failed_label}` label to retry, or",
-        f"- Apply the `{agent_def.status_label(STATUS_SKIPPED)}` label to bypass this agent on this item.",
+        f"- Apply the `{agent_def.skipped_label}` label to bypass this agent on this item.",
         "",
         footer,
     ]

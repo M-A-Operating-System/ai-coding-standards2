@@ -1756,7 +1756,7 @@ class TestHandleReviewLoop:
         assert not any(l.startswith("review-cycle:") for l in result)
 
     def test_clears_target_skipped_instead_of_complete(self):
-        """If target was :skipped (not :complete), review loop clears :skipped so it can re-run."""
+        """If target was :skipped, review loop clears :skipped so it can re-run."""
         reviewer = self._reviewer_def()
         target = self._target_def()
         wi = self._work_item()
@@ -1769,10 +1769,9 @@ class TestHandleReviewLoop:
 
         gh.remove_label.assert_any_call(wi.number, target.skipped_label)
         assert target.skipped_label not in result
-        # :complete was not present so should not have been attempted
-        complete_remove_calls = [c for c in gh.remove_label.call_args_list
-                                  if c[0][1] == target.complete_label]
-        assert complete_remove_calls == []
+        # Both :complete and :skipped are always attempted; remove_label swallows 404
+        # for whichever label isn't present — no snapshot-race window.
+        gh.remove_label.assert_any_call(wi.number, target.complete_label)
 
     def test_also_clear_removes_skipped_variant(self):
         """also_clear entries have their :skipped label removed when :complete is absent."""
