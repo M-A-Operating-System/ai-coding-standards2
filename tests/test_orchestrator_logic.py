@@ -1769,9 +1769,11 @@ class TestHandleReviewLoop:
 
         gh.remove_label.assert_any_call(wi.number, target.skipped_label)
         assert target.skipped_label not in result
-        # Both :complete and :skipped are always attempted; remove_label swallows 404
-        # for whichever label isn't present — no snapshot-race window.
-        gh.remove_label.assert_any_call(wi.number, target.complete_label)
+        # :complete was not in the local label set so no API call is made for it.
+        for call in gh.remove_label.call_args_list:
+            assert call[0][1] != target.complete_label, (
+                "remove_label should not be called for labels not in the local set"
+            )
 
     def test_also_clear_removes_skipped_variant(self):
         """also_clear entries have their :skipped label removed when :complete is absent."""
@@ -3918,16 +3920,22 @@ class TestDependenciesComplete:
         agent.dependencies = ["nonexistent/agent"]
         assert dependencies_complete(set(), agent, {}) is False
 
-    def test_human_gate_required_when_dep_complete(self):
+    def test_human_gate_blocks_when_gate_absent(self):
         dep = _make_agent_def("01_product_docs/prd-writer")
         dep.human_gate_after = True
         dep.human_gate_label = "prd-writer:approved"
         agent = _make_agent_def("03_execute/coder")
         agent.dependencies = ["01_product_docs/prd-writer"]
         pipeline_map = {"01_product_docs/prd-writer": dep}
-        # complete but gate not applied → blocked
         assert dependencies_complete({"prd-writer:complete"}, agent, pipeline_map) is False
-        # complete + gate applied → passes
+
+    def test_human_gate_passes_when_gate_present(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        dep.human_gate_after = True
+        dep.human_gate_label = "prd-writer:approved"
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
         assert dependencies_complete({"prd-writer:complete", "prd-writer:approved"}, agent, pipeline_map) is True
 
     def test_human_gate_bypassed_when_dep_skipped(self):

@@ -979,8 +979,9 @@ def _handle_review_loop(
         )
 
     # Clear target's :complete (or :skipped if it was bypassed) so it can be re-triggered.
-    # Always attempt both removals — remove_label swallows 404, so a missing label is safe.
     for lbl in (target_def.complete_label, target_def.skipped_label):
+        if lbl not in labels:
+            continue
         try:
             gh.remove_label(work_item.number, lbl)
             labels.discard(lbl)
@@ -998,6 +999,8 @@ def _handle_review_loop(
             continue
         cleared_any = False
         for lbl in (also_def.complete_label, also_def.skipped_label):
+            if lbl not in labels:
+                continue
             try:
                 gh.remove_label(work_item.number, lbl)
                 labels.discard(lbl)
@@ -1099,7 +1102,12 @@ def dependencies_complete(
     agent_def: AgentDef,
     pipeline_map: dict[str, AgentDef],
 ) -> bool:
-    """Return True if every dependency's :complete label is present and its human gate is satisfied."""
+    """Return True if every dependency's :complete label is present and its human gate is satisfied.
+
+    ``labels`` must already be normalized via :func:`normalize_skipped_labels` before
+    this call — a skipped dependency's synthesized ``:complete`` label must be present
+    for it to be treated as done.
+    """
     for dep_name in agent_def.dependencies:
         dep = pipeline_map.get(dep_name)
         if dep is None:
