@@ -14,10 +14,13 @@ from pipeline_orchestrator import (
     PIPELINE_MAX_CONCURRENT,
     agent_status,
     _apply_failed,
+    _apply_result,
     _count_running,
     _handle_review_loop,
     _make_audit_event,
     _emit_audit_event,
+    _run_agent,
+    _should_run,
     promote_gated_agents,
     AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
     parse_frontmatter,
@@ -755,7 +758,7 @@ class TestRateLimitCounterRollback:
         And concurrency.tick_launch_count is rolled back to 3
         """
         mock_invoke.return_value = AgentRunResult(success=False, rate_limited=True)
-        mock_paused.return_value = (True, "rate-limit", None)
+        mock_paused.return_value = (False, None, None)
         mock_restore.return_value = None
 
         agent_def = AgentDef(
@@ -2990,15 +2993,17 @@ class TestCommitAgentWorkScript:
         When the orchestrator source is reviewed
         Then the commit_after invoke block is guarded by work_item.kind == 'issue'
              so the script is never called for PR-scoped work items.
+        After the process_work_item() refactor the guard lives in _apply_result().
         """
         import inspect
         import pipeline_orchestrator as orch
-        source = inspect.getsource(orch.process_work_item)
+        source = inspect.getsource(orch._apply_result)
         guard = 'agent_def.commit_after and work_item.kind == "issue"'
         assert guard in source, (
             "commit_after invoke block must include 'work_item.kind == \"issue\"' "
             "in the outer guard — commit-agent-work.sh requires ISSUE_NUMBER and "
-            "must not be invoked for PR work items (DP-001)"
+            "must not be invoked for PR work items (DP-001). "
+            "After the process_work_item() refactor this guard lives in _apply_result()."
         )
 
     def _make_commit_after_agent(self) -> "AgentDef":
@@ -3431,3 +3436,341 @@ class TestPriorityScheduling:
             f"Priority issue #2 must be passed to process_work_item first; "
             f"got #{first_item.number}. The sort block in main() may not be exercised."
         )
+
+
+# ---------------------------------------------------------------------------
+# TestProcessWorkItemDecomposition  (PRD issue #156)
+# ---------------------------------------------------------------------------
+
+class TestProcessWorkItemDecomposition:
+    """Gherkin scenarios from PRD issue #156.
+
+    Verifies that process_work_item() is decomposed into _should_run(),
+    _run_agent(), and _apply_result() with no logic duplication and no
+    observable behaviour change.
+    """
+
+    # ------------------------------------------------------------------
+    # Scenario: process_work_item becomes a thin orchestration wrapper
+    # ------------------------------------------------------------------
+
+    def test_process_work_item_calls_should_run(self):
+        """
+        Given the orchestrator has been updated per issue #156
+        When process_work_item() is invoked
+        Then its body calls _should_run() — eligibility is not inlined.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        assert "_should_run(" in source, (
+            "process_work_item must delegate eligibility checking to _should_run(); "
+            "no eligibility logic should be inlined in the wrapper."
+        )
+
+    def test_process_work_item_calls_run_agent(self):
+        """
+        Given the orchestrator has been updated per issue #156
+        When process_work_item() is invoked
+        Then its body calls _run_agent() — agent invocation is not inlined.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        assert "_run_agent(" in source, (
+            "process_work_item must delegate agent invocation to _run_agent(); "
+            "no invocation logic should be inlined in the wrapper."
+        )
+
+    def test_process_work_item_calls_apply_result(self):
+        """
+        Given the orchestrator has been updated per issue #156
+        When process_work_item() is invoked
+        Then its body calls _apply_result() — result handling is not inlined.
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        source = inspect.getsource(orch.process_work_item)
+        assert "_apply_result(" in source, (
+            "process_work_item must delegate result handling to _apply_result(); "
+            "no result-handling logic should be inlined in the wrapper."
+        )
+
+    # ------------------------------------------------------------------
+    # Scenario: each concern lives in exactly one place
+    # ------------------------------------------------------------------
+
+    def test_eligibility_logic_only_in_should_run(self):
+        """
+        Given the three focused functions have been implemented
+        When the codebase is reviewed for duplication
+        Then dependencies_complete() is called only from _should_run(),
+             not from _run_agent() or _apply_result().
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        assert "dependencies_complete(" in inspect.getsource(orch._should_run), (
+            "_should_run must contain the dependencies_complete() call."
+        )
+        assert "dependencies_complete(" not in inspect.getsource(orch._run_agent), (
+            "_run_agent must not duplicate the dependencies_complete() check."
+        )
+        assert "dependencies_complete(" not in inspect.getsource(orch._apply_result), (
+            "_apply_result must not duplicate the dependencies_complete() check."
+        )
+
+    def test_result_handling_only_in_apply_result(self):
+        """
+        Given the three focused functions have been implemented
+        When the codebase is reviewed for duplication
+        Then _apply_terminal_status() is called only from _apply_result(),
+             not from _should_run() or _run_agent().
+        """
+        import inspect
+        import pipeline_orchestrator as orch
+        assert "_apply_terminal_status(" in inspect.getsource(orch._apply_result), (
+            "_apply_result must contain the _apply_terminal_status() call."
+        )
+        assert "_apply_terminal_status(" not in inspect.getsource(orch._should_run), (
+            "_should_run must not duplicate the _apply_terminal_status() call."
+        )
+        assert "_apply_terminal_status(" not in inspect.getsource(orch._run_agent), (
+            "_run_agent must not duplicate the _apply_terminal_status() call."
+        )
+
+    # ------------------------------------------------------------------
+    # Scenario: CI passes with no observable behaviour change
+    # ------------------------------------------------------------------
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_process_work_item_dispatches_eligible_agent(self, mock_invoke):
+        """
+        Given an eligible agent (trigger met, no :wip, no :complete)
+        When process_work_item() is called
+        Then the agent is triggered exactly once (behaviour preserved).
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent",
+            max_concurrent=10,
+        )
+        wi = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        gh = _make_gh_mock()
+        n = process_work_item(
+            wi, [agent_def], {agent_def.agent: agent_def},
+            gh, dry_run=False, repo="test/repo",
+        )
+        assert n == 1, f"Expected 1 agent triggered; got {n}"
+        mock_invoke.assert_called_once()
+
+    def test_should_run_returns_false_for_terminal_status(self):
+        """
+        Given an agent that is already :complete on the work item
+        When _should_run() is called
+        Then it returns False (skip).
+        """
+        agent_def = _make_agent_def("01_product_docs/prd-writer")
+        wi = _make_work_item_with_labels(1, {"prd-writer:complete"})
+        result = _should_run(agent_def, wi, wi.labels, {}, None)
+        assert result is False, (
+            f"_should_run must return False for a terminal :complete status; got {result!r}"
+        )
+
+    def test_should_run_returns_none_at_aggregate_ceiling(self):
+        """
+        Given the aggregate concurrency ceiling is already reached
+        When _should_run() is called for an otherwise-eligible agent
+        Then it returns None (stop the agent loop).
+        """
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=100,
+        )
+        wi = _make_work_item_with_labels(1, set())
+        conc = ConcurrencyState(
+            running_counts={"prd-writer": 0},
+            tick_launch_count=PIPELINE_MAX_CONCURRENT,
+        )
+        result = _should_run(agent_def, wi, wi.labels, {}, conc)
+        assert result is None, (
+            f"_should_run must return None when the aggregate ceiling is hit; got {result!r}"
+        )
+
+    def test_should_run_returns_true_for_eligible_agent(self):
+        """
+        Given an agent whose trigger is met and has no blocking conditions
+        When _should_run() is called
+        Then it returns True (dispatch).
+        """
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            max_concurrent=10,
+        )
+        wi = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        result = _should_run(agent_def, wi, wi.labels, {agent_def.agent: agent_def}, None)
+        assert result is True, (
+            f"_should_run must return True for a fully eligible agent; got {result!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Direct behavioural tests for the decomposition helpers.
+# These complement the source-string decomposition tests with real contract
+# checks: the stop/continue return signal, terminal-label application, the
+# :wip mutex, and a regression guard against the commit-after double-execution
+# bug that the rebaseline removed.
+# ---------------------------------------------------------------------------
+
+class TestApplyResultBehaviour:
+    """_apply_result() returns the stop/continue signal and applies exactly one
+    terminal status label — exercised directly, not only via process_work_item."""
+
+    def _agent(self, **kw) -> AgentDef:
+        d = dict(
+            agent="03_execute/pr-reviewer", phase="03_execute", objects=["issue"],
+            trigger={}, dependencies=[], human_gate_after=False,
+            human_gate_label=None, description="test",
+        )
+        d.update(kw)
+        return AgentDef(**d)
+
+    def _call(self, agent, wi, gh, sentinel):
+        import time
+        return _apply_result(
+            agent, wi, AgentRunResult(success=True, captured_tail=""),
+            sentinel, "", "", time.monotonic(), 0,
+            set(wi.labels), None, gh, "", "test/repo", {agent.agent: agent},
+        )
+
+    def test_complete_applies_complete_label_and_continues(self):
+        agent, gh = self._agent(), _make_gh_mock()
+        wi = _make_work_item_with_labels(42, set())
+        stop = self._call(agent, wi, gh, STATUS_COMPLETE)
+        assert stop is False, "a non-gated :complete must not halt the work item"
+        gh.add_label.assert_any_call(42, agent.status_label(STATUS_COMPLETE))
+
+    def test_blocked_halts_and_applies_blocked_label(self):
+        agent, gh = self._agent(), _make_gh_mock()
+        wi = _make_work_item_with_labels(42, set())
+        stop = self._call(agent, wi, gh, STATUS_BLOCKED)
+        assert stop is True, ":blocked must halt the work item (return True)"
+        gh.add_label.assert_any_call(42, agent.status_label(STATUS_BLOCKED))
+
+    def test_review_halts_and_never_applies_complete(self):
+        agent, gh = self._agent(), _make_gh_mock()
+        wi = _make_work_item_with_labels(42, set())
+        stop = self._call(agent, wi, gh, STATUS_REVIEW)
+        assert stop is True, ":review must halt the work item (return True)"
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert agent.status_label(STATUS_REVIEW) in applied
+        assert agent.status_label(STATUS_COMPLETE) not in applied, (
+            ":review must never apply the :complete label"
+        )
+
+
+class TestRunAgentBehaviour:
+    """_run_agent() applies the :wip mutex, invokes the agent, and returns the
+    parsed sentinel tuple — exercised directly as a unit."""
+
+    def _git_side_effect(self):
+        import subprocess as _sp
+        def _se(cmd, **kw):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return MagicMock(returncode=0, stdout="", stderr="")
+        return _se
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_returns_parsed_sentinel_and_applies_wip(self, mock_invoke):
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail='AI_AGILE_STATUS: complete "all done"'
+        )
+        agent = _make_agent_def("03_execute/coder")
+        gh = _make_gh_mock()
+        wi = _make_work_item_with_labels(42, {"issue-classifier:complete"})
+        with patch("subprocess.run", side_effect=self._git_side_effect()):
+            result, sentinel_status, sentinel_message, _pre, _at, attempt = _run_agent(
+                agent, wi, False, "test/repo", set(wi.labels), "",
+                None, None, gh, {agent.agent: agent},
+            )
+        assert result.success is True
+        assert sentinel_status == STATUS_COMPLETE
+        assert sentinel_message == "all done", "the quoted sentinel message must be parsed"
+        assert attempt == 0
+        gh.add_label.assert_any_call(42, agent.status_label(STATUS_WIP))
+
+
+class TestCommitAfterExactlyOnce:
+    """Regression guard for the double-execution bug the rebaseline removed:
+    commit-agent-work.sh must run EXACTLY once on :complete, not twice."""
+
+    def _agent(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/coder", phase="03_execute", objects=["issue"],
+            trigger={"label": "issue-classifier:complete"}, dependencies=[],
+            human_gate_after=False, human_gate_label=None, description="test coder",
+            commit_after=True, max_concurrent=10,
+        )
+
+    def _wi(self) -> WorkItem:
+        return WorkItem(
+            number=42, kind="issue", title="T",
+            labels={"issue-classifier:complete"},
+            url="https://github.com/test/repo/issues/42",
+        )
+
+    def _side_effect(self, bash_result):
+        import subprocess as _sp
+        def _se(cmd, **kw):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return bash_result
+        return _se
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_runs_exactly_once(self, mock_failed, mock_invoke):
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        bash_ok = MagicMock(returncode=0, stdout="", stderr="")
+        agent = self._agent()
+        with patch("subprocess.run", side_effect=self._side_effect(bash_ok)) as mock_sub:
+            process_work_item(
+                self._wi(), [agent], {agent.agent: agent}, _make_gh_mock(),
+                dry_run=False, repo="test/repo",
+                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+            )
+        commit_calls = [
+            c for c in mock_sub.call_args_list
+            if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+            and "commit-agent-work.sh" in c.args[0][-1]
+        ]
+        assert len(commit_calls) == 1, (
+            f"commit-agent-work.sh must run exactly once on :complete; "
+            f"ran {len(commit_calls)}x (double-execution regression)"
+        )
+        mock_failed.assert_not_called()

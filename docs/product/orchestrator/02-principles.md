@@ -4,6 +4,12 @@ These are the rules AI Agile is built on. They are referenced by ID
 (`P-1`, `P-2`, …) from code, agents, design docs, and reviews. A change to
 any principle is a significant architectural decision and goes through an ADR.
 
+> **New here?** This is the canonical rulebook other docs cite by ID — it
+> rewards reference more than a cover-to-cover read. To grasp the system,
+> P-1 (Git is authoritative), P-4 (`:wip` is the mutex), P-10 (agents draft,
+> humans decide), and P-14 (deterministic orchestrator) are the load-bearing
+> four; come back for the rest when a doc points you here.
+
 The principles fall into three groups:
 
 - **Architectural** (P-1 to P-4, P-14, P-16) — commitments about how the system is built.
@@ -278,24 +284,21 @@ similar fix shape) rather than time-window dumps.
 ### P-7 — One session per (object, agent)
 
 **Statement.** A session is the lifecycle of one agent's interactions
-with one object. The session ID is deterministic from those three
-facts and is stable forever:
+with one object. The session ID is deterministic from the object and
+the agent, and is stable forever. The built-in defaults are:
 
-```
-ais-v1-{kind}-{id}-{agent}
-```
-
-`{agent}` is the phase-prefixed agent name from `pipeline.json`
-(see [`12-agent-spec.md`](12-agent-spec.md#naming-convention)). The
-`/` in the agent name is preserved verbatim in the session ID — it is
-a literal character, not a hierarchy.
-
-| Object × Agent | Session ID |
+| Scope | Session ID |
 |---|---|
-| issue 42, `product-docs/prd-writer` | `ais-v1-iss-42-product-docs/prd-writer` |
-| issue 42, `technical-docs/architect` | `ais-v1-iss-42-technical-docs/architect` |
-| PR 77, `execute/coder` | `ais-v1-pr-77-execute/coder` |
-| PR 77, `execute/pr-reviewer` | `ais-v1-pr-77-execute/pr-reviewer` |
+| `per_issue` | `ais-v1-{safe_agent}-issue-{number}` |
+| `global` | `ais-v1-{safe_agent}` |
+
+`{safe_agent}` is the phase-prefixed agent name from `pipeline.json`,
+lowercased, with every character outside `[a-z0-9-]` replaced by `-`.
+The `/` in `01_product_docs/prd-writer` therefore becomes `-`, giving
+`ais-v1-01-product-docs-prd-writer-issue-42` for that agent on issue 42.
+The full token list and custom `id_pattern` syntax are specified in
+[`05-pipeline-config.md`](05-pipeline-config.md#session-id-tokens) — the
+authoritative source.
 
 Different agents on the same object have different sessions. The same
 agent on different objects has different sessions. Re-runs of the same
@@ -309,9 +312,9 @@ identity, audit grouping, and replay.
 
 **Consequences.**
 
-- Lookup is unambiguous: "show me everything the architect did on
-  issue 42" is one session ID; "show me everything that happened to
-  PR 77" is `grep ais-v1-pr-77-`.
+- Lookup is unambiguous: "show me everything the prd-writer did on
+  issue 42" is one session ID; "show me everything on issue 42" is
+  `grep -- -issue-42` over the audit log.
 - Re-runs (after rejection, blocked-then-resolved, or stale-lock
   reclaim) all share the same session ID. There are no "session 1
   vs session 2" of the same agent on the same object.

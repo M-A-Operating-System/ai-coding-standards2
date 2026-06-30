@@ -22,31 +22,46 @@ remains a human responsibility. Agents draft. Humans decide.
 
 ## The gates
 
-The full, authoritative list of gates is generated from
-[`pipeline/pipeline.json`](../../../pipeline/pipeline.json)
-to [`generated/gates.md`](generated/gates.md). The summary below is for
-orientation; the generated file is the source of truth (see
-[P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
+The planned authoritative source for the gate list is a generated file
+([`generated/gates.md`](generated/gates.md)), built from
+[`pipeline/pipeline.json`](../../../pipeline/pipeline.json) per
+[P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
+That generator is not yet built, so until it exists this catalogue is the
+working reference for every gate.
 
-| Gate label | Phase | Approver | What they are signing off |
-|---|---|---|---|
-| `01_product_docs/prd-writer:approved` | Product docs | Stakeholder | The PRD captures the right problem and acceptance criteria |
-| `size:approved` | Product docs | Engineer | The ticket is the right size for one cycle, or has been broken up |
-| `super-issue:approved` | Product docs | Engineer | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it |
-| `design:approved` | Technical docs | Engineer | The technical design is right and complete |
-| `test-spec:approved` | Testing spec | Engineer | The Gherkin scenarios cover every acceptance criterion |
-| `plan:approved` | Build plan | Engineer | The task breakdown and order are correct |
-| `pr:approved` | Execute | Engineer | The implementation matches the design and resolves all `required` violations |
-| `coverage:approved` | Test | Engineer | Tests pass and cover every required scenario |
-| `standards-proposal:approved` | Evaluate (weekly) | Standards owner | The proposed change to the standards is sound |
-| `security-review:approved` | Execute | Security owner | Security-flagged PR is safe to merge |
-| `data-migration:approved` | Execute | Data owner | Migration is forward-only, idempotent, and safe for production data |
-| `merge-conflict:approved` | Execute | Engineer | The conflict resolution plan is sound and safe to apply |
-| `gap-report:approved` | Gap assessment | Stakeholder + Standards owner | The proposed gap-issues are real gaps worth filing |
-| `debt-report:approved` | Tech debt | Engineer + Standards owner | The proposed debt-issues are worth filing and prioritising |
-| `pipeline-change:approved` | Learn | Standards owner | The proposed change to `pipeline.json` is sound |
-| `prompt-change:approved` | Learn | Agent owner | The proposed agent prompt edit is safe and correct |
-| `process-review:approved` | Learn | Standards owner + Principal stakeholder | The coordinated change proposal is sound and approved at the right level |
+Each row gives the gate's approver, the artefact the human reads, what
+approval signs off, and the cost of getting it wrong.
+
+| Gate label | Phase | Approver | Artefact | What you're signing off | Cost if wrong |
+|---|---|---|---|---|---|
+| `01_product_docs/prd-writer:approved` | Product docs | Stakeholder who opened the issue, or their delegate | The **issue body itself**, after `01_product_docs/prd-writer` rewrites it into the canonical PRD format (see [PRD format](#prd-format-and-the-prd-writer-gate) below) and rewrites the title | The problem and goal are correct; each user story names a real persona (including the System actor, [`03-personas.md`](03-personas.md) §7) and `As a developer` stories are suspect; each Gherkin scenario is falsifiable; "Out of scope" actually rules things out; success metrics are externally observable; the new title categorises the work correctly and names a real bounded context. Once approved, the PRD is the source of truth for everything downstream | The most expensive gate to skim — wrong PRD → wrong everything downstream (design, testing, evaluation) |
+| `size:approved` | Product docs | Engineer who will own the work, or the tech lead | A sizing comment from `ticket-sizer` (`S`, `M`, `L`, `XL`) with rationale | That the ticket fits a single development cycle. If `XL`, you are committing to break it into children before proceeding | An XL ticket past the gate produces a sprawling design and a multi-week PR |
+| `super-issue:approved` | Product docs | Engineer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
+| `design:approved` | Technical docs | Engineer or tech lead | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
+| `test-spec:approved` | Testing spec | Engineer | A Gherkin scenario list from `test-spec-writer`, plus a coverage report from `test-coverage-auditor` confirming every PRD acceptance criterion maps to at least one scenario | That these scenarios — and only these — are what "done" means | Tests get written for the wrong things |
+| `plan:approved` | Build plan | Engineer | A build plan showing the ordered child task list and the critical path. Produced by `dependency-planner` in the full design; in the MVP rollout (per [`10-roadmap.md`](10-roadmap.md)) folded into `task-decomposer`, which posts the combined output | That the decomposition is sensible and the order is correct | Wasted work; merge conflicts; tasks that discover the design has a hole |
+| `pr:approved` | Execute | Engineer | A PR review from `pr-reviewer` checking scope, design alignment, and resolution of `required` standards violations | That the code is right and ready to test | Bugs in production. Use this gate to look at the actual diff, not just the agent's review summary |
+| `coverage:approved` | Test | Engineer | A coverage report showing test results, coverage delta, and any acceptance criterion without a passing test. Produced by `coverage-enforcer` in the full design; in the MVP rollout (per [`10-roadmap.md`](10-roadmap.md)) folded into `test-runner`, which posts the combined output | That tests pass, coverage hasn't regressed, and every required scenario has a passing test | Untested code in production |
+| `standards-proposal:approved` | Evaluate (weekly) | Standards owner | An issue from `standards-evolver` proposing a new or changed standard, in JSON schema format | That the proposed standard is sound, the rationale is real, and the agent guidance is unambiguous | A bad standard ripples into every subsequent ticket |
+| `security-review:approved` | Execute | Security owner | The PR diff and the `impact-assessor` security-flag comment listing the sensitive surfaces touched (auth flows, RLS policies, IAM definitions, secrets, PII fields) | That the change is safe from an authentication, authorisation, and data-exposure perspective. Not a full pentest — a focused review of the flagged surface | Security vulnerabilities in production. Only required on PRs flagged by `impact-assessor`; non-flagged PRs skip this gate automatically |
+| `data-migration:approved` | Execute | Data owner | The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance | That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted | Data loss or corruption in production. Only required on PRs that include `**/*.sql` files |
+| `merge-conflict:approved` | Execute | Engineer | A prioritised list of conflict resolution recommendations from the `merge-conflict` agent, posted as a PR comment; each identifies the affected file, the conflict scope, and the suggested resolution approach | That the proposed resolution for each conflicting file is correct, safe, and consistent with both sides of the merge. Binary and generated files (lock files, compiled assets) may be flagged but require manual handling | Applying the wrong resolution silently drops or corrupts intentional changes. Review each conflicting hunk against the PR's stated intent. Only required on PRs that contain merge conflict markers when marked Ready for Review; clean PRs skip this gate automatically |
+| `gap-report:approved` | Gap assessment | Stakeholder + Standards owner (dual approval) | The rolled-up gap report from `gap-curator` listing candidate gap-issues grouped by severity | That the identified gaps are real (not stale requirements the product has intentionally moved away from) and worth filing as tickets | Filing phantom issues wastes the per-ticket pipeline on work no one wants |
+| `debt-report:approved` | Tech debt | Engineer (or tech lead) + Standards owner (dual approval) | The rolled-up debt report from `debt-curator` listing candidate debt-issues with structural evidence (metrics, ADR age, hot-spot trends) | That the identified debt is real and worth prioritising against the feature backlog | Remediating false debt distracts from delivering value |
+| `pipeline-change:approved` | Learn | Standards owner | A PR against `pipeline.json` from `pipeline-tuner`, with evidence from the metrics report | That the proposed pipeline change — adjusted schedule, added dependency, changed gate — is sound and will not degrade pipeline health | A bad pipeline change affects every subsequent ticket |
+| `prompt-change:approved` | Learn | The agent's designated owner (responsible for that agent's quality) | A PR against `.claude/agents/{agent}.md` from `prompt-tuner`, with rejection-rate evidence and diff | That the proposed prompt edit improves agent quality and does not introduce regression | A regressed prompt silently degrades every run of that agent |
+| `process-review:approved` | Learn | Standards owner + a principal stakeholder (dual approval required) | A coordinated change proposal from `process-reviewer` spanning the pipeline graph, agent prompts, standards, and docs | That the system-level diagnosis is correct, the proposed coordinated changes are coherent, and the dual approvers together represent both the technical and product perspectives | A bad coordinated change is harder to unwind than a single-component change; the dual approval bar reflects the blast radius |
+
+Two gates carry additional refusal/guard behaviour worth noting:
+
+- **`size:approved`** — `ticket-sizer`'s `XL` verdict is itself the trigger
+  to decompose; approving an `XL` commits you to breaking the ticket into
+  children first.
+- **`01_product_docs/prd-writer:approved`** — `prd-writer` will refuse to
+  draft an oversized PRD. If the issue describes multiple distinct user
+  outcomes or spans multiple bounded contexts, the agent set-blocks with a
+  decomposition recommendation rather than producing a sprawling PRD.
+  Decomposing early is cheaper than reviewing a too-big PRD.
 
 ---
 
@@ -80,257 +95,28 @@ the agent to `:complete`.
 
 ---
 
-## Gate-by-gate description
-
-### `01_product_docs/prd-writer:approved`
-
-**Approver.** The stakeholder who opened the issue, or whoever they delegate
-to.
-
-**Artefact.** The **issue body itself**, after `01_product_docs/prd-writer`
-has rewritten it. The body holds six required sections, in this order:
-
-| Section | Content | Format |
-|---|---|---|
-| Problem | What hurts now, who feels it, how often | Prose, one paragraph |
-| Goal | What success looks like, in user-observable terms | Prose, one paragraph |
-| User stories | The features, framed by user role | **User-story format** (`As a … I want … so that …`); 2–5 stories |
-| Acceptance criteria | The conditions that mean "done" | **Gherkin** (`Given … When … Then …`); one scenario per condition; happy path, alternatives, and edge cases |
-| Out of scope | Explicit non-goals to prevent scope creep | Bullet list |
-| Success metrics | How we'll know it's working in production | Bullet list of observable signals |
-
-The user-story / Gherkin combination is the canonical PRD format
-across AI Agile: user stories give the *why* in user-visible language;
-Gherkin scenarios give the *what's done* in falsifiable, executable
-form. Each Gherkin scenario in an approved PRD becomes a numbered test
-scenario in Phase 3 (`testing-spec/test-spec-writer`), tying every
-test back to a stakeholder-approved acceptance condition.
-
-**Title format.** When `prd-writer` rewrites the body it also rewrites
-the issue title to:
-
-```
-[CATEGORY] - {module} - {Title}        # with bounded-context module
-[CATEGORY] - {Title}                    # when no clear module
-```
-
-`CATEGORY` is one of `BUG`, `TOIL`, `ENHANCEMENT`, `FEATURE`, `SPIKE`
-(uppercased from the issue-classifier's classification).
-
-**Original preserved.** The stakeholder's original title and body —
-before `prd-writer` rewrote them — are preserved as a one-off snapshot
-comment on the issue with marker
-`<!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->`. The
-snapshot is immutable; even if the PRD is rewritten in subsequent
-runs after rejection, the snapshot stays as it was first captured.
-This preserves the audit trail under the
-[P-10](02-principles.md#p-10--agents-draft-humans-decide) carve-out
-that lets `prd-writer` edit issue title and body.
-
-**What you are signing off.**
-
-- The problem and goal are correct.
-- Each user story names a real persona — including the System actor
-  ([`03-personas.md`](03-personas.md) §7) when the primary actor is
-  genuinely automation. `As a developer` stories are still suspect —
-  developers are tool users, not product personas.
-- Each Gherkin scenario is falsifiable and concrete enough to be
-  turned into an automated test or a manual reproduction.
-- "Out of scope" actually rules things out (it's not a wishlist).
-- Success metrics are observable from outside the system.
-- The new title categorises the work correctly (BUG vs TOIL vs
-  ENHANCEMENT vs FEATURE vs SPIKE) and names a real bounded context
-  if a module is shown.
-
-Once approved, the PRD is the source of truth for everything
-downstream — design, test spec, build plan, code review.
-
-**Sizing guard.** `prd-writer` will refuse to draft an oversized PRD.
-If the issue describes multiple distinct user outcomes or spans
-multiple bounded contexts, the agent set-blocks with a decomposition
-recommendation rather than producing a sprawling PRD. Decomposing
-early is cheaper than reviewing a too-big PRD.
-
-**Cost of getting it wrong.** The most expensive gate to skim. The PRD
-becomes the input for design, testing, and evaluation. Wrong PRD →
-wrong everything.
-
-### `size:approved`
-
-**Approver.** The engineer who will own the work, or the tech lead.
-
-**Artefact.** A sizing comment from `ticket-sizer` (`S`, `M`, `L`, `XL`)
-with rationale.
-
-**What you are signing off.** That the ticket fits a single development
-cycle. If `XL`, you are committing to break the ticket into children before
-proceeding.
-
-**Cost of getting it wrong.** An XL ticket that slips past the gate produces
-a sprawling design and a multi-week PR.
-
-### `design:approved`
-
-**Approver.** Engineer or tech lead.
-
-**Artefact.** A technical design comment from `architect` covering data
-model, API contracts, component boundaries, integration points, NFRs.
-
-**What you are signing off.** That this is the right design, and that any
-ADR-worthy decisions have been flagged.
-
-**Cost of getting it wrong.** Code is written against this design. Discovering
-a flaw at the PR stage means re-doing implementation work.
-
-### `test-spec:approved`
-
-**Approver.** Engineer.
-
-**Artefact.** A Gherkin scenario list from `test-spec-writer`, plus a
-coverage report from `test-coverage-auditor` confirming every PRD
-acceptance criterion maps to at least one scenario.
-
-**What you are signing off.** That these scenarios — and only these
-scenarios — are what "done" means.
-
-**Cost of getting it wrong.** Tests get written for the wrong things.
-
-### `plan:approved`
-
-**Approver.** Engineer.
-
-**Artefact.** A build plan showing the ordered child task list and the
-critical path. In the full design this is produced by the
-`dependency-planner` agent; in the MVP rollout (per
-[`10-roadmap.md`](10-roadmap.md)) `dependency-planner` is folded into
-`task-decomposer`, which posts the combined output.
-
-**What you are signing off.** That the decomposition is sensible and the
-order is correct.
-
-**Cost of getting it wrong.** Wasted work; merge conflicts; tasks that
-discover the design has a hole.
-
-### `pr:approved`
-
-**Approver.** Engineer.
-
-**Artefact.** A PR review from `pr-reviewer` checking scope, design
-alignment, and resolution of `required` standards violations.
-
-**What you are signing off.** That the code is right and ready to test.
-
-**Cost of getting it wrong.** Bugs in production. Use this gate to look at
-the actual diff, not just the agent's review summary.
-
-### `coverage:approved`
-
-**Approver.** Engineer.
-
-**Artefact.** A coverage report showing test results, coverage delta,
-and any acceptance criterion without a passing test. In the full
-design this is produced by the `coverage-enforcer` agent; in the MVP
-rollout (per [`10-roadmap.md`](10-roadmap.md)) `coverage-enforcer` is
-folded into `test-runner`, which posts the combined output.
-
-**What you are signing off.** That tests pass, coverage hasn't regressed,
-and every required scenario has a passing test.
-
-**Cost of getting it wrong.** Untested code in production.
-
-### `standards-proposal:approved`
-
-**Approver.** Standards owner.
-
-**Artefact.** An issue from `standards-evolver` proposing a new standard
-or a change to an existing one, in JSON schema format.
-
-**What you are signing off.** That the proposed standard is sound, the
-rationale is real, and the agent guidance is unambiguous.
-
-**Cost of getting it wrong.** A bad standard ripples into every subsequent ticket.
-
-### `security-review:approved`
-
-**Approver.** Security owner.
-
-**Artefact.** The PR diff and the `impact-assessor` security-flag comment listing the sensitive surfaces touched (auth flows, RLS policies, IAM definitions, secrets, PII fields).
-
-**What you are signing off.** That the change is safe from an authentication, authorisation, and data-exposure perspective. Not a full pentest — a focused review of the flagged surface.
-
-**Cost of getting it wrong.** Security vulnerabilities in production. Only required on PRs flagged by `impact-assessor`; non-flagged PRs skip this gate automatically.
-
-### `data-migration:approved`
-
-**Approver.** Data owner.
-
-**Artefact.** The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance.
-
-**What you are signing off.** That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted.
-
-**Cost of getting it wrong.** Data loss or corruption in production. Only required on PRs that include `**/*.sql` files.
-
-### `merge-conflict:approved`
-
-**Approver.** Engineer.
-
-**Artefact.** A prioritised list of conflict resolution recommendations from the `merge-conflict` agent, posted as a PR comment. Each recommendation identifies the affected file, the conflict scope, and the suggested resolution approach.
-
-**What you are signing off.** That the proposed resolution approach for each conflicting file is correct, safe, and consistent with the intended changes on both sides of the merge. Binary files and generated files (lock files, compiled assets) may be flagged but are outside the scope of automated recommendations — those require manual handling.
-
-**Cost of getting it wrong.** Applying the wrong resolution silently drops or corrupts intentional changes. Review each conflicting hunk against the PR's stated intent before approving. Only required on PRs that contain merge conflict markers when marked Ready for Review; clean PRs skip this gate automatically.
-
----
-
-### `gap-report:approved`
-
-**Approver.** Stakeholder and standards owner (dual approval).
-
-**Artefact.** The rolled-up gap report from `gap-curator` listing candidate gap-issues grouped by severity.
-
-**What you are signing off.** That the identified gaps are real (not stale requirements the product has intentionally moved away from) and worth filing as tickets.
-
-**Cost of getting it wrong.** Filing phantom issues wastes the per-ticket pipeline on work no one wants.
-
-### `debt-report:approved`
-
-**Approver.** Engineer (or tech lead) and standards owner (dual approval).
-
-**Artefact.** The rolled-up debt report from `debt-curator` listing candidate debt-issues with structural evidence (metrics, ADR age, hot-spot trends).
-
-**What you are signing off.** That the identified debt is real and worth prioritising against the feature backlog.
-
-**Cost of getting it wrong.** Remediating false debt distracts from delivering value.
-
-### `pipeline-change:approved`
-
-**Approver.** Standards owner.
-
-**Artefact.** A PR against `pipeline.json` from `pipeline-tuner`, with evidence from the metrics report.
-
-**What you are signing off.** That the proposed pipeline change — adjusted schedule, added dependency, changed gate — is sound and will not degrade pipeline health.
-
-**Cost of getting it wrong.** A bad pipeline change affects every subsequent ticket.
-
-### `prompt-change:approved`
-
-**Approver.** The agent's designated owner (the person responsible for that agent's quality).
-
-**Artefact.** A PR against `.claude/agents/{agent}.md` from `prompt-tuner`, with rejection-rate evidence and diff.
-
-**What you are signing off.** That the proposed prompt edit improves agent quality and does not introduce regression.
-
-**Cost of getting it wrong.** A regressed prompt silently degrades every run of that agent.
-
-### `process-review:approved`
-
-**Approver.** Standards owner and a principal stakeholder (dual approval required).
-
-**Artefact.** A coordinated change proposal from `process-reviewer` spanning the pipeline graph, agent prompts, standards, and docs.
-
-**What you are signing off.** That the system-level diagnosis is correct, the proposed coordinated changes are coherent, and the dual approvers together represent both the technical and product perspectives.
-
-**Cost of getting it wrong.** A bad coordinated change is harder to unwind than a single-component change. The dual approval bar reflects the blast radius.
+## PRD format and the `prd-writer` gate
+
+The artefact for `01_product_docs/prd-writer:approved` is the rewritten
+issue body. Its required structure — the six sections (Problem, Goal,
+User stories, Acceptance criteria, Out of scope, Success metrics), the
+user-story and Gherkin formats, and the `[CATEGORY] - {module} - {Title}`
+title format — is defined in the `prd-writer` / product-docs
+documentation, not duplicated here. Two facts about that artefact matter
+at the gate:
+
+- **Gherkin flows downstream.** Each Gherkin scenario in an approved PRD
+  becomes a numbered test scenario in Phase 3
+  (`testing-spec/test-spec-writer`), tying every test back to a
+  stakeholder-approved acceptance condition.
+- **The original is preserved.** The stakeholder's original title and body
+  — before `prd-writer` rewrote them — are kept as a one-off, immutable
+  snapshot comment marked
+  `<!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->`. It stays
+  as first captured even if the PRD is rewritten after rejection,
+  preserving the audit trail under the
+  [P-10](02-principles.md#p-10--agents-draft-humans-decide) carve-out that
+  lets `prd-writer` edit issue title and body.
 
 ---
 

@@ -229,7 +229,7 @@ Agents own git commits (write files, `git add`, `git commit`, `git push`
 to their branch). The orchestrator owns the PR object (create, ready,
 merge). Agents may read issues and PRs freely; they must not call
 `gh pr create`, `gh pr ready`, or `gh pr merge`. See
-[P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle).
+[P-16](02-principles.md#p-16--git-commit-ownership-two-modes).
 
 ### Automatic issue close and branch delete
 

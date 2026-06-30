@@ -59,29 +59,9 @@ an adjacent agent without losing the separation of concerns that matters.
 | `adr-proposer` → `architect` | ADR logic runs as the last step of the architect's work | No separate gate |
 | `product-standards-checker` → `prd-writer` | Standards check runs inline; violations appear in the PRD comment | `01_product_docs/prd-writer:approved` |
 
-### Detail
-
-**`task-decomposer` absorbs `dependency-planner`.** The merged agent produces
-both the ordered child task list and the critical-path dependency order. Nothing
-is lost — the output is richer than `task-decomposer` alone and identical in
-shape to what `dependency-planner` would have produced separately. The single
-agent posts both in one comment. Gate: `plan:approved`.
-
-**`test-runner` absorbs `coverage-enforcer`.** The merged agent runs the test
-suite and computes the coverage delta in one pass, then posts both in one
-comment. The `coverage:approved` gate applies to the combined output. A single
-rejection-and-rerun cycle covers both concerns.
-
-**`architect` runs `adr-proposer` logic inline.** At the end of its work, the
-architect evaluates whether any decision in the design is ADR-worthy. If no ADR
-is needed, it notes this explicitly. If ADRs are needed, it drafts stubs in the
-same design comment. The stubs are reviewed as part of `design:approved`. There
-is no separate `adr-proposer:review` gate.
-
-**`prd-writer` runs `product-standards-checker` inline.** Violations of
-product-layer standards are noted directly in the PRD comment and must be
-resolved before the stakeholder applies `01_product_docs/prd-writer:approved`. The checker does not
-post a separate comment or require a separate label.
+Each merge folds a simple agent into an adjacent one and routes both outputs
+through the surviving agent's gate; no separation of concerns that matters is
+lost.
 
 ---
 
@@ -90,10 +70,18 @@ post a separate comment or require a separate label.
 The pipeline is delivered in four phases. Each phase is a superset of the
 previous; nothing from an earlier phase is removed when the next phase is added.
 
-### Phase 0 — Skeleton (current state)
+> **Status note.** The shipped pipeline has diverged from the agent names and
+> phase numbering planned below. The live system runs phases `01_product_docs`,
+> `03_execute`, and `00_ondemand` (issue-classifier, prd-writer, create-pr,
+> prd-docs-updater, coder, ci-gate, merge-conflict, pr-reviewer, plus the
+> on-demand agents). The phase plan here is retained as the original direction;
+> `pipeline/pipeline.json` and the generated views are authoritative for what
+> actually exists.
 
-The orchestrator Python skeleton and `pipeline.json` exist. Agents are not yet
-running. This is the baseline from which Phase 1 is built.
+### Phase 0 — Skeleton
+
+The orchestrator Python skeleton and `pipeline.json` exist. This was the
+baseline from which the core loop was built.
 
 ### Phase 1 — Core loop
 
