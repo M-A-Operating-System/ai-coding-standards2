@@ -528,15 +528,23 @@ def install_requirements(
     if dst.exists():
         print(f"  SKIP   requirements.txt  (exists; add packages there directly)")
         return False
+    src = SUBMODULE_ROOT / "requirements.txt"
+    if src.exists():
+        runtime_deps = "\n".join(
+            ln for ln in src.read_text().splitlines()
+            if ln.strip() and not ln.strip().startswith("pytest")
+        ) + "\n"
+    else:
+        runtime_deps = "requests\n"
     content = (
         "# Runtime dependencies for the AI Agile pipeline orchestrator.\n"
         f"# Seeded from {SUBMODULE_NAME}/requirements.txt — never overwritten by sync.\n"
         "# When the submodule adds new runtime deps, mirror them here manually.\n"
         "# Add project-specific packages below.\n"
-        "requests\n"
+        f"{runtime_deps}"
     )
     print(f"  Requirements: → {dst}")
-    return write_file(dst, content, force=True, dry_run=dry_run)
+    return write_file(dst, content, force=False, dry_run=dry_run)
 
 
 def _managed_standards_files() -> list[str]:
@@ -678,7 +686,7 @@ def untrack_managed_paths(consuming_root: Path, dry_run: bool) -> int:
     return removed
 
 
-def print_followup_seed(consuming_root: Path) -> None:
+def print_followup_seed() -> None:
     print()
     print("Done. Two steps to finish:")
     print()
@@ -702,7 +710,7 @@ def print_followup_seed(consuming_root: Path) -> None:
     print(f"     commands and standards, drops sync-claude.yml and other workflows,")
     print(f"     and commits everything. After it completes, open a test issue.")
     print()
-    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/agile/.")
+    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
 
 
 def print_followup(consuming_root: Path) -> None:
@@ -721,7 +729,8 @@ def print_followup(consuming_root: Path) -> None:
     print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
-    print(f"             .gitignore")
+    print(f"             .gitignore \\")
+    print(f"             requirements.txt")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
     print(f"     git push")
     print()
@@ -734,7 +743,7 @@ def print_followup(consuming_root: Path) -> None:
     print(f"     The orchestrator workflow fires on issue-opened; expect")
     print(f"     `01_product_docs/issue-classifier:wip` then `:complete` labels.")
     print()
-    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/agile/.")
+    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
 
 
 def parse_args() -> argparse.Namespace:
@@ -782,7 +791,8 @@ def main() -> int:
         # developers who try to place standards files manually before setup.
         install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
         add_gitignore_entries(consuming_root, args.dry_run, include_standards=False)
-        print_followup_seed(consuming_root)
+        untrack_managed_paths(consuming_root, args.dry_run)
+        print_followup_seed()
         return 0
 
     install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
