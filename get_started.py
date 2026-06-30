@@ -132,7 +132,7 @@ def write_file(
         print(f"  WOULD  {path}  ({len(content)} bytes)")
         return True
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
     print(f"  WROTE  {path}")
     return True
 
@@ -206,7 +206,7 @@ def install_standards(
                 written += 1
             continue
 
-        content = src.read_text().replace(
+        content = src.read_text(encoding="utf-8").replace(
             '"../pipeline/schemas/standards.schema.json"',
             f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
         )
@@ -313,7 +313,7 @@ def _install_agents_copy(
     for src in sorted(src_dir.rglob("*.md")):
         rel = src.relative_to(src_dir)
         dst = dst_dir / rel
-        if write_file(dst, src.read_text(), force, dry_run):
+        if write_file(dst, src.read_text(encoding="utf-8"), force, dry_run):
             written += 1
 
     # Remove stale agents that are no longer in the submodule.
@@ -348,7 +348,7 @@ def install_slash_commands(
     written = 0
     for src in sorted(src_dir.glob("*.md")):
         dst = dst_dir / src.name
-        original = src.read_text()
+        original = src.read_text(encoding="utf-8")
         rewritten = rewrite_paths(original)
         if rewritten != original:
             print(f"    (rewriting paths in {src.name})")
@@ -427,7 +427,7 @@ def install_orchestrator_workflows(
             print(f"  SKIP   {name}  ({src} missing)")
             continue
         print(f"  Orchestrator workflow ({name}): → {dst}")
-        content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+        content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
         if write_file(dst, content, force, dry_run):
             written += 1
     return written
@@ -445,7 +445,7 @@ def install_bootstrap_labels_workflow(
         print(f"  SKIP   bootstrap-labels workflow  ({src} missing)")
         return False
     print(f"  Bootstrap-labels workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
     return write_file(dst, content, force, dry_run)
 
 
@@ -461,7 +461,7 @@ def install_label_cleanup_workflow(
         print(f"  SKIP   label-cleanup workflow  ({src} missing)")
         return False
     print(f"  Label-cleanup workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
     return write_file(dst, content, force, dry_run)
 
 
@@ -477,7 +477,7 @@ def install_sync_workflow(
         print(f"  SKIP   sync-claude workflow  ({src} missing)")
         return False
     print(f"  Sync-claude workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
     return write_file(dst, content, force, dry_run)
 
 
@@ -531,7 +531,7 @@ def install_requirements(
     src = SUBMODULE_ROOT / "requirements.txt"
     if src.exists():
         runtime_deps = "\n".join(
-            ln for ln in src.read_text().splitlines()
+            ln for ln in src.read_text(encoding="utf-8").splitlines()
             if ln.strip() and not ln.strip().startswith("pytest")
         ) + "\n"
     else:
@@ -596,7 +596,7 @@ def add_gitignore_entries(
         *(_managed_standards_files() if include_standards else []),
     ]
 
-    existing_lines = set(gitignore.read_text().splitlines()) if gitignore.exists() else set()
+    existing_lines = set(gitignore.read_text(encoding="utf-8").splitlines()) if gitignore.exists() else set()
 
     to_add = [p for p in patterns if p not in existing_lines]
     if not to_add:
