@@ -56,7 +56,7 @@ concurrency:
 jobs:
   # ─── First-time setup ────────────────────────────────────────────────────────
   # Run this job once after adding ai-coding-standards2 as a submodule:
-  #   Actions → Pipeline Orchestrator → Run workflow → ✓ First-time setup
+  #   Actions → Pipeline Orchestrator → Run workflow → OK: First-time setup
   # It calls get_started.py --force on a Linux runner, which creates the
   # .claude/agents symlink, copies slash commands and standards, and drops all
   # remaining workflow files — then commits and pushes everything.
@@ -105,18 +105,18 @@ jobs:
           git add requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "✓ Already fully set up — nothing to commit."
+            echo "OK: Already fully set up — nothing to commit."
           else
             git commit -m "chore: AI first-time setup — wire up ai-coding-standards2"
             # Try a direct push first. If branch protection rules block it,
             # fall back to a PR branch so the commit is not lost.
             if git push origin HEAD 2>&1; then
-              echo "✓ Pushed directly to the default branch."
+              echo "OK: Pushed directly to the default branch."
             else
               SETUP_BRANCH="ai-standards-setup"
               git push origin HEAD:refs/heads/$SETUP_BRANCH --force
               echo ""
-              echo "⚠️  Direct push was rejected (branch protection rules apply)."
+              echo "WARNING:  Direct push was rejected (branch protection rules apply)."
               echo "   Branch '$SETUP_BRANCH' has been created with the setup commit."
               echo "   Open a pull request from that branch to complete onboarding."
             fi

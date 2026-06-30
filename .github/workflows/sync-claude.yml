@@ -94,7 +94,7 @@ jobs:
           git add requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "✓ .claude is already in sync with the submodule — nothing to commit."
+            echo "OK: .claude is already in sync with the submodule -- nothing to commit."
           else
             git commit -m "chore: sync .claude and workflows from ai-coding-standards2 submodule"
             git push origin HEAD
