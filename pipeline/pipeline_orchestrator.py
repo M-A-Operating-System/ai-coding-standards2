@@ -193,6 +193,10 @@ class AgentDef:
     def blocked_label(self) -> str:
         return f"{self.label_key}:{STATUS_BLOCKED}"
 
+    @property
+    def skipped_label(self) -> str:
+        return f"{self.label_key}:{STATUS_SKIPPED}"
+
     def status_label(self, status: str) -> str:
         return f"{self.label_key}:{status}"
 
@@ -974,14 +978,17 @@ def _handle_review_loop(
             "could not remove %s on #%d: %s", agent_def.review_label, work_item.number, exc
         )
 
-    # Clear target's :complete so it can be re-triggered
-    try:
-        gh.remove_label(work_item.number, target_def.complete_label)
-        labels.discard(target_def.complete_label)
-    except Exception as exc:
-        log.warning(
-            "could not remove %s on #%d: %s", target_def.complete_label, work_item.number, exc
-        )
+    # Clear target's :complete (or :skipped if it was bypassed) so it can be re-triggered.
+    for lbl in (target_def.complete_label, target_def.skipped_label):
+        if lbl not in labels:
+            continue
+        try:
+            gh.remove_label(work_item.number, lbl)
+            labels.discard(lbl)
+        except Exception as exc:
+            log.warning(
+                "could not remove %s on #%d: %s", lbl, work_item.number, exc
+            )
 
     # Clear any intermediate steps that must re-run (e.g. ci-gate between coder and pr-reviewer)
     also_cleared: list[str] = []
@@ -990,14 +997,20 @@ def _handle_review_loop(
         if also_def is None:
             log.warning("review_loop also_clear '%s' not found in pipeline — skipping", also_name)
             continue
-        try:
-            gh.remove_label(work_item.number, also_def.complete_label)
-            labels.discard(also_def.complete_label)
+        cleared_any = False
+        for lbl in (also_def.complete_label, also_def.skipped_label):
+            if lbl not in labels:
+                continue
+            try:
+                gh.remove_label(work_item.number, lbl)
+                labels.discard(lbl)
+                cleared_any = True
+            except Exception as exc:
+                log.warning(
+                    "could not remove %s on #%d: %s", lbl, work_item.number, exc
+                )
+        if cleared_any:
             also_cleared.append(also_name)
-        except Exception as exc:
-            log.warning(
-                "could not remove %s on #%d: %s", also_def.complete_label, work_item.number, exc
-            )
 
     also_suffix = (
         f" (also cleared: {', '.join(f'`{n}`' for n in also_cleared)})" if also_cleared else ""
@@ -1068,15 +1081,32 @@ def _fetch_unresolved_human_review_requests(gh: "GitHubClient", pr_number: int) 
     return [r for r in latest_by_reviewer.values() if r.get("state") == "CHANGES_REQUESTED"]
 
 
+def normalize_skipped_labels(
+    labels: set[str],
+    pipeline_map: dict[str, AgentDef],
+) -> set[str]:
+    """Return a copy of labels with :complete synthesized for every :skipped agent.
+
+    Downstream eligibility checks (dependencies_complete, trigger_label_present)
+    only need to test for :complete — the "is done?" concept lives here, once.
+    """
+    normalized = set(labels)
+    for adef in pipeline_map.values():
+        if adef.skipped_label in labels:
+            normalized.add(adef.complete_label)
+    return normalized
+
+
 def dependencies_complete(
     labels: set[str],
     agent_def: AgentDef,
     pipeline_map: dict[str, AgentDef],
 ) -> bool:
-    """
-    Return True if every dependency is complete, where complete means:
-      - The label {dep}:complete exists on the issue/PR, AND
-      - If the dependency has a human_gate_label, that label also exists.
+    """Return True if every dependency's :complete label is present and its human gate is satisfied.
+
+    ``labels`` must already be normalized via :func:`normalize_skipped_labels` before
+    this call — a skipped dependency's synthesized ``:complete`` label must be present
+    for it to be treated as done.
     """
     for dep_name in agent_def.dependencies:
         dep = pipeline_map.get(dep_name)
@@ -1087,7 +1117,10 @@ def dependencies_complete(
         if dep.complete_label not in labels:
             return False
 
-        if dep.human_gate_after and dep.human_gate_label:
+        # Human gate only applies when the dep actually ran — a skipped dep
+        # never ran, so its gate label was never applied.
+        dep_skipped = dep.skipped_label in labels
+        if not dep_skipped and dep.human_gate_after and dep.human_gate_label:
             if dep.human_gate_label not in labels:
                 log.debug(
                     "  %s complete but human gate '%s' not yet applied",
@@ -1100,12 +1133,18 @@ def dependencies_complete(
 
 def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     """Return True if the label trigger for this agent is satisfied."""
-    trigger = agent_def.trigger
-    if "label" in trigger:
-        return trigger["label"] in labels
-    # Event and schedule triggers are handled externally (GitHub Actions).
-    # When running interactively, treat them as always-eligible.
-    return True
+    if "label" not in agent_def.trigger:
+        # Event and schedule triggers are handled externally (GitHub Actions).
+        # When running interactively, treat them as always-eligible.
+        return True
+    label = agent_def.trigger["label"]
+    if not isinstance(label, str):
+        log.warning(
+            "agent %s has non-string trigger label %r — treating as ineligible",
+            agent_def.agent, label,
+        )
+        return False
+    return label in labels
 
 
 _CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike"}
@@ -2217,7 +2256,7 @@ def _apply_failed(
         "",
         "**To recover:**",
         f"- Fix the underlying error, then **remove** the `{agent_def.failed_label}` label to retry, or",
-        f"- Apply the `{agent_def.status_label(STATUS_SKIPPED)}` label to bypass this agent on this item.",
+        f"- Apply the `{agent_def.skipped_label}` label to bypass this agent on this item.",
         "",
         footer,
     ]
@@ -3169,6 +3208,10 @@ def process_work_item(
         )
         work_item.labels = labels
 
+    # Synthesize :complete for every :skipped agent so downstream eligibility
+    # checks express "is done?" as a single :complete test throughout.
+    labels = normalize_skipped_labels(labels, pipeline_map)
+
     for agent_def in agents:
         should_run = _should_run(agent_def, work_item, labels, pipeline_map, concurrency)
         if should_run is None:
@@ -3211,7 +3254,7 @@ def process_work_item(
                 pre_branch, invoked_at, attempt, labels, concurrency,
                 gh, session_id, repo, pipeline_map,
             )
-            labels = work_item.labels  # sync after _apply_result may have refreshed labels
+            labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
             if stop:
                 break
 

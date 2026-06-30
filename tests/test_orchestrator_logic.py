@@ -17,6 +17,7 @@ from pipeline_orchestrator import (
     _apply_result,
     _count_running,
     _handle_review_loop,
+    normalize_skipped_labels,
     _make_audit_event,
     _emit_audit_event,
     _run_agent,
@@ -26,6 +27,8 @@ from pipeline_orchestrator import (
     parse_frontmatter,
     process_work_item,
     _compute_agent_session_id,
+    dependencies_complete,
+    trigger_label_present,
     main,
 )
 
@@ -1751,6 +1754,63 @@ class TestHandleReviewLoop:
         assert target.complete_label not in result
         # review_loop does not set review-cycle:N (dispatch does)
         assert not any(l.startswith("review-cycle:") for l in result)
+
+    def test_clears_target_skipped_instead_of_complete(self):
+        """If target was :skipped, review loop clears :skipped so it can re-run."""
+        reviewer = self._reviewer_def()
+        target = self._target_def()
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target}
+        # Target was bypassed by human — :skipped, not :complete
+        labels = {reviewer.review_label, target.skipped_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        gh.remove_label.assert_any_call(wi.number, target.skipped_label)
+        assert target.skipped_label not in result
+        # :complete was not in the local label set so no API call is made for it.
+        for call in gh.remove_label.call_args_list:
+            assert call[0][1] != target.complete_label, (
+                "remove_label should not be called for labels not in the local set"
+            )
+
+    def test_also_clear_removes_skipped_variant(self):
+        """also_clear entries have their :skipped label removed when :complete is absent."""
+        reviewer = self._reviewer_def()
+        reviewer.review_loop["also_clear"] = ["03_execute/ci-gate"]
+        target = self._target_def()
+        ci_gate = self._target_def("03_execute/ci-gate")
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target, ci_gate.agent: ci_gate}
+        # ci-gate was skipped, not completed
+        labels = {reviewer.review_label, target.complete_label, ci_gate.skipped_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        gh.remove_label.assert_any_call(wi.number, ci_gate.skipped_label)
+        assert ci_gate.skipped_label not in result
+
+    def test_also_clear_label_remains_when_removal_fails(self):
+        """When both remove_label calls raise, the also_clear label stays in the returned set."""
+        reviewer = self._reviewer_def()
+        reviewer.review_loop["also_clear"] = ["03_execute/ci-gate"]
+        target = self._target_def()
+        ci_gate = self._target_def("03_execute/ci-gate")
+        wi = self._work_item()
+        gh = MagicMock()
+        # Only the also_clear removals should fail — make all calls raise so we can
+        # verify that the label is NOT discarded when the removal errors.
+        gh.remove_label.side_effect = Exception("network error")
+        pipeline_map = {target.agent: target, ci_gate.agent: ci_gate}
+        labels = {reviewer.review_label, target.complete_label, ci_gate.complete_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        # ci-gate:complete was not actually removed from GitHub, so it must still be
+        # in the returned label set — the discard only runs on successful removal.
+        assert ci_gate.complete_label in result
 
 
 # ---------------------------------------------------------------------------
@@ -3774,3 +3834,163 @@ class TestCommitAfterExactlyOnce:
             f"ran {len(commit_calls)}x (double-execution regression)"
         )
         mock_failed.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestNormalizeSkippedLabels
+# ---------------------------------------------------------------------------
+
+class TestNormalizeSkippedLabels:
+    def test_skipped_synthesizes_complete(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        result = normalize_skipped_labels({"prd-writer:skipped"}, pipeline_map)
+        assert "prd-writer:complete" in result
+
+    def test_complete_unchanged(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        result = normalize_skipped_labels({"prd-writer:complete"}, pipeline_map)
+        assert "prd-writer:complete" in result
+        assert "prd-writer:skipped" not in result
+
+    def test_returns_copy_not_original(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        original = {"prd-writer:skipped"}
+        result = normalize_skipped_labels(original, pipeline_map)
+        assert result is not original
+
+    def test_non_pipeline_label_unchanged(self):
+        pipeline_map = {}
+        result = normalize_skipped_labels({"other:skipped"}, pipeline_map)
+        assert result == {"other:skipped"}
+        assert "other:complete" not in result
+
+    def test_empty_labels_unchanged(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        result = normalize_skipped_labels(set(), pipeline_map)
+        assert result == set()
+
+    def test_multiple_skipped_agents_all_synthesized(self):
+        a = _make_agent_def("01_product_docs/prd-writer")
+        b = _make_agent_def("03_execute/coder")
+        pipeline_map = {"01_product_docs/prd-writer": a, "03_execute/coder": b}
+        result = normalize_skipped_labels({"prd-writer:skipped", "coder:skipped"}, pipeline_map)
+        assert "prd-writer:complete" in result
+        assert "coder:complete" in result
+
+
+# ---------------------------------------------------------------------------
+# TestDependenciesComplete
+# ---------------------------------------------------------------------------
+
+
+class TestDependenciesComplete:
+    def test_no_dependencies_always_true(self):
+        agent = _make_agent_def("03_execute/coder")
+        assert dependencies_complete(set(), agent, {}) is True
+
+    def test_dep_complete_passes(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        assert dependencies_complete({"prd-writer:complete"}, agent, pipeline_map) is True
+
+    def test_dep_missing_blocks(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        assert dependencies_complete(set(), agent, pipeline_map) is False
+
+    def test_dep_skipped_unblocks(self):
+        # After normalize_skipped_labels runs, :skipped agents have :complete synthesized.
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        normalized = {"prd-writer:skipped", "prd-writer:complete"}
+        assert dependencies_complete(normalized, agent, pipeline_map) is True
+
+    def test_unknown_dep_blocks(self):
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["nonexistent/agent"]
+        assert dependencies_complete(set(), agent, {}) is False
+
+    def test_human_gate_blocks_when_gate_absent(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        dep.human_gate_after = True
+        dep.human_gate_label = "prd-writer:approved"
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        assert dependencies_complete({"prd-writer:complete"}, agent, pipeline_map) is False
+
+    def test_human_gate_passes_when_gate_present(self):
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        dep.human_gate_after = True
+        dep.human_gate_label = "prd-writer:approved"
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        assert dependencies_complete({"prd-writer:complete", "prd-writer:approved"}, agent, pipeline_map) is True
+
+    def test_human_gate_bypassed_when_dep_skipped(self):
+        # After normalization, skipped dep has both :skipped and :complete in labels.
+        # Gate must be bypassed because the dep never ran (gate label was never applied).
+        dep = _make_agent_def("01_product_docs/prd-writer")
+        dep.human_gate_after = True
+        dep.human_gate_label = "prd-writer:approved"
+        agent = _make_agent_def("03_execute/coder")
+        agent.dependencies = ["01_product_docs/prd-writer"]
+        pipeline_map = {"01_product_docs/prd-writer": dep}
+        normalized = {"prd-writer:skipped", "prd-writer:complete"}
+        assert dependencies_complete(normalized, agent, pipeline_map) is True
+
+
+# ---------------------------------------------------------------------------
+# TestTriggerLabelPresent
+# ---------------------------------------------------------------------------
+
+class TestTriggerLabelPresent:
+    def _agent_with_trigger(self, trigger: dict) -> AgentDef:
+        agent = _make_agent_def()
+        agent.trigger = trigger
+        return agent
+
+    def test_no_label_trigger_always_true(self):
+        agent = self._agent_with_trigger({})
+        assert trigger_label_present(set(), agent) is True
+
+    def test_label_trigger_present(self):
+        agent = self._agent_with_trigger({"label": "prd-writer:complete"})
+        assert trigger_label_present({"prd-writer:complete"}, agent) is True
+
+    def test_label_trigger_absent(self):
+        agent = self._agent_with_trigger({"label": "prd-writer:complete"})
+        assert trigger_label_present(set(), agent) is False
+
+    def test_complete_trigger_satisfied_after_normalization(self):
+        # normalize_skipped_labels adds :complete when :skipped is present;
+        # trigger_label_present sees both and matches on :complete.
+        agent = self._agent_with_trigger({"label": "prd-docs-updater:complete"})
+        normalized = {"prd-docs-updater:skipped", "prd-docs-updater:complete"}
+        assert trigger_label_present(normalized, agent) is True
+
+    def test_non_complete_trigger_not_synthesized(self):
+        # normalization only adds :complete, not :approved — gate label must be explicitly applied
+        agent = self._agent_with_trigger({"label": "prd-writer:approved"})
+        assert trigger_label_present({"prd-writer:skipped", "prd-writer:complete"}, agent) is False
+
+    def test_event_trigger_always_true(self):
+        agent = self._agent_with_trigger({"event": "pull_request.closed"})
+        assert trigger_label_present(set(), agent) is True
+
+    def test_null_label_blocks_agent(self):
+        # {"label": null} in pipeline.json is a misconfiguration — must block, not fire unconditionally
+        agent = self._agent_with_trigger({"label": None})
+        assert trigger_label_present(set(), agent) is False
+        assert trigger_label_present({"anything:complete"}, agent) is False
