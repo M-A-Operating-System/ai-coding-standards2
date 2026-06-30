@@ -1075,13 +1075,20 @@ def _fetch_unresolved_human_review_requests(gh: "GitHubClient", pr_number: int) 
     return [r for r in latest_by_reviewer.values() if r.get("state") == "CHANGES_REQUESTED"]
 
 
-def _label_satisfied(label: str, labels: set[str]) -> bool:
-    """Return True if label is present, or its :skipped equivalent is (for :complete triggers)."""
-    if label in labels:
-        return True
-    if label.endswith(f":{STATUS_COMPLETE}"):
-        return label.removesuffix(f":{STATUS_COMPLETE}") + f":{STATUS_SKIPPED}" in labels
-    return False
+def normalize_skipped_labels(
+    labels: set[str],
+    pipeline_map: dict[str, AgentDef],
+) -> set[str]:
+    """Return a copy of labels with :complete synthesized for every :skipped agent.
+
+    Downstream eligibility checks (dependencies_complete, trigger_label_present)
+    only need to test for :complete — the "is done?" concept lives here, once.
+    """
+    normalized = set(labels)
+    for adef in pipeline_map.values():
+        if adef.skipped_label in labels:
+            normalized.add(adef.complete_label)
+    return normalized
 
 
 def dependencies_complete(
@@ -1089,26 +1096,19 @@ def dependencies_complete(
     agent_def: AgentDef,
     pipeline_map: dict[str, AgentDef],
 ) -> bool:
-    """
-    Return True if every dependency is complete, where complete means:
-      - The label {dep}:complete OR {dep}:skipped exists on the issue/PR, AND
-      - If the dependency has a human_gate_label, that label also exists.
-    """
+    """Return True if every dependency's :complete label is present and its human gate is satisfied."""
     for dep_name in agent_def.dependencies:
         dep = pipeline_map.get(dep_name)
         if dep is None:
             log.warning("Unknown dependency: %s (required by %s)", dep_name, agent_def.agent)
             return False
 
-        if not _label_satisfied(dep.complete_label, labels):
+        if dep.complete_label not in labels:
             return False
 
-        # True when dep was satisfied only via :skipped (not via :complete).
-        # Derive from the absence of :complete rather than presence of :skipped so that
-        # stale :skipped debris coexisting with :complete doesn't bypass the human gate.
-        dep_skipped = dep.complete_label not in labels
-        # Human gate only applies when the dep actually ran and completed —
-        # a skipped dep never ran, so its gate label was never applied.
+        # Human gate only applies when the dep actually ran — a skipped dep
+        # never ran, so its gate label was never applied.
+        dep_skipped = dep.skipped_label in labels
         if not dep_skipped and dep.human_gate_after and dep.human_gate_label:
             if dep.human_gate_label not in labels:
                 log.debug(
@@ -1133,7 +1133,7 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
             agent_def.agent, label,
         )
         return False
-    return _label_satisfied(label, labels)
+    return label in labels
 
 
 _CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike"}
@@ -3196,6 +3196,10 @@ def process_work_item(
             session_id=session_id, repo=repo,
         )
         work_item.labels = labels
+
+    # Synthesize :complete for every :skipped agent so downstream eligibility
+    # checks express "is done?" as a single :complete test throughout.
+    labels = normalize_skipped_labels(labels, pipeline_map)
 
     for agent_def in agents:
         should_run = _should_run(agent_def, work_item, labels, pipeline_map, concurrency)
