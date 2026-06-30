@@ -996,15 +996,18 @@ def _handle_review_loop(
         if also_def is None:
             log.warning("review_loop also_clear '%s' not found in pipeline — skipping", also_name)
             continue
+        cleared_any = False
         for lbl in (also_def.complete_label, also_def.skipped_label):
             try:
                 gh.remove_label(work_item.number, lbl)
                 labels.discard(lbl)
+                cleared_any = True
             except Exception as exc:
                 log.warning(
                     "could not remove %s on #%d: %s", lbl, work_item.number, exc
                 )
-        also_cleared.append(also_name)
+        if cleared_any:
+            also_cleared.append(also_name)
 
     also_suffix = (
         f" (also cleared: {', '.join(f'`{n}`' for n in also_cleared)})" if also_cleared else ""
@@ -3243,7 +3246,7 @@ def process_work_item(
                 pre_branch, invoked_at, attempt, labels, concurrency,
                 gh, session_id, repo, pipeline_map,
             )
-            labels = work_item.labels  # sync after _apply_result may have refreshed labels
+            labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
             if stop:
                 break
 

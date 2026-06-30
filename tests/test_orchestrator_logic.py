@@ -1790,6 +1790,26 @@ class TestHandleReviewLoop:
         gh.remove_label.assert_any_call(wi.number, ci_gate.skipped_label)
         assert ci_gate.skipped_label not in result
 
+    def test_also_clear_label_remains_when_removal_fails(self):
+        """When both remove_label calls raise, the also_clear label stays in the returned set."""
+        reviewer = self._reviewer_def()
+        reviewer.review_loop["also_clear"] = ["03_execute/ci-gate"]
+        target = self._target_def()
+        ci_gate = self._target_def("03_execute/ci-gate")
+        wi = self._work_item()
+        gh = MagicMock()
+        # Only the also_clear removals should fail — make all calls raise so we can
+        # verify that the label is NOT discarded when the removal errors.
+        gh.remove_label.side_effect = Exception("network error")
+        pipeline_map = {target.agent: target, ci_gate.agent: ci_gate}
+        labels = {reviewer.review_label, target.complete_label, ci_gate.complete_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        # ci-gate:complete was not actually removed from GitHub, so it must still be
+        # in the returned label set — the discard only runs on successful removal.
+        assert ci_gate.complete_label in result
+
 
 # ---------------------------------------------------------------------------
 # TestDispatchReviewCycleCounter — review-cycle:N set at coder dispatch time
