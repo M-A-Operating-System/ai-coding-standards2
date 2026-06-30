@@ -265,6 +265,20 @@
         "Bash(python3 *)"
       ],
       "description": "Ad-hoc agent that scans the consuming repo for existing knowledge files and ground-truth artifacts, then converts the timeless rules they imply into machine-readable standards/*.json. Presents proposed standards for human approval before writing. Triggered by applying the standards-migrator:requested label to any issue."
+    },
+
+    {
+      "agent": "00_ondemand/delete-branch",
+      "type": "script",
+      "script": ".github/scripts/delete-branch.sh",
+      "phase": "00_ondemand",
+      "object": ["pr"],
+      "trigger": {
+        "event": "pull_request.closed"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "description": "Scripted step: deletes the head branch (issue-{N}) when a PR closes (merged or abandoned). Called directly from _wake() when GITHUB_EVENT_NAME=pull_request and action=closed; skips branches that do not match the issue-{N} pattern or have already been deleted. Registered here so the pipeline config is the single source of truth for all event handlers."
     }
 
   ]

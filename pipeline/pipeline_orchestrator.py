@@ -3881,6 +3881,68 @@ class RunContext:
     default_extra_tools: Optional[list]
 
 
+def _read_pr_event_action() -> str:
+    """Return the GitHub pull_request event action from GITHUB_EVENT_PATH.
+
+    Reads the JSON event payload written by GitHub Actions. Returns the action
+    string (e.g. "closed", "opened") or "" when unavailable (no env var,
+    missing file, or malformed JSON). Never raises.
+    """
+    event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+    if not event_path:
+        return ""
+    try:
+        with open(event_path) as f:
+            data = json.load(f)
+        return data.get("action", "")
+    except (OSError, json.JSONDecodeError, ValueError):
+        return ""
+
+
+def _call_delete_branch(repo: str, branch: str) -> None:
+    """Invoke delete-branch.sh to remove a branch when a PR closes.
+
+    Logs the outcome but never raises — branch cleanup is best-effort and
+    must not abort the orchestrator process on partial failure.
+    """
+    if not branch:
+        log.warning("_call_delete_branch: BRANCH is empty — skipping")
+        return
+    if not repo:
+        log.warning("_call_delete_branch: REPO is empty — skipping")
+        return
+
+    script = SUBMODULE_ROOT / ".github/scripts/delete-branch.sh"
+    if not script.exists():
+        log.warning(
+            "delete-branch.sh not found at %s — branch '%s' not cleaned up",
+            script, branch,
+        )
+        return
+
+    env = {**os.environ, "REPO": repo, "BRANCH": branch}
+    log.info("Deleting branch '%s' from %s (pull_request.closed)", branch, repo)
+    try:
+        result = subprocess.run(
+            ["bash", str(script)],
+            env=env,
+            timeout=60,
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout:
+            log.info("delete-branch.sh stdout: %s", result.stdout.strip())
+        if result.returncode != 0:
+            log.warning(
+                "delete-branch.sh exited %d for branch '%s': %s",
+                result.returncode, branch, (result.stderr or "").strip(),
+            )
+    except subprocess.TimeoutExpired:
+        log.warning("delete-branch.sh timed out for branch '%s'", branch)
+    except OSError as exc:
+        log.warning("delete-branch.sh could not run for branch '%s': %s", branch, exc)
+
+
 def _wake(args) -> "Optional[RunContext]":
     """Wake up: honour control flags, evaluate pause/stop, authenticate, load
     the pipeline, then fetch and priority-order the work.
@@ -3904,6 +3966,20 @@ def _wake(args) -> "Optional[RunContext]":
         else:
             log.info("No stop marker was set.")
         return None
+
+    # Handle pull_request.closed: delete the branch and exit without processing
+    # any pipeline work. Runs before pause/stop checks so closed-PR branches are
+    # cleaned up even when the pipeline is paused or stopped.
+    if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
+        _action = _read_pr_event_action()
+        if _action == "closed":
+            _branch = os.environ.get("GITHUB_HEAD_REF", "")
+            _repo = args.repo or os.environ.get("GITHUB_REPOSITORY", "")
+            log.info(
+                "pull_request.closed: cleaning up branch '%s' from %s", _branch, _repo
+            )
+            _call_delete_branch(_repo, _branch)
+            return None
 
     # If a previous run hit an Anthropic rate limit and wrote the pause
     # marker, exit early. The scheduled tick will retry once the marker
