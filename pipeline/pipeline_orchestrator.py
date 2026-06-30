@@ -1084,10 +1084,13 @@ def dependencies_complete(
             log.warning("Unknown dependency: %s (required by %s)", dep_name, agent_def.agent)
             return False
 
-        if dep.complete_label not in labels and dep.status_label(STATUS_SKIPPED) not in labels:
+        dep_skipped = dep.status_label(STATUS_SKIPPED) in labels
+        if dep.complete_label not in labels and not dep_skipped:
             return False
 
-        if dep.human_gate_after and dep.human_gate_label:
+        # Human gate only applies when the dep actually ran and completed —
+        # a skipped dep never ran, so its gate label was never applied.
+        if not dep_skipped and dep.human_gate_after and dep.human_gate_label:
             if dep.human_gate_label not in labels:
                 log.debug(
                     "  %s complete but human gate '%s' not yet applied",
