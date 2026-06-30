@@ -1755,6 +1755,42 @@ class TestHandleReviewLoop:
         # review_loop does not set review-cycle:N (dispatch does)
         assert not any(l.startswith("review-cycle:") for l in result)
 
+    def test_clears_target_skipped_instead_of_complete(self):
+        """If target was :skipped (not :complete), review loop clears :skipped so it can re-run."""
+        reviewer = self._reviewer_def()
+        target = self._target_def()
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target}
+        # Target was bypassed by human — :skipped, not :complete
+        labels = {reviewer.review_label, target.skipped_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        gh.remove_label.assert_any_call(wi.number, target.skipped_label)
+        assert target.skipped_label not in result
+        # :complete was not present so should not have been attempted
+        complete_remove_calls = [c for c in gh.remove_label.call_args_list
+                                  if c[0][1] == target.complete_label]
+        assert complete_remove_calls == []
+
+    def test_also_clear_removes_skipped_variant(self):
+        """also_clear entries have their :skipped label removed when :complete is absent."""
+        reviewer = self._reviewer_def()
+        reviewer.review_loop["also_clear"] = ["03_execute/ci-gate"]
+        target = self._target_def()
+        ci_gate = self._target_def("03_execute/ci-gate")
+        wi = self._work_item()
+        gh = MagicMock()
+        pipeline_map = {target.agent: target, ci_gate.agent: ci_gate}
+        # ci-gate was skipped, not completed
+        labels = {reviewer.review_label, target.complete_label, ci_gate.skipped_label}
+
+        result = _handle_review_loop(gh, reviewer, wi, labels, pipeline_map)
+
+        gh.remove_label.assert_any_call(wi.number, ci_gate.skipped_label)
+        assert ci_gate.skipped_label not in result
+
 
 # ---------------------------------------------------------------------------
 # TestDispatchReviewCycleCounter — review-cycle:N set at coder dispatch time
@@ -3808,9 +3844,6 @@ class TestLabelSatisfied:
 # TestDependenciesComplete
 # ---------------------------------------------------------------------------
 
-def _make_pipeline_map(*names: str) -> dict[str, AgentDef]:
-    return {n: _make_agent_def(n) for n in names}
-
 
 class TestDependenciesComplete:
     def test_no_dependencies_always_true(self):
@@ -3899,3 +3932,9 @@ class TestTriggerLabelPresent:
     def test_event_trigger_always_true(self):
         agent = self._agent_with_trigger({"event": "pull_request.closed"})
         assert trigger_label_present(set(), agent) is True
+
+    def test_null_label_blocks_agent(self):
+        # {"label": null} in pipeline.json is a misconfiguration — must block, not fire unconditionally
+        agent = self._agent_with_trigger({"label": None})
+        assert trigger_label_present(set(), agent) is False
+        assert trigger_label_present({"anything:complete"}, agent) is False

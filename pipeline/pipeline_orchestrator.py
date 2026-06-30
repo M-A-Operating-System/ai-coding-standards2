@@ -978,14 +978,17 @@ def _handle_review_loop(
             "could not remove %s on #%d: %s", agent_def.review_label, work_item.number, exc
         )
 
-    # Clear target's :complete so it can be re-triggered
-    try:
-        gh.remove_label(work_item.number, target_def.complete_label)
-        labels.discard(target_def.complete_label)
-    except Exception as exc:
-        log.warning(
-            "could not remove %s on #%d: %s", target_def.complete_label, work_item.number, exc
-        )
+    # Clear target's :complete (or :skipped if it was bypassed) so it can be re-triggered
+    for lbl in (target_def.complete_label, target_def.skipped_label):
+        if lbl not in labels:
+            continue
+        try:
+            gh.remove_label(work_item.number, lbl)
+            labels.discard(lbl)
+        except Exception as exc:
+            log.warning(
+                "could not remove %s on #%d: %s", lbl, work_item.number, exc
+            )
 
     # Clear any intermediate steps that must re-run (e.g. ci-gate between coder and pr-reviewer)
     also_cleared: list[str] = []
@@ -994,14 +997,20 @@ def _handle_review_loop(
         if also_def is None:
             log.warning("review_loop also_clear '%s' not found in pipeline — skipping", also_name)
             continue
-        try:
-            gh.remove_label(work_item.number, also_def.complete_label)
-            labels.discard(also_def.complete_label)
+        cleared_any = False
+        for lbl in (also_def.complete_label, also_def.skipped_label):
+            if lbl not in labels:
+                continue
+            try:
+                gh.remove_label(work_item.number, lbl)
+                labels.discard(lbl)
+                cleared_any = True
+            except Exception as exc:
+                log.warning(
+                    "could not remove %s on #%d: %s", lbl, work_item.number, exc
+                )
+        if cleared_any:
             also_cleared.append(also_name)
-        except Exception as exc:
-            log.warning(
-                "could not remove %s on #%d: %s", also_def.complete_label, work_item.number, exc
-            )
 
     also_suffix = (
         f" (also cleared: {', '.join(f'`{n}`' for n in also_cleared)})" if also_cleared else ""
@@ -1097,10 +1106,10 @@ def dependencies_complete(
             log.warning("Unknown dependency: %s (required by %s)", dep_name, agent_def.agent)
             return False
 
-        dep_skipped = dep.skipped_label in labels
-        if dep.complete_label not in labels and not dep_skipped:
+        if not _label_satisfied(dep.complete_label, labels):
             return False
 
+        dep_skipped = dep.skipped_label in labels
         # Human gate only applies when the dep actually ran and completed —
         # a skipped dep never ran, so its gate label was never applied.
         if not dep_skipped and dep.human_gate_after and dep.human_gate_label:
@@ -1116,12 +1125,18 @@ def dependencies_complete(
 
 def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     """Return True if the label trigger for this agent is satisfied."""
-    label = agent_def.trigger.get("label")
-    if label is not None:
-        return _label_satisfied(label, labels)
-    # Event and schedule triggers are handled externally (GitHub Actions).
-    # When running interactively, treat them as always-eligible.
-    return True
+    if "label" not in agent_def.trigger:
+        # Event and schedule triggers are handled externally (GitHub Actions).
+        # When running interactively, treat them as always-eligible.
+        return True
+    label = agent_def.trigger["label"]
+    if not isinstance(label, str):
+        log.warning(
+            "agent %s has non-string trigger label %r — treating as ineligible",
+            agent_def.agent, label,
+        )
+        return False
+    return _label_satisfied(label, labels)
 
 
 _CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike"}
