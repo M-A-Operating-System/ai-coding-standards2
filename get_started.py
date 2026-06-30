@@ -558,6 +558,7 @@ def _managed_standards_files() -> list[str]:
 def add_gitignore_entries(
     consuming_root: Path,
     dry_run: bool,
+    include_standards: bool = True,
 ) -> int:
     """Append .gitignore entries for get_started-managed files.
 
@@ -570,6 +571,11 @@ def add_gitignore_entries(
         (project-owned adrs.json is intentionally excluded so it remains
          committed)
 
+    ``include_standards`` should be False in --seed mode because
+    install_standards() has not run yet; listing gitignore entries for
+    files that do not exist yet confuses developers who try to manually
+    place standards files before the setup workflow runs.
+
     Idempotent: patterns already present in .gitignore are not re-added.
     Returns the number of new entries written (or that would be written).
     """
@@ -579,7 +585,7 @@ def add_gitignore_entries(
         ".claude/agents",
         ".claude/commands/",
         ".claude/settings.local.json",
-        *_managed_standards_files(),
+        *(_managed_standards_files() if include_standards else []),
     ]
 
     existing_lines = set(gitignore.read_text().splitlines()) if gitignore.exists() else set()
@@ -771,8 +777,11 @@ def main() -> int:
         # developer can commit and push a single file. The workflow's
         # built-in "First-time setup" mode handles everything else on a
         # Linux runner (symlinks, commands, standards, remaining workflows).
+        # Skip standards gitignore entries — install_standards() hasn't run
+        # yet, so listing gitignore paths for non-existent files confuses
+        # developers who try to place standards files manually before setup.
         install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
-        add_gitignore_entries(consuming_root, args.dry_run)
+        add_gitignore_entries(consuming_root, args.dry_run, include_standards=False)
         print_followup_seed(consuming_root)
         return 0
 

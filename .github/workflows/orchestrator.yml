@@ -96,6 +96,7 @@ jobs:
             .claude/agents \
             .claude/commands/ \
             .gitignore \
+            .github/workflows/orchestrator.yml \
             .github/workflows/sync-claude.yml \
             .github/workflows/bootstrap-labels.yml \
             .github/workflows/label-cleanup.yml
@@ -107,7 +108,18 @@ jobs:
             echo "✓ Already fully set up — nothing to commit."
           else
             git commit -m "chore: AI first-time setup — wire up ai-coding-standards2"
-            git push origin HEAD
+            # Try a direct push first. If branch protection rules block it,
+            # fall back to a PR branch so the commit is not lost.
+            if git push origin HEAD 2>&1; then
+              echo "✓ Pushed directly to the default branch."
+            else
+              SETUP_BRANCH="ai-standards-setup"
+              git push origin HEAD:refs/heads/$SETUP_BRANCH --force
+              echo ""
+              echo "⚠️  Direct push was rejected (branch protection rules apply)."
+              echo "   Branch '$SETUP_BRANCH' has been created with the setup commit."
+              echo "   Open a pull request from that branch to complete onboarding."
+            fi
           fi
 
   # ─── Normal pipeline operation ───────────────────────────────────────────────
