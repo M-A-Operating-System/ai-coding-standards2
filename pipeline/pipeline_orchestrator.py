@@ -1075,7 +1075,7 @@ def dependencies_complete(
 ) -> bool:
     """
     Return True if every dependency is complete, where complete means:
-      - The label {dep}:complete exists on the issue/PR, AND
+      - The label {dep}:complete OR {dep}:skipped exists on the issue/PR, AND
       - If the dependency has a human_gate_label, that label also exists.
     """
     for dep_name in agent_def.dependencies:
@@ -1084,7 +1084,7 @@ def dependencies_complete(
             log.warning("Unknown dependency: %s (required by %s)", dep_name, agent_def.agent)
             return False
 
-        if dep.complete_label not in labels:
+        if dep.complete_label not in labels and dep.status_label(STATUS_SKIPPED) not in labels:
             return False
 
         if dep.human_gate_after and dep.human_gate_label:
@@ -1102,7 +1102,14 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     """Return True if the label trigger for this agent is satisfied."""
     trigger = agent_def.trigger
     if "label" in trigger:
-        return trigger["label"] in labels
+        label = trigger["label"]
+        if label in labels:
+            return True
+        # A :complete trigger is also satisfied when the agent was :skipped,
+        # so downstream agents fire even when an upstream step is bypassed.
+        if label.endswith(f":{STATUS_COMPLETE}"):
+            return label[: -len(STATUS_COMPLETE)] + STATUS_SKIPPED in labels
+        return False
     # Event and schedule triggers are handled externally (GitHub Actions).
     # When running interactively, treat them as always-eligible.
     return True
