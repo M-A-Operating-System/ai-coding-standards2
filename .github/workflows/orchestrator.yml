@@ -1,6 +1,6 @@
 name: Pipeline Orchestrator
 
-# Single orchestrator workflow — evaluates every pipeline phase in one pass.
+# Single orchestrator workflow -- evaluates every pipeline phase in one pass.
 #
 # The orchestrator loads all agents from pipeline.json and processes whichever
 # work items are eligible, in dependency order, across every phase. Running the
@@ -31,14 +31,14 @@ on:
   workflow_dispatch:
     inputs:
       setup:
-        description: 'First-time setup — wire up agents, commands, and workflows from the submodule'
+        description: 'First-time setup -- wire up agents, commands, and workflows from the submodule'
         type: boolean
         default: false
       issue_number:
         description: 'Process a single issue/PR number (leave blank for all)'
         required: false
       dry_run:
-        description: 'Dry run — show what would trigger without executing'
+        description: 'Dry run -- show what would trigger without executing'
         type: boolean
         default: false
 
@@ -48,18 +48,18 @@ permissions:
   pull-requests: write
   checks: read
 
-# Only one orchestrator run at a time — concurrent triggers queue.
+# Only one orchestrator run at a time -- concurrent triggers queue.
 concurrency:
   group: pipeline-orchestrator
   cancel-in-progress: false
 
 jobs:
-  # ─── First-time setup ────────────────────────────────────────────────────────
+  # --- First-time setup -------------------------------------------------------
   # Run this job once after adding ai-coding-standards2 as a submodule:
-  #   Actions → Pipeline Orchestrator → Run workflow → OK: First-time setup
+  #   Actions -> Pipeline Orchestrator -> Run workflow -> OK: First-time setup
   # It calls get_started.py --force on a Linux runner, which creates the
   # .claude/agents symlink, copies slash commands and standards, and drops all
-  # remaining workflow files — then commits and pushes everything.
+  # remaining workflow files -- then commits and pushes everything.
   # After this job completes, trigger it again (without setup checked) or open
   # an issue to start the normal pipeline.
   setup:
@@ -105,9 +105,9 @@ jobs:
           git add requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "OK: Already fully set up — nothing to commit."
+            echo "OK: Already fully set up -- nothing to commit."
           else
-            git commit -m "chore: AI first-time setup — wire up ai-coding-standards2"
+            git commit -m "chore: AI first-time setup -- wire up ai-coding-standards2"
             # Try a direct push first. If branch protection rules block it,
             # fall back to a PR branch so the commit is not lost.
             if git push origin HEAD 2>&1; then
@@ -116,13 +116,13 @@ jobs:
               SETUP_BRANCH="ai-standards-setup"
               git push origin HEAD:refs/heads/$SETUP_BRANCH --force
               echo ""
-              echo "WARNING:  Direct push was rejected (branch protection rules apply)."
+              echo "WARNING: Direct push was rejected (branch protection rules apply)."
               echo "   Branch '$SETUP_BRANCH' has been created with the setup commit."
               echo "   Open a pull request from that branch to complete onboarding."
             fi
           fi
 
-  # ─── Normal pipeline operation ───────────────────────────────────────────────
+  # --- Normal pipeline operation ----------------------------------------------
   orchestrate:
     name: Evaluate pipeline state
     if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.setup == 'true')"

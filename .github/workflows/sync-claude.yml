@@ -6,12 +6,12 @@ name: Sync AI Agile .claude directory
 # on demand.
 #
 # On Linux runners get_started.py creates a directory symlink for
-# .claude/agents (→ submodule's .claude/agents/). The symlink is committed
+# .claude/agents (symlink to submodule's .claude/agents/). The symlink is committed
 # as a tiny git blob (~40 bytes) so developers who clone the consuming
 # repo get agent visibility in Claude Code without running get_started.py.
 #
 # .claude/commands/ and standards/ are committed as verbatim copies with
-# path rewrites applied. .claude/settings.local.json is always excluded —
+# path rewrites applied. .claude/settings.local.json is always excluded --
 # it is developer-local and must never be committed.
 #
 # These paths are listed in .gitignore to protect developers on Windows
@@ -20,7 +20,7 @@ name: Sync AI Agile .claude directory
 # despite the .gitignore rule.
 #
 # This workflow is installed into consuming repos by get_started.py.
-# Do NOT edit it directly in the consuming repo — edit the source at
+# Do NOT edit it directly in the consuming repo -- edit the source at
 # ai-coding-standards2/.github/workflows/sync-claude.yml and re-run
 # get_started.py --force (or wait for the next daily sync).
 
@@ -75,11 +75,11 @@ jobs:
           # protects developers from accidentally committing Windows copies;
           # the sync workflow is the authoritative committer on Linux).
           #
-          # .claude/agents — symlink on Linux (no trailing slash; git add -f
+          # .claude/agents -- symlink on Linux (no trailing slash; git add -f
           #   stages the symlink blob, not the directory contents).
-          # .claude/commands/ — copied with path rewrites applied.
-          # standards/ — copied with schema path rewrites applied.
-          # Workflows — always committed (GitHub Actions requires them here).
+          # .claude/commands/ -- copied with path rewrites applied.
+          # standards/ -- copied with schema path rewrites applied.
+          # Workflows -- always committed (GitHub Actions requires them here).
           git add -f \
             standards/ \
             .claude/agents \

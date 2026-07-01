@@ -869,7 +869,7 @@ class TestAddGitignoreEntries:
         assert not text.startswith("\n")
         first_line = text.splitlines()[0]
         assert first_line == (
-            "# Managed by get_started.py — do not commit these paths manually; "
+            "# Managed by get_started.py -- do not commit these paths manually; "
             "sync-claude.yml is the authoritative committer"
         )
 
@@ -891,7 +891,7 @@ class TestAddGitignoreEntries:
         assert (
             "__pycache__/\n"
             "\n"
-            "# Managed by get_started.py — do not commit these paths manually; "
+            "# Managed by get_started.py -- do not commit these paths manually; "
             "sync-claude.yml is the authoritative committer"
         ) in text
 
@@ -904,7 +904,7 @@ class TestAddGitignoreEntries:
         consuming = tmp_path / "consuming"
         consuming.mkdir()
         header = (
-            "# Managed by get_started.py — do not commit these paths manually; "
+            "# Managed by get_started.py -- do not commit these paths manually; "
             "sync-claude.yml is the authoritative committer"
         )
         # Seed with header + one of the managed patterns already present.
