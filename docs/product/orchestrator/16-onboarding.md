@@ -93,7 +93,7 @@ In the consuming repo: Settings → Secrets and variables → Actions → New re
 
 **Step 3 — Trigger the setup job**
 
-Go to: **Actions → Pipeline Orchestrator → Run workflow → ✓ First-time setup → Run**.
+Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard → Run**.
 
 The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the `.claude/agents` symlink, copies slash

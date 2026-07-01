@@ -38,7 +38,7 @@ automatically every day.
 Options:
     --seed       Minimal bootstrap: copy only orchestrator.yml + .gitignore.
                  Commit those two files, push, then run the workflow with the
-                 "First-time setup" option to finish wiring on a Linux runner.
+                 "Onboard" option to finish wiring on a Linux runner.
     --force      Overwrite existing files in the consuming repo
     --dry-run    Print what would be created/modified without writing
 """
@@ -690,7 +690,7 @@ def print_followup_seed() -> None:
     print()
     print("Done. Two steps to finish:")
     print()
-    print(f"  1. Commit and push the seed files:")
+    print(f"  Step 1 -- Commit and push the seed files:")
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
     print(f"             .github/workflows/orchestrator.yml \\")
@@ -698,17 +698,18 @@ def print_followup_seed() -> None:
     print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
     print(f"     git push")
     print()
-    print(f"  2. Add secrets, then run the setup workflow:")
+    print(f"  Step 2 -- Add secrets, then run the Onboard job:")
     print(f"     Settings -> Secrets -> Actions:")
     print(f"       ANTHROPIC_API_KEY  -- your Anthropic API key")
     print(f"       AI_AGILE_BOT_TOKEN -- a GitHub PAT for the bot account")
     print()
     print(f"     Then: GitHub -> Actions -> 'Pipeline Orchestrator' -> Run workflow")
-    print(f"     -> check 'First-time setup' -> Run.")
+    print(f"     -> check 'Onboard' -> Run.")
     print()
-    print(f"     The workflow creates the .claude/agents symlink, copies slash")
-    print(f"     commands and standards, drops sync-claude.yml and other workflows,")
-    print(f"     and commits everything. After it completes, open a test issue.")
+    print(f"     The Onboard job runs on a Linux runner. It creates the")
+    print(f"     .claude/agents symlink, copies slash commands and standards,")
+    print(f"     drops sync-claude.yml and other workflows, and commits everything.")
+    print(f"     After it completes, open a test issue to confirm the pipeline is live.")
     print()
     print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
 
@@ -756,7 +757,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Minimal bootstrap: copy only orchestrator.yml + .gitignore. "
             "Commit those two files, push, then trigger the workflow with "
-            "'First-time setup' to finish wiring on a Linux runner."
+            "'Onboard' to finish wiring on a Linux runner."
         ),
     )
     p.add_argument(
@@ -784,7 +785,7 @@ def main() -> int:
     if args.seed:
         # Minimal bootstrap: drop only the orchestrator workflow so the
         # developer can commit and push a single file. The workflow's
-        # built-in "First-time setup" mode handles everything else on a
+        # built-in "Onboard" mode handles everything else on a
         # Linux runner (symlinks, commands, standards, remaining workflows).
         # Skip standards gitignore entries -- install_standards() hasn't run
         # yet, so listing gitignore paths for non-existent files confuses

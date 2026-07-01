@@ -131,7 +131,7 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 
 ### 5. Run the first-time setup
 
-Go to: **Actions → Pipeline Orchestrator → Run workflow → ✓ First-time setup → Run**.
+Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard → Run**.
 
 The workflow checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the `.claude/agents` symlink, copies slash

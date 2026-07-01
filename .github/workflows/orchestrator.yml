@@ -30,8 +30,8 @@ on:
 
   workflow_dispatch:
     inputs:
-      setup:
-        description: 'First-time setup -- wire up agents, commands, and workflows from the submodule'
+      onboard:
+        description: 'Onboard -- wire up agents, commands, and workflows from the submodule'
         type: boolean
         default: false
       issue_number:
@@ -54,17 +54,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # --- First-time setup -------------------------------------------------------
-  # Run this job once after adding ai-coding-standards2 as a submodule:
-  #   Actions -> Pipeline Orchestrator -> Run workflow -> OK: First-time setup
+  # --- Onboard ----------------------------------------------------------------
+  # Run this job once after get_started.py --seed has copied orchestrator.yml:
+  #   Actions -> Pipeline Orchestrator -> Run workflow -> OK: Onboard
   # It calls get_started.py --force on a Linux runner, which creates the
   # .claude/agents symlink, copies slash commands and standards, and drops all
   # remaining workflow files -- then commits and pushes everything.
-  # After this job completes, trigger it again (without setup checked) or open
-  # an issue to start the normal pipeline.
-  setup:
-    name: First-time setup
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.setup == 'true'
+  # After this job completes, open an issue to start the normal pipeline.
+  onboard:
+    name: Onboard
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -78,7 +77,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Run full setup
+      - name: Run onboarding
         # Creates .claude/agents symlink, copies commands + standards,
         # writes sync-claude.yml, bootstrap-labels.yml, label-cleanup.yml,
         # seeds requirements.txt, and updates .gitignore.
@@ -105,9 +104,9 @@ jobs:
           git add requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "OK: Already fully set up -- nothing to commit."
+            echo "OK: Already onboarded -- nothing to commit."
           else
-            git commit -m "chore: AI first-time setup -- wire up ai-coding-standards2"
+            git commit -m "chore: AI onboarding -- wire up ai-coding-standards2"
             # Try a direct push first. If branch protection rules block it,
             # fall back to a PR branch so the commit is not lost.
             if git push origin HEAD 2>&1; then
@@ -125,7 +124,7 @@ jobs:
   # --- Normal pipeline operation ----------------------------------------------
   orchestrate:
     name: Evaluate pipeline state
-    if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.setup == 'true')"
+    if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true')"
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
