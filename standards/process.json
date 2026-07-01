@@ -666,21 +666,24 @@
     {
       "id": "STD-PROC-028",
       "title": "GitHub Actions workflow names follow TYPE - Description format",
-      "description": "Every GitHub Actions workflow `name:` field must follow the pattern `{TYPE} - {Description}` where TYPE is a single uppercase keyword identifying the workflow category (e.g. BUILD, DEPLOY, SYNC, VALIDATE, REGRESSION, LINT, RELEASE, SETUP) and Description is a complete active sentence with a verb that fully describes what the workflow does. The separator is a space-hyphen-space ( - ). Both the type and description must appear on the top-level `name:` key, not only in the job name.",
+      "description": "Every GitHub Actions workflow `name:` field must follow the pattern `{TYPE} - {Description}` where TYPE is a single uppercase keyword identifying the workflow category (e.g. BUILD, DEPLOY, SYNC, VALIDATE, REGRESSION, LINT, RELEASE, SETUP) and Description is a complete active sentence with a verb that fully describes what the workflow does. The separator is a space-hyphen-space ( - ). Both the type and description must appear on the top-level `name:` key, not only in the job name. DEPLOY workflows use the target platform as the description rather than a verb sentence: `DEPLOY - {Platform}` (e.g. `DEPLOY - Supabase`, `DEPLOY - Azure`). When multiple deploy workflows exist for the same platform, append a service qualifier: `DEPLOY - {Platform} - {Service}` (e.g. `DEPLOY - Azure - Communications Services`, `DEPLOY - Azure - Static Web App`).",
       "rationale": "A consistent prefix makes the Actions tab scannable: developers see the category at a glance without reading the full name. An active sentence for the description ensures the name is self-contained and unambiguous when it appears in notifications, status badges, and CI logs.",
       "acceptance_criteria": [
         "The workflow `name:` starts with an uppercase TYPE keyword drawn from the approved vocabulary (BUILD, DEPLOY, SYNC, VALIDATE, REGRESSION, LINT, RELEASE, SETUP, or another uppercase category approved for the project).",
         "The TYPE is followed by exactly ` - ` (space, hyphen, space).",
-        "The description after ` - ` is a complete active sentence: it contains a verb and fully describes what the workflow does without requiring knowledge of the filename.",
+        "For non-DEPLOY workflows, the description after ` - ` is a complete active sentence containing a verb that fully describes what the workflow does without requiring knowledge of the filename.",
+        "For DEPLOY workflows, the description is the target platform name (`DEPLOY - Supabase`, `DEPLOY - Azure`). When multiple deploy workflows exist for the same platform, a service qualifier is appended (`DEPLOY - Azure - Communications Services`).",
         "No emoji or non-ASCII characters appear in the `name:` field."
       ],
       "anti_patterns": [
         "name: Pipeline Orchestrator  -- no type prefix, not a sentence.",
         "name: Sync .claude directory  -- no type prefix.",
-        "name: CI  -- too terse; gives no information about what CI does.",
+        "name: CI  -- too terse; no information about what CI does.",
         "name: deploy  -- lowercase type, not a sentence.",
         "name: BUILD: compile the app  -- colon separator instead of space-hyphen-space.",
-        "name: SYNC - sync files  -- description repeats the type word rather than saying what is synced and why."
+        "name: SYNC - sync files  -- description repeats the type word rather than saying what is synced.",
+        "name: DEPLOY - Deploy to Azure  -- verb in description is redundant; use DEPLOY - Azure.",
+        "name: DEPLOY - Azure  -- ambiguous when three Azure workflows exist; qualify with the service name."
       ],
       "adr_overridable": true,
       "applies_to": [
