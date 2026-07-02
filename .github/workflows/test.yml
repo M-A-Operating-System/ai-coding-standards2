@@ -33,13 +33,7 @@ jobs:
         run: pytest tests/ -v
       - name: Run integration tests
         run: pytest tests/integration/ -v
-  shell-tests:
-    name: Run shell tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run tests/*.sh
+      - name: Run shell tests
         run: |
           set -euo pipefail
           fail=0
