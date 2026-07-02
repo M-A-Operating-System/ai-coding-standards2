@@ -1,0 +1,12 @@
+# maos-merge-conflict
+
+Run the `03_execute/merge-conflict` pipeline agent. Checks for merge conflicts on the issue PR after CI passes.
+
+## Input
+
+`$ARGUMENTS` — GitHub issue or PR number (e.g. `42`)
+
+## Instructions
+
+Follow the `run-agent` command with pre-filled arguments:
+`run-agent 03_execute/merge-conflict $ARGUMENTS`

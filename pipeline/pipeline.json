@@ -80,7 +80,31 @@
       "dependencies": ["01_product_docs/prd-docs-updater"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
-      "extra_allowedTools": ["Bash(test -f *)"],
+      "extra_allowedTools": [
+        "Bash(git *)",
+        "Bash(python *)", "Bash(python3 *)",
+        "Bash(pip *)", "Bash(pip3 *)", "Bash(uv *)",
+        "Bash(pytest *)", "Bash(tox *)",
+        "Bash(npm *)", "Bash(npx *)", "Bash(node *)",
+        "Bash(yarn *)", "Bash(pnpm *)", "Bash(bun *)",
+        "Bash(cargo *)", "Bash(rustc *)", "Bash(go *)",
+        "Bash(mvn *)", "Bash(mvnw *)", "Bash(gradle *)", "Bash(gradlew *)",
+        "Bash(ruby *)", "Bash(gem *)", "Bash(bundle *)",
+        "Bash(make *)", "Bash(cmake *)", "Bash(ninja *)",
+        "Bash(bash *)", "Bash(sh *)",
+        "Bash(mkdir *)", "Bash(cp *)", "Bash(mv *)", "Bash(rm *)",
+        "Bash(chmod *)", "Bash(chown *)", "Bash(ln *)", "Bash(touch *)",
+        "Bash(sed *)", "Bash(awk *)", "Bash(tr *)", "Bash(cut *)",
+        "Bash(sort *)", "Bash(uniq *)", "Bash(xargs *)", "Bash(tee *)",
+        "Bash(diff *)", "Bash(patch *)", "Bash(jq *)",
+        "Bash(tar *)", "Bash(gzip *)", "Bash(gunzip *)",
+        "Bash(zip *)", "Bash(unzip *)",
+        "Bash(ls *)", "Bash(echo *)", "Bash(printf *)",
+        "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(du *)",
+        "Bash(which *)", "Bash(type *)",
+        "Bash(true)", "Bash(false)",
+        "Bash(export *)", "Bash(unset *)", "Bash(test *)"
+      ],
       "git_ops": { "commit_after": true },
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
@@ -118,6 +142,22 @@
       "dependencies": ["03_execute/ci-gate"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
+      "extra_allowedTools": [
+        "Bash(gh api *)",
+        "Bash(gh pr checks *)",
+        "Bash(gh pr comment *)",
+        "Bash(gh run view *)",
+        "Bash(gh run list *)",
+        "Bash(git fetch *)",
+        "Bash(git checkout *)",
+        "Bash(git merge *)",
+        "Bash(git rebase *)",
+        "Bash(git push *)",
+        "Bash(git log *)",
+        "Bash(git diff *)",
+        "Bash(git branch *)",
+        "Bash(git config *)"
+      ],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
       "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the orchestrator auto-applies merge-conflict:approved so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review — the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues."
@@ -134,6 +174,13 @@
       "dependencies": ["03_execute/merge-conflict"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
+      "extra_allowedTools": [
+        "Bash(gh pr review *)",
+        "Bash(gh pr ready *)",
+        "Bash(gh api *)",
+        "Bash(gh pr checks *)",
+        "Bash(gh run view *)"
+      ],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
       "review_loop": {
@@ -160,6 +207,10 @@
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "global" },
+      "extra_allowedTools": [
+        "Bash(gh issue create *)",
+        "Bash(git log *)"
+      ],
       "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
     },
 
@@ -176,7 +227,44 @@
       "dependencies": [],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
+      "extra_allowedTools": [
+        "Bash(gh issue create *)",
+        "Bash(gh api *)"
+      ],
       "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete — auto-approved). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
+    },
+
+    {
+      "agent": "00_ondemand/new-agent",
+      "phase": "00_ondemand",
+      "object": ["issue"],
+      "trigger": {
+        "label": "new-agent:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "git_ops": { "commit_after": true },
+      "description": "On-demand agent that scaffolds a new pipeline agent from a GitHub issue description. Reads the issue to determine the agent's name, phase, trigger, and purpose, then creates the agent prompt file and registers it in pipeline.json. Triggered by applying the new-agent:requested label to an issue."
+    },
+
+    {
+      "agent": "00_ondemand/standards-migrator",
+      "phase": "00_ondemand",
+      "object": ["issue"],
+      "trigger": {
+        "label": "standards-migrator:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "per_issue" },
+      "extra_allowedTools": [
+        "Bash(gh issue create *)",
+        "Bash(python3 *)"
+      ],
+      "description": "Ad-hoc agent that scans the consuming repo for existing knowledge files and ground-truth artifacts, then converts the timeless rules they imply into machine-readable standards/*.json. Presents proposed standards for human approval before writing. Triggered by applying the standards-migrator:requested label to any issue."
     }
 
   ]

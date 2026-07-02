@@ -1,0 +1,12 @@
+# maos-codebase-reviewer
+
+Run the `00_ondemand/codebase-reviewer` pipeline agent. Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality A….
+
+## Input
+
+`$ARGUMENTS` — GitHub issue or PR number (e.g. `42`)
+
+## Instructions
+
+Follow the `run-agent` command with pre-filled arguments:
+`run-agent 00_ondemand/codebase-reviewer $ARGUMENTS`

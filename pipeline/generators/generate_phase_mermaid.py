@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Generate per-phase Mermaid flowcharts from pipeline/pipeline.json.
 
-Produces one .mmd file per phase under docs/product/agile/generated/phases/,
-plus a single lifecycle flowchart at docs/product/agile/generated/pipeline.mmd.
+Produces one .mmd file per phase under docs/product/orchestrator/generated/phases/,
+a single lifecycle flowchart at docs/product/orchestrator/generated/pipeline.mmd,
+and a complete-flow diagram grouped by phase at
+docs/product/orchestrator/generated/pipeline_phases.mmd.
 Run without arguments to regenerate all charts. Run with --check to verify
 charts are up-to-date without writing; exits non-zero if any chart is missing,
 stale, or orphaned.
@@ -16,8 +18,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
-OUTPUT_DIR = REPO_ROOT / "docs" / "product" / "agile" / "generated" / "phases"
-LIFECYCLE_FILE = REPO_ROOT / "docs" / "product" / "agile" / "generated" / "pipeline.mmd"
+OUTPUT_DIR = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "phases"
+LIFECYCLE_FILE = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "pipeline.mmd"
+COMPLETE_FLOW_FILE = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "pipeline_phases.mmd"
 
 # ---------------------------------------------------------------------------
 # Hand-curated outcome branches not yet expressible as structured JSON fields.
@@ -270,6 +273,145 @@ def build_lifecycle_chart(all_entries: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def build_complete_chart(all_entries: list[dict]) -> str:
+    """Return a Mermaid flowchart of the complete pipeline grouped by phase.
+
+    Agents are wrapped in labelled subgraph blocks so phase boundaries are
+    immediately visible.  Entry nodes for ``issue.opened`` events sit above
+    the first subgraph; entry nodes for ``:requested`` triggers sit inside
+    their phase's subgraph.  All edges, dashed back-loops, and terminal nodes
+    are rendered identically to the lifecycle chart.
+    """
+    entry_map = {e["agent"]: e for e in all_entries}
+
+    # Discover phases in pipeline order (first-seen wins).
+    phases: list[str] = []
+    seen_phases: set[str] = set()
+    for e in all_entries:
+        ph = e["phase"]
+        if ph not in seen_phases:
+            phases.append(ph)
+            seen_phases.add(ph)
+
+    lines: list[str] = ["flowchart TD"]
+
+    # Entry nodes for issue.opened (outside every subgraph so they float at top)
+    for entry in all_entries:
+        trigger = entry.get("trigger", {})
+        if trigger.get("event") == "issue.opened":
+            eid = f"entry_{_node_id(entry['agent'])}"
+            lines.append(f'    {eid}(["issue.opened"])')
+
+    # One subgraph per phase
+    for phase in phases:
+        phase_entries = [e for e in all_entries if e["phase"] == phase]
+        phase_label = phase.replace("_", " ").title()
+        lines.append(f'    subgraph {phase}["{phase_label}"]')
+
+        # :requested entry nodes inside the phase that owns them
+        for entry in phase_entries:
+            trigger = entry.get("trigger", {})
+            label = trigger.get("label", "")
+            if label.endswith(":requested"):
+                eid = f"entry_{_node_id(entry['agent'])}"
+                lines.append(f'        {eid}(["{label}"])')
+
+        # Agent / script nodes
+        for entry in phase_entries:
+            nid = _node_id(entry["agent"])
+            label = _safe_label(_short_name(entry["agent"]))
+            if entry.get("type") == "script":
+                lines.append(f'        {nid}("{label}")')
+            else:
+                lines.append(f'        {nid}["{label}"]')
+
+        # Gate nodes
+        for entry in phase_entries:
+            if entry.get("human_gate_after"):
+                gid = _gate_node_id(entry["agent"])
+                gate_label = _safe_label(entry.get("human_gate_label", "human-gate"))
+                if entry.get("auto_approve_on_complete"):
+                    gate_label += " · auto"
+                lines.append(f'        {gid}{{"{gate_label}"}}')
+
+        lines.append("    end")
+
+    # Terminal nodes (outside every subgraph)
+    used_terms: set[str] = set()
+    for agent_path, outcomes in _LIFECYCLE_SOLID.items():
+        if agent_path in entry_map:
+            for _, target in outcomes:
+                used_terms.add(target)
+    for target in sorted(used_terms):
+        nid = _terminal_node_id(target)
+        label = _TERMINAL_LABELS.get(target, target)
+        lines.append(f'    {nid}(["{label}"]):::term')
+
+    # Edges: entry points → agents
+    for entry in all_entries:
+        trigger = entry.get("trigger", {})
+        event = trigger.get("event", "")
+        label = trigger.get("label", "")
+        if event == "issue.opened" or label.endswith(":requested"):
+            eid = f"entry_{_node_id(entry['agent'])}"
+            lines.append(f"    {eid} --> {_node_id(entry['agent'])}")
+
+    # Edges: agent → gate
+    for entry in all_entries:
+        if entry.get("human_gate_after"):
+            lines.append(
+                f"    {_node_id(entry['agent'])} --> {_gate_node_id(entry['agent'])}"
+            )
+
+    # Edges: dependency → agent (routing through gate when dep has one)
+    for entry in all_entries:
+        aid = _node_id(entry["agent"])
+        for dep in entry.get("dependencies", []):
+            dep_entry = entry_map.get(dep)
+            if dep_entry and dep_entry.get("human_gate_after"):
+                src = _gate_node_id(dep)
+            else:
+                src = _node_id(dep)
+            lines.append(f"    {src} --> {aid}")
+
+    # Dashed back-edges from JSON review_loop field
+    for entry in all_entries:
+        review_loop = entry.get("review_loop")
+        if not review_loop:
+            continue
+        re_invoke = review_loop.get("re_invoke")
+        max_cycles = review_loop.get("max_cycles")
+        if re_invoke and re_invoke in entry_map:
+            source_id = _node_id(entry["agent"])
+            target_id = _node_id(re_invoke)
+            cycle_text = f" ≤{max_cycles}" if max_cycles else ""
+            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
+
+    # Dashed back-edges from hand-curated loop outcomes
+    for agent_path, loops in _LIFECYCLE_LOOPS.items():
+        if agent_path not in entry_map:
+            continue
+        src_id = _node_id(agent_path)
+        for edge_label, target_agent, max_cycles in loops:
+            if target_agent not in entry_map:
+                continue
+            tgt_id = _node_id(target_agent)
+            cycle_text = f" ≤{max_cycles}" if max_cycles else ""
+            lines.append(f"    {src_id} -. {edge_label}{cycle_text} .-> {tgt_id}")
+
+    # Labeled solid edges to terminal nodes
+    for agent_path, outcomes in _LIFECYCLE_SOLID.items():
+        if agent_path not in entry_map:
+            continue
+        src_id = _node_id(agent_path)
+        for edge_label, target in outcomes:
+            tgt_id = _terminal_node_id(target)
+            lines.append(f"    {src_id} -->|{edge_label}| {tgt_id}")
+
+    lines.append("    classDef term fill:#f0f0f0,stroke:#999,stroke-dasharray:3")
+    return "\n".join(lines) + "\n"
+
+
 def load_pipeline() -> list[dict]:
     if not PIPELINE_JSON.exists():
         print(f"error: {PIPELINE_JSON} not found", file=sys.stderr)
@@ -299,10 +441,12 @@ def main(argv: list[str] | None = None) -> int:
 
     charts: dict[str, str] = {ph: build_chart(ph, all_entries) for ph in phases}
     lifecycle_content = build_lifecycle_chart(all_entries)
+    complete_content = build_complete_chart(all_entries)
 
     if not args.check:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         LIFECYCLE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        COMPLETE_FLOW_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     expected_files = {OUTPUT_DIR / f"{ph}.mmd" for ph in phases}
     failures: list[str] = []
@@ -338,6 +482,16 @@ def main(argv: list[str] | None = None) -> int:
     else:
         LIFECYCLE_FILE.write_text(lifecycle_content, encoding="utf-8")
         print(f"wrote {LIFECYCLE_FILE.relative_to(REPO_ROOT)}")
+
+    # Complete flow chart (phase-grouped)
+    if args.check:
+        if not COMPLETE_FLOW_FILE.exists():
+            failures.append(f"missing: {COMPLETE_FLOW_FILE.relative_to(REPO_ROOT)}")
+        elif COMPLETE_FLOW_FILE.read_text(encoding="utf-8") != complete_content:
+            failures.append(f"stale: {COMPLETE_FLOW_FILE.relative_to(REPO_ROOT)}")
+    else:
+        COMPLETE_FLOW_FILE.write_text(complete_content, encoding="utf-8")
+        print(f"wrote {COMPLETE_FLOW_FILE.relative_to(REPO_ROOT)}")
 
     for msg in failures:
         print(f"error: {msg}", file=sys.stderr)

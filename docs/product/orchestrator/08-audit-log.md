@@ -52,7 +52,7 @@ Every line is one JSON object:
 | `session_id` | string | Deterministic session identifier for this (object, agent) pair |
 | `object` | object or null | `{"kind": "issue"\|"pr", "id": number, "repo": "owner/repo"}` |
 | `actor` | object | Always `{"kind": "orchestrator", "id": "github-actions", "human": null}` |
-| `ref` | string or null | Reserved; always null in current implementation |
+| `ref` | string or null | Reserved; always null |
 | `duration_ms` | integer or null | Wall-clock duration of the agent run in milliseconds |
 
 ---

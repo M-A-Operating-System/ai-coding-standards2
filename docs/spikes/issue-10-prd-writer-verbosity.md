@@ -302,7 +302,7 @@ Addresses **D-6**.
 >
 > - **As a** {persona}, **I want** {capability}, **so that** {outcome}.
 >
-> Pick personas from `docs/product/agile/03-personas.md`. "As a
+> Pick personas from `docs/product/orchestrator/03-personas.md`. "As a
 > developer" stories are suspect — if there is no user-observable
 > benefit, it is technical-intermediate work, not a feature PRD.
 
@@ -314,7 +314,7 @@ Addresses **D-6**.
 >
 > - **As a** {persona}, **I want** {capability}, **so that** {outcome}.
 >
-> Pick personas from `docs/product/agile/03-personas.md`. "As a
+> Pick personas from `docs/product/orchestrator/03-personas.md`. "As a
 > developer" stories are suspect — if there is no user-observable benefit,
 > it is technical-intermediate work, not a feature PRD.
 >

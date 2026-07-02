@@ -6,7 +6,7 @@ the single source of truth referenced by [P-2](02-principles.md#p-2--one-machine
 
 Anything human-readable about the pipeline (agent catalogues, phase
 tables, mermaid diagrams, gate lists) is generated from this file and
-committed to `docs/product/agile/generated/`. Hand-editing those generated
+committed to `docs/product/orchestrator/generated/`. Hand-editing those generated
 files is not allowed.
 
 ---
@@ -19,7 +19,7 @@ pipeline/
   schemas/
     pipeline.schema.json            ← JSON schema (validation)
   generators/
-    generate_docs.py                ← produces docs/product/agile/generated/
+    generate_docs.py                ← produces docs/product/orchestrator/generated/
     generate_pipeline_mermaid.py    ← produces .mmd flowcharts
     generate_phase_mermaid.py       ← produces per-phase .mmd charts under generated/phases/
 ```
@@ -134,13 +134,13 @@ The schema enforces:
 
 | Generated file | Description |
 |---|---|
-| `docs/product/agile/generated/agents.md` | One section per agent: phase, dependencies, gate, description |
-| `docs/product/agile/generated/phases.md` | Agents grouped by phase, in dependency order |
-| `docs/product/agile/generated/gates.md` | Every human gate, what triggers it, who approves |
-| `docs/product/agile/generated/pipeline.mmd` | Full mermaid flowchart |
-| `docs/product/agile/generated/pipeline-issue.mmd` | Issue subgraph |
-| `docs/product/agile/generated/pipeline-pr.mmd` | PR subgraph |
-| `docs/product/agile/generated/phases/{phase}.mmd` (one per phase) | Per-phase mermaid flowchart showing only the agents and boundary gates for that phase |
+| `docs/product/orchestrator/generated/agents.md` | One section per agent: phase, dependencies, gate, description |
+| `docs/product/orchestrator/generated/phases.md` | Agents grouped by phase, in dependency order |
+| `docs/product/orchestrator/generated/gates.md` | Every human gate, what triggers it, who approves |
+| `docs/product/orchestrator/generated/pipeline.mmd` | Full mermaid flowchart |
+| `docs/product/orchestrator/generated/pipeline-issue.mmd` | Issue subgraph |
+| `docs/product/orchestrator/generated/pipeline-pr.mmd` | PR subgraph |
+| `docs/product/orchestrator/generated/phases/{phase}.mmd` (one per phase) | Per-phase mermaid flowchart showing only the agents and boundary gates for that phase |
 
 The generator is idempotent: running it twice on the same input produces
 byte-identical output. CI runs the generator and fails the PR if any
@@ -229,7 +229,7 @@ Agents own git commits (write files, `git add`, `git commit`, `git push`
 to their branch). The orchestrator owns the PR object (create, ready,
 merge). Agents may read issues and PRs freely; they must not call
 `gh pr create`, `gh pr ready`, or `gh pr merge`. See
-[P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle).
+[P-16](02-principles.md#p-16--git-commit-ownership-two-modes).
 
 ### Automatic issue close and branch delete
 

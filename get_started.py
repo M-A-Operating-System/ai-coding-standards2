@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-get_started.py — wire ai-coding-standards2 into a consuming repo.
+get_started.py -- wire ai-coding-standards2 into a consuming repo.
 
 This script is run ONCE after `git submodule add ...` has placed this
 repo at `<consuming-repo>/ai-coding-standards2/`. It:
@@ -36,6 +36,9 @@ commands, and workflow changes. The sync-claude.yml workflow does this
 automatically every day.
 
 Options:
+    --seed       Minimal bootstrap: copy only orchestrator.yml + .gitignore.
+                 Commit those two files, push, then run the workflow with the
+                 "Onboard" option to finish wiring on a Linux runner.
     --force      Overwrite existing files in the consuming repo
     --dry-run    Print what would be created/modified without writing
 """
@@ -62,21 +65,21 @@ SUBMODULE_NAME = SUBMODULE_ROOT.name  # actual dir name, not hard-coded
 # to the submodule-relative form so they resolve when a developer runs
 # them from the consuming repo's root.
 PATH_REWRITES = [
-    # Bare ".github/scripts/status.sh" → "ai-coding-standards2/.github/scripts/status.sh"
+    # Bare ".github/scripts/status.sh" -> "ai-coding-standards2/.github/scripts/status.sh"
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
     (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
-    # Bare ".github/scripts/migrate_labels.py" → "ai-coding-standards2/.github/scripts/migrate_labels.py"
+    # Bare ".github/scripts/migrate_labels.py" -> "ai-coding-standards2/.github/scripts/migrate_labels.py"
     (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/migrate_labels\.py", f"{SUBMODULE_NAME}/.github/scripts/migrate_labels.py"),
-    # Bare ".claude/agents/..." → "ai-coding-standards2/.claude/agents/..."
+    # Bare ".claude/agents/..." -> "ai-coding-standards2/.claude/agents/..."
     (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
-    # Bare "pipeline/..." → "ai-coding-standards2/pipeline/..."
+    # Bare "pipeline/..." -> "ai-coding-standards2/pipeline/..."
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
     (rf"(?<!{SUBMODULE_NAME}/)pipeline/", f"{SUBMODULE_NAME}/pipeline/"),
     # Bare ".claude/agent-todo-standard.md" was retired (see 13-todos.md);
     # rewrite any lingering reference to point at the new doc.
     (
         r"\.claude/agent-todo-standard\.md",
-        f"{SUBMODULE_NAME}/docs/product/agile/13-todos.md",
+        f"{SUBMODULE_NAME}/docs/product/orchestrator/13-todos.md",
     ),
 ]
 
@@ -129,7 +132,7 @@ def write_file(
         print(f"  WOULD  {path}  ({len(content)} bytes)")
         return True
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
     print(f"  WROTE  {path}")
     return True
 
@@ -151,14 +154,14 @@ def install_standards(
 
     Seeds the consuming repo's standards/ folder with the pipeline's base
     standards. The consuming repo can add project-specific standards as
-    additional files (e.g. standards/myapp.json) — the sync never deletes
+    additional files (e.g. standards/myapp.json) -- the sync never deletes
     files it didn't create.
 
     Convention: do not modify the base files directly; add new files for
     custom standards so the daily sync can safely overwrite the base set
     without destroying local additions.
 
-    Special case — adrs.json: the consuming repo owns its adrs.json as the
+    Special case -- adrs.json: the consuming repo owns its adrs.json as the
     place to record project ADRs. The sync never overwrites it so that project
     ADRs are not lost. On first install (file absent), a minimal project-owned
     adrs.json is created. Org ADRs are a separate concern; the submodule's
@@ -174,7 +177,7 @@ def install_standards(
         print(f"  SKIP   standards  ({src_dir} missing)")
         return 0
 
-    print(f"  Standards: {src_dir} → {dst_dir}")
+    print(f"  Standards: {src_dir} -> {dst_dir}")
     written = 0
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".schema.json"):
@@ -184,7 +187,7 @@ def install_standards(
 
         if src.name == "adrs.json":
             # adrs.json is project-owned: only seed it when it does not yet
-            # exist. Never overwrite — project ADRs would be lost on every
+            # exist. Never overwrite -- project ADRs would be lost on every
             # daily sync.
             if dst.exists():
                 print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
@@ -203,7 +206,7 @@ def install_standards(
                 written += 1
             continue
 
-        content = src.read_text().replace(
+        content = src.read_text(encoding="utf-8").replace(
             '"../pipeline/schemas/standards.schema.json"',
             f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
         )
@@ -219,7 +222,7 @@ def install_agents(
 ) -> int:
     """Wire .claude/agents/ from the submodule into the consuming repo.
 
-    On Linux/macOS: creates a directory symlink dst → src so the agents
+    On Linux/macOS: creates a directory symlink dst -> src so the agents
     directory is always in sync with the submodule without copying files.
 
     On Windows: falls back to verbatim file copies (directory symlinks
@@ -242,7 +245,7 @@ def install_agents(
         print(f"  SKIP   agents  ({src_dir} missing)")
         return 0
 
-    print(f"  Agents: {src_dir} → {dst_dir}")
+    print(f"  Agents: {src_dir} -> {dst_dir}")
 
     if sys.platform != "win32":
         return _install_agents_symlink(src_dir, dst_dir, force, dry_run)
@@ -255,7 +258,7 @@ def _install_agents_symlink(
     force: bool,
     dry_run: bool,
 ) -> int:
-    """Create a relative directory symlink dst_dir → src_dir.
+    """Create a relative directory symlink dst_dir -> src_dir.
 
     Returns 1 if a symlink was (or would be) created/updated, 0 if skipped.
     """
@@ -270,7 +273,7 @@ def _install_agents_symlink(
             print(f"  SKIP   {dst_dir}  (symlink exists pointing elsewhere; pass --force to update)")
             return 0
         if dry_run:
-            print(f"  WOULD  {dst_dir} → {rel_target}  (replace symlink)")
+            print(f"  WOULD  {dst_dir} -> {rel_target}  (replace symlink)")
             return 1
         dst_dir.unlink()
     elif dst_dir.is_dir():
@@ -278,20 +281,20 @@ def _install_agents_symlink(
             print(f"  SKIP   {dst_dir}  (directory exists; pass --force to replace with symlink)")
             return 0
         if dry_run:
-            print(f"  WOULD  {dst_dir} → {rel_target}  (replace directory with symlink; contents will be removed)")
+            print(f"  WOULD  {dst_dir} -> {rel_target}  (replace directory with symlink; contents will be removed)")
             return 1
-        print(f"  WARNING  replacing {dst_dir} with symlink — any files not in the submodule will be removed")
+        print(f"  WARNING  replacing {dst_dir} with symlink -- any files not in the submodule will be removed")
         shutil.rmtree(dst_dir)
     elif dst_dir.exists():
         print(f"  SKIP   {dst_dir}  (exists but is not a directory or symlink; skipping)")
         return 0
     elif dry_run:
-        print(f"  WOULD  {dst_dir} → {rel_target}")
+        print(f"  WOULD  {dst_dir} -> {rel_target}")
         return 1
 
     dst_dir.parent.mkdir(parents=True, exist_ok=True)
     os.symlink(rel_target, dst_dir)
-    print(f"  LINKED {dst_dir} → {rel_target}")
+    print(f"  LINKED {dst_dir} -> {rel_target}")
     return 1
 
 
@@ -310,7 +313,7 @@ def _install_agents_copy(
     for src in sorted(src_dir.rglob("*.md")):
         rel = src.relative_to(src_dir)
         dst = dst_dir / rel
-        if write_file(dst, src.read_text(), force, dry_run):
+        if write_file(dst, src.read_text(encoding="utf-8"), force, dry_run):
             written += 1
 
     # Remove stale agents that are no longer in the submodule.
@@ -341,11 +344,11 @@ def install_slash_commands(
         print(f"  SKIP   slash commands  ({src_dir} missing)")
         return 0
 
-    print(f"  Slash commands: {src_dir} → {dst_dir}")
+    print(f"  Slash commands: {src_dir} -> {dst_dir}")
     written = 0
     for src in sorted(src_dir.glob("*.md")):
         dst = dst_dir / src.name
-        original = src.read_text()
+        original = src.read_text(encoding="utf-8")
         rewritten = rewrite_paths(original)
         if rewritten != original:
             print(f"    (rewriting paths in {src.name})")
@@ -374,7 +377,7 @@ def _add_submodules_to_checkout(content: str) -> str:
 
     Handles both named form ('- name: Checkout\\n  uses: ...') and
     shorthand form ('- uses: actions/checkout@...') in YAML steps.
-    Already-expanded steps (with: block present) are left untouched —
+    Already-expanded steps (with: block present) are left untouched --
     callers that add their own with: options (e.g. fetch-depth) must
     include submodules: true themselves.
     """
@@ -423,8 +426,8 @@ def install_orchestrator_workflows(
         if not src.exists():
             print(f"  SKIP   {name}  ({src} missing)")
             continue
-        print(f"  Orchestrator workflow ({name}): → {dst}")
-        content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+        print(f"  Orchestrator workflow ({name}): -> {dst}")
+        content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
         if write_file(dst, content, force, dry_run):
             written += 1
     return written
@@ -441,8 +444,8 @@ def install_bootstrap_labels_workflow(
     if not src.exists():
         print(f"  SKIP   bootstrap-labels workflow  ({src} missing)")
         return False
-    print(f"  Bootstrap-labels workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    print(f"  Bootstrap-labels workflow: -> {dst}")
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
     return write_file(dst, content, force, dry_run)
 
 
@@ -457,8 +460,8 @@ def install_label_cleanup_workflow(
     if not src.exists():
         print(f"  SKIP   label-cleanup workflow  ({src} missing)")
         return False
-    print(f"  Label-cleanup workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    print(f"  Label-cleanup workflow: -> {dst}")
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
     return write_file(dst, content, force, dry_run)
 
 
@@ -473,8 +476,8 @@ def install_sync_workflow(
     if not src.exists():
         print(f"  SKIP   sync-claude workflow  ({src} missing)")
         return False
-    print(f"  Sync-claude workflow: → {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text()))
+    print(f"  Sync-claude workflow: -> {dst}")
+    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
     return write_file(dst, content, force, dry_run)
 
 
@@ -500,8 +503,48 @@ def install_local_settings(
             "ignore .claude/settings.local.json."
         ),
     }
-    print(f"  Local settings: → {dst}")
+    print(f"  Local settings: -> {dst}")
     return write_file(dst, json.dumps(payload, indent=2) + "\n", force, dry_run)
+
+
+def install_requirements(
+    consuming_root: Path,
+    dry_run: bool,
+) -> bool:
+    """Seed requirements.txt in the consuming repo if it does not already exist.
+
+    The orchestrator workflow does `pip install -r requirements.txt` on every
+    run.  In this submodule's own CI that file lists the full test stack
+    (pytest, pyyaml, etc.).  In consuming repos the orchestrator only needs
+    `requests`; project teams extend the file via PR for anything their own
+    coder agents need at runtime.
+
+    This file is never overwritten once created -- project additions are
+    preserved across syncs.  When the submodule gains new runtime orchestrator
+    dependencies, check {SUBMODULE_NAME}/requirements.txt and mirror any
+    additions to this file manually.
+    """
+    dst = consuming_root / "requirements.txt"
+    if dst.exists():
+        print(f"  SKIP   requirements.txt  (exists; add packages there directly)")
+        return False
+    src = SUBMODULE_ROOT / "requirements.txt"
+    if src.exists():
+        runtime_deps = "\n".join(
+            ln for ln in src.read_text(encoding="utf-8").splitlines()
+            if ln.strip() and not ln.strip().startswith("pytest")
+        ) + "\n"
+    else:
+        runtime_deps = "requests\n"
+    content = (
+        "# Runtime dependencies for the AI Agile pipeline orchestrator.\n"
+        f"# Seeded from {SUBMODULE_NAME}/requirements.txt -- never overwritten by sync.\n"
+        "# When the submodule adds new runtime deps, mirror them here manually.\n"
+        "# Add project-specific packages below.\n"
+        f"{runtime_deps}"
+    )
+    print(f"  Requirements: -> {dst}")
+    return write_file(dst, content, force=False, dry_run=dry_run)
 
 
 def _managed_standards_files() -> list[str]:
@@ -523,17 +566,23 @@ def _managed_standards_files() -> list[str]:
 def add_gitignore_entries(
     consuming_root: Path,
     dry_run: bool,
+    include_standards: bool = True,
 ) -> int:
     """Append .gitignore entries for get_started-managed files.
 
     Covers directories/files that get_started creates but that should not
     be committed to the consuming repo:
-      - .claude/agents    — symlink (Linux) or copied files (Windows)
-      - .claude/commands/ — always copied with path rewrites
-      - .claude/settings.local.json — developer-local settings
-      - standards/<name>.json — base standards copied from the submodule
+      - .claude/agents    -- symlink (Linux) or copied files (Windows)
+      - .claude/commands/ -- always copied with path rewrites
+      - .claude/settings.local.json -- developer-local settings
+      - standards/<name>.json -- base standards copied from the submodule
         (project-owned adrs.json is intentionally excluded so it remains
          committed)
+
+    ``include_standards`` should be False in --seed mode because
+    install_standards() has not run yet; listing gitignore entries for
+    files that do not exist yet confuses developers who try to manually
+    place standards files before the setup workflow runs.
 
     Idempotent: patterns already present in .gitignore are not re-added.
     Returns the number of new entries written (or that would be written).
@@ -544,17 +593,17 @@ def add_gitignore_entries(
         ".claude/agents",
         ".claude/commands/",
         ".claude/settings.local.json",
-        *_managed_standards_files(),
+        *(_managed_standards_files() if include_standards else []),
     ]
 
-    existing_lines = set(gitignore.read_text().splitlines()) if gitignore.exists() else set()
+    existing_lines = set(gitignore.read_text(encoding="utf-8").splitlines()) if gitignore.exists() else set()
 
     to_add = [p for p in patterns if p not in existing_lines]
     if not to_add:
         print(f"  SKIP   .gitignore  (all entries already present)")
         return 0
 
-    header = "# Managed by get_started.py — do not commit these paths manually; sync-claude.yml is the authoritative committer"
+    header = "# Managed by get_started.py -- do not commit these paths manually; sync-claude.yml is the authoritative committer"
     needs_header = header not in existing_lines
     separator = "\n" if existing_lines else ""
     if needs_header:
@@ -569,7 +618,7 @@ def add_gitignore_entries(
         return len(to_add)
 
     gitignore.parent.mkdir(parents=True, exist_ok=True)
-    with open(gitignore, "a") as fh:
+    with open(gitignore, "a", encoding="utf-8") as fh:
         fh.write(block)
 
     plural = "entry" if len(to_add) == 1 else "entries"
@@ -608,7 +657,7 @@ def untrack_managed_paths(consuming_root: Path, dry_run: bool) -> int:
             break  # git binary not found; skip all
 
         if check.returncode != 0:
-            # Fatal git error (e.g. "not a git repository") — no point continuing.
+            # Fatal git error (e.g. "not a git repository") -- no point continuing.
             # Transient per-path errors also return non-zero; bail once on first.
             if check.stderr.strip():
                 break
@@ -637,18 +686,43 @@ def untrack_managed_paths(consuming_root: Path, dry_run: bool) -> int:
     return removed
 
 
+def print_followup_seed() -> None:
+    print()
+    print("Done. Two steps to finish:")
+    print()
+    print(f"  Step 1 -- Commit and push the seed files:")
+    print(f"     git add .gitmodules \\")
+    print(f"             {SUBMODULE_NAME} \\")
+    print(f"             .github/workflows/orchestrator.yml \\")
+    print(f"             .gitignore")
+    print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
+    print(f"     git push")
+    print()
+    print(f"  Step 2 -- Add secrets, then run the Onboard job:")
+    print(f"     Settings -> Secrets -> Actions:")
+    print(f"       ANTHROPIC_API_KEY  -- your Anthropic API key")
+    print(f"       AI_AGILE_BOT_TOKEN -- a GitHub PAT for the bot account")
+    print()
+    print(f"     Then: GitHub -> Actions -> 'Pipeline Orchestrator' -> Run workflow")
+    print(f"     -> check 'Onboard' -> Run.")
+    print()
+    print(f"     The Onboard job runs on a Linux runner. It creates the")
+    print(f"     .claude/agents symlink, copies slash commands and standards,")
+    print(f"     drops sync-claude.yml and other workflows, and commits everything.")
+    print(f"     After it completes, open a test issue to confirm the pipeline is live.")
+    print()
+    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
+
+
 def print_followup(consuming_root: Path) -> None:
     print()
     print("Done. Next steps:")
     print()
-    print(f"  1. Add secrets to your repo (Settings → Secrets → Actions):")
-    print(f"       ANTHROPIC_API_KEY  — your Anthropic API key")
-    print(f"       AI_AGILE_BOT_TOKEN — a GitHub PAT for the bot account")
+    print(f"  1. Add secrets to your repo (Settings -> Secrets -> Actions):")
+    print(f"       ANTHROPIC_API_KEY  -- your Anthropic API key")
+    print(f"       AI_AGILE_BOT_TOKEN -- a GitHub PAT for the bot account")
     print()
     print(f"  2. Commit the seed files (workflows + .gitignore only).")
-    print(f"     On Windows these are the only files to commit — the sync")
-    print(f"     workflow (step 3) will create and commit everything else")
-    print(f"     from a Linux runner automatically.")
     print()
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
@@ -656,50 +730,35 @@ def print_followup(consuming_root: Path) -> None:
     print(f"             .github/workflows/bootstrap-labels.yml \\")
     print(f"             .github/workflows/label-cleanup.yml \\")
     print(f"             .github/workflows/sync-claude.yml \\")
-    print(f"             .gitignore")
+    print(f"             .gitignore \\")
+    print(f"             requirements.txt")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
     print(f"     git push")
     print()
     print(f"     If any managed paths were previously committed,")
     print(f"     get_started.py has already staged their removal via")
-    print(f"     'git rm --cached' — include those staged deletions in")
+    print(f"     'git rm --cached' -- include those staged deletions in")
     print(f"     this commit too.")
     print()
-    print(f"  3. Run the sync workflow to build the full Linux environment.")
-    print(f"     Go to: GitHub → Actions → 'Sync AI Agile .claude directory'")
-    print(f"     → Run workflow.")
-    print()
-    print(f"     This runs get_started.py on a Linux runner, which creates:")
-    print(f"       .claude/agents      — symlink → submodule agents dir")
-    print(f"       .claude/commands/   — copies with path rewrites")
-    print(f"       standards/          — copies with schema path rewrites")
-    print(f"     and commits them all. After this step the repo is fully set up.")
-    print()
-    print(f"     The sync workflow also runs daily at 06:00 UTC so these")
-    print(f"     files are kept in sync as the submodule is updated.")
-    print()
-    print(f"     NOTE: .claude/settings.local.json is never committed —")
-    print(f"     it is developer-local. Run get_started.py locally to")
-    print(f"     regenerate it after a fresh clone.")
-    print()
-    print(f"  4. Bootstrap the {{agent}}:{{status}} labels:")
-    print(f"     Actions → 'Pipeline Orchestrator' → Run workflow.")
-    print(f"     The bootstrap-labels job runs automatically on workflow_dispatch")
-    print(f"     and creates all required labels in one step.")
-    print()
-    print(f"     (Or run locally: bash {SUBMODULE_NAME}/.github/scripts/status.sh")
-    print(f"      bootstrap-all {SUBMODULE_NAME}/pipeline/pipeline.json)")
-    print()
-    print(f"  5. Open a test issue with a problem statement and acceptance criteria.")
+    print(f"  3. Open a test issue with a problem statement and acceptance criteria.")
     print(f"     The orchestrator workflow fires on issue-opened; expect")
     print(f"     `01_product_docs/issue-classifier:wip` then `:complete` labels.")
     print()
-    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/agile/.")
+    print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Wire ai-coding-standards2 into a consuming repo."
+    )
+    p.add_argument(
+        "--seed",
+        action="store_true",
+        help=(
+            "Minimal bootstrap: copy only orchestrator.yml + .gitignore. "
+            "Commit those two files, push, then trigger the workflow with "
+            "'Onboard' to finish wiring on a Linux runner."
+        ),
     )
     p.add_argument(
         "--force",
@@ -720,8 +779,22 @@ def main() -> int:
     print(f"Consuming repo root: {consuming_root}")
     print(f"Submodule root:      {SUBMODULE_ROOT}")
     if args.dry_run:
-        print("(dry run — no files will be written)")
+        print("(dry run -- no files will be written)")
     print()
+
+    if args.seed:
+        # Minimal bootstrap: drop only the orchestrator workflow so the
+        # developer can commit and push a single file. The workflow's
+        # built-in "Onboard" mode handles everything else on a
+        # Linux runner (symlinks, commands, standards, remaining workflows).
+        # Skip standards gitignore entries -- install_standards() hasn't run
+        # yet, so listing gitignore paths for non-existent files confuses
+        # developers who try to place standards files manually before setup.
+        install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
+        add_gitignore_entries(consuming_root, args.dry_run, include_standards=False)
+        untrack_managed_paths(consuming_root, args.dry_run)
+        print_followup_seed()
+        return 0
 
     install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
     install_bootstrap_labels_workflow(consuming_root, args.force, args.dry_run)
@@ -731,6 +804,7 @@ def main() -> int:
     install_agents(consuming_root, args.force, args.dry_run)
     install_slash_commands(consuming_root, args.force, args.dry_run)
     install_local_settings(consuming_root, args.force, args.dry_run)
+    install_requirements(consuming_root, args.dry_run)
     add_gitignore_entries(consuming_root, args.dry_run)
     untrack_managed_paths(consuming_root, args.dry_run)
 

@@ -11,7 +11,7 @@ tools: [Bash, Read, Write, Grep]
 model: claude-sonnet-4-6
 # 40 turns observed ~25-35 on a typical run; 40 gives ~25% headroom over the DEFAULT_MAX_TURNS=30 global default
 max_turns: 40
-extra_allowedTools: [Bash(gh issue view *), Bash(gh issue comment *), Bash(find docs/product *)]
+# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 01_product_docs/prd-docs-updater
@@ -166,7 +166,7 @@ AI_AGILE_STATUS: complete
 - Do not edit the issue body or the PRD — they are human-approved artefacts.
 - Keep doc edits minimal. Do not reformat, reorder, or restructure
   sections unrelated to this issue.
-- Never update `docs/product/agile/` pipeline system files
+- Never update `docs/product/orchestrator/` pipeline system files
   (`01-vision.md` through `13-todos.md`) on the basis of a consuming-
   repo feature PRD. Those files describe the AI Agile pipeline itself.
 - If `docs/product/` does not exist, post a comment noting the
