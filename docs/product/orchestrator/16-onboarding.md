@@ -9,20 +9,40 @@ automatically.
 
 ## Modes
 
+`get_started.py` is **one script that is run twice during onboarding**, and
+the `--seed` flag decides how much work it does. This is the single most
+common source of onboarding confusion, so read this first.
+
+| Run | Command | What it installs | Who runs it |
+|---|---|---|---|
+| **Seed** (step 1) | `get_started.py --seed` | **Only** `orchestrator.yml` + `.gitignore` entries. Nothing else. | A developer, locally |
+| **Full** (step 2) | `get_started.py --force` | **Everything** — all workflows, the agents symlink, slash commands, standards, settings, requirements. | The Onboard job, on a Linux runner |
+
+The two runs are two steps of the same flow: seed drops the one workflow file
+GitHub needs to run the Onboard job; the Onboard job then re-runs the script
+in full mode to lay down (and commit) the rest. The daily `sync-claude.yml`
+workflow also runs the full mode (`--force`) to repair drift.
+
+In code these are the `run_seed()` and `run_full()` functions in
+`get_started.py`; the module docstring lists exactly what each installs.
+
 ### `--seed` (recommended for new installs)
 
 Drops `orchestrator.yml` into the consuming repo's `.github/workflows/` and
 adds `.gitignore` entries. The developer commits those two things and pushes.
 The orchestrator workflow's built-in setup job then does the rest on a Linux
-runner (see Bootstrap flow below).
+runner (see Bootstrap flow below). Seed mode deliberately installs almost
+nothing — it is only enough to bootstrap step 2.
 
 ```bash
 python ai-coding-standards2/get_started.py --seed
 ```
 
-### Full run (default)
+### Full run (default / `--force`)
 
-Running without `--seed` performs all wiring locally:
+Running without `--seed` performs all wiring. This is what the Onboard job
+runs on a Linux runner (and what you would run locally if you skip the seed
+bootstrap):
 
 | Step | What happens |
 |---|---|
