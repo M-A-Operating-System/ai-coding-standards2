@@ -24,7 +24,13 @@ The full design is in `docs/product/orchestrator/`. Start with
 
 ---
 
-## Install in a consuming repo
+## Using this repo
+
+These instructions are for **teams adding this pipeline to their own project repo**
+as a submodule. If you want to contribute to ai-coding-standards2 itself, see
+[Contributing](#contributing) below.
+
+### Install in a consuming repo
 
 > **Security notice:** Do **not** install this pipeline on a public
 > repository where untrusted users can open issues. The `coder` agent
