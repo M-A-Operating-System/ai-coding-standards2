@@ -153,3 +153,41 @@ Older installs may have `.claude/agents/`, `.claude/commands/`, and `standards/`
 tracked in git as committed copies. Running `get_started.py` (any version
 with `untrack_managed_paths`) will call `git rm --cached -r` on each tracked
 managed path to remove it from the index without deleting local files.
+
+---
+
+## How paths resolve
+
+The orchestrator is path-agnostic and infers everything from one
+of two roots:
+
+| Variable | Default | Used for |
+|---|---|---|
+| `AI_AGILE_ROOT` env var | The directory three levels above `pipeline_orchestrator.py` (i.e. the repo root containing `.github/` and `ai-agile/`) | Locating `status.sh` and agent prompts |
+| `--pipeline PATH` arg | `<this_dir>/pipeline.json` | The pipeline graph |
+
+When this repo is checked out **at the consuming repo's root**
+(non-submodule mode), `AI_AGILE_ROOT` defaults to the repo root —
+everything just works.
+
+When this repo is checked out **as a submodule** at
+`<consuming-repo>/ai-coding-standards2/`, set `AI_AGILE_ROOT` in the
+workflow env (the installed `orchestrator.yml` does this) so the
+orchestrator finds `status.sh` and agent prompts under the submodule,
+not under the consuming repo's root.
+
+The orchestrator passes both `AI_AGILE_ROOT` and the resolved
+`STATUS_SH` to every agent subprocess via env. Agent prompts
+reference `$STATUS_SH` rather than a hardcoded path, so they work
+identically in both layouts.
+
+---
+
+## Adding repo-specific agents (planned)
+
+Out of MVP scope. Today every agent prompt lives in the submodule.
+Once the submodule is stable, the design supports the consuming repo
+adding its own agents at `<consuming-repo>/.claude/agents/{agent}.md`,
+which override (or extend) the submodule's set. This requires a small
+orchestrator change to consult two agent directories. Tracked in the
+[roadmap](10-roadmap.md).
