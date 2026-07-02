@@ -233,14 +233,17 @@ merge). Agents may read issues and PRs freely; they must not call
 
 ### Automatic issue close and branch delete
 
-These two lifecycle events are GitHub-native and require no pipeline code:
-
 - **Issue auto-close:** The `create-pr` script writes "Closes #{N}" in
   the PR body. GitHub automatically closes the linked issue when the PR
-  merges.
-- **Branch auto-delete:** The GitHub repo setting **"Automatically delete
-  head branches"** must be enabled. When a PR merges, GitHub deletes the
-  feature branch automatically. This is a required repository configuration.
+  merges. This is GitHub-native and requires no pipeline code.
+- **Branch delete on merge:** When the orchestrator receives a
+  `pull_request.closed` event with `merged=true`, `_wake` calls
+  `delete-branch.sh` with the head branch name. This deletes `issue-{N}`
+  branches immediately on merge. Non-`issue-{N}` head branches (e.g.
+  `claude/*`) are skipped silently. Branches from PRs closed without
+  merging are not auto-deleted — they are candidates for the
+  `00_ondemand/branch-cleanup` agent, which proposes a deletion list for
+  human approval before removing anything.
 
 ### `git_ops` field reference
 
