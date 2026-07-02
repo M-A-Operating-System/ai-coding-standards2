@@ -193,7 +193,7 @@ their own git operations. They commit and push directly to the issue branch.
 | Apply `:wip`, `:complete`, `:review`, `:failed` labels | Orchestrator |
 | Audit log writes | Orchestrator |
 | Issue auto-close on merge | GitHub (via "Closes #N" trailer in PR body) |
-| Branch auto-delete on merge | GitHub (repo setting: auto-delete head branches) |
+| Branch deletion on merge | Orchestrator (`delete-branch.sh`, called if required) |
 
 Agent `extra_allowedTools` lists specific git subcommands, never the bare
 `Bash(git *)` glob.
@@ -427,8 +427,10 @@ short-lived: deleted automatically on merge or close.
 - A second attempt at the same shippable unit (after a
   closed-without-merge) creates a *new* branch with a new name; the
   old branch is preserved for the audit trail.
-- GitHub setting: **auto-delete head branches on merge** must be
-  enabled — this is a required repo configuration, not an agent action.
+- The orchestrator deletes the merged PR's branch itself, if required
+  (`_wake` calls `delete-branch.sh` on `pull_request.closed` with
+  `merged=true`) — this is an agent action, not a repo configuration
+  requirement.
 - Force-push within a PR's branch (rebase, fixup) is allowed; pushing
   a different branch's history into the PR's branch is not.
 - The `pr.draft_ready` transition is triggered by the **orchestrator**
