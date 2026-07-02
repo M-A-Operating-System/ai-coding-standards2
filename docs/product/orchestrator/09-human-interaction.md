@@ -424,14 +424,15 @@ unrelated CI activity in the timeline.
 ### Two implementation paths
 
 There are two production-acceptable ways to back the bot identity.
-The MVP uses (B); (A) is the production target.
+The pipeline uses (B); the [roadmap](10-roadmap.md) sequences the
+migration to (A).
 
-| Path | Status |
+| Path | Tradeoffs |
 |---|---|
-| (A) **GitHub App** with short-lived installation tokens | Production target. App tokens auto-rotate every hour, scopes are per-installation, no per-seat cost, app comments visibly carry the `[bot]` suffix. Migration tracked in the roadmap. |
-| (B) **Dedicated user account + fine-grained PAT** | **Current** (MVP). Simpler to set up but requires manual PAT rotation (90-day expiry recommended) and may consume one seat on per-seat-billed orgs. |
+| (A) **GitHub App** with short-lived installation tokens | App tokens auto-rotate every hour, scopes are per-installation, no per-seat cost, app comments visibly carry the `[bot]` suffix. |
+| (B) **Dedicated user account + fine-grained PAT** | Simpler to set up, but requires manual PAT rotation (90-day expiry recommended) and may consume one seat on per-seat-billed orgs. |
 
-### Setup (current — option B)
+### Setup (option B)
 
 The consuming repo's install steps are documented in the submodule
 README. Summary:

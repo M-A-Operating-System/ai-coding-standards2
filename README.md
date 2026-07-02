@@ -211,9 +211,9 @@ git commit -m "Refresh ai-coding-standards2 wrapper files"
 `.claude/agents`, `.claude/commands/`, and `standards/` are managed by the
 daily `sync-claude.yml` workflow and should not be committed manually.
 
-Look at the submodule's CHANGELOG (when one exists) or the diff
-between tags to know whether re-running is needed. If neither the
-workflow nor any slash command changed, no re-run is required.
+Compare the diff between tags to know whether re-running is
+needed. If neither the workflow nor any slash command changed, no
+re-run is required.
 
 ---
 
