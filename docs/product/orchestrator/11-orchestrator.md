@@ -749,7 +749,10 @@ Options:
                         in Rate limit handling)
   --clear-stop          Clear the emergency stop marker if set, then exit
                         (manual override for operators; see "Emergency stop")
-  --verbose, -v         Debug-level output
+  --verbose, -v         Emit all non-system agent stream-json events to stderr.
+                        Default (without this flag): emit only the result-type
+                        summary event per agent invocation. Non-JSON lines are
+                        always forwarded regardless of this flag.
 ```
 
 ---
