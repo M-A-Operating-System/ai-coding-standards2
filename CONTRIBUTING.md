@@ -1,5 +1,12 @@
 # Contributing to ai-coding-standards2
 
+## Questions and feedback
+
+Use [GitHub Discussions](../../discussions) to ask questions, share feedback, or
+propose ideas before opening an issue or PR.
+
+---
+
 ## Start here
 
 Read [docs/product/orchestrator/README.md](docs/product/orchestrator/README.md) first.

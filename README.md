@@ -300,3 +300,9 @@ repos.
 - [`docs/product/orchestrator/11-orchestrator.md`](docs/product/orchestrator/11-orchestrator.md) — orchestrator technical design
 - [`docs/product/orchestrator/12-agent-spec.md`](docs/product/orchestrator/12-agent-spec.md) — agent prompt-file spec
 - [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md) — onboarding a consuming repo
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup instructions, code standards, and
+how to submit a change. Use [GitHub Discussions](../../discussions) to ask questions
+or share feedback before opening an issue.
