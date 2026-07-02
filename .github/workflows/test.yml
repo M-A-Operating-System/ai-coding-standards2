@@ -33,3 +33,12 @@ jobs:
         run: pytest tests/ -v
       - name: Run integration tests
         run: pytest tests/integration/ -v
+      - name: Run shell tests
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in tests/*.sh; do
+            echo "=== $f ==="
+            bash "$f" || fail=1
+          done
+          exit "$fail"
