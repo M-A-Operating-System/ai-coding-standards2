@@ -321,7 +321,7 @@ AI_AGILE_STATUS: complete
   the human's artefact.
 - **Cross-reference `docs/product/` sparingly.** Only read it when code
   intent is genuinely unclear and the product docs are likely to clarify it.
-  Never read `docs/product/agile/` pipeline system files to justify findings.
+  Never read `docs/product/orchestrator/` pipeline system files to justify findings.
 - **Every finding must be AI-actionable.** Vague findings like "improve
   error handling" are not acceptable. Name the function, the line, and the
   exact change.

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate per-phase Mermaid flowcharts from pipeline/pipeline.json.
 
-Produces one .mmd file per phase under docs/product/agile/generated/phases/,
-a single lifecycle flowchart at docs/product/agile/generated/pipeline.mmd,
+Produces one .mmd file per phase under docs/product/orchestrator/generated/phases/,
+a single lifecycle flowchart at docs/product/orchestrator/generated/pipeline.mmd,
 and a complete-flow diagram grouped by phase at
-docs/product/agile/generated/pipeline_phases.mmd.
+docs/product/orchestrator/generated/pipeline_phases.mmd.
 Run without arguments to regenerate all charts. Run with --check to verify
 charts are up-to-date without writing; exits non-zero if any chart is missing,
 stale, or orphaned.
@@ -18,9 +18,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
-OUTPUT_DIR = REPO_ROOT / "docs" / "product" / "agile" / "generated" / "phases"
-LIFECYCLE_FILE = REPO_ROOT / "docs" / "product" / "agile" / "generated" / "pipeline.mmd"
-COMPLETE_FLOW_FILE = REPO_ROOT / "docs" / "product" / "agile" / "generated" / "pipeline_phases.mmd"
+OUTPUT_DIR = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "phases"
+LIFECYCLE_FILE = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "pipeline.mmd"
+COMPLETE_FLOW_FILE = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "pipeline_phases.mmd"
 
 # ---------------------------------------------------------------------------
 # Hand-curated outcome branches not yet expressible as structured JSON fields.

@@ -543,7 +543,7 @@ class TestRewritePaths:
     def test_rewrites_agent_todo_standard(self):
         src = "See .claude/agent-todo-standard.md for details."
         result = get_started.rewrite_paths(src)
-        assert f"{self._name()}/docs/product/agile/13-todos.md" in result
+        assert f"{self._name()}/docs/product/orchestrator/13-todos.md" in result
         assert "agent-todo-standard.md" not in result
 
 

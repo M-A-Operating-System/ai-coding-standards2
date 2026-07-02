@@ -41,7 +41,7 @@ Pick exactly one of the five classifications based on the body content:
 
 | Classification | When | Title prefix (used by `prd-writer`) |
 |---|---|---|
-| `bug` | Broken behaviour, an unexpected error, or something that used to work and no longer does. By definition the code has drifted from the product-docs target ([P-15](../../docs/product/agile/02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)). | `[BUG]` |
+| `bug` | Broken behaviour, an unexpected error, or something that used to work and no longer does. By definition the code has drifted from the product-docs target ([P-15](../../docs/product/orchestrator/02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)). | `[BUG]` |
 | `toil` | Operational / maintenance work that does not change product capability — dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes. Tied to a non-functional requirement in the product docs, not a user-facing feature. | `[TOIL]` |
 | `enhancement` | An improvement to an **existing** capability — making a feature richer, faster, more accessible, or more reliable. The capability exists in production today; the issue moves it closer to the target state. | `[ENHANCEMENT]` |
 | `feature` | A **new** capability the product cannot do today. Adds a fresh user-observable outcome to the target state. | `[FEATURE]` |

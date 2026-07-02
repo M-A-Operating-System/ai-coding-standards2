@@ -79,7 +79,7 @@ PATH_REWRITES = [
     # rewrite any lingering reference to point at the new doc.
     (
         r"\.claude/agent-todo-standard\.md",
-        f"{SUBMODULE_NAME}/docs/product/agile/13-todos.md",
+        f"{SUBMODULE_NAME}/docs/product/orchestrator/13-todos.md",
     ),
 ]
 
