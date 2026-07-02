@@ -441,8 +441,7 @@ README. Summary:
    `write`-permission collaborator on every consuming repo.
 2. Generate a fine-grained PAT scoped to those repos with
    **Issues: Read & Write**, **Pull requests: Read & Write**,
-   **Contents: Read & Write** (Phase 1 Slice 1 needs only the first
-   two; Contents-write is needed when `coder` lands).
+   **Contents: Read & Write**.
 3. Store as the `AI_AGILE_BOT_TOKEN` secret on each consuming repo.
 4. The orchestrator workflow reads `AI_AGILE_BOT_TOKEN` (not
    `GITHUB_TOKEN`) and passes it through to all `gh` and orchestrator

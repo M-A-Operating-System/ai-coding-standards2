@@ -183,11 +183,10 @@ identically in both layouts.
 
 ---
 
-## Adding repo-specific agents (planned)
+## Adding repo-specific agents
 
-Out of MVP scope. Today every agent prompt lives in the submodule.
-Once the submodule is stable, the design supports the consuming repo
-adding its own agents at `<consuming-repo>/.claude/agents/{agent}.md`,
-which override (or extend) the submodule's set. This requires a small
-orchestrator change to consult two agent directories. Tracked in the
-[roadmap](10-roadmap.md).
+The consuming repo adds its own agents at
+`<consuming-repo>/.claude/agents/{agent}.md`, which override (or extend)
+the submodule's set. The orchestrator consults both agent directories,
+with the consuming repo's taking precedence. Delivery sequencing is in
+the [roadmap](10-roadmap.md).

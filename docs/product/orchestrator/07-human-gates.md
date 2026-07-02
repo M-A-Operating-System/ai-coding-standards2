@@ -22,12 +22,11 @@ remains a human responsibility. Agents draft. Humans decide.
 
 ## The gates
 
-The planned authoritative source for the gate list is a generated file
-([`generated/gates.md`](generated/gates.md)), built from
-[`pipeline/pipeline.json`](../../../pipeline/pipeline.json) per
+The authoritative source for the gate list is
+[`pipeline/pipeline.json`](../../../pipeline/pipeline.json), rendered as a
+generated catalogue per
 [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
-That generator is not yet built, so until it exists this catalogue is the
-working reference for every gate.
+This document describes what each gate means for the human approving it.
 
 Each row gives the gate's approver, the artefact the human reads, what
 approval signs off, and the cost of getting it wrong.

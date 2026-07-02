@@ -6,12 +6,6 @@ tested, documented code — with humans approving at well-defined gates.
 Everything runs on GitHub: issues, labels, comments, branches, and PRs.
 There is no sidecar database, no separate dashboard, and no hidden state.
 
-> **Target state vs. today.** These docs are written in the present tense
-> ("this is how it works") and describe the **full target design**. The
-> pipeline that actually runs today is a leaner subset — see
-> [`10-roadmap.md`](10-roadmap.md) for what ships now versus later, and
-> `pipeline/pipeline.json` for the authoritative list of live agents.
-
 ---
 
 ## New here? Start here
@@ -102,6 +96,6 @@ Authoritative facts about the pipeline are declared once in
 `pipeline/generators/generate_phase_mermaid.py`. These files are never
 hand-edited and are committed in the same PR as any change to the source
 JSON (see [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
-The currently generated file and the planned views are listed in
+The generated views are listed in
 [`generated/README.md`](generated/README.md); whole-pipeline catalogues
 (agents, gates) are tracked in [`backlog.md`](15-backlog.md).

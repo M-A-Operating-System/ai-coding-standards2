@@ -154,34 +154,27 @@ In the **Execute** phase, branch and PR ownership follows
 
 ## Forks in the path
 
-> **Note:** Every fork below is planned design **except** `merge-conflict`,
-> which is implemented and runs after CI (see "PR contains merge conflicts").
-> The current pipeline runs
-> `issue-classifier → prd-writer → create-pr → prd-docs-updater → coder →
-> ci-gate → merge-conflict → pr-reviewer`.
-
 ### The ticket is too big
 
-If a future `ticket-sizer` agent returns `XL`, an **`issue-decomposer`**
-agent would run. It would draft a roadmap of proposed child issues —
-each a smaller business outcome — and post the roadmap as a comment on
-the parent. A human would approve the decomposition by applying
-`decomposition:approved`. On approval, the agent would auto-create
-the child issues and link them back to the parent. Each child
-re-enters the pipeline at `issue-classifier` and runs through its own
-full lifecycle. The parent waits and closes when all children close,
-with a roll-up retrospective.
+If `ticket-sizer` returns `XL`, an **`issue-decomposer`** agent runs.
+It drafts a roadmap of proposed child issues — each a smaller business
+outcome — and posts the roadmap as a comment on the parent. A human
+approves the decomposition by applying `decomposition:approved`. On
+approval, the agent auto-creates the child issues and links them back
+to the parent. Each child re-enters the pipeline at `issue-classifier`
+and runs through its own full lifecycle. The parent waits and closes
+when all children close, with a roll-up retrospective.
 
-Distinct from a future `task-decomposer` (Design phase): `task-decomposer`
-would break a *sized* feature into implementation tasks (one file, one
-concern) that all ship in one PR. `issue-decomposer` would run *before*
+Distinct from `task-decomposer` (Design phase): `task-decomposer`
+breaks a *sized* feature into implementation tasks (one file, one
+concern) that all ship in one PR. `issue-decomposer` runs *before*
 sizing clears, breaking a too-large issue into smaller business-outcome
 issues, each with its own PR.
 
 ### Many small tickets in a window
 
-If a future `ticket-sizer` returns `S` and the issue is the Nth small
-bug or chore in a configured window, the orchestrator would suggest
+If `ticket-sizer` returns `S` and the issue is the Nth small
+bug or chore in a configured window, the orchestrator suggests
 grouping under a super-issue before sizing completes. On approval the
 super-issue becomes the shippable unit
 (see [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)): it runs
@@ -206,21 +199,18 @@ plan as context; it applies the resolutions and pushes the updated branch.
 
 ### SQL changes
 
-When the `coder` opens a PR that touches `**/*.sql`, a future
-`migration-validator` would run in addition to the standard reviewers.
-Merge would be blocked on naming, RLS, and type violations regardless
+When the `coder` opens a PR that touches `**/*.sql`, a
+`migration-validator` runs in addition to the standard reviewers.
+Merge is blocked on naming, RLS, and type violations regardless
 of the standard review path.
 
 ---
 
 ## End-to-end happy path
 
-A typical feature/bug/enhancement/toil ticket flows like this. The table
-reflects the **current implementation** — the agents actually present in
+A typical feature/bug/enhancement/toil ticket flows like this. Agent
+names, dependencies, and gates are as declared in
 [`pipeline.json`](../../../pipeline/pipeline.json).
-The Design (2), Evaluate (4), and Continuous (5) phases described
-elsewhere in this document are planned but not yet wired into the
-pipeline; their directories exist but hold no agents.
 
 **Spike issues** (`classification: spike`) stop after `prd-writer:approved`.
 `create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —

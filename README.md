@@ -30,22 +30,9 @@ consume it.
 The full design is in [`docs/product/orchestrator/`](docs/product/orchestrator/README.md) —
 start with its 60-second summary and reading order.
 
-## What runs today
-
-The docs describe the full target design; the pipeline that runs today is
-a leaner subset:
-
-```
-issue-classifier → prd-writer → create-pr → prd-docs-updater
-                → coder → ci-gate → merge-conflict → pr-reviewer
-```
-
-That is a complete issue-to-merged-PR loop with human gates at PRD approval
-and PR review. The Design, Evaluate, and Continuous phases described in the
-docs are planned but not yet wired in. See
-[`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md)
-for what ships now versus later, and `pipeline/pipeline.json` for the
-authoritative list of live agents.
+The authoritative list of agents and their dependencies is
+`pipeline/pipeline.json`; delivery sequencing lives in
+[`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md).
 
 ---
 
@@ -156,8 +143,7 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 > and login so reviewers can see at a glance which actions are
 > agent-driven vs human-driven. See
 > [`docs/product/orchestrator/09-human-interaction.md`](docs/product/orchestrator/09-human-interaction.md#4-agent-identity)
-> for the full rationale and the planned migration path to a GitHub
-> App.
+> for the full rationale.
 
 ### 5. Run the Onboard job
 
