@@ -87,7 +87,11 @@ fi
 
 log "GITHUB_RUN_ID=${GITHUB_RUN_ID:-<not set>}"
 log "exclude list: ${EXCLUDE_NAMES}"
-log "excluded job names: ${!seen_names[*]:-<none>}"
+if [[ ${#seen_names[@]} -eq 0 ]]; then
+    log "excluded job names: <none>"
+else
+    log "excluded job names: ${!seen_names[*]}"
+fi
 
 # ── locate PR ────────────────────────────────────────────────────────────────
 
