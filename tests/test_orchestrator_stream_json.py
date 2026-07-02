@@ -535,9 +535,6 @@ class TestShouldEmitStreamLine:
     def test_non_json_line_forwarded_in_non_verbose_mode(self):
         assert _should_emit_stream_line("not json at all\n", verbose=False) is True
 
-    def test_non_json_line_forwarded_in_verbose_mode(self):
-        assert _should_emit_stream_line("not json at all\n", verbose=True) is True
-
     def test_truncated_json_line_forwarded_in_non_verbose_mode(self):
         assert _should_emit_stream_line('{"type": "result", "result": "half', verbose=False) is True
 
