@@ -137,6 +137,12 @@ PIPELINE_MAX_CONCURRENT = 20
 # Maximum wall-clock time for a single agent invocation.
 AGENT_TIMEOUT_SECONDS = 1800
 
+# Controls stderr verbosity for the invoke_agent stdout read loop.
+# False (default): only result-type stream-json events are forwarded.
+# True (--verbose): all non-system events are forwarded.
+# Set once in main() after arg parsing; non-JSON lines are always forwarded.
+_VERBOSE: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -1270,6 +1276,22 @@ def _parse_agent_sentinel(captured_tail: str) -> tuple[Optional[str], str]:
     return m.group(1), (m.group(2) or "")
 
 
+def _should_emit_stream_line(line: str, verbose: bool) -> bool:
+    """Return True when line should be forwarded to stderr from the agent read loop.
+
+    verbose=False (default): only result-type events and non-JSON lines.
+    verbose=True  (--verbose): all non-system events and non-JSON lines.
+    """
+    try:
+        ev = json.loads(line)
+        event_type = ev.get("type")
+        if event_type == "system":
+            return False
+        return verbose or event_type == "result"
+    except (json.JSONDecodeError, AttributeError):
+        return True
+
+
 def _extract_text_from_stream_event(event: dict) -> str:
     """Extract human-readable text from a stream-json CLI event.
 
@@ -1853,14 +1875,11 @@ def invoke_agent(
                 raise RuntimeError("subprocess stdout pipe unexpectedly None")
             for line in proc.stdout:
                 # Mirror to our stderr so the subprocess log is visible in the
-                # orchestrator's CI output. Skip type=system events (thinking
-                # token progress ticks) — they are pure noise in the log.
-                try:
-                    _ev = json.loads(line)
-                    if _ev.get("type") != "system":
-                        sys.stderr.write(line)
-                except (json.JSONDecodeError, AttributeError):
-                    sys.stderr.write(line)  # non-JSON lines always shown
+                # orchestrator's CI output. Verbosity controlled by _VERBOSE:
+                # default emits only result-type events; --verbose emits all
+                # non-system events. Non-JSON lines are always forwarded.
+                if _should_emit_stream_line(line, _VERBOSE):
+                    sys.stderr.write(line)
                 if len(captured_lines) < MAX_CAPTURED_LINES:
                     captured_lines.append(line)
                 # Shared with _accumulate_stream_text so tests cover this path.
@@ -2917,13 +2936,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--verbose", "-v",
         action="store_true",
-        help="Show debug-level output",
+        help=(
+            "Emit all non-system agent stream-json events to stderr. "
+            "Default (without this flag): emit only the result-type summary "
+            "event per agent invocation. Non-JSON lines are always forwarded "
+            "regardless of this flag. Also enables debug-level logging."
+        ),
     )
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+
+    global _VERBOSE
+    _VERBOSE = args.verbose
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)

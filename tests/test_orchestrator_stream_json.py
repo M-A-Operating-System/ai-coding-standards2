@@ -21,6 +21,7 @@ from pipeline_orchestrator import (
     _parse_agent_sentinel,
     _captured_tail,
     _accumulate_stream_text,
+    _should_emit_stream_line,
     detect_rate_limit,
     MAX_PAUSE_SECONDS,
 )
@@ -479,3 +480,70 @@ class TestTokenUsageCapture:
                 result_output_tokens = out
         assert result_input_tokens == 200
         assert result_output_tokens == 20
+
+
+# ---------------------------------------------------------------------------
+# Scenario: verbosity-controlled stderr filtering (issue #174)
+# ---------------------------------------------------------------------------
+
+class TestShouldEmitStreamLine:
+    """Covers acceptance criteria from issue #174: Reduce CI Log Verbosity.
+
+    Scenario: Normal run emits one result line per agent
+    Scenario: Verbose run emits all non-system events
+    Scenario: Non-JSON lines are always forwarded
+    """
+
+    # --- Scenario: Normal run emits one result line per agent ---
+
+    def test_result_event_emitted_in_non_verbose_mode(self):
+        line = json.dumps({"type": "result", "subtype": "success", "result": "done"})
+        assert _should_emit_stream_line(line, verbose=False) is True
+
+    def test_assistant_event_suppressed_in_non_verbose_mode(self):
+        line = json.dumps({"type": "assistant", "message": {"content": []}})
+        assert _should_emit_stream_line(line, verbose=False) is False
+
+    def test_user_event_suppressed_in_non_verbose_mode(self):
+        line = json.dumps({"type": "user", "message": {}})
+        assert _should_emit_stream_line(line, verbose=False) is False
+
+    def test_system_event_suppressed_in_non_verbose_mode(self):
+        line = json.dumps({"type": "system", "subtype": "init"})
+        assert _should_emit_stream_line(line, verbose=False) is False
+
+    # --- Scenario: Verbose run emits all non-system events ---
+
+    def test_result_event_emitted_in_verbose_mode(self):
+        line = json.dumps({"type": "result", "subtype": "success", "result": "done"})
+        assert _should_emit_stream_line(line, verbose=True) is True
+
+    def test_assistant_event_emitted_in_verbose_mode(self):
+        line = json.dumps({"type": "assistant", "message": {"content": []}})
+        assert _should_emit_stream_line(line, verbose=True) is True
+
+    def test_user_event_emitted_in_verbose_mode(self):
+        line = json.dumps({"type": "user", "message": {}})
+        assert _should_emit_stream_line(line, verbose=True) is True
+
+    def test_system_event_suppressed_in_verbose_mode(self):
+        line = json.dumps({"type": "system", "subtype": "init"})
+        assert _should_emit_stream_line(line, verbose=True) is False
+
+    # --- Scenario: Non-JSON lines are always forwarded ---
+
+    def test_non_json_line_forwarded_in_non_verbose_mode(self):
+        assert _should_emit_stream_line("not json at all\n", verbose=False) is True
+
+    def test_non_json_line_forwarded_in_verbose_mode(self):
+        assert _should_emit_stream_line("not json at all\n", verbose=True) is True
+
+    def test_truncated_json_line_forwarded_in_non_verbose_mode(self):
+        assert _should_emit_stream_line('{"type": "result", "result": "half', verbose=False) is True
+
+    # --- Default state ---
+
+    def test_verbose_flag_defaults_to_false(self):
+        """_VERBOSE is False at module load so default runs are low-verbosity."""
+        import pipeline_orchestrator
+        assert pipeline_orchestrator._VERBOSE is False
