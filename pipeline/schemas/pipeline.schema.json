@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
   "title": "AI Agile Pipeline",
-  "description": "The agent dependency graph that the orchestrator uses to decide which agent runs next. See docs/product/agile/05-pipeline-config.md.",
+  "description": "The agent dependency graph that the orchestrator uses to decide which agent runs next. See docs/product/orchestrator/05-pipeline-config.md.",
   "type": "object",
   "required": ["pipeline"],
   "additionalProperties": true,
@@ -43,7 +43,7 @@
         "agent": {
           "type": "string",
           "pattern": "^(00_ondemand|01_product_docs|02_design|03_execute|04_evaluate|05_continuous)/[a-z][a-z0-9-]*[a-z0-9]$",
-          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .claude/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix is numeric-prefixed (e.g. 01_product_docs) so the directory tree sorts in lifecycle order. 00_ondemand holds human-triggered agents outside the lifecycle flow. The phase prefix must equal the phase field. See docs/product/agile/12-agent-spec.md."
+          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .claude/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix is numeric-prefixed (e.g. 01_product_docs) so the directory tree sorts in lifecycle order. 00_ondemand holds human-triggered agents outside the lifecycle flow. The phase prefix must equal the phase field. See docs/product/orchestrator/12-agent-spec.md."
         },
         "phase": {
           "type": "string",
@@ -102,7 +102,7 @@
             },
             "id_pattern": {
               "type": "string",
-              "description": "Optional token pattern for the session ID. Available tokens: {agent}, {safe_agent}, {phase}, {safe_phase}, {number}, {kind}, {owner}, {repo_name}, {safe_repo}. Only bare {identifier} placeholders are allowed — attribute/index access is rejected. When omitted the built-in default for the chosen scope is used. See docs/product/agile/05-pipeline-config.md §Session ID tokens."
+              "description": "Optional token pattern for the session ID. Available tokens: {agent}, {safe_agent}, {phase}, {safe_phase}, {number}, {kind}, {owner}, {repo_name}, {safe_repo}. Only bare {identifier} placeholders are allowed — attribute/index access is rejected. When omitted the built-in default for the chosen scope is used. See docs/product/orchestrator/05-pipeline-config.md §Session ID tokens."
             }
           }
         },

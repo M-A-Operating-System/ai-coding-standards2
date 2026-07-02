@@ -93,7 +93,7 @@ In the consuming repo: Settings → Secrets and variables → Actions → New re
 
 **Step 3 — Trigger the setup job**
 
-Go to: **Actions → Pipeline Orchestrator → Run workflow → ✓ First-time setup → Run**.
+Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard → Run**.
 
 The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the `.claude/agents` symlink, copies slash
@@ -153,3 +153,40 @@ Older installs may have `.claude/agents/`, `.claude/commands/`, and `standards/`
 tracked in git as committed copies. Running `get_started.py` (any version
 with `untrack_managed_paths`) will call `git rm --cached -r` on each tracked
 managed path to remove it from the index without deleting local files.
+
+---
+
+## How paths resolve
+
+The orchestrator is path-agnostic and infers everything from one
+of two roots:
+
+| Variable | Default | Used for |
+|---|---|---|
+| `AI_AGILE_ROOT` env var | The directory three levels above `pipeline_orchestrator.py` (i.e. the repo root containing `.github/` and `ai-agile/`) | Locating `status.sh` and agent prompts |
+| `--pipeline PATH` arg | `<this_dir>/pipeline.json` | The pipeline graph |
+
+When this repo is checked out **at the consuming repo's root**
+(non-submodule mode), `AI_AGILE_ROOT` defaults to the repo root —
+everything just works.
+
+When this repo is checked out **as a submodule** at
+`<consuming-repo>/ai-coding-standards2/`, set `AI_AGILE_ROOT` in the
+workflow env (the installed `orchestrator.yml` does this) so the
+orchestrator finds `status.sh` and agent prompts under the submodule,
+not under the consuming repo's root.
+
+The orchestrator passes both `AI_AGILE_ROOT` and the resolved
+`STATUS_SH` to every agent subprocess via env. Agent prompts
+reference `$STATUS_SH` rather than a hardcoded path, so they work
+identically in both layouts.
+
+---
+
+## Adding repo-specific agents
+
+The consuming repo adds its own agents at
+`<consuming-repo>/.claude/agents/{agent}.md`, which override (or extend)
+the submodule's set. The orchestrator consults both agent directories,
+with the consuming repo's taking precedence. Delivery sequencing is in
+the [roadmap](10-roadmap.md).

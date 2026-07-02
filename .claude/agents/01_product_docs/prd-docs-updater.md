@@ -166,7 +166,7 @@ AI_AGILE_STATUS: complete
 - Do not edit the issue body or the PRD — they are human-approved artefacts.
 - Keep doc edits minimal. Do not reformat, reorder, or restructure
   sections unrelated to this issue.
-- Never update `docs/product/agile/` pipeline system files
+- Never update `docs/product/orchestrator/` pipeline system files
   (`01-vision.md` through `13-todos.md`) on the basis of a consuming-
   repo feature PRD. Those files describe the AI Agile pipeline itself.
 - If `docs/product/` does not exist, post a comment noting the

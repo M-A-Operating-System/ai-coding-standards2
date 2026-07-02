@@ -154,34 +154,27 @@ In the **Execute** phase, branch and PR ownership follows
 
 ## Forks in the path
 
-> **Note:** Every fork below is planned design **except** `merge-conflict`,
-> which is implemented and runs after CI (see "PR contains merge conflicts").
-> The current pipeline runs
-> `issue-classifier → prd-writer → create-pr → prd-docs-updater → coder →
-> ci-gate → merge-conflict → pr-reviewer`.
-
 ### The ticket is too big
 
-If a future `ticket-sizer` agent returns `XL`, an **`issue-decomposer`**
-agent would run. It would draft a roadmap of proposed child issues —
-each a smaller business outcome — and post the roadmap as a comment on
-the parent. A human would approve the decomposition by applying
-`decomposition:approved`. On approval, the agent would auto-create
-the child issues and link them back to the parent. Each child
-re-enters the pipeline at `issue-classifier` and runs through its own
-full lifecycle. The parent waits and closes when all children close,
-with a roll-up retrospective.
+If `ticket-sizer` returns `XL`, an **`issue-decomposer`** agent runs.
+It drafts a roadmap of proposed child issues — each a smaller business
+outcome — and posts the roadmap as a comment on the parent. A human
+approves the decomposition by applying `decomposition:approved`. On
+approval, the agent auto-creates the child issues and links them back
+to the parent. Each child re-enters the pipeline at `issue-classifier`
+and runs through its own full lifecycle. The parent waits and closes
+when all children close, with a roll-up retrospective.
 
-Distinct from a future `task-decomposer` (Design phase): `task-decomposer`
-would break a *sized* feature into implementation tasks (one file, one
-concern) that all ship in one PR. `issue-decomposer` would run *before*
+Distinct from `task-decomposer` (Design phase): `task-decomposer`
+breaks a *sized* feature into implementation tasks (one file, one
+concern) that all ship in one PR. `issue-decomposer` runs *before*
 sizing clears, breaking a too-large issue into smaller business-outcome
 issues, each with its own PR.
 
 ### Many small tickets in a window
 
-If a future `ticket-sizer` returns `S` and the issue is the Nth small
-bug or chore in a configured window, the orchestrator would suggest
+If `ticket-sizer` returns `S` and the issue is the Nth small
+bug or chore in a configured window, the orchestrator suggests
 grouping under a super-issue before sizing completes. On approval the
 super-issue becomes the shippable unit
 (see [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)): it runs
@@ -206,21 +199,18 @@ plan as context; it applies the resolutions and pushes the updated branch.
 
 ### SQL changes
 
-When the `coder` opens a PR that touches `**/*.sql`, a future
-`migration-validator` would run in addition to the standard reviewers.
-Merge would be blocked on naming, RLS, and type violations regardless
+When the `coder` opens a PR that touches `**/*.sql`, a
+`migration-validator` runs in addition to the standard reviewers.
+Merge is blocked on naming, RLS, and type violations regardless
 of the standard review path.
 
 ---
 
 ## End-to-end happy path
 
-A typical feature/bug/enhancement/toil ticket flows like this. The table
-reflects the **current implementation** — the agents actually present in
+A typical feature/bug/enhancement/toil ticket flows like this. Agent
+names, dependencies, and gates are as declared in
 [`pipeline.json`](../../../pipeline/pipeline.json).
-The Design (2), Evaluate (4), and Continuous (5) phases described
-elsewhere in this document are planned but not yet wired into the
-pipeline; their directories exist but hold no agents.
 
 **Spike issues** (`classification: spike`) stop after `prd-writer:approved`.
 `create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —
@@ -275,7 +265,7 @@ inputs, outputs, agents, and gates in full.
 | Targets | Improvements to the pipeline itself | Drift between the product design and what was actually shipped | Poor architecture or implementation choices that warrant remediation |
 | Inputs | Audit log branch (see [`08-audit-log.md`](08-audit-log.md)); corpus of closed retrospectives | Approved PRDs (issue comments tagged with the PRD marker); product vision ([`01-vision.md`](01-vision.md)) and product-layer standards; shipped codebase (code, tests, public API surface, UI flows); closed retrospectives (a noted "we cut scope X" seeds a gap-issue) | Codebase (module sizes, dependency graphs, test ratios, duplication, coupling, hot-spot files); ADRs (`standards/adrs.json`), especially `status: accepted` whose context has changed; standards (`standards/*.json`); closed retrospectives ("we'll come back to this" seeds a debt-issue); audit log (repeated `:blocked` against one surface flags structural fragility) |
 | Outputs | Proposals against the pipeline itself (`pipeline.json`, agent prompts, schedules): pipeline metrics, pipeline-graph proposals, prompt tuning, knowledge artefacts | New GitHub *gap-issues* proposing work to close a gap. They re-enter the pipeline at `issue-classifier` and run through Phases 1–4; provenance recorded via a `Gap-source: ai-agile/gap-assessor` trailer | New GitHub *debt-issues* proposing remediation. They re-enter the pipeline at `issue-classifier` and carry a `Debt-source: ai-agile/debt-finder` trailer |
-| Agents | **`metrics-aggregator`** (daily) — reads the audit log; computes cycle time per phase, gate dwell time per gate, agent duration distributions, rejection rates, blocked/failed counts; writes a metrics report to `docs/product/agile/generated/metrics/` (per [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)). **`pipeline-tuner`** (monthly) — scans metrics for systemic patterns (agents that exceed timeout, dependencies that always halt, gates that are rubber-stamped, schedules that miss work); drafts PRs against `pipeline.json`. **`prompt-tuner`** (monthly) — per agent, examines rejection rates and the diff between first draft and human-approved version; drafts targeted prompt edits at `.claude/agents/{agent}.md` as PRs. **`knowledge-curator`** (weekly) — identifies tickets with reusable patterns (recurring incident shape, novel architecture choice, useful test pattern) and drafts knowledge artefacts (runbooks, templates, teaching examples) into `docs/learnings/`. **`process-reviewer`** (quarterly) — reads principles ([`02-principles.md`](02-principles.md)), vision ([`01-vision.md`](01-vision.md)), the metrics from `metrics-aggregator`, and closed retrospectives; produces a holistic assessment (are we honoring our principles, serving our personas, where has practice drifted) and drafts *coordinated* change proposals spanning the pipeline graph, agent prompts, standards, and docs; may propose changes to the principles themselves (rare; requires an ADR). Distinct from `prompt-tuner`: tactical one-agent tuning vs. strategic multi-component review. | **`gap-assessor`** (weekly) — walks approved PRDs, cross-checks each acceptance criterion against the test suite, shipped code, and changelog; flags criteria with no matching test, no shipped behaviour, or behaviour that diverges from spec. **`vision-aligner`** (weekly) — reads the product vision and product-layer standards; checks the codebase for *missing* capabilities the vision implies but no ticket has captured; drafts gap-issues. **`gap-curator`** (weekly) — de-duplicates and clusters candidates from `gap-assessor` and `vision-aligner`, prioritises by severity (broken acceptance criterion > missing capability > divergent behaviour), posts one rolled-up gap report for human review. | **`debt-finder`** (weekly) — computes structural metrics (module size, cyclomatic complexity, coupling, test coverage on hot files, churn) and surfaces outliers; cross-references hot-spot files against open issues and recent retrospectives; drafts candidate debt-issues with evidence (file paths, metric snapshots, trend over the last N weeks). **`adr-revisitor`** (monthly) — walks accepted ADRs, evaluates whether the *context* of each decision still holds; drafts revisit-this-ADR issues for those whose tradeoff has materially shifted. **`debt-curator`** (weekly) — like `gap-curator`: de-duplicates and prioritises candidates from `debt-finder` and `adr-revisitor`, posts one rolled-up debt report for human review. |
+| Agents | **`metrics-aggregator`** (daily) — reads the audit log; computes cycle time per phase, gate dwell time per gate, agent duration distributions, rejection rates, blocked/failed counts; writes a metrics report to `docs/product/orchestrator/generated/metrics/` (per [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)). **`pipeline-tuner`** (monthly) — scans metrics for systemic patterns (agents that exceed timeout, dependencies that always halt, gates that are rubber-stamped, schedules that miss work); drafts PRs against `pipeline.json`. **`prompt-tuner`** (monthly) — per agent, examines rejection rates and the diff between first draft and human-approved version; drafts targeted prompt edits at `.claude/agents/{agent}.md` as PRs. **`knowledge-curator`** (weekly) — identifies tickets with reusable patterns (recurring incident shape, novel architecture choice, useful test pattern) and drafts knowledge artefacts (runbooks, templates, teaching examples) into `docs/learnings/`. **`process-reviewer`** (quarterly) — reads principles ([`02-principles.md`](02-principles.md)), vision ([`01-vision.md`](01-vision.md)), the metrics from `metrics-aggregator`, and closed retrospectives; produces a holistic assessment (are we honoring our principles, serving our personas, where has practice drifted) and drafts *coordinated* change proposals spanning the pipeline graph, agent prompts, standards, and docs; may propose changes to the principles themselves (rare; requires an ADR). Distinct from `prompt-tuner`: tactical one-agent tuning vs. strategic multi-component review. | **`gap-assessor`** (weekly) — walks approved PRDs, cross-checks each acceptance criterion against the test suite, shipped code, and changelog; flags criteria with no matching test, no shipped behaviour, or behaviour that diverges from spec. **`vision-aligner`** (weekly) — reads the product vision and product-layer standards; checks the codebase for *missing* capabilities the vision implies but no ticket has captured; drafts gap-issues. **`gap-curator`** (weekly) — de-duplicates and clusters candidates from `gap-assessor` and `vision-aligner`, prioritises by severity (broken acceptance criterion > missing capability > divergent behaviour), posts one rolled-up gap report for human review. | **`debt-finder`** (weekly) — computes structural metrics (module size, cyclomatic complexity, coupling, test coverage on hot files, churn) and surfaces outliers; cross-references hot-spot files against open issues and recent retrospectives; drafts candidate debt-issues with evidence (file paths, metric snapshots, trend over the last N weeks). **`adr-revisitor`** (monthly) — walks accepted ADRs, evaluates whether the *context* of each decision still holds; drafts revisit-this-ADR issues for those whose tradeoff has materially shifted. **`debt-curator`** (weekly) — like `gap-curator`: de-duplicates and prioritises candidates from `debt-finder` and `adr-revisitor`, posts one rolled-up debt report for human review. |
 | Human gates | **`pipeline-change:approved`** (standards owner) for `pipeline-tuner` changes to `pipeline.json`; **`prompt-change:approved`** (agent owner) for `prompt-tuner` changes to an agent prompt; **`process-review:approved`** (standards owner *and* a principal stakeholder) for `process-reviewer` coordinated changes, the dual approval reflecting their cross-cutting nature; `knowledge-curator` changes follow normal PR review | **`gap-report:approved`** — stakeholder *and* standards owner approve which gap-issues become issues. Dual approval keeps the queue from flooding with churn issues that don't reflect real product intent | **`debt-report:approved`** — engineer (or tech lead) *and* standards owner approve which debt-issues become issues. The engineer judges feasibility and priority; the standards owner judges fit with architecture direction |
 
 The Learn loop is the only one that changes the *pipeline*; Gap and

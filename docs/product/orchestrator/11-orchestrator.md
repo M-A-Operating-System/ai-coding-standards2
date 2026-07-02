@@ -922,9 +922,8 @@ not found, a default of 5 minutes is used.
 }
 ```
 
-The marker is **runner-local** (gitignored). For multi-runner
-deployments the marker would need to live in GitHub state instead;
-that is out of MVP scope.
+The marker is **runner-local** (gitignored) and assumes a
+single-runner deployment.
 
 **Pause behaviour on subsequent ticks.** Every run, before doing any
 other work, the orchestrator calls `is_pipeline_paused()`:
