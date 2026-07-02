@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "standards.schema.json",
   "title": "AI Agile Standards",
-  "description": "Schema for standards/*.json files loaded by the coder and pr-reviewer agents. Each file is either a StandardsFile (array of enforceable rules) or an AdrsFile (registry of approved exceptions). See docs/product/agile/14-standards.md.",
+  "description": "Schema for standards/*.json files loaded by the coder and pr-reviewer agents. Each file is either a StandardsFile (array of enforceable rules) or an AdrsFile (registry of approved exceptions). See docs/product/orchestrator/14-standards.md.",
   "oneOf": [
     { "$ref": "#/definitions/StandardsFile" },
     { "$ref": "#/definitions/AdrsFile" }
@@ -47,8 +47,8 @@
         },
         "title": {
           "type": "string",
-          "maxLength": 80,
-          "description": "Short imperative phrase (≤80 chars)."
+          "maxLength": 100,
+          "description": "Short imperative phrase (≤100 chars)."
         },
         "description": {
           "type": "string",
@@ -86,6 +86,19 @@
         "source": {
           "type": "string",
           "description": "Optional migration provenance, e.g. 'Migrated from CLAUDE.md — §Principles'."
+        },
+        "instantiates": {
+          "type": "string",
+          "pattern": "^STD-[A-Z]+-\\d{3}$",
+          "description": "Optional. The parent (usually org) standard ID this standard is a concrete project-specific instance of."
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^STD-[A-Z]+-\\d{3}$"
+          },
+          "description": "Optional. Other standard IDs that are related or should be consulted together with this one."
         }
       }
     },

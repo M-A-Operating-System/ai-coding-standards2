@@ -48,13 +48,15 @@ agents outside the lifecycle flow:
 
 The short-name is lowercase-hyphenated with no spaces or underscores.
 
-**Why the split convention.** Phase directories use `NN_snake_case` (numeric
-prefix + underscore) so they match the phase enum values in `pipeline.json`
-exactly and sort in lifecycle order in any directory listing. Agent
-short-names use `kebab-case` (hyphens only, no underscores) because they
-appear in GitHub labels, audit-log entries, and status markers where hyphens
-are the standard separator. The two conventions serve different audiences and
-must not be conflated.
+**Rationale.** Phase directories use `NN_snake_case` (numeric prefix +
+underscore) so they match the phase enum values in `pipeline.json` exactly and
+sort in lifecycle order in any directory listing. Agent short-names use
+`kebab-case` (hyphens only, no underscores) because they appear in GitHub
+labels, audit-log entries, and status markers where hyphens are the standard
+separator. The two conventions serve different audiences and must not be
+conflated. Carrying the phase as a prefix lets a glance at any label, comment,
+or audit-log line reveal which phase an agent belongs to without consulting
+`pipeline.json`, and it prevents name collisions across phases.
 
 **Special directories** inside `.claude/agents/`:
 
@@ -66,12 +68,6 @@ must not be conflated.
   They are registered in `pipeline.json` with phase `00_ondemand` and run only
   when a human applies their `:requested` label or invokes them manually. The
   `00_` prefix sorts them before all lifecycle phases.
-
-**Why prefix.** A glance at any label, comment, or audit-log line
-reveals which phase the agent belongs to without consulting
-`pipeline.json`. It also prevents future name collisions across phases
-(e.g. a hypothetical `03_execute/dependency-resolver` could coexist with
-`01_product_docs/dependency-resolver` if the design ever requires it).
 
 **Constraint.** An agent's phase prefix is part of its identity. If
 its phase changes, the agent is treated as renamed: a new entry
@@ -239,10 +235,8 @@ it runs (in terms of phase or trigger), and what artefact it produces.
 **2. Step 1 — Opening announcement.** A single `gh issue comment` (or
 `gh pr comment`) call posting the JSON announcement with `phase: start`
 per the schema in
-[`09-human-interaction.md`](09-human-interaction.md) §3.
-
-The orchestrator applies `:wip` before invoking the agent — the agent
-does not do this.
+[`09-human-interaction.md`](09-human-interaction.md) §3. (The agent
+does not apply any labels — see the [Status transition contract](#status-transition-contract).)
 
 **3. Read-input steps.** Read the issue body, prior agent comments, and
 any files needed. Use `gh issue view`, `gh pr view`, `cat`, `grep`,
@@ -259,24 +253,10 @@ validation finding, a check result. Avoid step soup; keep steps coarse.
 comments / files / PRs produced this run.
 
 **6. Terminal status step.** After the closing announcement, print
-exactly one sentinel line as the **final stdout output**. The
-orchestrator reads this line and applies the appropriate label:
-
-```
-AI_AGILE_STATUS: complete
-AI_AGILE_STATUS: review "short message"
-AI_AGILE_STATUS: blocked "reason"
-```
-
-`complete` — work is done, no gate required.
-`review "msg"` — work is done and awaiting a human gate; `msg` is a
-short description shown in the label or log.
-`blocked "reason"` — the agent cannot continue without human input;
-`reason` describes what is needed.
-
-The orchestrator applies `:failed` if the agent exits without one of
-these sentinels. Agents must not call `set-failed` themselves. Never
-call `status.sh` — the orchestrator owns all label transitions.
+exactly one terminal `AI_AGILE_STATUS:` sentinel line as the **final
+stdout output**. See the [Status transition contract](#status-transition-contract)
+below for the exact sentinel syntax, semantics, and label-ownership
+rules.
 
 **7. Behaviour rules.** A bullet list. Hard constraints the LLM must
 follow. Examples:
@@ -309,6 +289,12 @@ AI_AGILE_STATUS: review "short message"
 AI_AGILE_STATUS: blocked "reason"
 ```
 
+`complete` — work is done, no gate required.
+`review "msg"` — work is done and awaiting a human gate; `msg` is a
+short description shown in the label or log.
+`blocked "reason"` — the agent cannot continue without human input;
+`reason` describes what is needed.
+
 Every agent run must either:
 
 - Print exactly one of the three sentinels above as its final stdout
@@ -316,13 +302,14 @@ Every agent run must either:
 - Crash, in which case the orchestrator applies `:failed`.
 
 There is no fourth path. Agents that exit without a terminal sentinel
-are treated as failed. Agents must not apply `:complete` for gated work
-— that transition is owned by the orchestrator (see
-[`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition)).
+are treated as failed.
 
-**Never call `status.sh`.** The orchestrator owns all label transitions.
-The `:wip` label is applied by the orchestrator before invoking the
-agent; agents do not set it themselves.
+**The orchestrator owns all label transitions.** Agents never call
+`status.sh` and never call `set-failed` themselves. The orchestrator
+applies `:wip` before invoking the agent, and it owns the `:complete`
+transition for gated work — an agent must not apply `:complete` for
+gated work (see
+[`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition)).
 
 ---
 
@@ -341,9 +328,9 @@ Every PR that touches `.claude/agents/*.md` runs
 7. **Required body sections** exist (`# {agent-name}`,
    opening + closing announcement steps, `## Behaviour rules`).
 8. **Terminal sentinel** is present: the agent's final stdout line must
-   be one of `AI_AGILE_STATUS: complete`, `AI_AGILE_STATUS: review "msg"`,
-   or `AI_AGILE_STATUS: blocked "reason"`. `status.sh` must not be
-   called anywhere in the prompt.
+   be a terminal `AI_AGILE_STATUS:` sentinel (syntax per the
+   [Status transition contract](#status-transition-contract)), and
+   `status.sh` must not be called anywhere in the prompt.
 9. **No forbidden tools.** `WebFetch` and `WebSearch` block the PR
    unless an exception ADR is referenced in the frontmatter.
 
@@ -371,14 +358,7 @@ PRs that fail validation cannot merge.
 
 ## Why this template
 
-- **Predictability for reviewers.** Every agent file has the same shape;
-  reviewing a new agent is reading deltas, not reverse-engineering
-  structure.
-- **Predictability for the orchestrator.** It knows how to invoke any
-  agent based on the frontmatter alone — no per-agent special-casing.
-- **Auditability.** The opening and closing announcements, plus the
-  required terminal status call, mean every run produces a parseable
-  trail without depending on the LLM remembering to log.
-- **Safety.** The tool allowlist plus the no-`:failed`-from-agent rule
-  bound what an agent can do and what it can claim about its own
-  outcome.
+A uniform file shape gives predictability for reviewers and the
+orchestrator, auditability via the required announcements and terminal
+sentinel, and safety via the tool allowlist and the no-`:failed`-from-agent
+rule.

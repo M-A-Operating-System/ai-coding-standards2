@@ -53,7 +53,7 @@ can scale without a separate coordination layer.
   workflow is: read the artefact in the issue, comment if needed, remove the
   gate label.
 - A new contributor can pick up the system in a single afternoon by reading
-  this `docs/product/agile/` directory.
+  this `docs/product/orchestrator/` directory.
 
 ## What this is not
 

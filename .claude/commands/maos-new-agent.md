@@ -1,0 +1,12 @@
+# maos-new-agent
+
+Run the `00_ondemand/new-agent` pipeline agent. On-demand agent that scaffolds a new pipeline agent from a GitHub issue description.
+
+## Input
+
+`$ARGUMENTS` — GitHub issue or PR number (e.g. `42`)
+
+## Instructions
+
+Follow the `run-agent` command with pre-filled arguments:
+`run-agent 00_ondemand/new-agent $ARGUMENTS`

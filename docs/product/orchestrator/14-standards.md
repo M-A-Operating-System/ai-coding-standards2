@@ -65,7 +65,7 @@ Every entry in a `standards` array must conform to this shape:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `id` | string | yes | `STD-{CATEGORY}-{NNN}` — stable, never reused. Org standards use `STD-`. |
-| `title` | string | yes | Short imperative phrase, ≤80 chars. |
+| `title` | string | yes | Short imperative phrase, ≤100 chars. |
 | `description` | string | yes | One or two sentences stating precisely what is required or forbidden. |
 | `rationale` | string | yes | One or two sentences explaining why. May cite a source file or section. |
 | `acceptance_criteria` | string[] | yes | Concrete, diff-checkable statements. Each starts with a subject and verb. |
@@ -170,8 +170,8 @@ project-specific standards are PRd against the consuming project repo.
 
 ## Evolving existing standards
 
-Standards are evolved by the `04_evaluate/standards-evolver` agent (roadmap
-item — not yet active in MVP). When active, it runs after each retrospective,
+Standards are evolved by the `04_evaluate/standards-evolver` agent.
+It runs after each retrospective,
 identifies recurring violations, and drafts proposals as GitHub issues for
 Standards Owner approval. Approved proposals are merged as PRs against the
 relevant standards file.
