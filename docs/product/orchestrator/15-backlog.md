@@ -1,6 +1,8 @@
 # Open Backlog
 
-Tracks all open issues and their pipeline state. Updated as work is delivered.
+A point-in-time snapshot of open issues and their pipeline state, refreshed
+as work is delivered. The live source of truth is the GitHub issue list
+(P-1); this table is a convenience view and may lag.
 
 | # | Title | Pipeline state | Phase |
 |---|-------|---------------|-------|

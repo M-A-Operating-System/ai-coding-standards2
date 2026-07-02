@@ -1,0 +1,12 @@
+# maos-sizer
+
+Run the `00_ondemand/sizer` pipeline agent. Ad-hoc issue sizer.
+
+## Input
+
+`$ARGUMENTS` — GitHub issue or PR number (e.g. `42`)
+
+## Instructions
+
+Follow the `run-agent` command with pre-filled arguments:
+`run-agent 00_ondemand/sizer $ARGUMENTS`

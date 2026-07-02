@@ -9,6 +9,11 @@ This document covers: inputs, outputs, decision logic, the mutex protocol,
 gate label handling, failure recovery, and the GitHub Actions workflows that
 host it.
 
+> **New here?** This is a deep reference on the orchestrator's internals —
+> safe to skip on a first pass. For how the pipeline *behaves*, read
+> [`04-lifecycle.md`](04-lifecycle.md) and [`06-status-model.md`](06-status-model.md)
+> first; return here when you need to change or operate the orchestrator.
+
 ---
 
 ## Role and scope
@@ -96,9 +101,24 @@ default).
 
 ## Decision loop
 
-On every invocation, the orchestrator runs the same loop:
+`main()` reads as a three-phase sequence — **wake up → do the work → close down**:
 
-Work items are evaluated in two passes: open issues carrying the `priority`
+- **`_wake(args)`** — honour `--clear-pause`/`--clear-stop`, evaluate the single
+  pause/stop control guard (`_check_controls`), authenticate, load and
+  phase-filter the pipeline, then fetch and priority-order the work. Returns a
+  `RunContext` (the transient, run-scoped working set) or `None` to abort the
+  run (a `--clear-*` invocation, or an active pause/stop).
+- **`_do_work(ctx)`** — iterate the work items, honouring the aggregate
+  concurrency ceiling, calling `process_work_item` for each.
+- **`_close_down(ctx, n)`** — emit the run summary.
+
+`process_work_item` is itself a thin per-agent loop calling `_should_run`,
+`_run_agent`, and `_apply_result` in sequence; per-agent behaviour lives in
+`pipeline.json` (`post_steps`), not as special cases in the loop. State is read
+from labels each tick — the orchestrator keeps no persisted per-agent state
+(P-1, P-11).
+
+Within `_do_work`, work items are evaluated in two passes: open issues carrying the `priority`
 label are iterated first, then all remaining open work items. Within each
 pass the per-agent logic is identical. This means a `priority`-labeled issue
 will receive the next available `:wip` slot before any non-priority issue,
@@ -161,6 +181,11 @@ for each work item (issue or PR), priority-labeled issues first:
         if agent_outcome in {review, blocked, failed}:
             break                         ← halt this item; no further agents this run
 ```
+
+The eight skip checks above are the flow skeleton; their authoritative
+definitions (object match, status, trigger, dependencies, and the two
+concurrency ceilings) are in [Eligibility check](#eligibility-check) below and
+are not repeated elsewhere.
 
 The loop is **deterministic**: given identical inputs (labels + `pipeline.json`)
 it always produces the same decision. There is no randomness, no LLM call.
@@ -275,17 +300,19 @@ in `pipeline.json` (default: `"agent"`).
 
 ### Agent steps (`type: "agent"`)
 
-The orchestrator invokes the Claude CLI as a subprocess:
+The orchestrator invokes the Claude CLI as a subprocess with `--output-format
+stream-json` (so the orchestrator can parse status sentinels and token usage
+from the event stream) and an injected system prompt. The exact invocation
+lives in `pipeline/pipeline_orchestrator.py`.
 
-```bash
-claude \
-  --allowedTools "Bash(gh issue view *),Bash(gh issue comment *),Bash(gh issue edit *),Bash(gh issue list *),Bash(gh pr view *),Bash(gh pr comment *),Bash(gh pr edit *),Bash(gh pr list *),Bash(gh pr diff *),Bash(gh api repos/*/issues/*),Bash(gh api repos/*/pulls/*),Bash(cat *),Bash(grep *),Bash(find *),Read,Glob,Grep" \
-  --output-format stream-json \
-  --max-turns 60 \
-  -p "<system prompt>"
-```
-
-The tools listed above are the base allowlist applied to every agent. Per-agent tools are added via the `extra_allowedTools` frontmatter field in the agent's `.claude/agents/` prompt file.
+A base `--allowedTools` allowlist is applied to every agent: read-only `gh`
+issue/PR commands (`view`, `comment`, `edit`, `list`, `diff`, and scoped `gh
+api repos/*/issues/*` and `pulls/*`), read-only shell (`cat`, `grep`, `find`),
+and the `Read`, `Glob`, `Grep` tools. The allowlist is read-only by design —
+agents inspect state and post comments but never write labels directly (P-4
+keeps transition logic in one place). Per-agent tools are added via the
+`extra_allowedTools` frontmatter field in the agent's `.claude/agents/` prompt
+file.
 
 The system prompt injected by the orchestrator provides:
 
@@ -428,14 +455,8 @@ if final_status in {blocked, failed}:
     break item loop
 ```
 
-**Gate promotion** (separate pass, runs every tick):
-```
-for each agent_def with human_gate_after=true:
-    if {agent}:review ∈ labels AND agent_def.human_gate_label ∈ labels:
-        remove {agent}:review
-        apply {agent}:complete
-        emit gate.approved + agent.complete to audit log
-```
+**Gate promotion** runs as a separate pass every tick — see
+[Gate promotion](#gate-promotion) below.
 
 ---
 
@@ -462,15 +483,11 @@ If `git_ops` is absent or `commit_after` is `false`, no git operations run.
 
 The `create-pr` pipeline step (`.github/scripts/create-pr.sh`) runs as a
 dedicated script after the PRD is approved, before any docs or code agent
-runs. It:
-
-1. Creates branch `issue-{N}` from the default branch HEAD (if absent)
-2. Opens a draft PR: title `issue-{N}: {title[:60]}`, body `Closes #{N}`
-3. Calls `link-pr-to-issue.sh` to apply the `source-issue:{N}` label
-4. Posts a comment on the issue with the PR number and URL, so stakeholders
-   and engineers can navigate to the draft PR directly from the issue without
-   consulting build logs. This comment is posted only once — on idempotent
-   re-runs where the PR already exists, no duplicate comment is posted.
+runs. It creates branch `issue-{N}` (from default-branch HEAD, if absent),
+opens a draft PR (`body: Closes #{N}`), applies the `source-issue:{N}` link
+label, and posts the PR number and URL once on the issue (no duplicate comment
+on idempotent re-runs where the PR already exists). The step is idempotent so a
+re-run never creates a second branch, PR, or comment.
 
 Both the branch and the PR exist before `prd-docs-updater` is invoked, so
 all subsequent agent commits accumulate in the already-open PR.
@@ -495,28 +512,23 @@ the fix.
 ### Mode — Agent commit (PR already exists)
 
 After any `commit_after: true` agent signals `AI_AGILE_STATUS: complete`,
-the orchestrator commits the agent's file changes to the existing branch:
+the orchestrator commits the agent's file changes to the existing branch. The
+load-bearing decisions:
 
-```
-1. Check:    git status --porcelain → if empty, skip (no working-tree changes)
-2. Config:   git config user.email / user.name
-3. Stash:    git stash push --include-untracked  (saves agent's file changes)
-4. Fetch:    git fetch origin issue-{N}
-5. Checkout: git checkout -B issue-{N} origin/issue-{N}  (reset to remote tip)
-6. Pop:      git stash pop  (applies agent changes onto issue-{N})
-7. Stage:    git add -A
-8. Guard:    git diff --cached --quiet → if empty, skip commit
-9. Commit:   git commit -m "{phase_prefix}: {label_key} changes for issue #{N}"
-             (phase_prefix: "docs" for 01/02 phases, "feat" for 03_execute,
-              "chore" otherwise)
-10. Push:    git push origin issue-{N}
-11. Restore: git checkout {original_branch}  (called at all exit points)
-```
-
-Step 1 prevents unnecessary stash/checkout work when an agent writes no
-files. Step 8 guards against committing an empty staging area after a pop
-that produced no diff. The `finally` block in step 11 ensures the runner
-workspace is always restored to the original branch regardless of failures.
+- **Empty-tree guard.** If `git status --porcelain` is empty (agent wrote no
+  files), the whole git path is skipped — no stash, checkout, or commit.
+- **Stash onto the remote tip.** The agent's changes are stashed, the branch is
+  reset to `origin/issue-{N}` (fetched fresh), then the stash is popped on top.
+  This applies the agent's work onto the latest pushed state rather than
+  whatever the runner happened to have checked out.
+- **Empty-staging guard.** After staging, `git diff --cached --quiet` skips the
+  commit if the pop produced no net diff.
+- **Commit message** is `{phase_prefix}: {label_key} changes for issue #{N}`
+  (`phase_prefix`: `docs` for 01/02 phases, `feat` for `03_execute`, `chore`
+  otherwise).
+- **Push target** is always `origin issue-{N}`.
+- **Always restore.** A `finally` block restores the runner to its original
+  branch at every exit point, success or failure.
 
 ### Mode B — Address review feedback (coder re-invocation)
 
@@ -617,27 +629,16 @@ AND {agent}:complete ∉ labels:
 ## Audit log emission
 
 Every status transition emits one JSON line to stdout. GitHub Actions
-captures stdout natively; the run log is the persistent record. See
-[`08-audit-log.md`](08-audit-log.md) for the full schema and how to
-query the log.
+captures stdout natively; the run log is the persistent record.
 
-Events emitted by the orchestrator:
-
-| Event type | Emitted when |
-|---|---|
-| `agent.invoked` | Orchestrator acquired mutex and launched the subprocess |
-| `agent.complete` | Agent emitted `AI_AGILE_STATUS: complete` or gate promotion completed |
-| `agent.review` | Agent emitted `AI_AGILE_STATUS: review` |
-| `agent.blocked` | Agent emitted `AI_AGILE_STATUS: blocked` |
-| `agent.failed` | Agent crashed or timed out without a sentinel; `:failed` applied |
-| `gate.approved` | Human applied the gate label; gate promotion about to run |
-| `lock.reclaimed` | Stale `:wip` was force-reclaimed |
-| `system.emergency_stop` | Stop marker detected at run start; orchestrator exited without invoking agents |
-
-Each event carries at minimum: `ts` (ISO-8601), `event`, `agent`,
-`issue`, and `status`. For `agent.invoked` and terminal events,
-additional fields may include `mode` (`agent` or `script`) so
-operators can confirm which invocation mode ran for any given step.
+The orchestrator emits the event types `agent.invoked`, `agent.complete`,
+`agent.review`, `agent.blocked`, `agent.failed`, `gate.approved`,
+`lock.reclaimed`, and `system.emergency_stop` — one per transition, run, gate
+approval, lock reclaim, or emergency stop. Terminal and `agent.invoked` events
+also carry `mode` (`agent` or `script`) so operators can confirm which
+invocation mode ran. See [`08-audit-log.md`](08-audit-log.md) for the
+authoritative event-type definitions, required fields, full schema, and query
+guidance.
 
 ---
 
@@ -657,87 +658,16 @@ file handles all triggers by combining them under one `on:` block.
 | `schedule` | `*/15 6-20 * * 1-5` | Backstop reconciler — catches webhook drops, stale locks, partial-state recovery |
 | `workflow_dispatch` | _(manual)_ | Debugging, dry-run, or single-item reprocessing |
 
-```yaml
-name: Orchestrator
-
-on:
-  issues:
-    types: [opened, reopened, labeled, unlabeled]
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
-  schedule:
-    - cron: '*/15 6-20 * * 1-5'   # every 15 min, Mon–Fri, 06:00–20:00 UTC
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: 'Issue or PR number (blank = all open items)'
-        required: false
-      dry_run:
-        description: 'Dry run — log what would trigger without executing'
-        type: boolean
-        default: false
-      verbose:
-        description: 'Verbose logging'
-        type: boolean
-        default: false
-
-permissions:
-  contents: write          # git commit + push for commit_after agents
-  issues: write
-  pull-requests: write
-
-# Single global group — all orchestrator runs are serialised.
-# A second trigger queues behind the running instance rather than
-# starting in parallel, so the second run always reads settled label state.
-concurrency:
-  group: pipeline-orchestrator
-  cancel-in-progress: false
-
-jobs:
-  orchestrate:
-    name: Evaluate pipeline state
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - run: pip install requests
-
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-
-      - name: Build args
-        id: args
-        run: |
-          ARGS=""
-          if [ -n "${{ github.event.inputs.issue_number }}" ]; then
-            ARGS="$ARGS --issue ${{ github.event.inputs.issue_number }}"
-          elif [ "${{ github.event_name }}" = "issues" ]; then
-            ARGS="$ARGS --issue ${{ github.event.issue.number }} --kind issue"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            ARGS="$ARGS --issue ${{ github.event.pull_request.number }} --kind pr"
-          fi
-          [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
-          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
-
-      - name: Run orchestrator
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GIT_TRACE: "1"
-        run: |
-          python pipeline/pipeline_orchestrator.py \
-            --repo "$GITHUB_REPOSITORY" \
-            --verbose \
-            ${{ steps.args.outputs.args }}
-```
+The workflow source is `.github/workflows/orchestrator.yml`; the table above is
+the authoritative summary of its `on:` triggers. The job grants `permissions:
+contents: write` (for `commit_after` git push), `issues: write`, and
+`pull-requests: write`; runs under the global `concurrency` group
+`pipeline-orchestrator` with `cancel-in-progress: false` (rationale below); and
+in a single job checks out the repo, installs Python and the Claude Code CLI,
+maps the triggering event to `--issue`/`--kind`/`--dry-run` arguments, and runs
+`pipeline/pipeline_orchestrator.py`. `workflow_dispatch` exposes
+`issue_number`, `dry_run`, and `verbose` inputs for manual reprocessing and
+debugging.
 
 ### `sync-claude.yml`
 
@@ -772,12 +702,6 @@ already have a `with:` block.
 run `python ai-coding-standards2/get_started.py --force` to install all
 artefacts. This is idempotent — re-running it updates without overwriting
 local additions (e.g. project-specific standards files not in the submodule).
-
-**Why `cancel-in-progress: false`.** Two label events can fire within
-seconds (e.g., human applies gate label; orchestrator immediately promotes
-the agent and applies `:complete`, firing a second event). Cancelling the
-second run would skip the promotion step. The global concurrency key
-serialises all orchestrator runs; it never cancels a run already in progress.
 
 **Scheduled reconciler.** The schedule trigger is the backstop for:
 
@@ -834,7 +758,10 @@ Options:
                         in Rate limit handling)
   --clear-stop          Clear the emergency stop marker if set, then exit
                         (manual override for operators; see "Emergency stop")
-  --verbose, -v         Debug-level output
+  --verbose, -v         Emit all non-system agent stream-json events to stderr.
+                        Default (without this flag): emit only the result-type
+                        summary event per agent invocation. Non-JSON lines are
+                        always forwarded regardless of this flag.
 ```
 
 ---
@@ -853,27 +780,22 @@ Options:
 
 ## Concurrency model
 
+There are three independent layers. The two ceilings are the eligibility
+conditions 5 and 6 above; this section covers only run serialisation and the
+reconciler backstop.
+
 **Orchestrator-run serialisation.** The global `pipeline-orchestrator`
 concurrency group serialises all orchestrator *runs* globally — only one
 orchestrator process executes at a time. If a label event fires while a run
 is active, GitHub queues the new run; the queued run starts only after the
 first completes, at which point labels reflect settled state and already-`:wip`
-agents are correctly skipped.
+agents are correctly skipped. See [Race condition and concurrency
+management](#race-condition-and-concurrency-management) for why this is
+required.
 
-**Per-agent concurrency ceiling.** Within a single orchestrator run, multiple
-agent instances of the same type may be launched for different issues, up to
-the `max_concurrent` value configured in `pipeline.json` (default: 1 when the
-field is absent or null). Before launching an instance, the orchestrator counts
-the number of open issues that currently carry `{agent}:wip` — instances
-running from a prior tick. It starts at most `max_concurrent − running_count`
-additional instances. If the running count already meets or exceeds
-`max_concurrent`, no new instances are launched for that tick; eligible issues
-remain pending until the next tick.
-
-**Aggregate pipeline ceiling.** A pipeline-wide maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value) caps
-the total number of agent instances launched across all agent types in a
-single tick, regardless of per-agent `max_concurrent` values. This prevents
-unbounded resource consumption when many agent types each have large backlogs.
+**Concurrency ceilings.** Per-agent (`max_concurrent`) and aggregate
+(`PIPELINE_MAX_CONCURRENT`) limits are eligibility conditions 5 and 6 — see
+[Eligibility check](#eligibility-check). They are not re-derived here.
 
 **Scheduled reconciler as backstop.** GitHub Actions keeps at most one pending
 run per concurrency group. If two label events fire in rapid succession while
@@ -886,57 +808,34 @@ re-evaluates all open items and advances any that became eligible.
 
 ## Race condition and concurrency management
 
-### What the race condition was
+### The failure mode and the fix
 
-Before a global concurrency group was added, multiple orchestrator runs could
-execute in parallel. The sequence that caused duplicate agent invocations:
+Before a global concurrency group existed, multiple orchestrator runs ran in
+parallel. Applying `{coder}:wip` fires an `issues.labeled` event that starts a
+second run within seconds — inside GitHub's eventual-consistency window for
+label writes. That second run reads labels before the `:wip` write has
+propagated, sees the coder as eligible, and invokes it again: two coder
+subprocesses on one issue, duplicate "opening announcement" comments, and two
+agents writing the same working tree. It only surfaced with the coder because
+its 20–40 minute runtime keeps the race window open across many label events;
+short agents (2–5 min) reach a terminal `:complete` label before any
+fired event's run starts.
 
-```
-t=0s   Run A starts. Reads labels: no :wip on coder. Coder is eligible.
-t=1s   Run A calls gh label add {coder}:wip on GitHub.
-t=2s   Applying :wip triggers issues.labeled → GitHub starts Run B.
-t=3s   Run A invokes the coder subprocess. Coder begins a 30-minute run.
-t=4s   Run B starts. Reads labels from GitHub. The :wip write from t=1s
-        has not yet propagated to the API response (GitHub label writes
-        have eventual consistency of a few seconds in practice).
-t=5s   Run B sees no :wip. Coder is eligible. Run B also invokes coder.
-        ↳ Two coder subprocesses now running for the same issue.
-```
+The fix is the global `pipeline-orchestrator` concurrency group with
+`cancel-in-progress: false` (defined in `.github/workflows/orchestrator.yml`).
+This serialises all runs at the Actions scheduler level, before any Python
+runs, so by the time a queued run starts all prior writes are settled. The
+`:wip` check in the decision loop is then a fast-path skip, not a
+race-condition guard.
 
-The result was duplicate "opening announcement" comments on the issue and
-two agents writing to the same working tree concurrently.
-
-### Why it only surfaced with the coder
-
-Short agents (issue-classifier, prd-writer) complete in 2–5 minutes. By the
-time any label event they fire produces a new orchestrator run, the original
-run has already written the `:complete` label and exited. The second run sees
-a terminal label and skips. The race window is too small to hit in practice.
-
-The coder runs for 20–40 minutes. During that window many label events fire
-(`:wip` apply, human gate labels, PR events). Without the concurrency group,
-each event started a new parallel run. Because the `:wip` write that gated
-the previous check had been applied seconds earlier, GitHub's eventual
-consistency window meant some of those parallel runs did not see it yet —
-and double-triggered the agent.
-
-### The fix
-
-```yaml
-# .github/workflows/orchestrator.yml
-concurrency:
-  group: pipeline-orchestrator
-  cancel-in-progress: false
-```
-
-This single change serialises all orchestrator runs at the GitHub Actions
-scheduler level, before any Python code runs. The `:wip` check in the
-decision loop is now a fast-path skip (already settled from the prior run)
-rather than a race-condition guard.
-
-`cancel-in-progress: false` is essential: cancelling the queued run would
-drop label events that need processing (gate promotions, PR synchronise
-events). Queuing is correct; cancellation is not.
+**Why `cancel-in-progress: false`** (the single authoritative statement of this
+rationale): cancelling the queued run would drop label events that still need
+processing — gate promotions and PR `synchronize` events. Two label events can
+fire within seconds (e.g. a human applies a gate label, the orchestrator
+promotes the agent and applies `:complete`, firing a second event); cancelling
+the second run would skip the promotion. Queuing is correct; cancellation is
+not. The global key serialises runs but never cancels a run already in
+progress.
 
 ### Trade-off: global serialisation vs. per-item groups
 
@@ -956,12 +855,11 @@ globally; by the time it starts, all prior writes are settled.
 
 ### In-memory label snapshot
 
-Within a single orchestrator run, labels are read once per work item and
-held in memory. When the orchestrator writes a label (`:wip`, terminal label)
-it updates the in-memory set immediately, without a GitHub round-trip. This
-prevents reading stale state between agents on the same item within the same
-run. The snapshot is reset at the start of each new run — no state crosses
-the process boundary.
+The per-run in-memory label snapshot is described under
+[Mutex acquisition (P-4)](#mutex-acquisition-p-4). The key point for
+correctness here: the snapshot is reset at the start of each new run, so no
+state crosses the process boundary — every run reconstructs state from settled
+GitHub labels.
 
 ---
 
@@ -1036,9 +934,8 @@ not found, a default of 5 minutes is used.
 }
 ```
 
-The marker is **runner-local** (gitignored). For multi-runner
-deployments the marker would need to live in GitHub state instead;
-that is out of MVP scope.
+The marker is **runner-local** (gitignored) and assumes a
+single-runner deployment.
 
 **Pause behaviour on subsequent ticks.** Every run, before doing any
 other work, the orchestrator calls `is_pipeline_paused()`:
@@ -1064,12 +961,9 @@ python pipeline/pipeline_orchestrator.py --clear-pause
 This deletes the marker file and exits. The next scheduled or
 event-driven tick proceeds as if no pause had been set.
 
-**Constants** (in `pipeline_orchestrator.py`, configurable if needed):
-
-| Constant | Default | Meaning |
-|---|---|---|
-| `DEFAULT_PAUSE_SECONDS` | `300` (5 min) | Used when the API does not name a retry-after |
-| `MAX_PAUSE_SECONDS` | `3600` (1 h) | Cap on any retry-after honoured from the API |
+The default pause (5 minutes, when the API names no retry-after) and the
+retry-after cap (1 hour) are defined as constants in
+`pipeline/pipeline_orchestrator.py` and are configurable there if needed.
 
 ---
 

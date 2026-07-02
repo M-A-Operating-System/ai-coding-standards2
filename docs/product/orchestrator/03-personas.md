@@ -76,7 +76,6 @@ coverage, or proposed standards changes.
 
 - A single artefact to read at each gate, not scattered context.
 - Clear instructions on what they are signing off and what to do next.
-- The ability to reject and re-run an agent without manual recovery.
 - Confidence that approving a gate is a meaningful act, not a rubber stamp.
 
 **How AI Agile serves them.**
@@ -85,10 +84,6 @@ coverage, or proposed standards changes.
   required, and the label to remove or apply.
 - Every artefact is self-contained: the PRD is one comment, the design is
   one comment, the build plan is one comment.
-- Removing a gate label allows the agent to re-run with feedback from the
-  reviewer's comments — there is no "rerun the build" button to find.
-- The pipeline halts entirely when a gate label is held; nothing advances
-  silently.
 
 ---
 
@@ -222,17 +217,11 @@ first-class personas keeps automated capabilities inside the
 product-led pipeline (PRD with Gherkin AC), instead of being
 smuggled into technical design as "implementation detail".
 
-**Examples of valid System actor user stories.**
+**Example of a valid System actor user story.**
 
 - *As the **scheduled metrics aggregator**, I want to compute pipeline
   cycle times nightly, so that the standards owner sees current
   performance on the dashboard without manual queries.*
-- *As the **upstream-PRD webhook handler**, I want to ingest changes
-  to the source product spec on commit, so that downstream agents
-  always operate on the latest target state.*
-- *As the **audit log writer**, I want to record every status
-  transition with the actor and timestamp, so that compliance
-  reviewers can reconstruct any session.*
 
 **The valid-vs-invalid test.** A System actor story must:
 
@@ -250,16 +239,12 @@ smuggled into technical design as "implementation detail".
    is implementation. "As a developer" is also not — developers are
    tool users, not product personas.
 
-**What this persona does NOT serve.**
-
-- Refactors, library upgrades, internal API rewrites — these are
-  technical-intermediate work for the roadmap to sequence, not user
-  stories. They are tied to the target-state docs through
-  non-functional requirements (P-15), not through a System actor
-  story.
-- Any story whose acceptance criteria can only be expressed in code
-  terms (e.g. "the function returns a list"). That is a unit test
-  spec, not product behaviour.
+**What this persona does NOT serve.** Technical-intermediate work
+(refactors, library upgrades, internal API rewrites) and code-only
+acceptance criteria are not System actor stories — see the
+non-functional-requirements treatment under
+[P-15](02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)
+and the toil classification in [04-lifecycle.md](04-lifecycle.md).
 
 **How AI Agile serves them.**
 

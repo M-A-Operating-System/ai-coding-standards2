@@ -42,17 +42,7 @@ satisfied. Phase 5 does not block any per-ticket flow; it operates
 independently and feeds back into the queue as new issues (gap-issues,
 debt-issues) or as proposals against `pipeline.json` and the standards.
 
-**Phase consolidation note.** Earlier revisions of this document
-described a ten-phase model (product docs / technical docs / testing
-spec / build plan / execute / test / evaluate / learn / gap assessment
-/ tech debt). The conceptual stages are unchanged, but the directory
-and `pipeline.json` phase structure consolidates them: technical docs,
-testing spec, and build plan are one **Design** phase (their artefacts
-are produced in sequence within it); test is part of **Execute** (tests
-ship in the same PR as the code, so a phase boundary between them
-fought the workflow); and learn, gap assessment, and tech debt are
-three loops within one **Continuous** phase (same trigger shape, same
-output type — new issues and proposals — different corpus each).
+**Phase consolidation note.** An earlier ten-phase model is consolidated into the five phases above: technical docs / testing spec / build plan became **Design**, test folded into **Execute** (tests ship in the same PR as the code), and learn / gap assessment / tech debt became three loops within one **Continuous** phase.
 
 **The three continuous loops.** Within Phase 5, three loops mine
 different inputs at different cadences:
@@ -85,11 +75,10 @@ When two classifications are plausible, prefer the one with the higher review ba
 
 ## How the pipeline advances
 
-A single, deterministic, Python-based orchestrator has the sole
-responsibility for reacting to events and deciding which agent runs
-next. See [P-14](02-principles.md#p-14--deterministic-python-orchestrator-with-sole-routing-authority)
-for the full architectural commitment; the rest of this section
-describes the operational mechanics.
+A single deterministic Python orchestrator has sole authority for
+routing — reacting to events and deciding which agent runs next
+([P-14](02-principles.md#p-14--deterministic-python-orchestrator-with-sole-routing-authority)).
+The rest of this section describes the operational mechanics.
 
 The orchestrator is invoked on three triggers:
 
@@ -120,50 +109,72 @@ human removes the offending label. There is no separate "retry" button.
 Every transition emits one JSON event to stdout
 (see [`08-audit-log.md`](08-audit-log.md)).
 
-In the **Execute** phase the `create-pr` script step opens a draft PR
-immediately after PRD approval, establishing the branch and PR that all
-subsequent agent commits accumulate into. Agents (`prd-docs-updater`,
-`coder`) write files during their run; the orchestrator commits and
-pushes those changes to the branch after the agent signals `complete`
-(`git_ops.commit_after: true`). Reading issues and PRs is allowed,
-but only the orchestrator may create, commit to, or advance the PR. `pr-reviewer` issues `REQUEST_CHANGES` when any Critical, High, or Medium severity finding is present; it issues `APPROVE` only when all findings are Low or Informational severity. Human reviewer feedback is a first-class input: the `pr-reviewer` reads all open human `REQUEST_CHANGES` reviews on the PR in addition to the diff and spec — it **cannot** issue `APPROVE` while any unresolved human `REQUEST_CHANGES` review remains open, regardless of its own findings. When the `coder` is re-invoked it reads both the `pr-reviewer`'s findings and any unresolved human review comments so both sources are addressed in one pass. Reviews from bot accounts are excluded — only human GitHub accounts count. When `pr-reviewer` completes with APPROVE (and no unresolved human `REQUEST_CHANGES` reviews exist), the orchestrator runs the `mark-pr-ready.sh` post_steps hook to mark the PR ready-for-review; when it issues `REQUEST_CHANGES`, the orchestrator automatically re-invokes the coder to address the findings (up to three cycles before requiring human sign-off). **Edge case:** if `pr-reviewer` issues APPROVE but one or more human `REQUEST_CHANGES` reviews remain open, the orchestrator does not mark the PR ready — it re-invokes the coder once to address the human feedback (this re-invocation does not count toward the three-cycle limit), then ci-gate and `pr-reviewer` run again.
-The linked issue closes automatically on merge via the "Closes #{N}"
-trailer in the PR body; the branch is deleted automatically by GitHub's
-"auto-delete head branches" repo setting.
-See [P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr)
-and [P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle).
+In the **Execute** phase, branch and PR ownership follows
+[P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr)
+(draft PRs early, one branch per PR) and
+[P-16](02-principles.md#p-16--git-commit-ownership-two-modes)
+(agents own branch commits, orchestrator owns the PR lifecycle):
+
+- The `create-pr` script step opens a draft PR immediately after PRD
+  approval, establishing the branch and PR that all subsequent agent
+  commits accumulate into.
+- Agents (`prd-docs-updater`, `coder`) write files during their run;
+  the orchestrator commits and pushes those changes to the branch after
+  the agent signals `complete` (`git_ops.commit_after: true`). Agents
+  may read issues and PRs, but only the orchestrator may create, commit
+  to, or advance the PR.
+- `pr-reviewer` issues `REQUEST_CHANGES` for any Critical, High, or
+  Medium severity finding; it issues `APPROVE` only when all findings
+  are Low or Informational severity.
+- Human reviewer feedback is a first-class input. `pr-reviewer` reads
+  all open human `REQUEST_CHANGES` reviews on the PR in addition to the
+  diff and spec, and **cannot** issue `APPROVE` while any unresolved
+  human `REQUEST_CHANGES` review remains open, regardless of its own
+  findings. Reviews from bot accounts are excluded — only human GitHub
+  accounts count.
+- When the `coder` is re-invoked it reads both the `pr-reviewer`'s
+  findings and any unresolved human review comments, so both sources
+  are addressed in one pass.
+- On `APPROVE` with no unresolved human `REQUEST_CHANGES` reviews, the
+  orchestrator marks the PR ready-for-review
+  (`git_ops.mark_ready_on_complete`).
+- On `REQUEST_CHANGES`, the orchestrator automatically re-invokes the
+  coder to address the findings (up to three cycles before requiring
+  human sign-off).
+- **Edge case:** if `pr-reviewer` issues `APPROVE` but one or more
+  human `REQUEST_CHANGES` reviews remain open, the orchestrator does
+  not mark the PR ready — it re-invokes the coder once to address the
+  human feedback (this re-invocation does not count toward the
+  three-cycle limit), then ci-gate and `pr-reviewer` run again.
+- The linked issue closes automatically on merge via the "Closes #{N}"
+  trailer in the PR body; the branch is deleted automatically by
+  GitHub's "auto-delete head branches" repo setting.
 
 ---
 
 ## Forks in the path
 
-> **Note:** Most forks below are planned design. Exception: `merge-conflict`
-> is implemented and runs after CI (see below). The current pipeline runs
-> `issue-classifier → prd-writer → create-pr → prd-docs-updater → coder →
-> ci-gate → merge-conflict → pr-reviewer`.
+### The ticket is too big
 
-### The ticket is too big _(planned)_
+If `ticket-sizer` returns `XL`, an **`issue-decomposer`** agent runs.
+It drafts a roadmap of proposed child issues — each a smaller business
+outcome — and posts the roadmap as a comment on the parent. A human
+approves the decomposition by applying `decomposition:approved`. On
+approval, the agent auto-creates the child issues and links them back
+to the parent. Each child re-enters the pipeline at `issue-classifier`
+and runs through its own full lifecycle. The parent waits and closes
+when all children close, with a roll-up retrospective.
 
-If a future `ticket-sizer` agent returns `XL`, an **`issue-decomposer`**
-agent would run. It would draft a roadmap of proposed child issues —
-each a smaller business outcome — and post the roadmap as a comment on
-the parent. A human would approve the decomposition by applying
-`decomposition:approved`. On approval, the agent would auto-create
-the child issues and link them back to the parent. Each child
-re-enters the pipeline at `issue-classifier` and runs through its own
-full lifecycle. The parent waits and closes when all children close,
-with a roll-up retrospective.
-
-Distinct from a future `task-decomposer` (Design phase): `task-decomposer`
-would break a *sized* feature into implementation tasks (one file, one
-concern) that all ship in one PR. `issue-decomposer` would run *before*
+Distinct from `task-decomposer` (Design phase): `task-decomposer`
+breaks a *sized* feature into implementation tasks (one file, one
+concern) that all ship in one PR. `issue-decomposer` runs *before*
 sizing clears, breaking a too-large issue into smaller business-outcome
 issues, each with its own PR.
 
-### Many small tickets in a window _(planned)_
+### Many small tickets in a window
 
-If a future `ticket-sizer` returns `S` and the issue is the Nth small
-bug or chore in a configured window, the orchestrator would suggest
+If `ticket-sizer` returns `S` and the issue is the Nth small
+bug or chore in a configured window, the orchestrator suggests
 grouping under a super-issue before sizing completes. On approval the
 super-issue becomes the shippable unit
 (see [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)): it runs
@@ -186,23 +197,20 @@ scope and the suggested resolution approach. The pipeline pauses at a
 On approval, the coding agent is re-invoked with the approved resolution
 plan as context; it applies the resolutions and pushes the updated branch.
 
-### SQL changes _(planned)_
+### SQL changes
 
-When the `coder` opens a PR that touches `**/*.sql`, a future
-`migration-validator` would run in addition to the standard reviewers.
-Merge would be blocked on naming, RLS, and type violations regardless
+When the `coder` opens a PR that touches `**/*.sql`, a
+`migration-validator` runs in addition to the standard reviewers.
+Merge is blocked on naming, RLS, and type violations regardless
 of the standard review path.
 
 ---
 
 ## End-to-end happy path
 
-A typical feature/bug/enhancement/toil ticket flows like this. The table
-reflects the **current implementation** — the agents actually present in
+A typical feature/bug/enhancement/toil ticket flows like this. Agent
+names, dependencies, and gates are as declared in
 [`pipeline.json`](../../../pipeline/pipeline.json).
-The Design (2), Evaluate (4), and Continuous (5) phases described
-elsewhere in this document are planned but not yet wired into the
-pipeline; their directories exist but hold no agents.
 
 **Spike issues** (`classification: spike`) stop after `prd-writer:approved`.
 `create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —
@@ -242,220 +250,34 @@ Total wall-clock human time: minutes. Total elapsed time: hours.
 ## Phase 5 — the continuous meta-loops
 
 Phase 5 (`05_continuous`) holds three continuously running meta-loops,
-not per-ticket steps. Each loop treats a different corpus as its
-primary input and produces a different kind of improvement proposal.
-None blocks the per-ticket pipeline; they feed it new issues and
-proposals.
+not per-ticket steps. None blocks the per-ticket pipeline; they feed it
+new issues and proposals. The three loops share one template: each
+treats a different **corpus** as its primary input, runs a set of
+**agents** on a cadence, rolls candidates into a curated report, and
+gates that report behind a **human approval** before any output takes
+effect. The comparison table at the top of this document
+([The three continuous loops](#the-five-phases-plus-on-demand))
+differentiates them at a glance; the table below records each loop's
+inputs, outputs, agents, and gates in full.
 
----
+| | Learn loop | Gap-assessment loop | Tech-debt loop |
+|---|---|---|---|
+| Targets | Improvements to the pipeline itself | Drift between the product design and what was actually shipped | Poor architecture or implementation choices that warrant remediation |
+| Inputs | Audit log branch (see [`08-audit-log.md`](08-audit-log.md)); corpus of closed retrospectives | Approved PRDs (issue comments tagged with the PRD marker); product vision ([`01-vision.md`](01-vision.md)) and product-layer standards; shipped codebase (code, tests, public API surface, UI flows); closed retrospectives (a noted "we cut scope X" seeds a gap-issue) | Codebase (module sizes, dependency graphs, test ratios, duplication, coupling, hot-spot files); ADRs (`standards/adrs.json`), especially `status: accepted` whose context has changed; standards (`standards/*.json`); closed retrospectives ("we'll come back to this" seeds a debt-issue); audit log (repeated `:blocked` against one surface flags structural fragility) |
+| Outputs | Proposals against the pipeline itself (`pipeline.json`, agent prompts, schedules): pipeline metrics, pipeline-graph proposals, prompt tuning, knowledge artefacts | New GitHub *gap-issues* proposing work to close a gap. They re-enter the pipeline at `issue-classifier` and run through Phases 1–4; provenance recorded via a `Gap-source: ai-agile/gap-assessor` trailer | New GitHub *debt-issues* proposing remediation. They re-enter the pipeline at `issue-classifier` and carry a `Debt-source: ai-agile/debt-finder` trailer |
+| Agents | **`metrics-aggregator`** (daily) — reads the audit log; computes cycle time per phase, gate dwell time per gate, agent duration distributions, rejection rates, blocked/failed counts; writes a metrics report to `docs/product/orchestrator/generated/metrics/` (per [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)). **`pipeline-tuner`** (monthly) — scans metrics for systemic patterns (agents that exceed timeout, dependencies that always halt, gates that are rubber-stamped, schedules that miss work); drafts PRs against `pipeline.json`. **`prompt-tuner`** (monthly) — per agent, examines rejection rates and the diff between first draft and human-approved version; drafts targeted prompt edits at `.claude/agents/{agent}.md` as PRs. **`knowledge-curator`** (weekly) — identifies tickets with reusable patterns (recurring incident shape, novel architecture choice, useful test pattern) and drafts knowledge artefacts (runbooks, templates, teaching examples) into `docs/learnings/`. **`process-reviewer`** (quarterly) — reads principles ([`02-principles.md`](02-principles.md)), vision ([`01-vision.md`](01-vision.md)), the metrics from `metrics-aggregator`, and closed retrospectives; produces a holistic assessment (are we honoring our principles, serving our personas, where has practice drifted) and drafts *coordinated* change proposals spanning the pipeline graph, agent prompts, standards, and docs; may propose changes to the principles themselves (rare; requires an ADR). Distinct from `prompt-tuner`: tactical one-agent tuning vs. strategic multi-component review. | **`gap-assessor`** (weekly) — walks approved PRDs, cross-checks each acceptance criterion against the test suite, shipped code, and changelog; flags criteria with no matching test, no shipped behaviour, or behaviour that diverges from spec. **`vision-aligner`** (weekly) — reads the product vision and product-layer standards; checks the codebase for *missing* capabilities the vision implies but no ticket has captured; drafts gap-issues. **`gap-curator`** (weekly) — de-duplicates and clusters candidates from `gap-assessor` and `vision-aligner`, prioritises by severity (broken acceptance criterion > missing capability > divergent behaviour), posts one rolled-up gap report for human review. | **`debt-finder`** (weekly) — computes structural metrics (module size, cyclomatic complexity, coupling, test coverage on hot files, churn) and surfaces outliers; cross-references hot-spot files against open issues and recent retrospectives; drafts candidate debt-issues with evidence (file paths, metric snapshots, trend over the last N weeks). **`adr-revisitor`** (monthly) — walks accepted ADRs, evaluates whether the *context* of each decision still holds; drafts revisit-this-ADR issues for those whose tradeoff has materially shifted. **`debt-curator`** (weekly) — like `gap-curator`: de-duplicates and prioritises candidates from `debt-finder` and `adr-revisitor`, posts one rolled-up debt report for human review. |
+| Human gates | **`pipeline-change:approved`** (standards owner) for `pipeline-tuner` changes to `pipeline.json`; **`prompt-change:approved`** (agent owner) for `prompt-tuner` changes to an agent prompt; **`process-review:approved`** (standards owner *and* a principal stakeholder) for `process-reviewer` coordinated changes, the dual approval reflecting their cross-cutting nature; `knowledge-curator` changes follow normal PR review | **`gap-report:approved`** — stakeholder *and* standards owner approve which gap-issues become issues. Dual approval keeps the queue from flooding with churn issues that don't reflect real product intent | **`debt-report:approved`** — engineer (or tech lead) *and* standards owner approve which debt-issues become issues. The engineer judges feasibility and priority; the standards owner judges fit with architecture direction |
 
-### The Learn loop
-
-The Learn loop treats the audit log branch
-(see [`08-audit-log.md`](08-audit-log.md)) and the corpus of closed
-retrospectives as its primary inputs and proposes improvements to the
-pipeline itself.
-
-**Distinction from Phase 4 (Evaluate).** Evaluate closes one ticket: it
-writes the changelog, records a per-ticket retrospective, and feeds
-targeted standards proposals. The Learn loop looks across many tickets
-to find systemic patterns and tune the system that produced them.
-
-| Concern | Phase 4 (Evaluate) | Learn loop |
-|---|---|---|
-| Scope | One ticket | All tickets in a window |
-| Cadence | On PR merge / issue close | Continuous: daily metrics, weekly tuning |
-| Output | Changelog, retrospective, standards proposals | Pipeline metrics, pipeline-graph proposals, prompt tuning, knowledge artefacts |
-| Changes | Standards (`standards/*.json`) | The pipeline itself (`pipeline.json`, agent prompts, schedules) |
-
-**Agents.**
-
-- **`metrics-aggregator`** — runs daily. Reads the audit log and
-  computes cycle time per phase, gate dwell time per gate, agent
-  duration distributions, rejection rates, blocked/failed counts.
-  Writes a metrics report to `docs/product/agile/generated/metrics/`
-  (per [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
-- **`pipeline-tuner`** — runs monthly. Looks at the metrics for
-  systemic patterns: agents that consistently exceed timeout,
-  dependencies that always halt, gates that are rubber-stamped,
-  trigger schedules that miss work. Drafts proposals as PRs against
-  `pipeline.json` for standards-owner review.
-- **`prompt-tuner`** — runs monthly. For each agent, examines
-  rejection rates and the diff between the agent's first draft and
-  the human-approved version. Drafts targeted edits to the agent's
-  prompt at `.claude/agents/{agent}.md` as PRs.
-- **`knowledge-curator`** — runs weekly. Identifies tickets whose
-  outcomes contain reusable patterns (a recurring incident shape, a
-  novel architecture choice, a useful test pattern) and drafts
-  knowledge artefacts (runbooks, templates, teaching examples)
-  into `docs/learnings/`.
-- **`process-reviewer`** — runs quarterly. Reads the principles
-  ([`02-principles.md`](02-principles.md)), the vision
-  ([`01-vision.md`](01-vision.md)), the metrics produced by
-  `metrics-aggregator`, and the corpus of closed retrospectives.
-  Produces a holistic assessment: are we still honoring our own
-  principles, is the system serving its personas, and where has
-  practice drifted from intent? Drafts *coordinated* change proposals
-  that span the pipeline graph, agent prompts, standards, and docs —
-  not single-component edits. May also propose changes to the
-  principles themselves (rare; requires an ADR).
-  Distinct from `prompt-tuner`: that agent does narrow, one-agent-at-a-time
-  tactical tuning. `process-reviewer` does strategic, multi-component
-  review.
-
-**Human gates.**
-
-- **`pipeline-change:approved`** — standards owner approves any
-  change to `pipeline.json` proposed by `pipeline-tuner`.
-- **`prompt-change:approved`** — agent owner approves any change to
-  an agent prompt proposed by `prompt-tuner`.
-- **`process-review:approved`** — standards owner *and* a principal
-  stakeholder approve any coordinated change proposed by
-  `process-reviewer`. The dual approval reflects the cross-cutting
-  nature of these changes.
-- Changes from `knowledge-curator` follow normal PR review.
-
-**Why the Learn loop is distinct.**
-
-- Per-ticket retrospectives surface ticket-shaped lessons.
-  Cross-ticket meta-analysis surfaces system-shaped lessons. They
-  use different inputs and produce different outputs.
-- Changes from the Learn loop affect all subsequent tickets, so they
-  need higher review bars than per-ticket standards changes.
-- Separating the Learn loop lets us scale the cadence: daily metrics,
-  weekly knowledge curation, monthly tuning — without entangling
-  with the per-ticket lifecycle.
-
----
-
-### The Gap-assessment loop
-
-The Gap-assessment loop looks for **drift between the product design and
-what was actually shipped**. The per-ticket pipeline is good at delivering what
-each ticket asks for, but it does not, by itself, ensure the *whole
-product* still matches the *whole design*. Acceptance criteria slip,
-edge cases get pruned during execution, PRDs evolve faster than code,
-and over time the cumulative gap becomes invisible to anyone not
-explicitly looking for it.
-
-**Inputs.**
-
-- The corpus of approved PRDs (issue comments tagged with the PRD
-  marker).
-- The product vision ([`01-vision.md`](01-vision.md)) and any
-  product-layer standards.
-- The shipped codebase: code, tests, public API surface, UI flows.
-- Closed retrospectives — sometimes a retrospective notes "we cut
-  scope X" and the gap-issue is the formal follow-up.
-
-**Outputs.** New GitHub issues — *gap-issues* — proposing work to
-close a gap. Gap-issues re-enter the per-ticket pipeline at
-`issue-classifier` and run through Phases 1–4 like any other ticket;
-the difference is their provenance, which is recorded in the issue
-body via a `Gap-source: ai-agile/gap-assessor` trailer for audit
-purposes.
-
-**Agents.**
-
-- **`gap-assessor`** — runs weekly. Walks the approved PRDs and
-  cross-checks each acceptance criterion against the test suite, the
-  shipped code, and the changelog. Flags criteria that have no
-  matching test, no shipped behaviour, or whose shipped behaviour
-  diverges from the spec.
-- **`vision-aligner`** — runs weekly. Reads the product vision and
-  product-layer standards and checks the codebase for *missing*
-  capabilities the vision implies but no ticket has yet captured.
-  Drafts gap-issues for the discovered gaps.
-- **`gap-curator`** — runs weekly. De-duplicates and clusters
-  candidate gaps from `gap-assessor` and `vision-aligner`, prioritises
-  them by severity (broken acceptance criterion > missing capability >
-  divergent behaviour), and posts a single rolled-up gap report as the
-  artefact for human review.
-
-**Human gates.**
-
-- **`gap-report:approved`** — stakeholder *and* standards owner
-  approve which gap-issues actually become issues. Dual approval keeps
-  the queue from being flooded with churn issues that don't reflect
-  real product intent.
-
-**Why the Gap-assessment loop is distinct.**
-
-- The input corpus (PRDs + shipped code) is different from Evaluate's
-  per-ticket retrospective and the Learn loop's audit log.
-- Gap-issues are *new product work*, not pipeline tweaks — they go
-  back through the per-ticket pipeline rather than being applied
-  directly.
-- The approver shape is different: gap-issues need product judgement
-  (is this still a real gap or has the product moved on?), which is
-  the stakeholder's call, not the standards owner's alone.
-
----
-
-### The Tech-debt loop
-
-The Tech-debt loop looks for **poor architecture or implementation
-choices that warrant remediation**. The per-ticket pipeline blocks `required`
-standards violations at merge time, but it does not catch slower
-problems: layered shortcuts that compound, abstractions that have
-ossified, modules that have grown beyond their original scope, ADRs
-whose tradeoff has aged badly, and patterns that are technically
-within standards but obviously wrong at scale.
-
-**Inputs.**
-
-- The codebase — module sizes, dependency graphs, test ratios,
-  duplication, coupling metrics, hot-spot files (most-changed,
-  most-bug-fixed).
-- ADRs (`standards/adrs.json`) — particularly any with
-  `status: accepted` whose context has materially changed.
-- Standards (`standards/*.json`) — to compare actual code
-  against the declared bar.
-- Closed retrospectives — frequently a phrase like "we'll come back
-  to this" is the seed of a debt-issue.
-- Audit log — agents that consistently `:blocked` against the same
-  surface area suggest that surface is structurally fragile.
-
-**Outputs.** New GitHub issues — *debt-issues* — proposing
-remediation. Like gap-issues, they re-enter the per-ticket pipeline at
-`issue-classifier` and carry a `Debt-source: ai-agile/debt-finder`
-trailer.
-
-**Agents.**
-
-- **`debt-finder`** — runs weekly. Computes structural metrics
-  (module size, cyclomatic complexity, coupling, test coverage on hot
-  files, churn) and surfaces outliers. Cross-references hot-spot
-  files against open issues and recent retrospectives. Drafts
-  candidate debt-issues with evidence (file paths, metric snapshots,
-  trend over the last N weeks).
-- **`adr-revisitor`** — runs monthly. Walks accepted ADRs and
-  evaluates whether the *context* on which the decision was made
-  still holds. Drafts revisit-this-ADR issues for those whose tradeoff
-  has materially shifted.
-- **`debt-curator`** — runs weekly. Like `gap-curator`: de-duplicates
-  and prioritises candidate debt-issues from `debt-finder` and
-  `adr-revisitor`, then posts a single rolled-up debt report as the
-  artefact for human review.
-
-**Human gates.**
-
-- **`debt-report:approved`** — engineer (or tech lead) *and*
-  standards owner approve which debt-issues become issues. The
-  engineer judges feasibility and priority; the standards owner judges
-  fit with architecture direction.
-
-**Why the Tech-debt loop is distinct.**
-
-- The signal is structural and slow-moving — it cannot be detected
-  inside a single ticket's flow.
-- The remediation cost is often material (refactor of a hot module,
-  ADR superseded by a new one), so the proposal-then-approval shape is
-  necessary; we do not want a debt agent quietly opening 30
-  refactor issues a week.
-- Distinct from the Learn loop: Learn changes the *pipeline*; Tech debt
-  changes the *product's implementation*. Both are improvements;
-  they're different surfaces.
+The Learn loop is the only one that changes the *pipeline*; Gap and
+Tech-debt both change the *product* and route their output back through
+Phases 1–4 as ordinary issues (Gap = new product work, Tech-debt =
+remediation of implementation choices). All three are deliberately
+separated from Phase 4 (Evaluate), which closes a single ticket
+(changelog, per-ticket retrospective, targeted standards proposals);
+the meta-loops instead look across many tickets, so their signals are
+systemic and slow-moving, their cadences vary (daily / weekly / monthly
+/ quarterly) independently of any one ticket, and their changes affect
+all subsequent tickets — which is why each carries a higher review bar.
 
 ---
 

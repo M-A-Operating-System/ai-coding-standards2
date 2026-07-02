@@ -1,0 +1,40 @@
+name: Sync /maos-* slash commands
+
+on:
+  push:
+    paths:
+      - 'pipeline/pipeline.json'
+      - '.claude/agents/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync slash commands from pipeline.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate slash commands
+        run: python3 scripts/generate_slash_commands.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .claude/commands/maos-*.md
+          if git diff --cached --quiet; then
+            echo "Slash commands already up-to-date — nothing to commit."
+          else
+            git commit -m "chore: sync /maos-* slash commands from pipeline.json"
+            git push
+          fi

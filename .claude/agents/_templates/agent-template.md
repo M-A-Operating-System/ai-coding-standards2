@@ -4,7 +4,7 @@ description: >
   One paragraph describing what this agent does and when it runs.
   Replace this placeholder with the actual description before adding
   to the pipeline. Surfaces in the generated agent catalogue at
-  docs/product/agile/generated/agents.md.
+  docs/product/orchestrator/generated/agents.md.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 ---
@@ -14,7 +14,7 @@ model: claude-sonnet-4-6
 Replace this paragraph with the agent's role statement. State what the
 agent owns, when it runs (which phase / which trigger), and what artefact
 it produces. Keep to two or three sentences. Reference the relevant
-sections of the design docs (`docs/product/agile/`) when behaviour
+sections of the design docs (`docs/product/orchestrator/`) when behaviour
 depends on a documented protocol.
 
 The orchestrator applies `:wip`, posts the opening announcement, and
@@ -67,7 +67,7 @@ EOF
 ```
 
 If the agent produces a structured question for a human, use the
-Question Card schema (see `docs/product/agile/09-human-interaction.md`
+Question Card schema (see `docs/product/orchestrator/09-human-interaction.md`
 §2) with the `ai-agile/question/v1` marker.
 
 ---
