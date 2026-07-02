@@ -80,6 +80,7 @@ jobs:
       - name: Run onboarding
         # Creates .claude/agents symlink, copies commands + standards,
         # writes sync-claude.yml, bootstrap-labels.yml, label-cleanup.yml,
+        # pipeline-emergency-stop.yml, pipeline-restart.yml,
         # seeds requirements.txt, and updates .gitignore.
         run: python ai-coding-standards2/get_started.py --force
 
@@ -98,7 +99,9 @@ jobs:
             .github/workflows/orchestrator.yml \
             .github/workflows/sync-claude.yml \
             .github/workflows/bootstrap-labels.yml \
-            .github/workflows/label-cleanup.yml
+            .github/workflows/label-cleanup.yml \
+            .github/workflows/pipeline-emergency-stop.yml \
+            .github/workflows/pipeline-restart.yml
 
           # requirements.txt is project-owned, not gitignored.
           git add requirements.txt 2>/dev/null || true

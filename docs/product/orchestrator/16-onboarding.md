@@ -118,10 +118,19 @@ Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard →
 The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the `.claude/agents` symlink, copies slash
 commands and standards, drops the remaining workflow files (`sync-claude.yml`,
-`bootstrap-labels.yml`, `label-cleanup.yml`), and commits everything directly
+`bootstrap-labels.yml`, `label-cleanup.yml`, `pipeline-emergency-stop.yml`,
+`pipeline-restart.yml`), and commits everything directly
 to the default branch (or to an `ai-standards-setup` branch if branch
 protection rules block a direct push — in that case, open a PR from that
 branch).
+
+The `pipeline-emergency-stop.yml` / `pipeline-restart.yml` pair is the
+operator kill switch: emergency-stop writes a `.pipeline-stop` marker (which
+the orchestrator checks before invoking any agent) and cancels in-flight
+runs; restart clears the marker and resumes. Unlike the other installed
+workflows, these two are copied **without** `submodules: true` injected —
+they read nothing from the submodule, so they must not depend on a submodule
+fetch to run when you need to stop the pipeline.
 
 After the job completes, open a test issue with a problem statement and
 acceptance criteria to confirm the pipeline is live.

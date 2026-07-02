@@ -39,10 +39,10 @@ wiring. See docs/product/orchestrator/16-onboarding.md for the full flow.
 
 What run_full() installs, in order (each is one install_* function below):
     orchestrator.yml, bootstrap-labels.yml, label-cleanup.yml,
-    sync-claude.yml, standards/*.json, .claude/agents (symlink or copies),
-    .claude/commands/, .claude/settings.local.json, requirements.txt,
-    .gitignore entries, and untracking of any previously-committed managed
-    paths.
+    sync-claude.yml, pipeline-emergency-stop.yml, pipeline-restart.yml,
+    standards/*.json, .claude/agents (symlink or copies), .claude/commands/,
+    .claude/settings.local.json, requirements.txt, .gitignore entries, and
+    untracking of any previously-committed managed paths.
 
 Agents are read by the orchestrator from the submodule via $AI_AGILE_ROOT,
 so agent prompts are never rewritten; only slash commands and workflows get
@@ -446,52 +446,76 @@ def install_orchestrator_workflows(
     return written
 
 
-def install_bootstrap_labels_workflow(
+def _install_workflow(
+    name: str,
     consuming_root: Path,
     force: bool,
     dry_run: bool,
+    *,
+    inject_submodules: bool = True,
 ) -> bool:
-    """Copy bootstrap-labels.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "bootstrap-labels.yml"
-    dst = consuming_root / ".github" / "workflows" / "bootstrap-labels.yml"
+    """Copy a single workflow file from the submodule into the consuming repo.
+
+    Path rewrites (submodule-relative paths) are always applied. ``submodules:
+    true`` is injected into checkout steps unless ``inject_submodules`` is
+    False -- pass False for workflows that read nothing from the submodule so
+    they never depend on a submodule fetch (which can fail for a private
+    submodule checked out without an elevated token).
+
+    Returns True if the file was (or would be) written, False if the source
+    was missing or the destination was skipped.
+    """
+    src = SUBMODULE_ROOT / ".github" / "workflows" / name
+    dst = consuming_root / ".github" / "workflows" / name
     if not src.exists():
-        print(f"  SKIP   bootstrap-labels workflow  ({src} missing)")
+        print(f"  SKIP   {name}  ({src} missing)")
         return False
-    print(f"  Bootstrap-labels workflow: -> {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
+    print(f"  Workflow ({name}): -> {dst}")
+    content = rewrite_paths(src.read_text(encoding="utf-8"))
+    if inject_submodules:
+        content = _add_submodules_to_checkout(content)
     return write_file(dst, content, force, dry_run)
 
 
-def install_label_cleanup_workflow(
-    consuming_root: Path,
-    force: bool,
-    dry_run: bool,
-) -> bool:
-    """Copy label-cleanup.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "label-cleanup.yml"
-    dst = consuming_root / ".github" / "workflows" / "label-cleanup.yml"
-    if not src.exists():
-        print(f"  SKIP   label-cleanup workflow  ({src} missing)")
-        return False
-    print(f"  Label-cleanup workflow: -> {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
-    return write_file(dst, content, force, dry_run)
+def install_bootstrap_labels_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy bootstrap-labels.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("bootstrap-labels.yml", consuming_root, force, dry_run)
 
 
-def install_sync_workflow(
-    consuming_root: Path,
-    force: bool,
-    dry_run: bool,
-) -> bool:
-    """Copy sync-claude.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "sync-claude.yml"
-    dst = consuming_root / ".github" / "workflows" / "sync-claude.yml"
-    if not src.exists():
-        print(f"  SKIP   sync-claude workflow  ({src} missing)")
-        return False
-    print(f"  Sync-claude workflow: -> {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
-    return write_file(dst, content, force, dry_run)
+def install_label_cleanup_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy label-cleanup.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("label-cleanup.yml", consuming_root, force, dry_run)
+
+
+def install_sync_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy sync-claude.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("sync-claude.yml", consuming_root, force, dry_run)
+
+
+def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy pipeline-emergency-stop.yml into the consuming repo.
+
+    The operator's kill switch: writes the .pipeline-stop marker (at the repo
+    root, where the orchestrator looks for it) and cancels in-flight runs.
+    inject_submodules=False -- it reads nothing from the submodule, so it must
+    not depend on a submodule fetch to run when the pipeline needs stopping.
+    """
+    return _install_workflow(
+        "pipeline-emergency-stop.yml", consuming_root, force, dry_run, inject_submodules=False
+    )
+
+
+def install_restart_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy pipeline-restart.yml into the consuming repo.
+
+    The counterpart to the emergency stop: clears the .pipeline-stop marker and
+    optionally triggers a fresh orchestrator run. Installed alongside the stop
+    workflow because a stop with no restart cannot be undone from the UI.
+    inject_submodules=False for the same reason as the stop workflow.
+    """
+    return _install_workflow(
+        "pipeline-restart.yml", consuming_root, force, dry_run, inject_submodules=False
+    )
 
 
 def install_local_settings(
@@ -819,6 +843,8 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_bootstrap_labels_workflow(consuming_root, force, dry_run)
     install_label_cleanup_workflow(consuming_root, force, dry_run)
     install_sync_workflow(consuming_root, force, dry_run)
+    install_emergency_stop_workflow(consuming_root, force, dry_run)
+    install_restart_workflow(consuming_root, force, dry_run)
     install_standards(consuming_root, force, dry_run)
     install_agents(consuming_root, force, dry_run)
     install_slash_commands(consuming_root, force, dry_run)

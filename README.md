@@ -152,7 +152,8 @@ Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard →
 The workflow checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the `.claude/agents` symlink, copies slash
 commands and standards, drops the remaining workflow files (`sync-claude.yml`,
-`bootstrap-labels.yml`, `label-cleanup.yml`), and commits everything.
+`bootstrap-labels.yml`, `label-cleanup.yml`, `pipeline-emergency-stop.yml`,
+`pipeline-restart.yml`), and commits everything.
 
 After it completes, open an issue with a problem statement and acceptance
 criteria. The workflow fires on `issues.opened`; expect labels
