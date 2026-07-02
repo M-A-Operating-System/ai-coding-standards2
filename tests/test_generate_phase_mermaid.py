@@ -13,6 +13,7 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
 build_chart = _mod.build_chart
+build_lifecycle_chart = _mod.build_lifecycle_chart
 main = _mod.main
 load_pipeline = _mod.load_pipeline
 _safe_label = _mod._safe_label
@@ -78,14 +79,21 @@ def _node_line(chart: str, node_id: str) -> str | None:
     return None
 
 
+build_complete_chart = _mod.build_complete_chart
+
+
 @pytest.fixture()
 def patched(tmp_path, monkeypatch):
     pipeline_file = tmp_path / "pipeline" / "pipeline.json"
     pipeline_file.parent.mkdir(parents=True)
     pipeline_file.write_text(json.dumps({"pipeline": _ENTRIES}), encoding="utf-8")
     output_dir = tmp_path / "docs" / "product" / "agile" / "generated" / "phases"
+    lifecycle_file = tmp_path / "docs" / "product" / "agile" / "generated" / "pipeline.mmd"
+    complete_flow_file = tmp_path / "docs" / "product" / "agile" / "generated" / "pipeline_phases.mmd"
     monkeypatch.setattr(_mod, "PIPELINE_JSON", pipeline_file)
     monkeypatch.setattr(_mod, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(_mod, "LIFECYCLE_FILE", lifecycle_file)
+    monkeypatch.setattr(_mod, "COMPLETE_FLOW_FILE", complete_flow_file)
     monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
     return output_dir
 
@@ -238,6 +246,101 @@ def test_build_chart_duplicate_node_ids_raises():
     assert "n_ph_x__foo_bar" in str(exc_info.value)
 
 
+# --- build_chart: review_loop ---
+
+_LOOP_ENTRIES = [
+    {
+        "agent": "ph_c/worker",
+        "phase": "ph_c",
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+    {
+        "agent": "ph_c/reviewer",
+        "phase": "ph_c",
+        "dependencies": ["ph_c/worker"],
+        "human_gate_after": False,
+        "review_loop": {
+            "re_invoke": "ph_c/worker",
+            "max_cycles": 3,
+        },
+    },
+]
+
+_AUTO_ENTRIES = [
+    {
+        "agent": "ph_d/gated",
+        "phase": "ph_d",
+        "dependencies": [],
+        "human_gate_after": True,
+        "human_gate_label": "gated:approved",
+        "auto_approve_on_complete": True,
+    },
+]
+
+
+def _has_dashed_edge(chart: str, src: str, dst: str) -> bool:
+    """Return True if there is any dashed arrow from src to dst."""
+    for line in chart.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(src) and ".->" in stripped and dst in stripped:
+            return True
+    return False
+
+
+def test_build_chart_review_loop_dashed_edge():
+    chart = build_chart("ph_c", _LOOP_ENTRIES)
+    assert _has_dashed_edge(chart, "n_ph_c__reviewer", "n_ph_c__worker")
+
+
+def test_build_chart_review_loop_max_cycles_label():
+    chart = build_chart("ph_c", _LOOP_ENTRIES)
+    assert "REQUEST_CHANGES ≤3" in chart
+
+
+def test_build_chart_no_review_loop_no_dashed_edge():
+    chart = build_chart("ph_a", _ENTRIES)
+    assert ".->" not in chart
+
+
+def test_build_chart_review_loop_cross_phase_not_rendered():
+    # re_invoke targets outside the current phase should produce no dashed edge.
+    entries = [
+        {
+            "agent": "ph_e/reviewer",
+            "phase": "ph_e",
+            "dependencies": [],
+            "human_gate_after": False,
+            "review_loop": {
+                "re_invoke": "other_phase/worker",
+                "max_cycles": 2,
+            },
+        },
+        {
+            "agent": "other_phase/worker",
+            "phase": "other_phase",
+            "dependencies": [],
+            "human_gate_after": False,
+        },
+    ]
+    chart = build_chart("ph_e", entries)
+    assert ".->" not in chart
+
+
+# --- build_chart: auto_approve_on_complete ---
+
+def test_build_chart_auto_approve_annotates_gate():
+    chart = build_chart("ph_d", _AUTO_ENTRIES)
+    line = _node_line(chart, "gate__n_ph_d__gated")
+    assert line is not None, "gate node missing"
+    assert "(auto)" in line
+
+
+def test_build_chart_no_auto_approve_no_annotation():
+    chart = build_chart("ph_a", _ENTRIES)
+    assert "(auto)" not in chart
+
+
 # --- _safe_label ---
 
 def test_safe_label_replaces_double_quotes():
@@ -338,3 +441,288 @@ def test_load_pipeline_malformed_json_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(_mod, "PIPELINE_JSON", pipeline_file)
     with pytest.raises(json.JSONDecodeError):
         load_pipeline()
+
+
+# --- build_lifecycle_chart ---
+
+# Shared fixture entries for lifecycle tests.
+_LC_ENTRIES = [
+    {
+        "agent": "ph_z/entry-agent",
+        "phase": "ph_z",
+        "trigger": {"event": "issue.opened"},
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+    {
+        "agent": "ph_z/gated-agent",
+        "phase": "ph_z",
+        "trigger": {"label": "entry-agent:complete"},
+        "dependencies": ["ph_z/entry-agent"],
+        "human_gate_after": True,
+        "human_gate_label": "gated-agent:approved",
+        "auto_approve_on_complete": False,
+    },
+    {
+        "agent": "ph_z/looper",
+        "phase": "ph_z",
+        "trigger": {"label": "gated-agent:complete"},
+        "dependencies": ["ph_z/gated-agent"],
+        "human_gate_after": False,
+        "review_loop": {"re_invoke": "ph_z/entry-agent", "max_cycles": 2},
+    },
+    {
+        "agent": "ph_z/on-demand",
+        "phase": "ph_z",
+        "trigger": {"label": "on-demand:requested"},
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+    {
+        "agent": "ph_z/auto-gated",
+        "phase": "ph_z",
+        "trigger": {"label": "on-demand:complete"},
+        "dependencies": ["ph_z/on-demand"],
+        "human_gate_after": True,
+        "human_gate_label": "auto-gated:approved",
+        "auto_approve_on_complete": True,
+    },
+]
+
+
+def test_lifecycle_starts_with_flowchart_td():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert chart.startswith("flowchart TD\n")
+
+
+def test_lifecycle_entry_node_for_issue_opened():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert 'issue.opened' in chart
+
+
+def test_lifecycle_entry_node_for_requested_trigger():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert 'on-demand:requested' in chart
+
+
+def test_lifecycle_entry_to_agent_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "entry_n_ph_z__entry_agent", "n_ph_z__entry_agent")
+
+
+def test_lifecycle_on_demand_entry_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "entry_n_ph_z__on_demand", "n_ph_z__on_demand")
+
+
+def test_lifecycle_dependency_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "n_ph_z__entry_agent", "n_ph_z__gated_agent")
+
+
+def test_lifecycle_dependency_routes_through_gate():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    # looper depends on gated-agent which has a gate → edge goes gate → looper
+    assert _has_edge(chart, "gate__n_ph_z__gated_agent", "n_ph_z__looper")
+
+
+def test_lifecycle_agent_to_gate_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_edge(chart, "n_ph_z__gated_agent", "gate__n_ph_z__gated_agent")
+
+
+def test_lifecycle_auto_gate_annotated():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    line = _node_line(chart, "gate__n_ph_z__auto_gated")
+    assert line is not None
+    assert "· auto" in line
+
+
+def test_lifecycle_review_loop_dashed_edge():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert _has_dashed_edge(chart, "n_ph_z__looper", "n_ph_z__entry_agent")
+
+
+def test_lifecycle_review_loop_cycle_count_in_label():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert "≤2" in chart
+
+
+def test_lifecycle_hand_curated_loop_absent_when_agent_missing():
+    # _LIFECYCLE_LOOPS refers to 03_execute/ci-gate — not in _LC_ENTRIES
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    # No spurious edges from the hand-curated map should appear.
+    assert "ci_gate" not in chart
+
+
+def test_lifecycle_hand_curated_terminal_absent_when_agent_missing():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    # Terminals require their source agent to be present.
+    assert "term_rejected" not in chart
+
+
+def test_lifecycle_classDef_term_present():
+    chart = build_lifecycle_chart(_LC_ENTRIES)
+    assert "classDef term" in chart
+
+
+# --- main: lifecycle file ---
+
+def test_main_writes_lifecycle_file(patched):
+    lifecycle_file = _mod.LIFECYCLE_FILE
+    assert main([]) == 0
+    assert lifecycle_file.exists()
+
+
+def test_main_check_detects_stale_lifecycle(patched):
+    main([])
+    _mod.LIFECYCLE_FILE.write_text("hand-edited\n", encoding="utf-8")
+    assert main(["--check"]) != 0
+
+
+def test_main_check_fails_when_lifecycle_missing(patched):
+    # Write phase charts only (not lifecycle), then check should catch the gap.
+    main([])
+    _mod.LIFECYCLE_FILE.unlink()
+    assert main(["--check"]) != 0
+
+
+def test_main_check_leaves_lifecycle_unmodified(patched):
+    main([])
+    _mod.LIFECYCLE_FILE.write_text("hand-edited\n", encoding="utf-8")
+    main(["--check"])
+    assert _mod.LIFECYCLE_FILE.read_text(encoding="utf-8") == "hand-edited\n"
+
+
+# --- build_complete_chart ---
+
+_CC_ENTRIES = [
+    {
+        "agent": "ph_p/opener",
+        "phase": "ph_p",
+        "trigger": {"event": "issue.opened"},
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+    {
+        "agent": "ph_p/gated",
+        "phase": "ph_p",
+        "trigger": {"label": "opener:complete"},
+        "dependencies": ["ph_p/opener"],
+        "human_gate_after": True,
+        "human_gate_label": "gated:approved",
+        "auto_approve_on_complete": False,
+    },
+    {
+        "agent": "ph_q/worker",
+        "phase": "ph_q",
+        "trigger": {"label": "gated:complete"},
+        "dependencies": ["ph_p/gated"],
+        "human_gate_after": False,
+        "review_loop": {"re_invoke": "ph_q/worker", "max_cycles": 2},
+    },
+    {
+        "agent": "ph_q/ondemand",
+        "phase": "ph_q",
+        "trigger": {"label": "ondemand:requested"},
+        "dependencies": [],
+        "human_gate_after": False,
+    },
+]
+
+
+def test_complete_chart_starts_with_flowchart_td():
+    chart = build_complete_chart(_CC_ENTRIES)
+    assert chart.startswith("flowchart TD\n")
+
+
+def test_complete_chart_has_subgraph_per_phase():
+    chart = build_complete_chart(_CC_ENTRIES)
+    assert "subgraph ph_p" in chart
+    assert "subgraph ph_q" in chart
+
+
+def test_complete_chart_issue_opened_entry_outside_subgraph():
+    chart = build_complete_chart(_CC_ENTRIES)
+    lines = chart.splitlines()
+    # issue.opened entry must appear before the first subgraph line
+    entry_idx = next(i for i, l in enumerate(lines) if "issue.opened" in l)
+    subgraph_idx = next(i for i, l in enumerate(lines) if l.strip().startswith("subgraph"))
+    assert entry_idx < subgraph_idx
+
+
+def test_complete_chart_requested_entry_inside_its_phase_subgraph():
+    chart = build_complete_chart(_CC_ENTRIES)
+    lines = chart.splitlines()
+    # Find the ph_q subgraph block boundaries
+    start = next(i for i, l in enumerate(lines) if "subgraph ph_q" in l)
+    end = next(i for i, l in enumerate(lines[start:]) if l.strip() == "end") + start
+    subgraph_body = "\n".join(lines[start:end])
+    assert "ondemand:requested" in subgraph_body
+
+
+def test_complete_chart_gate_inside_its_phase_subgraph():
+    chart = build_complete_chart(_CC_ENTRIES)
+    lines = chart.splitlines()
+    start = next(i for i, l in enumerate(lines) if "subgraph ph_p" in l)
+    end = next(i for i, l in enumerate(lines[start:]) if l.strip() == "end") + start
+    subgraph_body = "\n".join(lines[start:end])
+    assert "gated:approved" in subgraph_body
+
+
+def test_complete_chart_dependency_edge_across_phases():
+    chart = build_complete_chart(_CC_ENTRIES)
+    # ph_q/worker depends on ph_p/gated (which has a gate) — edge from gate to worker
+    assert _has_edge(chart, "gate__n_ph_p__gated", "n_ph_q__worker")
+
+
+def test_complete_chart_entry_edge_issue_opened():
+    chart = build_complete_chart(_CC_ENTRIES)
+    assert _has_edge(chart, "entry_n_ph_p__opener", "n_ph_p__opener")
+
+
+def test_complete_chart_entry_edge_requested():
+    chart = build_complete_chart(_CC_ENTRIES)
+    assert _has_edge(chart, "entry_n_ph_q__ondemand", "n_ph_q__ondemand")
+
+
+def test_complete_chart_review_loop_dashed_edge():
+    chart = build_complete_chart(_CC_ENTRIES)
+    assert _has_dashed_edge(chart, "n_ph_q__worker", "n_ph_q__worker")
+
+
+def test_complete_chart_classDef_term_present():
+    chart = build_complete_chart(_CC_ENTRIES)
+    assert "classDef term" in chart
+
+
+# --- main: complete flow file ---
+
+def test_main_writes_complete_flow_file(patched):
+    assert main([]) == 0
+    assert _mod.COMPLETE_FLOW_FILE.exists()
+
+
+def test_main_complete_flow_contains_subgraphs(patched):
+    main([])
+    content = _mod.COMPLETE_FLOW_FILE.read_text(encoding="utf-8")
+    assert "subgraph" in content
+
+
+def test_main_check_detects_stale_complete_flow(patched):
+    main([])
+    _mod.COMPLETE_FLOW_FILE.write_text("hand-edited\n", encoding="utf-8")
+    assert main(["--check"]) != 0
+
+
+def test_main_check_fails_when_complete_flow_missing(patched):
+    main([])
+    _mod.COMPLETE_FLOW_FILE.unlink()
+    assert main(["--check"]) != 0
+
+
+def test_main_check_leaves_complete_flow_unmodified(patched):
+    main([])
+    _mod.COMPLETE_FLOW_FILE.write_text("hand-edited\n", encoding="utf-8")
+    main(["--check"])
+    assert _mod.COMPLETE_FLOW_FILE.read_text(encoding="utf-8") == "hand-edited\n"

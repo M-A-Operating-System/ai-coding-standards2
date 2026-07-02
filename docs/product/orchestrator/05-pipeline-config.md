@@ -6,7 +6,7 @@ the single source of truth referenced by [P-2](02-principles.md#p-2--one-machine
 
 Anything human-readable about the pipeline (agent catalogues, phase
 tables, mermaid diagrams, gate lists) is generated from this file and
-committed to `docs/product/agile/generated/`. Hand-editing those generated
+committed to `docs/product/orchestrator/generated/`. Hand-editing those generated
 files is not allowed.
 
 ---
@@ -19,7 +19,7 @@ pipeline/
   schemas/
     pipeline.schema.json            ← JSON schema (validation)
   generators/
-    generate_docs.py                ← produces docs/product/agile/generated/
+    generate_docs.py                ← produces docs/product/orchestrator/generated/
     generate_pipeline_mermaid.py    ← produces .mmd flowcharts
     generate_phase_mermaid.py       ← produces per-phase .mmd charts under generated/phases/
 ```
@@ -51,6 +51,7 @@ For each step, exactly these facts are declared:
 | `max_concurrent` | no | Maximum number of instances of this agent the orchestrator may launch simultaneously across all issues in a single tick. The orchestrator counts active `{agent}:wip` labels across all open issues before launching additional instances; it starts no more than this many at once. Default 1 when the field is absent or null. A pipeline-wide aggregate maximum (see `PIPELINE_MAX_CONCURRENT` in `pipeline/pipeline_orchestrator.py` for the authoritative value) caps total agent launches across all agent types per tick regardless of per-agent settings. |
 | `description` | yes | One-sentence statement of what the step owns |
 | `session` | no | Session management config (agent steps only — see [§ Session management](#session-management) below). Ignored for script steps. |
+| `post_steps` | no | Ordered list of repo-relative shell script paths to execute after the agent signals `:complete`. Agent steps only — see [§ post_steps](#post_steps--per-agent-completion-hooks). |
 
 Anything else about an agent step — its prompt, its tools, its model — lives
 in `.claude/agents/{phase}/{short-name}.md`, not in `pipeline.json`.
@@ -133,13 +134,13 @@ The schema enforces:
 
 | Generated file | Description |
 |---|---|
-| `docs/product/agile/generated/agents.md` | One section per agent: phase, dependencies, gate, description |
-| `docs/product/agile/generated/phases.md` | Agents grouped by phase, in dependency order |
-| `docs/product/agile/generated/gates.md` | Every human gate, what triggers it, who approves |
-| `docs/product/agile/generated/pipeline.mmd` | Full mermaid flowchart |
-| `docs/product/agile/generated/pipeline-issue.mmd` | Issue subgraph |
-| `docs/product/agile/generated/pipeline-pr.mmd` | PR subgraph |
-| `docs/product/agile/generated/phases/{phase}.mmd` (one per phase) | Per-phase mermaid flowchart showing only the agents and boundary gates for that phase |
+| `docs/product/orchestrator/generated/agents.md` | One section per agent: phase, dependencies, gate, description |
+| `docs/product/orchestrator/generated/phases.md` | Agents grouped by phase, in dependency order |
+| `docs/product/orchestrator/generated/gates.md` | Every human gate, what triggers it, who approves |
+| `docs/product/orchestrator/generated/pipeline.mmd` | Full mermaid flowchart |
+| `docs/product/orchestrator/generated/pipeline-issue.mmd` | Issue subgraph |
+| `docs/product/orchestrator/generated/pipeline-pr.mmd` | PR subgraph |
+| `docs/product/orchestrator/generated/phases/{phase}.mmd` (one per phase) | Per-phase mermaid flowchart showing only the agents and boundary gates for that phase |
 
 The generator is idempotent: running it twice on the same input produces
 byte-identical output. CI runs the generator and fails the PR if any
@@ -228,7 +229,7 @@ Agents own git commits (write files, `git add`, `git commit`, `git push`
 to their branch). The orchestrator owns the PR object (create, ready,
 merge). Agents may read issues and PRs freely; they must not call
 `gh pr create`, `gh pr ready`, or `gh pr merge`. See
-[P-16](02-principles.md#p-16--agents-own-branch-commits-orchestrator-owns-the-pr-lifecycle).
+[P-16](02-principles.md#p-16--git-commit-ownership-two-modes).
 
 ### Automatic issue close and branch delete
 
@@ -245,28 +246,51 @@ These two lifecycle events are GitHub-native and require no pipeline code:
 
 ```json
 "git_ops": {
-  "mark_ready_on_complete": true
+  "commit_after": true
 }
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `commit_after` | boolean | `false` | When `true`, after the agent signals `:complete`, the orchestrator stashes working-tree changes, checks out branch `issue-{N}`, pops the stash, commits all staged changes (`"docs: {agent} updates for issue #{N}"`), and pushes. Use for agents that write files via the `Write` tool and cannot run git. |
-| `mark_ready_on_complete` | boolean | `false` | When `true`, marks the PR ready for review after `:complete`. |
 
 All other git behaviour (branch prefix, commit strategy) is agent-internal and should
 not be declared in `pipeline.json`.
 
-### When to set `mark_ready_on_complete`
+---
 
-Set it on an agent that acts as the final automated review gate before
-human merge approval. In the current pipeline that is `pr-reviewer`: when
-it completes with APPROVE, the draft PR should be visible in GitHub's
-review queue.
+## post_steps — Per-agent completion hooks
 
-Do not set it on code-writing agents (`coder`, `prd-docs-updater`) — those
-agents commit to the branch, but the PR should stay draft until the review
-agent has run.
+Some agent steps need to run a short deterministic script immediately after
+they signal `:complete` — for example, marking a PR ready for review once the
+`pr-reviewer` agent issues APPROVE. These actions are declared as an ordered
+array of repo-relative script paths in the `post_steps` field:
+
+```json
+"post_steps": [
+  ".github/scripts/mark-pr-ready.sh"
+]
+```
+
+### How post_steps work
+
+1. Scripts execute only when the agent signals `AI_AGILE_STATUS: complete` —
+   not on `:review`, `:blocked`, or `:failed`.
+2. Scripts run in declaration order. Each receives the same environment
+   variables as agent steps: `$REPO`, `$ISSUE_NUMBER` (or `$PR_NUMBER`),
+   `$WORK_ITEM_KIND`, `$WORK_ITEM_NUMBER`, `$AGENT_NAME`, `$AI_AGILE_ROOT`,
+   `$GITHUB_TOKEN`.
+3. A script that exits non-zero aborts the remaining `post_steps`; the
+   orchestrator applies `{agent}:failed` and posts a recovery comment.
+4. `post_steps` is only valid on agent steps. It is ignored on script steps.
+
+### When to use post_steps
+
+Use `post_steps` for any deterministic, agent-specific action that must run
+after the agent succeeds — actions that would otherwise require a hardcoded
+`if agent == "..."` branch in the orchestrator. Prefer `git_ops.commit_after`
+for git operations; use `post_steps` for everything else (e.g. calling
+`gh pr ready`).
 
 ---
 

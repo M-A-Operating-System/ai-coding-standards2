@@ -9,6 +9,7 @@ import pipeline_orchestrator
 from pipeline_orchestrator import (
     is_pipeline_stopped,
     clear_stop,
+    _check_controls,
 )
 
 
@@ -225,7 +226,12 @@ class TestMainStopMarkerBehavior:
         assert not loaded, "--clear-stop must exit before loading the pipeline"
 
     def test_stop_marker_detected_mid_loop(self, tmp_path, monkeypatch):
-        """Stop marker written after startup must be detected before the next work item is processed."""
+        """Stop detected at entry of process_work_item() must prevent all work for that item.
+
+        Under the refactored architecture, _check_controls() is called once per work item
+        at the top of process_work_item(). When it returns "stop", the function returns 0
+        immediately — before promote_gated_agents or any agent invocation.
+        """
         marker_path = tmp_path / ".pipeline-stop"
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
 
@@ -235,14 +241,14 @@ class TestMainStopMarkerBehavior:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return (False, "")   # startup check — not stopped
-            return (True, "mid-run stop")  # per-cycle check — stopped
+                return (False, "")   # startup check in main() — not stopped
+            return (True, "mid-run stop")  # per-item check via _check_controls() — stopped
 
-        processed = []
+        promote_calls = []
 
-        def fake_process(item, agents, pipeline_map, gh, dry_run, repo, **kw):
-            processed.append(item)
-            return 0
+        def fake_promote(labels, agents, work_item, gh, **kw):
+            promote_calls.append(work_item)
+            return labels
 
         wi1 = MagicMock()
         wi1.labels = set()
@@ -259,15 +265,117 @@ class TestMainStopMarkerBehavior:
              patch.object(pipeline_orchestrator, "is_pipeline_stopped", side_effect=fake_is_stopped), \
              patch.object(pipeline_orchestrator, "load_pipeline", return_value=([], [])), \
              patch.object(pipeline_orchestrator, "GitHubClient", return_value=gh_mock), \
-             patch.object(pipeline_orchestrator, "process_work_item", side_effect=fake_process), \
+             patch.object(pipeline_orchestrator, "promote_gated_agents", side_effect=fake_promote), \
              patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             pipeline_orchestrator.main()
 
-        assert len(processed) == 0, (
-            "No work items should be processed once the mid-loop stop is detected; "
-            f"got {len(processed)} processed"
+        assert len(promote_calls) == 0, (
+            "promote_gated_agents must not be called when _check_controls() returns 'stop'; "
+            f"got {len(promote_calls)} call(s)"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestCheckControls
+# ---------------------------------------------------------------------------
+
+class TestCheckControls:
+    """Tests for the consolidated _check_controls() guard function."""
+
+    def test_returns_run_when_neither_stopped_nor_paused(self, tmp_path, monkeypatch):
+        """Returns 'run' when no stop or pause marker is present."""
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", tmp_path / ".pipeline-stop")
+        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
+        assert _check_controls("test/repo") == "run"
+
+    def test_returns_stop_when_stop_marker_exists(self, tmp_path, monkeypatch, capsys):
+        """Returns 'stop' when a stop marker is present, regardless of pause state."""
+        stop_path = tmp_path / ".pipeline-stop"
+        stop_path.write_text(json.dumps({"reason": "test stop", "stopped_at": "2026-01-01T00:00:00Z"}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
+        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
+        assert _check_controls("test/repo") == "stop"
+
+    def test_returns_pause_when_pause_marker_active(self, tmp_path, monkeypatch):
+        """Returns 'pause' when a non-expired pause marker is present."""
+        import datetime
+        pause_path = tmp_path / ".pipeline-pause"
+        future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
+        pause_path.write_text(json.dumps({"until": future, "reason": "rate limit", "paused_at": future}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", tmp_path / ".pipeline-stop")
+        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
+        assert _check_controls("test/repo") == "pause"
+
+    def test_stop_takes_priority_over_pause(self, tmp_path, monkeypatch):
+        """Returns 'stop' even when both stop and pause markers are present."""
+        import datetime
+        stop_path = tmp_path / ".pipeline-stop"
+        stop_path.write_text(json.dumps({"reason": "test stop"}))
+        pause_path = tmp_path / ".pipeline-pause"
+        future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
+        pause_path.write_text(json.dumps({"until": future, "reason": "rate limit", "paused_at": future}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
+        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
+        assert _check_controls("test/repo") == "stop"
+
+    def test_returns_run_when_pause_marker_expired(self, tmp_path, monkeypatch):
+        """Returns 'run' when pause marker exists but has expired."""
+        import datetime
+        past = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat()
+        pause_path = tmp_path / ".pipeline-pause"
+        pause_path.write_text(json.dumps({"until": past, "reason": "expired", "paused_at": past}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", tmp_path / ".pipeline-stop")
+        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
+        assert _check_controls("test/repo") == "run"
+
+    def test_process_work_item_returns_zero_when_stopped(self, tmp_path, monkeypatch):
+        """process_work_item returns 0 immediately when _check_controls detects stop."""
+        from pipeline_orchestrator import process_work_item, AgentDef, WorkItem, ConcurrencyState
+        stop_path = tmp_path / ".pipeline-stop"
+        stop_path.write_text(json.dumps({"reason": "test stop", "stopped_at": "2026-01-01T00:00:00Z"}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
+        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
+
+        promote_calls = []
+
+        def fake_promote(labels, agents, work_item, gh, **kw):
+            promote_calls.append(True)
+            return labels
+
+        wi = WorkItem(number=1, kind="issue", title="test", labels=set(), url="https://example.com/1")
+        gh = MagicMock()
+
+        with patch.object(pipeline_orchestrator, "promote_gated_agents", side_effect=fake_promote):
+            result = process_work_item(wi, [], {}, gh, dry_run=False, repo="test/repo")
+
+        assert result == 0
+        assert len(promote_calls) == 0, "promote_gated_agents must not run when stop is detected at entry"
+
+    def test_process_work_item_returns_zero_when_paused(self, tmp_path, monkeypatch):
+        """process_work_item returns 0 immediately when _check_controls detects pause."""
+        import datetime
+        from pipeline_orchestrator import process_work_item, WorkItem
+        future = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
+        pause_path = tmp_path / ".pipeline-pause"
+        pause_path.write_text(json.dumps({"until": future, "reason": "rate limit", "paused_at": future}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", tmp_path / ".pipeline-stop")
+        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
+
+        promote_calls = []
+
+        def fake_promote(labels, agents, work_item, gh, **kw):
+            promote_calls.append(True)
+            return labels
+
+        wi = WorkItem(number=2, kind="issue", title="test", labels=set(), url="https://example.com/2")
+        gh = MagicMock()
+
+        with patch.object(pipeline_orchestrator, "promote_gated_agents", side_effect=fake_promote):
+            result = process_work_item(wi, [], {}, gh, dry_run=False, repo="test/repo")
+
+        assert result == 0
+        assert len(promote_calls) == 0, "promote_gated_agents must not run when pause is detected at entry"
 
 
 # ---------------------------------------------------------------------------

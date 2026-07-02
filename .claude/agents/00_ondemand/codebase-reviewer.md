@@ -11,7 +11,7 @@ description: >
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 80
-extra_allowedTools: [Bash(find *), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(gh issue create *), Bash(gh issue comment *), Bash(gh issue view *)]
+# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 00_ondemand/codebase-reviewer
@@ -321,7 +321,7 @@ AI_AGILE_STATUS: complete
   the human's artefact.
 - **Cross-reference `docs/product/` sparingly.** Only read it when code
   intent is genuinely unclear and the product docs are likely to clarify it.
-  Never read `docs/product/agile/` pipeline system files to justify findings.
+  Never read `docs/product/orchestrator/` pipeline system files to justify findings.
 - **Every finding must be AI-actionable.** Vague findings like "improve
   error handling" are not acceptable. Name the function, the line, and the
   exact change.

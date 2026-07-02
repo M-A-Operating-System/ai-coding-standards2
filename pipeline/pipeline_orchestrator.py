@@ -2,7 +2,7 @@
 """
 pipeline_orchestrator.py
 
-Reads pipeline.json and orchestrates agent execution by inspecting GitHub
+Reads pipeline.json and orchestrates agent execution  by inspecting GitHub
 issue and PR labels of the form:
 
     {agent-name}:complete     — agent finished successfully
@@ -50,7 +50,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import requests
 
@@ -163,7 +163,8 @@ class AgentDef:
     max_retries: int = 0               # how many times to re-invoke after :failed before giving up
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
-    mark_ready_on_complete: bool = False  # orchestrator calls gh pr ready on :complete
+    post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
+    review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
@@ -171,6 +172,7 @@ class AgentDef:
     max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
+    extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults and frontmatter
 
     @property
     def label_key(self) -> str:
@@ -196,6 +198,10 @@ class AgentDef:
     @property
     def blocked_label(self) -> str:
         return f"{self.label_key}:{STATUS_BLOCKED}"
+
+    @property
+    def skipped_label(self) -> str:
+        return f"{self.label_key}:{STATUS_SKIPPED}"
 
     def status_label(self, status: str) -> str:
         return f"{self.label_key}:{status}"
@@ -257,12 +263,34 @@ class ConcurrencyState:
 # Pipeline loader
 # ---------------------------------------------------------------------------
 
+def _coerce_tools(val: object) -> list[str]:
+    """Coerce an extra_allowedTools value to a list of strings.
+
+    Accepts a JSON array (list), a comma-separated string (same format as
+    defaults.extra_allowedTools), or None/missing (returns []).
+    Raises TypeError for any other type so pipeline.json errors surface early.
+    """
+    if val is None or val == []:
+        return []
+    if isinstance(val, str):
+        return [t.strip() for t in val.split(",") if t.strip()]
+    if isinstance(val, list):
+        for t in val:
+            if not isinstance(t, str):
+                raise TypeError(
+                    f"extra_allowedTools list elements must be strings, got {type(t).__name__}: {t!r}"
+                )
+        return [t.strip() for t in val if t.strip()]
+    raise TypeError(f"extra_allowedTools must be a list or comma-separated string, got {type(val).__name__}")
+
+
 def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     """Parse pipeline.json once and return (agents, default_extra_tools).
 
     default_extra_tools comes from defaults.extra_allowedTools and is
     prepended to every agent's own extra_allowedTools at invocation time.
     """
+    entry: dict = {}  # sentinel so the except block can report agent name
     try:
         with open(path) as f:
             raw = json.load(f)
@@ -283,7 +311,8 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 max_retries=int(entry.get("max_retries", 0)),
                 session_scope=entry.get("session", {}).get("scope", "per_issue"),
                 session_id_pattern=entry.get("session", {}).get("id_pattern"),
-                mark_ready_on_complete=bool(entry.get("git_ops", {}).get("mark_ready_on_complete", False)),
+                post_steps=list(entry.get("post_steps", [])),
+                review_gate=bool(entry.get("review_gate", False)),
                 commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
@@ -291,18 +320,22 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
+                extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
             ))
+            if entry.get("git_ops", {}).get("mark_ready_on_complete"):
+                log.warning(
+                    "pipeline.json: agent %r uses deprecated git_ops.mark_ready_on_complete; "
+                    "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",
+                    entry.get("agent", "<unknown>"),
+                )
 
-        _raw_defaults = raw.get("defaults", {}).get("extra_allowedTools", [])
-        default_extra_tools: list[str] = (
-            [t.strip() for t in _raw_defaults.split(",") if t.strip()]
-            if isinstance(_raw_defaults, str)
-            else list(_raw_defaults)
+        default_extra_tools: list[str] = _coerce_tools(
+            raw.get("defaults", {}).get("extra_allowedTools")
         )
 
         return agents, default_extra_tools
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        log.error("pipeline.json is malformed — cannot start: %s", exc)
+        log.error("pipeline.json is malformed (agent: %s) — cannot start: %s", entry.get("agent", "<unknown>"), exc)
         sys.exit(1)
 
 
@@ -738,6 +771,25 @@ def clear_stop() -> bool:
         return False
 
 
+def _check_controls(repo: str) -> Literal["run", "pause", "stop"]:
+    """Check repository-level pause and stop signals.
+
+    Called once per work item at the entry of process_work_item(). Returns
+    "stop" if an emergency stop marker is active, "pause" if a rate-limit
+    pause marker is active, or "run" if the pipeline should proceed.
+
+    repo is accepted for future multi-repo extensibility but unused in the
+    current file-based implementation.
+    """
+    stopped, _stop_reason = is_pipeline_stopped()
+    if stopped:
+        return "stop"
+    paused, _pause_reason, _until = is_pipeline_paused()
+    if paused:
+        return "pause"
+    return "run"
+
+
 def detect_rate_limit(output: str) -> tuple[bool, int]:
     """Inspect agent subprocess output for rate-limit indicators.
 
@@ -868,7 +920,7 @@ def _handle_review_loop(
     current_cycle = _get_review_cycle(labels)
     next_cycle = current_cycle + 1
 
-    if not skip_cycle_increment and next_cycle >= max_cycles:
+    if not skip_cycle_increment and next_cycle > max_cycles:
         log.info(
             "  LOOP    %-38s  %d/%d cycles — escalating to human",
             agent_def.agent, next_cycle, max_cycles,
@@ -890,18 +942,18 @@ def _handle_review_loop(
 
     if skip_cycle_increment:
         log.info(
-            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s (cycle counter unchanged)",
+            "  LOOP    %-38s  human-review free re-invoke — re-invoking %s",
             agent_def.agent, re_invoke_name,
         )
     else:
         log.info(
-            "  LOOP    %-38s  cycle %d/%d — re-invoking %s",
-            agent_def.agent, next_cycle, max_cycles, re_invoke_name,
+            "  LOOP    %-38s  re-invoking %s (counter advances at dispatch)",
+            agent_def.agent, re_invoke_name,
         )
 
     if skip_cycle_increment:
-        # Apply HUMAN_REVIEW_PENDING_LABEL instead of advancing the cycle counter.
-        # This signals Mode B to the coder and prevents a second free re-invoke.
+        # Apply HUMAN_REVIEW_PENDING_LABEL to signal Mode B to the coder and
+        # prevent a second free re-invoke.
         try:
             gh.add_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
             labels.add(HUMAN_REVIEW_PENDING_LABEL)
@@ -911,22 +963,6 @@ def _handle_review_loop(
             )
             return labels  # guard not set; abort free re-invoke to preserve once-only semantics
     else:
-        # Rotate the cycle counter label
-        if current_cycle > 0:
-            old = f"review-cycle:{current_cycle}"
-            try:
-                gh.remove_label(work_item.number, old)
-                labels.discard(old)
-            except Exception as exc:
-                log.debug("could not remove %s on #%d: %s", old, work_item.number, exc)
-
-        new_cycle_label = f"review-cycle:{next_cycle}"
-        try:
-            gh.add_label(work_item.number, new_cycle_label)
-            labels.add(new_cycle_label)
-        except Exception as exc:
-            log.warning("could not apply %s on #%d: %s", new_cycle_label, work_item.number, exc)
-
         # Clean up HUMAN_REVIEW_PENDING_LABEL if present from a prior free cycle —
         # the normal automated review cycle supersedes it.
         if HUMAN_REVIEW_PENDING_LABEL in labels:
@@ -948,14 +984,17 @@ def _handle_review_loop(
             "could not remove %s on #%d: %s", agent_def.review_label, work_item.number, exc
         )
 
-    # Clear target's :complete so it can be re-triggered
-    try:
-        gh.remove_label(work_item.number, target_def.complete_label)
-        labels.discard(target_def.complete_label)
-    except Exception as exc:
-        log.warning(
-            "could not remove %s on #%d: %s", target_def.complete_label, work_item.number, exc
-        )
+    # Clear target's :complete (or :skipped if it was bypassed) so it can be re-triggered.
+    for lbl in (target_def.complete_label, target_def.skipped_label):
+        if lbl not in labels:
+            continue
+        try:
+            gh.remove_label(work_item.number, lbl)
+            labels.discard(lbl)
+        except Exception as exc:
+            log.warning(
+                "could not remove %s on #%d: %s", lbl, work_item.number, exc
+            )
 
     # Clear any intermediate steps that must re-run (e.g. ci-gate between coder and pr-reviewer)
     also_cleared: list[str] = []
@@ -964,14 +1003,20 @@ def _handle_review_loop(
         if also_def is None:
             log.warning("review_loop also_clear '%s' not found in pipeline — skipping", also_name)
             continue
-        try:
-            gh.remove_label(work_item.number, also_def.complete_label)
-            labels.discard(also_def.complete_label)
+        cleared_any = False
+        for lbl in (also_def.complete_label, also_def.skipped_label):
+            if lbl not in labels:
+                continue
+            try:
+                gh.remove_label(work_item.number, lbl)
+                labels.discard(lbl)
+                cleared_any = True
+            except Exception as exc:
+                log.warning(
+                    "could not remove %s on #%d: %s", lbl, work_item.number, exc
+                )
+        if cleared_any:
             also_cleared.append(also_name)
-        except Exception as exc:
-            log.warning(
-                "could not remove %s on #%d: %s", also_def.complete_label, work_item.number, exc
-            )
 
     also_suffix = (
         f" (also cleared: {', '.join(f'`{n}`' for n in also_cleared)})" if also_cleared else ""
@@ -1042,15 +1087,32 @@ def _fetch_unresolved_human_review_requests(gh: "GitHubClient", pr_number: int) 
     return [r for r in latest_by_reviewer.values() if r.get("state") == "CHANGES_REQUESTED"]
 
 
+def normalize_skipped_labels(
+    labels: set[str],
+    pipeline_map: dict[str, AgentDef],
+) -> set[str]:
+    """Return a copy of labels with :complete synthesized for every :skipped agent.
+
+    Downstream eligibility checks (dependencies_complete, trigger_label_present)
+    only need to test for :complete — the "is done?" concept lives here, once.
+    """
+    normalized = set(labels)
+    for adef in pipeline_map.values():
+        if adef.skipped_label in labels:
+            normalized.add(adef.complete_label)
+    return normalized
+
+
 def dependencies_complete(
     labels: set[str],
     agent_def: AgentDef,
     pipeline_map: dict[str, AgentDef],
 ) -> bool:
-    """
-    Return True if every dependency is complete, where complete means:
-      - The label {dep}:complete exists on the issue/PR, AND
-      - If the dependency has a human_gate_label, that label also exists.
+    """Return True if every dependency's :complete label is present and its human gate is satisfied.
+
+    ``labels`` must already be normalized via :func:`normalize_skipped_labels` before
+    this call — a skipped dependency's synthesized ``:complete`` label must be present
+    for it to be treated as done.
     """
     for dep_name in agent_def.dependencies:
         dep = pipeline_map.get(dep_name)
@@ -1061,7 +1123,10 @@ def dependencies_complete(
         if dep.complete_label not in labels:
             return False
 
-        if dep.human_gate_after and dep.human_gate_label:
+        # Human gate only applies when the dep actually ran — a skipped dep
+        # never ran, so its gate label was never applied.
+        dep_skipped = dep.skipped_label in labels
+        if not dep_skipped and dep.human_gate_after and dep.human_gate_label:
             if dep.human_gate_label not in labels:
                 log.debug(
                     "  %s complete but human gate '%s' not yet applied",
@@ -1074,12 +1139,18 @@ def dependencies_complete(
 
 def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     """Return True if the label trigger for this agent is satisfied."""
-    trigger = agent_def.trigger
-    if "label" in trigger:
-        return trigger["label"] in labels
-    # Event and schedule triggers are handled externally (GitHub Actions).
-    # When running interactively, treat them as always-eligible.
-    return True
+    if "label" not in agent_def.trigger:
+        # Event and schedule triggers are handled externally (GitHub Actions).
+        # When running interactively, treat them as always-eligible.
+        return True
+    label = agent_def.trigger["label"]
+    if not isinstance(label, str):
+        log.warning(
+            "agent %s has non-string trigger label %r — treating as ineligible",
+            agent_def.agent, label,
+        )
+        return False
+    return label in labels
 
 
 _CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike"}
@@ -1717,14 +1788,15 @@ def invoke_agent(
 
     frontmatter = parse_frontmatter(agent_text)
     agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
-    _extra: object = frontmatter.get("extra_allowedTools", [])
-    _agent_extra: list[str] = (
-        [t.strip() for t in _extra.split(",") if t.strip()]
-        if isinstance(_extra, str)
-        else list(_extra)
-    )
-    # Merge defaults (first) with agent-specific tools; deduplicate preserving order.
-    extra_tools = list(dict.fromkeys(list(default_extra_tools or []) + _agent_extra))
+    # Frontmatter extra_allowedTools is a deprecated fallback; canonical config lives in
+    # pipeline.json. All registered agents now have an empty frontmatter entry (comment only).
+    _frontmatter_extra: list[str] = _coerce_tools(frontmatter.get("extra_allowedTools"))
+    # Merge: defaults → pipeline.json per-agent → frontmatter fallback (deduplicated, order preserved).
+    extra_tools = list(dict.fromkeys(
+        list(default_extra_tools or []) +
+        list(agent_def.extra_allowedTools) +
+        _frontmatter_extra
+    ))
     try:
         max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))
     except (ValueError, TypeError):
@@ -1739,6 +1811,10 @@ def invoke_agent(
     num_var = "ISSUE_NUMBER" if work_item.kind == "issue" else "PR_NUMBER"
     kind_label = "Issue" if work_item.kind == "issue" else "PR"
 
+    # Build the claude session ID before the prompt so its resolved value can
+    # be embedded directly — agents must not shell out to read it.
+    agent_session_id = _compute_agent_session_id(agent_def, work_item, repo)
+
     prompt = (
         f"{agents_md}\n\n"
         f"---\n\n"
@@ -1749,8 +1825,14 @@ def invoke_agent(
         f"Agent: {agent_def.agent}\n"
         f"{kind_label}: #{work_item.number} in {repo}\n"
         f"URL: {work_item.url}\n\n"
-        f"Env vars: $REPO ${num_var} $WORK_ITEM_KIND $AI_AGILE_ROOT $AI_AGILE_CONTEXT "
-        f"$SESSION_ID $SESSION_SCOPE\n\n"
+        f"## Runtime context\n\n"
+        f"REPO={repo.strip()}\n"
+        f"{num_var}={work_item.number}\n"
+        f"WORK_ITEM_KIND={work_item.kind}\n"
+        f"SESSION_ID={agent_session_id.strip()}\n"
+        f"SESSION_SCOPE={agent_def.session_scope.strip()}\n"
+        f"AI_AGILE_ROOT={os.environ.get('AI_AGILE_ROOT', str(SUBMODULE_ROOT)).strip()}\n"
+        f"AI_AGILE_CONTEXT={str(AI_AGILE_CONTEXT).strip()}\n\n"
         f"Print exactly one of these as the last line before exiting:\n"
         f"AI_AGILE_STATUS: complete\n"
         f"AI_AGILE_STATUS: review \"short message\"\n"
@@ -1758,10 +1840,6 @@ def invoke_agent(
         f"(No leading spaces — the orchestrator's regex matches only at line start.)\n"
         f"The orchestrator reads this sentinel, applies the label, and posts the closing announcement."
     )
-
-    # Build the claude session ID using the shared helper so the value is
-    # identical to what the orchestrator advertises in the opening announcement.
-    agent_session_id = _compute_agent_session_id(agent_def, work_item, repo)
 
     if dry_run:
         log.info(
@@ -1840,6 +1918,23 @@ def invoke_agent(
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
     else:
         agent_env["PR_NUMBER"] = str(work_item.number)
+
+    # Preflight: a missing ANTHROPIC_API_KEY produces an auth-error response
+    # that the stream-json parser may misread as a rate-limit pause, masking
+    # the real cause and leaving the work item stuck in :wip indefinitely.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        log.error(
+            "  invoke_agent: ANTHROPIC_API_KEY is not set — cannot launch %s "
+            "on %s #%d; add the key to CI secrets and retry.",
+            agent_def.agent, work_item.kind, work_item.number,
+        )
+        return AgentRunResult(
+            success=False,
+            captured_tail=(
+                "Configuration error: ANTHROPIC_API_KEY is not set. "
+                "Add the key to CI secrets and retry."
+            ),
+        )
 
     # Capture the stream-json output line-by-line. Each line is a JSON event;
     # we parse it immediately to extract agent text (for sentinel/rate-limit
@@ -2180,7 +2275,7 @@ def _apply_failed(
         "",
         "**To recover:**",
         f"- Fix the underlying error, then **remove** the `{agent_def.failed_label}` label to retry, or",
-        f"- Apply the `{agent_def.status_label(STATUS_SKIPPED)}` label to bypass this agent on this item.",
+        f"- Apply the `{agent_def.skipped_label}` label to bypass this agent on this item.",
         "",
         footer,
     ]
@@ -2209,6 +2304,885 @@ def _restore_pre_agent_branch(branch: str) -> None:
         pass
 
 
+def _should_run(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    labels: set,
+    pipeline_map: dict,
+    concurrency: Optional[ConcurrencyState],
+) -> Optional[bool]:
+    """Evaluate whether an agent should be dispatched for a work item.
+
+    Returns True to dispatch, False to skip (continue to next agent),
+    or None to stop processing agents for this work item (aggregate ceiling hit).
+    """
+    if work_item.kind not in agent_def.objects:
+        return False
+
+    if agent_def.exclude_classifications and work_item.kind == "issue":
+        _classification = get_work_item_classification(work_item)
+        if _classification and _classification in agent_def.exclude_classifications:
+            log.debug(
+                "  skip %-40s  [classification '%s' excluded]",
+                agent_def.agent, _classification,
+            )
+            return False
+
+    if agent_def.exclude_labels:
+        _blocking_label = next(
+            (lbl for lbl in agent_def.exclude_labels if lbl in labels), None
+        )
+        if _blocking_label:
+            log.debug(
+                "  skip %-40s  [label '%s' excludes this agent]",
+                agent_def.agent, _blocking_label,
+            )
+            return False
+
+    current_status = agent_status(labels, agent_def.label_key)
+
+    if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED):
+        log.debug("  skip %-40s  [%s]", agent_def.agent, current_status)
+        return False
+
+    if current_status == STATUS_IN_PROGRESS:
+        log.info("  wait %-40s  [wip]", agent_def.agent)
+        return False
+
+    # :review means awaiting a gate label or human reject; :blocked means
+    # human intervention required. Re-invoking without human action would
+    # loop indefinitely or duplicate the artefact.
+    if current_status in HALT_STATUSES:
+        log.info("  halt %-40s  [%s]", agent_def.agent, current_status)
+        return False
+
+    # :requested is a manual override — bypass trigger check.
+    _manual_trigger = (current_status == STATUS_REQUESTED)
+
+    if not _manual_trigger and not trigger_label_present(labels, agent_def):
+        log.debug(
+            "  skip %-40s  [trigger not met: %s]",
+            agent_def.agent,
+            agent_def.trigger.get("label", "event/schedule"),
+        )
+        return False
+
+    if not dependencies_complete(labels, agent_def, pipeline_map):
+        log.debug("  skip %-40s  [dependencies unmet]", agent_def.agent)
+        return False
+
+    if concurrency is not None:
+        _running = concurrency.running_counts.get(agent_def.label_key, 0)
+        if _running >= agent_def.max_concurrent:
+            log.info(
+                "  skip %-40s  [per-agent concurrency: %d/%d running]",
+                agent_def.agent, _running, agent_def.max_concurrent,
+            )
+            return False
+        # Aggregate pipeline ceiling: stop the loop when hit.
+        if concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+            log.info(
+                "  ceiling %-38s  [pipeline max-concurrent: %d/%d launched this tick]",
+                agent_def.agent, concurrency.tick_launch_count, PIPELINE_MAX_CONCURRENT,
+            )
+            return None
+
+    return True
+
+
+def _acquire_wip_and_announce(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    dry_run: bool,
+    manual_trigger: bool,
+    repo: str,
+    labels: set,
+    concurrency: Optional[ConcurrencyState],
+    gh: "GitHubClient",
+    pipeline_map: dict,
+) -> None:
+    """Pre-invocation ceremony: remove :requested, apply :wip, announce, cycle++.
+
+    Applies the :wip status label and bumps concurrency counters (live or dry-run),
+    posts the opening announcement, and increments review-cycle:N for re_invoke
+    targets. Mutates labels and work_item.labels in-place.
+    """
+    if not dry_run:
+        # Remove :requested before applying :wip so the work item never
+        # carries two status labels simultaneously.
+        if manual_trigger:
+            try:
+                gh.remove_label(work_item.number, agent_def.status_label(STATUS_REQUESTED))
+                labels.discard(agent_def.status_label(STATUS_REQUESTED))
+            except Exception as exc:
+                log.debug(
+                    "  could not remove :requested for %s on #%d: %s",
+                    agent_def.agent, work_item.number, exc,
+                )
+        try:
+            gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
+            labels.add(agent_def.status_label(STATUS_WIP))
+            work_item.labels = labels
+            # Increment only on successful label application — a failed
+            # add_label means no :wip was set so no slot is consumed.
+            if concurrency is not None:
+                concurrency.running_counts[agent_def.label_key] = (
+                    concurrency.running_counts.get(agent_def.label_key, 0) + 1
+                )
+                concurrency.tick_launch_count += 1
+        except Exception as exc:
+            log.error(
+                "  could not apply :wip for %s on #%d: %s",
+                agent_def.agent, work_item.number, exc,
+            )
+        try:
+            # Use the agent's own deterministic session ID so the announcement
+            # matches what the agent prints in its own start comment.
+            _agent_sid = _compute_agent_session_id(agent_def, work_item, repo)
+            gh.post_comment(
+                work_item.number,
+                _build_opening_announcement(agent_def, work_item, _agent_sid),
+            )
+        except Exception as exc:
+            log.warning(
+                "  could not post opening announcement for %s on #%d: %s",
+                agent_def.agent, work_item.number, exc,
+            )
+
+        # Increment review-cycle:N at dispatch for review_loop re_invoke targets.
+        # The counter reflects the number of times this agent has started.
+        _is_reinvoke_target = any(
+            ad.review_loop and ad.review_loop.get("re_invoke") == agent_def.agent
+            for ad in pipeline_map.values()
+        )
+        if _is_reinvoke_target:
+            _rc_cur = _get_review_cycle(labels)
+            _rc_next = _rc_cur + 1
+            if _rc_cur > 0:
+                try:
+                    gh.remove_label(work_item.number, f"review-cycle:{_rc_cur}")
+                    labels.discard(f"review-cycle:{_rc_cur}")
+                except Exception as exc:
+                    log.debug(
+                        "could not remove review-cycle:%d on #%d: %s",
+                        _rc_cur, work_item.number, exc,
+                    )
+            try:
+                gh.add_label(work_item.number, f"review-cycle:{_rc_next}")
+                labels.add(f"review-cycle:{_rc_next}")
+                log.info(
+                    "  CYCLE   %-38s  review-cycle:%d", agent_def.agent, _rc_next,
+                )
+            except Exception as exc:
+                log.warning(
+                    "could not apply review-cycle:%d on #%d: %s",
+                    _rc_next, work_item.number, exc,
+                )
+
+    else:
+        # dry_run: skip :wip ceremony but advance counters so simulated output
+        # respects per-agent and aggregate ceilings.
+        if concurrency is not None:
+            concurrency.running_counts[agent_def.label_key] = (
+                concurrency.running_counts.get(agent_def.label_key, 0) + 1
+            )
+            concurrency.tick_launch_count += 1
+
+
+def _invoke_with_retries(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    dry_run: bool,
+    repo: str,
+    gh: "GitHubClient",
+    default_extra_tools: Optional[list],
+    agent_text_snapshot: Optional[str],
+) -> tuple:
+    """Invoke an agent, retrying on crash (no sentinel) up to max_retries.
+
+    Rate-limit events break immediately without applying :failed. Parses the
+    sentinel from the final run. Returns (result, sentinel_status,
+    sentinel_message, attempt).
+    """
+    sentinel_status: Optional[str] = None
+    sentinel_message: str = ""
+    _attempt = 0
+    # Retry loop: re-invoke on crash (no sentinel) up to max_retries times.
+    # Rate-limit events break immediately without applying :failed.
+    result = invoke_agent(
+        agent_def, work_item, dry_run, repo, attempt=0,
+        agent_text_override=agent_text_snapshot,
+        default_extra_tools=default_extra_tools,
+    )
+    while not dry_run:
+        if result.rate_limited:
+            break
+        sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
+        if sentinel_status or result.success or _attempt >= agent_def.max_retries:
+            break
+        _attempt += 1
+        _backoff = 5 * (2 ** (_attempt - 1))
+        log.info(
+            "  RETRY   %d/%d %-38s  (exit %d; sleeping %ds)",
+            _attempt, agent_def.max_retries,
+            agent_def.agent, result.returncode or -1, _backoff,
+        )
+        try:
+            gh.post_comment(
+                work_item.number,
+                f"**`{agent_def.agent}` retry {_attempt}/{agent_def.max_retries}** — "
+                f"attempt {_attempt} failed "
+                f"(exit {result.returncode if result.returncode is not None else 'unknown'}); "
+                f"retrying automatically.",
+            )
+        except Exception as exc:
+            log.warning("  could not post retry comment on #%d: %s", work_item.number, exc)
+        time.sleep(_backoff)
+        result = invoke_agent(
+            agent_def, work_item, dry_run, repo, attempt=_attempt,
+            agent_text_override=agent_text_snapshot,
+            default_extra_tools=default_extra_tools,
+        )
+        if result.rate_limited:
+            break
+
+    if not dry_run and not result.rate_limited:
+        sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
+
+    return result, sentinel_status, sentinel_message, _attempt
+
+
+def _run_agent(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    dry_run: bool,
+    repo: str,
+    labels: set,
+    session_id: str,
+    default_extra_tools: Optional[list],
+    concurrency: Optional[ConcurrencyState],
+    gh: "GitHubClient",
+    pipeline_map: dict,
+) -> tuple:
+    """Pre-invocation ceremony, agent/script dispatch, and retry loop.
+
+    Applies :wip, posts the opening announcement, manages the review-cycle
+    counter, invokes the agent or script, and parses the sentinel.
+
+    Modifies labels and work_item.labels in-place (review-cycle tracking).
+
+    Returns: (result, sentinel_status, sentinel_message,
+              pre_agent_branch, invoked_at, attempt)
+    """
+    log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
+
+    # :requested is a manual override — detect before removing the label below.
+    _manual_trigger = agent_status(labels, agent_def.label_key) == STATUS_REQUESTED
+
+    _acquire_wip_and_announce(
+        agent_def, work_item, dry_run, _manual_trigger,
+        repo, labels, concurrency, gh, pipeline_map,
+    )
+
+    if session_id and not dry_run:
+        _emit_audit_event(_make_audit_event(
+            session_id, "agent.invoked", repo,
+            work_item=work_item, agent=agent_def.agent,
+            outcome_status="started",
+            outcome_detail=f"mode={agent_def.step_type}",
+        ))
+    _invoked_at = time.monotonic()
+
+    # Snapshot the agent file before any branch checkout below so agent
+    # definitions always reflect the orchestrator's branch, not the issue branch.
+    _agent_file_path = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
+    _agent_text_snapshot: Optional[str] = (
+        _agent_file_path.read_text() if _agent_file_path.exists() else None
+    )
+
+    # For commit_after agents, check out the issue branch before invoking so
+    # the agent reads accumulated state. commit-agent-work.sh handles staging,
+    # commit, and push. Guard: only for issue work items (ISSUE_NUMBER required).
+    _pre_agent_branch: str = ""
+    if not dry_run and agent_def.commit_after and work_item.kind == "issue":
+        try:
+            _pre_agent_branch = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            _issue_branch = f"issue-{work_item.number}"
+            subprocess.run(["git", "fetch", "origin", _issue_branch], check=True)
+            subprocess.run(
+                ["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"],
+                check=True,
+            )
+            log.info("  pre-agent: checked out %s for %s", _issue_branch, agent_def.agent)
+        except Exception as _pre_exc:
+            log.warning(
+                "  pre-agent branch checkout failed for %s: %s — running on current branch",
+                agent_def.agent, _pre_exc,
+            )
+            _pre_agent_branch = ""  # don't attempt restoration if checkout failed
+
+    sentinel_status: Optional[str] = None
+    sentinel_message: str = ""
+    _attempt = 0
+
+    if agent_def.step_type == "script":
+        result = invoke_script(agent_def, work_item, dry_run, repo)
+        if not dry_run:
+            sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
+    else:
+        result, sentinel_status, sentinel_message, _attempt = _invoke_with_retries(
+            agent_def, work_item, dry_run, repo, gh,
+            default_extra_tools, _agent_text_snapshot,
+        )
+
+    return result, sentinel_status, sentinel_message, _pre_agent_branch, _invoked_at, _attempt
+
+
+def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[str]:
+    """Run commit-agent-work.sh for a `commit_after` agent.
+
+    Returns a human-readable failure reason, or None on success. The caller
+    owns the label/branch side-effects on failure.
+    """
+    _commit_script = SUBMODULE_ROOT / ".github/scripts/commit-agent-work.sh"
+    _commit_env = {
+        **os.environ,
+        "AGENT_NAME": agent_def.agent,
+        "ISSUE_NUMBER": str(work_item.number),
+    }
+    log.info(
+        "  commit-after: invoking commit-agent-work.sh for %s on #%d",
+        agent_def.agent, work_item.number,
+    )
+    if not _commit_script.exists():
+        log.error("  commit-after: commit-agent-work.sh not found at %s", _commit_script)
+        return (
+            "_commit-agent-work.sh not found. Check that .github/scripts/commit-agent-work.sh "
+            "exists on the orchestrator branch. Remove the failed label to retry._"
+        )
+    try:
+        _commit_result = subprocess.run(
+            ["bash", str(_commit_script)],
+            env=_commit_env, capture_output=True, text=True, timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        log.error(
+            "  commit-after: commit-agent-work.sh timed out for %s on #%d",
+            agent_def.agent, work_item.number,
+        )
+        return "_commit-agent-work.sh timed out after 300s. Remove the failed label to retry._"
+    except FileNotFoundError:
+        log.error("  commit-after: bash not found in PATH")
+        return (
+            "_bash not found in PATH; commit-agent-work.sh could not run. "
+            "Remove the failed label to retry._"
+        )
+    if _commit_result.returncode != 0:
+        _failure_output = (_commit_result.stderr or _commit_result.stdout)[:2000]
+        log.error(
+            "  commit-after: commit-agent-work.sh exited %d for %s on #%d\n%s",
+            _commit_result.returncode, agent_def.agent, work_item.number, _failure_output,
+        )
+        return (
+            "_The agent completed successfully but commit-agent-work.sh failed. "
+            "Check the orchestrator CI log for the specific error. "
+            "Remove the failed label to retry._"
+        )
+    log.info(
+        "  commit-after: commit-agent-work.sh completed for %s on #%d",
+        agent_def.agent, work_item.number,
+    )
+    return None
+
+
+def _invoke_post_steps(
+    agent_def: AgentDef, work_item: WorkItem, repo: str, gh: "GitHubClient"
+) -> Optional[str]:
+    """Run an agent's post_steps completion hooks in order.
+
+    Returns the first failure reason, or None if all hooks succeed. Each hook is
+    a repo-relative bash script; a path escaping the repo root is rejected.
+    """
+    _ps_env = {
+        **os.environ,
+        "REPO": repo or gh.repo,
+        "WORK_ITEM_KIND": work_item.kind,
+        "WORK_ITEM_NUMBER": str(work_item.number),
+        "AGENT_NAME": agent_def.agent,
+    }
+    if work_item.kind == "issue":
+        _ps_env["ISSUE_NUMBER"] = str(work_item.number)
+    else:
+        _ps_env["PR_NUMBER"] = str(work_item.number)
+    _ps_env["AI_AGILE_ROOT"] = os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
+    for _ps_path_str in agent_def.post_steps:
+        _ps_file = SUBMODULE_ROOT / _ps_path_str
+        if not _ps_file.resolve().is_relative_to(SUBMODULE_ROOT.resolve()):
+            log.error(
+                "  post_steps: path %s escapes repo root — blocked (agent %s on #%d)",
+                _ps_path_str, agent_def.agent, work_item.number,
+            )
+            return (
+                f"_post_steps path `{_ps_path_str}` escapes the repository root. "
+                f"This is a configuration error in pipeline.json. "
+                f"Remove the failed label to retry._"
+            )
+        if not _ps_file.exists():
+            log.error(
+                "  post_steps: %s not found at %s (agent %s on #%d)",
+                _ps_path_str, _ps_file, agent_def.agent, work_item.number,
+            )
+            return (
+                f"_post_steps script `{_ps_path_str}` not found. "
+                f"Check that the script exists on the orchestrator branch. "
+                f"Remove the failed label to retry._"
+            )
+        log.info(
+            "  post_steps: running %s for %s on #%d",
+            _ps_path_str, agent_def.agent, work_item.number,
+        )
+        try:
+            _ps_result = subprocess.run(
+                ["bash", str(_ps_file)],
+                env=_ps_env, capture_output=True, text=True, timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            log.error(
+                "  post_steps: %s timed out for %s on #%d",
+                _ps_path_str, agent_def.agent, work_item.number,
+            )
+            return (
+                f"_post_steps script `{_ps_path_str}` timed out after 300s. "
+                f"Remove the failed label to retry._"
+            )
+        except FileNotFoundError:
+            log.error("  post_steps: bash not found in PATH")
+            return (
+                "_bash not found in PATH; post_steps script could not run. "
+                "Remove the failed label to retry._"
+            )
+        if _ps_result.returncode != 0:
+            _ps_output = (_ps_result.stderr or _ps_result.stdout)[:2000]
+            log.error(
+                "  post_steps: %s exited %d for %s on #%d\n%s",
+                _ps_path_str, _ps_result.returncode,
+                agent_def.agent, work_item.number, _ps_output,
+            )
+            return (
+                f"_post_steps script `{_ps_path_str}` exited {_ps_result.returncode}. "
+                f"Check the orchestrator CI log for details. "
+                f"Remove the failed label to retry._"
+            )
+        log.info(
+            "  post_steps: %s completed for %s on #%d",
+            _ps_path_str, agent_def.agent, work_item.number,
+        )
+    return None
+
+
+def _finalize_run_failure(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    result: AgentRunResult,
+    attempt: int,
+    invoked_at: float,
+    gh: "GitHubClient",
+    session_id: str,
+    repo: str,
+) -> None:
+    """Apply :failed for a non-zero exit with no sentinel, and emit agent.failed.
+
+    Covers the retry-exhausted and never-retried cases. The caller owns branch
+    restoration and the early return.
+    """
+    # Non-zero exit, no sentinel — retries exhausted (or not configured).
+    if attempt > 0:
+        _exhaustion_reason = (
+            f"Retry limit exhausted — `{agent_def.agent}` failed "
+            f"{attempt + 1} time(s) (max_retries: {agent_def.max_retries}). "
+            f"Human intervention is required: fix the underlying issue, "
+            f"then remove `{agent_def.failed_label}` to retry."
+        )
+        _apply_failed(
+            gh, agent_def, work_item, result,
+            heading=f"### `{agent_def.agent}` failed — retry limit exhausted",
+            reason=_exhaustion_reason,
+        )
+    else:
+        _apply_failed(gh, agent_def, work_item, result)
+    log.error(
+        "  FAILED  %-38s  after %d attempt(s) on #%d",
+        agent_def.agent, attempt + 1, work_item.number,
+    )
+    if session_id:
+        _emit_audit_event(_make_audit_event(
+            session_id, "agent.failed", repo,
+            work_item=work_item, agent=agent_def.agent,
+            outcome_status="failed",
+            outcome_detail=(
+                f"exit code {result.returncode} after {attempt + 1} attempt(s) "
+                f"mode={agent_def.step_type}"
+            ),
+            duration_ms=int((time.monotonic() - invoked_at) * 1000),
+        ))
+
+
+def _compute_human_review_override(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    final_status: str,
+    labels: set,
+    gh: "GitHubClient",
+) -> tuple:
+    """Resolve the issue-#100 human-review override.
+
+    When pr-reviewer APPROVEs but unresolved human REQUEST_CHANGES reviews exist,
+    override final_status to :review for a free coder re-invoke (once-only, guarded
+    by HUMAN_REVIEW_PENDING_LABEL). On the second approve, clears the label.
+
+    Returns (final_status, human_review_override, human_review_list).
+    """
+    _human_review_override = False
+    _human_review_list: list = []
+    if (
+        final_status == STATUS_COMPLETE
+        and agent_def.review_gate
+        and agent_def.review_loop
+        and HUMAN_REVIEW_PENDING_LABEL not in labels
+    ):
+        _hr_pr_number: Optional[int] = None
+        if work_item.kind == "pr":
+            _hr_pr_number = work_item.number
+        elif work_item.kind == "issue":
+            try:
+                _hr_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+                if _hr_pr_number is None:
+                    _hr_pr_number = gh.find_pr_by_label(
+                        f"source-issue:{work_item.number}"
+                    )
+            except Exception as exc:
+                log.warning(
+                    "  could not look up PR for human review check on #%d: %s",
+                    work_item.number, exc,
+                )
+        if _hr_pr_number is not None:
+            _human_review_list = _fetch_unresolved_human_review_requests(gh, _hr_pr_number)
+            if _human_review_list:
+                log.info(
+                    "  HUMAN   %-38s  %d unresolved REQUEST_CHANGES — "
+                    "overriding to :review for free re-invoke",
+                    agent_def.agent, len(_human_review_list),
+                )
+                final_status = STATUS_REVIEW
+                _human_review_override = True
+    elif (
+        HUMAN_REVIEW_PENDING_LABEL in labels
+        and final_status == STATUS_COMPLETE
+        and agent_def.review_gate
+        and agent_def.review_loop
+    ):
+        # Free re-invoke already ran (label present) and pr-reviewer APPROVEs
+        # again — remove the label before the PR is marked ready.
+        try:
+            gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
+            labels.discard(HUMAN_REVIEW_PENDING_LABEL)
+            work_item.labels = labels
+        except Exception as exc:
+            log.debug(
+                "  could not remove %s on #%d: %s",
+                HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
+            )
+    return final_status, _human_review_override, _human_review_list
+
+
+def _resolve_applied_status(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    final_status: str,
+    gh: "GitHubClient",
+) -> str:
+    """Map final_status to the status label actually applied.
+
+    An agent with a human gate completing applies :review (the "needs human
+    action" state) instead of :complete, unless auto_approve_on_complete is set,
+    in which case the gate label is auto-applied and :complete stands.
+    """
+    applied_status = final_status
+    if (
+        final_status == STATUS_COMPLETE
+        and agent_def.human_gate_after
+        and agent_def.human_gate_label
+    ):
+        if agent_def.auto_approve_on_complete:
+            try:
+                gh.add_label(work_item.number, agent_def.human_gate_label)
+                log.info(
+                    "  auto-approved  %-38s  applied %s on #%d",
+                    agent_def.agent, agent_def.human_gate_label, work_item.number,
+                )
+            except Exception as exc:
+                log.warning(
+                    "  could not auto-apply gate label %s on #%d: %s",
+                    agent_def.human_gate_label, work_item.number, exc,
+                )
+        else:
+            applied_status = STATUS_REVIEW
+    return applied_status
+
+
+def _announce_and_prompt(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    session_id: str,
+    applied_status: str,
+    sentinel_message: str,
+    gh: "GitHubClient",
+) -> None:
+    """Post the closing announcement and, if awaiting a gate, the gate prompt."""
+    try:
+        gh.post_comment(
+            work_item.number,
+            _build_closing_announcement(
+                agent_def, work_item, session_id, applied_status, sentinel_message,
+            ),
+        )
+    except Exception as exc:
+        log.warning(
+            "  could not post closing announcement for %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
+
+    # If awaiting human sign-off, post the gate prompt immediately after the
+    # closing announcement so the required action is clear.
+    if applied_status == STATUS_REVIEW and agent_def.human_gate_after and agent_def.human_gate_label:
+        try:
+            gh.post_comment(
+                work_item.number,
+                (
+                    f"<!-- ai-agile/gate-prompt/v1 by {agent_def.agent} -->\n"
+                    f"**{agent_def.agent}** is complete.\n\n"
+                    f"- Apply `{agent_def.human_gate_label}` to approve and advance the pipeline.\n"
+                    f"- Add your feedback as a comment, then apply "
+                    f"`{agent_def.status_label(STATUS_REQUESTED)}` to request changes "
+                    f"(the agent will re-read your comments and revise).\n\n"
+                    f"> **Note:** Applying `:requested` clears the current `:review` state. "
+                    f"If you had already applied `{agent_def.human_gate_label}`, "
+                    f"re-apply it after reviewing the revision."
+                ),
+            )
+        except Exception as exc:
+            log.warning(
+                "  could not post gate comment for %s on #%d: %s",
+                agent_def.agent, work_item.number, exc,
+            )
+        log.info(
+            "  GATE    %-38s  waiting for: %s",
+            agent_def.agent, agent_def.human_gate_label,
+        )
+
+
+def _emit_terminal_audit(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    applied_status: str,
+    invoked_at: float,
+    session_id: str,
+    repo: str,
+) -> None:
+    """Emit the terminal agent.* audit event for the applied status."""
+    if not (session_id and applied_status):
+        return
+    _et_map = {
+        STATUS_COMPLETE: "agent.complete",
+        STATUS_REVIEW:   "agent.review",
+        STATUS_BLOCKED:  "agent.blocked",
+        STATUS_SKIPPED:  "agent.skipped",
+    }
+    _emit_audit_event(_make_audit_event(
+        session_id, _et_map.get(applied_status, "agent.complete"), repo,
+        work_item=work_item, agent=agent_def.agent,
+        outcome_status=applied_status,
+        outcome_detail=f"mode={agent_def.step_type}",
+        duration_ms=int((time.monotonic() - invoked_at) * 1000),
+    ))
+
+
+def _mark_pr_ready_if_requested(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    gh: "GitHubClient",
+) -> None:
+    """Locate the PR for a review_gate agent and mark it ready for review."""
+    if work_item.kind == "pr":
+        _ready_pr_number = work_item.number
+    elif work_item.kind == "issue":
+        try:
+            _ready_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+            if _ready_pr_number is None:
+                _ready_pr_number = gh.find_pr_by_label(
+                    f"source-issue:{work_item.number}"
+                )
+        except Exception as exc:
+            log.warning(
+                "  could not look up PR for issue #%d: %s",
+                work_item.number, exc,
+            )
+            _ready_pr_number = None
+    else:
+        _ready_pr_number = None
+
+    if _ready_pr_number:
+        try:
+            gh.mark_pr_ready(_ready_pr_number)
+            log.info(
+                "  READY   %-38s  marked PR #%d ready for review",
+                agent_def.agent, _ready_pr_number,
+            )
+        except Exception as exc:
+            log.warning(
+                "  could not mark PR #%d ready after %s: %s",
+                _ready_pr_number, agent_def.agent, exc,
+            )
+    elif agent_def.review_gate:
+        log.warning(
+            "  review_gate set on %s but no PR found for #%d — skipped",
+            agent_def.agent, work_item.number,
+        )
+
+
+def _apply_result(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    result: AgentRunResult,
+    sentinel_status: Optional[str],
+    sentinel_message: str,
+    pre_agent_branch: str,
+    invoked_at: float,
+    attempt: int,
+    labels: set,
+    concurrency: Optional[ConcurrencyState],
+    gh: "GitHubClient",
+    session_id: str,
+    repo: str,
+    pipeline_map: dict,
+) -> bool:
+    """Apply GitHub side-effects for a completed agent run.
+
+    Handles rate-limit short-circuit, final status determination, commit-after
+    invocation, human review override, terminal label application, closing
+    announcement, gate prompt, label refresh, audit event, and PR ready promotion.
+
+    Calls _restore_pre_agent_branch on every break path before returning True.
+    The caller (process_work_item) calls _restore_pre_agent_branch on the
+    non-break path after this function returns False.
+
+    Returns True if the agent loop should stop (break), False to continue.
+    Updates work_item.labels after GitHub label refresh on the non-break path.
+    """
+    # Rate-limit short-circuit is handled by the caller (process_work_item) before
+    # _apply_result is invoked, so result.rate_limited is always False here.
+    if sentinel_status:
+        final_status = sentinel_status
+    elif result.success:
+        final_status = STATUS_COMPLETE
+        sentinel_message = "completed (no sentinel; inferred from exit 0)"
+    else:
+        _finalize_run_failure(
+            agent_def, work_item, result, attempt, invoked_at, gh, session_id, repo,
+        )
+        _restore_pre_agent_branch(pre_agent_branch)
+        return True
+
+    # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
+    # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
+    if final_status == STATUS_COMPLETE and agent_def.commit_after and work_item.kind == "issue":
+        _commit_fail_reason = _invoke_commit_after(agent_def, work_item)
+        if _commit_fail_reason:
+            _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
+            final_status = STATUS_FAILED
+            log.error(
+                "  FAILED  %-38s  commit-after failed on #%d",
+                agent_def.agent, work_item.number,
+            )
+            _restore_pre_agent_branch(pre_agent_branch)
+            return True
+
+    # Edge case (issue #100): pr-reviewer APPROVEs (STATUS_COMPLETE) but
+    # unresolved human REQUEST_CHANGES reviews exist on the PR. Override
+    # final_status to STATUS_REVIEW so _handle_review_loop triggers a free
+    # coder re-invoke. HUMAN_REVIEW_PENDING_LABEL guards against a second
+    # free cycle (once-only).
+    final_status, _human_review_override, _human_review_list = _compute_human_review_override(
+        agent_def, work_item, final_status, labels, gh,
+    )
+
+    # When an agent with a human gate completes, apply :review rather than
+    # :complete so the "needs human action" state is visible consistently.
+    # promote_gated_agents advances to :complete once the gate label is applied.
+    #
+    # Exception: auto_approve_on_complete=True — orchestrator auto-applies the
+    # gate label so downstream agents are not blocked.
+    applied_status = _resolve_applied_status(agent_def, work_item, final_status, gh)
+
+    _apply_terminal_status(gh, agent_def, work_item, applied_status)
+
+    _announce_and_prompt(
+        agent_def, work_item, session_id, applied_status, sentinel_message, gh,
+    )
+
+    # Refresh label set from GitHub after our writes.
+    labels_refreshed = gh.get_issue_labels(work_item.number)
+    work_item.labels = labels_refreshed
+
+    log.info("  %-6s  %-38s", (applied_status or "?").upper(), agent_def.agent)
+
+    _emit_terminal_audit(agent_def, work_item, applied_status, invoked_at, session_id, repo)
+
+    # Mark the PR ready-for-review if the agent declares it (P-16).
+    # Only fires on true completion — not when awaiting a human gate.
+    if applied_status == STATUS_COMPLETE and agent_def.review_gate:
+        _mark_pr_ready_if_requested(agent_def, work_item, gh)
+
+    # post_steps: run per-agent completion hooks after the agent signals :complete.
+    # Each hook is a repo-relative path to a bash script. A non-zero exit removes
+    # :complete and applies :failed, halting the pipeline for this work item.
+    if applied_status == STATUS_COMPLETE and agent_def.post_steps:
+        _ps_fail_reason = _invoke_post_steps(agent_def, work_item, repo, gh)
+        if _ps_fail_reason:
+            try:
+                gh.remove_label(work_item.number, agent_def.complete_label)
+            except Exception as exc:
+                log.debug(
+                    "  could not remove %s before post_steps failure on #%d: %s",
+                    agent_def.complete_label, work_item.number, exc,
+                )
+            _apply_failed(gh, agent_def, work_item, result, reason=_ps_fail_reason)
+            applied_status = STATUS_FAILED
+            log.error(
+                "  FAILED  %-38s  post_steps failed on #%d",
+                agent_def.agent, work_item.number,
+            )
+            _restore_pre_agent_branch(pre_agent_branch)
+            return True
+
+    # Halt if blocked, awaiting review, or failed — stop dispatching further agents.
+    if applied_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
+        if applied_status == STATUS_REVIEW and agent_def.review_loop:
+            labels_refreshed = _handle_review_loop(
+                gh, agent_def, work_item, labels_refreshed, pipeline_map,
+                skip_cycle_increment=_human_review_override,
+                human_reviews=_human_review_list if _human_review_override else None,
+            )
+            work_item.labels = labels_refreshed
+        _restore_pre_agent_branch(pre_agent_branch)
+        return True
+
+    return False
+
+
 def process_work_item(
     work_item: WorkItem,
     agents: list[AgentDef],
@@ -2221,23 +3195,31 @@ def process_work_item(
     default_extra_tools: Optional[list[str]] = None,
     concurrency: Optional[ConcurrencyState] = None,
 ) -> int:
-    """
-    Evaluate all agents against a single issue or PR.
+    """Evaluate all agents against a single issue or PR.
+
+    Thin orchestration wrapper: promotes gated agents, then for each agent
+    calls _should_run(), _run_agent(), and _apply_result() in sequence.
     Returns the number of agents triggered.
     """
+    ctrl = _check_controls(repo)
+    if ctrl != "run":
+        log.warning(
+            "  CTRL    pipeline %s — skipping work item #%d",
+            ctrl, work_item.number,
+        )
+        return 0
+
     triggered = 0
     labels = work_item.labels
 
     log.info(
         "%s #%d: %s",
         work_item.kind.upper(), work_item.number,
-        work_item.title[:70] + ("…" if len(work_item.title) > 70 else "")
+        work_item.title[:70] + ("…" if len(work_item.title) > 70 else ""),
     )
 
-    # Gate promotion runs FIRST every tick. Any gated agent currently in
-    # :review whose gate label is now present is transitioned to
-    # :complete here, so the per-agent eligibility loop below sees a
-    # consistent state.
+    # Gate promotion runs FIRST every tick so the eligibility loop sees a
+    # consistent state for all gated agents.
     if not dry_run:
         labels = promote_gated_agents(
             labels, agents, work_item, gh,
@@ -2245,256 +3227,30 @@ def process_work_item(
         )
         work_item.labels = labels
 
+    # Synthesize :complete for every :skipped agent so downstream eligibility
+    # checks express "is done?" as a single :complete test throughout.
+    labels = normalize_skipped_labels(labels, pipeline_map)
+
     for agent_def in agents:
-
-        # Skip if this agent doesn't operate on this kind of work item
-        if work_item.kind not in agent_def.objects:
+        should_run = _should_run(agent_def, work_item, labels, pipeline_map, concurrency)
+        if should_run is None:
+            break
+        if not should_run:
             continue
 
-        # Skip if the issue classification is excluded for this agent
-        if agent_def.exclude_classifications and work_item.kind == "issue":
-            _classification = get_work_item_classification(work_item)
-            if _classification and _classification in agent_def.exclude_classifications:
-                log.debug(
-                    "  skip %-40s  [classification '%s' excluded]",
-                    agent_def.agent, _classification,
-                )
-                continue
-
-        # Skip if any of the agent's exclude_labels are present on the work item
-        if agent_def.exclude_labels:
-            _blocking_label = next(
-                (lbl for lbl in agent_def.exclude_labels if lbl in labels), None
-            )
-            if _blocking_label:
-                log.debug(
-                    "  skip %-40s  [label '%s' excludes this agent]",
-                    agent_def.agent, _blocking_label,
-                )
-                continue
-
-        current_status = agent_status(labels, agent_def.label_key)
-
-        # Skip if already terminal
-        if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED):
-            log.debug("  skip %-40s  [%s]", agent_def.agent, current_status)
-            continue
-
-        # Skip if already running
-        if current_status == STATUS_IN_PROGRESS:
-            log.info("  wait %-40s  [wip]", agent_def.agent)
-            continue
-
-        # Skip if halted pending human action. :review means the agent
-        # finished and is awaiting a gate label (handled by
-        # promote_gated_agents above) or a human reject (label removal).
-        # :blocked means the agent stopped and needs human intervention
-        # before re-running. In both cases re-invoking the agent without
-        # human action would loop indefinitely or duplicate the artefact.
-        if current_status in HALT_STATUSES:
-            log.info("  halt %-40s  [%s]", agent_def.agent, current_status)
-            continue
-
-        # :requested is a manual override — bypass the configured trigger
-        # check so humans can ad-hoc invoke any agent regardless of its
-        # pipeline.json trigger conditions.
-        _manual_trigger = (current_status == STATUS_REQUESTED)
-
-        # Check trigger label is present (skipped for :requested overrides)
-        if not _manual_trigger and not trigger_label_present(labels, agent_def):
-            log.debug(
-                "  skip %-40s  [trigger not met: %s]",
-                agent_def.agent,
-                agent_def.trigger.get("label", "event/schedule")
-            )
-            continue
-
-        # Check all dependencies are complete (including human gates)
-        if not dependencies_complete(labels, agent_def, pipeline_map):
-            log.debug("  skip %-40s  [dependencies unmet]", agent_def.agent)
-            continue
-
-        # Per-agent concurrency ceiling: count instances already running
-        # (from prior ticks) plus those launched this tick.
-        if concurrency is not None:
-            _running = concurrency.running_counts.get(agent_def.label_key, 0)
-            if _running >= agent_def.max_concurrent:
-                log.info(
-                    "  skip %-40s  [per-agent concurrency: %d/%d running]",
-                    agent_def.agent, _running, agent_def.max_concurrent,
-                )
-                continue
-            # Aggregate pipeline ceiling: total launches across all agent types.
-            if concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
-                log.info(
-                    "  ceiling %-38s  [pipeline max-concurrent: %d/%d launched this tick]",
-                    agent_def.agent, concurrency.tick_launch_count, PIPELINE_MAX_CONCURRENT,
-                )
-                break
-
-        # All conditions met — dispatch to the correct invocation mode.
-        # Pre-invocation ceremony: apply :wip and post the opening
-        # announcement so the timeline shows the agent is active before
-        # the subprocess starts. Ceremony owned here (not in agent prompts)
-        # so all step types are consistent.
-        log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
-
-        if not dry_run:
-            # Remove :requested before applying :wip so the work item never
-            # has two status labels simultaneously.
-            if _manual_trigger:
-                try:
-                    gh.remove_label(work_item.number, agent_def.status_label(STATUS_REQUESTED))
-                    labels.discard(agent_def.status_label(STATUS_REQUESTED))
-                except Exception as exc:
-                    log.debug(
-                        "  could not remove :requested for %s on #%d: %s",
-                        agent_def.agent, work_item.number, exc,
-                    )
-            try:
-                gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
-                labels.add(agent_def.status_label(STATUS_WIP))
-                work_item.labels = labels
-                # Increment only on successful label application — a failed
-                # add_label means no :wip was set so no slot is consumed.
-                if concurrency is not None:
-                    concurrency.running_counts[agent_def.label_key] = (
-                        concurrency.running_counts.get(agent_def.label_key, 0) + 1
-                    )
-                    concurrency.tick_launch_count += 1
-            except Exception as exc:
-                log.error(
-                    "  could not apply :wip for %s on #%d: %s",
-                    agent_def.agent, work_item.number, exc,
-                )
-            try:
-                # Use the agent's own deterministic session ID (not the
-                # orchestrator's timestamped ID) so the announcement matches
-                # what the agent prints in its own start comment.
-                _agent_sid = _compute_agent_session_id(agent_def, work_item, repo)
-                gh.post_comment(
-                    work_item.number,
-                    _build_opening_announcement(agent_def, work_item, _agent_sid),
-                )
-            except Exception as exc:
-                log.warning(
-                    "  could not post opening announcement for %s on #%d: %s",
-                    agent_def.agent, work_item.number, exc,
-                )
-        else:
-            # dry_run: :wip ceremony is skipped, but counters still advance so
-            # the simulated output respects per-agent and aggregate ceilings.
-            if concurrency is not None:
-                concurrency.running_counts[agent_def.label_key] = (
-                    concurrency.running_counts.get(agent_def.label_key, 0) + 1
-                )
-                concurrency.tick_launch_count += 1
-
-        if session_id and not dry_run:
-            _emit_audit_event(_make_audit_event(
-                session_id, "agent.invoked", repo,
-                work_item=work_item, agent=agent_def.agent,
-                outcome_status="started",
-                outcome_detail=f"mode={agent_def.step_type}",
-            ))
-        _invoked_at = time.monotonic()
-
-        # Snapshot the agent file now, before any branch checkout below.
-        # invoke_agent reads extra_allowedTools and the prompt body from this
-        # snapshot so agent definitions always reflect the orchestrator's branch
-        # rather than whatever is checked out on the issue branch.
-        _agent_file_path = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
-        _agent_text_snapshot: Optional[str] = (
-            _agent_file_path.read_text() if _agent_file_path.exists() else None
+        result, sentinel_status, sentinel_message, pre_branch, invoked_at, attempt = _run_agent(
+            agent_def, work_item, dry_run, repo, labels,
+            session_id, default_extra_tools, concurrency, gh, pipeline_map,
         )
-
-        # For agents with commit_after, check out the issue branch before
-        # invoking the agent so it reads accumulated state (e.g. docs committed
-        # by prd-docs-updater, code from a prior coder run). The branch is
-        # restored after the agent completes. commit-agent-work.sh handles the
-        # actual staging, commit, and push.
-        _pre_agent_branch: str = ""
-        if not dry_run and agent_def.commit_after and work_item.kind == "issue":
-            try:
-                _pre_agent_branch = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    capture_output=True, text=True, check=True,
-                ).stdout.strip()
-                _issue_branch = f"issue-{work_item.number}"
-                subprocess.run(["git", "fetch", "origin", _issue_branch], check=True)
-                subprocess.run(["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"], check=True)
-                log.info("  pre-agent: checked out %s for %s", _issue_branch, agent_def.agent)
-            except Exception as _pre_exc:
-                log.warning(
-                    "  pre-agent branch checkout failed for %s: %s — running on current branch",
-                    agent_def.agent, _pre_exc,
-                )
-                _pre_agent_branch = ""  # don't attempt restoration if checkout failed
-
-        sentinel_status: Optional[str] = None
-        sentinel_message: str = ""
-        _attempt = 0  # tracks retry count; 0 for scripts (no retries)
-
-        if agent_def.step_type == "script":
-            # Scripts are deterministic — no retry loop, no rate-limit risk.
-            result = invoke_script(agent_def, work_item, dry_run, repo)
-            if not dry_run:
-                sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
-        else:
-            # Retry loop: re-invoke on crash (no sentinel) up to max_retries
-            # times with exponential backoff. Rate-limit events break immediately.
-            result = invoke_agent(
-                agent_def, work_item, dry_run, repo, attempt=0,
-                agent_text_override=_agent_text_snapshot,
-                default_extra_tools=default_extra_tools,
-            )
-
-            while not dry_run:
-                if result.rate_limited:
-                    break
-                sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
-                if sentinel_status or result.success or _attempt >= agent_def.max_retries:
-                    break
-                _attempt += 1
-                _backoff = 5 * (2 ** (_attempt - 1))
-                log.info(
-                    "  RETRY   %d/%d %-38s  (exit %d; sleeping %ds)",
-                    _attempt, agent_def.max_retries,
-                    agent_def.agent, result.returncode or -1, _backoff,
-                )
-                try:
-                    gh.post_comment(
-                        work_item.number,
-                        f"**`{agent_def.agent}` retry {_attempt}/{agent_def.max_retries}** — "
-                        f"attempt {_attempt} failed (exit {result.returncode if result.returncode is not None else 'unknown'}); "
-                        f"retrying automatically.",
-                    )
-                except Exception as exc:
-                    log.warning(
-                        "  could not post retry comment on #%d: %s",
-                        work_item.number, exc,
-                    )
-                time.sleep(_backoff)
-                result = invoke_agent(
-                    agent_def, work_item, dry_run, repo, attempt=_attempt,
-                    agent_text_override=_agent_text_snapshot,
-                    default_extra_tools=default_extra_tools,
-                )
-                if result.rate_limited:
-                    break
-
-            if not dry_run and not result.rate_limited:
-                sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
 
         if not dry_run:
             # Rate-limit short-circuit: the pause marker was written.
             # Do NOT mark :failed — the agent never got a fair run.
-            # The next scheduled tick (after the pause expires) will retry.
+            # The next tick's _check_controls() call will detect the pause marker.
             if result.rate_limited:
-                paused, _reason, until = is_pipeline_paused()
                 log.warning(
-                    "  PAUSED  %-38s  rate-limited; resuming after %s",
-                    agent_def.agent, until.isoformat() if until else "?"
+                    "  PAUSED  %-38s  rate-limited; next tick will check pause status",
+                    agent_def.agent,
                 )
                 # Remove :wip so the next tick sees a clean state
                 try:
@@ -2509,344 +3265,19 @@ def process_work_item(
                         0, concurrency.running_counts.get(agent_def.label_key, 0) - 1
                     )
                     concurrency.tick_launch_count = max(0, concurrency.tick_launch_count - 1)
-                _restore_pre_agent_branch(_pre_agent_branch)
+                _restore_pre_agent_branch(pre_branch)
                 break
 
-            if sentinel_status:
-                final_status = sentinel_status
-            elif result.success:
-                final_status = STATUS_COMPLETE
-                sentinel_message = "completed (no sentinel; inferred from exit 0)"
-            else:
-                # Non-zero exit, no sentinel — retries exhausted (or not configured).
-                if _attempt > 0:
-                    _exhaustion_reason = (
-                        f"Retry limit exhausted — `{agent_def.agent}` failed "
-                        f"{_attempt + 1} time(s) (max_retries: {agent_def.max_retries}). "
-                        f"Human intervention is required: fix the underlying issue, "
-                        f"then remove `{agent_def.failed_label}` to retry."
-                    )
-                    _apply_failed(
-                        gh, agent_def, work_item, result,
-                        heading=f"### `{agent_def.agent}` failed — retry limit exhausted",
-                        reason=_exhaustion_reason,
-                    )
-                else:
-                    _apply_failed(gh, agent_def, work_item, result)
-                final_status = STATUS_FAILED
-                log.error(
-                    "  FAILED  %-38s  after %d attempt(s) on #%d",
-                    agent_def.agent, _attempt + 1, work_item.number
-                )
-                if session_id:
-                    _emit_audit_event(_make_audit_event(
-                        session_id, "agent.failed", repo,
-                        work_item=work_item, agent=agent_def.agent,
-                        outcome_status="failed",
-                        outcome_detail=f"exit code {result.returncode} after {_attempt + 1} attempt(s) mode={agent_def.step_type}",
-                        duration_ms=int((time.monotonic() - _invoked_at) * 1000),
-                    ))
-                _restore_pre_agent_branch(_pre_agent_branch)
-                break
-
-            # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
-            # The script stages, commits, and pushes agent-written files to the issue branch.
-            # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
-            if final_status == STATUS_COMPLETE and agent_def.commit_after and work_item.kind == "issue":
-                _commit_script = SUBMODULE_ROOT / ".github/scripts/commit-agent-work.sh"
-                _commit_env = {
-                    **os.environ,
-                    "AGENT_NAME": agent_def.agent,
-                    "ISSUE_NUMBER": str(work_item.number),
-                }
-                log.info(
-                    "  commit-after: invoking commit-agent-work.sh for %s on #%d",
-                    agent_def.agent, work_item.number,
-                )
-                _commit_ok = True
-                _commit_fail_reason = ""
-                if not _commit_script.exists():
-                    log.error("  commit-after: commit-agent-work.sh not found at %s", _commit_script)
-                    _commit_ok = False
-                    _commit_fail_reason = (
-                        "_commit-agent-work.sh not found. Check that .github/scripts/commit-agent-work.sh "
-                        "exists on the orchestrator branch. Remove the failed label to retry._"
-                    )
-                else:
-                    try:
-                        _commit_result = subprocess.run(
-                            ["bash", str(_commit_script)],
-                            env=_commit_env,
-                            capture_output=True,
-                            text=True,
-                            timeout=300,
-                        )
-                    except subprocess.TimeoutExpired:
-                        log.error(
-                            "  commit-after: commit-agent-work.sh timed out for %s on #%d",
-                            agent_def.agent, work_item.number,
-                        )
-                        _commit_ok = False
-                        _commit_fail_reason = (
-                            "_commit-agent-work.sh timed out after 300s. "
-                            "Remove the failed label to retry._"
-                        )
-                    except FileNotFoundError:
-                        log.error("  commit-after: bash not found in PATH")
-                        _commit_ok = False
-                        _commit_fail_reason = (
-                            "_bash not found in PATH; commit-agent-work.sh could not run. "
-                            "Remove the failed label to retry._"
-                        )
-                    else:
-                        if _commit_result.returncode != 0:
-                            _failure_output = (_commit_result.stderr or _commit_result.stdout)[:2000]
-                            log.error(
-                                "  commit-after: commit-agent-work.sh exited %d for %s on #%d\n%s",
-                                _commit_result.returncode, agent_def.agent, work_item.number,
-                                _failure_output,
-                            )
-                            _commit_ok = False
-                            _commit_fail_reason = (
-                                "_The agent completed successfully but commit-agent-work.sh failed. "
-                                "Check the orchestrator CI log for the specific error. "
-                                "Remove the failed label to retry._"
-                            )
-                        else:
-                            log.info(
-                                "  commit-after: commit-agent-work.sh completed for %s on #%d",
-                                agent_def.agent, work_item.number,
-                            )
-                if not _commit_ok:
-                    _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
-                    final_status = STATUS_FAILED
-                    log.error(
-                        "  FAILED  %-38s  commit-after failed on #%d",
-                        agent_def.agent, work_item.number,
-                    )
-                    _restore_pre_agent_branch(_pre_agent_branch)
-                    break
-
-            # Edge case (issue #100): pr-reviewer APPROVEs (STATUS_COMPLETE) but
-            # unresolved human REQUEST_CHANGES reviews exist on the PR. Override
-            # final_status to STATUS_REVIEW so _handle_review_loop triggers a free
-            # coder re-invoke. HUMAN_REVIEW_PENDING_LABEL guards against a second
-            # free cycle (once-only).
-            _human_review_override = False
-            _human_review_list: list = []
-            if (
-                final_status == STATUS_COMPLETE
-                and agent_def.mark_ready_on_complete
-                and agent_def.review_loop
-                and HUMAN_REVIEW_PENDING_LABEL not in labels
-            ):
-                _hr_pr_number: Optional[int] = None
-                if work_item.kind == "pr":
-                    _hr_pr_number = work_item.number
-                elif work_item.kind == "issue":
-                    try:
-                        _hr_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
-                        if _hr_pr_number is None:
-                            _hr_pr_number = gh.find_pr_by_label(
-                                f"source-issue:{work_item.number}"
-                            )
-                    except Exception as exc:
-                        log.warning(
-                            "  could not look up PR for human review check on #%d: %s",
-                            work_item.number, exc,
-                        )
-                if _hr_pr_number is not None:
-                    _human_review_list = _fetch_unresolved_human_review_requests(
-                        gh, _hr_pr_number
-                    )
-                    if _human_review_list:
-                        log.info(
-                            "  HUMAN   %-38s  %d unresolved REQUEST_CHANGES — "
-                            "overriding to :review for free re-invoke",
-                            agent_def.agent, len(_human_review_list),
-                        )
-                        final_status = STATUS_REVIEW
-                        _human_review_override = True
-            elif (
-                HUMAN_REVIEW_PENDING_LABEL in labels
-                and final_status == STATUS_COMPLETE
-                and agent_def.mark_ready_on_complete
-                and agent_def.review_loop
-            ):
-                # Free re-invoke already ran (label present) and pr-reviewer APPROVEs
-                # again — remove the label before the PR is marked ready.
-                try:
-                    gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
-                    labels.discard(HUMAN_REVIEW_PENDING_LABEL)
-                    work_item.labels = labels
-                except Exception as exc:
-                    log.debug(
-                        "  could not remove %s on #%d: %s",
-                        HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
-                    )
-
-            # When an agent with a human gate completes, apply :review rather
-            # than :complete. This makes the "needs human action" state visible
-            # consistently — both mid-run blocks and post-completion gates use
-            # the same :review label. promote_gated_agents advances to :complete
-            # once the human applies the configured gate label (e.g. :approved).
-            #
-            # Exception: auto_approve_on_complete=True means the agent's :complete
-            # path requires no human action (e.g. merge-conflict on a clean PR).
-            # The orchestrator auto-applies the gate label so downstream agents
-            # are not blocked, and applied_status stays :complete.
-            applied_status = final_status
-            if (
-                final_status == STATUS_COMPLETE
-                and agent_def.human_gate_after
-                and agent_def.human_gate_label
-            ):
-                if agent_def.auto_approve_on_complete:
-                    try:
-                        gh.add_label(work_item.number, agent_def.human_gate_label)
-                        log.info(
-                            "  auto-approved  %-38s  applied %s on #%d",
-                            agent_def.agent, agent_def.human_gate_label, work_item.number,
-                        )
-                    except Exception as exc:
-                        log.warning(
-                            "  could not auto-apply gate label %s on #%d: %s",
-                            agent_def.human_gate_label, work_item.number, exc,
-                        )
-                else:
-                    applied_status = STATUS_REVIEW
-
-            _apply_terminal_status(gh, agent_def, work_item, applied_status)
-
-            # Post closing announcement for non-failure outcomes.
-            try:
-                gh.post_comment(
-                    work_item.number,
-                    _build_closing_announcement(
-                        agent_def, work_item, session_id,
-                        applied_status, sentinel_message,
-                    ),
-                )
-            except Exception as exc:
-                log.warning(
-                    "  could not post closing announcement for %s on #%d: %s",
-                    agent_def.agent, work_item.number, exc,
-                )
-
-            # If the step is awaiting human sign-off, post the gate prompt
-            # immediately after the closing announcement so it is clear what
-            # action is required. Both mid-run :review (agent emitted the
-            # sentinel) and post-completion gates (applied_status overridden
-            # to :review above) go through this path.
-            if applied_status == STATUS_REVIEW and agent_def.human_gate_after and agent_def.human_gate_label:
-                try:
-                    gh.post_comment(
-                        work_item.number,
-                        (
-                            f"<!-- ai-agile/gate-prompt/v1 by {agent_def.agent} -->\n"
-                            f"**{agent_def.agent}** is complete.\n\n"
-                            f"- Apply `{agent_def.human_gate_label}` to approve and advance the pipeline.\n"
-                            f"- Add your feedback as a comment, then apply "
-                            f"`{agent_def.status_label(STATUS_REQUESTED)}` to request changes "
-                            f"(the agent will re-read your comments and revise).\n\n"
-                            f"> **Note:** Applying `:requested` clears the current `:review` state. "
-                            f"If you had already applied `{agent_def.human_gate_label}`, "
-                            f"re-apply it after reviewing the revision."
-                        )
-                    )
-                except Exception as exc:
-                    log.warning(
-                        "  could not post gate comment for %s on #%d: %s",
-                        agent_def.agent, work_item.number, exc,
-                    )
-                log.info(
-                    "  GATE    %-38s  waiting for: %s",
-                    agent_def.agent, agent_def.human_gate_label,
-                )
-
-            # Refresh label set from GitHub after our writes.
-            labels = gh.get_issue_labels(work_item.number)
-            work_item.labels = labels
-
-            log.info(
-                "  %-6s  %-38s",
-                (applied_status or "?").upper(), agent_def.agent,
+            stop = _apply_result(
+                agent_def, work_item, result, sentinel_status, sentinel_message,
+                pre_branch, invoked_at, attempt, labels, concurrency,
+                gh, session_id, repo, pipeline_map,
             )
-
-            if session_id and applied_status:
-                _et_map = {
-                    STATUS_COMPLETE: "agent.complete",
-                    STATUS_REVIEW:   "agent.review",
-                    STATUS_BLOCKED:  "agent.blocked",
-                    STATUS_SKIPPED:  "agent.skipped",
-                }
-                _emit_audit_event(_make_audit_event(
-                    session_id, _et_map.get(applied_status, "agent.complete"), repo,
-                    work_item=work_item, agent=agent_def.agent,
-                    outcome_status=applied_status,
-                    outcome_detail=f"mode={agent_def.step_type}",
-                    duration_ms=int((time.monotonic() - _invoked_at) * 1000),
-                ))
-
-            # Mark the PR ready-for-review if the agent declares it (P-16).
-            # Only fires on true completion — not when awaiting a human gate.
-            if applied_status == STATUS_COMPLETE and agent_def.mark_ready_on_complete:
-                if work_item.kind == "pr":
-                    _ready_pr_number = work_item.number
-                elif work_item.kind == "issue":
-                    # For issue-scoped agents, look up the PR on the issue branch.
-                    # Fall back to source-issue:{N} label for rebased branches that
-                    # don't match the canonical issue-{N} pattern.
-                    try:
-                        _ready_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
-                        if _ready_pr_number is None:
-                            _ready_pr_number = gh.find_pr_by_label(
-                                f"source-issue:{work_item.number}"
-                            )
-                    except Exception as exc:
-                        log.warning(
-                            "  could not look up PR for issue #%d: %s",
-                            work_item.number, exc,
-                        )
-                        _ready_pr_number = None
-                else:
-                    _ready_pr_number = None
-
-                if _ready_pr_number:
-                    # Best-effort draft→ready promotion (no-op when not supported).
-                    try:
-                        gh.mark_pr_ready(_ready_pr_number)
-                        log.info(
-                            "  READY   %-38s  marked PR #%d ready for review",
-                            agent_def.agent, _ready_pr_number,
-                        )
-                    except Exception as exc:
-                        log.warning(
-                            "  could not mark PR #%d ready after %s: %s",
-                            _ready_pr_number, agent_def.agent, exc,
-                        )
-                elif agent_def.mark_ready_on_complete:
-                    log.warning(
-                        "  mark_ready_on_complete set on %s but no PR found for #%d — skipped",
-                        agent_def.agent, work_item.number,
-                    )
-
-            # Halt if blocked or awaiting review — do not trigger further
-            # steps on this item this run.
-            if applied_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
-                # review_loop: automatically re-invoke the target agent rather
-                # than waiting for human sign-off, until max_cycles is reached.
-                if applied_status == STATUS_REVIEW and agent_def.review_loop:
-                    labels = _handle_review_loop(
-                        gh, agent_def, work_item, labels, pipeline_map,
-                        skip_cycle_increment=_human_review_override,
-                        human_reviews=_human_review_list if _human_review_override else None,
-                    )
-                    work_item.labels = labels
-                _restore_pre_agent_branch(_pre_agent_branch)
+            labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
+            if stop:
                 break
 
-        _restore_pre_agent_branch(_pre_agent_branch)
+        _restore_pre_agent_branch(pre_branch)
         triggered += 1
 
     return triggered
@@ -2946,22 +3377,40 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
+@dataclass
+class RunContext:
+    """Everything one orchestrator tick needs to do its work.
 
-    global _VERBOSE
-    _VERBOSE = args.verbose
+    Built once during _wake() from GitHub + pipeline config; consumed by
+    _do_work() and _close_down(). Run-scoped and transient — it is NOT
+    persisted between runs (P-1: GitHub labels remain the source of truth).
+    """
+    gh: "GitHubClient"
+    agents: list
+    pipeline_map: dict
+    work_items: list
+    concurrency: ConcurrencyState
+    repo: str
+    session_id: str
+    dry_run: bool
+    default_extra_tools: Optional[list]
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
 
+def _wake(args) -> "Optional[RunContext]":
+    """Wake up: honour control flags, evaluate pause/stop, authenticate, load
+    the pipeline, then fetch and priority-order the work.
+
+    Returns a RunContext to act on, or None if this run should not proceed
+    (a --clear-* invocation, or an active pause/stop). Exits the process on a
+    fatal misconfiguration (missing --repo or token).
+    """
     # Manual pause clear — short-circuit before doing anything else.
     if args.clear_pause:
         if clear_pause():
             log.info("Pause marker cleared. Re-run without --clear-pause to resume work.")
         else:
             log.info("No pause marker was set.")
-        return
+        return None
 
     # Manual stop clear — short-circuit before doing anything else.
     if args.clear_stop:
@@ -2969,7 +3418,7 @@ def main() -> None:
             log.info("Stop marker cleared. Re-run without --clear-stop to resume work.")
         else:
             log.info("No stop marker was set.")
-        return
+        return None
 
     # If a previous run hit an Anthropic rate limit and wrote the pause
     # marker, exit early. The scheduled tick will retry once the marker
@@ -2982,7 +3431,7 @@ def main() -> None:
             until.isoformat() if until else "<unknown>",
             reason or "no reason recorded",
         )
-        return
+        return None
 
     # Emergency stop: an operator has halted the pipeline indefinitely.
     # Unlike the rate-limit pause, the stop marker is never auto-cleared.
@@ -2999,7 +3448,7 @@ def main() -> None:
             outcome_status="stopped",
             outcome_detail=stop_reason or "no reason recorded",
         ))
-        return
+        return None
 
     if not args.repo:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
@@ -3116,42 +3565,65 @@ def main() -> None:
     if _active:
         log.info("Running at tick start (prior-tick :wip): %s", _active)
 
-    total_triggered = 0
-    for item in work_items:
-        stopped, stop_reason = is_pipeline_stopped()
-        if stopped:
-            log.warning(
-                "Pipeline STOPPED mid-run: %s. Exiting without further agent invocations.",
-                stop_reason or "no reason recorded",
-            )
-            return
+    return RunContext(
+        gh=gh, agents=agents, pipeline_map=pipeline_map, work_items=work_items,
+        concurrency=conc, repo=args.repo, session_id=session_id,
+        dry_run=args.dry_run, default_extra_tools=default_extra_tools,
+    )
 
-        if not args.dry_run and conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+
+def _do_work(ctx: "RunContext") -> int:
+    """Do the work: evaluate each work item, honouring the pipeline-wide
+    aggregate concurrency ceiling. Returns the number of agents triggered."""
+    total_triggered = 0
+    for item in ctx.work_items:
+        if not ctx.dry_run and ctx.concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
             log.info(
                 "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",
                 PIPELINE_MAX_CONCURRENT,
             )
             break
         n = process_work_item(
-            item, agents, pipeline_map, gh, args.dry_run, args.repo,
-            session_id=session_id,
-            default_extra_tools=default_extra_tools,
-            concurrency=conc,
+            item, ctx.agents, ctx.pipeline_map, ctx.gh, ctx.dry_run, ctx.repo,
+            session_id=ctx.session_id,
+            default_extra_tools=ctx.default_extra_tools,
+            concurrency=ctx.concurrency,
         )
         total_triggered += n
         if n > 0:
             # Brief pause between agent invocations to avoid rate limits
             time.sleep(2)
+    return total_triggered
 
+
+def _close_down(ctx: "RunContext", total_triggered: int) -> None:
+    """Close down: emit the run summary."""
     log.info("─" * 60)
     log.info("Complete. Agents triggered this run: %d", total_triggered)
-
-    if not args.dry_run:
+    if not ctx.dry_run:
         _emit_audit_event(_make_audit_event(
-            session_id, "system.tick", args.repo,
+            ctx.session_id, "system.tick", ctx.repo,
             outcome_status="complete",
             outcome_detail=f"{total_triggered} agent(s) triggered",
         ))
+
+
+def main() -> None:
+    # Wake up -> do the work -> close down.
+    args = parse_args()
+
+    global _VERBOSE
+    _VERBOSE = args.verbose
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    ctx = _wake(args)
+    if ctx is None:
+        return
+
+    total_triggered = _do_work(ctx)
+    _close_down(ctx, total_triggered)
 
 
 if __name__ == "__main__":
