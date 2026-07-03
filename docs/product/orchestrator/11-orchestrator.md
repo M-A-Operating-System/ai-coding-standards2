@@ -92,6 +92,8 @@ default).
 | Gate prompt comment | GitHub Issues API | After a non-gated agent completes and the next step requires a gate label |
 | `:failed` recovery comment | GitHub Issues API | When an agent crashes; names the label to remove and the label to skip |
 | Audit log JSONL event | Print to stdout | Once per status transition, agent run, or gate approval |
+| Metrics comment | GitHub Issues API | After every pipeline step (AI agent or scripted, success or error); contains `timestamp_start`, `timestamp_end`, session context (`session_id`, `model`, `cwd`, `permission_mode`, `tools_available`, `mcp_servers`), token usage, cost, duration, and retry events; AI-specific fields are `null`/`0`/`[]` for scripted steps |
+| Metrics record on `ai-agile/metrics` | `git` push to long-running branch in the repo the orchestrator is operating against | After every pipeline step (AI agent or scripted); flat JSON record with identical field set and values as the issue comment, including `timestamp_start`, `timestamp_end`, `github_issue_number`, `agent_id`, `branch_id`, `pr_id`, `cycle_id`, and all session/result/retry fields |
 | Git commit + push | `git` subprocess | After an agent signals `complete` (`git_ops.commit_after: true`) |
 | PR push (existing branch, Mode B) | `git` subprocess | After a code-writing agent addresses review feedback |
 
@@ -390,7 +392,10 @@ depending on the step type:
 **Agent steps** — the orchestrator reads the sentinel and applies the label:
 ```
 parse AI_AGILE_STATUS: from stream-json event stream text events
-extract token usage (input_tokens, output_tokens) from stream-json result event
+capture session context from system/init event (session_id, model, cwd, permission_mode, tools_available, mcp_servers)
+accumulate retry_count and retry_errors from system/api_retry events during cycle
+extract full usage and result fields from terminal result event
+post metrics comment on the triggering issue; append metrics record to ai-agile/metrics branch
 
 if sentinel found:
     remove :wip, apply matching label ({agent}:complete / :review / :blocked)
@@ -406,6 +411,10 @@ else (exited non-zero, no sentinel):
 **Script steps** — the orchestrator reads the sentinel and applies the label:
 ```
 parse AI_AGILE_STATUS: from last 5 lines of stdout
+post metrics comment on the triggering issue (AI fields zeroed: session_id/model/cwd/permission_mode/tools_available/mcp_servers/service_tier=null,
+    duration_api_ms/num_turns/input_tokens/output_tokens/cache_creation_input_tokens/cache_read_input_tokens/
+    web_search_requests/total_cost_usd/retry_count=0, retry_errors=[])
+append matching metrics record to ai-agile/metrics branch (same schema, AI fields zeroed)
 
 if sentinel found:
     remove :wip, apply matching label ({agent}:complete / :review / :blocked)

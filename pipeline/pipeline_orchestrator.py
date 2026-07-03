@@ -236,6 +236,12 @@ class AgentRunResult:
                     stream-json result event. None if unavailable.
     output_tokens — Total output tokens for the run, extracted from the
                     stream-json result event. None if unavailable.
+    init_event   — Raw system/init event dict captured from the stream.
+                    None when the agent did not emit an init event.
+    result_event — Raw result event dict captured from the stream.
+                    None when the agent did not emit a result event.
+    retry_count  — Number of system/api_retry events observed during the run.
+    retry_errors — Error category strings from each api_retry event.
     """
     success: bool
     returncode: Optional[int] = None
@@ -243,6 +249,10 @@ class AgentRunResult:
     rate_limited: bool = False
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    init_event: Optional[dict] = None
+    result_event: Optional[dict] = None
+    retry_count: int = 0
+    retry_errors: list = field(default_factory=list)
 
 
 @dataclass
@@ -642,6 +652,411 @@ def _emit_audit_event(event: dict) -> None:
         print(json.dumps(event, separators=(",", ":")), flush=True)
     except Exception as exc:
         log.warning("could not emit audit event: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Per-cycle metrics capture
+# ---------------------------------------------------------------------------
+
+METRICS_BRANCH = "ai-agile/metrics"
+METRICS_RECORDS_FILE = "records.jsonl"
+METRICS_SCHEMA_FILE = "schema.json"
+
+# Required-minimum JSON Schema for metrics records.
+# additionalProperties: true ensures future CLI fields are not rejected.
+# Null is accepted for every AI-specific field so scripted-step records
+# (which set those fields to null) pass validation without a separate schema.
+METRICS_SCHEMA: dict = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AI Agile Metrics Record",
+    "description": (
+        "Per-cycle orchestrator metrics. Required fields are the floor; "
+        "additionalProperties: true allows future CLI additions."
+    ),
+    "type": "object",
+    "required": [
+        "timestamp_start", "timestamp_end", "github_issue_number",
+        "agent_id", "cycle_id", "duration_ms",
+        "input_tokens", "output_tokens", "retry_count", "retry_errors",
+    ],
+    "additionalProperties": True,
+    "properties": {
+        "timestamp_start": {"type": "string", "description": "ISO 8601 UTC timestamp when the orchestrator launched the step"},
+        "timestamp_end":   {"type": "string", "description": "ISO 8601 UTC timestamp when the orchestrator observed step completion"},
+        "github_issue_number": {"type": ["integer", "null"]},
+        "agent_id":   {"type": "string"},
+        "branch_id":  {"type": ["string", "null"]},
+        "pr_id":      {"type": ["integer", "null"]},
+        "cycle_id":   {"type": "string"},
+        "session_id": {"type": ["string", "null"]},
+        "model":      {"type": ["string", "null"]},
+        "cwd":        {"type": ["string", "null"]},
+        "permission_mode":  {"type": ["string", "null"]},
+        "tools_available":  {"type": ["string", "null"]},
+        "mcp_servers":      {"type": ["string", "null"]},
+        "subtype":          {"type": ["string", "null"]},
+        "is_error":         {"type": ["boolean", "null"]},
+        "duration_ms":         {"type": "integer", "minimum": 0},
+        "duration_api_ms":     {"type": "integer", "minimum": 0},
+        "num_turns":           {"type": "integer", "minimum": 0},
+        "input_tokens":        {"type": "integer", "minimum": 0},
+        "output_tokens":       {"type": "integer", "minimum": 0},
+        "cache_creation_input_tokens": {"type": "integer", "minimum": 0},
+        "cache_read_input_tokens":     {"type": "integer", "minimum": 0},
+        "web_search_requests":         {"type": "integer", "minimum": 0},
+        "service_tier":   {"type": ["string", "null"]},
+        "total_cost_usd": {"type": "number",  "minimum": 0},
+        "retry_count":    {"type": "integer", "minimum": 0},
+        "retry_errors":   {"type": "array",   "items": {"type": "string"}},
+    },
+}
+
+# Fields from system/init and result events that are explicitly mapped to
+# canonical names — excluded from the "extra" pass-through so they don't
+# appear twice in the record.
+_INIT_ENVELOPE: frozenset = frozenset({
+    "type", "subtype", "session_id", "model", "cwd",
+    "permissionMode", "tools", "mcp_servers",
+})
+_RESULT_ENVELOPE: frozenset = frozenset({
+    "type", "subtype", "is_error", "duration_ms", "duration_api_ms",
+    "num_turns", "usage", "total_cost_usd", "result", "session_id", "cost_usd",
+})
+
+
+def _build_agent_metrics(
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    result: "AgentRunResult",
+    timestamp_start: str,
+    timestamp_end: str,
+    cycle_id: str,
+    *,
+    is_error_override: Optional[bool] = None,
+) -> dict:
+    """Build a complete per-cycle metrics record from a completed agent run.
+
+    Extra fields from system/init and result events (beyond the PRD-enumerated
+    minimum) are included at their original CLI names so no field is silently
+    dropped. Known canonical fields override any same-named extra field.
+    """
+    init = result.init_event or {}
+    result_ev = result.result_event or {}
+    usage = result_ev.get("usage") or {}
+    server_tool_use = usage.get("server_tool_use") or {}
+
+    # Pass through any extra fields from both events that are not already
+    # captured by the canonical mapping, preserving their original names.
+    extra: dict = {}
+    for k, v in init.items():
+        if k not in _INIT_ENVELOPE:
+            extra[k] = v
+    for k, v in result_ev.items():
+        if k not in _RESULT_ENVELOPE:
+            extra[k] = v
+
+    tools = init.get("tools", [])
+    tools_str: Optional[str] = None
+    if isinstance(tools, list) and tools:
+        tools_str = ",".join(
+            t.get("name", str(t)) if isinstance(t, dict) else str(t)
+            for t in tools
+        )
+
+    mcps = init.get("mcp_servers", [])
+    mcp_str: Optional[str] = None
+    if isinstance(mcps, list) and mcps:
+        mcp_str = ",".join(
+            f"{m.get('name', '?')}:{m.get('status', '?')}"
+            for m in mcps
+            if isinstance(m, dict)
+        )
+
+    try:
+        _ts = timestamp_start.rstrip("Z") + "+00:00"
+        _te = timestamp_end.rstrip("Z") + "+00:00"
+        _dur = (datetime.fromisoformat(_te) - datetime.fromisoformat(_ts)).total_seconds()
+        duration_ms = max(0, int(_dur * 1000))
+    except (ValueError, AttributeError):
+        duration_ms = int(result_ev.get("duration_ms") or 0)
+
+    github_issue_number: Optional[int] = work_item.number if work_item.kind == "issue" else None
+    pr_id: Optional[int] = work_item.number if work_item.kind == "pr" else None
+    branch_id: Optional[str] = (
+        f"issue-{work_item.number}" if work_item.kind == "issue" else None
+    )
+
+    is_error = (
+        is_error_override
+        if is_error_override is not None
+        else result_ev.get("is_error")
+    )
+
+    known: dict = {
+        "timestamp_start": timestamp_start,
+        "timestamp_end": timestamp_end,
+        "github_issue_number": github_issue_number,
+        "agent_id": agent_def.agent,
+        "branch_id": branch_id,
+        "pr_id": pr_id,
+        "cycle_id": cycle_id,
+        "session_id": init.get("session_id"),
+        "model": init.get("model"),
+        "cwd": init.get("cwd"),
+        "permission_mode": init.get("permissionMode"),
+        "tools_available": tools_str,
+        "mcp_servers": mcp_str,
+        "subtype": result_ev.get("subtype"),
+        "is_error": is_error,
+        "duration_ms": duration_ms,
+        "duration_api_ms": int(result_ev.get("duration_api_ms") or 0),
+        "num_turns": int(result_ev.get("num_turns") or 0),
+        "input_tokens": int(usage.get("input_tokens") or 0),
+        "output_tokens": int(usage.get("output_tokens") or 0),
+        "cache_creation_input_tokens": int(usage.get("cache_creation_input_tokens") or 0),
+        "cache_read_input_tokens": int(usage.get("cache_read_input_tokens") or 0),
+        "web_search_requests": int(server_tool_use.get("web_search_requests") or 0),
+        "service_tier": usage.get("service_tier"),
+        "total_cost_usd": float(result_ev.get("total_cost_usd") or 0),
+        "retry_count": result.retry_count,
+        "retry_errors": list(result.retry_errors),
+    }
+
+    # Known canonical fields override any same-named extra fields.
+    return {**extra, **known}
+
+
+def _build_scripted_metrics(
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    is_error: bool,
+    timestamp_start: str,
+    timestamp_end: str,
+    cycle_id: str,
+) -> dict:
+    """Build a metrics record for a scripted (non-AI) pipeline step.
+
+    AI-specific fields are set to their zero values (null/0/[]) as required
+    by the PRD so every pipeline step leaves exactly one record regardless
+    of step type. The zero-value block signals 'deterministic step' without
+    a missing or broken record.
+    """
+    try:
+        _ts = timestamp_start.rstrip("Z") + "+00:00"
+        _te = timestamp_end.rstrip("Z") + "+00:00"
+        _dur = (datetime.fromisoformat(_te) - datetime.fromisoformat(_ts)).total_seconds()
+        duration_ms = max(0, int(_dur * 1000))
+    except (ValueError, AttributeError):
+        duration_ms = 0
+
+    github_issue_number: Optional[int] = work_item.number if work_item.kind == "issue" else None
+    pr_id: Optional[int] = work_item.number if work_item.kind == "pr" else None
+    branch_id: Optional[str] = (
+        f"issue-{work_item.number}" if work_item.kind == "issue" else None
+    )
+
+    return {
+        "timestamp_start": timestamp_start,
+        "timestamp_end": timestamp_end,
+        "github_issue_number": github_issue_number,
+        "agent_id": agent_def.agent,
+        "branch_id": branch_id,
+        "pr_id": pr_id,
+        "cycle_id": cycle_id,
+        "session_id": None,
+        "model": None,
+        "cwd": None,
+        "permission_mode": None,
+        "tools_available": None,
+        "mcp_servers": None,
+        "subtype": "script",
+        "is_error": is_error,
+        "duration_ms": duration_ms,
+        "duration_api_ms": 0,
+        "num_turns": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "web_search_requests": 0,
+        "service_tier": None,
+        "total_cost_usd": 0,
+        "retry_count": 0,
+        "retry_errors": [],
+    }
+
+
+def _build_step_metrics(
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    result: "AgentRunResult",
+    timestamp_start: str,
+    timestamp_end: str,
+    cycle_id: str,
+    *,
+    is_error_override: Optional[bool] = None,
+) -> dict:
+    """Dispatch to the correct metrics builder based on step type."""
+    if agent_def.step_type == "script":
+        is_error = is_error_override if is_error_override is not None else (not result.success)
+        return _build_scripted_metrics(
+            agent_def, work_item, is_error, timestamp_start, timestamp_end, cycle_id
+        )
+    return _build_agent_metrics(
+        agent_def, work_item, result, timestamp_start, timestamp_end, cycle_id,
+        is_error_override=is_error_override,
+    )
+
+
+def _post_metrics_comment(
+    gh: "GitHubClient",
+    work_item: "WorkItem",
+    record: dict,
+) -> None:
+    """Post a structured metrics comment on the work item."""
+    comment = (
+        "<!-- ai-agile/metrics/v1 -->\n"
+        "<details><summary>Pipeline step metrics</summary>\n\n"
+        "```json\n"
+        f"{json.dumps(record, indent=2)}\n"
+        "```\n\n"
+        "</details>"
+    )
+    try:
+        gh.post_comment(work_item.number, comment)
+    except Exception as exc:
+        log.warning("could not post metrics comment on #%d: %s", work_item.number, exc)
+
+
+def _ensure_metrics_branch(gh: "GitHubClient", repo: str) -> None:
+    """Create the ai-agile/metrics branch in *repo* if it does not exist.
+
+    Initialises the branch from the repo's default branch and pushes the
+    JSON schema file. A concurrent creation race is handled by swallowing
+    the 422 response from GitHub.
+    """
+    try:
+        gh._get(f"/repos/{repo}/git/refs/heads/{METRICS_BRANCH}")
+        return  # already exists
+    except requests.HTTPError as exc:
+        if exc.response is None or exc.response.status_code != 404:
+            raise
+
+    # Determine default branch SHA to branch from.
+    try:
+        repo_data = gh._get(f"/repos/{repo}")
+        default_branch = repo_data.get("default_branch", "main")
+        ref_data = gh._get(f"/repos/{repo}/git/refs/heads/{default_branch}")
+        sha = ref_data["object"]["sha"]
+    except Exception as exc:
+        log.warning("metrics branch: could not get default branch SHA for %s — %s", repo, exc)
+        return
+
+    try:
+        gh._post(f"/repos/{repo}/git/refs", {
+            "ref": f"refs/heads/{METRICS_BRANCH}",
+            "sha": sha,
+        })
+        log.info("metrics branch: created %s in %s", METRICS_BRANCH, repo)
+    except requests.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 422:
+            return  # concurrent creation — branch now exists
+        raise
+
+    schema_b64 = base64.b64encode(
+        (json.dumps(METRICS_SCHEMA, indent=2) + "\n").encode()
+    ).decode()
+    try:
+        gh._put(f"/repos/{repo}/contents/{METRICS_SCHEMA_FILE}", {
+            "message": "metrics: initialize schema for ai-agile/metrics branch",
+            "content": schema_b64,
+            "branch": METRICS_BRANCH,
+        })
+        log.info("metrics branch: schema pushed to %s", METRICS_BRANCH)
+    except Exception as exc:
+        log.warning("metrics branch: could not push schema — %s", exc)
+
+
+def _append_metrics_record(
+    gh: "GitHubClient",
+    repo: str,
+    record: dict,
+    *,
+    _retries: int = 2,
+) -> None:
+    """Append one metrics record to records.jsonl on the ai-agile/metrics branch.
+
+    Uses the GitHub Contents API so no branch checkout is required.
+    Retries on 409 Conflict (concurrent write) up to _retries times.
+    """
+    record_line = json.dumps(record, separators=(",", ":")) + "\n"
+
+    for attempt in range(_retries + 1):
+        file_sha: Optional[str] = None
+        existing = ""
+        try:
+            file_data = gh._get(
+                f"/repos/{repo}/contents/{METRICS_RECORDS_FILE}",
+                params={"ref": METRICS_BRANCH},
+            )
+            existing = base64.b64decode(
+                file_data["content"].replace("\n", "")
+            ).decode()
+            file_sha = file_data["sha"]
+        except requests.HTTPError as exc:
+            if exc.response is None or exc.response.status_code != 404:
+                raise
+            # File does not exist yet — this is the first record.
+
+        new_b64 = base64.b64encode((existing + record_line).encode()).decode()
+        body: dict = {
+            "message": (
+                f"metrics: {record.get('agent_id', 'step')} "
+                f"on #{record.get('github_issue_number')}"
+            ),
+            "content": new_b64,
+            "branch": METRICS_BRANCH,
+        }
+        if file_sha:
+            body["sha"] = file_sha
+
+        r = gh._put(f"/repos/{repo}/contents/{METRICS_RECORDS_FILE}", body)
+        if r.status_code in (200, 201):
+            return
+        if r.status_code == 409 and attempt < _retries:
+            log.debug(
+                "metrics: 409 conflict appending records.jsonl, retrying (attempt %d)",
+                attempt + 1,
+            )
+            time.sleep(1)
+            continue
+        r.raise_for_status()
+
+
+def _post_cycle_metrics(
+    gh: "GitHubClient",
+    repo: str,
+    work_item: "WorkItem",
+    record: dict,
+    dry_run: bool,
+) -> None:
+    """Post metrics comment on the work item and append to the metrics branch.
+
+    Both outputs carry identical field sets from the shared *record* dict.
+    Skipped in dry_run mode. All failures are logged as warnings and never
+    propagated — metrics must never halt the pipeline.
+    """
+    if dry_run:
+        return
+    _post_metrics_comment(gh, work_item, record)
+    try:
+        _ensure_metrics_branch(gh, repo)
+        _append_metrics_record(gh, repo, record)
+    except Exception as exc:
+        log.warning(
+            "could not push metrics record for #%d: %s",
+            work_item.number, exc,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1424,7 +1839,7 @@ def _extract_usage_from_result_event(event: dict) -> tuple[Optional[int], Option
 
 
 class _StreamAccumulator:
-    """Accumulates agent text and token usage from stream-json CLI lines.
+    """Accumulates agent text, token usage, and metrics events from stream-json CLI lines.
 
     A single line at a time is fed via ``feed()``. Both the live
     ``invoke_agent`` read loop and the batch ``_accumulate_stream_text``
@@ -1432,15 +1847,22 @@ class _StreamAccumulator:
     batch form cover the exact parsing the production loop uses.
     """
 
-    __slots__ = ("text_parts", "input_tokens", "output_tokens")
+    __slots__ = (
+        "text_parts", "input_tokens", "output_tokens",
+        "init_event", "retry_count", "retry_errors", "result_event",
+    )
 
     def __init__(self) -> None:
         self.text_parts: list[str] = []
         self.input_tokens: Optional[int] = None
         self.output_tokens: Optional[int] = None
+        self.init_event: Optional[dict] = None
+        self.retry_count: int = 0
+        self.retry_errors: list[str] = []
+        self.result_event: Optional[dict] = None
 
     def feed(self, line: str) -> None:
-        """Parse one stream-json line, collecting text and (last-wins) tokens.
+        """Parse one stream-json line, collecting text, tokens, and metrics events.
 
         Blank lines are ignored. A non-JSON line is kept as plain text so
         CLI startup messages remain visible in diagnostics.
@@ -1453,6 +1875,21 @@ class _StreamAccumulator:
         except json.JSONDecodeError:
             self.text_parts.append(line.rstrip("\n"))
             return
+
+        # Capture events needed for per-cycle metrics.
+        event_type = event.get("type", "")
+        event_subtype = event.get("subtype", "")
+        if event_type == "system":
+            if event_subtype == "init":
+                self.init_event = event
+            elif event_subtype == "api_retry":
+                self.retry_count += 1
+                error = event.get("error")
+                if error is not None:
+                    self.retry_errors.append(str(error))
+        elif event_type == "result":
+            self.result_event = event
+
         text = _extract_text_from_stream_event(event)
         if text:
             self.text_parts.append(text)
@@ -2001,6 +2438,10 @@ def invoke_agent(
                 ),
                 input_tokens=acc.input_tokens,
                 output_tokens=acc.output_tokens,
+                init_event=acc.init_event,
+                result_event=acc.result_event,
+                retry_count=acc.retry_count,
+                retry_errors=list(acc.retry_errors),
             )
         finally:
             _kill_timer.cancel()
@@ -2035,6 +2476,10 @@ def invoke_agent(
                     captured_tail=agent_tail,
                     input_tokens=acc.input_tokens,
                     output_tokens=acc.output_tokens,
+                    init_event=acc.init_event,
+                    result_event=acc.result_event,
+                    retry_count=acc.retry_count,
+                    retry_errors=list(acc.retry_errors),
                 )
             return AgentRunResult(
                 success=False,
@@ -2042,6 +2487,10 @@ def invoke_agent(
                 captured_tail=agent_tail,
                 input_tokens=acc.input_tokens,
                 output_tokens=acc.output_tokens,
+                init_event=acc.init_event,
+                result_event=acc.result_event,
+                retry_count=acc.retry_count,
+                retry_errors=list(acc.retry_errors),
             )
 
         return AgentRunResult(
@@ -2050,6 +2499,10 @@ def invoke_agent(
             captured_tail=agent_tail,
             input_tokens=acc.input_tokens,
             output_tokens=acc.output_tokens,
+            init_event=acc.init_event,
+            result_event=acc.result_event,
+            retry_count=acc.retry_count,
+            retry_errors=list(acc.retry_errors),
         )
 
     except FileNotFoundError:
@@ -3068,12 +3521,18 @@ def _apply_result(
     session_id: str,
     repo: str,
     pipeline_map: dict,
+    *,
+    dry_run: bool = False,
+    cycle_id: str = "",
+    timestamp_start: str = "",
+    timestamp_end: str = "",
 ) -> bool:
     """Apply GitHub side-effects for a completed agent run.
 
     Handles rate-limit short-circuit, final status determination, commit-after
     invocation, human review override, terminal label application, closing
-    announcement, gate prompt, label refresh, audit event, and PR ready promotion.
+    announcement, gate prompt, label refresh, audit event, PR ready promotion,
+    and per-cycle metrics (issue #121).
 
     Calls _restore_pre_agent_branch on every break path before returning True.
     The caller (process_work_item) calls _restore_pre_agent_branch on the
@@ -3093,6 +3552,12 @@ def _apply_result(
         _finalize_run_failure(
             agent_def, work_item, result, attempt, invoked_at, gh, session_id, repo,
         )
+        _metrics_record = _build_step_metrics(
+            agent_def, work_item, result,
+            timestamp_start, timestamp_end, cycle_id,
+            is_error_override=True,
+        )
+        _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
         _restore_pre_agent_branch(pre_agent_branch)
         return True
 
@@ -3107,6 +3572,12 @@ def _apply_result(
                 "  FAILED  %-38s  commit-after failed on #%d",
                 agent_def.agent, work_item.number,
             )
+            _metrics_record = _build_step_metrics(
+                agent_def, work_item, result,
+                timestamp_start, timestamp_end, cycle_id,
+                is_error_override=True,
+            )
+            _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
             _restore_pre_agent_branch(pre_agent_branch)
             return True
 
@@ -3140,6 +3611,12 @@ def _apply_result(
     log.info("  %-6s  %-38s", (applied_status or "?").upper(), agent_def.agent)
 
     _emit_terminal_audit(agent_def, work_item, applied_status, invoked_at, session_id, repo)
+
+    _metrics_record = _build_step_metrics(
+        agent_def, work_item, result,
+        timestamp_start, timestamp_end, cycle_id,
+    )
+    _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
 
     # Mark the PR ready-for-review if the agent declares it (P-16).
     # Only fires on true completion — not when awaiting a human gate.
@@ -3238,10 +3715,15 @@ def process_work_item(
         if not should_run:
             continue
 
+        _cycle_id = str(uuid.uuid4())
+        _timestamp_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
         result, sentinel_status, sentinel_message, pre_branch, invoked_at, attempt = _run_agent(
             agent_def, work_item, dry_run, repo, labels,
             session_id, default_extra_tools, concurrency, gh, pipeline_map,
         )
+
+        _timestamp_end = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         if not dry_run:
             # Rate-limit short-circuit: the pause marker was written.
@@ -3272,9 +3754,12 @@ def process_work_item(
                 agent_def, work_item, result, sentinel_status, sentinel_message,
                 pre_branch, invoked_at, attempt, labels, concurrency,
                 gh, session_id, repo, pipeline_map,
+                dry_run=dry_run, cycle_id=_cycle_id,
+                timestamp_start=_timestamp_start, timestamp_end=_timestamp_end,
             )
             labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
             if stop:
+                break
                 break
 
         _restore_pre_agent_branch(pre_branch)
