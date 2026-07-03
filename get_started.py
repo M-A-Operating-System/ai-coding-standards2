@@ -2,45 +2,58 @@
 """
 get_started.py -- wire ai-coding-standards2 into a consuming repo.
 
-This script is run ONCE after `git submodule add ...` has placed this
-repo at `<consuming-repo>/ai-coding-standards2/`. It:
+Run from the consuming repo's root after `git submodule add ...` has
+placed this repo at `<consuming-repo>/ai-coding-standards2/`:
 
-  1. Verifies it's running from inside the submodule of a consuming repo.
-  2. Copies the agent prompts from this submodule's .claude/agents/ into
-     the consuming repo's .claude/agents/, preserving subdirectory
-     structure. Agents use $AI_AGILE_ROOT for all paths so no rewriting
-     is needed.
-  3. Creates the consuming repo's `.claude/commands/` directory and
-     copies the slash commands from this submodule into it, rewriting
-     any submodule-relative paths so they resolve from the consuming
-     repo's root.
-  4. Drops the orchestrator workflows into the consuming repo's
-     `.github/workflows/` directory. (GitHub Actions cannot pick up
-     workflows from submodules; the consuming repo's own workflow dir
-     is the only place they can run from.)
-  5. Drops the daily .claude sync workflow into the consuming repo's
-     `.github/workflows/sync-claude.yml`. This workflow re-runs this
-     script with --force every day to prevent agent/command drift.
-  6. Writes `.claude/settings.local.json` setting AI_AGILE_ROOT so
-     anyone running the orchestrator manually from the consuming repo
-     gets the right paths.
-  7. Prints a short follow-up checklist (set ANTHROPIC_API_KEY,
-     bootstrap labels, open a test issue).
+    python ai-coding-standards2/get_started.py [--seed] [--force] [--dry-run]
 
-Run from the consuming repo's root:
+==============================================================================
+TWO MODES -- this is the same script, run twice during onboarding.
+==============================================================================
 
-    python ai-coding-standards2/get_started.py
+The script does very different amounts of work depending on --seed. This is
+the source of most onboarding confusion, so read this before changing it.
 
-Re-run with --force after updating the submodule to pick up new agents,
-commands, and workflow changes. The sync-claude.yml workflow does this
-automatically every day.
+  --seed  (SEED mode)    -> run_seed()  -> installs ONLY orchestrator.yml
+                                            + .gitignore entries. Nothing else.
+
+  (default) / --force    -> run_full()  -> installs the COMPLETE managed set:
+                                            all workflows, the agents symlink,
+                                            slash commands, standards,
+                                            settings, requirements, .gitignore.
+
+The two modes are two steps of ONE onboarding flow:
+
+  Step 1 (local, by a developer):
+      python get_started.py --seed
+      -> writes orchestrator.yml only, so a single workflow can be committed
+         and pushed. That is the minimum GitHub needs to run the Onboard job.
+
+  Step 2 (on a Linux runner, by the Onboard job in orchestrator.yml):
+      python get_started.py --force
+      -> writes EVERYTHING else and commits it. This is also what the daily
+         sync-claude.yml workflow runs to repair drift.
+
+So `--seed` deliberately copies almost nothing; `--force` does the real
+wiring. See docs/product/orchestrator/16-onboarding.md for the full flow.
+
+What run_full() installs, in order (each is one install_* function below):
+    orchestrator.yml, bootstrap-labels.yml, label-cleanup.yml,
+    sync-claude.yml, pipeline-emergency-stop.yml, pipeline-restart.yml,
+    standards/*.json, .claude/agents (symlink or copies), .claude/commands/,
+    .claude/settings.local.json, requirements.txt, .gitignore entries, and
+    untracking of any previously-committed managed paths.
+
+Agents are read by the orchestrator from the submodule via $AI_AGILE_ROOT,
+so agent prompts are never rewritten; only slash commands and workflows get
+submodule-relative path rewrites applied on copy.
 
 Options:
-    --seed       Minimal bootstrap: copy only orchestrator.yml + .gitignore.
-                 Commit those two files, push, then run the workflow with the
-                 "Onboard" option to finish wiring on a Linux runner.
-    --force      Overwrite existing files in the consuming repo
-    --dry-run    Print what would be created/modified without writing
+    --seed       SEED mode: copy only orchestrator.yml + .gitignore, then
+                 stop. Commit those, push, then trigger the "Onboard" job to
+                 finish wiring on a Linux runner (which runs --force).
+    --force      Overwrite existing files in the consuming repo.
+    --dry-run    Print what would be created/modified without writing.
 """
 
 from __future__ import annotations
@@ -433,52 +446,76 @@ def install_orchestrator_workflows(
     return written
 
 
-def install_bootstrap_labels_workflow(
+def _install_workflow(
+    name: str,
     consuming_root: Path,
     force: bool,
     dry_run: bool,
+    *,
+    inject_submodules: bool = True,
 ) -> bool:
-    """Copy bootstrap-labels.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "bootstrap-labels.yml"
-    dst = consuming_root / ".github" / "workflows" / "bootstrap-labels.yml"
+    """Copy a single workflow file from the submodule into the consuming repo.
+
+    Path rewrites (submodule-relative paths) are always applied. ``submodules:
+    true`` is injected into checkout steps unless ``inject_submodules`` is
+    False -- pass False for workflows that read nothing from the submodule so
+    they never depend on a submodule fetch (which can fail for a private
+    submodule checked out without an elevated token).
+
+    Returns True if the file was (or would be) written, False if the source
+    was missing or the destination was skipped.
+    """
+    src = SUBMODULE_ROOT / ".github" / "workflows" / name
+    dst = consuming_root / ".github" / "workflows" / name
     if not src.exists():
-        print(f"  SKIP   bootstrap-labels workflow  ({src} missing)")
+        print(f"  SKIP   {name}  ({src} missing)")
         return False
-    print(f"  Bootstrap-labels workflow: -> {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
+    print(f"  Workflow ({name}): -> {dst}")
+    content = rewrite_paths(src.read_text(encoding="utf-8"))
+    if inject_submodules:
+        content = _add_submodules_to_checkout(content)
     return write_file(dst, content, force, dry_run)
 
 
-def install_label_cleanup_workflow(
-    consuming_root: Path,
-    force: bool,
-    dry_run: bool,
-) -> bool:
-    """Copy label-cleanup.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "label-cleanup.yml"
-    dst = consuming_root / ".github" / "workflows" / "label-cleanup.yml"
-    if not src.exists():
-        print(f"  SKIP   label-cleanup workflow  ({src} missing)")
-        return False
-    print(f"  Label-cleanup workflow: -> {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
-    return write_file(dst, content, force, dry_run)
+def install_bootstrap_labels_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy bootstrap-labels.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("bootstrap-labels.yml", consuming_root, force, dry_run)
 
 
-def install_sync_workflow(
-    consuming_root: Path,
-    force: bool,
-    dry_run: bool,
-) -> bool:
-    """Copy sync-claude.yml into the consuming repo with paths rewritten."""
-    src = SUBMODULE_ROOT / ".github" / "workflows" / "sync-claude.yml"
-    dst = consuming_root / ".github" / "workflows" / "sync-claude.yml"
-    if not src.exists():
-        print(f"  SKIP   sync-claude workflow  ({src} missing)")
-        return False
-    print(f"  Sync-claude workflow: -> {dst}")
-    content = _add_submodules_to_checkout(rewrite_paths(src.read_text(encoding="utf-8")))
-    return write_file(dst, content, force, dry_run)
+def install_label_cleanup_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy label-cleanup.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("label-cleanup.yml", consuming_root, force, dry_run)
+
+
+def install_sync_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy sync-claude.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("sync-claude.yml", consuming_root, force, dry_run)
+
+
+def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy pipeline-emergency-stop.yml into the consuming repo.
+
+    The operator's kill switch: writes the .pipeline-stop marker (at the repo
+    root, where the orchestrator looks for it) and cancels in-flight runs.
+    inject_submodules=False -- it reads nothing from the submodule, so it must
+    not depend on a submodule fetch to run when the pipeline needs stopping.
+    """
+    return _install_workflow(
+        "pipeline-emergency-stop.yml", consuming_root, force, dry_run, inject_submodules=False
+    )
+
+
+def install_restart_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
+    """Copy pipeline-restart.yml into the consuming repo.
+
+    The counterpart to the emergency stop: clears the .pipeline-stop marker and
+    optionally triggers a fresh orchestrator run. Installed alongside the stop
+    workflow because a stop with no restart cannot be undone from the UI.
+    inject_submodules=False for the same reason as the stop workflow.
+    """
+    return _install_workflow(
+        "pipeline-restart.yml", consuming_root, force, dry_run, inject_submodules=False
+    )
 
 
 def install_local_settings(
@@ -773,42 +810,68 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
+    """SEED mode (--seed): install ONLY orchestrator.yml + .gitignore, then stop.
+
+    This is the minimal local bootstrap. The developer commits the single
+    orchestrator.yml workflow and pushes it -- that is all GitHub needs to run
+    the "Onboard" job, which then re-runs this script in full mode (--force) on
+    a Linux runner to install everything else. Deliberately copies almost
+    nothing; see run_full() for the real wiring.
+
+    include_standards=False because install_standards() does not run in seed
+    mode -- listing gitignore entries for standards files that do not exist yet
+    confuses developers who try to place them manually before the Onboard job.
+    """
+    install_orchestrator_workflows(consuming_root, force, dry_run)
+    add_gitignore_entries(consuming_root, dry_run, include_standards=False)
+    untrack_managed_paths(consuming_root, dry_run)
+    print_followup_seed()
+
+
+def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
+    """Full mode (default / --force): install the COMPLETE managed file set.
+
+    This is what the Onboard job in orchestrator.yml runs (get_started.py
+    --force), and what the daily sync-claude.yml workflow runs to repair drift.
+    It lays down every workflow, the agents symlink, slash commands, standards,
+    settings, and requirements -- everything a consuming repo needs to run the
+    pipeline. Each step is one install_* function; the order is stable so the
+    printed log reads top-to-bottom.
+    """
+    install_orchestrator_workflows(consuming_root, force, dry_run)
+    install_bootstrap_labels_workflow(consuming_root, force, dry_run)
+    install_label_cleanup_workflow(consuming_root, force, dry_run)
+    install_sync_workflow(consuming_root, force, dry_run)
+    install_emergency_stop_workflow(consuming_root, force, dry_run)
+    install_restart_workflow(consuming_root, force, dry_run)
+    install_standards(consuming_root, force, dry_run)
+    install_agents(consuming_root, force, dry_run)
+    install_slash_commands(consuming_root, force, dry_run)
+    install_local_settings(consuming_root, force, dry_run)
+    install_requirements(consuming_root, dry_run)
+    add_gitignore_entries(consuming_root, dry_run)
+    untrack_managed_paths(consuming_root, dry_run)
+    print_followup(consuming_root)
+
+
 def main() -> int:
     args = parse_args()
     consuming_root = find_consuming_repo_root()
     print(f"Consuming repo root: {consuming_root}")
     print(f"Submodule root:      {SUBMODULE_ROOT}")
+    print(f"Mode:                {'seed (orchestrator.yml only)' if args.seed else 'full (complete wiring)'}")
     if args.dry_run:
         print("(dry run -- no files will be written)")
     print()
 
+    # One script, two modes -- see the module docstring. run_seed() is the
+    # minimal local bootstrap; run_full() does the real wiring and is what the
+    # Onboard job runs on a Linux runner.
     if args.seed:
-        # Minimal bootstrap: drop only the orchestrator workflow so the
-        # developer can commit and push a single file. The workflow's
-        # built-in "Onboard" mode handles everything else on a
-        # Linux runner (symlinks, commands, standards, remaining workflows).
-        # Skip standards gitignore entries -- install_standards() hasn't run
-        # yet, so listing gitignore paths for non-existent files confuses
-        # developers who try to place standards files manually before setup.
-        install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
-        add_gitignore_entries(consuming_root, args.dry_run, include_standards=False)
-        untrack_managed_paths(consuming_root, args.dry_run)
-        print_followup_seed()
-        return 0
-
-    install_orchestrator_workflows(consuming_root, args.force, args.dry_run)
-    install_bootstrap_labels_workflow(consuming_root, args.force, args.dry_run)
-    install_label_cleanup_workflow(consuming_root, args.force, args.dry_run)
-    install_sync_workflow(consuming_root, args.force, args.dry_run)
-    install_standards(consuming_root, args.force, args.dry_run)
-    install_agents(consuming_root, args.force, args.dry_run)
-    install_slash_commands(consuming_root, args.force, args.dry_run)
-    install_local_settings(consuming_root, args.force, args.dry_run)
-    install_requirements(consuming_root, args.dry_run)
-    add_gitignore_entries(consuming_root, args.dry_run)
-    untrack_managed_paths(consuming_root, args.dry_run)
-
-    print_followup(consuming_root)
+        run_seed(consuming_root, args.force, args.dry_run)
+    else:
+        run_full(consuming_root, args.force, args.dry_run)
     return 0
 
 
