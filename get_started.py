@@ -158,30 +158,90 @@ def rewrite_paths(text: str) -> str:
     return out
 
 
+def _symlink_file(src: Path, dst: Path, force: bool, dry_run: bool) -> int:
+    """Create a relative symlink dst -> src for a single file.
+
+    The per-file analogue of the `.claude/agents` directory symlink. Replaces
+    an existing real file (e.g. a copy from an older install) under --force so
+    linked and previously-copied installs converge. Returns 1 if a symlink was
+    (or would be) created/updated, 0 if skipped.
+    """
+    rel_target = os.path.relpath(src, dst.parent)
+
+    if dst.is_symlink():
+        resolved = (dst.parent / os.readlink(dst)).resolve()
+        if resolved == src.resolve():
+            print(f"  SKIP   {dst}  (symlink already correct)")
+            return 0
+        if not force:
+            print(f"  SKIP   {dst}  (symlink points elsewhere; pass --force to update)")
+            return 0
+        if dry_run:
+            print(f"  WOULD  {dst} -> {rel_target}  (replace symlink)")
+            return 1
+        dst.unlink()
+    elif dst.exists():
+        if not force:
+            print(f"  SKIP   {dst}  (file exists; pass --force to replace with symlink)")
+            return 0
+        if dry_run:
+            print(f"  WOULD  {dst} -> {rel_target}  (replace file with symlink)")
+            return 1
+        dst.unlink()
+    elif dry_run:
+        print(f"  WOULD  {dst} -> {rel_target}")
+        return 1
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(rel_target, dst)
+    print(f"  LINKED {dst} -> {rel_target}")
+    return 1
+
+
+def _prune_stale_standard_links(dst_dir: Path, dry_run: bool) -> None:
+    """Remove standards symlinks whose submodule target no longer exists.
+
+    Only prunes dangling symlinks (an org standard removed upstream). Never
+    touches a real file -- `adrs.json` and any local file the installer did not
+    create are left alone.
+    """
+    if not dst_dir.is_dir():
+        return
+    for dst in sorted(dst_dir.glob("*.json")):
+        if not dst.is_symlink():
+            continue
+        target = (dst.parent / os.readlink(dst)).resolve()
+        if target.exists():
+            continue
+        if dry_run:
+            print(f"  WOULD REMOVE {dst}  (submodule standard no longer exists)")
+        else:
+            dst.unlink()
+            print(f"  REMOVED {dst}  (submodule standard no longer exists)")
+
+
 def install_standards(
     consuming_root: Path,
     force: bool,
     dry_run: bool,
 ) -> int:
-    """Copy standards/*.json from the submodule into the consuming repo.
+    """Wire standards/*.json from the submodule into the consuming repo.
 
-    Seeds the consuming repo's standards/ folder with the pipeline's base
-    standards. The consuming repo can add project-specific standards as
-    additional files (e.g. standards/myapp.json) -- the sync never deletes
-    files it didn't create.
+    Standards are defined centrally: the framework owns them and they are read
+    verbatim. So on Linux/macOS each org standards file is symlinked to the
+    submodule -- like `.claude/agents` -- so it stays live and never drifts. On
+    Windows (unprivileged directory/file symlinks are unavailable) the files
+    are copied instead, with the `$schema` path rewritten to resolve from the
+    consuming repo root.
 
-    Convention: do not modify the base files directly; add new files for
-    custom standards so the daily sync can safely overwrite the base set
-    without destroying local additions.
+    Special case -- adrs.json: the one project-owned artifact. It is always a
+    real local file, never a link: seeded once on first install and never
+    overwritten, so project ADRs survive every sync.
 
-    Special case -- adrs.json: the consuming repo owns its adrs.json as the
-    place to record project ADRs. The sync never overwrites it so that project
-    ADRs are not lost. On first install (file absent), a minimal project-owned
-    adrs.json is created. Org ADRs are a separate concern; the submodule's
-    adrs.json is the canonical source for those.
-
-    Skips *.schema.json (pipeline infrastructure, not agent-loadable).
-    Returns the number of files written.
+    Skips *.schema.json (pipeline infrastructure, not agent-loadable). Real
+    (non-symlink) files the installer did not create are never deleted; only
+    dangling standards symlinks are pruned. Returns the number of files
+    linked/written.
     """
     src_dir = SUBMODULE_ROOT / "standards"
     dst_dir = consuming_root / "standards"
@@ -191,6 +251,7 @@ def install_standards(
         return 0
 
     print(f"  Standards: {src_dir} -> {dst_dir}")
+    use_symlink = sys.platform != "win32"
     written = 0
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".schema.json"):
@@ -201,7 +262,7 @@ def install_standards(
         if src.name == "adrs.json":
             # adrs.json is project-owned: only seed it when it does not yet
             # exist. Never overwrite -- project ADRs would be lost on every
-            # daily sync.
+            # daily sync. Always a real local file, never a symlink.
             if dst.exists():
                 print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
                 continue
@@ -219,12 +280,20 @@ def install_standards(
                 written += 1
             continue
 
-        content = src.read_text(encoding="utf-8").replace(
-            '"../pipeline/schemas/standards.schema.json"',
-            f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
-        )
-        if write_file(dst, content, force, dry_run):
-            written += 1
+        if use_symlink:
+            written += _symlink_file(src, dst, force, dry_run)
+        else:
+            # Windows fallback: copy with the $schema path rewritten so it
+            # resolves from the consuming repo root (a symlink would keep the
+            # submodule-relative path, which does not resolve from a copy).
+            content = src.read_text(encoding="utf-8").replace(
+                '"../pipeline/schemas/standards.schema.json"',
+                f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
+            )
+            if write_file(dst, content, force, dry_run):
+                written += 1
+
+    _prune_stale_standard_links(dst_dir, dry_run)
     return written
 
 

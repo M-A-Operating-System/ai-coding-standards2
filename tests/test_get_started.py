@@ -24,7 +24,9 @@ def _make_agents_src(tmp_path, name="submodule"):
 # ---------------------------------------------------------------------------
 
 class TestInstallStandards:
-    def test_copies_json_not_schema(self, tmp_path, monkeypatch):
+    def test_links_json_not_schema(self, tmp_path, monkeypatch):
+        """On Linux/macOS, org standards are symlinked into the consuming repo;
+        *.schema.json is skipped."""
         fake_src = tmp_path / "submodule"
         (fake_src / "standards").mkdir(parents=True)
         (fake_src / "standards" / "base.json").write_text('{"standards": []}')
@@ -36,10 +38,18 @@ class TestInstallStandards:
         written = get_started.install_standards(consuming, force=True, dry_run=False)
 
         assert written == 1
-        assert (consuming / "standards" / "base.json").exists()
+        base = consuming / "standards" / "base.json"
+        assert base.is_symlink()
+        # Resolves into the submodule (sole, live source -- no drift).
+        assert base.resolve() == (fake_src / "standards" / "base.json").resolve()
+        # Symlink target is relative, not absolute.
+        assert not os.path.isabs(os.readlink(base))
         assert not (consuming / "standards" / "pipeline.schema.json").exists()
 
-    def test_rewrites_schema_ref_path(self, tmp_path, monkeypatch):
+    def test_symlink_keeps_original_schema_ref(self, tmp_path, monkeypatch):
+        """A symlinked standard exposes the submodule's own content verbatim --
+        no $schema rewrite happens (the file physically lives in the submodule,
+        where the relative path already resolves)."""
         fake_src = tmp_path / "submodule"
         (fake_src / "standards").mkdir(parents=True)
         (fake_src / "standards" / "s.json").write_text(
@@ -52,25 +62,70 @@ class TestInstallStandards:
 
         get_started.install_standards(consuming, force=True, dry_run=False)
 
-        result = (consuming / "standards" / "s.json").read_text()
+        dst = consuming / "standards" / "s.json"
+        assert dst.is_symlink()
+        assert dst.read_text() == '{"$schema": "../pipeline/schemas/standards.schema.json"}'
+
+    def test_windows_copies_and_rewrites_schema_ref(self, tmp_path, monkeypatch):
+        """On Windows (no unprivileged symlinks) standards are copied with the
+        $schema path rewritten to resolve from the consuming repo root."""
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "s.json").write_text(
+            '{"$schema": "../pipeline/schemas/standards.schema.json"}'
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(get_started, "SUBMODULE_NAME", "submodule")
+        monkeypatch.setattr(sys, "platform", "win32")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_standards(consuming, force=True, dry_run=False)
+
+        dst = consuming / "standards" / "s.json"
+        assert not dst.is_symlink()
+        result = dst.read_text()
         assert "../submodule/pipeline/schemas/standards.schema.json" in result
         assert '"../pipeline/schemas/standards.schema.json"' not in result
 
-    def test_preserves_project_specific_standards(self, tmp_path, monkeypatch):
-        """Standards not in the submodule (project-specific) are never deleted."""
+    def test_force_replaces_old_copy_with_symlink(self, tmp_path, monkeypatch):
+        """Migrating a pre-existing copied install: --force replaces the real
+        file with a symlink."""
         fake_src = tmp_path / "submodule"
         (fake_src / "standards").mkdir(parents=True)
         (fake_src / "standards" / "base.json").write_text("{}")
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
         (consuming / "standards").mkdir(parents=True)
-        project_specific = consuming / "standards" / "myapp.json"
-        project_specific.write_text("{}")
+        old_copy = consuming / "standards" / "base.json"
+        old_copy.write_text("{}")  # a real file from an older copied install
+        assert not old_copy.is_symlink()
 
         get_started.install_standards(consuming, force=True, dry_run=False)
 
-        assert (consuming / "standards" / "base.json").exists()
-        assert project_specific.exists()  # must not be deleted
+        assert old_copy.is_symlink()
+
+    def test_prunes_dangling_link_but_keeps_real_files(self, tmp_path, monkeypatch):
+        """A dangling standards symlink (org standard removed upstream) is
+        pruned; real local files (e.g. adrs.json) are never deleted."""
+        fake_src = tmp_path / "submodule"
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "base.json").write_text("{}")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        (consuming / "standards").mkdir(parents=True)
+        # A dangling symlink to a since-removed submodule standard.
+        dangling = consuming / "standards" / "retired.json"
+        os.symlink("../submodule/standards/retired.json", dangling)
+        # A real local file must survive.
+        local = consuming / "standards" / "local.json"
+        local.write_text("{}")
+
+        get_started.install_standards(consuming, force=True, dry_run=False)
+
+        assert not dangling.exists() and not dangling.is_symlink()  # pruned
+        assert local.exists()  # real file preserved
+        assert (consuming / "standards" / "base.json").is_symlink()
 
     def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"

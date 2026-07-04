@@ -14,7 +14,7 @@ header (`"scope": "org"` or `"scope": "project"`).
 
 | Scope | Canonical source | On-disk in a consuming repo | Who owns it | Purpose |
 |-------|-----------------|------------------------------|-------------|---------|
-| **org** | `ai-coding-standards2/standards/*.json` (submodule) | `{project-root}/standards/` (copied by `get_started.py`; re-seeded daily by `sync-claude.yml`) | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
+| **org** | `ai-coding-standards2/standards/*.json` (submodule) | `{project-root}/standards/` (symlinked into the submodule by `get_started.py` on Linux/macOS, copied on Windows; kept live by `sync-claude.yml`) | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
 | **project** | `{project-root}/standards/*.json` | `{project-root}/standards/` (same directory) | Project tech lead | Rules specific to this project's stack, domain, or team conventions — always additive |
 
 After `get_started.py` runs, both tiers are co-located in the consuming repo's

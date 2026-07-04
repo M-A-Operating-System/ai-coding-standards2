@@ -50,7 +50,7 @@ bootstrap):
 | Install agents | On Linux/macOS: creates a relative directory symlink `.claude/agents → submodule/.claude/agents/`. On Windows: copies agent files individually |
 | Install commands | Copies slash commands from the submodule into `.claude/commands/`, rewriting submodule-relative paths |
 | Install workflows | Copies orchestrator and sync workflows into `.github/workflows/`, inserting `submodules: true` into checkout steps |
-| Install standards | Copies `standards/*.json` (excluding schema files) into the consuming repo's `standards/` |
+| Install standards | On Linux/macOS: symlinks each org `standards/*.json` into the consuming repo's `standards/` (like `.claude/agents`, so they stay live and never drift). On Windows: copies them with the `$schema` path rewritten. `adrs.json` is always a real local file — seeded once, never overwritten |
 | Add .gitignore entries | Marks copied/symlinked paths as gitignored to prevent accidental commits on Windows |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
 | Write settings | Creates `.claude/settings.local.json` with `AI_AGILE_ROOT=.` (consuming repo root) so a manually-run orchestrator resolves repo-root data (`standards/`, control markers) from the repo root. Agent prompts always come from the submodule, not this path |
@@ -70,7 +70,7 @@ on a Linux runner to keep managed paths in sync.
 |---|---|---|
 | `.claude/agents` | Relative directory symlink — committed by the setup job as a tiny git blob | Individual file copies — gitignored |
 | `.claude/commands/` | Gitignored — committed by the setup job and kept current by sync-claude.yml | Gitignored — committed by the setup job and kept current by sync-claude.yml |
-| `standards/` | Base files gitignored (`adrs.json` stays committed) | Base files gitignored (`adrs.json` stays committed) |
+| `standards/` | Per-file symlinks into the submodule; gitignored, committed by the setup job (`adrs.json` is a real file, stays committed) | File copies (`$schema` rewritten); gitignored, committed by the setup job (`adrs.json` is a real file, stays committed) |
 | Bootstrap path | `--seed` commit → trigger setup job | `--seed` commit → trigger setup job |
 
 ### Why the split?
@@ -86,10 +86,11 @@ sync-claude.yml workflow rebuilds the symlink on every Linux runner run.
 > checked out. A developer who clones the parent repo without the submodule
 > will see a dangling `.claude/agents` link and **no agents in Claude Code's
 > `/agents` view** until they run `git submodule update --init` (or cloned
-> with `git clone --recurse-submodules`). Copied slash commands still work in
-> that state; only the symlinked agents depend on the submodule being present.
-> CI is unaffected — the orchestrator reads agents straight from the submodule
-> and every workflow checkout uses `submodules: true`.
+> with `git clone --recurse-submodules`). The symlinked pieces — `.claude/agents`
+> and the org `standards/*.json` — all depend on the submodule being present;
+> copied slash commands and the local `standards/adrs.json` still work without
+> it. CI is unaffected — the orchestrator reads agents and standards straight
+> from the submodule and every workflow checkout uses `submodules: true`.
 
 ---
 
