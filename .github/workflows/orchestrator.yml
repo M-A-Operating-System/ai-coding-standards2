@@ -89,12 +89,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force-stage gitignored managed paths. Workflow files are not
-          # gitignored but included so any updates are committed too.
+          # Force-stage the gitignored whole-folder symlinks (.claude and
+          # standards). Workflow files are not gitignored but included so any
+          # updates are committed too.
           git add -f \
-            standards/ \
-            .claude/agents \
-            .claude/commands/ \
+            .claude \
+            standards \
             .gitignore \
             .github/workflows/orchestrator.yml \
             .github/workflows/sync-claude.yml \
@@ -103,8 +103,9 @@ jobs:
             .github/workflows/pipeline-emergency-stop.yml \
             .github/workflows/pipeline-restart.yml
 
-          # requirements.txt is project-owned, not gitignored.
-          git add requirements.txt 2>/dev/null || true
+          # Project-owned artifacts, committed normally (not gitignored):
+          # local ADRs, the local config file, and requirements.txt.
+          git add adrs .ai-agile.settings.json requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "OK: Already onboarded -- nothing to commit."

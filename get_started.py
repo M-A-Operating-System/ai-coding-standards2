@@ -18,9 +18,11 @@ the source of most onboarding confusion, so read this before changing it.
                                             + .gitignore entries. Nothing else.
 
   (default) / --force    -> run_full()  -> installs the COMPLETE managed set:
-                                            all workflows, the agents symlink,
-                                            slash commands, standards,
-                                            settings, requirements, .gitignore.
+                                            all workflows, the whole-.claude
+                                            symlink, the standards symlink, the
+                                            local adrs/ folder and
+                                            .ai-agile.settings.json,
+                                            requirements, .gitignore.
 
 The two modes are two steps of ONE onboarding flow:
 
@@ -40,13 +42,17 @@ wiring. See docs/product/orchestrator/16-onboarding.md for the full flow.
 What run_full() installs, in order (each is one install_* function below):
     orchestrator.yml, bootstrap-labels.yml, label-cleanup.yml,
     sync-claude.yml, pipeline-emergency-stop.yml, pipeline-restart.yml,
-    standards/*.json, .claude/agents (symlink or copies), .claude/commands/,
-    .claude/settings.local.json, requirements.txt, .gitignore entries, and
+    the standards/ symlink, the local adrs/ folder, the whole-.claude symlink,
+    .ai-agile.settings.json, requirements.txt, .gitignore entries, and
     untracking of any previously-committed managed paths.
 
-Agents are read by the orchestrator from the submodule via $AI_AGILE_ROOT,
-so agent prompts are never rewritten; only slash commands and workflows get
-submodule-relative path rewrites applied on copy.
+The consuming repo inherits its ENTIRE Claude Code setup from the submodule:
+`.claude` and `standards` are whole-folder symlinks into it (copies on
+Windows). The only files the consuming repo owns are OUTSIDE those folders:
+`adrs/` (project ADRs) and `.ai-agile.settings.json` (local config). Workflows
+still get submodule-relative path rewrites applied on copy; agents and slash
+commands are read verbatim (commands already try both standalone and submodule
+paths, so they need no rewriting).
 
 Options:
     --seed       SEED mode: copy only orchestrator.yml + .gitignore, then
@@ -158,90 +164,21 @@ def rewrite_paths(text: str) -> str:
     return out
 
 
-def _symlink_file(src: Path, dst: Path, force: bool, dry_run: bool) -> int:
-    """Create a relative symlink dst -> src for a single file.
-
-    The per-file analogue of the `.claude/agents` directory symlink. Replaces
-    an existing real file (e.g. a copy from an older install) under --force so
-    linked and previously-copied installs converge. Returns 1 if a symlink was
-    (or would be) created/updated, 0 if skipped.
-    """
-    rel_target = os.path.relpath(src, dst.parent)
-
-    if dst.is_symlink():
-        resolved = (dst.parent / os.readlink(dst)).resolve()
-        if resolved == src.resolve():
-            print(f"  SKIP   {dst}  (symlink already correct)")
-            return 0
-        if not force:
-            print(f"  SKIP   {dst}  (symlink points elsewhere; pass --force to update)")
-            return 0
-        if dry_run:
-            print(f"  WOULD  {dst} -> {rel_target}  (replace symlink)")
-            return 1
-        dst.unlink()
-    elif dst.exists():
-        if not force:
-            print(f"  SKIP   {dst}  (file exists; pass --force to replace with symlink)")
-            return 0
-        if dry_run:
-            print(f"  WOULD  {dst} -> {rel_target}  (replace file with symlink)")
-            return 1
-        dst.unlink()
-    elif dry_run:
-        print(f"  WOULD  {dst} -> {rel_target}")
-        return 1
-
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    os.symlink(rel_target, dst)
-    print(f"  LINKED {dst} -> {rel_target}")
-    return 1
-
-
-def _prune_stale_standard_links(dst_dir: Path, dry_run: bool) -> None:
-    """Remove standards symlinks whose submodule target no longer exists.
-
-    Only prunes dangling symlinks (an org standard removed upstream). Never
-    touches a real file -- `adrs.json` and any local file the installer did not
-    create are left alone.
-    """
-    if not dst_dir.is_dir():
-        return
-    for dst in sorted(dst_dir.glob("*.json")):
-        if not dst.is_symlink():
-            continue
-        target = (dst.parent / os.readlink(dst)).resolve()
-        if target.exists():
-            continue
-        if dry_run:
-            print(f"  WOULD REMOVE {dst}  (submodule standard no longer exists)")
-        else:
-            dst.unlink()
-            print(f"  REMOVED {dst}  (submodule standard no longer exists)")
-
-
 def install_standards(
     consuming_root: Path,
     force: bool,
     dry_run: bool,
 ) -> int:
-    """Wire standards/*.json from the submodule into the consuming repo.
+    """Wire the whole `standards/` directory from the submodule into the consuming repo.
 
     Standards are defined centrally: the framework owns them and they are read
-    verbatim. So on Linux/macOS each org standards file is symlinked to the
-    submodule -- like `.claude/agents` -- so it stays live and never drifts. On
-    Windows (unprivileged directory/file symlinks are unavailable) the files
-    are copied instead, with the `$schema` path rewritten to resolve from the
-    consuming repo root.
+    verbatim, and no project-owned file lives inside `standards/` (ADRs live in
+    the separate local `adrs/` folder -- see install_adrs). So `standards/` is a
+    single directory symlink `<consuming>/standards -> submodule/standards` on
+    Linux/macOS, and a verbatim copy on Windows (unprivileged symlinks
+    unavailable).
 
-    Special case -- adrs.json: the one project-owned artifact. It is always a
-    real local file, never a link: seeded once on first install and never
-    overwritten, so project ADRs survive every sync.
-
-    Skips *.schema.json (pipeline infrastructure, not agent-loadable). Real
-    (non-symlink) files the installer did not create are never deleted; only
-    dangling standards symlinks are pruned. Returns the number of files
-    linked/written.
+    Returns 1 (symlink created/updated) or the number of files written.
     """
     src_dir = SUBMODULE_ROOT / "standards"
     dst_dir = consuming_root / "standards"
@@ -251,90 +188,78 @@ def install_standards(
         return 0
 
     print(f"  Standards: {src_dir} -> {dst_dir}")
-    use_symlink = sys.platform != "win32"
-    written = 0
-    for src in sorted(src_dir.glob("*.json")):
-        if src.name.endswith(".schema.json"):
-            continue
 
-        dst = dst_dir / src.name
-
-        if src.name == "adrs.json":
-            # adrs.json is project-owned: only seed it when it does not yet
-            # exist. Never overwrite -- project ADRs would be lost on every
-            # daily sync. Always a real local file, never a symlink.
-            if dst.exists():
-                print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
-                continue
-            # First install: create a project-scoped empty ADRs file.
-            project_adrs = (
-                '{\n'
-                f'  "$schema": "../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json",\n'
-                '  "version": "1.0",\n'
-                '  "scope": "project",\n'
-                '  "description": "Approved project-level Architecture Decision Records.",\n'
-                '  "adrs": []\n'
-                '}\n'
-            )
-            if write_file(dst, project_adrs, force, dry_run):
-                written += 1
-            continue
-
-        if use_symlink:
-            written += _symlink_file(src, dst, force, dry_run)
-        else:
-            # Windows fallback: copy with the $schema path rewritten so it
-            # resolves from the consuming repo root (a symlink would keep the
-            # submodule-relative path, which does not resolve from a copy).
-            content = src.read_text(encoding="utf-8").replace(
-                '"../pipeline/schemas/standards.schema.json"',
-                f'"../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json"',
-            )
-            if write_file(dst, content, force, dry_run):
-                written += 1
-
-    _prune_stale_standard_links(dst_dir, dry_run)
-    return written
+    if sys.platform != "win32":
+        return _symlink_dir(src_dir, dst_dir, force, dry_run)
+    return _copy_dir_tree(src_dir, dst_dir, force, dry_run)
 
 
-def install_agents(
+def install_adrs(
+    consuming_root: Path,
+    dry_run: bool,
+) -> bool:
+    """Seed the local `adrs/` folder with a project-owned adrs.json.
+
+    ADRs are the one standards-adjacent artifact a project owns locally. They
+    live OUTSIDE the symlinked `standards/` folder precisely so `standards/` can
+    be a whole-folder symlink. Seeded once and never overwritten, so project
+    ADRs survive every sync.
+    """
+    dst = consuming_root / "adrs" / "adrs.json"
+    if dst.exists():
+        print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
+        return False
+    project_adrs = (
+        '{\n'
+        f'  "$schema": "../{SUBMODULE_NAME}/pipeline/schemas/standards.schema.json",\n'
+        '  "version": "1.0",\n'
+        '  "scope": "project",\n'
+        '  "description": "Approved project-level Architecture Decision Records.",\n'
+        '  "adrs": []\n'
+        '}\n'
+    )
+    print(f"  Project ADRs: -> {dst}")
+    return write_file(dst, project_adrs, force=False, dry_run=dry_run)
+
+
+def install_claude(
     consuming_root: Path,
     force: bool,
     dry_run: bool,
 ) -> int:
-    """Wire .claude/agents/ from the submodule into the consuming repo.
+    """Wire the whole `.claude/` directory from the submodule into the consuming repo.
 
-    On Linux/macOS: creates a directory symlink dst -> src so the agents
-    directory is always in sync with the submodule without copying files.
+    The consuming repo inherits its ENTIRE Claude Code setup from the submodule:
+    agents, slash commands, AGENTS.md, and settings.json. On Linux/macOS this is
+    a single directory symlink `<consuming>/.claude -> submodule/.claude`, so it
+    is always live and never drifts. On Windows (unprivileged directory symlinks
+    unavailable) the tree is copied verbatim.
 
-    On Windows: falls back to verbatim file copies (directory symlinks
-    require elevated privileges on Windows).
+    Slash commands need no path rewriting: they are written to try both the
+    standalone (`pipeline/...`) and submodule (`ai-coding-standards2/...`) paths,
+    so they resolve correctly from a verbatim symlink. `AI_AGILE_ROOT` is carried
+    by the inherited `.claude/settings.json`, so consumers get it for free.
 
-    IMPORTANT: The orchestrator ALWAYS reads agent prompts from the
-    submodule (SUBMODULE_ROOT/.claude/agents/), never from these copies.
-    The symlink / copies are provided solely for interactive Claude Code
-    sessions (developers using /agents or viewing agent files locally).
-    Editing the copies has no effect on pipeline execution. To customise
-    an agent for the pipeline, pin the submodule to a fork or raise a PR
-    upstream.
+    The consuming repo keeps no Claude config of its own -- to change an agent,
+    command, or setting, change it here (PR the submodule) or pin a fork.
 
     Returns 1 (symlink created/updated) or the number of files written.
     """
-    src_dir = SUBMODULE_ROOT / ".claude" / "agents"
-    dst_dir = consuming_root / ".claude" / "agents"
+    src_dir = SUBMODULE_ROOT / ".claude"
+    dst_dir = consuming_root / ".claude"
 
     if not src_dir.is_dir():
-        print(f"  SKIP   agents  ({src_dir} missing)")
+        print(f"  SKIP   .claude  ({src_dir} missing)")
         return 0
 
-    print(f"  Agents: {src_dir} -> {dst_dir}")
+    print(f"  Claude setup: {src_dir} -> {dst_dir}")
 
     if sys.platform != "win32":
-        return _install_agents_symlink(src_dir, dst_dir, force, dry_run)
-    return _install_agents_copy(src_dir, dst_dir, force, dry_run)
+        return _symlink_dir(src_dir, dst_dir, force, dry_run)
+    return _copy_dir_tree(src_dir, dst_dir, force, dry_run)
 
 
-def _install_agents_symlink(
+def _symlink_dir(
     src_dir: Path,
     dst_dir: Path,
     force: bool,
@@ -380,67 +305,31 @@ def _install_agents_symlink(
     return 1
 
 
-def _install_agents_copy(
+def _copy_dir_tree(
     src_dir: Path,
     dst_dir: Path,
     force: bool,
     dry_run: bool,
 ) -> int:
-    """Verbatim-copy agent files from src_dir into dst_dir.
+    """Verbatim-copy every file under src_dir into dst_dir (recursive).
 
-    Used on Windows where directory symlinks require elevated privileges.
-    Returns the number of files written.
+    Used on Windows where directory symlinks require elevated privileges. Copies
+    all files (not just *.md) so settings.json and AGENTS.md come along too.
+    Removes stale files no longer present in the submodule. Returns the number
+    of files written.
     """
     written = 0
-    for src in sorted(src_dir.rglob("*.md")):
+    for src in sorted(p for p in src_dir.rglob("*") if p.is_file()):
         rel = src.relative_to(src_dir)
         dst = dst_dir / rel
         if write_file(dst, src.read_text(encoding="utf-8"), force, dry_run):
             written += 1
 
-    # Remove stale agents that are no longer in the submodule.
+    # Remove stale files that are no longer in the submodule.
     if dst_dir.is_dir():
-        for dst in sorted(dst_dir.rglob("*.md")):
+        for dst in sorted(p for p in dst_dir.rglob("*") if p.is_file()):
             rel = dst.relative_to(dst_dir)
             if not (src_dir / rel).exists():
-                if dry_run:
-                    print(f"  WOULD REMOVE {dst}  (no longer in submodule)")
-                else:
-                    dst.unlink()
-                    print(f"  REMOVED {dst}  (no longer in submodule)")
-
-    return written
-
-
-def install_slash_commands(
-    consuming_root: Path,
-    force: bool,
-    dry_run: bool,
-) -> int:
-    """Copy .claude/commands/ into the consuming repo with paths rewritten.
-    Returns the number of files written."""
-    src_dir = SUBMODULE_ROOT / ".claude" / "commands"
-    dst_dir = consuming_root / ".claude" / "commands"
-
-    if not src_dir.is_dir():
-        print(f"  SKIP   slash commands  ({src_dir} missing)")
-        return 0
-
-    print(f"  Slash commands: {src_dir} -> {dst_dir}")
-    written = 0
-    for src in sorted(src_dir.glob("*.md")):
-        dst = dst_dir / src.name
-        original = src.read_text(encoding="utf-8")
-        rewritten = rewrite_paths(original)
-        if rewritten != original:
-            print(f"    (rewriting paths in {src.name})")
-        if write_file(dst, rewritten, force, dry_run):
-            written += 1
-
-    # Remove stale commands that are no longer in the submodule.
-    if dst_dir.is_dir():
-        for dst in sorted(dst_dir.glob("*.md")):
-            if not (src_dir / dst.name).exists():
                 if dry_run:
                     print(f"  WOULD REMOVE {dst}  (no longer in submodule)")
                 else:
@@ -587,30 +476,38 @@ def install_restart_workflow(consuming_root: Path, force: bool, dry_run: bool) -
     )
 
 
-def install_local_settings(
+def install_ai_agile_settings(
     consuming_root: Path,
-    force: bool,
     dry_run: bool,
 ) -> bool:
-    """Write a .claude/settings.local.json with AI_AGILE_ROOT set so a
-    developer running the orchestrator manually picks up the right
-    paths. The .local.json file is per-developer and not committed."""
-    dst = consuming_root / ".claude" / "settings.local.json"
+    """Seed .ai-agile.settings.json at the consuming repo root.
+
+    This is the consuming repo's single local config surface for the framework
+    -- the one AI Agile file it owns. It lives OUTSIDE the symlinked `.claude/`
+    and `standards/` folders precisely so those can be whole-folder symlinks.
+    It is read by the orchestrator (not by Claude Code, which does not read
+    custom-named settings files).
+
+    Seeded once and never overwritten, so project settings survive every sync.
+    `AI_AGILE_ROOT` is carried by the inherited `.claude/settings.json` and the
+    orchestrator auto-detects the consuming root, so this file holds only
+    optional per-project overrides.
+    """
+    dst = consuming_root / ".ai-agile.settings.json"
+    if dst.exists():
+        print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
+        return False
     payload = {
-        "env": {
-            "AI_AGILE_ROOT": ".",
-        },
         "_comment": (
-            "Generated by ai-coding-standards2/get_started.py. "
-            "AI_AGILE_ROOT points at the consuming repo root (.) so agents "
-            "resolve standards/ and .claude/agents/ from here. The pipeline "
-            "submodule locates its own files via __file__, not this var. "
-            "Add to .gitignore if your project doesn't already "
-            "ignore .claude/settings.local.json."
+            "Local AI Agile config for this repo, owned by the project and "
+            "never overwritten by sync. The framework (agents, commands, "
+            "standards, settings) is inherited from the ai-coding-standards2 "
+            "submodule via symlinks; put per-project overrides here."
         ),
+        "overrides": {},
     }
-    print(f"  Local settings: -> {dst}")
-    return write_file(dst, json.dumps(payload, indent=2) + "\n", force, dry_run)
+    print(f"  Local AI Agile settings: -> {dst}")
+    return write_file(dst, json.dumps(payload, indent=2) + "\n", force=False, dry_run=dry_run)
 
 
 def install_requirements(
@@ -677,18 +574,17 @@ def add_gitignore_entries(
     """Append .gitignore entries for get_started-managed files.
 
     Covers directories/files that get_started creates but that should not
-    be committed to the consuming repo:
-      - .claude/agents    -- symlink (Linux) or copied files (Windows)
-      - .claude/commands/ -- always copied with path rewrites
-      - .claude/settings.local.json -- developer-local settings
-      - standards/<name>.json -- base standards copied from the submodule
-        (project-owned adrs.json is intentionally excluded so it remains
-         committed)
+    be committed to the consuming repo as normal files (they are symlinks
+    into the submodule, force-committed by the Onboard job / sync-claude.yml):
+      - .claude     -- whole-folder symlink into the submodule
+      - standards   -- whole-folder symlink into the submodule
 
-    ``include_standards`` should be False in --seed mode because
-    install_standards() has not run yet; listing gitignore entries for
-    files that do not exist yet confuses developers who try to manually
-    place standards files before the setup workflow runs.
+    Project-owned artifacts are intentionally NOT gitignored so they stay
+    committed: adrs/ (project ADRs) and .ai-agile.settings.json (local config).
+
+    ``include_standards`` should be False in --seed mode because the standards
+    symlink has not been created yet; listing it before it exists confuses
+    developers who try to place files there before the setup workflow runs.
 
     Idempotent: patterns already present in .gitignore are not re-added.
     Returns the number of new entries written (or that would be written).
@@ -696,10 +592,8 @@ def add_gitignore_entries(
     gitignore = consuming_root / ".gitignore"
 
     patterns: list[str] = [
-        ".claude/agents",
-        ".claude/commands/",
-        ".claude/settings.local.json",
-        *(_managed_standards_files() if include_standards else []),
+        ".claude",
+        *(["standards"] if include_standards else []),
     ]
 
     existing_lines = set(gitignore.read_text(encoding="utf-8").splitlines()) if gitignore.exists() else set()
@@ -735,18 +629,18 @@ def add_gitignore_entries(
 def untrack_managed_paths(consuming_root: Path, dry_run: bool) -> int:
     """Remove get_started-managed paths from git tracking (git rm --cached).
 
-    Previous versions of get_started.py instructed users to commit
-    .claude/agents/, .claude/commands/, and base standards files.
-    This function removes those paths from the git index so they stop
-    being tracked, without deleting the local copies.  Safe to call on
-    repos that never tracked these paths (no-op when not tracked).
+    Earlier installs committed .claude subpaths and per-file standards, or the
+    now-retired .claude/settings.local.json. This removes them (and the whole
+    .claude / standards paths) from the git index so they stop being tracked as
+    normal files, without deleting the local copies. Safe to call on repos that
+    never tracked these paths (no-op when not tracked).
 
     Returns the number of paths removed from the index.
     """
     candidates = [
-        ".claude/agents",
-        ".claude/commands",
+        ".claude",
         ".claude/settings.local.json",
+        "standards",
         *_managed_standards_files(),
     ]
 
@@ -903,10 +797,11 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
 
     This is what the Onboard job in orchestrator.yml runs (get_started.py
     --force), and what the daily sync-claude.yml workflow runs to repair drift.
-    It lays down every workflow, the agents symlink, slash commands, standards,
-    settings, and requirements -- everything a consuming repo needs to run the
-    pipeline. Each step is one install_* function; the order is stable so the
-    printed log reads top-to-bottom.
+    It lays down every workflow, the whole `.claude` symlink, the `standards`
+    symlink, the local `adrs/` folder and `.ai-agile.settings.json`, and
+    requirements -- everything a consuming repo needs to run the pipeline. Each
+    step is one install_* function; the order is stable so the printed log reads
+    top-to-bottom.
     """
     install_orchestrator_workflows(consuming_root, force, dry_run)
     install_bootstrap_labels_workflow(consuming_root, force, dry_run)
@@ -915,9 +810,9 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_emergency_stop_workflow(consuming_root, force, dry_run)
     install_restart_workflow(consuming_root, force, dry_run)
     install_standards(consuming_root, force, dry_run)
-    install_agents(consuming_root, force, dry_run)
-    install_slash_commands(consuming_root, force, dry_run)
-    install_local_settings(consuming_root, force, dry_run)
+    install_adrs(consuming_root, dry_run)
+    install_claude(consuming_root, force, dry_run)
+    install_ai_agile_settings(consuming_root, dry_run)
     install_requirements(consuming_root, dry_run)
     add_gitignore_entries(consuming_root, dry_run)
     untrack_managed_paths(consuming_root, dry_run)

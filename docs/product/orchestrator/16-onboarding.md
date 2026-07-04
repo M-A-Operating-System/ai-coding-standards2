@@ -16,7 +16,7 @@ common source of onboarding confusion, so read this first.
 | Run | Command | What it installs | Who runs it |
 |---|---|---|---|
 | **Seed** (step 1) | `get_started.py --seed` | **Only** `orchestrator.yml` + `.gitignore` entries. Nothing else. | A developer, locally |
-| **Full** (step 2) | `get_started.py --force` | **Everything** — all workflows, the agents symlink, slash commands, standards, settings, requirements. | The Onboard job, on a Linux runner |
+| **Full** (step 2) | `get_started.py --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder and `.ai-agile.settings.json`, requirements. | The Onboard job, on a Linux runner |
 
 The two runs are two steps of the same flow: seed drops the one workflow file
 GitHub needs to run the Onboard job; the Onboard job then re-runs the script
@@ -47,13 +47,13 @@ bootstrap):
 | Step | What happens |
 |---|---|
 | Verify location | Confirms the script is running from inside a submodule of a consuming repo |
-| Install agents | On Linux/macOS: creates a relative directory symlink `.claude/agents → submodule/.claude/agents/`. On Windows: copies agent files individually |
-| Install commands | Copies slash commands from the submodule into `.claude/commands/`, rewriting submodule-relative paths |
 | Install workflows | Copies orchestrator and sync workflows into `.github/workflows/`, inserting `submodules: true` into checkout steps |
-| Install standards | On Linux/macOS: symlinks each org `standards/*.json` into the consuming repo's `standards/` (like `.claude/agents`, so they stay live and never drift). On Windows: copies them with the `$schema` path rewritten. `adrs.json` is always a real local file — seeded once, never overwritten |
-| Add .gitignore entries | Marks copied/symlinked paths as gitignored to prevent accidental commits on Windows |
+| Install standards | On Linux/macOS: creates a single directory symlink `standards → submodule/standards`. On Windows: copies the tree. Standards are framework-owned and read verbatim |
+| Install ADRs | Seeds a project-owned `adrs/adrs.json` (once, never overwritten). ADRs live in their own local folder — outside the symlinked `standards/` — so `standards/` can be a whole-folder symlink |
+| Install Claude setup | On Linux/macOS: creates a single directory symlink `.claude → submodule/.claude`, so the consuming repo inherits its ENTIRE Claude Code setup (agents, slash commands, `AGENTS.md`, `settings.json`) from the submodule. On Windows: copies the tree. The parent keeps no Claude config of its own |
+| Install local config | Seeds `.ai-agile.settings.json` at the repo root (once, never overwritten) — the one local config file, read by the orchestrator. `AI_AGILE_ROOT` is carried by the inherited `.claude/settings.json`, so no per-repo settings file is needed for it |
+| Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`) so they are not committed as normal files; the setup job force-commits the symlink blobs. `adrs/` and `.ai-agile.settings.json` are NOT gitignored — they stay committed |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
-| Write settings | Creates `.claude/settings.local.json` with `AI_AGILE_ROOT=.` (consuming repo root) so a manually-run orchestrator resolves repo-root data (`standards/`, control markers) from the repo root. Agent prompts always come from the submodule, not this path |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
@@ -68,29 +68,28 @@ on a Linux runner to keep managed paths in sync.
 
 | Aspect | Linux / macOS | Windows |
 |---|---|---|
-| `.claude/agents` | Relative directory symlink — committed by the setup job as a tiny git blob | Individual file copies — gitignored |
-| `.claude/commands/` | Gitignored — committed by the setup job and kept current by sync-claude.yml | Gitignored — committed by the setup job and kept current by sync-claude.yml |
-| `standards/` | Per-file symlinks into the submodule; gitignored, committed by the setup job (`adrs.json` is a real file, stays committed) | File copies (`$schema` rewritten); gitignored, committed by the setup job (`adrs.json` is a real file, stays committed) |
+| `.claude` | Whole-folder directory symlink into the submodule — committed by the setup job as a tiny git blob; gitignored as a normal path | Full copy of the tree — gitignored, committed by the setup job |
+| `standards` | Whole-folder directory symlink into the submodule — committed by the setup job; gitignored as a normal path | Full copy of the tree — gitignored, committed by the setup job |
+| `adrs/`, `.ai-agile.settings.json` | Real local files, committed normally (never symlinked, never overwritten) | Real local files, committed normally |
 | Bootstrap path | `--seed` commit → trigger setup job | `--seed` commit → trigger setup job |
 
 ### Why the split?
 
 Creating directory symlinks on Windows requires elevated privileges that most
 developers and VS builds do not have. Committing the symlink blob from a Linux
-runner means developers who clone the consuming repo on any platform get agent
-visibility in Claude Code without running `get_started.py` again. The daily
-sync-claude.yml workflow rebuilds the symlink on every Linux runner run.
+runner means developers who clone the consuming repo on any platform inherit the
+framework's Claude setup and standards without running `get_started.py` again.
+The daily sync-claude.yml workflow rebuilds the symlinks on every Linux runner run.
 
-> **Local clones must init the submodule.** The `.claude/agents` symlink
-> points **into** the submodule, so it only resolves when the submodule is
-> checked out. A developer who clones the parent repo without the submodule
-> will see a dangling `.claude/agents` link and **no agents in Claude Code's
-> `/agents` view** until they run `git submodule update --init` (or cloned
-> with `git clone --recurse-submodules`). The symlinked pieces — `.claude/agents`
-> and the org `standards/*.json` — all depend on the submodule being present;
-> copied slash commands and the local `standards/adrs.json` still work without
-> it. CI is unaffected — the orchestrator reads agents and standards straight
-> from the submodule and every workflow checkout uses `submodules: true`.
+> **Local clones must init the submodule.** The `.claude` and `standards`
+> symlinks point **into** the submodule, so they only resolve when the submodule
+> is checked out. A developer who clones the parent repo without the submodule
+> will see dangling `.claude` / `standards` links and **no agents in Claude
+> Code's `/agents` view** until they run `git submodule update --init` (or cloned
+> with `git clone --recurse-submodules`). The local `adrs/` and
+> `.ai-agile.settings.json` are real files and work without the submodule. CI is
+> unaffected — the orchestrator reads the framework straight from the submodule
+> and every workflow checkout uses `submodules: true`.
 
 ---
 
@@ -127,13 +126,13 @@ In the consuming repo: Settings → Secrets and variables → Actions → New re
 Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard → Run**.
 
 The job checks out the repo with its submodule on a Linux runner, runs
-`get_started.py --force`, creates the `.claude/agents` symlink, copies slash
-commands and standards, drops the remaining workflow files (`sync-claude.yml`,
-`bootstrap-labels.yml`, `label-cleanup.yml`, `pipeline-emergency-stop.yml`,
-`pipeline-restart.yml`), and commits everything directly
-to the default branch (or to an `ai-standards-setup` branch if branch
-protection rules block a direct push — in that case, open a PR from that
-branch).
+`get_started.py --force`, creates the whole-folder `.claude` and `standards`
+symlinks, seeds the local `adrs/` folder and `.ai-agile.settings.json`, drops
+the remaining workflow files (`sync-claude.yml`, `bootstrap-labels.yml`,
+`label-cleanup.yml`, `pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and
+commits everything directly to the default branch (or to an `ai-standards-setup`
+branch if branch protection rules block a direct push — in that case, open a PR
+from that branch).
 
 The `pipeline-emergency-stop.yml` / `pipeline-restart.yml` pair is the
 operator kill switch: emergency-stop writes a `.pipeline-stop` marker (which
@@ -175,24 +174,27 @@ commit is attributed to the bot account and branch-protection rules that block
 `get_started.py` adds the following entries to the consuming repo's `.gitignore`:
 
 ```
-.claude/agents
-.claude/commands/
-.claude/settings.local.json
-standards/<file>.json   # one entry per standards file
+.claude
+standards
 ```
 
-These entries prevent Windows developers from accidentally committing local file
-copies. The `sync-claude.yml` workflow uses `git add -f` to override `.gitignore`
-when committing the Linux-built symlink and copied files on behalf of the bot.
+These are the whole-folder symlinks; gitignoring them keeps them from being
+committed as normal files (and stops Windows copies being committed by hand).
+The setup job and `sync-claude.yml` use `git add -f` to override `.gitignore`
+when committing the symlink blobs on behalf of the bot. The project-owned
+`adrs/` folder and `.ai-agile.settings.json` are **not** gitignored — they are
+committed normally.
 
 ---
 
 ## Migration from tracked copies
 
-Older installs may have `.claude/agents/`, `.claude/commands/`, and `standards/`
-tracked in git as committed copies. Running `get_started.py` (any version
-with `untrack_managed_paths`) will call `git rm --cached -r` on each tracked
-managed path to remove it from the index without deleting local files.
+Older installs may have `.claude/agents/`, `.claude/commands/`,
+`.claude/settings.local.json`, and per-file `standards/*.json` tracked in git as
+committed copies. Running `get_started.py` (any version with
+`untrack_managed_paths`) will call `git rm --cached -r` on each tracked managed
+path — including the whole `.claude` and `standards` paths — to remove them from
+the index without deleting local files.
 
 ---
 
@@ -231,16 +233,17 @@ and `status.sh` are all read from under it. There is no merge with a
 consuming-repo agent directory: a `.claude/agents/*.md` file placed in the
 parent repo is never consulted by the pipeline.
 
-On the interactive side, the parent repo's `.claude/agents` is a symlink
-**into** this submodule, so Claude Code's `/agents` view shows exactly this
-submodule's set and there is no local directory for the parent to diverge
-into. Together these make the framework a single, authoritative definition
-of the agentic SDLC: drop the submodule in, and the parent inherits the
-whole pipeline, agents, and gates without forking the framework locally.
+On the interactive side, the parent repo's **entire** `.claude` folder is a
+symlink **into** this submodule, so Claude Code's `/agents` view (and every
+slash command and setting) shows exactly this submodule's set, and there is no
+local `.claude` for the parent to diverge into. The parent keeps no Claude
+config of its own. Together these make the framework a single, authoritative
+definition of the agentic SDLC: drop the submodule in, and the parent inherits
+the whole pipeline, agents, and gates without forking the framework locally.
 (Standards are defined centrally here too — the framework owns them and a
-project does not add its own. The only locally-owned artifact is a project's
-ADRs in `standards/adrs.json`, which the framework seeds once and never
-overwrites.)
+project does not add its own. The only locally-owned artifacts are the project's
+ADRs in `adrs/adrs.json` and its `.ai-agile.settings.json`, both seeded once and
+never overwritten.)
 
 To change an agent, change it here — open a PR against this repo, or pin the
 parent's submodule to a fork you control. Both routes keep the parent repo's

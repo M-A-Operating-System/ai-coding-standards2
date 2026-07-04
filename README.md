@@ -12,10 +12,10 @@ standards. The consuming repo adds only a thin workflow file and two
 secrets — it does not define, fork, or maintain the framework's moving
 parts. This repo is the single, authoritative source for the pipeline, the
 orchestrator, the agents, the gates, and the standards. Standards are
-defined centrally here; the only thing a project owns locally is its **ADRs**
+defined centrally here; the only things a project owns locally are its **ADRs**
 — the architecture decisions and standard-exceptions it records in its own
-`standards/adrs.json`, which the framework seeds once and never overwrites
-(see [14-standards.md](docs/product/orchestrator/14-standards.md)).
+`adrs/adrs.json` — and its `.ai-agile.settings.json`, both seeded once and never
+overwritten (see [14-standards.md](docs/product/orchestrator/14-standards.md)).
 
 Software teams spend a disproportionate share of their time on the
 connective tissue around code: writing PRDs, translating them into designs,
@@ -165,10 +165,11 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard → Run**.
 
 The workflow checks out the repo with its submodule on a Linux runner, runs
-`get_started.py --force`, creates the `.claude/agents` symlink, copies slash
-commands and standards, drops the remaining workflow files (`sync-claude.yml`,
-`bootstrap-labels.yml`, `label-cleanup.yml`, `pipeline-emergency-stop.yml`,
-`pipeline-restart.yml`), and commits everything.
+`get_started.py --force`, creates the whole-folder `.claude` and `standards`
+symlinks, seeds the local `adrs/` folder and `.ai-agile.settings.json`, drops
+the remaining workflow files (`sync-claude.yml`, `bootstrap-labels.yml`,
+`label-cleanup.yml`, `pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and
+commits everything.
 
 After it completes, open an issue with a problem statement and acceptance
 criteria. The workflow fires on `issues.opened`; expect labels
@@ -206,17 +207,20 @@ in production unless you want every change auto-applied.
 After a submodule bump, **most things just work** because the
 orchestrator reads them straight from the submodule:
 
-- Agent prompts (`.claude/agents/{phase}/*.md`) — read via `AI_AGILE_ROOT`
-- `pipeline.json`, `status.sh`, validators — read via `AI_AGILE_ROOT`
+- Agent prompts (`.claude/agents/{phase}/*.md`) — read from the submodule
+- `pipeline.json`, `status.sh`, validators — read from the submodule
 - Schema and CI checks — referenced by their submodule paths
 
-A small set of files were copied into your repo by `get_started.py`
-and **don't** auto-update:
+The `.claude` and `standards` folders are **whole-folder symlinks** into the
+submodule, so agents, slash commands, settings, and standards **all auto-update**
+on a submodule bump — nothing to re-run.
 
-- `.github/workflows/orchestrator.yml` (GitHub Actions can't read workflows from submodules)
-- `.claude/commands/*.md` (path rewrites are baked in at install time)
+The one thing that does **not** auto-update is the workflow files, because
+GitHub Actions cannot read workflows from a submodule:
 
-If those have changed in the new submodule version, re-run:
+- `.github/workflows/orchestrator.yml` (and the other installed workflow files)
+
+If a workflow changed in the new submodule version, re-run:
 
 ```bash
 python ai-coding-standards2/get_started.py --force
@@ -224,8 +228,9 @@ git add .github/workflows/
 git commit -m "Refresh ai-coding-standards2 wrapper files"
 ```
 
-`.claude/agents`, `.claude/commands/`, and `standards/` are managed by the
-daily `sync-claude.yml` workflow and should not be committed manually.
+The `.claude` and `standards` symlinks are managed by the daily
+`sync-claude.yml` workflow and should not be committed manually. Your local
+`adrs/` and `.ai-agile.settings.json` are yours — never overwritten by sync.
 
 Compare the diff between tags to know whether re-running is
 needed. If neither the workflow nor any slash command changed, no

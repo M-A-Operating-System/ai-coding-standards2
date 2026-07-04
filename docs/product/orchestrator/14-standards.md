@@ -98,7 +98,7 @@ ADRs follow the same two-tier pattern.
 | Scope | Location | Can waive |
 |-------|----------|-----------|
 | **org** | `ai-coding-standards2/standards/adrs.json` | Org `adr_overridable: true` standards only |
-| **project** | `{project-root}/standards/adrs.json` | Org or project `adr_overridable: true` standards |
+| **project** | `{project-root}/adrs/adrs.json` (local folder, outside the symlinked `standards/`) | Org or project `adr_overridable: true` standards |
 
 Every ADR entry requires:
 
@@ -134,17 +134,18 @@ The pr-reviewer verdict rule: **APPROVE if and only if zero unwaived findings.**
 Agents load all standards from a single directory at startup.
 
 ```bash
-# All standards — org copies and project additions are co-located.
+# Standards live in the symlinked standards/ folder (framework-owned).
 # AI_AGILE_ROOT = consuming repo root (set by the orchestrator as $GITHUB_WORKSPACE).
 find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "adrs.json" | sort
 
-# ADRs (project-owned; org ADR entries are in adrs.json at scope: "org")
-cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null || true
+# Project ADRs live in the local adrs/ folder, OUTSIDE the symlinked standards/.
+cat "${AI_AGILE_ROOT}/adrs/adrs.json" 2>/dev/null || true
 ```
 
-`AI_AGILE_ROOT` is the consuming repo root — where `standards/` lives after
-`get_started.py` installation. In standalone dev mode (running inside
-ai-coding-standards2 directly), it equals the submodule root.
+`AI_AGILE_ROOT` is the consuming repo root — where the `standards/` symlink and
+the local `adrs/` folder live after `get_started.py` installation. In standalone
+dev mode (running inside ai-coding-standards2 directly), it equals the submodule
+root.
 
 `AI_AGILE_CONTEXT` (also set by the orchestrator) is the absolute path to
 `AGENTS.md` inside the submodule. Agents that need to locate the schema

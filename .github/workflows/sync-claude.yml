@@ -1,23 +1,22 @@
 name: Sync AI Agile .claude directory
 
-# Keeps the consuming repo's .claude/agents and .claude/commands/ in
-# sync with whatever version of the ai-coding-standards2 submodule is
-# currently pinned. Runs daily to catch any drift, and can be triggered
-# on demand.
+# Keeps the consuming repo's whole .claude and standards folders in sync
+# with whatever version of the ai-coding-standards2 submodule is currently
+# pinned. Runs daily to catch any drift, and can be triggered on demand.
 #
-# On Linux runners get_started.py creates a directory symlink for
-# .claude/agents (symlink to submodule's .claude/agents/). The symlink is committed
-# as a tiny git blob (~40 bytes) so developers who clone the consuming
-# repo get agent visibility in Claude Code without running get_started.py.
+# On Linux runners get_started.py creates whole-folder directory symlinks
+# for .claude and standards (pointing into the submodule). Each symlink is
+# committed as a tiny git blob so developers who clone the consuming repo
+# inherit the framework's Claude setup and standards without running
+# get_started.py. The parent keeps no Claude config of its own.
 #
-# .claude/commands/ and standards/ are committed as verbatim copies with
-# path rewrites applied. .claude/settings.local.json is always excluded --
-# it is developer-local and must never be committed.
+# The consuming repo's own files -- adrs/ (project ADRs) and
+# .ai-agile.settings.json (local config) -- live OUTSIDE the symlinked
+# folders and are never overwritten by sync.
 #
-# These paths are listed in .gitignore to protect developers on Windows
-# (where get_started.py falls back to file copies that should not be
-# committed manually). The workflow uses `git add -f` to force-stage them
-# despite the .gitignore rule.
+# The .claude and standards paths are listed in .gitignore (so Windows file
+# copies are not committed by hand). The workflow uses `git add -f` to
+# force-stage the symlink blobs despite the .gitignore rule.
 #
 # This workflow is installed into consuming repos by get_started.py.
 # Do NOT edit it directly in the consuming repo -- edit the source at
@@ -59,11 +58,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Sync agents, commands, standards, and workflows
-        # --force overwrites any files that have drifted from the submodule.
-        # On Linux this creates a .claude/agents symlink instead of copying
-        # individual files. Also adds/updates .gitignore entries and removes
-        # any previously-tracked managed paths from the git index.
+      - name: Sync Claude setup, standards, and workflows
+        # --force overwrites anything that drifted from the submodule. On Linux
+        # this creates whole-folder .claude and standards symlinks instead of
+        # copying files. Also adds/updates .gitignore entries and removes any
+        # previously-tracked managed paths from the git index.
         run: python ai-coding-standards2/get_started.py --force
 
       - name: Commit and push if anything changed
@@ -71,27 +70,25 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force-stage managed paths despite .gitignore (the gitignore rule
-          # protects developers from accidentally committing Windows copies;
-          # the sync workflow is the authoritative committer on Linux).
+          # Force-stage the whole-folder symlinks despite .gitignore (the
+          # gitignore rule protects developers from accidentally committing
+          # Windows copies; the sync workflow is the authoritative committer on
+          # Linux).
           #
-          # .claude/agents -- symlink on Linux (no trailing slash; git add -f
-          #   stages the symlink blob, not the directory contents).
-          # .claude/commands/ -- copied with path rewrites applied.
-          # standards/ -- copied with schema path rewrites applied.
+          # .claude / standards -- symlinks on Linux (no trailing slash; git
+          #   add -f stages the symlink blob, not the directory contents).
           # Workflows -- always committed (GitHub Actions requires them here).
           git add -f \
-            standards/ \
-            .claude/agents \
-            .claude/commands/ \
+            .claude \
+            standards \
             .gitignore \
             .github/workflows/orchestrator.yml \
             .github/workflows/bootstrap-labels.yml \
             .github/workflows/label-cleanup.yml \
             .github/workflows/sync-claude.yml
 
-          # requirements.txt is project-owned and not gitignored; add without -f.
-          git add requirements.txt 2>/dev/null || true
+          # Project-owned artifacts, committed normally (not gitignored).
+          git add adrs .ai-agile.settings.json requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "OK: .claude is already in sync with the submodule -- nothing to commit."

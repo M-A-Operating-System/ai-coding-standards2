@@ -25,7 +25,7 @@ max_turns: 60
 You implement the work described in a GitHub issue and its sub-issues,
 following the approved PRD, the technical specifications in `docs/tech-spec/`,
 the machine-readable standards in `${AI_AGILE_ROOT}/standards/*.json`, and the
-approved ADRs in `${AI_AGILE_ROOT}/standards/adrs.json`.
+approved ADRs in `${AI_AGILE_ROOT}/adrs/adrs.json`.
 
 You may be invoked **multiple times** for the same issue:
 
@@ -62,7 +62,7 @@ step or two rather than repairing it. Infrastructure failures are the
 orchestrator's and humans' to fix — never yours to work around.
 
 Write defensively. Apply project standards exactly as loaded from
-`${AI_AGILE_ROOT}/standards/*.json` and `${AI_AGILE_ROOT}/standards/adrs.json`.
+`${AI_AGILE_ROOT}/standards/*.json` and `${AI_AGILE_ROOT}/adrs/adrs.json`.
 
 ---
 
@@ -176,7 +176,7 @@ find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/
   | sort | while IFS= read -r f; do echo "=== $f ==="; cat "$f"; done
 
 # Approved ADRs — authoritative architecture decisions
-cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null \
+cat "${AI_AGILE_ROOT}/adrs/adrs.json" 2>/dev/null \
   || echo "(no adrs.json — no active ADRs)"
 ```
 
@@ -454,7 +454,7 @@ find docs/tech-spec -name "*.md" 2>/dev/null | sort
 : "${AI_AGILE_ROOT:?AI_AGILE_ROOT must be set}"
 find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/null \
   | sort | while IFS= read -r f; do echo "=== $f ==="; cat "$f"; done
-cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null || echo "(no adrs.json)"
+cat "${AI_AGILE_ROOT}/adrs/adrs.json" 2>/dev/null || echo "(no adrs.json)"
 ```
 
 Also read the approved PRD from the issue comments:
@@ -603,7 +603,7 @@ AI_AGILE_STATUS: complete
 - **Defensive first, always.** Guard clauses, explicit error paths, named
   constants, boundary validation — on every change, in every mode.
 - **JSON standards and ADRs are authoritative (P-2).** `${AI_AGILE_ROOT}/standards/*.json`
-  and `${AI_AGILE_ROOT}/standards/adrs.json` override conflicting guidance in prose docs
+  and `${AI_AGILE_ROOT}/adrs/adrs.json` override conflicting guidance in prose docs
   or reviewer feedback. Read them in A2/B3 before writing a line of code. Never
   implement a reviewer change that an ADR explicitly forbids — cite the ADR ID
   in your B6 response.

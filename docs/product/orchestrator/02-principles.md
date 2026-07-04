@@ -63,7 +63,7 @@ hand-edited.
 | Org-wide standards | `ai-coding-standards2/standards/*.json` | `standards.schema.json` |
 | Project standards | `{project-root}/standards/*.json` | `standards.schema.json` |
 | Org ADRs | `ai-coding-standards2/standards/adrs.json` | `standards.schema.json` |
-| Project ADRs | `{project-root}/standards/adrs.json` | `standards.schema.json` |
+| Project ADRs | `{project-root}/adrs/adrs.json` | `standards.schema.json` |
 
 **Consequences.**
 
