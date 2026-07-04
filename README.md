@@ -1,9 +1,20 @@
 # AI Agile
 
-**AI Agile** is a product-development lifecycle in which specialised AI
-agents move every change from a GitHub issue through to shipped, tested,
-documented code — with humans approving at well-defined gates rather than
-performing the work.
+**AI Agile is a complete, self-contained agentic framework for a
+product-led software development lifecycle — dropped into any project repo
+as a single git submodule.** Specialised AI agents move every change from a
+GitHub issue through to shipped, tested, documented code, with humans
+approving at well-defined gates rather than performing the work.
+
+One submodule brings the whole SDLC: the pipeline graph, the deterministic
+orchestrator, every agent, the human gates, and a base set of
+machine-readable standards. The consuming repo adds only a thin workflow
+file and two secrets — it does not define, fork, or maintain the framework's
+moving parts. This repo is the single, authoritative source for the pipeline,
+the orchestrator, the agents, and the gates. Standards are the one
+deliberately two-tier piece: this repo owns the base set, and a project may
+layer its own standards files on top (see
+[14-standards.md](docs/product/orchestrator/14-standards.md)).
 
 Software teams spend a disproportionate share of their time on the
 connective tissue around code: writing PRDs, translating them into designs,
@@ -23,9 +34,12 @@ then marks itself complete or asks for human review. Humans approve at
 **gates** by applying a label. Every transition is auditable, every state
 is resumable, and code is held to machine-readable **standards**.
 
-This repo (`ai-coding-standards2`) is the pipeline itself. It is
-**designed to be added as a git submodule** to the project repos that
-consume it.
+This repo (`ai-coding-standards2`) **is** the framework — the pipeline, the
+orchestrator, the agents, and the standards in one place. It is **designed
+to be added as a git submodule** to the project repos that consume it, and
+it remains the sole definition of every agent and pipeline stage: consuming
+repos inherit the framework wholesale and never redefine it locally (see
+[Onboarding → sole source of agents](docs/product/orchestrator/16-onboarding.md#this-submodule-is-the-sole-source-of-agents)).
 
 The full design is in [`docs/product/orchestrator/`](docs/product/orchestrator/README.md) —
 start with its 60-second summary and reading order.

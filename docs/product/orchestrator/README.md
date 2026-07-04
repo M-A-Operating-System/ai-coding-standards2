@@ -1,10 +1,14 @@
 # AI Agile — Product Documentation
 
-**AI Agile** is a product-development lifecycle in which specialised AI
-agents move every change from a single GitHub issue through to shipped,
-tested, documented code — with humans approving at well-defined gates.
-Everything runs on GitHub: issues, labels, comments, branches, and PRs.
-There is no sidecar database, no separate dashboard, and no hidden state.
+**AI Agile** is a complete, self-contained agentic framework for a
+product-led software development lifecycle, delivered as a single git
+submodule. Specialised AI agents move every change from a single GitHub
+issue through to shipped, tested, documented code — with humans approving at
+well-defined gates. Everything runs on GitHub: issues, labels, comments,
+branches, and PRs. There is no sidecar database, no separate dashboard, and
+no hidden state. A consuming repo drops the submodule in and inherits the
+whole lifecycle; this repo stays the sole definition of every agent,
+pipeline stage, and gate, and owns the base standards a project can extend.
 
 ---
 

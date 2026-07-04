@@ -53,7 +53,7 @@ bootstrap):
 | Install standards | Copies `standards/*.json` (excluding schema files) into the consuming repo's `standards/` |
 | Add .gitignore entries | Marks copied/symlinked paths as gitignored to prevent accidental commits on Windows |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
-| Write settings | Creates `.claude/settings.local.json` with `AI_AGILE_ROOT=.` (consuming repo root) so agents resolve `standards/` and `.claude/agents/` from the repo root |
+| Write settings | Creates `.claude/settings.local.json` with `AI_AGILE_ROOT=.` (consuming repo root) so a manually-run orchestrator resolves repo-root data (`standards/`, control markers) from the repo root. Agent prompts always come from the submodule, not this path |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
@@ -80,6 +80,16 @@ developers and VS builds do not have. Committing the symlink blob from a Linux
 runner means developers who clone the consuming repo on any platform get agent
 visibility in Claude Code without running `get_started.py` again. The daily
 sync-claude.yml workflow rebuilds the symlink on every Linux runner run.
+
+> **Local clones must init the submodule.** The `.claude/agents` symlink
+> points **into** the submodule, so it only resolves when the submodule is
+> checked out. A developer who clones the parent repo without the submodule
+> will see a dangling `.claude/agents` link and **no agents in Claude Code's
+> `/agents` view** until they run `git submodule update --init` (or cloned
+> with `git clone --recurse-submodules`). Copied slash commands still work in
+> that state; only the symlinked agents depend on the submodule being present.
+> CI is unaffected — the orchestrator reads agents straight from the submodule
+> and every workflow checkout uses `submodules: true`.
 
 ---
 
@@ -187,23 +197,21 @@ managed path to remove it from the index without deleting local files.
 
 ## How paths resolve
 
-The orchestrator is path-agnostic and infers everything from one
-of two roots:
+The orchestrator resolves two kinds of path, from two different roots:
 
-| Variable | Default | Used for |
+| Root | How it is derived | Used for |
 |---|---|---|
-| `AI_AGILE_ROOT` env var | The directory three levels above `pipeline_orchestrator.py` (i.e. the repo root containing `.github/` and `ai-agile/`) | Locating `status.sh` and agent prompts |
-| `--pipeline PATH` arg | `<this_dir>/pipeline.json` | The pipeline graph |
+| `SUBMODULE_ROOT` | From `__file__` (the location of `pipeline_orchestrator.py`), **never** from an env var | The framework's own files: agent prompts (`.claude/agents/*.md`), agent scripts, `status.sh`, `AGENTS.md`, `pipeline.json` |
+| `AI_AGILE_ROOT` env var | The consuming repo root (set to `${{ github.workspace }}` by the installed `orchestrator.yml`; falls back to `SUBMODULE_ROOT` when unset) | Repo-root data and runtime markers: `standards/`, the `.pipeline-stop` / `.pipeline-pause` markers, and the value passed to each agent subprocess |
 
-When this repo is checked out **at the consuming repo's root**
-(non-submodule mode), `AI_AGILE_ROOT` defaults to the repo root —
-everything just works.
-
-When this repo is checked out **as a submodule** at
-`<consuming-repo>/ai-coding-standards2/`, set `AI_AGILE_ROOT` in the
-workflow env (the installed `orchestrator.yml` does this) so the
-orchestrator finds `status.sh` and agent prompts under the submodule,
-not under the consuming repo's root.
+The split is what makes the framework self-contained: because agent
+prompts, scripts, and `status.sh` always resolve from `SUBMODULE_ROOT`, the
+pipeline runs identically whether this repo is checked out at the consuming
+repo's root (non-submodule mode) or as a submodule at
+`<consuming-repo>/ai-coding-standards2/`. `AI_AGILE_ROOT` only tells the
+running agents where the parent repo's `standards/` and control markers
+live; it never changes which agents exist or where their definitions come
+from.
 
 The orchestrator passes both `AI_AGILE_ROOT` and the resolved
 `STATUS_SH` to every agent subprocess via env. Agent prompts
@@ -212,10 +220,26 @@ identically in both layouts.
 
 ---
 
-## Adding repo-specific agents
+## This submodule is the sole source of agents
 
-The consuming repo adds its own agents at
-`<consuming-repo>/.claude/agents/{agent}.md`, which override (or extend)
-the submodule's set. The orchestrator consults both agent directories,
-with the consuming repo's taking precedence. Delivery sequencing is in
-the [roadmap](10-roadmap.md).
+The agent set is defined **only** by this submodule. The orchestrator
+resolves every agent prompt from the submodule itself — see
+`pipeline_orchestrator.py`, where `SUBMODULE_ROOT` is derived from
+`__file__` (never from `AI_AGILE_ROOT`) and agent prompts, agent scripts,
+and `status.sh` are all read from under it. There is no merge with a
+consuming-repo agent directory: a `.claude/agents/*.md` file placed in the
+parent repo is never consulted by the pipeline.
+
+On the interactive side, the parent repo's `.claude/agents` is a symlink
+**into** this submodule, so Claude Code's `/agents` view shows exactly this
+submodule's set and there is no local directory for the parent to diverge
+into. Together these make the framework a single, authoritative definition
+of the agentic SDLC: drop the submodule in, and the parent inherits the
+whole pipeline, agents, and gates without forking the framework locally.
+(Standards are the one two-tier piece — the base set comes from here and a
+project may add its own standards files on top; agents and pipeline stages
+are not extensible this way.)
+
+To change an agent, change it here — open a PR against this repo, or pin the
+parent's submodule to a fork you control. Both routes keep the parent repo's
+copy of the framework identical to a known, reviewed commit.
