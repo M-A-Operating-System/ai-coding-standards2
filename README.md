@@ -7,14 +7,15 @@ GitHub issue through to shipped, tested, documented code, with humans
 approving at well-defined gates rather than performing the work.
 
 One submodule brings the whole SDLC: the pipeline graph, the deterministic
-orchestrator, every agent, the human gates, and a base set of
-machine-readable standards. The consuming repo adds only a thin workflow
-file and two secrets — it does not define, fork, or maintain the framework's
-moving parts. This repo is the single, authoritative source for the pipeline,
-the orchestrator, the agents, and the gates. Standards are the one
-deliberately two-tier piece: this repo owns the base set, and a project may
-layer its own standards files on top (see
-[14-standards.md](docs/product/orchestrator/14-standards.md)).
+orchestrator, every agent, the human gates, and the machine-readable
+standards. The consuming repo adds only a thin workflow file and two
+secrets — it does not define, fork, or maintain the framework's moving
+parts. This repo is the single, authoritative source for the pipeline, the
+orchestrator, the agents, the gates, and the standards. Standards are
+defined centrally here; the only thing a project owns locally is its **ADRs**
+— the architecture decisions and standard-exceptions it records in its own
+`standards/adrs.json`, which the framework seeds once and never overwrites
+(see [14-standards.md](docs/product/orchestrator/14-standards.md)).
 
 Software teams spend a disproportionate share of their time on the
 connective tissue around code: writing PRDs, translating them into designs,

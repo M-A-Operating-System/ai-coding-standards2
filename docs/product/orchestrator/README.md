@@ -8,7 +8,8 @@ well-defined gates. Everything runs on GitHub: issues, labels, comments,
 branches, and PRs. There is no sidecar database, no separate dashboard, and
 no hidden state. A consuming repo drops the submodule in and inherits the
 whole lifecycle; this repo stays the sole definition of every agent,
-pipeline stage, and gate, and owns the base standards a project can extend.
+pipeline stage, gate, and standard. The only thing a project owns locally is
+its ADRs — the exceptions it records against the centrally-defined standards.
 
 ---
 

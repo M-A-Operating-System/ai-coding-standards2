@@ -236,9 +236,10 @@ submodule's set and there is no local directory for the parent to diverge
 into. Together these make the framework a single, authoritative definition
 of the agentic SDLC: drop the submodule in, and the parent inherits the
 whole pipeline, agents, and gates without forking the framework locally.
-(Standards are the one two-tier piece — the base set comes from here and a
-project may add its own standards files on top; agents and pipeline stages
-are not extensible this way.)
+(Standards are defined centrally here too — the framework owns them and a
+project does not add its own. The only locally-owned artifact is a project's
+ADRs in `standards/adrs.json`, which the framework seeds once and never
+overwrites.)
 
 To change an agent, change it here — open a PR against this repo, or pin the
 parent's submodule to a fork you control. Both routes keep the parent repo's
