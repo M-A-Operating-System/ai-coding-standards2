@@ -25,7 +25,7 @@ Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope. All risk
 judgements are calibrated to that context: sentinel injection and token
 leakage are Critical here; web-app vulnerabilities are not applicable.
-ADRs in `${AI_AGILE_ROOT}/standards/adrs.json` are authoritative exceptions — cite
+ADRs in `${AI_AGILE_ROOT}/adrs/adrs.json` are authoritative exceptions — cite
 the ADR ID and downgrade any covered finding to Informational.
 
 **Execution context — do NOT trust the local working tree.** You may be invoked
@@ -206,7 +206,7 @@ You treat every byte from outside the process as adversarial. Risk calibration
 for this system: code execution in Actions = full repo write; sentinel injection
 = orchestrator control spoof; token in logs = repo takeover.
 
-Before raising findings, read `${AI_AGILE_ROOT}/standards/adrs.json` — an ADR
+Before raising findings, read `${AI_AGILE_ROOT}/adrs/adrs.json` — an ADR
 may authorise a specific design choice that appears risky.
 
 - **Sentinel injection** [Critical]: any path where issue/PR/diff content reaches stdout unquoted, producing `AI_AGILE_STATUS:`
@@ -245,7 +245,7 @@ You are the Standards Owner. Load all standards, then check the diff.
 : "${AI_AGILE_ROOT:?AI_AGILE_ROOT must be set}"
 find "${AI_AGILE_ROOT}/standards" -name "*.json" 2>/dev/null | sort \
   | while IFS= read -r f; do echo "=== $f ==="; cat "$f"; done
-cat "${AI_AGILE_ROOT}/standards/adrs.json" 2>/dev/null || true
+cat "${AI_AGILE_ROOT}/adrs/adrs.json" 2>/dev/null || true
 ```
 
 If `standards/` is absent or empty, the P-1 to P-16 principles in `AGENTS.md`
@@ -287,7 +287,7 @@ Common failure modes:
 - An ADR documents a consequence that the diff does not actually produce.
 
 **8b — Structured file entries must conform to their schema.**
-For any entry added to a structured JSON file (`standards/adrs.json`,
+For any entry added to a structured JSON file (`adrs/adrs.json`,
 `pipeline/pipeline.json`, `standards/*.json`, etc.), locate and read the
 corresponding schema:
 

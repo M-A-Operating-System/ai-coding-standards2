@@ -316,7 +316,7 @@ Show each fully-drafted standard in readable form:
 - **`false`** — reserved for absolute invariants no business reason could ever
   waive: secrets, RLS/auth, injection & output sanitisation, fail-closed,
   migration safety, regulated PII. Worded with no exception clause.
-- **`true`** — everything else. A project ADR in `standards/adrs.json` citing the
+- **`true`** — everything else. A project ADR in `adrs/adrs.json` citing the
   `id` in `authorises_exception_to` waives a specific violation. The standard
   stays hard-worded; the ADR is the only escape hatch.
 
@@ -522,7 +522,7 @@ gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
 
 ---
 _To waive a specific violation of any standard, add a project ADR to
-`standards/adrs.json` citing the STD ID in `authorises_exception_to`._
+`adrs/adrs.json` citing the STD ID in `authorises_exception_to`._
 EOF
 )"
 ```
@@ -559,7 +559,7 @@ deterministic gate.
   RLS/auth, injection & output sanitisation, fail-closed, migration safety,
   regulated PII. No exception clause in the wording.
 - **`true`** — firm rules a documented business reason could waive once, via a
-  project ADR in `standards/adrs.json` whose `authorises_exception_to` cites the
+  project ADR in `adrs/adrs.json` whose `authorises_exception_to` cites the
   `id`. The rule stays hard-worded; the ADR is the only escape hatch.
 
 ---
