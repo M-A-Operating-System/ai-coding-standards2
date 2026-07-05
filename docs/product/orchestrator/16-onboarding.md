@@ -50,8 +50,8 @@ bootstrap):
 | Install workflows | Copies orchestrator and sync workflows into `.github/workflows/`, inserting `submodules: true` into checkout steps |
 | Install standards | On Linux/macOS: creates a single directory symlink `standards → submodule/standards`. On Windows: copies the tree. Standards are framework-owned and read verbatim |
 | Install ADRs | Seeds a project-owned `adrs/adrs.json` (once, never overwritten). ADRs live in their own local folder — outside the symlinked `standards/` — so `standards/` can be a whole-folder symlink |
-| Install Claude setup | On Linux/macOS: creates a single directory symlink `.claude → submodule/.claude`, so the consuming repo inherits its ENTIRE Claude Code setup (agents, slash commands, `AGENTS.md`, `settings.json`) from the submodule. On Windows: copies the tree. The parent keeps no Claude config of its own |
-| Install local config | Seeds `.ai-agile.settings.json` at the repo root (once, never overwritten) — the one local config file, read by the orchestrator. `AI_AGILE_ROOT` is carried by the inherited `.claude/settings.json`, so no per-repo settings file is needed for it |
+| Install Claude setup | On Linux/macOS: creates a single directory symlink `.claude → submodule/.claude`, so the consuming repo inherits its ENTIRE Claude Code setup (agents, slash commands, `AGENTS.md`, `settings.json`) from the submodule. On Windows: copies the tree. The parent keeps no Claude config of its own. **The run fails** if the consuming repo already has its own real `.claude` directory (it will not be silently deleted) — back it up and remove it, or set `AI_AGILE_REPLACE_CLAUDE=1` to replace it deliberately |
+| Install local config | Seeds `.ai-agile.settings.json` at the repo root (once, never overwritten) — a reserved local config surface for per-project overrides. Nothing reads it yet; orchestrator support is deferred (#217). `AI_AGILE_ROOT` is carried by the inherited `.claude/settings.json` (for interactive Claude Code sessions) and set by the workflow env in CI, so no per-repo config is needed for it |
 | Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`) so they are not committed as normal files; the setup job force-commits the symlink blobs. `adrs/` and `.ai-agile.settings.json` are NOT gitignored — they stay committed |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
@@ -205,7 +205,7 @@ The orchestrator resolves two kinds of path, from two different roots:
 | Root | How it is derived | Used for |
 |---|---|---|
 | `SUBMODULE_ROOT` | From `__file__` (the location of `pipeline_orchestrator.py`), **never** from an env var | The framework's own files: agent prompts (`.claude/agents/*.md`), agent scripts, `status.sh`, `AGENTS.md`, `pipeline.json` |
-| `AI_AGILE_ROOT` env var | The consuming repo root (set to `${{ github.workspace }}` by the installed `orchestrator.yml`; falls back to `SUBMODULE_ROOT` when unset) | Repo-root data and runtime markers: `standards/`, the `.pipeline-stop` / `.pipeline-pause` markers, and the value passed to each agent subprocess |
+| `AI_AGILE_ROOT` env var | The consuming repo root (set to `${{ github.workspace }}` by the installed `orchestrator.yml`; falls back to `SUBMODULE_ROOT` when unset) | Repo-root data and runtime markers: the `standards/` symlink, the local `adrs/adrs.json`, the `.pipeline-stop` / `.pipeline-pause` markers, and the value passed to each agent subprocess |
 
 The split is what makes the framework self-contained: because agent
 prompts, scripts, and `status.sh` always resolve from `SUBMODULE_ROOT`, the

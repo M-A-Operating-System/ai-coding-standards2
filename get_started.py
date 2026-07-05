@@ -485,13 +485,16 @@ def install_ai_agile_settings(
     This is the consuming repo's single local config surface for the framework
     -- the one AI Agile file it owns. It lives OUTSIDE the symlinked `.claude/`
     and `standards/` folders precisely so those can be whole-folder symlinks.
-    It is read by the orchestrator (not by Claude Code, which does not read
-    custom-named settings files).
+
+    NOTE: this file is a reserved surface for per-project overrides. Nothing
+    reads it yet -- orchestrator support is deferred (see issue #217), and it is
+    NOT a Claude Code settings file (Claude Code does not read custom-named
+    files). `AI_AGILE_ROOT` is provided separately: interactive Claude Code
+    sessions get it from the inherited `.claude/settings.json`, and CI sets it in
+    the workflow env; the orchestrator otherwise reads it from the process
+    environment (falling back to `SUBMODULE_ROOT`).
 
     Seeded once and never overwritten, so project settings survive every sync.
-    `AI_AGILE_ROOT` is carried by the inherited `.claude/settings.json` and the
-    orchestrator auto-detects the consuming root, so this file holds only
-    optional per-project overrides.
     """
     dst = consuming_root / ".ai-agile.settings.json"
     if dst.exists():
@@ -792,6 +795,38 @@ def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
     print_followup_seed()
 
 
+def _guard_existing_claude(consuming_root: Path) -> None:
+    """Refuse to clobber a consuming repo's own `.claude` directory.
+
+    The framework installs `.claude` as a whole-folder symlink into the
+    submodule, so the consuming repo keeps no Claude config of its own -- and
+    the symlink install would `rmtree` a real `.claude` that got in the way.
+    Most repos that use Claude Code already have a `.claude/` (settings, hooks,
+    commands), so deleting it silently would lose the developer's files.
+
+    Fail the run (exit non-zero, which fails the Onboard/sync job) if a real,
+    non-symlink `.claude` exists and was not created by a prior get_started run
+    (a prior managed install leaves a `.claude/agents` symlink). Set
+    `AI_AGILE_REPLACE_CLAUDE=1` to replace it deliberately.
+    """
+    dst = consuming_root / ".claude"
+    if not dst.is_dir() or dst.is_symlink():
+        return  # missing, or already the framework's symlink -- nothing to guard
+    if (dst / "agents").is_symlink():
+        return  # a prior get_started-managed install -- safe to convert
+    if os.environ.get("AI_AGILE_REPLACE_CLAUDE") == "1":
+        print("  WARNING  replacing existing .claude (AI_AGILE_REPLACE_CLAUDE=1 set)")
+        return
+    sys.exit(
+        f"ERROR: {dst} already exists as a real directory in the consuming repo.\n"
+        "  AI Agile installs .claude as a whole-folder symlink into the\n"
+        "  ai-coding-standards2 submodule, so the consuming repo keeps no Claude\n"
+        "  config of its own. Refusing to delete your existing .claude.\n"
+        "  Back up or remove it and re-run, or set AI_AGILE_REPLACE_CLAUDE=1 to\n"
+        "  replace it deliberately."
+    )
+
+
 def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     """Full mode (default / --force): install the COMPLETE managed file set.
 
@@ -803,6 +838,10 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     step is one install_* function; the order is stable so the printed log reads
     top-to-bottom.
     """
+    # Pre-flight: refuse to clobber a consuming repo's own .claude. Runs before
+    # any writes so a rejected onboard leaves no partial state.
+    _guard_existing_claude(consuming_root)
+
     install_orchestrator_workflows(consuming_root, force, dry_run)
     install_bootstrap_labels_workflow(consuming_root, force, dry_run)
     install_label_cleanup_workflow(consuming_root, force, dry_run)

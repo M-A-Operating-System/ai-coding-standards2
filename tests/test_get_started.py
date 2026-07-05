@@ -1248,3 +1248,50 @@ class TestDryRunStaleRemoval:
         out = capsys.readouterr().out
         assert "WOULD REMOVE" in out
         assert stale.exists()  # dry-run must not delete
+
+
+# ---------------------------------------------------------------------------
+# TestGuardExistingClaude — refuse to clobber a consuming repo's own .claude
+# ---------------------------------------------------------------------------
+
+class TestGuardExistingClaude:
+    def test_fails_on_foreign_claude_dir(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("AI_AGILE_REPLACE_CLAUDE", raising=False)
+        consuming = tmp_path / "consuming"
+        (consuming / ".claude").mkdir(parents=True)
+        (consuming / ".claude" / "settings.json").write_text("{}")  # parent's own config
+
+        with pytest.raises(SystemExit) as exc:
+            get_started._guard_existing_claude(consuming)
+        assert ".claude" in str(exc.value)
+
+    def test_passes_when_missing(self, tmp_path):
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        get_started._guard_existing_claude(consuming)  # no exception
+
+    def test_passes_when_already_symlink(self, tmp_path):
+        """A re-run where .claude is already the framework's symlink is fine."""
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        target = tmp_path / "submodule" / ".claude"
+        target.mkdir(parents=True)
+        os.symlink(os.path.relpath(target, consuming), consuming / ".claude")
+        get_started._guard_existing_claude(consuming)  # no exception
+
+    def test_passes_for_prior_managed_install(self, tmp_path):
+        """An old-style managed .claude (real dir with a .claude/agents symlink)
+        is safe to convert, so the guard allows it."""
+        consuming = tmp_path / "consuming"
+        (consuming / ".claude").mkdir(parents=True)
+        agents_target = tmp_path / "submodule" / ".claude" / "agents"
+        agents_target.mkdir(parents=True)
+        os.symlink(agents_target, consuming / ".claude" / "agents")
+        get_started._guard_existing_claude(consuming)  # no exception
+
+    def test_bypass_env_allows_replacement(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AI_AGILE_REPLACE_CLAUDE", "1")
+        consuming = tmp_path / "consuming"
+        (consuming / ".claude").mkdir(parents=True)
+        (consuming / ".claude" / "settings.json").write_text("{}")
+        get_started._guard_existing_claude(consuming)  # no exception

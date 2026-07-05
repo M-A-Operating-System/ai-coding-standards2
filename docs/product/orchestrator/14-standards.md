@@ -7,32 +7,37 @@ commit messages, and PR findings.
 
 ---
 
-## Two-tier scope
+## Scope
 
-Standards exist at two scopes. Scope is declared explicitly in the JSON file
-header (`"scope": "org"` or `"scope": "project"`).
+Standards are **defined centrally**: the framework (the ai-coding-standards2
+submodule) owns them, and a consuming repo inherits them via the whole-folder
+`standards/` symlink.
 
 | Scope | Canonical source | On-disk in a consuming repo | Who owns it | Purpose |
 |-------|-----------------|------------------------------|-------------|---------|
-| **org** | `ai-coding-standards2/standards/*.json` (submodule) | `{project-root}/standards/` (symlinked into the submodule by `get_started.py` on Linux/macOS, copied on Windows; kept live by `sync-claude.yml`) | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
-| **project** | `{project-root}/standards/*.json` | `{project-root}/standards/` (same directory) | Project tech lead | Rules specific to this project's stack, domain, or team conventions — always additive |
+| **org** | `ai-coding-standards2/standards/*.json` (submodule) | `{project-root}/standards` — a whole-folder symlink into the submodule (copied on Windows), kept live by `sync-claude.yml` | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
 
-After `get_started.py` runs, both tiers are co-located in the consuming repo's
-`standards/` directory. The `"scope"` field in each file's JSON header is the
-authoritative indicator of which tier a file belongs to.
+A consuming repo does **not** add its own standards files. `standards/` is a
+symlink into the submodule, so there is nowhere project-local to put one, and
+the sync would not preserve it. The single per-project mechanism is a **project
+ADR** (see below), which records an exception to a centrally-defined standard.
 
-**Rules governing the two tiers:**
+> The schema's `scope` field still permits `"project"`, and older installs may
+> carry project standards files. Retiring the project-standards tier from the
+> schema and validator — and cleaning the central `standards/` contents — is
+> tracked in #216. Under the whole-folder symlink model, **only org standards
+> are supported**; project-specific needs are expressed as project ADRs.
 
-- Org standard files are re-seeded by the daily `sync-claude.yml` sync. Do not
-  modify them directly in the consuming repo — changes will be overwritten. Add
-  project-specific files instead.
-- Project standards extend the org set. They may not redeclare an org STD ID
-  at a different enforcement level.
+**Rules:**
+
+- Org standard files are owned by the framework and live in the submodule. The
+  symlink points at the submodule, so there is nothing local to edit — change a
+  standard by opening a PR against ai-coding-standards2.
 - A project that needs to waive an org standard for specific code writes a
   **project ADR** citing the org STD ID. This is the only mechanism for
   per-project exceptions.
-- Agents load all standards from `${AI_AGILE_ROOT}/standards/` in one pass.
-  Both tiers are enforced — a violation against either raises a finding.
+- Agents load all standards from `${AI_AGILE_ROOT}/standards/` in one pass; a
+  violation of any of them raises a finding.
 
 ---
 
@@ -93,12 +98,13 @@ Every standards file (`StandardsFile`) carries:
 
 ## ADR scope
 
-ADRs follow the same two-tier pattern.
+ADRs exist at two scopes: org ADRs live in the submodule, project ADRs in the
+consuming repo's local `adrs/` folder.
 
 | Scope | Location | Can waive |
 |-------|----------|-----------|
-| **org** | `ai-coding-standards2/standards/adrs.json` | Org `adr_overridable: true` standards only |
-| **project** | `{project-root}/adrs/adrs.json` (local folder, outside the symlinked `standards/`) | Org or project `adr_overridable: true` standards |
+| **org** | `ai-coding-standards2/standards/adrs.json` | Org `adr_overridable: true` standards |
+| **project** | `{project-root}/adrs/adrs.json` (local folder, outside the symlinked `standards/`) | Org `adr_overridable: true` standards (there are no project standards to waive under the whole-folder model) |
 
 Every ADR entry requires:
 
