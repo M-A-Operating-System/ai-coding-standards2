@@ -20,9 +20,8 @@ the source of most onboarding confusion, so read this before changing it.
   (default) / --force    -> run_full()  -> installs the COMPLETE managed set:
                                             all workflows, the whole-.claude
                                             symlink, the standards symlink, the
-                                            local adrs/ folder and
-                                            .ai-agile.settings.json,
-                                            requirements, .gitignore.
+                                            local adrs/ folder, requirements,
+                                            .gitignore.
 
 The two modes are two steps of ONE onboarding flow:
 
@@ -43,16 +42,15 @@ What run_full() installs, in order (each is one install_* function below):
     orchestrator.yml, bootstrap-labels.yml, label-cleanup.yml,
     sync-claude.yml, pipeline-emergency-stop.yml, pipeline-restart.yml,
     the standards/ symlink, the local adrs/ folder, the whole-.claude symlink,
-    .ai-agile.settings.json, requirements.txt, .gitignore entries, and
-    untracking of any previously-committed managed paths.
+    requirements.txt, .gitignore entries, and untracking of any
+    previously-committed managed paths.
 
 The consuming repo inherits its ENTIRE Claude Code setup from the submodule:
 `.claude` and `standards` are whole-folder symlinks into it (copies on
-Windows). The only files the consuming repo owns are OUTSIDE those folders:
-`adrs/` (project ADRs) and `.ai-agile.settings.json` (local config). Workflows
-still get submodule-relative path rewrites applied on copy; agents and slash
-commands are read verbatim (commands already try both standalone and submodule
-paths, so they need no rewriting).
+Windows). The only thing the consuming repo owns is OUTSIDE those folders:
+`adrs/` (project ADRs). Workflows still get submodule-relative path rewrites
+applied on copy; agents and slash commands are read verbatim (commands already
+try both standalone and submodule paths, so they need no rewriting).
 
 Options:
     --seed       SEED mode: copy only orchestrator.yml + .gitignore, then
@@ -476,43 +474,6 @@ def install_restart_workflow(consuming_root: Path, force: bool, dry_run: bool) -
     )
 
 
-def install_ai_agile_settings(
-    consuming_root: Path,
-    dry_run: bool,
-) -> bool:
-    """Seed .ai-agile.settings.json at the consuming repo root.
-
-    This is the consuming repo's single local config surface for the framework
-    -- the one AI Agile file it owns. It lives OUTSIDE the symlinked `.claude/`
-    and `standards/` folders precisely so those can be whole-folder symlinks.
-
-    NOTE: this file is a reserved surface for per-project overrides. Nothing
-    reads it yet -- orchestrator support is deferred (see issue #217), and it is
-    NOT a Claude Code settings file (Claude Code does not read custom-named
-    files). `AI_AGILE_ROOT` is provided separately: interactive Claude Code
-    sessions get it from the inherited `.claude/settings.json`, and CI sets it in
-    the workflow env; the orchestrator otherwise reads it from the process
-    environment (falling back to `SUBMODULE_ROOT`).
-
-    Seeded once and never overwritten, so project settings survive every sync.
-    """
-    dst = consuming_root / ".ai-agile.settings.json"
-    if dst.exists():
-        print(f"  KEEP   {dst}  (project-owned; not overwritten by sync)")
-        return False
-    payload = {
-        "_comment": (
-            "Local AI Agile config for this repo, owned by the project and "
-            "never overwritten by sync. The framework (agents, commands, "
-            "standards, settings) is inherited from the ai-coding-standards2 "
-            "submodule via symlinks; put per-project overrides here."
-        ),
-        "overrides": {},
-    }
-    print(f"  Local AI Agile settings: -> {dst}")
-    return write_file(dst, json.dumps(payload, indent=2) + "\n", force=False, dry_run=dry_run)
-
-
 def install_requirements(
     consuming_root: Path,
     dry_run: bool,
@@ -582,8 +543,8 @@ def add_gitignore_entries(
       - .claude     -- whole-folder symlink into the submodule
       - standards   -- whole-folder symlink into the submodule
 
-    Project-owned artifacts are intentionally NOT gitignored so they stay
-    committed: adrs/ (project ADRs) and .ai-agile.settings.json (local config).
+    The project-owned adrs/ folder is intentionally NOT gitignored so it stays
+    committed.
 
     ``include_standards`` should be False in --seed mode because the standards
     symlink has not been created yet; listing it before it exists confuses
@@ -833,8 +794,8 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     This is what the Onboard job in orchestrator.yml runs (get_started.py
     --force), and what the daily sync-claude.yml workflow runs to repair drift.
     It lays down every workflow, the whole `.claude` symlink, the `standards`
-    symlink, the local `adrs/` folder and `.ai-agile.settings.json`, and
-    requirements -- everything a consuming repo needs to run the pipeline. Each
+    symlink, the local `adrs/` folder, and requirements -- everything a
+    consuming repo needs to run the pipeline. Each
     step is one install_* function; the order is stable so the printed log reads
     top-to-bottom.
     """
@@ -851,7 +812,6 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
     install_claude(consuming_root, force, dry_run)
-    install_ai_agile_settings(consuming_root, dry_run)
     install_requirements(consuming_root, dry_run)
     add_gitignore_entries(consuming_root, dry_run)
     untrack_managed_paths(consuming_root, dry_run)

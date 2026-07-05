@@ -12,10 +12,10 @@ standards. The consuming repo adds only a thin workflow file and two
 secrets — it does not define, fork, or maintain the framework's moving
 parts. This repo is the single, authoritative source for the pipeline, the
 orchestrator, the agents, the gates, and the standards. Standards are
-defined centrally here; the only things a project owns locally are its **ADRs**
+defined centrally here; the only thing a project owns locally is its **ADRs**
 — the architecture decisions and standard-exceptions it records in its own
-`adrs/adrs.json` — and its `.ai-agile.settings.json`, both seeded once and never
-overwritten (see [14-standards.md](docs/product/orchestrator/14-standards.md)).
+`adrs/adrs.json`, seeded once and never overwritten (see
+[14-standards.md](docs/product/orchestrator/14-standards.md)).
 
 Software teams spend a disproportionate share of their time on the
 connective tissue around code: writing PRDs, translating them into designs,
@@ -166,10 +166,9 @@ Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard →
 
 The workflow checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the whole-folder `.claude` and `standards`
-symlinks, seeds the local `adrs/` folder and `.ai-agile.settings.json`, drops
-the remaining workflow files (`sync-claude.yml`, `bootstrap-labels.yml`,
-`label-cleanup.yml`, `pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and
-commits everything.
+symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
+(`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
+`pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and commits everything.
 
 After it completes, open an issue with a problem statement and acceptance
 criteria. The workflow fires on `issues.opened`; expect labels
@@ -230,7 +229,7 @@ git commit -m "Refresh ai-coding-standards2 wrapper files"
 
 The `.claude` and `standards` symlinks are managed by the daily
 `sync-claude.yml` workflow and should not be committed manually. Your local
-`adrs/` and `.ai-agile.settings.json` are yours — never overwritten by sync.
+`adrs/` folder is yours — never overwritten by sync.
 
 Compare the diff between tags to know whether re-running is
 needed. If neither the workflow nor any slash command changed, no

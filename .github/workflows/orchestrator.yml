@@ -104,8 +104,8 @@ jobs:
             .github/workflows/pipeline-restart.yml
 
           # Project-owned artifacts, committed normally (not gitignored):
-          # local ADRs, the local config file, and requirements.txt.
-          git add adrs .ai-agile.settings.json requirements.txt 2>/dev/null || true
+          # local ADRs and requirements.txt.
+          git add adrs requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "OK: Already onboarded -- nothing to commit."

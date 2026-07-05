@@ -16,7 +16,7 @@ common source of onboarding confusion, so read this first.
 | Run | Command | What it installs | Who runs it |
 |---|---|---|---|
 | **Seed** (step 1) | `get_started.py --seed` | **Only** `orchestrator.yml` + `.gitignore` entries. Nothing else. | A developer, locally |
-| **Full** (step 2) | `get_started.py --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder and `.ai-agile.settings.json`, requirements. | The Onboard job, on a Linux runner |
+| **Full** (step 2) | `get_started.py --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder, requirements. | The Onboard job, on a Linux runner |
 
 The two runs are two steps of the same flow: seed drops the one workflow file
 GitHub needs to run the Onboard job; the Onboard job then re-runs the script
@@ -51,8 +51,7 @@ bootstrap):
 | Install standards | On Linux/macOS: creates a single directory symlink `standards → submodule/standards`. On Windows: copies the tree. Standards are framework-owned and read verbatim |
 | Install ADRs | Seeds a project-owned `adrs/adrs.json` (once, never overwritten). ADRs live in their own local folder — outside the symlinked `standards/` — so `standards/` can be a whole-folder symlink |
 | Install Claude setup | On Linux/macOS: creates a single directory symlink `.claude → submodule/.claude`, so the consuming repo inherits its ENTIRE Claude Code setup (agents, slash commands, `AGENTS.md`, `settings.json`) from the submodule. On Windows: copies the tree. The parent keeps no Claude config of its own. **The run fails** if the consuming repo already has its own real `.claude` directory (it will not be silently deleted) — back it up and remove it, or set `AI_AGILE_REPLACE_CLAUDE=1` to replace it deliberately |
-| Install local config | Seeds `.ai-agile.settings.json` at the repo root (once, never overwritten) — a reserved local config surface for per-project overrides. Nothing reads it yet; orchestrator support is deferred (#217). `AI_AGILE_ROOT` is carried by the inherited `.claude/settings.json` (for interactive Claude Code sessions) and set by the workflow env in CI, so no per-repo config is needed for it |
-| Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`) so they are not committed as normal files; the setup job force-commits the symlink blobs. `adrs/` and `.ai-agile.settings.json` are NOT gitignored — they stay committed |
+| Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`) so they are not committed as normal files; the setup job force-commits the symlink blobs. The `adrs/` folder is NOT gitignored — it stays committed |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 
@@ -70,7 +69,7 @@ on a Linux runner to keep managed paths in sync.
 |---|---|---|
 | `.claude` | Whole-folder directory symlink into the submodule — committed by the setup job as a tiny git blob; gitignored as a normal path | Full copy of the tree — gitignored, committed by the setup job |
 | `standards` | Whole-folder directory symlink into the submodule — committed by the setup job; gitignored as a normal path | Full copy of the tree — gitignored, committed by the setup job |
-| `adrs/`, `.ai-agile.settings.json` | Real local files, committed normally (never symlinked, never overwritten) | Real local files, committed normally |
+| `adrs/` | Real local folder, committed normally (never symlinked, never overwritten) | Real local folder, committed normally |
 | Bootstrap path | `--seed` commit → trigger setup job | `--seed` commit → trigger setup job |
 
 ### Why the split?
@@ -86,10 +85,10 @@ The daily sync-claude.yml workflow rebuilds the symlinks on every Linux runner r
 > is checked out. A developer who clones the parent repo without the submodule
 > will see dangling `.claude` / `standards` links and **no agents in Claude
 > Code's `/agents` view** until they run `git submodule update --init` (or cloned
-> with `git clone --recurse-submodules`). The local `adrs/` and
-> `.ai-agile.settings.json` are real files and work without the submodule. CI is
-> unaffected — the orchestrator reads the framework straight from the submodule
-> and every workflow checkout uses `submodules: true`.
+> with `git clone --recurse-submodules`). The local `adrs/` folder is a real
+> folder and works without the submodule. CI is unaffected — the orchestrator
+> reads the framework straight from the submodule and every workflow checkout
+> uses `submodules: true`.
 
 ---
 
@@ -127,12 +126,12 @@ Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard →
 
 The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the whole-folder `.claude` and `standards`
-symlinks, seeds the local `adrs/` folder and `.ai-agile.settings.json`, drops
-the remaining workflow files (`sync-claude.yml`, `bootstrap-labels.yml`,
-`label-cleanup.yml`, `pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and
-commits everything directly to the default branch (or to an `ai-standards-setup`
-branch if branch protection rules block a direct push — in that case, open a PR
-from that branch).
+symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
+(`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
+`pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and commits everything
+directly to the default branch (or to an `ai-standards-setup` branch if branch
+protection rules block a direct push — in that case, open a PR from that
+branch).
 
 The `pipeline-emergency-stop.yml` / `pipeline-restart.yml` pair is the
 operator kill switch: emergency-stop writes a `.pipeline-stop` marker (which
@@ -182,8 +181,7 @@ These are the whole-folder symlinks; gitignoring them keeps them from being
 committed as normal files (and stops Windows copies being committed by hand).
 The setup job and `sync-claude.yml` use `git add -f` to override `.gitignore`
 when committing the symlink blobs on behalf of the bot. The project-owned
-`adrs/` folder and `.ai-agile.settings.json` are **not** gitignored — they are
-committed normally.
+`adrs/` folder is **not** gitignored — it is committed normally.
 
 ---
 
@@ -241,9 +239,8 @@ config of its own. Together these make the framework a single, authoritative
 definition of the agentic SDLC: drop the submodule in, and the parent inherits
 the whole pipeline, agents, and gates without forking the framework locally.
 (Standards are defined centrally here too — the framework owns them and a
-project does not add its own. The only locally-owned artifacts are the project's
-ADRs in `adrs/adrs.json` and its `.ai-agile.settings.json`, both seeded once and
-never overwritten.)
+project does not add its own. The only locally-owned artifact is the project's
+ADRs in `adrs/adrs.json`, seeded once and never overwritten.)
 
 To change an agent, change it here — open a PR against this repo, or pin the
 parent's submodule to a fork you control. Both routes keep the parent repo's

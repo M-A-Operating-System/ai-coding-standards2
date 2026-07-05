@@ -10,9 +10,8 @@ name: Sync AI Agile .claude directory
 # inherit the framework's Claude setup and standards without running
 # get_started.py. The parent keeps no Claude config of its own.
 #
-# The consuming repo's own files -- adrs/ (project ADRs) and
-# .ai-agile.settings.json (local config) -- live OUTSIDE the symlinked
-# folders and are never overwritten by sync.
+# The consuming repo's own files -- adrs/ (project ADRs) -- live OUTSIDE the
+# symlinked folders and are never overwritten by sync.
 #
 # The .claude and standards paths are listed in .gitignore (so Windows file
 # copies are not committed by hand). The workflow uses `git add -f` to
@@ -88,7 +87,7 @@ jobs:
             .github/workflows/sync-claude.yml
 
           # Project-owned artifacts, committed normally (not gitignored).
-          git add adrs .ai-agile.settings.json requirements.txt 2>/dev/null || true
+          git add adrs requirements.txt 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "OK: .claude is already in sync with the submodule -- nothing to commit."

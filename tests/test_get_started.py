@@ -747,70 +747,9 @@ class TestInstallOrchestratorWorkflows:
         assert existing.read_text() == "original content"
 
 
-# ---------------------------------------------------------------------------
-# TestInstallSlashCommands
-# ---------------------------------------------------------------------------
-
-class TestInstallAiAgileSettings:
-    """Slash commands and settings now arrive via the whole-.claude symlink;
-    the only generated local config is .ai-agile.settings.json at the repo root."""
-
-    def test_seeds_local_config(self, tmp_path, monkeypatch):
-        import json
-        fake_src = tmp_path / "submodule"
-        fake_src.mkdir()
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_ai_agile_settings(consuming, dry_run=False)
-
-        assert result is True
-        dst = consuming / ".ai-agile.settings.json"
-        assert dst.exists()
-        data = json.loads(dst.read_text())
-        assert "overrides" in data
-
-    def test_lives_outside_dot_claude(self, tmp_path, monkeypatch):
-        """The local config must sit at the repo root, not inside the symlinked
-        .claude/, so .claude can be a whole-folder symlink."""
-        fake_src = tmp_path / "submodule"
-        fake_src.mkdir()
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        get_started.install_ai_agile_settings(consuming, dry_run=False)
-
-        assert (consuming / ".ai-agile.settings.json").exists()
-        assert not (consuming / ".claude" / "settings.local.json").exists()
-
-    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        fake_src.mkdir()
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_ai_agile_settings(consuming, dry_run=True)
-
-        assert result is True
-        assert not (consuming / ".ai-agile.settings.json").exists()
-
-    def test_never_overwritten(self, tmp_path, monkeypatch):
-        """Project-owned: never overwritten once it exists, so local config survives sync."""
-        fake_src = tmp_path / "submodule"
-        fake_src.mkdir()
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-        dst = consuming / ".ai-agile.settings.json"
-        dst.write_text('{"overrides": {"custom": true}}')
-
-        result = get_started.install_ai_agile_settings(consuming, dry_run=False)
-
-        assert result is False
-        assert '"custom"' in dst.read_text()
+# TestInstallSlashCommands / TestInstallLocalSettings retired: slash commands and
+# settings now arrive via the whole-.claude symlink, and there is no generated
+# local config file (the consuming repo owns only its adrs/ folder).
 
 
 # ---------------------------------------------------------------------------
@@ -844,8 +783,8 @@ class TestAddGitignoreEntries:
         assert ".claude/settings.local.json" not in text
         assert "standards/architecture.json" not in text
 
-    def test_excludes_project_owned_artifacts(self, tmp_path, monkeypatch):
-        """adrs/ and .ai-agile.settings.json are project-owned and stay committed."""
+    def test_excludes_project_owned_adrs(self, tmp_path, monkeypatch):
+        """The adrs/ folder is project-owned and stays committed (not gitignored)."""
         fake_src = self._make_submodule(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
@@ -855,7 +794,6 @@ class TestAddGitignoreEntries:
 
         text = (consuming / ".gitignore").read_text()
         assert "adrs" not in text.split()
-        assert ".ai-agile.settings.json" not in text
 
     def test_seed_mode_omits_standards(self, tmp_path, monkeypatch):
         fake_src = self._make_submodule(tmp_path)
