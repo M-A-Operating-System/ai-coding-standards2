@@ -1,54 +1,60 @@
 {
-  "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
+  "$schema": "../pipeline/schemas/standards.schema.json",
   "version": "1.0",
-  "scope": "project",
+  "scope": "org",
   "category": "security",
-  "description": "Project-specific security standards for master-model-maven, written principle-first so the rule is portable and the project mechanism is the example (access control, output encoding, input validation, secrets, least privilege, dependency pinning & vulnerability scanning, security-event logging, file-upload validation, SSRF). Checked by the pr-reviewer agent against every diff. All are non-overridable except STD-SEC-017 (dependency vulnerability scanning).",
+  "description": "Org-level security standards: authentication, authorization, input validation, output encoding, secret handling, dependency hygiene, and safe server behaviour that apply to every project installing AI Agile.",
   "standards": [
     {
       "id": "STD-SEC-001",
-      "title": "Role-checking SQL functions use SECURITY DEFINER and a fixed search_path",
-      "description": "Any SQL function that performs a role/authorization check (e.g. has_role) must be declared SECURITY DEFINER, must SET search_path to an explicit schema (e.g. 'public'), and is marked STABLE.",
-      "rationale": "SECURITY DEFINER lets the check bypass the caller's RLS to read the roles table; the explicit search_path prevents search_path-injection exploits that could shadow the intended objects. Source: docs/AI_INSTRUCTIONS.md §Security Best Practices §1.",
+      "title": "Authorization-check functions run in a fixed, trusted execution context",
+      "description": "Any function that performs a role or authorization check runs in a fixed, trusted execution context that a caller cannot subvert: it does not resolve names, permissions, or state through caller-controlled configuration, and cannot be tricked into running privileged logic in an attacker-influenced scope.",
+      "rationale": "Authorization logic that resolves through caller-controlled context (mutable resolution paths, shadowable names, session settings) can be subverted to escalate privilege; pinning the execution context closes that class of attack.",
       "acceptance_criteria": [
-        "Every new or modified role/authorization-checking SQL function in the diff declares SECURITY DEFINER.",
-        "Every such function declares `SET search_path TO 'public'` (or the explicit intended schema).",
-        "No authorization function in the diff relies on the caller's ambient search_path."
+        "Authorization-check functions in the diff pin their execution context and do not depend on caller-controlled configuration to resolve names, permissions, or state.",
+        "No authorization function can be redirected to attacker-controlled definitions via a mutable resolution path."
       ],
       "anti_patterns": [
-        "A `has_role`-style function without `SECURITY DEFINER`.",
-        "A SECURITY DEFINER function with no `SET search_path`, leaving it open to search_path shadowing."
+        "An authorization-check function that resolves referenced objects through a caller-controllable resolution path or mutable session setting."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Security Best Practices §1"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-002",
-      "related": ["STD-DATA-001", "STD-DATA-016"],
-      "title": "Enable RLS on every base table with role-gated write policies",
-      "description": "Every base table must have ROW LEVEL SECURITY enabled, regardless of schema or module. Read access is granted via an authenticated SELECT policy (or a narrower scope where required); INSERT/UPDATE/DELETE policies must check an appropriate write-tier role via public.has_role(auth.uid(), '<role>'::app_role) (role names follow STD-DATA-016). has_role checks are exact-match — each qualifying role is listed explicitly; there is no implicit tier hierarchy.",
-      "rationale": "A base table without RLS is readable/writable by anyone authenticated; unguarded write policies (`USING (true)`) defeat RBAC. Writes flow through public views to base tables where RLS is enforced. Source: docs/AI_INSTRUCTIONS.md §3 and §Security 4; survey threat-model §0.1. See also STD-DATA-001 (migration checklist), STD-DATA-016 (role naming).",
+      "related": [
+        "STD-DATA-001",
+        "STD-DATA-016"
+      ],
+      "title": "Enforce record-level authorization at the data layer",
+      "description": "Access to stored records is authorized at the data layer -- record/row-level access controls enforced by the data store or data-access layer -- not solely by application code. Read and write access is gated by the caller's identity and role, default-deny. (Row-level security policies are one such mechanism.)",
+      "rationale": "Authorization enforced only in application code is bypassed by any path that reaches the data directly; enforcing it at the data layer makes it hold regardless of the caller.",
       "acceptance_criteria": [
-        "Every `CREATE TABLE` for a base table in the diff is followed by `ENABLE ROW LEVEL SECURITY`, regardless of schema.",
-        "Each write policy (INSERT/UPDATE/DELETE) in the diff checks a write-tier role via `public.has_role(auth.uid(), '<role>')`, not `USING (true)`, and lists each qualifying role explicitly.",
-        "Read access is granted via an authenticated SELECT policy (or narrower); write grants target the base table."
+        "Every stored entity in the diff is protected by record/row-level access controls at the data layer, default-deny.",
+        "Write access is gated by the caller's role at the data layer, not only in application code."
       ],
       "anti_patterns": [
-        "A new base table in any schema with no `ENABLE ROW LEVEL SECURITY`.",
-        "`CREATE POLICY \"Anyone can update\" ON <table> FOR UPDATE TO authenticated USING (true)`.",
-        "A write policy that assumes one role implies another rather than listing each qualifying role."
+        "A table or collection whose access is enforced only by application code, with no record-level authorization at the data layer."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Critical Architectural Rules §3 / Security Best Practices §4"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-003",
-      "related": ["STD-SEC-008", "STD-SEC-009", "STD-SEC-012"],
+      "related": [
+        "STD-SEC-008",
+        "STD-SEC-009",
+        "STD-SEC-012"
+      ],
       "title": "Contextually encode untrusted content at every output boundary",
-      "description": "User-supplied (untrusted) content must be neutralised for the context it is written into — choose the encoder that matches the sink. This standard governs the HTML and email-header sinks: HTML output (web or email body) escapes user values via escapeHtml() or the framework's auto-escaping (never raw interpolation or dangerouslySetInnerHTML with unescaped content); email subjects/headers strip CR/LF via safeHeaderField() and are built through the templating library, never string concatenation. Other sinks follow the same principle under their own standards — PDFs/reports (STD-SEC-008), error responses (STD-SEC-009), exports incl. SQL/URL (STD-SEC-012).",
-      "rationale": "Untrusted content interpreted in the wrong context is the root of injection (XSS, email header injection, phishing); encoding for the specific sink neutralises it, and the correct defence is always contextual. Source: CLAUDE.md §Architecture Rules; survey threat-model §6.",
+      "description": "User-supplied (untrusted) content must be neutralised for the context it is written into \u2014 choose the encoder that matches the sink. This standard governs the HTML and email-header sinks: HTML output (web or email body) escapes user values via escapeHtml() or the framework's auto-escaping (never raw interpolation or dangerouslySetInnerHTML with unescaped content); email subjects/headers strip CR/LF via safeHeaderField() and are built through the templating library, never string concatenation. Other sinks follow the same principle under their own standards \u2014 PDFs/reports (STD-SEC-008), error responses (STD-SEC-009), exports incl. SQL/URL (STD-SEC-012).",
+      "rationale": "Untrusted content interpreted in the wrong context is the root of injection (XSS, email header injection, phishing); encoding for the specific sink neutralises it, and the correct defence is always contextual.",
       "acceptance_criteria": [
         "Every user-supplied value written into HTML (web or email body) in the diff passes through escapeHtml() or framework auto-escaping, never raw interpolation.",
         "Every value interpolated into an email subject/header in the diff is CR/LF-stripped via safeHeaderField() and built via the templating library, not string concatenation.",
@@ -60,17 +66,19 @@
         "`dangerouslySetInnerHTML` fed unescaped user content."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from CLAUDE.md — Architecture Rules; survey threat-model §6. Sanitisation family: see STD-SEC-008 / STD-SEC-009 / STD-SEC-012."
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-007",
       "title": "Pin all dependencies to exact versions",
-      "description": "Every third-party dependency is pinned to a specific exact version — never a range or an unpinned name — across all package manifests and inline imports, with a committed lockfile. In this project: Deno npm: specifiers carry a full patch version (e.g. npm:react@18.3.1, not npm:react@18 or npm:zod); package.json uses exact versions (no ^/~) and the lockfile is committed.",
-      "rationale": "Unpinned or range dependencies resolve to whatever version is current at build time, introducing supply-chain and reproducibility risk; exact pins make builds deterministic and reviewable. Source: CLAUDE.md §Architecture Rules; OWASP A06.",
+      "description": "Every third-party dependency is pinned to a specific exact version \u2014 never a range or an unpinned name \u2014 across all package manifests and inline imports, with a committed lockfile.",
+      "rationale": "Unpinned or range dependencies resolve to whatever version is current at build time, introducing supply-chain and reproducibility risk; exact pins make builds deterministic and reviewable.",
       "acceptance_criteria": [
         "Every dependency introduced or modified in the diff is pinned to an exact version (no range, no bare name).",
-        "Deno npm: specifiers in the diff include a full patch version (name@x.y.z); package.json entries use exact versions, not ^/~ ranges.",
+        "the server runtime npm: specifiers in the diff include a full patch version (name@x.y.z); package.json entries use exact versions, not ^/~ ranges.",
         "A dependency change in the diff updates and commits the lockfile."
       ],
       "anti_patterns": [
@@ -78,15 +86,19 @@
         "`\"react\": \"^18.3.0\"` (caret range) in package.json instead of an exact version."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from CLAUDE.md — Architecture Rules"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-008",
-      "related": ["STD-SEC-003"],
+      "related": [
+        "STD-SEC-003"
+      ],
       "title": "Treat user content as untrusted when rendering PDFs and reports",
       "description": "Generated PDFs and reports carry user-authored freeform content. The generator must treat that content as untrusted: escape or strip control characters, never execute embedded JavaScript, and never interpolate user content into an executable or markup context unescaped.",
-      "rationale": "Even though PDF renderers are less XSS-prone than HTML email clients, user content in a report is still untrusted input and must be neutralised. Source: survey threat-model §6 (residual risk).",
+      "rationale": "Even though PDF renderers are less XSS-prone than HTML email clients, user content in a report is still untrusted input and must be neutralised.",
       "acceptance_criteria": [
         "User-authored values rendered into a PDF/report in the diff are escaped or sanitised (control characters stripped) before rendering.",
         "No diff path lets user content reach a JavaScript-execution or unescaped-markup context in the report generator.",
@@ -97,35 +109,41 @@
         "A report template that evaluates user-supplied content as script."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from survey threat-model §6 (residual risk)"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-009",
-      "related": ["STD-SEC-003"],
-      "title": "Sanitise all error responses — never leak internals to clients",
-      "description": "Errors surfaced to a client expose only a generic, safe message; internal details — raw exception messages, stack traces, SQL, server internals — are logged server-side but never returned to the client. In this project, Edge Functions return a generic message and log via console.error, and the frontend translates DB errors through formatSupabaseError()/formatError() before display, never rendering raw error text.",
-      "rationale": "Raw error messages and stack/SQL fragments disclose internal structure and aid attackers; users need a translated, safe message. Source: docs/LOVABLE_KNOWLEDGE.md §23 (Error Handling) and §25 (Edge Function error sanitisation).",
+      "related": [
+        "STD-SEC-003"
+      ],
+      "title": "Sanitise all error responses \u2014 never leak internals to clients",
+      "description": "Errors surfaced to a client expose only a generic, safe message; internal details \u2014 raw exception messages, stack traces, SQL, server internals \u2014 are logged server-side but never returned to the client.",
+      "rationale": "Raw error messages and stack/SQL fragments disclose internal structure and aid attackers; users need a translated, safe message.",
       "acceptance_criteria": [
-        "Edge Function error responses in the diff return a generic message (e.g. via errorResponse()) and log details with console.error, not `error.message` to the client.",
+        "server endpoint error responses in the diff return a generic message (e.g. via errorResponse()) and log details with console.error, not `error.message` to the client.",
         "No diff returns a stack trace or SQL string in a client response body.",
-        "Frontend error display in the diff routes through formatSupabaseError()/formatError() (or a provided userMessage), never raw error text."
+        "Frontend error display in the diff routes through formatthe databaseError()/formatError() (or a provided userMessage), never raw error text."
       ],
       "anti_patterns": [
         "`return new Response(JSON.stringify({ error: error.message }), { status: 500 })`.",
         "Rendering a caught Postgres error directly into a toast or page."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §23 / §25 — Error Handling & Sanitisation"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-010",
-      "title": "Validate CORS origins against an allowlist — never a wildcard",
-      "description": "Cross-origin responses use a single, centrally-defined CORS configuration that validates the request Origin against an allowlist, never returns a wildcard `*`, and includes `Vary: Origin`. In this project, every Edge Function imports getCorsHeaders/handleCorsPreflightIfNeeded from _shared/cors.ts and applies them to all responses (success and error); new origins are added only there.",
-      "rationale": "A single validated CORS source prevents unauthorised cross-origin access; wildcard origins open the API to any site, and a missing Vary: Origin enables cache poisoning. Source: docs/LOVABLE_KNOWLEDGE.md §22 (Shared CORS Protection).",
+      "title": "Validate CORS origins against an allowlist \u2014 never a wildcard",
+      "description": "Cross-origin responses use a single, centrally-defined CORS configuration that validates the request Origin against an allowlist, never returns a wildcard `*`, and includes `Vary: Origin`.",
+      "rationale": "A single validated CORS source prevents unauthorised cross-origin access; wildcard origins open the API to any site, and a missing Vary: Origin enables cache poisoning.",
       "acceptance_criteria": [
-        "Edge Function CORS in the diff comes from _shared/cors.ts, not inline header literals.",
+        "server endpoint CORS in the diff comes from _shared/cors.ts, not inline header literals.",
         "No diff sets `Access-Control-Allow-Origin: '*'`.",
         "Origin whitelist changes in the diff are confined to _shared/cors.ts, and responses include Vary: Origin."
       ],
@@ -134,34 +152,42 @@
         "Defining per-function CORS headers instead of importing the shared utility."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §22 — Shared CORS Protection"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-011",
-      "related": ["STD-ARCH-017"],
-      "title": "Default to the authenticated, RLS-respecting client; service-role is a governed exception",
-      "description": "Edge Functions perform data access with the authenticated client (from authenticateRequest) so RLS policies apply. The service-role key is not the default and is reserved for specific, governed server paths (e.g. the signup flow calling entityCrud under service-role per the survey data model) — never used to casually bypass RLS.",
-      "rationale": "Using the RLS-respecting client keeps per-user authorization enforced; ad-hoc service-role usage silently bypasses every policy. The narrow governed exceptions route through entityCrud for audit (see STD-ARCH-017). Source: docs/LOVABLE_KNOWLEDGE.md §25 (rule 4); survey threat-model §1.",
+      "related": [
+        "STD-ARCH-017"
+      ],
+      "title": "Default to least-privilege credentials; elevated credentials are a governed exception",
+      "description": "Data access uses least-privilege, authorization-respecting credentials by default, so access controls apply to every request. Elevated or service-level credentials that bypass those controls are a governed exception -- used only where explicitly required, scoped narrowly, and justified.",
+      "rationale": "Running under least privilege ensures authorization is enforced on every operation; routine use of elevated credentials silently disables those controls.",
       "acceptance_criteria": [
-        "Data access in new Edge Function code in the diff uses the authenticated client from authenticateRequest, not a service-role client, by default.",
-        "Any service-role client use in the diff is a documented governed path (e.g. signup→entityCrud) with an inline justification, not a convenience RLS bypass.",
-        "No diff instantiates a service-role client to read/write user data that the authenticated client could handle under RLS."
+        "Data access in the diff uses the least-privilege, authorization-respecting credentials by default.",
+        "Any use of elevated/service credentials is explicitly justified and scoped to the narrow operation that requires it."
       ],
       "anti_patterns": [
-        "Creating a `createClient(url, SERVICE_ROLE_KEY)` to skip an RLS policy that is merely inconvenient.",
-        "Defaulting a new function to the service role 'to be safe'."
+        "Performing routine data access with an elevated/service credential that bypasses authorization controls."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §25 — Edge Function Standards (rule 4)."
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-012",
-      "related": ["STD-SEC-003", "STD-SEC-008", "STD-SEC-009"],
+      "related": [
+        "STD-SEC-003",
+        "STD-SEC-008",
+        "STD-SEC-009"
+      ],
       "title": "Sanitise and validate all data on export",
-      "description": "Data emitted from the application into an external format (exports, generated SQL/markup/CSV/XML) is sanitised and escaped for that destination: user content in SQL output is escaped or parameterised, URLs are scheme-validated (http/https only), and free text is cleaned of control characters. In this project the export pipeline applies sanitizeCode/Text/Url/Description/Boolean/JsonField and escapeSqlValue(); new export paths must not emit unsanitised user content.",
-      "rationale": "Exports turn stored user content into executable SQL/markup downstream; unsanitised values enable SQL injection and malformed output. Source: docs/LOVABLE_KNOWLEDGE.md §19 (Export System — Security Features).",
+      "description": "Data emitted from the application into an external format (exports, generated SQL/markup/CSV/XML) is sanitised and escaped for that destination: user content in SQL output is escaped or parameterised, URLs are scheme-validated (http/https only), and free text is cleaned of control characters.",
+      "rationale": "Exports turn stored user content into executable SQL/markup downstream; unsanitised values enable SQL injection and malformed output.",
       "acceptance_criteria": [
         "User-supplied values in new export paths in the diff pass through the appropriate sanitiser before output.",
         "SQL export in the diff escapes all interpolated values via escapeSqlValue() rather than raw string concatenation.",
@@ -172,16 +198,18 @@
         "Emitting an unvalidated `javascript:`/`file:` URL into an export."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §19 — Export System Security Features. Sanitisation family: see STD-SEC-003 / STD-SEC-008 / STD-SEC-009."
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-013",
       "title": "Read secrets from the environment; never hardcode or commit them",
-      "description": "Secrets — API keys, auth tokens, service-role/DB credentials, signing secrets — are read at runtime from the environment/secret store, never written as string literals in source, never committed (.env stays gitignored), and never emitted into logs, error responses, comments, or test fixtures. In this project, Edge Functions read secrets via Deno.env.get(); only non-secret public config is exposed via import.meta.env on the client.",
-      "rationale": "A hardcoded or committed secret leaks permanently through git history and client bundles and cannot be un-disclosed by deletion. Source: docs/LOVABLE_KNOWLEDGE.md §25 (rule 8 — Deno.env.get); .env is gitignored.",
+      "description": "Secrets \u2014 API keys, auth tokens, service-role/DB credentials, signing secrets \u2014 are read at runtime from the environment/secret store, never written as string literals in source, never committed (.env stays gitignored), and never emitted into logs, error responses, comments, or test fixtures.",
+      "rationale": "A hardcoded or committed secret leaks permanently through git history and client bundles and cannot be un-disclosed by deletion.",
       "acceptance_criteria": [
-        "Secrets used in the diff are read via Deno.env.get() (Edge) and do not appear as string literals.",
+        "Secrets used in the diff are read via the environment.get() (Edge) and do not appear as string literals.",
         "No diff commits a secret value (key/token/password/service-role key) in source, config, fixture, or comment, and .env remains gitignored.",
         "No secret value is written to a console log or returned in an error response in the diff."
       ],
@@ -191,17 +219,19 @@
         "`console.log('using key', apiKey)`."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §25 — Edge Function Standards (rule 8)"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-014",
       "title": "Validate external input at the boundary before use",
-      "description": "All externally-supplied input — request bodies, URL/query parameters, headers, and routing fields — is validated against an explicit schema at the boundary before any database or business logic runs; invalid or unknown input is rejected (e.g. 400), never silently coerced. In this project, validation uses Zod / the function's validateRequest step, and entityCrud validates `object`/`action` and rejects unknown entity types.",
-      "rationale": "Unvalidated input reaches the database and business logic and is the entry point for injection and malformed-state bugs; validating at the boundary fails fast and keeps internal code working with known-good shapes. Source: .github/copilot-instructions.md (Validation: Zod); docs/LOVABLE_KNOWLEDGE.md §25 (template validateRequest) / §29 (rule 8).",
+      "description": "All externally-supplied input \u2014 request bodies, URL/query parameters, headers, and routing fields \u2014 is validated against an explicit schema at the boundary before any database or business logic runs; invalid or unknown input is rejected (e.g. 400), never silently coerced.",
+      "rationale": "Unvalidated input reaches the database and business logic and is the entry point for injection and malformed-state bugs; validating at the boundary fails fast and keeps internal code working with known-good shapes.",
       "acceptance_criteria": [
-        "A new Edge Function in the diff validates its request payload (Zod schema / validateRequest) before any DB call or business logic.",
-        "entityCrud-style handlers in the diff validate `object` and `action` and reject unknown entity types with a 400 before touching the database.",
+        "A new server endpoint in the diff validates its request payload (Zod schema / validateRequest) before any DB call or business logic.",
+        "the data-access layer-style handlers in the diff validate `object` and `action` and reject unknown entity types with a 400 before touching the database.",
         "Externally-supplied values in the diff are validated/parsed, not passed unchecked into queries or writes."
       ],
       "anti_patterns": [
@@ -209,33 +239,34 @@
         "Accepting an arbitrary `object` string and querying with it before confirming it is a known entity."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from .github/copilot-instructions.md (Zod) + docs/LOVABLE_KNOWLEDGE.md §25 / §29"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-015",
-      "title": "Authenticate and authorize every protected Edge Function before business logic",
-      "description": "Every server endpoint that reads or writes protected data authenticates the caller and authorizes the specific action before any business logic or data access; an unauthenticated request returns 401 and an unauthorized one returns 403, both before any side effect (CORS preflight handled first). In this project, Edge Functions authenticate via authenticateRequest (JWT via getClaims) and authorize via requireRole / requireFunctionAccess against functionEntitlements.",
-      "rationale": "RLS guards the database, but the function boundary is the first gate; a function that runs business logic before authenticating and authorizing leaks behaviour and error surface to callers who should never reach it. Source: docs/LOVABLE_KNOWLEDGE.md §25 (Edge Function template), §29 (rules 8, 10), §6 (entitlements).",
+      "title": "Authenticate and authorize every protected endpoint before business logic",
+      "description": "Every server endpoint that reads or writes protected data authenticates the caller and authorizes the specific action before any business logic or data access runs. Authentication and authorization are the first step, not an afterthought.",
+      "rationale": "Running business logic or touching data before the caller is authenticated and authorized exposes protected operations to unauthorised callers.",
       "acceptance_criteria": [
-        "Every new protected Edge Function in the diff calls authenticateRequest (JWT via getClaims) before any business logic or DB access, returning 401 on failure.",
-        "Every new protected Edge Function in the diff enforces a role/function entitlement via requireRole or requireFunctionAccess before acting, returning 403 on denial.",
-        "CORS preflight is handled before auth; no query, mutation, or side effect occurs before authentication and authorization pass."
+        "Every protected endpoint in the diff authenticates the caller and authorizes the specific action before any business logic or data access.",
+        "No protected handler performs work before its auth check."
       ],
       "anti_patterns": [
-        "An Edge Function that runs a query or mutation before calling authenticateRequest.",
-        "A protected operation with no requireRole / requireFunctionAccess check.",
-        "Returning data to a caller whose authorization was never checked."
+        "A protected endpoint that runs a query or mutation before authenticating and authorizing the caller."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §25 / §29 / §6 — Edge Function auth & entitlements"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-016",
       "title": "Log security-relevant events without leaking secrets or PII",
       "description": "Authentication outcomes, authorization denials, and other security-significant actions are logged with enough non-sensitive context to investigate (actor as a Display ID, action, timestamp, request id), and security-relevant errors are recorded rather than silently swallowed. Log statements never include secrets, credentials, tokens, full PII, or raw request bodies (see STD-SEC-013, STD-ARCH-022).",
-      "rationale": "Without security-event logs, intrusion and abuse are undetectable and un-investigable (OWASP A09; NIST CSF Detect); conversely, logging secrets or PII turns the log into a new disclosure surface. Source: OWASP A09; NIST CSF (Detect).",
+      "rationale": "Without security-event logs, intrusion and abuse are undetectable and un-investigable (OWASP A09; NIST CSF Detect); conversely, logging secrets or PII turns the log into a new disclosure surface.",
       "acceptance_criteria": [
         "Authentication failures and authorization denials in the diff are logged with non-sensitive context (actor Display ID, action, request id).",
         "No log statement in the diff writes a secret, token, password, full PII value, or raw request body.",
@@ -246,14 +277,16 @@
         "`console.log(req.headers.authorization)` or logging a full payload containing PII."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Aligned to OWASP A09 (Logging & Monitoring Failures); NIST CSF Detect"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-017",
       "title": "Scan dependencies for known vulnerabilities",
       "description": "The dependency set is checked against known-vulnerability databases (e.g. npm audit or equivalent) as part of CI. A dependency newly added or upgraded in a diff must not carry an unaddressed high/critical advisory unless the PR documents the accepted risk and why no fix is applied.",
-      "rationale": "Exact version pins (STD-SEC-007) make builds deterministic but a pinned version can still be vulnerable; scanning surfaces known CVEs so they are patched rather than shipped. Source: OWASP A06 (Vulnerable & Outdated Components); NIST SSDF PW.4 / RV.",
+      "rationale": "Exact version pins (STD-SEC-007) make builds deterministic but a pinned version can still be vulnerable; scanning surfaces known CVEs so they are patched rather than shipped.",
       "acceptance_criteria": [
         "A dependency added or upgraded in the diff has no known unaddressed high/critical advisory, or the PR documents the accepted risk.",
         "A dependency vulnerability scan runs in CI against the committed lockfile.",
@@ -264,45 +297,49 @@
         "Disabling the audit/scan step to get a green build."
       ],
       "adr_overridable": true,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Aligned to OWASP A06; NIST SSDF PW.4 / RV"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-018",
-      "related": ["STD-UX-009"],
-      "title": "Validate uploaded files — type, size, and content",
-      "description": "User-uploaded files (e.g. images/icons stored as bytea) are validated before storage and before rendering: enforce an allowlist of MIME types/extensions and a maximum size, and confirm the content matches the declared type (magic-byte check) rather than trusting the client-supplied filename or content-type. Stored binary is treated as untrusted on read — validated (e.g. confirmed `data:` URI of an allowed type, per STD-UX-009) before use.",
-      "rationale": "Unrestricted or unvalidated uploads enable malicious content, oversized payloads, and content-type confusion; the bytea→data-URI render path must validate the decoded value. Source: OWASP (Unrestricted File Upload); docs/LOVABLE_KNOWLEDGE.md §21.",
+      "related": [
+        "STD-UX-009"
+      ],
+      "title": "Validate uploaded files -- type, size, and content",
+      "description": "User-uploaded files are validated before storage and before rendering: enforce an allowlist of accepted types, a maximum size, and content checks appropriate to the type (e.g. verifying the bytes match the claimed type). Untrusted file content is never rendered or executed without validation.",
+      "rationale": "Unvalidated uploads enable oversized payloads, type spoofing, and malicious content that is later served to other users.",
       "acceptance_criteria": [
-        "Upload paths in the diff enforce an allowlist of MIME types/extensions and a maximum size before storing.",
-        "Upload handling in the diff validates content against the declared type (e.g. magic bytes), not the client-supplied filename/content-type.",
-        "Stored binary rendered in the diff is validated (e.g. allowed `data:` URI) before use."
+        "Uploaded files in the diff are checked against a type allowlist and a maximum size before storage.",
+        "File content is validated to match its claimed type before it is stored or rendered."
       ],
       "anti_patterns": [
-        "Storing an uploaded file using only its client-supplied content-type with no size/type check.",
-        "Rendering a stored bytea value as an image without validating it decodes to an allowed data URI."
+        "Storing or rendering an uploaded file without validating its type, size, and content."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Aligned to OWASP Unrestricted File Upload; docs/LOVABLE_KNOWLEDGE.md §21"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     },
     {
       "id": "STD-SEC-019",
       "title": "Guard server-side outbound requests against SSRF",
-      "description": "Server-side (Edge Function) HTTP requests whose destination is influenced by user input must restrict the target: allowlist the host and scheme (https + known providers), reject internal/link-local/cloud-metadata addresses, and never forward to an arbitrary user-supplied URL. Outbound integrations (e.g. GitHub, HubSpot) target fixed, configured endpoints.",
-      "rationale": "An outbound request built from user input can be redirected at internal services or cloud metadata endpoints; pinning destinations to an allowlist removes the surface. Source: OWASP A10 (SSRF).",
+      "description": "Server-side HTTP requests whose destination is influenced by user input restrict the target: allowlist the host and scheme (e.g. https only), reject internal, loopback, and link-local addresses, and do not follow redirects to disallowed targets.",
+      "rationale": "Unrestricted server-side requests to user-influenced destinations allow SSRF -- reaching internal services, cloud metadata endpoints, or arbitrary hosts.",
       "acceptance_criteria": [
-        "Edge Function outbound requests in the diff target a fixed/allowlisted host and scheme, not an arbitrary user-supplied URL.",
-        "Any user-influenced URL used in an outbound request in the diff is validated against an allowlist and rejects internal/link-local/metadata hosts.",
-        "Provider integrations in the diff use configured endpoints, not request-supplied ones."
+        "Server-side outbound requests in the diff with user-influenced destinations validate the host and scheme against an allowlist.",
+        "Internal, loopback, and link-local targets are rejected."
       ],
       "anti_patterns": [
-        "`fetch(userProvidedUrl)` in an Edge Function with no host allowlist.",
-        "Proxying to a URL taken from the request body/query without validation."
+        "Making a server-side HTTP request to a user-supplied URL without host/scheme allowlisting or internal-address blocking."
       ],
       "adr_overridable": false,
-      "applies_to": ["coder", "pr-reviewer"],
-      "source": "Aligned to OWASP A10 (Server-Side Request Forgery)"
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }
