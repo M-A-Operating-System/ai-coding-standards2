@@ -26,7 +26,6 @@
     {
       "id": "STD-SEC-002",
       "related": [
-        "STD-DATA-001",
         "STD-DATA-016"
       ],
       "title": "Enforce record-level authorization at the data layer",

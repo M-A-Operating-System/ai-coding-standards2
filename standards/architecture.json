@@ -309,8 +309,7 @@
     {
       "id": "STD-ARCH-022",
       "related": [
-        "STD-ARCH-026",
-        "STD-DATA-012"
+        "STD-ARCH-026"
       ],
       "title": "Never expose raw internal database identifiers; expose stable external IDs",
       "description": "Raw database primary and foreign keys are never exposed through any external channel -- web UI, API responses, exports, logs, or tool input/output. Expose a stable external identifier instead. The external-identifier scheme is a project decision.",
