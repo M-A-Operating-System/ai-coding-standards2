@@ -389,6 +389,28 @@
         "pr-reviewer"
       ],
       "source": "Generalised to org from a project-migrated standard"
+    },
+    {
+      "id": "STD-ARCH-029",
+      "title": "Deployment environments use the fixed names PROD, BETA, TEST, DEV, TEMP",
+      "description": "Every deployment environment is named from a single fixed vocabulary of five upper-case tiers: PROD (production -- the live, user-facing environment; the only tier that serves real users and holds real production data), BETA (pre-production/staging -- a production-like environment for release-candidate validation and acceptance before promotion to PROD), TEST (integration and QA -- where automated and manual test suites run against integrated services), DEV (development -- the shared, expected-unstable environment for in-progress work), and TEMP (ephemeral -- short-lived throwaway environments such as per-branch previews or experiments, provisioned on demand and torn down automatically). Environment identifiers in configuration, infrastructure code, hostnames, variable names, and secret scopes use one of these five names. Ad-hoc synonyms (staging, uat, qa, preprod, prod2, sandbox, local) are not introduced, and a tier beyond the five requires a deliberate decision recorded in an ADR.",
+      "rationale": "A single fixed environment vocabulary makes every deploy target, config key, hostname, and secret scope unambiguous across services and tooling; ad-hoc synonyms (staging vs uat vs preprod) fragment configuration and cause the wrong environment to be targeted.",
+      "acceptance_criteria": [
+        "New or renamed deployment environments in the diff use exactly one of PROD, BETA, TEST, DEV, TEMP (upper-case).",
+        "Environment identifiers in configuration, infrastructure code, hostnames, and secret scopes in the diff draw from the same five-name vocabulary, not ad-hoc synonyms (staging, uat, qa, prod2, sandbox).",
+        "Only PROD serves real users and holds real production data; lower tiers do not point at production resources.",
+        "A tier outside the five, or a synonym for an existing tier, is introduced only under a referenced ADR."
+      ],
+      "anti_patterns": [
+        "Naming an environment `staging` or `uat` instead of `BETA`.",
+        "Introducing `prod2`, `qa1`, or `sandbox` as a parallel environment name.",
+        "Using lower-case or mixed-case environment names (`Prod`, `dev-env`) inconsistently across services."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }
