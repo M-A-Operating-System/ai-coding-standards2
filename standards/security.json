@@ -303,9 +303,6 @@
     },
     {
       "id": "STD-SEC-018",
-      "related": [
-        "STD-UX-009"
-      ],
       "title": "Validate uploaded files -- type, size, and content",
       "description": "User-uploaded files are validated before storage and before rendering: enforce an allowlist of accepted types, a maximum size, and content checks appropriate to the type (e.g. verifying the bytes match the claimed type). Untrusted file content is never rendered or executed without validation.",
       "rationale": "Unvalidated uploads enable oversized payloads, type spoofing, and malicious content that is later served to other users.",
