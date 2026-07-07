@@ -144,7 +144,7 @@
         "STD-PROC-005"
       ],
       "title": "Every issue carries one type, one area, and one feature label",
-      "description": "Every GitHub issue carries exactly one label from each of three orthogonal dimensions: type (type:enhancement | type:debt | type:bug), area (area:testing|docs|security|data-model|performance|ux|infra), and feature (feature:entity-crud|mcp|workflow-engine|frontend|ai-chat|exports). The issue states the gap it closes and its acceptance, not just a title. The portable rule is exactly one label per dimension; the specific area/feature label values are this project's.",
+      "description": "Every GitHub issue carries exactly one label from each of three orthogonal dimensions: type (what kind of change -- e.g. enhancement, debt, bug), area (which part of the system -- e.g. testing, docs, security, data-model, performance, ux, infra), and feature (which product capability -- the project's feature set). The type dimension and its values are org-standard; the concrete area and feature label vocabularies are nominated in a project ADR or label configuration before use. The issue states the gap it closes and its acceptance, not just a title.",
       "rationale": "A consistent three-dimensional taxonomy keeps the backlog searchable and triage-able long after filing.",
       "acceptance_criteria": [
         "An issue created in the PR carries exactly one type:, one area:, and one feature: label.",
