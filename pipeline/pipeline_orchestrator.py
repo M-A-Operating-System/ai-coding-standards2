@@ -3899,6 +3899,24 @@ def _read_pr_event_action() -> str:
         return ""
 
 
+def _read_pr_event_merged() -> bool:
+    """Return whether the GitHub pull_request event's PR was merged.
+
+    Reads the JSON event payload written by GitHub Actions. Returns
+    `pull_request.merged` (a bool), or False when unavailable (no env var,
+    missing file, malformed JSON, or the field is absent). Never raises.
+    """
+    event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+    if not event_path:
+        return False
+    try:
+        with open(event_path) as f:
+            data = json.load(f)
+        return bool(data.get("pull_request", {}).get("merged", False))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+
+
 def _call_delete_branch(repo: str, branch: str) -> None:
     """Invoke delete-branch.sh to remove a branch when a PR closes.
 
@@ -3967,16 +3985,18 @@ def _wake(args) -> "Optional[RunContext]":
             log.info("No stop marker was set.")
         return None
 
-    # Handle pull_request.closed: delete the branch and exit without processing
-    # any pipeline work. Runs before pause/stop checks so closed-PR branches are
-    # cleaned up even when the pipeline is paused or stopped.
+    # Handle pull_request.closed (merged only): delete the branch and exit
+    # without processing any pipeline work. Runs before pause/stop checks so
+    # merged-PR branches are cleaned up even when the pipeline is paused or
+    # stopped. PRs closed without merging are left alone -- the branch may
+    # still hold work the human wants to resume or recover.
     if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
         _action = _read_pr_event_action()
-        if _action == "closed":
+        if _action == "closed" and _read_pr_event_merged():
             _branch = os.environ.get("GITHUB_HEAD_REF", "")
             _repo = args.repo or os.environ.get("GITHUB_REPOSITORY", "")
             log.info(
-                "pull_request.closed: cleaning up branch '%s' from %s", _branch, _repo
+                "pull_request.closed (merged): cleaning up branch '%s' from %s", _branch, _repo
             )
             _call_delete_branch(_repo, _branch)
             return None
