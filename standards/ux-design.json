@@ -28,7 +28,7 @@
     {
       "id": "STD-UX-002",
       "related": [
-        "STD-PROC-016"
+        "STD-ARCH-001"
       ],
       "title": "Build from the shared design-system component library; no new primitives without approval",
       "description": "All interactive UI is built from the shared, approved design-system component library -- a base component set plus the project's theme (shared data tables, dialogs, layout, navigation, and form controls). Custom components are a last resort. A new font, icon set, spacing scale, or colour token requires a product decision record and approval before introduction.",

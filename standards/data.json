@@ -160,7 +160,7 @@
     {
       "id": "STD-DATA-016",
       "related": [
-        "STD-PROC-020"
+        "STD-SEC-011"
       ],
       "title": "Database roles follow the pattern {module}_{tier}",
       "description": "Application database roles follow the pattern `{module}_{tier}`, where `module` is the application module and `tier` is one of the fixed access tiers: `_ro` (read-only), `_rw` (read-write), `_ad` (admin: create/delete/configure), `_wf` (workflow engine) -- e.g. `billing_ro`, `billing_rw`, `billing_ad`. Write policies check a write-capable role; read access uses the read-only role or an authenticated read policy. Roles are kept minimal: no ad-hoc names, no per-table roles, and no new tier beyond the established set without a deliberate decision.",

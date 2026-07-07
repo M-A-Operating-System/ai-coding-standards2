@@ -336,6 +336,51 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-SEC-020",
+      "title": "No shell injection via unsanitised input",
+      "description": "Shell commands constructed from external input must use argument list form (subprocess with a list, not a string) or parameterised equivalents. String interpolation of untrusted data into shell commands is forbidden.",
+      "rationale": "Shell injection is in the OWASP Top 10 and trivially exploitable. A single unvalidated value in a shell string can result in arbitrary code execution, data exfiltration, or privilege escalation.",
+      "acceptance_criteria": [
+        "Every subprocess call in the diff that originates from user-controlled data uses a list of arguments (subprocess.run(['cmd', arg], ...)) rather than a shell string (subprocess.run(f'cmd {arg}', shell=True)).",
+        "No os.system(), os.popen(), or eval() call in the diff incorporates data derived from user input, environment variables set by callers, or external API responses without explicit quoting via shlex.quote().",
+        "Template strings used to build shell commands contain only developer-controlled literals \u2014 never f-strings or .format() calls with external data.",
+        "If shell=True is required, the rationale is documented inline and the arguments are sanitised with shlex.quote()."
+      ],
+      "anti_patterns": [
+        "subprocess.run(f'git clone {user_url}', shell=True) where user_url comes from a form field.",
+        "os.system('rm -rf ' + path) where path is derived from a request parameter.",
+        "Constructing a shell pipeline as a single string and passing it to Popen.",
+        "Using shell=True without any quoting for convenience rather than necessity."
+      ],
+      "adr_overridable": false,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
+    },
+    {
+      "id": "STD-SEC-021",
+      "title": "No eval or exec on untrusted data",
+      "description": "Python eval(), exec(), compile(), and equivalent dynamic execution functions must not receive data that originates from user input, external APIs, file contents, or any other untrusted source.",
+      "rationale": "Executing arbitrary code from untrusted input is an immediate remote code execution (RCE) vulnerability with no safe mitigation short of total elimination.",
+      "acceptance_criteria": [
+        "No eval() or exec() call in the diff takes a string constructed from or containing user-supplied data.",
+        "If eval() is used on a developer-controlled literal (e.g. evaluating a constant expression at module load), the literal is either a module-level constant or loaded from a vetted internal file \u2014 never from a request, config file, or environment variable that could be user-controlled.",
+        "Dynamic import mechanisms (importlib, __import__) in the diff resolve only to module names from a closed allowlist \u2014 they do not interpolate user input into the module path."
+      ],
+      "anti_patterns": [
+        "eval(request.json()['formula']) to evaluate a user-supplied expression.",
+        "exec(open(user_supplied_path).read()) to run a script from a user-chosen file.",
+        "Using eval() to parse a config value when json.loads() or ast.literal_eval() would suffice.",
+        "Dynamic __import__(user_plugin_name) without validating user_plugin_name against a known allowlist."
+      ],
+      "adr_overridable": false,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }
