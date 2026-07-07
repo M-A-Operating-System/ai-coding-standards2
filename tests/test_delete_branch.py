@@ -2,7 +2,7 @@
 
 Covers three PRD Gherkin scenarios:
   - Branch deleted when PR merges
-  - Branch deleted when PR is closed without merging
+  - Branch is left alone when PR is closed without merging
   - Non-issue branch is ignored
 """
 import argparse
@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
 from pipeline_orchestrator import (
     _call_delete_branch,
     _read_pr_event_action,
+    _read_pr_event_merged,
     _wake,
     SUBMODULE_ROOT,
 )
@@ -71,6 +72,51 @@ class TestReadPrEventAction:
         event_file.write_text(json.dumps({"number": 42}))
         with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_file)}):
             assert _read_pr_event_action() == ""
+
+
+# ---------------------------------------------------------------------------
+# _read_pr_event_merged helpers
+# ---------------------------------------------------------------------------
+
+class TestReadPrEventMerged:
+    def test_returns_true_when_merged(self, tmp_path):
+        """_read_pr_event_merged reads True from the GitHub event JSON."""
+        event_file = tmp_path / "event.json"
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": True}}))
+        with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_file)}):
+            assert _read_pr_event_merged() is True
+
+    def test_returns_false_when_closed_without_merge(self, tmp_path):
+        """_read_pr_event_merged returns False for a closed-but-not-merged PR."""
+        event_file = tmp_path / "event.json"
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": False}}))
+        with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_file)}):
+            assert _read_pr_event_merged() is False
+
+    def test_returns_false_when_pull_request_key_absent(self, tmp_path):
+        """_read_pr_event_merged returns False when the JSON has no 'pull_request' key."""
+        event_file = tmp_path / "event.json"
+        event_file.write_text(json.dumps({"action": "closed"}))
+        with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_file)}):
+            assert _read_pr_event_merged() is False
+
+    def test_returns_false_when_env_not_set(self):
+        """_read_pr_event_merged returns False when GITHUB_EVENT_PATH is absent."""
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_EVENT_PATH"}
+        with patch.dict(os.environ, env, clear=True):
+            assert _read_pr_event_merged() is False
+
+    def test_returns_false_on_missing_file(self, tmp_path):
+        """_read_pr_event_merged returns False when the event file does not exist."""
+        with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(tmp_path / "missing.json")}):
+            assert _read_pr_event_merged() is False
+
+    def test_returns_false_on_malformed_json(self, tmp_path):
+        """_read_pr_event_merged returns False when the event file contains invalid JSON."""
+        event_file = tmp_path / "event.json"
+        event_file.write_text("not-json{{{")
+        with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_file)}):
+            assert _read_pr_event_merged() is False
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +199,7 @@ class TestCallDeleteBranch:
 
 
 # ---------------------------------------------------------------------------
-# _wake — pull_request.closed path
+# _wake -- pull_request.closed path
 # ---------------------------------------------------------------------------
 
 def _minimal_wake_args(**overrides):
@@ -174,12 +220,12 @@ def _minimal_wake_args(**overrides):
 
 
 class TestWakePullRequestClosed:
-    """Scenario: Branch deleted when PR merges / closed without merging."""
+    """Scenario: Branch deleted when PR merges / left alone when closed without merging."""
 
-    def test_wake_returns_none_on_pr_closed(self, tmp_path):
-        """_wake returns None immediately when pull_request.closed fires."""
+    def test_wake_returns_none_on_pr_closed_and_merged(self, tmp_path):
+        """_wake returns None immediately when pull_request.closed fires for a merged PR."""
         event_file = tmp_path / "event.json"
-        event_file.write_text(json.dumps({"action": "closed"}))
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": True}}))
         args = _minimal_wake_args()
 
         env_patch = {
@@ -197,7 +243,7 @@ class TestWakePullRequestClosed:
     def test_wake_calls_delete_with_github_head_ref(self, tmp_path):
         """_wake passes GITHUB_HEAD_REF as the branch to _call_delete_branch."""
         event_file = tmp_path / "event.json"
-        event_file.write_text(json.dumps({"action": "closed"}))
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": True}}))
         args = _minimal_wake_args()
 
         env_patch = {
@@ -211,6 +257,29 @@ class TestWakePullRequestClosed:
 
         _, called_branch = mock_delete.call_args[0]
         assert called_branch == "issue-99"
+
+    def test_wake_does_not_delete_branch_when_closed_without_merge(self, tmp_path):
+        """Scenario: PR closed without merging -- _wake must NOT delete the branch.
+
+        Regression coverage for SC-001: previously _wake deleted the branch on
+        any pull_request.closed event regardless of merge state, destroying
+        work on abandoned-but-recoverable branches.
+        """
+        event_file = tmp_path / "event.json"
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": False}}))
+        args = _minimal_wake_args()
+
+        env_patch = {
+            "GITHUB_EVENT_NAME": "pull_request",
+            "GITHUB_HEAD_REF": "issue-42",
+            "GITHUB_EVENT_PATH": str(event_file),
+        }
+        with patch.dict(os.environ, env_patch):
+            with patch("pipeline_orchestrator._call_delete_branch") as mock_delete:
+                with patch("pipeline_orchestrator.is_pipeline_paused", return_value=(True, "paused", None)):
+                    result = _wake(args)
+
+        mock_delete.assert_not_called()
 
     def test_wake_does_not_short_circuit_on_pr_opened(self, tmp_path):
         """_wake does NOT short-circuit for pull_request events with action != closed."""
@@ -226,7 +295,7 @@ class TestWakePullRequestClosed:
         with patch.dict(os.environ, env_patch):
             with patch("pipeline_orchestrator._call_delete_branch") as mock_delete:
                 with patch("pipeline_orchestrator.is_pipeline_paused", return_value=(True, "paused", None)):
-                    # Pipeline is paused → _wake returns None for the pause, not for PR close
+                    # Pipeline is paused -- _wake returns None for the pause, not for PR close
                     result = _wake(args)
 
         # _call_delete_branch must NOT have been called (action was "opened", not "closed")
@@ -235,7 +304,7 @@ class TestWakePullRequestClosed:
     def test_wake_handles_missing_github_head_ref(self, tmp_path):
         """_wake passes empty string to _call_delete_branch when GITHUB_HEAD_REF is unset."""
         event_file = tmp_path / "event.json"
-        event_file.write_text(json.dumps({"action": "closed"}))
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": {"merged": True}}))
         args = _minimal_wake_args()
 
         env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_HEAD_REF",)}
@@ -297,32 +366,60 @@ class TestDeleteBranchScript:
         return result.stdout + result.stderr, result.returncode
 
     def test_non_issue_branch_is_skipped(self, tmp_path):
-        """Scenario: Non-issue branch is ignored — script exits 0 without calling gh."""
+        """Scenario: Non-issue branch is ignored -- script exits 0 without calling gh."""
         output, rc = self._run_script(tmp_path, "owner/repo", "claude/some-feature")
         assert rc == 0
         assert "AI_AGILE_STATUS: complete" in output
         assert "skipping" in output.lower()
 
     def test_main_branch_is_skipped(self, tmp_path):
-        """main branch does not match issue-{N} — skipped silently."""
+        """main branch does not match issue-{N} -- skipped silently."""
         output, rc = self._run_script(tmp_path, "owner/repo", "main")
         assert rc == 0
         assert "AI_AGILE_STATUS: complete" in output
 
     def test_issue_branch_deleted_on_success(self, tmp_path):
-        """Scenario: Branch deleted when PR merges — gh DELETE succeeds."""
+        """Scenario: Branch deleted when PR merges -- gh DELETE succeeds."""
         output, rc = self._run_script(tmp_path, "owner/repo", "issue-42", gh_exit=0)
         assert rc == 0
         assert "AI_AGILE_STATUS: complete" in output
 
     def test_issue_branch_idempotent_when_already_deleted(self, tmp_path):
-        """Scenario: Branch deleted when PR closed — gh DELETE fails (already gone) → still exits 0."""
-        output, rc = self._run_script(tmp_path, "owner/repo", "issue-42", gh_exit=1)
+        """Scenario: gh DELETE fails with a 404 (already gone) -> still exits 0."""
+        output, rc = self._run_script(
+            tmp_path, "owner/repo", "issue-42", gh_exit=1,
+            gh_output="HTTP 404: Not Found",
+        )
         assert rc == 0, (
-            "delete-branch.sh must exit 0 even when gh api returns non-zero "
-            "(idempotency — branch may already be gone)"
+            "delete-branch.sh must exit 0 when gh api returns 404 "
+            "(idempotency -- branch is already gone)"
         )
         assert "AI_AGILE_STATUS: complete" in output
+        assert "already gone" in output.lower()
+
+    def test_issue_branch_idempotent_on_422(self, tmp_path):
+        """gh DELETE fails with a 422 (reference does not exist) -> still exits 0."""
+        output, rc = self._run_script(
+            tmp_path, "owner/repo", "issue-42", gh_exit=1,
+            gh_output="HTTP 422: Reference does not exist",
+        )
+        assert rc == 0
+        assert "already gone" in output.lower()
+
+    def test_issue_branch_real_error_is_not_swallowed(self, tmp_path):
+        """DP-004: a genuine gh api failure (e.g. permission denied) must NOT be
+        reported as 'already gone' -- the script must exit non-zero so the
+        caller can distinguish idempotent no-ops from real failures."""
+        output, rc = self._run_script(
+            tmp_path, "owner/repo", "issue-42", gh_exit=1,
+            gh_output="HTTP 403: Resource not accessible by integration",
+        )
+        assert rc != 0, (
+            "delete-branch.sh must exit non-zero on a real gh api error, "
+            "not silently report success"
+        )
+        assert "already gone" not in output.lower()
+        assert "failed to delete" in output.lower()
 
     def test_requires_repo_env_var(self, tmp_path):
         """Missing REPO causes a non-zero exit (guard clause)."""
