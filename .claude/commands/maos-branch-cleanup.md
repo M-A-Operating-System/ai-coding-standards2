@@ -1,0 +1,12 @@
+# maos-branch-cleanup
+
+Run the `00_ondemand/branch-cleanup` pipeline agent. Ad-hoc sweep agent.
+
+## Input
+
+`$ARGUMENTS` — GitHub issue or PR number (e.g. `42`)
+
+## Instructions
+
+Follow the `run-agent` command with pre-filled arguments:
+`run-agent 00_ondemand/branch-cleanup $ARGUMENTS`
