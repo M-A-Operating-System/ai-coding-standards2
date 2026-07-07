@@ -52,17 +52,17 @@
         "STD-SEC-012"
       ],
       "title": "Contextually encode untrusted content at every output boundary",
-      "description": "User-supplied (untrusted) content must be neutralised for the context it is written into \u2014 choose the encoder that matches the sink. This standard governs the HTML and email-header sinks: HTML output (web or email body) escapes user values via escapeHtml() or the framework's auto-escaping (never raw interpolation or dangerouslySetInnerHTML with unescaped content); email subjects/headers strip CR/LF via safeHeaderField() and are built through the templating library, never string concatenation. Other sinks follow the same principle under their own standards \u2014 PDFs/reports (STD-SEC-008), error responses (STD-SEC-009), exports incl. SQL/URL (STD-SEC-012).",
+      "description": "User-supplied (untrusted) content must be neutralised for the context it is written into -- choose the encoder that matches the sink. This standard governs the HTML and email-header sinks: HTML output (web or email body) escapes user values via the project's designated HTML escaper or the framework's auto-escaping (never raw interpolation or a raw-HTML injection sink fed unescaped content); email subjects/headers strip CR/LF via the project's designated header-sanitiser and are built through the templating engine, never string concatenation. The specific escaping and header-sanitising mechanisms are nominated in a project ADR before use. Other sinks follow the same principle under their own standards -- PDFs/reports (STD-SEC-008), error responses (STD-SEC-009), exports incl. SQL/URL (STD-SEC-012).",
       "rationale": "Untrusted content interpreted in the wrong context is the root of injection (XSS, email header injection, phishing); encoding for the specific sink neutralises it, and the correct defence is always contextual.",
       "acceptance_criteria": [
-        "Every user-supplied value written into HTML (web or email body) in the diff passes through escapeHtml() or framework auto-escaping, never raw interpolation.",
-        "Every value interpolated into an email subject/header in the diff is CR/LF-stripped via safeHeaderField() and built via the templating library, not string concatenation.",
+        "Every user-supplied value written into HTML (web or email body) in the diff passes through the project's designated HTML escaper or framework auto-escaping, never raw interpolation.",
+        "Every value interpolated into an email subject/header in the diff is CR/LF-stripped via the project's designated header-sanitiser and built via the templating engine, not string concatenation.",
         "No diff writes untrusted content into an HTML or email-header context without the context-appropriate encoder (other sinks follow STD-SEC-008 / STD-SEC-009 / STD-SEC-012)."
       ],
       "anti_patterns": [
-        "`subject: 'Report for ' + userName` interpolated without safeHeaderField().",
-        "Embedding a freeform user response into an HTML body without escapeHtml().",
-        "`dangerouslySetInnerHTML` fed unescaped user content."
+        "`subject: 'Report for ' + userName` interpolated without the header-sanitiser.",
+        "Embedding a freeform user response into an HTML body without escaping.",
+        "A raw-HTML injection sink (e.g. `dangerouslySetInnerHTML`) fed unescaped user content."
       ],
       "adr_overridable": false,
       "applies_to": [
@@ -77,12 +77,12 @@
       "rationale": "Unpinned or range dependencies resolve to whatever version is current at build time, introducing supply-chain and reproducibility risk; exact pins make builds deterministic and reviewable.",
       "acceptance_criteria": [
         "Every dependency introduced or modified in the diff is pinned to an exact version (no range, no bare name).",
-        "the server runtime npm: specifiers in the diff include a full patch version (name@x.y.z); package.json entries use exact versions, not ^/~ ranges.",
+        "Runtime import specifiers in the diff pin a full patch version (name@x.y.z), and package-manifest entries use exact versions, not caret/tilde ranges.",
         "A dependency change in the diff updates and commits the lockfile."
       ],
       "anti_patterns": [
-        "`import React from 'npm:react@18'` or `'npm:zod'` with no version.",
-        "`\"react\": \"^18.3.0\"` (caret range) in package.json instead of an exact version."
+        "A runtime import specifier pinned only to a major version (e.g. `...@18`) or with no version at all.",
+        "A caret/tilde range (e.g. `^18.3.0`) in a package manifest instead of an exact version."
       ],
       "adr_overridable": false,
       "applies_to": [
@@ -119,16 +119,16 @@
         "STD-SEC-003"
       ],
       "title": "Sanitise all error responses \u2014 never leak internals to clients",
-      "description": "Errors surfaced to a client expose only a generic, safe message; internal details \u2014 raw exception messages, stack traces, SQL, server internals \u2014 are logged server-side but never returned to the client.",
+      "description": "Errors surfaced to a client expose only a generic, safe message; internal details -- raw exception messages, stack traces, SQL, server internals -- are logged server-side but never returned to the client. The specific error-response and error-formatting mechanisms are nominated in a project ADR before use.",
       "rationale": "Raw error messages and stack/SQL fragments disclose internal structure and aid attackers; users need a translated, safe message.",
       "acceptance_criteria": [
-        "server endpoint error responses in the diff return a generic message (e.g. via errorResponse()) and log details with console.error, not `error.message` to the client.",
+        "Server-side error responses in the diff return a generic message via the project's designated error-response helper and log details server-side, not `error.message`, to the client.",
         "No diff returns a stack trace or SQL string in a client response body.",
-        "Frontend error display in the diff routes through formatthe databaseError()/formatError() (or a provided userMessage), never raw error text."
+        "Client-side error display in the diff routes through the project's designated error-formatting helper (or a provided safe user message), never raw error text."
       ],
       "anti_patterns": [
         "`return new Response(JSON.stringify({ error: error.message }), { status: 500 })`.",
-        "Rendering a caught Postgres error directly into a toast or page."
+        "Rendering a caught database error directly into a toast or page."
       ],
       "adr_overridable": false,
       "applies_to": [
@@ -139,12 +139,12 @@
     {
       "id": "STD-SEC-010",
       "title": "Validate CORS origins against an allowlist \u2014 never a wildcard",
-      "description": "Cross-origin responses use a single, centrally-defined CORS configuration that validates the request Origin against an allowlist, never returns a wildcard `*`, and includes `Vary: Origin`.",
+      "description": "Cross-origin responses use a single, centrally-defined CORS configuration that validates the request Origin against an allowlist, never returns a wildcard `*`, and includes `Vary: Origin`. The location of the shared CORS configuration is nominated in a project ADR.",
       "rationale": "A single validated CORS source prevents unauthorised cross-origin access; wildcard origins open the API to any site, and a missing Vary: Origin enables cache poisoning.",
       "acceptance_criteria": [
-        "server endpoint CORS in the diff comes from _shared/cors.ts, not inline header literals.",
+        "CORS handling in the diff comes from the single shared CORS module, not inline header literals.",
         "No diff sets `Access-Control-Allow-Origin: '*'`.",
-        "Origin whitelist changes in the diff are confined to _shared/cors.ts, and responses include Vary: Origin."
+        "Origin allowlist changes in the diff are confined to the shared CORS module, and responses include Vary: Origin."
       ],
       "anti_patterns": [
         "`'Access-Control-Allow-Origin': '*'` in any function.",
@@ -208,7 +208,7 @@
       "description": "Secrets \u2014 API keys, auth tokens, service-role/DB credentials, signing secrets \u2014 are read at runtime from the environment/secret store, never written as string literals in source, never committed (.env stays gitignored), and never emitted into logs, error responses, comments, or test fixtures.",
       "rationale": "A hardcoded or committed secret leaks permanently through git history and client bundles and cannot be un-disclosed by deletion.",
       "acceptance_criteria": [
-        "Secrets used in the diff are read via the environment.get() (Edge) and do not appear as string literals.",
+        "Secrets used in the diff are read via the project's environment/secret-store accessor and do not appear as string literals.",
         "No diff commits a secret value (key/token/password/service-role key) in source, config, fixture, or comment, and .env remains gitignored.",
         "No secret value is written to a console log or returned in an error response in the diff."
       ],
@@ -229,13 +229,13 @@
       "description": "All externally-supplied input \u2014 request bodies, URL/query parameters, headers, and routing fields \u2014 is validated against an explicit schema at the boundary before any database or business logic runs; invalid or unknown input is rejected (e.g. 400), never silently coerced.",
       "rationale": "Unvalidated input reaches the database and business logic and is the entry point for injection and malformed-state bugs; validating at the boundary fails fast and keeps internal code working with known-good shapes.",
       "acceptance_criteria": [
-        "A new server endpoint in the diff validates its request payload (Zod schema / validateRequest) before any DB call or business logic.",
-        "the data-access layer-style handlers in the diff validate `object` and `action` and reject unknown entity types with a 400 before touching the database.",
+        "A new server endpoint in the diff validates its request payload against an explicit schema before any DB call or business logic.",
+        "Data-access handlers in the diff validate their entity-type and action fields and reject unknown entity types with a 400 before touching the database.",
         "Externally-supplied values in the diff are validated/parsed, not passed unchecked into queries or writes."
       ],
       "anti_patterns": [
-        "Using fields off `await req.json()` directly without validating the shape.",
-        "Accepting an arbitrary `object` string and querying with it before confirming it is a known entity."
+        "Using fields off a parsed request body directly without validating the shape.",
+        "Accepting an arbitrary entity-type string and querying with it before confirming it is a known entity."
       ],
       "adr_overridable": false,
       "applies_to": [
@@ -264,10 +264,10 @@
     {
       "id": "STD-SEC-016",
       "title": "Log security-relevant events without leaking secrets or PII",
-      "description": "Authentication outcomes, authorization denials, and other security-significant actions are logged with enough non-sensitive context to investigate (actor as a Display ID, action, timestamp, request id), and security-relevant errors are recorded rather than silently swallowed. Log statements never include secrets, credentials, tokens, full PII, or raw request bodies (see STD-SEC-013, STD-ARCH-022).",
+      "description": "Authentication outcomes, authorization denials, and other security-significant actions are logged with enough non-sensitive context to investigate (actor as a stable external identifier, action, timestamp, request id), and security-relevant errors are recorded rather than silently swallowed. Log statements never include secrets, credentials, tokens, full PII, or raw request bodies (see STD-SEC-013, STD-ARCH-022).",
       "rationale": "Without security-event logs, intrusion and abuse are undetectable and un-investigable (OWASP A09; NIST CSF Detect); conversely, logging secrets or PII turns the log into a new disclosure surface.",
       "acceptance_criteria": [
-        "Authentication failures and authorization denials in the diff are logged with non-sensitive context (actor Display ID, action, request id).",
+        "Authentication failures and authorization denials in the diff are logged with non-sensitive context (actor's stable external identifier, action, request id).",
         "No log statement in the diff writes a secret, token, password, full PII value, or raw request body.",
         "Security-relevant errors in the diff are recorded (server log), not silently swallowed."
       ],

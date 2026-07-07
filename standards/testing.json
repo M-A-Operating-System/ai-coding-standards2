@@ -13,10 +13,10 @@
       "acceptance_criteria": [
         "Integration/E2E tests in the diff call the real dependency the tier provisions rather than stubbing it.",
         "Mock doubles introduced in the diff are confined to pure-unit tests of logic with no reachable dependency.",
-        "No diff adds a hand-rolled stub for an endpoint/service the test tier can reach directly (e.g. a the real dependency table/function)."
+        "No diff adds a hand-rolled stub for an endpoint/service the test tier can reach directly (e.g. a real database table or service function)."
       ],
       "anti_patterns": [
-        "Mocking `the real dependency.from(...)` in an edge-function integration test that runs against an ephemeral DB.",
+        "Mocking the real data-access client in an integration test that runs against an ephemeral database.",
         "A fake HTTP layer standing in for a real endpoint the tier already provisions."
       ],
       "adr_overridable": true,
@@ -28,16 +28,16 @@
     {
       "id": "STD-TEST-002",
       "title": "Tests pin observable contracts, not implementation detail",
-      "description": "Tests assert observable behaviour \u2014 status codes, response shapes, redirects, authorization outcomes \u2014 not internal implementation. A refactor that preserves the contract must not require test changes. Do not write tests that assert framework behaviour (React, Radix, the real dependency client libraries are trusted dependencies).",
+      "description": "Tests assert observable behaviour -- status codes, response shapes, redirects, authorization outcomes -- not internal implementation. A refactor that preserves the contract must not require test changes. Do not write tests that assert framework behaviour (the UI framework, its component libraries, and data-access client libraries are trusted dependencies).",
       "rationale": "Contract-first tests survive refactors and catch real regressions; implementation-coupled tests are churn.",
       "acceptance_criteria": [
         "New tests in the diff assert observable outputs (status, response shape, redirect, authorization result), not private internals.",
-        "No test in the diff asserts behaviour owned by React/Radix/the real dependency client libraries.",
+        "No test in the diff asserts behaviour owned by trusted third-party framework or client libraries.",
         "Tests in the diff would still pass after a contract-preserving refactor of the unit under test."
       ],
       "anti_patterns": [
         "Asserting on a component's internal state variable instead of rendered output.",
-        "A test that re-verifies that Radix opens a dialog (framework behaviour)."
+        "A test that re-verifies that the component library opens a dialog (framework behaviour)."
       ],
       "adr_overridable": true,
       "applies_to": [

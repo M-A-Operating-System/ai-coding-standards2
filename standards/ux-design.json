@@ -135,16 +135,16 @@
         "STD-UX-004"
       ],
       "title": "Every button has a descriptive, full-sentence tooltip",
-      "description": "Project convention (not a universal UX rule): every <Button> is wrapped in a <Tooltip> (from @/components/ui/tooltip) whose content is at least one complete, descriptive sentence explaining the action \u2014 not a single word or a repeat of the label. Icon-only buttons especially require this (also an accessibility need, STD-UX-004); text-labelled buttons still carry a tooltip for additional context.",
+      "description": "Every button is paired with a tooltip (using the design system's tooltip component) whose content is at least one complete, descriptive sentence explaining the action -- not a single word or a repeat of the label. Icon-only buttons especially require this (also an accessibility need, STD-UX-004); text-labelled buttons still carry a tooltip for additional context.",
       "rationale": "Tooltips are the primary affordance for understanding actions, and the only one for icon-only buttons.",
       "acceptance_criteria": [
-        "Every Button added in the diff is wrapped in a Tooltip with TooltipContent.",
+        "Every button added in the diff is paired with a tooltip using the design system's tooltip component.",
         "Tooltip content for buttons in the diff is a complete sentence, not a single word or the bare label.",
         "Icon-only buttons in the diff have a tooltip describing the action."
       ],
       "anti_patterns": [
-        "An icon-only `<Button>` with no surrounding Tooltip.",
-        "`<TooltipContent><p>Delete</p></TooltipContent>` (single word, not a sentence)."
+        "An icon-only button with no tooltip.",
+        "A tooltip whose content is a single word (e.g. 'Delete') rather than a descriptive sentence."
       ],
       "adr_overridable": true,
       "applies_to": [
