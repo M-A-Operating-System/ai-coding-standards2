@@ -3923,20 +3923,20 @@ def _read_pr_event_merged() -> bool:
 def _call_delete_branch(repo: str, branch: str) -> None:
     """Invoke delete-branch.sh to remove a branch when a PR closes.
 
-    Logs the outcome but never raises — branch cleanup is best-effort and
+    Logs the outcome but never raises -- branch cleanup is best-effort and
     must not abort the orchestrator process on partial failure.
     """
     if not branch:
-        log.warning("_call_delete_branch: BRANCH is empty — skipping")
+        log.warning("_call_delete_branch: BRANCH is empty -- skipping")
         return
     if not repo:
-        log.warning("_call_delete_branch: REPO is empty — skipping")
+        log.warning("_call_delete_branch: REPO is empty -- skipping")
         return
 
     script = SUBMODULE_ROOT / ".github/scripts/delete-branch.sh"
     if not script.exists():
         log.warning(
-            "delete-branch.sh not found at %s — branch '%s' not cleaned up",
+            "delete-branch.sh not found at %s -- branch '%s' not cleaned up",
             script, branch,
         )
         return
