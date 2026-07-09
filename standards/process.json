@@ -415,6 +415,32 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-PROC-030",
+      "title": "DEPLOY workflows must include a human-gated, role-restricted teardown path",
+      "description": "Every DEPLOY-category workflow (STD-PROC-028) that provisions or deploys infrastructure or application resources must also define a teardown (destroy/decommission) path in the same workflow file -- never left as an undocumented manual process. The teardown path's trigger must be `workflow_dispatch` only. It must define a required text input (e.g. `confirm`) with no default value, and the job's first step must verify that input is exactly the literal string `TEARDOWN`, failing the run immediately if it does not match -- this is the deliberate human confirmation gate. Execution must additionally be restricted to a limited, explicitly privileged set of roles (for example a GitHub Environment with required reviewers and restricted deployment branches, or an equivalent actor/role check), so that only entitled operators can run teardown, not any contributor with Actions access.",
+      "rationale": "Teardown is destructive and often irreversible (data loss, service outage). Requiring a typed literal confirmation plus a restricted-role gate prevents both an accidental click and an unauthorized run, mirroring the industry-standard \"type the resource name to confirm deletion\" pattern for irreversible actions.",
+      "acceptance_criteria": [
+        "Every DEPLOY workflow that provisions or deploys resources defines a teardown path (a job or a separate workflow) able to decommission what it deployed.",
+        "The teardown path's trigger is `workflow_dispatch` only -- never `push`, `schedule`, or `pull_request`.",
+        "The teardown `workflow_dispatch` inputs include a required text input (e.g. `confirm`) with no default value.",
+        "The teardown job's first step compares that input to the literal string `TEARDOWN` and fails the run immediately on any other value.",
+        "The teardown job is restricted to a limited, explicitly privileged set of roles, via a GitHub Environment with required reviewers, restricted deployment branches/tags, or an equivalent actor/role check.",
+        "No emoji or non-ASCII characters appear in the workflow file (per CLAUDE.md)."
+      ],
+      "anti_patterns": [
+        "A DEPLOY workflow with no teardown path at all -- decommissioning requires an undocumented manual process.",
+        "A `confirm` input with a default value of `TEARDOWN` -- defeats the purpose of a deliberate typed confirmation.",
+        "Teardown gated only by \"click Run workflow\" with no typed confirmation input -- one accidental click destroys the deployment.",
+        "A teardown workflow open to any contributor with Actions write access -- no Environment protection or role restriction.",
+        "Teardown triggered on `push` or `schedule` -- a destructive action must never fire automatically."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }

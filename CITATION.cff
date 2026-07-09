@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "AI Agile"
+abstract: >-
+  A complete, self-contained agentic framework for a product-led software
+  development lifecycle, added to any project repo as a single git
+  submodule. A deterministic Python orchestrator (no LLM in the routing
+  path) reads GitHub issue status labels, consults a dependency graph, and
+  invokes specialised AI agents that move each change from issue to
+  shipped, tested, documented code, with humans approving at well-defined
+  gates.
+authors:
+  - name: "M&A Operating System"
+    website: "https://www.maoperatingsystem.com"
+repository-code: "https://github.com/M-A-Operating-System/ai-coding-standards2"
+url: "https://www.maoperatingsystem.com"
+keywords:
+  - agentic-workflow
+  - software-development-lifecycle
+  - github-automation
+  - orchestrator
+  - ai-agile
