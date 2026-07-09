@@ -365,13 +365,15 @@
     {
       "id": "STD-PROC-028",
       "title": "GitHub Actions workflow names follow TYPE - Description format",
-      "description": "Every GitHub Actions workflow `name:` field must follow the pattern `{TYPE} - {Description}` where TYPE is a single uppercase keyword identifying the workflow category (e.g. BUILD, DEPLOY, SYNC, VALIDATE, REGRESSION, LINT, RELEASE, SETUP, CONTROL, PROCESS, ORCHESTRATE) and Description is a complete active sentence with a verb that fully describes what the workflow does. The separator is a space-hyphen-space ( - ). Both the type and description must appear on the top-level `name:` key, not only in the job name. DEPLOY workflows use the target platform as the description rather than a verb sentence: `DEPLOY - {Platform}` (e.g. `DEPLOY - AWS`, `DEPLOY - Azure`). When multiple deploy workflows exist for the same platform, append a service qualifier: `DEPLOY - {Platform} - {Service}` (e.g. `DEPLOY - Azure - Communications Services`, `DEPLOY - Azure - Static Web App`).",
+      "description": "Every GitHub Actions workflow `name:` field must follow the pattern `{TYPE} - {Description}` where TYPE is a single uppercase keyword identifying the workflow category (e.g. BUILD, DEPLOY, SYNC, VALIDATE, REGRESSION, LINT, RELEASE, SETUP, CONTROL, PROCESS, ORCHESTRATE) and Description is a complete active sentence with a verb that fully describes what the workflow does. The separator is a space-hyphen-space ( - ). Both the type and description must appear on the top-level `name:` key, not only in the job name. DEPLOY workflows use the target platform as the description rather than a verb sentence: `DEPLOY - {Platform}` (e.g. `DEPLOY - AWS`, `DEPLOY - Azure`). When multiple deploy workflows exist for the same platform, append a service qualifier: `DEPLOY - {Platform} - {Service}` (e.g. `DEPLOY - Azure - Communications Services`, `DEPLOY - Azure - Static Web App`). Beyond naming, every DEPLOY workflow must trigger automatically on a successful merge to `main` (`on: push: branches: [main]`, or the equivalent for the CI system in use) -- deployment happens as a direct consequence of code landing on `main`, not as a separate manual step. A DEPLOY workflow may additionally support `workflow_dispatch` for on-demand re-deploys, but push-to-`main` must always be present as a trigger.",
       "rationale": "A consistent prefix makes the Actions tab scannable: developers see the category at a glance without reading the full name. An active sentence for the description ensures the name is self-contained and unambiguous when it appears in notifications, status badges, and CI logs.",
       "acceptance_criteria": [
         "The workflow `name:` starts with an uppercase TYPE keyword drawn from the approved vocabulary (BUILD, DEPLOY, SYNC, VALIDATE, REGRESSION, LINT, RELEASE, SETUP, CONTROL, PROCESS, ORCHESTRATE, or another uppercase category approved for the project).",
         "The TYPE is followed by exactly ` - ` (space, hyphen, space).",
         "For non-DEPLOY workflows, the description after ` - ` is a complete active sentence containing a verb that fully describes what the workflow does without requiring knowledge of the filename.",
         "For DEPLOY workflows, the description is the target platform name (`DEPLOY - AWS`, `DEPLOY - Azure`). When multiple deploy workflows exist for the same platform, a service qualifier is appended (`DEPLOY - Azure - Communications Services`).",
+        "Every DEPLOY workflow's trigger includes push to the `main` branch (e.g. `on: push: branches: [main]`), so it fires automatically when a PR merges to `main`.",
+        "A DEPLOY workflow never relies solely on `pull_request` (which fires before merge completes) or solely on `workflow_dispatch` (which requires a manual trigger for every deploy) -- both may be present alongside the required push-to-`main` trigger, never instead of it.",
         "No emoji or non-ASCII characters appear in the `name:` field."
       ],
       "anti_patterns": [
@@ -382,7 +384,31 @@
         "name: BUILD: compile the app  -- colon separator instead of space-hyphen-space.",
         "name: SYNC - sync files  -- description repeats the type word rather than saying what is synced.",
         "name: DEPLOY - Deploy to Azure  -- verb in description is redundant; use DEPLOY - Azure.",
-        "name: DEPLOY - Azure  -- ambiguous when three Azure workflows exist; qualify with the service name."
+        "name: DEPLOY - Azure  -- ambiguous when three Azure workflows exist; qualify with the service name.",
+        "name: DEPLOY - Azure with only `on: pull_request` -- fires on the PR itself, before the merge actually lands on main.",
+        "name: DEPLOY - AWS with only `on: workflow_dispatch` -- deploy only happens if a human remembers to trigger it manually; no automatic trigger on merge to main."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
+    },
+    {
+      "id": "STD-PROC-029",
+      "title": "The primary production branch is named `main`",
+      "description": "This project's single primary, production/deployable branch is named `main`. All feature and fix branches are cut from `main`, every PR targets `main` as its base, branch-protection rules are configured against `main`, and (per STD-PROC-028) every DEPLOY-category workflow triggers on a successful merge to `main`. No other branch name (`master`, `production`, `release`, etc.) is a production branch for this project; a legacy branch under one of those names is not authoritative and should be retired, not treated as a second production target.",
+      "rationale": "A single, unambiguous name for the production branch lets automation (branch protection, deploy triggers, default PR base) target the right ref without per-repo configuration guesswork, and avoids new contributors or agents branching from or deploying to the wrong ref.",
+      "acceptance_criteria": [
+        "The repository's default branch and branch-protection rules are configured against `main`.",
+        "Every PR's base branch is `main` (or a `main`-derived branch under an active branching-strategy ADR), never `master` or another legacy production-branch name.",
+        "DEPLOY-category workflows (STD-PROC-028) trigger on push/merge to `main`, never to any other branch name.",
+        "No documentation, workflow, or script hardcodes `master` (or another alternate name) as the production branch."
+      ],
+      "anti_patterns": [
+        "on: push: branches: [master]  -- wrong branch name; the production branch is main.",
+        "A PR opened with base: master  -- targets a non-authoritative branch.",
+        "Documentation or a script referring to \"the master branch\" as the deploy or release target."
       ],
       "adr_overridable": true,
       "applies_to": [
