@@ -36,7 +36,6 @@ elif echo "${DELETE_OUTPUT}" | grep -qE "HTTP 404|HTTP 422|Reference does not ex
   echo "Branch '${BRANCH}' already gone -- nothing to do."
 else
   echo "Failed to delete branch '${BRANCH}': ${DELETE_OUTPUT}" >&2
-  echo "AI_AGILE_STATUS: complete"
   exit 1
 fi
 

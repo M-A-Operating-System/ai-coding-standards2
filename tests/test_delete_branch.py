@@ -100,6 +100,18 @@ class TestReadPrEventMerged:
         with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_file)}):
             assert _read_pr_event_merged() is False
 
+    def test_returns_false_when_pull_request_is_null(self, tmp_path):
+        """_read_pr_event_merged returns False (never raises) when 'pull_request' is null.
+
+        Regression coverage: a naive `data.get("pull_request", {}).get(...)`
+        raises AttributeError here because the default only applies when the
+        key is absent, not when it is present with a None value.
+        """
+        event_file = tmp_path / "event.json"
+        event_file.write_text(json.dumps({"action": "closed", "pull_request": None}))
+        with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event_file)}):
+            assert _read_pr_event_merged() is False
+
     def test_returns_false_when_env_not_set(self):
         """_read_pr_event_merged returns False when GITHUB_EVENT_PATH is absent."""
         env = {k: v for k, v in os.environ.items() if k != "GITHUB_EVENT_PATH"}
@@ -420,6 +432,9 @@ class TestDeleteBranchScript:
         )
         assert "already gone" not in output.lower()
         assert "failed to delete" in output.lower()
+        assert "AI_AGILE_STATUS: complete" not in output, (
+            "a failing run must not also claim AI_AGILE_STATUS: complete"
+        )
 
     def test_requires_repo_env_var(self, tmp_path):
         """Missing REPO causes a non-zero exit (guard clause)."""
