@@ -83,7 +83,8 @@ home**, and everything else **references it rather than restating it**. Duplicat
 - **Family = umbrella + facets.** When several standards are facets of one concern,
   one is the umbrella and the others own only their distinct facet, linked with
   `related`. (e.g. output-encoding umbrella `STD-SEC-003` with sinks `STD-SEC-008/009/012`;
-  the Display-ID family `STD-ARCH-012/022/026` + `STD-DATA-012`.)
+  the database-naming umbrella `STD-DATA-014` with facets `STD-DATA-008` (surrogate key)
+  and `STD-DATA-009` (role-named foreign keys).)
 - **Thin parents.** An umbrella/value standard (e.g. "prefer the simplest solution")
   carries no gate of its own — its acceptance is delegated to the concrete facets it
   points to, so it cannot duplicate them.
