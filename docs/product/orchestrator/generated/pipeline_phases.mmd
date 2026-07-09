@@ -20,10 +20,12 @@ flowchart TD
         entry_n_00_ondemand__sizer(["sizer:requested"])
         entry_n_00_ondemand__new_agent(["new-agent:requested"])
         entry_n_00_ondemand__standards_migrator(["standards-migrator:requested"])
+        entry_n_00_ondemand__branch_cleanup(["branch-cleanup:requested"])
         n_00_ondemand__codebase_reviewer["codebase-reviewer"]
         n_00_ondemand__sizer["sizer"]
         n_00_ondemand__new_agent["new-agent"]
         n_00_ondemand__standards_migrator["standards-migrator"]
+        n_00_ondemand__branch_cleanup["branch-cleanup"]
         gate__n_00_ondemand__sizer{"sizer:review · auto"}
     end
     term_blocked(["blocked — human"]):::term
@@ -37,6 +39,7 @@ flowchart TD
     entry_n_00_ondemand__sizer --> n_00_ondemand__sizer
     entry_n_00_ondemand__new_agent --> n_00_ondemand__new_agent
     entry_n_00_ondemand__standards_migrator --> n_00_ondemand__standards_migrator
+    entry_n_00_ondemand__branch_cleanup --> n_00_ondemand__branch_cleanup
     n_01_product_docs__prd_writer --> gate__n_01_product_docs__prd_writer
     n_01_product_docs__prd_docs_updater --> gate__n_01_product_docs__prd_docs_updater
     n_03_execute__merge_conflict --> gate__n_03_execute__merge_conflict

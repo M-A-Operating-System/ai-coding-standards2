@@ -147,8 +147,11 @@ In the **Execute** phase, branch and PR ownership follows
   human feedback (this re-invocation does not count toward the
   three-cycle limit), then ci-gate and `pr-reviewer` run again.
 - The linked issue closes automatically on merge via the "Closes #{N}"
-  trailer in the PR body; the branch is deleted automatically by
-  GitHub's "auto-delete head branches" repo setting.
+  trailer in the PR body; the `issue-{N}` branch is deleted by the
+  orchestrator when it receives the `pull_request.closed` event with
+  `merged=true` — `_wake` calls `delete-branch.sh` for this.
+  Branches from PRs closed without merging are not auto-deleted; they
+  are handled by the `00_ondemand/branch-cleanup` agent on human request.
 
 ---
 

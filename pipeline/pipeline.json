@@ -265,6 +265,26 @@
         "Bash(python3 *)"
       ],
       "description": "Ad-hoc agent that scans the consuming repo for existing knowledge files and ground-truth artifacts, then converts the timeless rules they imply into machine-readable standards/*.json. Presents proposed standards for human approval before writing. Triggered by applying the standards-migrator:requested label to any issue."
+    },
+
+    {
+      "agent": "00_ondemand/branch-cleanup",
+      "phase": "00_ondemand",
+      "object": ["issue"],
+      "trigger": {
+        "label": "branch-cleanup:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "global" },
+      "extra_allowedTools": [
+        "Bash(gh api *)",
+        "Bash(gh pr list *)",
+        "Bash(gh issue comment *)",
+        "Bash(gh issue view *)"
+      ],
+      "description": "Ad-hoc sweep agent. Evaluates every remote branch, classifies each as a deletion candidate or one to keep, and posts the recommendation for human approval. On re-invocation after a human approves specific branches in a reply comment, deletes exactly those branches and posts a summary. Triggered by applying the branch-cleanup:requested label to any issue."
     }
 
   ]
