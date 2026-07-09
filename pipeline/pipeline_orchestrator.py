@@ -3912,7 +3912,10 @@ def _read_pr_event_merged() -> bool:
     try:
         with open(event_path) as f:
             data = json.load(f)
-        return bool(data.get("pull_request", {}).get("merged", False))
+        pull_request = data.get("pull_request")
+        if not isinstance(pull_request, dict):
+            return False
+        return bool(pull_request.get("merged", False))
     except (OSError, json.JSONDecodeError, ValueError):
         return False
 
