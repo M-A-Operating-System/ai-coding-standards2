@@ -1063,6 +1063,8 @@ class TestParseArgsAndMain:
     def test_parse_args_defaults(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["get_started.py"])
         args = get_started.parse_args()
+        assert args.seed is False
+        assert args.full is False
         assert args.force is False
         assert args.dry_run is False
 
@@ -1071,6 +1073,29 @@ class TestParseArgsAndMain:
         args = get_started.parse_args()
         assert args.force is True
         assert args.dry_run is True
+
+    def test_main_requires_explicit_run_type(self, monkeypatch):
+        """No run type => main() exits with an error (there is no default mode)."""
+        monkeypatch.setattr(sys, "argv", ["get_started.py"])
+        # find_consuming_repo_root must never be reached -- the guard runs first.
+        monkeypatch.setattr(
+            get_started, "find_consuming_repo_root",
+            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+        )
+        with pytest.raises(SystemExit) as exc:
+            get_started.main()
+        assert "no run type" in str(exc.value).lower()
+
+    def test_main_rejects_conflicting_run_types(self, monkeypatch):
+        """--seed together with --full/--force => main() exits with a conflict error."""
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--seed", "--force"])
+        monkeypatch.setattr(
+            get_started, "find_consuming_repo_root",
+            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+        )
+        with pytest.raises(SystemExit) as exc:
+            get_started.main()
+        assert "conflicting run types" in str(exc.value).lower()
 
     def test_main_runs_dry_run_end_to_end(self, tmp_path, monkeypatch, capsys):
         """main() in --dry-run wires the consuming repo without writing files."""
@@ -1100,13 +1125,14 @@ class TestParseArgsAndMain:
         monkeypatch.setattr(
             get_started, "find_consuming_repo_root", lambda: consuming
         )
-        monkeypatch.setattr(sys, "argv", ["get_started.py", "--dry-run"])
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--force", "--dry-run"])
 
         rc = get_started.main()
 
         assert rc == 0
         out = capsys.readouterr().out
         assert "dry run" in out
+        assert "full" in out.lower()
         # Dry-run must not have written anything into the consuming repo.
         assert not (consuming / ".github").exists()
         assert not (consuming / "standards").exists()
