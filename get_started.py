@@ -21,12 +21,14 @@ neither clobber the consuming repo nor silently do the wrong amount of work).
                                         kill switch) + .gitignore entries.
                                         Nothing else.
 
-  --full / --force   -> run_full()  -> installs the COMPLETE managed set:
+  --full             -> run_full()  -> installs the COMPLETE managed set:
                                         all workflows, the whole-.claude
                                         symlink, the standards symlink, the
                                         local adrs/ folder, requirements,
-                                        .gitignore. --force also overwrites
-                                        existing files; --full does not.
+                                        .gitignore.
+
+  --force is an overwrite modifier (not a mode): add it to --seed or --full to
+  overwrite existing files. The Onboard job and sync-claude.yml run --full --force.
 
 The two modes are two steps of ONE onboarding flow:
 
@@ -38,14 +40,14 @@ The two modes are two steps of ONE onboarding flow:
          ships alongside it so the operator has a kill switch from the start.
 
   Step 2 (on a Linux runner, by the Onboard job in orchestrator.yml):
-      python get_started.py --force
+      python get_started.py --full --force
       -> writes EVERYTHING else and commits it. This is also what the daily
          sync-claude.yml workflow runs to repair drift.
 
 So `--seed` deliberately copies almost nothing -- the whole-folder
 symlink/full wiring happens in Step 2, on a Linux runner, via the Onboard
-GitHub Action (which passes --force). A developer who genuinely wants the full
-install locally passes --full (or --force to also overwrite). See
+GitHub Action (which passes --full --force). A developer who genuinely wants
+the full install locally passes --full (adding --force to overwrite). See
 docs/product/orchestrator/16-onboarding.md for the full flow.
 
 What run_full() installs, in order (each is one install_* function below):
@@ -67,13 +69,13 @@ Options (a run type is REQUIRED -- there is no default):
                  pipeline-emergency-stop.yml) + .gitignore, then stop. Commit
                  those, push, then trigger the "Onboard" job to finish wiring
                  on a Linux runner (which runs --force).
-    --full       FULL mode: install the complete managed set locally, without
-                 overwriting existing files. Use --force to also overwrite.
-    --force      FULL mode AND overwrite existing files. This is what the
-                 Onboard job and sync-claude.yml pass on a Linux runner.
+    --full       FULL mode: install the complete managed set locally. This is
+                 what the Onboard job and sync-claude.yml run on a Linux runner.
+    --force      Overwrite existing files. A modifier, not a mode -- combine it
+                 with --seed or --full.
     --dry-run    Print what would be created/modified without writing.
 
-Running with no run type (neither --seed nor --full/--force) is an error.
+Running with no run type (neither --seed nor --full) is an error.
 """
 
 from __future__ import annotations
@@ -736,28 +738,28 @@ def parse_args() -> argparse.Namespace:
         "--seed",
         action="store_true",
         help=(
-            "Minimal bootstrap (this is also the default when no mode flag is "
-            "given): copy only orchestrator.yml + .gitignore. Commit those two "
-            "files, push, then trigger the workflow with 'Onboard' to finish "
-            "wiring on a Linux runner."
+            "SEED mode (one of --seed/--full is required; there is no default): "
+            "copy the two seed workflows (orchestrator.yml + "
+            "pipeline-emergency-stop.yml) + .gitignore. Commit those, push, then "
+            "trigger the 'Onboard' workflow to finish wiring on a Linux runner."
         ),
     )
     p.add_argument(
         "--full",
         action="store_true",
         help=(
-            "Full install: lay down every workflow, the whole-.claude and "
-            "standards symlinks, adrs/, and requirements locally, without "
-            "overwriting existing files. Pass --force to also overwrite."
+            "FULL mode (one of --seed/--full is required): lay down every "
+            "workflow, the whole-.claude and standards symlinks, adrs/, and "
+            "requirements locally. This is what the Onboard job and "
+            "sync-claude.yml run on a Linux runner (they add --force)."
         ),
     )
     p.add_argument(
         "--force",
         action="store_true",
         help=(
-            "Full install AND overwrite existing files in the consuming repo. "
-            "This is what the Onboard job and sync-claude.yml run on a Linux "
-            "runner."
+            "Overwrite existing files. A modifier, not a mode: use it with "
+            "--seed or --full."
         ),
     )
     p.add_argument(
@@ -828,7 +830,7 @@ def _guard_existing_claude(consuming_root: Path) -> None:
 
 
 def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
-    """Full mode (default / --force): install the COMPLETE managed file set.
+    """Full mode (--full): install the COMPLETE managed file set.
 
     This is what the Onboard job in orchestrator.yml runs (get_started.py
     --force), and what the daily sync-claude.yml workflow runs to repair drift.
@@ -860,27 +862,23 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
 def main() -> int:
     args = parse_args()
 
-    # Mode resolution -- there is NO DEFAULT. The caller must pick exactly one
-    # run type: --seed (minimal) or --full/--force (complete wiring; --force
-    # also overwrites and is what the Onboard job and sync-claude.yml pass).
-    # Refuse an ambiguous invocation before touching the consuming repo.
-    full_mode = args.full or args.force
-    if args.seed and full_mode:
-        sys.exit(
-            "ERROR: conflicting run types. Pass either --seed OR --full/--force, "
-            "not both."
-        )
-    if not args.seed and not full_mode:
+    # Mode resolution -- there is NO DEFAULT. Exactly one run type is required:
+    # --seed (minimal) or --full (complete wiring). --force is an overwrite
+    # modifier usable with either, never a mode of its own. Refuse an ambiguous
+    # invocation before touching the consuming repo.
+    if args.seed and args.full:
+        sys.exit("ERROR: pass either --seed or --full, not both.")
+    if not args.seed and not args.full:
         sys.exit(
             "ERROR: no run type specified -- get_started.py has no default mode.\n"
             "  Choose one:\n"
-            "    --seed    minimal local bootstrap (orchestrator.yml + .gitignore),\n"
+            "    --seed    minimal local bootstrap (the two seed workflows + .gitignore),\n"
             "              then commit, push, and run the Onboard job to finish.\n"
-            "    --full    complete wiring locally (add --force to also overwrite).\n"
-            "    --force   complete wiring AND overwrite -- what the Onboard job and\n"
-            "              sync-claude.yml run on a Linux runner.\n"
-            "  Add --dry-run to preview either without writing."
+            "    --full    complete wiring locally -- what the Onboard job and\n"
+            "              sync-claude.yml run on a Linux runner (they add --force).\n"
+            "  Add --force to overwrite existing files, --dry-run to preview."
         )
+    full_mode = args.full
 
     consuming_root = find_consuming_repo_root()
     print(f"Consuming repo root: {consuming_root}")
@@ -891,8 +889,8 @@ def main() -> int:
     print()
 
     # One script, two modes -- see the module docstring. run_seed() is the
-    # minimal local bootstrap (the default); run_full() does the real wiring and
-    # is what the Onboard job runs on a Linux runner.
+    # minimal local bootstrap; run_full() does the real wiring and is what the
+    # Onboard job runs on a Linux runner.
     if full_mode:
         run_full(consuming_root, args.force, args.dry_run)
     else:

@@ -1087,15 +1087,26 @@ class TestParseArgsAndMain:
         assert "no run type" in str(exc.value).lower()
 
     def test_main_rejects_conflicting_run_types(self, monkeypatch):
-        """--seed together with --full/--force => main() exits with a conflict error."""
-        monkeypatch.setattr(sys, "argv", ["get_started.py", "--seed", "--force"])
+        """--seed together with --full => main() exits with a conflict error."""
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--seed", "--full"])
         monkeypatch.setattr(
             get_started, "find_consuming_repo_root",
             lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
         )
         with pytest.raises(SystemExit) as exc:
             get_started.main()
-        assert "conflicting run types" in str(exc.value).lower()
+        assert "not both" in str(exc.value).lower()
+
+    def test_main_rejects_force_without_a_mode(self, monkeypatch):
+        """--force is a modifier, not a mode: --force alone => no-run-type error."""
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--force"])
+        monkeypatch.setattr(
+            get_started, "find_consuming_repo_root",
+            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+        )
+        with pytest.raises(SystemExit) as exc:
+            get_started.main()
+        assert "no run type" in str(exc.value).lower()
 
     def test_main_runs_dry_run_end_to_end(self, tmp_path, monkeypatch, capsys):
         """main() in --dry-run wires the consuming repo without writing files."""
@@ -1125,7 +1136,7 @@ class TestParseArgsAndMain:
         monkeypatch.setattr(
             get_started, "find_consuming_repo_root", lambda: consuming
         )
-        monkeypatch.setattr(sys, "argv", ["get_started.py", "--force", "--dry-run"])
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--full", "--dry-run"])
 
         rc = get_started.main()
 

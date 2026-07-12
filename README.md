@@ -168,7 +168,7 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run**.
 
 The workflow checks out the repo with its submodule on a Linux runner, runs
-`get_started.py --force`, creates the whole-folder `.claude` and `standards`
+`get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
 symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
 (`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
 `pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and commits everything.
@@ -204,7 +204,7 @@ git commit -m "Bump ai-coding-standards2 to <ref>"
 Pin to tags for predictable upgrades. Do not track `main` directly
 in production unless you want every change auto-applied.
 
-### What auto-flows vs. what needs `get_started.py --force`
+### What auto-flows vs. what needs `get_started.py --full --force`
 
 After a submodule bump, **most things just work** because the
 orchestrator reads them straight from the submodule:
@@ -225,7 +225,7 @@ GitHub Actions cannot read workflows from a submodule:
 If a workflow changed in the new submodule version, re-run:
 
 ```bash
-python ai-coding-standards2/get_started.py --force
+python ai-coding-standards2/get_started.py --full --force
 git add .github/workflows/
 git commit -m "Refresh ai-coding-standards2 wrapper files"
 ```
