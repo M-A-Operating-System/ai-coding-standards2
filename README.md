@@ -87,10 +87,13 @@ tag or specific commit when you're ready to control upgrades.
 python ai-coding-standards2/get_started.py --seed
 ```
 
-This drops a single file — `orchestrator.yml` — into `.github/workflows/`
-and adds `.gitignore` entries. That is all you need to commit locally.
-The workflow itself handles all remaining setup on a Linux runner (symlinks,
-slash commands, standards, remaining workflows).
+This drops the two seed workflows — `orchestrator.yml` and
+`pipeline-emergency-stop.yml` (the operator's kill switch) — into
+`.github/workflows/` and adds `.gitignore` entries. That is all you need to
+commit locally. The orchestrator then handles all remaining setup on a Linux
+runner (symlinks, slash commands, standards, remaining workflows); the
+emergency stop is available from the first commit so a runaway pipeline can be
+halted before the full wiring exists.
 
 ### 3. Commit and push
 

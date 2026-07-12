@@ -17,7 +17,7 @@ this first.
 
 | Run | Command | What it installs | Who runs it |
 |---|---|---|---|
-| **Seed** (step 1) | `get_started.py --seed` | **Only** `orchestrator.yml` + `.gitignore` entries. Nothing else. | A developer, locally |
+| **Seed** (step 1) | `get_started.py --seed` | The **two seed workflows** (`orchestrator.yml` + `pipeline-emergency-stop.yml`) + `.gitignore` entries. Nothing else. | A developer, locally |
 | **Full** (step 2) | `get_started.py --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder, requirements. | The Onboard job, on a Linux runner |
 
 Running `get_started.py` with no run type prints an error listing the choices
@@ -33,11 +33,15 @@ In code these are the `run_seed()` and `run_full()` functions in
 
 ### `--seed` (recommended for new installs)
 
-Drops `orchestrator.yml` into the consuming repo's `.github/workflows/` and
-adds `.gitignore` entries. The developer commits those two things and pushes.
-The orchestrator workflow's built-in setup job then does the rest on a Linux
-runner (see Bootstrap flow below). Seed mode deliberately installs almost
-nothing — it is only enough to bootstrap step 2.
+Drops the two seed workflows — `orchestrator.yml` and
+`pipeline-emergency-stop.yml` (the operator's kill switch) — into the consuming
+repo's `.github/workflows/` and adds `.gitignore` entries. The developer commits
+those and pushes. The orchestrator workflow's built-in setup job then does the
+rest on a Linux runner (see Bootstrap flow below). Seed mode deliberately
+installs almost nothing else — orchestrator.yml is enough to bootstrap step 2,
+and the emergency stop ships alongside it so a runaway pipeline can be halted
+from the very first commit (it reads nothing from the submodule, so it works
+before the full wiring exists).
 
 ```bash
 python ai-coding-standards2/get_started.py --seed
@@ -105,8 +109,9 @@ heavy lifting happens on a GitHub-hosted Linux runner, not locally.
 
 **Step 1 — Local seed commit**
 
-Run `get_started.py --seed`. It writes one file (`orchestrator.yml`) and
-updates `.gitignore`, then exits.
+Run `get_started.py --seed`. It writes the two seed workflows
+(`orchestrator.yml` + `pipeline-emergency-stop.yml`) and updates `.gitignore`,
+then exits.
 
 ```bash
 python ai-coding-standards2/get_started.py --seed

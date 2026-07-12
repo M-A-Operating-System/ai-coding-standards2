@@ -16,8 +16,10 @@ is NO DEFAULT: you must pick a run type explicitly. Running it with no mode
 flag is an error (it refuses rather than guess, so a first-time local run can
 neither clobber the consuming repo nor silently do the wrong amount of work).
 
-  --seed             -> run_seed()  -> installs ONLY orchestrator.yml
-                                        + .gitignore entries. Nothing else.
+  --seed             -> run_seed()  -> installs the two seed workflows
+                                        (orchestrator.yml + the emergency-stop
+                                        kill switch) + .gitignore entries.
+                                        Nothing else.
 
   --full / --force   -> run_full()  -> installs the COMPLETE managed set:
                                         all workflows, the whole-.claude
@@ -30,8 +32,10 @@ The two modes are two steps of ONE onboarding flow:
 
   Step 1 (local, by a developer):
       python get_started.py --seed
-      -> writes orchestrator.yml only, so a single workflow can be committed
-         and pushed. That is the minimum GitHub needs to run the Onboard job.
+      -> writes the two seed workflows (orchestrator.yml + the emergency-stop
+         kill switch), so they can be committed and pushed. orchestrator.yml is
+         the minimum GitHub needs to run the Onboard job; the emergency stop
+         ships alongside it so the operator has a kill switch from the start.
 
   Step 2 (on a Linux runner, by the Onboard job in orchestrator.yml):
       python get_started.py --force
@@ -59,9 +63,10 @@ applied on copy; agents and slash commands are read verbatim (commands already
 try both standalone and submodule paths, so they need no rewriting).
 
 Options (a run type is REQUIRED -- there is no default):
-    --seed       SEED mode: copy only orchestrator.yml + .gitignore, then stop.
-                 Commit those, push, then trigger the "Onboard" job to finish
-                 wiring on a Linux runner (which runs --force).
+    --seed       SEED mode: copy the two seed workflows (orchestrator.yml +
+                 pipeline-emergency-stop.yml) + .gitignore, then stop. Commit
+                 those, push, then trigger the "Onboard" job to finish wiring
+                 on a Linux runner (which runs --force).
     --full       FULL mode: install the complete managed set locally, without
                  overwriting existing files. Use --force to also overwrite.
     --force      FULL mode AND overwrite existing files. This is what the
@@ -669,6 +674,7 @@ def print_followup_seed() -> None:
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
     print(f"             .github/workflows/orchestrator.yml \\")
+    print(f"             .github/workflows/pipeline-emergency-stop.yml \\")
     print(f"             .gitignore")
     print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
     print(f"     git push")
@@ -763,19 +769,27 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
-    """SEED mode (--seed): install ONLY orchestrator.yml + .gitignore, then stop.
+    """SEED mode (--seed): install the two seed workflows + .gitignore, then stop.
 
-    This is the minimal local bootstrap. The developer commits the single
-    orchestrator.yml workflow and pushes it -- that is all GitHub needs to run
-    the "Onboard" job, which then re-runs this script in full mode (--force) on
-    a Linux runner to install everything else. Deliberately copies almost
-    nothing; see run_full() for the real wiring.
+    This is the minimal local bootstrap. It installs exactly two workflow files:
+      - orchestrator.yml         -- all GitHub needs to run the "Onboard" job,
+                                     which re-runs this script in full mode
+                                     (--force) on a Linux runner to install
+                                     everything else.
+      - pipeline-emergency-stop.yml -- the operator's kill switch. It reads
+                                     nothing from the submodule, so it works
+                                     from the first commit; shipping it in the
+                                     seed means the operator can halt a runaway
+                                     pipeline before the full wiring exists.
+    The developer commits these two workflows (plus .gitignore) and pushes.
+    Deliberately copies almost nothing else; see run_full() for the real wiring.
 
     include_standards=False because install_standards() does not run in seed
     mode -- listing gitignore entries for standards files that do not exist yet
     confuses developers who try to place them manually before the Onboard job.
     """
     install_orchestrator_workflows(consuming_root, force, dry_run)
+    install_emergency_stop_workflow(consuming_root, force, dry_run)
     add_gitignore_entries(consuming_root, dry_run, include_standards=False)
     untrack_managed_paths(consuming_root, dry_run)
     print_followup_seed()
@@ -871,7 +885,7 @@ def main() -> int:
     consuming_root = find_consuming_repo_root()
     print(f"Consuming repo root: {consuming_root}")
     print(f"Submodule root:      {SUBMODULE_ROOT}")
-    print(f"Mode:                {'full (complete wiring)' if full_mode else 'seed (orchestrator.yml only)'}")
+    print(f"Mode:                {'full (complete wiring)' if full_mode else 'seed (orchestrator + emergency-stop)'}")
     if args.dry_run:
         print("(dry run -- no files will be written)")
     print()

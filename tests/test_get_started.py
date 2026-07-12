@@ -1138,6 +1138,40 @@ class TestParseArgsAndMain:
         assert not (consuming / "standards").exists()
         assert not (consuming / ".gitignore").exists()
 
+    def test_seed_installs_orchestrator_and_emergency_stop_only(self, tmp_path, monkeypatch):
+        """Seed mode installs exactly the two seed workflows (orchestrator +
+        emergency stop) and none of the full-only workflows."""
+        fake_src = tmp_path / "submodule"
+        wf = fake_src / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        all_workflows = (
+            "orchestrator.yml",
+            "bootstrap-labels.yml",
+            "label-cleanup.yml",
+            "sync-claude.yml",
+            "pipeline-emergency-stop.yml",
+            "pipeline-restart.yml",
+        )
+        for name in all_workflows:
+            (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.run_seed(consuming, force=False, dry_run=False)
+
+        dst_wf = consuming / ".github" / "workflows"
+        # The two seed workflows are installed.
+        assert (dst_wf / "orchestrator.yml").exists()
+        assert (dst_wf / "pipeline-emergency-stop.yml").exists()
+        # The full-only workflows are NOT installed by seed.
+        for name in ("bootstrap-labels.yml", "label-cleanup.yml", "sync-claude.yml", "pipeline-restart.yml"):
+            assert not (dst_wf / name).exists(), f"seed must not install {name}"
+        # Seed does not lay down standards/.claude.
+        assert not (consuming / "standards").exists()
+        assert not (consuming / ".claude").exists()
+
 
 # ---------------------------------------------------------------------------
 # TestFindConsumingRepoRoot
