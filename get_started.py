@@ -678,7 +678,7 @@ def print_followup_seed() -> None:
     print(f"       ANTHROPIC_API_KEY  -- your Anthropic API key")
     print(f"       AI_AGILE_BOT_TOKEN -- a GitHub PAT for the bot account")
     print()
-    print(f"     Then: GitHub -> Actions -> 'Pipeline Orchestrator' -> Run workflow")
+    print(f"     Then: GitHub -> Actions -> 'AI - Orchestrator' -> Run workflow")
     print(f"     -> check 'Onboard' -> Run.")
     print()
     print(f"     The Onboard job runs on a Linux runner. It creates the")

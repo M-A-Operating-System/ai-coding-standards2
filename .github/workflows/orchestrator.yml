@@ -1,4 +1,4 @@
-name: Pipeline Orchestrator
+name: AI - Orchestrator
 
 # Single orchestrator workflow -- evaluates every pipeline phase in one pass.
 #
@@ -56,7 +56,7 @@ concurrency:
 jobs:
   # --- Onboard ----------------------------------------------------------------
   # Run this job once after get_started.py --seed has copied orchestrator.yml:
-  #   Actions -> Pipeline Orchestrator -> Run workflow -> OK: Onboard
+  #   Actions -> AI - Orchestrator -> Run workflow -> OK: Onboard
   # It calls get_started.py --force on a Linux runner, which creates the
   # .claude/agents symlink, copies slash commands and standards, and drops all
   # remaining workflow files -- then commits and pushes everything.

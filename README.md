@@ -162,7 +162,7 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 
 ### 5. Run the Onboard job
 
-Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard → Run**.
+Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run**.
 
 The workflow checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --force`, creates the whole-folder `.claude` and `standards`
