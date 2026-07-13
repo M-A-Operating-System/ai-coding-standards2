@@ -55,7 +55,7 @@ concurrency:
 
 jobs:
   # --- Onboard ----------------------------------------------------------------
-  # Run this job once after get_started.py --seed has copied orchestrator.yml:
+  # Run this job once after get_started.py --seed has copied ai_orchestrator.yml:
   #   Actions -> AI - Orchestrator -> Run workflow -> OK: Onboard
   # It calls get_started.py --full --force on a Linux runner, which creates the
   # .claude/agents symlink, copies slash commands and standards, and drops all
@@ -79,8 +79,8 @@ jobs:
 
       - name: Run onboarding
         # Creates .claude/agents symlink, copies commands + standards,
-        # writes sync-claude.yml, bootstrap-labels.yml, label-cleanup.yml,
-        # pipeline-emergency-stop.yml, seeds requirements.txt, and
+        # writes ai_sync_claude.yml, ai_bootstrap_labels.yml, ai_label_cleanup.yml,
+        # ai_emergency_stop.yml, seeds requirements.txt, and
         # updates .gitignore.
         run: python ai-coding-standards2/get_started.py --full --force
 
@@ -96,11 +96,11 @@ jobs:
             .claude \
             standards \
             .gitignore \
-            .github/workflows/orchestrator.yml \
-            .github/workflows/sync-claude.yml \
-            .github/workflows/bootstrap-labels.yml \
-            .github/workflows/label-cleanup.yml \
-            .github/workflows/pipeline-emergency-stop.yml
+            .github/workflows/ai_orchestrator.yml \
+            .github/workflows/ai_sync_claude.yml \
+            .github/workflows/ai_bootstrap_labels.yml \
+            .github/workflows/ai_label_cleanup.yml \
+            .github/workflows/ai_emergency_stop.yml
 
           # Project-owned artifacts, committed normally (not gitignored):
           # local ADRs and requirements.txt.

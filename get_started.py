@@ -17,7 +17,7 @@ flag is an error (it refuses rather than guess, so a first-time local run can
 neither clobber the consuming repo nor silently do the wrong amount of work).
 
   --seed             -> run_seed()  -> installs the two seed workflows
-                                        (orchestrator.yml + the emergency-stop
+                                        (ai_orchestrator.yml + the emergency-stop
                                         kill switch) + .gitignore entries.
                                         Nothing else.
 
@@ -28,21 +28,21 @@ neither clobber the consuming repo nor silently do the wrong amount of work).
                                         .gitignore.
 
   --force is an overwrite modifier (not a mode): add it to --seed or --full to
-  overwrite existing files. The Onboard job and sync-claude.yml run --full --force.
+  overwrite existing files. The Onboard job and ai_sync_claude.yml run --full --force.
 
 The two modes are two steps of ONE onboarding flow:
 
   Step 1 (local, by a developer):
       python get_started.py --seed
-      -> writes the two seed workflows (orchestrator.yml + the emergency-stop
-         kill switch), so they can be committed and pushed. orchestrator.yml is
+      -> writes the two seed workflows (ai_orchestrator.yml + the emergency-stop
+         kill switch), so they can be committed and pushed. ai_orchestrator.yml is
          the minimum GitHub needs to run the Onboard job; the emergency stop
          ships alongside it so the operator has a kill switch from the start.
 
-  Step 2 (on a Linux runner, by the Onboard job in orchestrator.yml):
+  Step 2 (on a Linux runner, by the Onboard job in ai_orchestrator.yml):
       python get_started.py --full --force
       -> writes EVERYTHING else and commits it. This is also what the daily
-         sync-claude.yml workflow runs to repair drift.
+         ai_sync_claude.yml workflow runs to repair drift.
 
 So `--seed` deliberately copies almost nothing -- the whole-folder
 symlink/full wiring happens in Step 2, on a Linux runner, via the Onboard
@@ -51,8 +51,8 @@ the full install locally passes --full (adding --force to overwrite). See
 docs/product/orchestrator/16-onboarding.md for the full flow.
 
 What run_full() installs, in order (each is one install_* function below):
-    orchestrator.yml, bootstrap-labels.yml, label-cleanup.yml,
-    sync-claude.yml, pipeline-emergency-stop.yml,
+    ai_orchestrator.yml, ai_bootstrap_labels.yml, ai_label_cleanup.yml,
+    ai_sync_claude.yml, ai_emergency_stop.yml,
     the standards/ symlink, the local adrs/ folder, the whole-.claude symlink,
     requirements.txt, .gitignore entries, and untracking of any
     previously-committed managed paths.
@@ -65,12 +65,12 @@ applied on copy; agents and slash commands are read verbatim (commands already
 try both standalone and submodule paths, so they need no rewriting).
 
 Options (a run type is REQUIRED -- there is no default):
-    --seed       SEED mode: copy the two seed workflows (orchestrator.yml +
-                 pipeline-emergency-stop.yml) + .gitignore, then stop. Commit
+    --seed       SEED mode: copy the two seed workflows (ai_orchestrator.yml +
+                 ai_emergency_stop.yml) + .gitignore, then stop. Commit
                  those, push, then trigger the "Onboard" job to finish wiring
                  on a Linux runner (which runs --full --force).
     --full       FULL mode: install the complete managed set locally. This is
-                 what the Onboard job and sync-claude.yml run on a Linux runner.
+                 what the Onboard job and ai_sync_claude.yml run on a Linux runner.
     --force      Overwrite existing files. A modifier, not a mode -- combine it
                  with --seed or --full.
     --dry-run    Print what would be created/modified without writing.
@@ -397,14 +397,14 @@ def install_orchestrator_workflows(
 ) -> int:
     """Copy the orchestrator workflow into the consuming repo.
 
-    A single workflow file (orchestrator.yml) evaluates every pipeline
+    A single workflow file (ai_orchestrator.yml) evaluates every pipeline
     phase in one pass, with contents:write so the execute-phase agents
     (coder, create-pr, prd-docs-updater) can push to the issue branch.
 
     Returns the number of files written.
     """
     workflows = [
-        "orchestrator.yml",
+        "ai_orchestrator.yml",
     ]
     written = 0
     for name in workflows:
@@ -452,22 +452,22 @@ def _install_workflow(
 
 
 def install_bootstrap_labels_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy bootstrap-labels.yml into the consuming repo (reads the submodule)."""
-    return _install_workflow("bootstrap-labels.yml", consuming_root, force, dry_run)
+    """Copy ai_bootstrap_labels.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("ai_bootstrap_labels.yml", consuming_root, force, dry_run)
 
 
 def install_label_cleanup_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy label-cleanup.yml into the consuming repo (reads the submodule)."""
-    return _install_workflow("label-cleanup.yml", consuming_root, force, dry_run)
+    """Copy ai_label_cleanup.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("ai_label_cleanup.yml", consuming_root, force, dry_run)
 
 
 def install_sync_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy sync-claude.yml into the consuming repo (reads the submodule)."""
-    return _install_workflow("sync-claude.yml", consuming_root, force, dry_run)
+    """Copy ai_sync_claude.yml into the consuming repo (reads the submodule)."""
+    return _install_workflow("ai_sync_claude.yml", consuming_root, force, dry_run)
 
 
 def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy pipeline-emergency-stop.yml into the consuming repo.
+    """Copy ai_emergency_stop.yml into the consuming repo.
 
     The operator's kill switch: writes the .pipeline-stop marker (at the repo
     root, where the orchestrator looks for it) and cancels in-flight runs.
@@ -475,7 +475,7 @@ def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: 
     not depend on a submodule fetch to run when the pipeline needs stopping.
     """
     return _install_workflow(
-        "pipeline-emergency-stop.yml", consuming_root, force, dry_run, inject_submodules=False
+        "ai_emergency_stop.yml", consuming_root, force, dry_run, inject_submodules=False
     )
 
 
@@ -544,7 +544,7 @@ def add_gitignore_entries(
 
     Covers directories/files that get_started creates but that should not
     be committed to the consuming repo as normal files (they are symlinks
-    into the submodule, force-committed by the Onboard job / sync-claude.yml):
+    into the submodule, force-committed by the Onboard job / ai_sync_claude.yml):
       - .claude     -- whole-folder symlink into the submodule
       - standards   -- whole-folder symlink into the submodule
 
@@ -572,7 +572,7 @@ def add_gitignore_entries(
         print(f"  SKIP   .gitignore  (all entries already present)")
         return 0
 
-    header = "# Managed by get_started.py -- do not commit these paths manually; sync-claude.yml is the authoritative committer"
+    header = "# Managed by get_started.py -- do not commit these paths manually; ai_sync_claude.yml is the authoritative committer"
     needs_header = header not in existing_lines
     separator = "\n" if existing_lines else ""
     if needs_header:
@@ -662,8 +662,8 @@ def print_followup_seed() -> None:
     print(f"  Step 1 -- Commit and push the seed files:")
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
-    print(f"             .github/workflows/orchestrator.yml \\")
-    print(f"             .github/workflows/pipeline-emergency-stop.yml \\")
+    print(f"             .github/workflows/ai_orchestrator.yml \\")
+    print(f"             .github/workflows/ai_emergency_stop.yml \\")
     print(f"             .gitignore")
     print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
     print(f"     git push")
@@ -678,7 +678,7 @@ def print_followup_seed() -> None:
     print()
     print(f"     The Onboard job runs on a Linux runner. It creates the")
     print(f"     .claude/agents symlink, copies slash commands and standards,")
-    print(f"     drops sync-claude.yml and other workflows, and commits everything.")
+    print(f"     drops ai_sync_claude.yml and other workflows, and commits everything.")
     print(f"     After it completes, open a test issue to confirm the pipeline is live.")
     print()
     print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
@@ -696,10 +696,10 @@ def print_followup(consuming_root: Path) -> None:
     print()
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
-    print(f"             .github/workflows/orchestrator.yml \\")
-    print(f"             .github/workflows/bootstrap-labels.yml \\")
-    print(f"             .github/workflows/label-cleanup.yml \\")
-    print(f"             .github/workflows/sync-claude.yml \\")
+    print(f"             .github/workflows/ai_orchestrator.yml \\")
+    print(f"             .github/workflows/ai_bootstrap_labels.yml \\")
+    print(f"             .github/workflows/ai_label_cleanup.yml \\")
+    print(f"             .github/workflows/ai_sync_claude.yml \\")
     print(f"             .gitignore \\")
     print(f"             requirements.txt")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
@@ -726,8 +726,8 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "SEED mode (one of --seed/--full is required; there is no default): "
-            "copy the two seed workflows (orchestrator.yml + "
-            "pipeline-emergency-stop.yml) + .gitignore. Commit those, push, then "
+            "copy the two seed workflows (ai_orchestrator.yml + "
+            "ai_emergency_stop.yml) + .gitignore. Commit those, push, then "
             "trigger the 'Onboard' workflow to finish wiring on a Linux runner."
         ),
     )
@@ -738,7 +738,7 @@ def parse_args() -> argparse.Namespace:
             "FULL mode (one of --seed/--full is required): lay down every "
             "workflow, the whole-.claude and standards symlinks, adrs/, and "
             "requirements locally. This is what the Onboard job and "
-            "sync-claude.yml run on a Linux runner (they add --force)."
+            "ai_sync_claude.yml run on a Linux runner (they add --force)."
         ),
     )
     p.add_argument(
@@ -761,11 +761,11 @@ def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
     """SEED mode (--seed): install the two seed workflows + .gitignore, then stop.
 
     This is the minimal local bootstrap. It installs exactly two workflow files:
-      - orchestrator.yml         -- all GitHub needs to run the "Onboard" job,
+      - ai_orchestrator.yml         -- all GitHub needs to run the "Onboard" job,
                                      which re-runs this script in full mode
                                      (--full --force) on a Linux runner to
                                      install everything else.
-      - pipeline-emergency-stop.yml -- the operator's kill switch. It reads
+      - ai_emergency_stop.yml -- the operator's kill switch. It reads
                                      nothing from the submodule, so it works
                                      from the first commit; shipping it in the
                                      seed means the operator can halt a runaway
@@ -819,8 +819,8 @@ def _guard_existing_claude(consuming_root: Path) -> None:
 def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     """Full mode (--full): install the COMPLETE managed file set.
 
-    This is what the Onboard job in orchestrator.yml runs (get_started.py
-    --full --force), and what the daily sync-claude.yml workflow runs to repair drift.
+    This is what the Onboard job in ai_orchestrator.yml runs (get_started.py
+    --full --force), and what the daily ai_sync_claude.yml workflow runs to repair drift.
     It lays down every workflow, the whole `.claude` symlink, the `standards`
     symlink, the local `adrs/` folder, and requirements -- everything a
     consuming repo needs to run the pipeline. Each
@@ -861,7 +861,7 @@ def main() -> int:
             "    --seed    minimal local bootstrap (the two seed workflows + .gitignore),\n"
             "              then commit, push, and run the Onboard job to finish.\n"
             "    --full    complete wiring locally -- what the Onboard job and\n"
-            "              sync-claude.yml run on a Linux runner (they add --force).\n"
+            "              ai_sync_claude.yml run on a Linux runner (they add --force).\n"
             "  Add --force to overwrite existing files, --dry-run to preview."
         )
     full_mode = args.full

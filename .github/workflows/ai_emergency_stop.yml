@@ -61,7 +61,7 @@ jobs:
           CANCELLED=0
           RUN_IDS=$(gh run list \
             --repo "$REPO" \
-            --workflow orchestrator.yml \
+            --workflow ai_orchestrator.yml \
             --status in_progress \
             --json databaseId \
             --jq '.[].databaseId')

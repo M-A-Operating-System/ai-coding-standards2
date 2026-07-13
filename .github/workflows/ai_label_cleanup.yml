@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run — show what would be deleted without deleting'
+        description: 'Dry run -- show what would be deleted without deleting'
         type: boolean
         default: true
 
