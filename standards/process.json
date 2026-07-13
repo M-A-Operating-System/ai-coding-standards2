@@ -443,6 +443,32 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-PROC-031",
+      "title": "New deployable infra components must be wired into every existing deploy AND teardown touchpoint",
+      "description": "When a PR adds a new deployable infrastructure component (a new resource type, module, or service definition), every place the deploy workflow already handles per-component wiring for existing components (e.g. provider/dependency registration, a component-existence check, environment parameter files, a params/output resolver step, post-deploy verification) must be extended to cover the new component in the same PR. The matching per-component touchpoints in the teardown workflow (STD-PROC-030) -- component-existence checks and pre-teardown verification -- must be extended in the same PR as well. A new component that deploys but was never wired into teardown becomes an orphaned resource the teardown workflow cannot find and remove.",
+      "rationale": "Deploy and teardown workflows for infrastructure-as-code projects are typically structured as a loop or list of per-component steps, enumerated rather than dynamically discovered. Adding a new component's IaC module without touching every one of those per-component touchpoints is a silent omission: the resource deploys but is invisible to component-path checks, parameter resolution, or teardown. This class of bug was observed directly: a new Azure resource shipped without corresponding updates to the deploy workflow's provider registration, parameter files, params resolver, and verification step, and without the matching teardown-workflow updates.",
+      "acceptance_criteria": [
+        "When the diff adds a new IaC module (Bicep/Terraform/CDK/Pulumi or equivalent) for a new resource type, the deploy workflow's per-component provider/dependency registration is extended to include it.",
+        "When the diff adds a new deployable component, the deploy workflow's component-existence/path check is extended to include it.",
+        "When the diff adds a new deployable component, every environment's parameters/variables file is updated with the new component's required inputs.",
+        "When the diff adds a new deployable component, any params/output resolver step that exposes deployed values downstream is extended to include the new component's outputs.",
+        "When the diff adds a new deployable component, a post-deploy verification step (confirming the resource was created with expected properties) is added, following the same pattern as existing components.",
+        "The teardown workflow's component-existence check (STD-PROC-030) is extended for the new component in the same PR.",
+        "The teardown workflow's pre-teardown verification step (with a graceful not-found fallback) is added for the new component, following the same pattern as existing components."
+      ],
+      "anti_patterns": [
+        "Adding a new IaC module and a deploy step for it, but leaving the provider-registration loop, parameters files, and params resolver untouched.",
+        "A new resource that deploys successfully but has no corresponding check in the teardown workflow, becoming an orphaned resource on environment teardown.",
+        "Copy-pasting an existing component's deploy step but not its matching teardown-workflow counterpart in the same PR."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from parent-project PR review feedback -- a new Azure/Bicep resource shipped without deploy-workflow provider registration, parameter files, params resolver, verification step, or matching teardown-workflow updates; generalized away from Bicep/ARM specifics for the shared framework"
     }
   ]
 }
