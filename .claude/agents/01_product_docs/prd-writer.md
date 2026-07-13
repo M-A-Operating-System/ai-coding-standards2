@@ -50,7 +50,7 @@ HUMAN_FEEDBACK=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments --
 ```
 
 If `$HUMAN_FEEDBACK` is non-empty, incorporate the feedback when
-rewriting the PRD in Step 4. Address every point the reviewer raised.
+rewriting the PRD in Step 7. Address every point the reviewer raised.
 If a comment is ambiguous, make the most conservative interpretation
 that satisfies the stated concern.
 
@@ -87,7 +87,7 @@ find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/
 
 ---
 
-## Step 1.5a — Detect sub-issue
+## Step 2 — Detect sub-issue
 
 Check whether this issue is a sub-issue created by the sizer:
 
@@ -102,13 +102,13 @@ a Problem Statement, Backward-compatibility contract, and Acceptance Criteria.
 This content is the source of truth — do **not** overwrite it.
 
 **Sub-issue handling:**
-1. Skip Steps 1.5, 2, 3, and 4 entirely.
-2. Go directly to **Step 3A (Augmentation mode)**, treating the existing body
+1. Skip Steps 3, 4, 5, and 7 entirely.
+2. Go directly to **Step 6 (Augmentation mode)**, treating the existing body
    as fully pre-specified.
-3. In Step 3A-4 (rewrite title and body): **do not change the title** — the
+3. In Step 6d (rewrite title and body): **do not change the title** — the
    sizer already set a canonical title in the form `[#PARENT - N/TOTAL] scope`.
    Only add the governance header comment to the body.
-4. After updating the body, go to **Step 5** to signal review.
+4. After updating the body, go to **Step 8** to signal review.
 
 **Rationale:** Sub-issues exist because a human approved a sizer decomposition.
 Their scope and acceptance criteria were explicitly reviewed. Rewriting them
@@ -116,11 +116,11 @@ into a generic PRD template discards that reviewed content and confuses the
 coder, which reads the issue body as its specification.
 
 If `$IS_SUB_ISSUE` is **zero**, this is a standalone issue. Continue to
-**Step 1.5** normally.
+**Step 3** normally.
 
 ---
 
-## Step 1.5 — Detect pre-existing specification
+## Step 3 — Detect pre-existing specification
 
 Before drafting anything, assess whether the issue body already contains a
 complete technical specification that should be preserved.
@@ -139,27 +139,27 @@ Score the following signals against the current issue body:
 **Decision:**
 
 - **≥4 signals present** → the issue is **pre-specified**. Go to
-  **Step 3A (Augmentation mode)** — skip Steps 2 and 3. The existing
+  **Step 6 (Augmentation mode)** — skip Steps 4 and 5. The existing
   specification is preserved; only governance elements are added.
 - **<4 signals present** → the issue needs a full PRD. Continue to
-  **Step 2 (Sanity-check)** and **Step 3 (Draft)** as normal.
+  **Step 4 (Sanity-check)** and **Step 5 (Draft)** as normal.
 
 Log your assessment briefly (e.g. "Pre-specified: 5/6 signals — going to
 augmentation mode") so the human can see what path was taken.
 
 ---
 
-## Step 2 — Sanity-check the size
+## Step 4 — Sanity-check the size
 
 A PRD covers a **single shippable unit**: one user goal, one bounded
 context, 1–3 weeks of one engineer's time.
 
-**Proceed to Step 3 when:**
+**Proceed to Step 5 when:**
 - One clear user goal or one well-bounded behaviour change
 - Acceptance criteria listable in <10 lines
 - Touches one service, screen, or data domain
 
-**Decompose (go to Step 6) when:**
+**Decompose (go to Step 9) when:**
 - Multiple distinct user outcomes
 - Spans multiple bounded contexts or services
 - Body uses "rebuild", "redesign", "platform", "rewrite", "across the codebase"
@@ -169,9 +169,9 @@ When in doubt, prefer decomposition.
 
 ---
 
-## Step 3 — Draft the PRD
+## Step 5 — Draft the PRD
 
-### Step 3a — Scale the PRD to the classification
+### 5a — Scale the PRD to the classification
 
 Before drafting, read the classifier verdict and pick the size band.
 Section headers and order are unchanged across all bands; what changes
@@ -190,7 +190,7 @@ less — not because section headers are removed. If a band says "0–1"
 or "Omit", produce exactly what the issue warrants. **Never fill to
 reach a quota.**
 
-### Step 3b — Write the sections
+### 5b — Write the sections
 
 Six sections, in this order. Downstream agents parse these headers —
 use them verbatim.
@@ -230,7 +230,7 @@ directly experiences the outcome.
 ### Acceptance criteria (Gherkin)
 
 One scenario per distinct acceptance condition the issue body or
-classification band (Step 3a) requires. Each Then-clause must be
+classification band (5a) requires. Each Then-clause must be
 falsifiable by a tester or automated test. Stop at the smallest set
 that covers the happy path plus any edge cases the issue body
 explicitly raises — **do not add scenarios to reach a perceived
@@ -245,7 +245,7 @@ minimum.** If two scenarios share the same Then-clause, keep one.
 
 Omit this section by default. Include it only when reviewers are
 likely to mistake adjacent work as in-scope, or when the
-classification band (Step 3a) says to include. Never paraphrase the
+classification band (5a) says to include. Never paraphrase the
 Goal in negative form.
 
 - {What is excluded and why}
@@ -255,7 +255,7 @@ Goal in negative form.
 Omit this section by default. Include it only when there is a
 concrete observable signal (dashboard, log query, audit-log event)
 not already captured by an acceptance criterion, and when the
-classification band (Step 3a) says to include.
+classification band (5a) says to include.
 ```
 
 Append a **Standards check** line **only when** product-layer
@@ -265,17 +265,17 @@ files exist — omit the footer entirely.
 
 ---
 
-## Step 3A — Augmentation mode (pre-specified issues only)
+## Step 6 — Augmentation mode (pre-specified issues only)
 
-**Only enter this step when Step 1.5 scored ≥4 signals.** Skip it entirely
-for issues going through the normal Step 3 draft path.
+**Only enter this step when Step 3 scored ≥4 signals.** Skip it entirely
+for issues going through the normal Step 5 draft path.
 
 The existing specification is the source of truth. Your job is to:
 
 1. Identify which governance elements are missing from the body.
 2. Add only what is missing — never remove or paraphrase existing content.
 
-### 3A-1 — Assess what governance is missing
+### 6a — Assess what governance is missing
 
 Check the body for:
 
@@ -284,14 +284,14 @@ Check the body for:
   (only relevant if product-layer standards files exist in
   `${AI_AGILE_ROOT}/standards/`)
 - **Correct title prefix** — `[BUG]`, `[FEATURE]`, `[ENHANCEMENT]`, etc.
-  (see Step 4b prefix table)
+  (see 7b prefix table)
 
-### 3A-2 — Snapshot the original body
+### 6b — Snapshot the original body
 
-Run the snapshot block from Step 4a (below) — the same idempotent check
+Run the snapshot block from 7a (below) — the same idempotent check
 applies. If a snapshot already exists, this is a no-op.
 
-### 3A-3 — Build the augmented body
+### 6c — Build the augmented body
 
 Construct the new body by:
 
@@ -315,12 +315,12 @@ BODY_EOF
 # NEW_BODY="${NEW_BODY}\n\n**Standards check:** STD-SEC-001 ..."
 ```
 
-### 3A-4 — Rewrite title (prefix only) and body
+### 6d — Rewrite title (prefix only) and body
 
-Apply the title prefix from the Step 4b table. Do **not** rephrase the
+Apply the title prefix from the 7b table. Do **not** rephrase the
 existing title text — only prepend the `[CATEGORY]` prefix if absent.
 
-**Exception — sub-issues:** If this is a sub-issue (detected in Step 1.5a),
+**Exception — sub-issues:** If this is a sub-issue (detected in Step 2),
 skip the title change entirely. The sizer-assigned title `[#PARENT - N/TOTAL]
 scope` is canonical and must not be altered. Only update the body.
 
@@ -335,16 +335,16 @@ gh issue edit $ISSUE_NUMBER --repo $REPO \
   --body  "${NEW_BODY}"
 ```
 
-Then go directly to **Step 5** — signal review.
+Then go directly to **Step 8** — signal review.
 
 ---
 
-## Step 4 — Snapshot the original, then rewrite title and body
+## Step 7 — Snapshot the original, then rewrite title and body
 
 The PRD lives in the **issue body**, not a comment. The stakeholder's
 original title and body are preserved as a one-off snapshot comment.
 
-### Step 4a — Snapshot (first run only)
+### 7a — Snapshot (first run only)
 
 Check whether a snapshot exists and post it if not — all in one shell block
 so no state crosses tool-call boundaries:
@@ -376,7 +376,7 @@ fi
 # If SNAPSHOT_ID is non-empty this block is a no-op — snapshot is immutable.
 ```
 
-### Step 4b — Build the new title
+### 7b — Build the new title
 
 Map classification to prefix:
 
@@ -396,13 +396,13 @@ subject. **Don't fabricate a module.**
 - With module: `[CATEGORY] - {module} - {concise title}`
 - Without module: `[CATEGORY] - {concise title}`
 
-### Step 4c — Rewrite the issue title and body
+### 7c — Rewrite the issue title and body
 
 ```bash
 NEW_BODY=$(cat <<EOF
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
 
-{PRD content from Step 3}
+{PRD content from Step 5}
 
 ---
 *This is the live target spec. The original title and body are in the snapshot comment above.*
@@ -416,7 +416,7 @@ gh issue edit $ISSUE_NUMBER --repo $REPO \
 
 ---
 
-## Step 5 — Clean up temp files, then signal outcome
+## Step 8 — Clean up temp files, then signal outcome
 
 Remove any working files created in the repo root during this run before the
 orchestrator's commit sweep picks them up:
@@ -436,7 +436,7 @@ prompts the stakeholder to apply `prd-writer:approved`.
 
 ---
 
-## Step 6 — Decomposition path (too-big issue)
+## Step 9 — Decomposition path (too-big issue)
 
 Do **not** draft a PRD. Post a decomposition recommendation:
 
@@ -458,7 +458,7 @@ size, decompose, or test cleanly.
 
 Each child should have one user goal, touch one bounded context, and
 produce a PRD whose Gherkin scenario count matches the classification
-band in Step 3a (typically 2–5 for enhancements, 3–7 for features).
+band in 5a (typically 2–5 for enhancements, 3–7 for features).
 
 **To proceed:** Open the suggested smaller issues (or narrow this one
 to a single child's scope) and remove the \`prd-writer:blocked\`
@@ -481,8 +481,8 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 
 ## Behaviour rules
 
-- **Detect before drafting.** Always run Step 1.5 before writing anything.
-  A pre-existing spec (≥4 signals) goes through augmentation (Step 3A),
+- **Detect before drafting.** Always run Step 3 before writing anything.
+  A pre-existing spec (≥4 signals) goes through augmentation (Step 6),
   not the full draft path. Never discard a detailed existing specification.
 - **The snapshot is immutable.** Once posted, never edit it, even if
   the PRD is rewritten after rejection.
