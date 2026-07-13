@@ -400,15 +400,15 @@ class TestWorkflowProposals:
         return self._on_block(name).get("workflow_dispatch", {}).get("inputs", {})
 
     def test_emergency_stop_workflow_exists(self):
-        assert "workflow_dispatch" in self._on_block("pipeline-emergency-stop.yml"), \
+        assert "workflow_dispatch" in self._on_block("ai_emergency_stop.yml"), \
             "workflow must be triggerable via workflow_dispatch"
 
     def test_emergency_stop_workflow_has_reason_input(self):
-        inputs = self._dispatch_inputs("pipeline-emergency-stop.yml")
+        inputs = self._dispatch_inputs("ai_emergency_stop.yml")
         assert "reason" in inputs, f"Expected 'reason' in workflow_dispatch.inputs; got {list(inputs)}"
 
     def test_emergency_stop_workflow_has_cancel_runs_input(self):
-        inputs = self._dispatch_inputs("pipeline-emergency-stop.yml")
+        inputs = self._dispatch_inputs("ai_emergency_stop.yml")
         assert "cancel_runs" in inputs, f"Expected 'cancel_runs' in workflow_dispatch.inputs; got {list(inputs)}"
 
     def test_no_restart_workflow(self):

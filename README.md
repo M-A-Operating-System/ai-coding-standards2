@@ -87,8 +87,8 @@ tag or specific commit when you're ready to control upgrades.
 python ai-coding-standards2/get_started.py --seed
 ```
 
-This drops the two seed workflows — `orchestrator.yml` and
-`pipeline-emergency-stop.yml` (the operator's kill switch) — into
+This drops the two seed workflows — `ai_orchestrator.yml` and
+`ai_emergency_stop.yml` (the operator's kill switch) — into
 `.github/workflows/` and adds `.gitignore` entries. That is all you need to
 commit locally. The orchestrator then handles all remaining setup on a Linux
 runner (symlinks, slash commands, standards, remaining workflows); the
@@ -99,7 +99,7 @@ halted before the full wiring exists.
 
 ```bash
 git add .gitmodules ai-coding-standards2 \
-        .github/workflows/orchestrator.yml \
+        .github/workflows/ai_orchestrator.yml \
         .gitignore
 git commit -m "Add ai-coding-standards2 submodule"
 git push
@@ -170,8 +170,8 @@ Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run
 The workflow checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
 symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
-(`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
-`pipeline-emergency-stop.yml`), and commits everything.
+(`ai_sync_claude.yml`, `ai_bootstrap_labels.yml`, `ai_label_cleanup.yml`,
+`ai_emergency_stop.yml`), and commits everything.
 
 After it completes, open an issue with a problem statement and acceptance
 criteria. The workflow fires on `issues.opened`; expect labels
@@ -220,7 +220,7 @@ on a submodule bump — nothing to re-run.
 The one thing that does **not** auto-update is the workflow files, because
 GitHub Actions cannot read workflows from a submodule:
 
-- `.github/workflows/orchestrator.yml` (and the other installed workflow files)
+- `.github/workflows/ai_orchestrator.yml` (and the other installed workflow files)
 
 If a workflow changed in the new submodule version, re-run:
 
@@ -231,7 +231,7 @@ git commit -m "Refresh ai-coding-standards2 wrapper files"
 ```
 
 The `.claude` and `standards` symlinks are managed by the daily
-`sync-claude.yml` workflow and should not be committed manually. Your local
+`ai_sync_claude.yml` workflow and should not be committed manually. Your local
 `adrs/` folder is yours — never overwritten by sync.
 
 Compare the diff between tags to know whether re-running is
@@ -257,9 +257,9 @@ re-run is required.
 ├── .github/
 │   ├── scripts/status.sh                    # label transitions helper
 │   └── workflows/                           # orchestrator + sync + label + CI workflows
-│       ├── orchestrator.yml                 # the pipeline (all phases) + Onboard job
-│       ├── sync-claude.yml                  # daily submodule drift repair
-│       ├── bootstrap-labels.yml / label-cleanup.yml
+│       ├── ai_orchestrator.yml                 # the pipeline (all phases) + Onboard job
+│       ├── ai_sync_claude.yml                  # daily submodule drift repair
+│       ├── ai_bootstrap_labels.yml / ai_label_cleanup.yml
 │       ├── test.yml / validate-pipeline.yml # this repo's own CI
 │       └── ...
 ├── .claude/
@@ -295,7 +295,7 @@ carry the same prefix:
 
 This repo also runs against itself, for testing the standards. Open an
 issue or PR in this repo and the same orchestrator workflow at
-`.github/workflows/orchestrator.yml` fires. No changes needed. This
+`.github/workflows/ai_orchestrator.yml` fires. No changes needed. This
 mode is how new agents are tested before being shipped to consuming
 repos.
 

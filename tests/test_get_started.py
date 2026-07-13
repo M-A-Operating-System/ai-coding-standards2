@@ -383,7 +383,7 @@ class TestInstallSyncWorkflow:
     def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
         (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "sync-claude.yml").write_text(
+        (fake_src / ".github" / "workflows" / "ai_sync_claude.yml").write_text(
             "steps:\n"
             "  - uses: actions/checkout@v4\n"
             "  - run: echo hi\n"
@@ -395,7 +395,7 @@ class TestInstallSyncWorkflow:
         result = get_started.install_sync_workflow(consuming, force=True, dry_run=False)
 
         assert result is True
-        dst = consuming / ".github" / "workflows" / "sync-claude.yml"
+        dst = consuming / ".github" / "workflows" / "ai_sync_claude.yml"
         assert dst.exists()
         assert "submodules: true" in dst.read_text()
 
@@ -419,7 +419,7 @@ class TestInstallBootstrapLabelsWorkflow:
     def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
         (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "bootstrap-labels.yml").write_text(
+        (fake_src / ".github" / "workflows" / "ai_bootstrap_labels.yml").write_text(
             "steps:\n"
             "  - name: Checkout\n"
             "    uses: actions/checkout@v4\n"
@@ -431,7 +431,7 @@ class TestInstallBootstrapLabelsWorkflow:
         result = get_started.install_bootstrap_labels_workflow(consuming, force=True, dry_run=False)
 
         assert result is True
-        dst = consuming / ".github" / "workflows" / "bootstrap-labels.yml"
+        dst = consuming / ".github" / "workflows" / "ai_bootstrap_labels.yml"
         assert "submodules: true" in dst.read_text()
 
     def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
@@ -459,7 +459,7 @@ class TestInstallOperationalWorkflows:
     def test_emergency_stop_copied_without_submodule_injection(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
         (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "pipeline-emergency-stop.yml").write_text(
+        (fake_src / ".github" / "workflows" / "ai_emergency_stop.yml").write_text(
             "steps:\n"
             "  - name: Checkout\n"
             "    uses: actions/checkout@v4\n"
@@ -471,7 +471,7 @@ class TestInstallOperationalWorkflows:
         result = get_started.install_emergency_stop_workflow(consuming, force=True, dry_run=False)
 
         assert result is True
-        dst = consuming / ".github" / "workflows" / "pipeline-emergency-stop.yml"
+        dst = consuming / ".github" / "workflows" / "ai_emergency_stop.yml"
         assert dst.exists()
         assert "submodules: true" not in dst.read_text()
 
@@ -614,7 +614,7 @@ class TestInstallLabelCleanupWorkflow:
     def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
         (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "label-cleanup.yml").write_text(
+        (fake_src / ".github" / "workflows" / "ai_label_cleanup.yml").write_text(
             "steps:\n"
             "  - name: Checkout\n"
             "    uses: actions/checkout@v4\n"
@@ -626,7 +626,7 @@ class TestInstallLabelCleanupWorkflow:
         result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=False)
 
         assert result is True
-        dst = consuming / ".github" / "workflows" / "label-cleanup.yml"
+        dst = consuming / ".github" / "workflows" / "ai_label_cleanup.yml"
         assert dst.exists()
         assert "submodules: true" in dst.read_text()
 
@@ -644,7 +644,7 @@ class TestInstallLabelCleanupWorkflow:
     def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
         (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "label-cleanup.yml").write_text("steps: []")
+        (fake_src / ".github" / "workflows" / "ai_label_cleanup.yml").write_text("steps: []")
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
         consuming.mkdir()
@@ -652,7 +652,7 @@ class TestInstallLabelCleanupWorkflow:
         result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=True)
 
         assert result is True
-        assert not (consuming / ".github" / "workflows" / "label-cleanup.yml").exists()
+        assert not (consuming / ".github" / "workflows" / "ai_label_cleanup.yml").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -664,7 +664,7 @@ class TestInstallOrchestratorWorkflows:
         fake_src = tmp_path / "submodule"
         wf_dir = fake_src / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
-        (wf_dir / "orchestrator.yml").write_text(
+        (wf_dir / "ai_orchestrator.yml").write_text(
             "steps:\n  - name: Checkout\n    uses: actions/checkout@v4\n"
         )
         return fake_src
@@ -678,7 +678,7 @@ class TestInstallOrchestratorWorkflows:
         count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
 
         assert count == 1
-        assert (consuming / ".github" / "workflows" / "orchestrator.yml").exists()
+        assert (consuming / ".github" / "workflows" / "ai_orchestrator.yml").exists()
 
     def test_injects_submodules_true(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
@@ -688,8 +688,8 @@ class TestInstallOrchestratorWorkflows:
 
         get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
 
-        content = (consuming / ".github" / "workflows" / "orchestrator.yml").read_text()
-        assert "submodules: true" in content, "orchestrator.yml missing submodules: true"
+        content = (consuming / ".github" / "workflows" / "ai_orchestrator.yml").read_text()
+        assert "submodules: true" in content, "ai_orchestrator.yml missing submodules: true"
 
     def test_returns_zero_when_src_missing(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "empty"
@@ -711,7 +711,7 @@ class TestInstallOrchestratorWorkflows:
         count = get_started.install_orchestrator_workflows(consuming, force=True, dry_run=True)
 
         assert count == 1
-        assert not (consuming / ".github" / "workflows" / "orchestrator.yml").exists()
+        assert not (consuming / ".github" / "workflows" / "ai_orchestrator.yml").exists()
 
     def test_skip_when_force_false_and_file_exists(self, tmp_path, monkeypatch):
         fake_src = self._make_src(tmp_path)
@@ -719,7 +719,7 @@ class TestInstallOrchestratorWorkflows:
         consuming = tmp_path / "consuming"
         wf_dir = consuming / ".github" / "workflows"
         wf_dir.mkdir(parents=True)
-        existing = wf_dir / "orchestrator.yml"
+        existing = wf_dir / "ai_orchestrator.yml"
         existing.write_text("original content")
 
         get_started.install_orchestrator_workflows(consuming, force=False, dry_run=False)
@@ -814,7 +814,7 @@ class TestAddGitignoreEntries:
         first_line = text.splitlines()[0]
         assert first_line == (
             "# Managed by get_started.py -- do not commit these paths manually; "
-            "sync-claude.yml is the authoritative committer"
+            "ai_sync_claude.yml is the authoritative committer"
         )
 
     def test_single_separator_newline_before_header(self, tmp_path, monkeypatch):
@@ -831,7 +831,7 @@ class TestAddGitignoreEntries:
             "__pycache__/\n"
             "\n"
             "# Managed by get_started.py -- do not commit these paths manually; "
-            "sync-claude.yml is the authoritative committer"
+            "ai_sync_claude.yml is the authoritative committer"
         ) in text
 
     def test_appends_without_duplicate_header_when_header_present(self, tmp_path, monkeypatch):
@@ -841,7 +841,7 @@ class TestAddGitignoreEntries:
         consuming.mkdir()
         header = (
             "# Managed by get_started.py -- do not commit these paths manually; "
-            "sync-claude.yml is the authoritative committer"
+            "ai_sync_claude.yml is the authoritative committer"
         )
         # Seed with header + one managed pattern (.claude) already present.
         (consuming / ".gitignore").write_text(
@@ -1016,12 +1016,12 @@ class TestPrintFollowup:
         assert "3. Open a test issue" in out
 
     def test_references_single_orchestrator_workflow(self, tmp_path, capsys):
-        """A SINGLE orchestrator.yml workflow is installed — the old split
+        """A SINGLE ai_orchestrator.yml workflow is installed — the old split
         pre-execute/execute files no longer exist and must not be referenced."""
         get_started.print_followup(tmp_path)
         out = capsys.readouterr().out
 
-        assert "orchestrator.yml" in out
+        assert "ai_orchestrator.yml" in out
         # The retired split workflow filenames must not appear.
         assert "pre-execute" not in out
         assert "execute.yml" not in out
@@ -1095,11 +1095,11 @@ class TestParseArgsAndMain:
         wf = fake_src / ".github" / "workflows"
         wf.mkdir(parents=True)
         for name in (
-            "orchestrator.yml",
-            "bootstrap-labels.yml",
-            "label-cleanup.yml",
-            "sync-claude.yml",
-            "pipeline-emergency-stop.yml",
+            "ai_orchestrator.yml",
+            "ai_bootstrap_labels.yml",
+            "ai_label_cleanup.yml",
+            "ai_sync_claude.yml",
+            "ai_emergency_stop.yml",
         ):
             (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
         (fake_src / "standards").mkdir(parents=True)
@@ -1135,11 +1135,11 @@ class TestParseArgsAndMain:
         wf = fake_src / ".github" / "workflows"
         wf.mkdir(parents=True)
         all_workflows = (
-            "orchestrator.yml",
-            "bootstrap-labels.yml",
-            "label-cleanup.yml",
-            "sync-claude.yml",
-            "pipeline-emergency-stop.yml",
+            "ai_orchestrator.yml",
+            "ai_bootstrap_labels.yml",
+            "ai_label_cleanup.yml",
+            "ai_sync_claude.yml",
+            "ai_emergency_stop.yml",
         )
         for name in all_workflows:
             (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
@@ -1152,10 +1152,10 @@ class TestParseArgsAndMain:
 
         dst_wf = consuming / ".github" / "workflows"
         # The two seed workflows are installed.
-        assert (dst_wf / "orchestrator.yml").exists()
-        assert (dst_wf / "pipeline-emergency-stop.yml").exists()
+        assert (dst_wf / "ai_orchestrator.yml").exists()
+        assert (dst_wf / "ai_emergency_stop.yml").exists()
         # The full-only workflows are NOT installed by seed.
-        for name in ("bootstrap-labels.yml", "label-cleanup.yml", "sync-claude.yml"):
+        for name in ("ai_bootstrap_labels.yml", "ai_label_cleanup.yml", "ai_sync_claude.yml"):
             assert not (dst_wf / name).exists(), f"seed must not install {name}"
         # Seed does not lay down standards/.claude.
         assert not (consuming / "standards").exists()

@@ -19,7 +19,7 @@ name: Sync AI Agile .claude directory
 #
 # This workflow is installed into consuming repos by get_started.py.
 # Do NOT edit it directly in the consuming repo -- edit the source at
-# ai-coding-standards2/.github/workflows/sync-claude.yml and re-run
+# ai-coding-standards2/.github/workflows/ai_sync_claude.yml and re-run
 # get_started.py --full --force (or wait for the next daily sync).
 
 on:
@@ -81,10 +81,10 @@ jobs:
             .claude \
             standards \
             .gitignore \
-            .github/workflows/orchestrator.yml \
-            .github/workflows/bootstrap-labels.yml \
-            .github/workflows/label-cleanup.yml \
-            .github/workflows/sync-claude.yml
+            .github/workflows/ai_orchestrator.yml \
+            .github/workflows/ai_bootstrap_labels.yml \
+            .github/workflows/ai_label_cleanup.yml \
+            .github/workflows/ai_sync_claude.yml
 
           # Project-owned artifacts, committed normally (not gitignored).
           git add adrs requirements.txt 2>/dev/null || true

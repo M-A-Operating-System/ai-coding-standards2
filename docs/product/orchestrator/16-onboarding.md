@@ -18,16 +18,16 @@ this first.
 
 | Run | Command | What it installs | Who runs it |
 |---|---|---|---|
-| **Seed** (step 1) | `get_started.py --seed` | The **two seed workflows** (`orchestrator.yml` + `pipeline-emergency-stop.yml`) + `.gitignore` entries. Nothing else. | A developer, locally |
+| **Seed** (step 1) | `get_started.py --seed` | The **two seed workflows** (`ai_orchestrator.yml` + `ai_emergency_stop.yml`) + `.gitignore` entries. Nothing else. | A developer, locally |
 | **Full** (step 2) | `get_started.py --full --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder, requirements. | The Onboard job, on a Linux runner |
 
 Running `get_started.py` with no run type prints an error listing the choices
 and exits without touching the consuming repo — it never guesses a mode.
 
 The two runs are two steps of the same flow: seed drops the two seed workflows
-(orchestrator.yml, which GitHub needs to run the Onboard job, plus the
+(ai_orchestrator.yml, which GitHub needs to run the Onboard job, plus the
 emergency-stop kill switch); the Onboard job then re-runs the script in full
-mode to lay down (and commit) the rest. The daily `sync-claude.yml` workflow
+mode to lay down (and commit) the rest. The daily `ai_sync_claude.yml` workflow
 also runs the full mode (`--full --force`) to repair drift.
 
 In code these are the `run_seed()` and `run_full()` functions in
@@ -35,12 +35,12 @@ In code these are the `run_seed()` and `run_full()` functions in
 
 ### `--seed` (recommended for new installs)
 
-Drops the two seed workflows — `orchestrator.yml` and
-`pipeline-emergency-stop.yml` (the operator's kill switch) — into the consuming
+Drops the two seed workflows — `ai_orchestrator.yml` and
+`ai_emergency_stop.yml` (the operator's kill switch) — into the consuming
 repo's `.github/workflows/` and adds `.gitignore` entries. The developer commits
 those and pushes. The orchestrator workflow's built-in setup job then does the
 rest on a Linux runner (see Bootstrap flow below). Seed mode deliberately
-installs almost nothing else — orchestrator.yml is enough to bootstrap step 2,
+installs almost nothing else — ai_orchestrator.yml is enough to bootstrap step 2,
 and the emergency stop ships alongside it so a runaway pipeline can be halted
 from the very first commit (it reads nothing from the submodule, so it works
 before the full wiring exists).
@@ -70,7 +70,7 @@ a Linux runner (as `--full --force`), and what you would run locally with
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
 
 Full mode is also how the orchestrator's built-in setup job and the daily
-`sync-claude.yml` workflow call this script — they run `get_started.py --full --force`
+`ai_sync_claude.yml` workflow call this script — they run `get_started.py --full --force`
 on a Linux runner to keep managed paths in sync.
 
 ---
@@ -90,7 +90,7 @@ Creating directory symlinks on Windows requires elevated privileges that most
 developers and VS builds do not have. Committing the symlink blob from a Linux
 runner means developers who clone the consuming repo on any platform inherit the
 framework's Claude setup and standards without running `get_started.py` again.
-The daily sync-claude.yml workflow rebuilds the symlinks on every Linux runner run.
+The daily ai_sync_claude.yml workflow rebuilds the symlinks on every Linux runner run.
 
 > **Local clones must init the submodule.** The `.claude` and `standards`
 > symlinks point **into** the submodule, so they only resolve when the submodule
@@ -112,13 +112,13 @@ heavy lifting happens on a GitHub-hosted Linux runner, not locally.
 **Step 1 — Local seed commit**
 
 Run `get_started.py --seed`. It writes the two seed workflows
-(`orchestrator.yml` + `pipeline-emergency-stop.yml`) and updates `.gitignore`,
+(`ai_orchestrator.yml` + `ai_emergency_stop.yml`) and updates `.gitignore`,
 then exits.
 
 ```bash
 python ai-coding-standards2/get_started.py --seed
 git add .gitmodules ai-coding-standards2 \
-        .github/workflows/orchestrator.yml \
+        .github/workflows/ai_orchestrator.yml \
         .gitignore
 git commit -m "Add ai-coding-standards2 submodule"
 git push
@@ -140,12 +140,12 @@ Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run
 The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
 symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
-(`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
-`pipeline-emergency-stop.yml`), and commits everything directly to the default
+(`ai_sync_claude.yml`, `ai_bootstrap_labels.yml`, `ai_label_cleanup.yml`,
+`ai_emergency_stop.yml`), and commits everything directly to the default
 branch (or to an `ai-standards-setup` branch if branch protection rules block a
 direct push — in that case, open a PR from that branch).
 
-The `pipeline-emergency-stop.yml` workflow is the operator kill switch:
+The `ai_emergency_stop.yml` workflow is the operator kill switch:
 emergency-stop writes a `.pipeline-stop` marker (which the orchestrator checks
 before invoking any agent) and cancels in-flight runs. There is no restart
 workflow — restarting is just clearing the committed marker (`git rm
@@ -161,9 +161,9 @@ acceptance criteria to confirm the pipeline is live.
 
 ---
 
-## sync-claude.yml — daily sync workflow
+## ai_sync_claude.yml — daily sync workflow
 
-The `sync-claude.yml` workflow (installed by the setup job into the consuming
+The `ai_sync_claude.yml` workflow (installed by the setup job into the consuming
 repo's `.github/workflows/`) runs daily at 06:00 UTC and on demand:
 
 1. Checks out the consuming repo **with submodules**
@@ -174,7 +174,7 @@ repo's `.github/workflows/`) runs daily at 06:00 UTC and on demand:
 
 This keeps the consuming repo in sync with submodule updates automatically and
 recovers from any drift between the committed symlink blob and the submodule.
-It is not used for initial onboarding — the setup job in `orchestrator.yml`
+It is not used for initial onboarding — the setup job in `ai_orchestrator.yml`
 handles first-time wiring.
 
 The workflow uses `AI_AGILE_BOT_TOKEN` (falls back to `GITHUB_TOKEN`) so the
@@ -194,7 +194,7 @@ standards
 
 These are the whole-folder symlinks; gitignoring them keeps them from being
 committed as normal files (and stops Windows copies being committed by hand).
-The setup job and `sync-claude.yml` use `git add -f` to override `.gitignore`
+The setup job and `ai_sync_claude.yml` use `git add -f` to override `.gitignore`
 when committing the symlink blobs on behalf of the bot. The project-owned
 `adrs/` folder is **not** gitignored — it is committed normally.
 
@@ -218,7 +218,7 @@ The orchestrator resolves two kinds of path, from two different roots:
 | Root | How it is derived | Used for |
 |---|---|---|
 | `SUBMODULE_ROOT` | From `__file__` (the location of `pipeline_orchestrator.py`), **never** from an env var | The framework's own files: agent prompts (`.claude/agents/*.md`), agent scripts, `status.sh`, `AGENTS.md`, `pipeline.json` |
-| `AI_AGILE_ROOT` env var | The consuming repo root (set to `${{ github.workspace }}` by the installed `orchestrator.yml`; falls back to `SUBMODULE_ROOT` when unset) | Repo-root data and runtime markers: the `standards/` symlink, the local `adrs/adrs.json`, the `.pipeline-stop` / `.pipeline-pause` markers, and the value passed to each agent subprocess |
+| `AI_AGILE_ROOT` env var | The consuming repo root (set to `${{ github.workspace }}` by the installed `ai_orchestrator.yml`; falls back to `SUBMODULE_ROOT` when unset) | Repo-root data and runtime markers: the `standards/` symlink, the local `adrs/adrs.json`, the `.pipeline-stop` / `.pipeline-pause` markers, and the value passed to each agent subprocess |
 
 The split is what makes the framework self-contained: because agent
 prompts, scripts, and `status.sh` always resolve from `SUBMODULE_ROOT`, the

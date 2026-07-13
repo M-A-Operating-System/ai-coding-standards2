@@ -6,7 +6,7 @@ Renames pipeline labels from the old {phase}/{agent}:{status} format to
 the short {agent}:{status} format across both the repo label registry and
 every open issue and PR.
 
-Run via bootstrap-labels.yml or manually:
+Run via ai_bootstrap_labels.yml or manually:
     python .github/scripts/migrate_labels.py
 """
 

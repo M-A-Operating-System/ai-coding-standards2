@@ -57,7 +57,7 @@ The GitHub Actions workflow that invokes it lives at:
 
 ```
 .github/workflows/
-  orchestrator.yml    ← single workflow handling all triggers
+  ai_orchestrator.yml    ← single workflow handling all triggers
 ```
 
 ---
@@ -647,9 +647,9 @@ guidance.
 The orchestrator is hosted entirely in GitHub Actions. A single workflow
 file handles all triggers by combining them under one `on:` block.
 
-### `orchestrator.yml`
+### `ai_orchestrator.yml`
 
-`.github/workflows/orchestrator.yml` handles all four trigger categories:
+`.github/workflows/ai_orchestrator.yml` handles all four trigger categories:
 
 | Trigger | Events | Purpose |
 |---|---|---|
@@ -658,7 +658,7 @@ file handles all triggers by combining them under one `on:` block.
 | `schedule` | `*/15 6-20 * * 1-5` | Backstop reconciler — catches webhook drops, stale locks, partial-state recovery |
 | `workflow_dispatch` | _(manual)_ | Debugging, dry-run, or single-item reprocessing |
 
-The workflow source is `.github/workflows/orchestrator.yml`; the table above is
+The workflow source is `.github/workflows/ai_orchestrator.yml`; the table above is
 the authoritative summary of its `on:` triggers. The job grants `permissions:
 contents: write` (for `commit_after` git push), `issues: write`, and
 `pull-requests: write`; runs under the global `concurrency` group
@@ -669,9 +669,9 @@ maps the triggering event to `--issue`/`--kind`/`--dry-run` arguments, and runs
 `issue_number`, `dry_run`, and `verbose` inputs for manual reprocessing and
 debugging.
 
-### `sync-claude.yml`
+### `ai_sync_claude.yml`
 
-`.github/workflows/sync-claude.yml` keeps the consuming repo's pipeline
+`.github/workflows/ai_sync_claude.yml` keeps the consuming repo's pipeline
 artefacts in sync with the `ai-coding-standards2` submodule. It runs
 nightly (and on `workflow_dispatch`) and calls `get_started.py` in sync
 mode.
@@ -683,10 +683,10 @@ mode.
 | `install_agents` | `.claude/agents/` | Yes — removes agents no longer in the submodule |
 | `install_standards` | `standards/` | No — project-specific standards files are never deleted |
 | `install_slash_commands` | `.claude/commands/` | Yes |
-| `install_orchestrator_workflow` | `.github/workflows/orchestrator.yml` | No (single file) |
-| `install_bootstrap_labels_workflow` | `.github/workflows/bootstrap-labels.yml` | No (single file) |
-| `install_label_cleanup_workflow` | `.github/workflows/label-cleanup.yml` | No (single file) |
-| `install_sync_workflow` | `.github/workflows/sync-claude.yml` | No (self) |
+| `install_orchestrator_workflow` | `.github/workflows/ai_orchestrator.yml` | No (single file) |
+| `install_bootstrap_labels_workflow` | `.github/workflows/ai_bootstrap_labels.yml` | No (single file) |
+| `install_label_cleanup_workflow` | `.github/workflows/ai_label_cleanup.yml` | No (single file) |
+| `install_sync_workflow` | `.github/workflows/ai_sync_claude.yml` | No (self) |
 
 The sync commit is made by the Actions bot if any files changed. If nothing
 changed, the workflow exits without a commit.
@@ -711,9 +711,9 @@ local additions (e.g. project-specific standards files not in the submodule).
   flaky webhook delivery)
 - Partial-state recovery (interrupted `:review` → `:complete` transitions)
 
-### `pipeline-emergency-stop.yml`
+### `ai_emergency_stop.yml`
 
-`.github/workflows/pipeline-emergency-stop.yml` is a `workflow_dispatch`-only
+`.github/workflows/ai_emergency_stop.yml` is a `workflow_dispatch`-only
 workflow that halts the pipeline immediately.
 
 | Input | Type | Required | Default | Description |
@@ -827,7 +827,7 @@ short agents (2–5 min) reach a terminal `:complete` label before any
 fired event's run starts.
 
 The fix is the global `pipeline-orchestrator` concurrency group with
-`cancel-in-progress: false` (defined in `.github/workflows/orchestrator.yml`).
+`cancel-in-progress: false` (defined in `.github/workflows/ai_orchestrator.yml`).
 This serialises all runs at the Actions scheduler level, before any Python
 runs, so by the time a queued run starts all prior writes are settled. The
 `:wip` check in the decision loop is then a fast-path skip, not a

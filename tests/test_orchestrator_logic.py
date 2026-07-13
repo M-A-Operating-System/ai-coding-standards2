@@ -1016,14 +1016,14 @@ class TestOrchestratorNonOverlapping:
         Then it defines a concurrency group with cancel-in-progress: false
         so concurrent triggers queue rather than cancel the active run.
         """
-        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "ai_orchestrator.yml"
         assert path.exists(), f"Workflow file not found: {path}"
         content = path.read_text()
         assert "group: pipeline-orchestrator" in content, (
-            "orchestrator.yml must declare concurrency group 'pipeline-orchestrator'"
+            "ai_orchestrator.yml must declare concurrency group 'pipeline-orchestrator'"
         )
         assert "cancel-in-progress: false" in content, (
-            "orchestrator.yml must set cancel-in-progress: false"
+            "ai_orchestrator.yml must set cancel-in-progress: false"
         )
 
 
@@ -1587,11 +1587,11 @@ class TestPhasesFilter:
         dependencies always resolve. Guard against a regression that
         reintroduces a --phases filter (which would silently drop agents).
         """
-        path = Path(__file__).parent.parent / ".github" / "workflows" / "orchestrator.yml"
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "ai_orchestrator.yml"
         assert path.exists(), f"Workflow file not found: {path}"
         content = path.read_text()
         assert "--phases" not in content, (
-            "orchestrator.yml must not pass --phases — the single workflow runs "
+            "ai_orchestrator.yml must not pass --phases — the single workflow runs "
             "all phases so cross-phase dependencies resolve."
         )
 
