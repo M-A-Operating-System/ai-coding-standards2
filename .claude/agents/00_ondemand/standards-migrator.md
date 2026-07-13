@@ -206,7 +206,7 @@ reference to the present state. If, after stripping, nothing enforceable
 remains, it was not a standard — it was a status note (handle in 2c/3d).
 
 Forbidden in `title` / `description` / `acceptance_criteria` (run this before
-proposing, and again in Step 4.5):
+proposing, and again in Step 5):
 
 ```bash
 grep -rniE 'legacy|currently|today|not yet|tracked|pre-existing|stale|drift|supersede|verified against|two eras|#[0-9]{2,}' \
@@ -462,7 +462,7 @@ the next file and report it to the human immediately.
 
 ---
 
-## Step 4.5 — Self-consistency pass (after all writes/edits)
+## Step 5 — Self-consistency pass (after all writes/edits)
 
 Before signalling complete, verify the corpus is internally coherent:
 
@@ -483,7 +483,7 @@ before the summary.
 
 ---
 
-## Step 5 — Post summary artefact
+## Step 6 — Post summary artefact
 
 If `$ISSUE_NUMBER` and `$REPO` are set, post a structured comment (otherwise print
 it):
@@ -588,7 +588,7 @@ deterministic gate.
   deprecated, not deleted.
 - **Read `standards/README.md` before writing it** — preserve any project-specific
   additions; do not silently overwrite hand-authored content.
-- **Validate JSON before signalling complete** and run the Step 4.5 consistency
+- **Validate JSON before signalling complete** and run the Step 5 consistency
   pass. A malformed or incoherent file silently breaks the coder and pr-reviewer.
 - **File issues only for discovered conflicts/defects**, only with human
   approval — never as a substitute for proposing a standard, and never bundling a

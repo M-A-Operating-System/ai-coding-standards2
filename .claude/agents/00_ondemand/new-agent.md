@@ -82,7 +82,10 @@ If either check fails, emit `AI_AGILE_STATUS: blocked` with a clear explanation.
 
 Write the agent prompt file to `.claude/agents/{phase}/{agent-name}.md`.
 
-The file must follow this structure exactly:
+The file must follow this structure exactly. **The `Step 1`/`Step 2` headers
+below are placeholder content for the generated file, not steps of this
+scaffolding agent's own flow** — a plain header-pattern scan of this file
+will see them as a false duplicate; skip past the fence.
 
 ```markdown
 ---
