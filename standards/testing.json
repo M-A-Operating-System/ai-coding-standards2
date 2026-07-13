@@ -281,6 +281,28 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-TEST-015",
+      "title": "New behaviour tests cover the primary error path, not just the happy path",
+      "description": "Every new or materially changed function, method, class, or API endpoint that has a defined error condition (a duplicate/conflict case, a not-found case, or another documented failure mode) must have at least one test exercising that error path, in addition to the happy-path test required by STD-TEST-011. A behaviour is not considered tested when only its success case is verified.",
+      "rationale": "The happy path is the easiest case to get right and the least likely to regress silently; the error path -- rejecting a duplicate, handling a missing resource -- is where defects hide and where a missed test lets a regression ship. Requiring both closes the most common gap between 'passes CI' and 'actually correct'.",
+      "acceptance_criteria": [
+        "For every new or changed function/method/class/endpoint in the diff that has a documented duplicate/conflict condition, at least one test asserts the expected error behaviour when that condition is triggered.",
+        "For every new or changed function/method/class/endpoint in the diff that has a documented not-found condition, at least one test asserts the expected error behaviour when the target does not exist.",
+        "Error-path tests assert the specific observable outcome (status code, exception type, error message shape) -- not merely that 'something' was raised.",
+        "Error-path tests are added in the same PR as the behaviour, per STD-TEST-011's same-PR requirement."
+      ],
+      "anti_patterns": [
+        "A new 'create X' endpoint with a test for successful creation but no test for the duplicate-key rejection path.",
+        "A new 'get X by id' function with a happy-path test but no test asserting the not-found behaviour.",
+        "A try/except in the implementation with no test ever triggering the except branch."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }
