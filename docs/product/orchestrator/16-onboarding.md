@@ -141,18 +141,19 @@ The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
 symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
 (`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
-`pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and commits everything
-directly to the default branch (or to an `ai-standards-setup` branch if branch
-protection rules block a direct push — in that case, open a PR from that
-branch).
+`pipeline-emergency-stop.yml`), and commits everything directly to the default
+branch (or to an `ai-standards-setup` branch if branch protection rules block a
+direct push — in that case, open a PR from that branch).
 
-The `pipeline-emergency-stop.yml` / `pipeline-restart.yml` pair is the
-operator kill switch: emergency-stop writes a `.pipeline-stop` marker (which
-the orchestrator checks before invoking any agent) and cancels in-flight
-runs; restart clears the marker and resumes. Unlike the other installed
-workflows, these two are copied **without** `submodules: true` injected —
-they read nothing from the submodule, so they must not depend on a submodule
-fetch to run when you need to stop the pipeline.
+The `pipeline-emergency-stop.yml` workflow is the operator kill switch:
+emergency-stop writes a `.pipeline-stop` marker (which the orchestrator checks
+before invoking any agent) and cancels in-flight runs. There is no restart
+workflow — restarting is just clearing the marker (`git rm .pipeline-stop` and
+push, or `pipeline_orchestrator.py --clear-stop`), which an owner can run at any
+time; the stop workflow's run summary prints these instructions. Unlike the
+other installed workflows, the emergency stop is copied **without**
+`submodules: true` injected — it reads nothing from the submodule, so it must
+not depend on a submodule fetch to run when you need to stop the pipeline.
 
 After the job completes, open a test issue with a problem statement and
 acceptance criteria to confirm the pipeline is live.

@@ -1150,8 +1150,8 @@ def is_pipeline_stopped() -> tuple[bool, str]:
         { "stopped_at": "<ISO-8601>", "reason": "...", "stopped_by": "github-actions" }
 
     Unlike the pause marker, the stop marker has no time field and is never
-    auto-cleared. It persists until the pipeline-restart workflow deletes it
-    or the operator runs --clear-stop.
+    auto-cleared. It persists until an owner clears it -- by deleting the
+    committed marker (git rm .pipeline-stop) or running --clear-stop.
     """
     try:
         raw = STOP_MARKER_PATH.read_text()
@@ -1618,8 +1618,8 @@ PAUSE_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) /
 
 # Emergency stop marker. Written by the pipeline-emergency-stop workflow when an
 # operator halts the pipeline manually. Unlike the rate-limit pause, this marker
-# is never auto-cleared — it persists until the pipeline-restart workflow deletes
-# it (or the operator runs --clear-stop locally).
+# is never auto-cleared -- it persists until an owner clears it (git rm the
+# committed marker, or run --clear-stop locally).
 STOP_MARKER_PATH = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / ".pipeline-stop"
 
 # Fixed UUID v5 namespace for deterministic session ID generation.
@@ -3847,7 +3847,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Clear the emergency stop marker if set, then exit. "
              "Use this when you want to resume after an emergency stop "
-             "without running the pipeline-restart workflow.",
+             "(the owner-run restart mechanism; there is no restart workflow).",
     )
     p.add_argument(
         "--verbose", "-v",
@@ -4023,7 +4023,7 @@ def _wake(args) -> "Optional[RunContext]":
     if stopped:
         log.warning(
             "Pipeline is STOPPED: %s. No agents will be invoked. "
-            "(Run pipeline-restart or use `--clear-stop` to resume.)",
+            "(Clear the .pipeline-stop marker or use `--clear-stop` to resume.)",
             stop_reason or "no reason recorded",
         )
         _stop_session = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"

@@ -52,7 +52,7 @@ docs/product/orchestrator/16-onboarding.md for the full flow.
 
 What run_full() installs, in order (each is one install_* function below):
     orchestrator.yml, bootstrap-labels.yml, label-cleanup.yml,
-    sync-claude.yml, pipeline-emergency-stop.yml, pipeline-restart.yml,
+    sync-claude.yml, pipeline-emergency-stop.yml,
     the standards/ symlink, the local adrs/ folder, the whole-.claude symlink,
     requirements.txt, .gitignore entries, and untracking of any
     previously-committed managed paths.
@@ -479,19 +479,6 @@ def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: 
     )
 
 
-def install_restart_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy pipeline-restart.yml into the consuming repo.
-
-    The counterpart to the emergency stop: clears the .pipeline-stop marker and
-    optionally triggers a fresh orchestrator run. Installed alongside the stop
-    workflow because a stop with no restart cannot be undone from the UI.
-    inject_submodules=False for the same reason as the stop workflow.
-    """
-    return _install_workflow(
-        "pipeline-restart.yml", consuming_root, force, dry_run, inject_submodules=False
-    )
-
-
 def install_requirements(
     consuming_root: Path,
     dry_run: bool,
@@ -849,7 +836,6 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_label_cleanup_workflow(consuming_root, force, dry_run)
     install_sync_workflow(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
-    install_restart_workflow(consuming_root, force, dry_run)
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
     install_claude(consuming_root, force, dry_run)

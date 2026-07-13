@@ -447,12 +447,12 @@ class TestInstallBootstrapLabelsWorkflow:
 
 
 # ---------------------------------------------------------------------------
-# TestInstallOperationalWorkflows -- emergency-stop / restart
+# TestInstallOperationalWorkflows -- emergency-stop
 # ---------------------------------------------------------------------------
 
 class TestInstallOperationalWorkflows:
-    """The stop/restart workflows read nothing from the submodule, so unlike
-    the other installers they must NOT get 'submodules: true' injected --
+    """The emergency-stop workflow reads nothing from the submodule, so unlike
+    the other installers it must NOT get 'submodules: true' injected --
     otherwise a private submodule that cannot be fetched would break the very
     workflow meant to stop the pipeline."""
 
@@ -475,25 +475,6 @@ class TestInstallOperationalWorkflows:
         assert dst.exists()
         assert "submodules: true" not in dst.read_text()
 
-    def test_restart_copied_without_submodule_injection(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "pipeline-restart.yml").write_text(
-            "steps:\n"
-            "  - name: Checkout\n"
-            "    uses: actions/checkout@v4\n"
-        )
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_restart_workflow(consuming, force=True, dry_run=False)
-
-        assert result is True
-        dst = consuming / ".github" / "workflows" / "pipeline-restart.yml"
-        assert dst.exists()
-        assert "submodules: true" not in dst.read_text()
-
     def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "empty"
         fake_src.mkdir()
@@ -502,7 +483,6 @@ class TestInstallOperationalWorkflows:
         consuming.mkdir()
 
         assert get_started.install_emergency_stop_workflow(consuming, force=True, dry_run=False) is False
-        assert get_started.install_restart_workflow(consuming, force=True, dry_run=False) is False
 
 
 # ---------------------------------------------------------------------------
@@ -1120,7 +1100,6 @@ class TestParseArgsAndMain:
             "label-cleanup.yml",
             "sync-claude.yml",
             "pipeline-emergency-stop.yml",
-            "pipeline-restart.yml",
         ):
             (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
         (fake_src / "standards").mkdir(parents=True)
@@ -1161,7 +1140,6 @@ class TestParseArgsAndMain:
             "label-cleanup.yml",
             "sync-claude.yml",
             "pipeline-emergency-stop.yml",
-            "pipeline-restart.yml",
         )
         for name in all_workflows:
             (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
@@ -1177,7 +1155,7 @@ class TestParseArgsAndMain:
         assert (dst_wf / "orchestrator.yml").exists()
         assert (dst_wf / "pipeline-emergency-stop.yml").exists()
         # The full-only workflows are NOT installed by seed.
-        for name in ("bootstrap-labels.yml", "label-cleanup.yml", "sync-claude.yml", "pipeline-restart.yml"):
+        for name in ("bootstrap-labels.yml", "label-cleanup.yml", "sync-claude.yml"):
             assert not (dst_wf / name).exists(), f"seed must not install {name}"
         # Seed does not lay down standards/.claude.
         assert not (consuming / "standards").exists()

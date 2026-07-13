@@ -171,7 +171,7 @@ The workflow checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
 symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
 (`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
-`pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and commits everything.
+`pipeline-emergency-stop.yml`), and commits everything.
 
 After it completes, open an issue with a problem statement and acceptance
 criteria. The workflow fires on `issues.opened`; expect labels

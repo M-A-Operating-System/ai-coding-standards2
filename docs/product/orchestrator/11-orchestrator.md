@@ -726,18 +726,19 @@ writes `.pipeline-stop` to the repo root, and logs how many runs were
 cancelled. See [Emergency stop](#emergency-stop) for the marker format and
 orchestrator behaviour.
 
-### `pipeline-restart.yml`
+### Restarting (no workflow)
 
-`.github/workflows/pipeline-restart.yml` is a `workflow_dispatch`-only
-workflow that clears the emergency stop and resumes normal pipeline operation.
+There is no restart workflow. Restarting after an emergency stop is just
+clearing the `.pipeline-stop` marker, which an owner can do at any time:
 
-| Input | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `trigger_run` | boolean | no | `true` | Whether to immediately dispatch a fresh orchestrator run after clearing the marker |
+- **From anywhere:** delete the committed marker and push —
+  `git rm .pipeline-stop && git commit -m 'chore: clear emergency stop [skip ci]' && git push`.
+- **Locally:** `python pipeline_orchestrator.py --clear-stop`.
 
-On run: deletes `.pipeline-stop` and, if `trigger_run` is `true`, dispatches
-a new orchestrator run so the pipeline resumes without waiting for the next
-scheduled tick.
+Once the marker is gone, the next scheduled orchestrator tick (or any new
+issue/PR event) resumes normal operation; trigger a run manually to resume
+immediately. The emergency-stop workflow's run summary prints these exact
+instructions.
 
 ---
 
@@ -1008,8 +1009,9 @@ marker exists, the orchestrator:
 2. Emits a `system.emergency_stop` audit event.
 3. Exits 0 — no labels are changed, no agents are invoked.
 
-The marker is not auto-cleared on the next tick. It persists until a human
-runs the restart workflow or invokes `--clear-stop`.
+The marker is not auto-cleared on the next tick. It persists until an owner
+clears it — by deleting the committed marker (`git rm .pipeline-stop`) or
+invoking `--clear-stop`.
 
 **Marker format** (`.pipeline-stop` in repo root):
 
@@ -1028,7 +1030,7 @@ runs the restart workflow or invokes `--clear-stop`.
 | Trigger | Automatic (Anthropic rate limit) | Manual (`workflow_dispatch`) |
 | Expiry | Yes — auto-cleared when `until` passes | No — must be explicitly cleared |
 | Cancels in-flight runs | No | Yes (if `cancel_runs` is `true`) |
-| Clear mechanism | Auto on expiry; `--clear-pause` | `pipeline-restart.yml`; `--clear-stop` |
+| Clear mechanism | Auto on expiry; `--clear-pause` | `git rm .pipeline-stop`; `--clear-stop` |
 | Check order in `main()` | First | Immediately after pause check |
 
 ### Manual override

@@ -411,10 +411,8 @@ class TestWorkflowProposals:
         inputs = self._dispatch_inputs("pipeline-emergency-stop.yml")
         assert "cancel_runs" in inputs, f"Expected 'cancel_runs' in workflow_dispatch.inputs; got {list(inputs)}"
 
-    def test_restart_workflow_exists(self):
-        assert "workflow_dispatch" in self._on_block("pipeline-restart.yml"), \
-            "workflow must be triggerable via workflow_dispatch"
-
-    def test_restart_workflow_has_trigger_run_input(self):
-        inputs = self._dispatch_inputs("pipeline-restart.yml")
-        assert "trigger_run" in inputs, f"Expected 'trigger_run' in workflow_dispatch.inputs; got {list(inputs)}"
+    def test_no_restart_workflow(self):
+        """The restart workflow was removed: restarting is clearing the marker,
+        which an owner runs at any time (git rm .pipeline-stop / --clear-stop)."""
+        restart = Path(__file__).parent.parent / ".github/workflows/pipeline-restart.yml"
+        assert not restart.exists(), "pipeline-restart.yml must not exist"
