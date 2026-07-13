@@ -9,40 +9,52 @@ automatically.
 
 ## Modes
 
-`get_started.py` is **one script that is run twice during onboarding**, and
-the `--seed` flag decides how much work it does. This is the single most
-common source of onboarding confusion, so read this first.
+`get_started.py` is **one script that is run twice during onboarding**, and the
+run type decides how much work it does. **There is no default mode** — you must
+pass one of `--seed` or `--full` (`--force` is an overwrite modifier, not a
+mode); running it with no run type is an
+error. This is the single most common source of onboarding confusion, so read
+this first.
 
 | Run | Command | What it installs | Who runs it |
 |---|---|---|---|
-| **Seed** (step 1) | `get_started.py --seed` | **Only** `orchestrator.yml` + `.gitignore` entries. Nothing else. | A developer, locally |
-| **Full** (step 2) | `get_started.py --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder, requirements. | The Onboard job, on a Linux runner |
+| **Seed** (step 1) | `get_started.py --seed` | The **two seed workflows** (`orchestrator.yml` + `pipeline-emergency-stop.yml`) + `.gitignore` entries. Nothing else. | A developer, locally |
+| **Full** (step 2) | `get_started.py --full --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder, requirements. | The Onboard job, on a Linux runner |
 
-The two runs are two steps of the same flow: seed drops the one workflow file
-GitHub needs to run the Onboard job; the Onboard job then re-runs the script
-in full mode to lay down (and commit) the rest. The daily `sync-claude.yml`
-workflow also runs the full mode (`--force`) to repair drift.
+Running `get_started.py` with no run type prints an error listing the choices
+and exits without touching the consuming repo — it never guesses a mode.
+
+The two runs are two steps of the same flow: seed drops the two seed workflows
+(orchestrator.yml, which GitHub needs to run the Onboard job, plus the
+emergency-stop kill switch); the Onboard job then re-runs the script in full
+mode to lay down (and commit) the rest. The daily `sync-claude.yml` workflow
+also runs the full mode (`--full --force`) to repair drift.
 
 In code these are the `run_seed()` and `run_full()` functions in
 `get_started.py`; the module docstring lists exactly what each installs.
 
 ### `--seed` (recommended for new installs)
 
-Drops `orchestrator.yml` into the consuming repo's `.github/workflows/` and
-adds `.gitignore` entries. The developer commits those two things and pushes.
-The orchestrator workflow's built-in setup job then does the rest on a Linux
-runner (see Bootstrap flow below). Seed mode deliberately installs almost
-nothing — it is only enough to bootstrap step 2.
+Drops the two seed workflows — `orchestrator.yml` and
+`pipeline-emergency-stop.yml` (the operator's kill switch) — into the consuming
+repo's `.github/workflows/` and adds `.gitignore` entries. The developer commits
+those and pushes. The orchestrator workflow's built-in setup job then does the
+rest on a Linux runner (see Bootstrap flow below). Seed mode deliberately
+installs almost nothing else — orchestrator.yml is enough to bootstrap step 2,
+and the emergency stop ships alongside it so a runaway pipeline can be halted
+from the very first commit (it reads nothing from the submodule, so it works
+before the full wiring exists).
 
 ```bash
 python ai-coding-standards2/get_started.py --seed
 ```
 
-### Full run (default / `--force`)
+### Full run (`--full`)
 
-Running without `--seed` performs all wiring. This is what the Onboard job
-runs on a Linux runner (and what you would run locally if you skip the seed
-bootstrap):
+Requested explicitly with `--full` — there is no bare default that does this.
+Add `--force` to overwrite existing files. This is what the Onboard job runs on
+a Linux runner (as `--full --force`), and what you would run locally with
+`--full` if you skip the seed bootstrap:
 
 | Step | What happens |
 |---|---|
@@ -57,8 +69,8 @@ bootstrap):
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
 
-The `--force` flag is also how the orchestrator's built-in setup job and the daily
-`sync-claude.yml` workflow call this script — they run `get_started.py --force`
+Full mode is also how the orchestrator's built-in setup job and the daily
+`sync-claude.yml` workflow call this script — they run `get_started.py --full --force`
 on a Linux runner to keep managed paths in sync.
 
 ---
@@ -99,8 +111,9 @@ heavy lifting happens on a GitHub-hosted Linux runner, not locally.
 
 **Step 1 — Local seed commit**
 
-Run `get_started.py --seed`. It writes one file (`orchestrator.yml`) and
-updates `.gitignore`, then exits.
+Run `get_started.py --seed`. It writes the two seed workflows
+(`orchestrator.yml` + `pipeline-emergency-stop.yml`) and updates `.gitignore`,
+then exits.
 
 ```bash
 python ai-coding-standards2/get_started.py --seed
@@ -122,24 +135,26 @@ In the consuming repo: Settings → Secrets and variables → Actions → New re
 
 **Step 3 — Trigger the setup job**
 
-Go to: **Actions → Pipeline Orchestrator → Run workflow → tick Onboard → Run**.
+Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run**.
 
 The job checks out the repo with its submodule on a Linux runner, runs
-`get_started.py --force`, creates the whole-folder `.claude` and `standards`
+`get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
 symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
 (`sync-claude.yml`, `bootstrap-labels.yml`, `label-cleanup.yml`,
-`pipeline-emergency-stop.yml`, `pipeline-restart.yml`), and commits everything
-directly to the default branch (or to an `ai-standards-setup` branch if branch
-protection rules block a direct push — in that case, open a PR from that
-branch).
+`pipeline-emergency-stop.yml`), and commits everything directly to the default
+branch (or to an `ai-standards-setup` branch if branch protection rules block a
+direct push — in that case, open a PR from that branch).
 
-The `pipeline-emergency-stop.yml` / `pipeline-restart.yml` pair is the
-operator kill switch: emergency-stop writes a `.pipeline-stop` marker (which
-the orchestrator checks before invoking any agent) and cancels in-flight
-runs; restart clears the marker and resumes. Unlike the other installed
-workflows, these two are copied **without** `submodules: true` injected —
-they read nothing from the submodule, so they must not depend on a submodule
-fetch to run when you need to stop the pipeline.
+The `pipeline-emergency-stop.yml` workflow is the operator kill switch:
+emergency-stop writes a `.pipeline-stop` marker (which the orchestrator checks
+before invoking any agent) and cancels in-flight runs. There is no restart
+workflow — restarting is just clearing the committed marker (`git rm
+.pipeline-stop` and push; `--clear-stop` only removes the local file and must
+still be committed and pushed to resume the hosted pipeline), which an owner can run at any
+time; the stop workflow's run summary prints these instructions. Unlike the
+other installed workflows, the emergency stop is copied **without**
+`submodules: true` injected — it reads nothing from the submodule, so it must
+not depend on a submodule fetch to run when you need to stop the pipeline.
 
 After the job completes, open a test issue with a problem statement and
 acceptance criteria to confirm the pipeline is live.
@@ -152,7 +167,7 @@ The `sync-claude.yml` workflow (installed by the setup job into the consuming
 repo's `.github/workflows/`) runs daily at 06:00 UTC and on demand:
 
 1. Checks out the consuming repo **with submodules**
-2. Runs `python ai-coding-standards2/get_started.py --force`
+2. Runs `python ai-coding-standards2/get_started.py --full --force`
 3. Force-stages all managed paths with `git add -f` (needed because managed
    paths are listed in `.gitignore` to protect Windows developers)
 4. Commits and pushes if anything changed

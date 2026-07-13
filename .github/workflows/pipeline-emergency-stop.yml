@@ -1,4 +1,4 @@
-name: Pipeline Emergency Stop
+name: AI - Emergency Stop
 
 on:
   workflow_dispatch:
@@ -81,7 +81,7 @@ jobs:
           CANCEL_RUNS: ${{ github.event.inputs.cancel_runs }}
         run: |
           set -euo pipefail
-          echo "## Pipeline Emergency Stop Applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "## AI - Emergency Stop Applied" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Reason:** ${REASON}" >> "$GITHUB_STEP_SUMMARY"
           echo "**Triggered by:** ${ACTOR}" >> "$GITHUB_STEP_SUMMARY"
@@ -104,7 +104,15 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "To resume immediately without waiting for the next scheduled run, also" >> "$GITHUB_STEP_SUMMARY"
-          echo "trigger the orchestrator manually (Actions -> Pipeline Orchestrator ->" >> "$GITHUB_STEP_SUMMARY"
-          echo "Run workflow), or run the **Pipeline Restart** workflow if it is installed." >> "$GITHUB_STEP_SUMMARY"
+          echo "trigger the orchestrator manually (Actions -> AI - Orchestrator -> Run workflow)." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "There is no restart workflow: restarting is just clearing the committed" >> "$GITHUB_STEP_SUMMARY"
+          echo "marker (the commands above), which an owner can run at any time. The marker" >> "$GITHUB_STEP_SUMMARY"
+          echo "is committed to the default branch, so it must be removed there and pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo "for the hosted pipeline to resume." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '`pipeline_orchestrator.py --clear-stop` only deletes the *local* marker' >> "$GITHUB_STEP_SUMMARY"
+          echo "file (useful when running the orchestrator locally); to resume the hosted" >> "$GITHUB_STEP_SUMMARY"
+          echo "pipeline you must still commit and push that removal." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Note: runs starting after this workflow began are not cancelled; the stop marker prevents all subsequent agent invocations." >> "$GITHUB_STEP_SUMMARY"

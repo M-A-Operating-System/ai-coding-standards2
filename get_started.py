@@ -5,42 +5,54 @@ get_started.py -- wire ai-coding-standards2 into a consuming repo.
 Run from the consuming repo's root after `git submodule add ...` has
 placed this repo at `<consuming-repo>/ai-coding-standards2/`:
 
-    python ai-coding-standards2/get_started.py [--seed] [--force] [--dry-run]
+    python ai-coding-standards2/get_started.py (--seed | --full) [--force] [--dry-run]
 
 ==============================================================================
 TWO MODES -- this is the same script, run twice during onboarding.
 ==============================================================================
 
-The script does very different amounts of work depending on --seed. This is
-the source of most onboarding confusion, so read this before changing it.
+The script does very different amounts of work depending on the mode, so there
+is NO DEFAULT: you must pick a run type explicitly. Running it with no mode
+flag is an error (it refuses rather than guess, so a first-time local run can
+neither clobber the consuming repo nor silently do the wrong amount of work).
 
-  --seed  (SEED mode)    -> run_seed()  -> installs ONLY orchestrator.yml
-                                            + .gitignore entries. Nothing else.
+  --seed             -> run_seed()  -> installs the two seed workflows
+                                        (orchestrator.yml + the emergency-stop
+                                        kill switch) + .gitignore entries.
+                                        Nothing else.
 
-  (default) / --force    -> run_full()  -> installs the COMPLETE managed set:
-                                            all workflows, the whole-.claude
-                                            symlink, the standards symlink, the
-                                            local adrs/ folder, requirements,
-                                            .gitignore.
+  --full             -> run_full()  -> installs the COMPLETE managed set:
+                                        all workflows, the whole-.claude
+                                        symlink, the standards symlink, the
+                                        local adrs/ folder, requirements,
+                                        .gitignore.
+
+  --force is an overwrite modifier (not a mode): add it to --seed or --full to
+  overwrite existing files. The Onboard job and sync-claude.yml run --full --force.
 
 The two modes are two steps of ONE onboarding flow:
 
   Step 1 (local, by a developer):
       python get_started.py --seed
-      -> writes orchestrator.yml only, so a single workflow can be committed
-         and pushed. That is the minimum GitHub needs to run the Onboard job.
+      -> writes the two seed workflows (orchestrator.yml + the emergency-stop
+         kill switch), so they can be committed and pushed. orchestrator.yml is
+         the minimum GitHub needs to run the Onboard job; the emergency stop
+         ships alongside it so the operator has a kill switch from the start.
 
   Step 2 (on a Linux runner, by the Onboard job in orchestrator.yml):
-      python get_started.py --force
+      python get_started.py --full --force
       -> writes EVERYTHING else and commits it. This is also what the daily
          sync-claude.yml workflow runs to repair drift.
 
-So `--seed` deliberately copies almost nothing; `--force` does the real
-wiring. See docs/product/orchestrator/16-onboarding.md for the full flow.
+So `--seed` deliberately copies almost nothing -- the whole-folder
+symlink/full wiring happens in Step 2, on a Linux runner, via the Onboard
+GitHub Action (which passes --full --force). A developer who genuinely wants
+the full install locally passes --full (adding --force to overwrite). See
+docs/product/orchestrator/16-onboarding.md for the full flow.
 
 What run_full() installs, in order (each is one install_* function below):
     orchestrator.yml, bootstrap-labels.yml, label-cleanup.yml,
-    sync-claude.yml, pipeline-emergency-stop.yml, pipeline-restart.yml,
+    sync-claude.yml, pipeline-emergency-stop.yml,
     the standards/ symlink, the local adrs/ folder, the whole-.claude symlink,
     requirements.txt, .gitignore entries, and untracking of any
     previously-committed managed paths.
@@ -52,12 +64,18 @@ Windows). The only thing the consuming repo owns is OUTSIDE those folders:
 applied on copy; agents and slash commands are read verbatim (commands already
 try both standalone and submodule paths, so they need no rewriting).
 
-Options:
-    --seed       SEED mode: copy only orchestrator.yml + .gitignore, then
-                 stop. Commit those, push, then trigger the "Onboard" job to
-                 finish wiring on a Linux runner (which runs --force).
-    --force      Overwrite existing files in the consuming repo.
+Options (a run type is REQUIRED -- there is no default):
+    --seed       SEED mode: copy the two seed workflows (orchestrator.yml +
+                 pipeline-emergency-stop.yml) + .gitignore, then stop. Commit
+                 those, push, then trigger the "Onboard" job to finish wiring
+                 on a Linux runner (which runs --full --force).
+    --full       FULL mode: install the complete managed set locally. This is
+                 what the Onboard job and sync-claude.yml run on a Linux runner.
+    --force      Overwrite existing files. A modifier, not a mode -- combine it
+                 with --seed or --full.
     --dry-run    Print what would be created/modified without writing.
+
+Running with no run type (neither --seed nor --full) is an error.
 """
 
 from __future__ import annotations
@@ -461,19 +479,6 @@ def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: 
     )
 
 
-def install_restart_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy pipeline-restart.yml into the consuming repo.
-
-    The counterpart to the emergency stop: clears the .pipeline-stop marker and
-    optionally triggers a fresh orchestrator run. Installed alongside the stop
-    workflow because a stop with no restart cannot be undone from the UI.
-    inject_submodules=False for the same reason as the stop workflow.
-    """
-    return _install_workflow(
-        "pipeline-restart.yml", consuming_root, force, dry_run, inject_submodules=False
-    )
-
-
 def install_requirements(
     consuming_root: Path,
     dry_run: bool,
@@ -658,6 +663,7 @@ def print_followup_seed() -> None:
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
     print(f"             .github/workflows/orchestrator.yml \\")
+    print(f"             .github/workflows/pipeline-emergency-stop.yml \\")
     print(f"             .gitignore")
     print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
     print(f"     git push")
@@ -667,7 +673,7 @@ def print_followup_seed() -> None:
     print(f"       ANTHROPIC_API_KEY  -- your Anthropic API key")
     print(f"       AI_AGILE_BOT_TOKEN -- a GitHub PAT for the bot account")
     print()
-    print(f"     Then: GitHub -> Actions -> 'Pipeline Orchestrator' -> Run workflow")
+    print(f"     Then: GitHub -> Actions -> 'AI - Orchestrator' -> Run workflow")
     print(f"     -> check 'Onboard' -> Run.")
     print()
     print(f"     The Onboard job runs on a Linux runner. It creates the")
@@ -719,15 +725,29 @@ def parse_args() -> argparse.Namespace:
         "--seed",
         action="store_true",
         help=(
-            "Minimal bootstrap: copy only orchestrator.yml + .gitignore. "
-            "Commit those two files, push, then trigger the workflow with "
-            "'Onboard' to finish wiring on a Linux runner."
+            "SEED mode (one of --seed/--full is required; there is no default): "
+            "copy the two seed workflows (orchestrator.yml + "
+            "pipeline-emergency-stop.yml) + .gitignore. Commit those, push, then "
+            "trigger the 'Onboard' workflow to finish wiring on a Linux runner."
+        ),
+    )
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help=(
+            "FULL mode (one of --seed/--full is required): lay down every "
+            "workflow, the whole-.claude and standards symlinks, adrs/, and "
+            "requirements locally. This is what the Onboard job and "
+            "sync-claude.yml run on a Linux runner (they add --force)."
         ),
     )
     p.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite existing files in the consuming repo.",
+        help=(
+            "Overwrite existing files. A modifier, not a mode: use it with "
+            "--seed or --full."
+        ),
     )
     p.add_argument(
         "--dry-run",
@@ -738,19 +758,27 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
-    """SEED mode (--seed): install ONLY orchestrator.yml + .gitignore, then stop.
+    """SEED mode (--seed): install the two seed workflows + .gitignore, then stop.
 
-    This is the minimal local bootstrap. The developer commits the single
-    orchestrator.yml workflow and pushes it -- that is all GitHub needs to run
-    the "Onboard" job, which then re-runs this script in full mode (--force) on
-    a Linux runner to install everything else. Deliberately copies almost
-    nothing; see run_full() for the real wiring.
+    This is the minimal local bootstrap. It installs exactly two workflow files:
+      - orchestrator.yml         -- all GitHub needs to run the "Onboard" job,
+                                     which re-runs this script in full mode
+                                     (--full --force) on a Linux runner to
+                                     install everything else.
+      - pipeline-emergency-stop.yml -- the operator's kill switch. It reads
+                                     nothing from the submodule, so it works
+                                     from the first commit; shipping it in the
+                                     seed means the operator can halt a runaway
+                                     pipeline before the full wiring exists.
+    The developer commits these two workflows (plus .gitignore) and pushes.
+    Deliberately copies almost nothing else; see run_full() for the real wiring.
 
     include_standards=False because install_standards() does not run in seed
     mode -- listing gitignore entries for standards files that do not exist yet
     confuses developers who try to place them manually before the Onboard job.
     """
     install_orchestrator_workflows(consuming_root, force, dry_run)
+    install_emergency_stop_workflow(consuming_root, force, dry_run)
     add_gitignore_entries(consuming_root, dry_run, include_standards=False)
     untrack_managed_paths(consuming_root, dry_run)
     print_followup_seed()
@@ -789,10 +817,10 @@ def _guard_existing_claude(consuming_root: Path) -> None:
 
 
 def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
-    """Full mode (default / --force): install the COMPLETE managed file set.
+    """Full mode (--full): install the COMPLETE managed file set.
 
     This is what the Onboard job in orchestrator.yml runs (get_started.py
-    --force), and what the daily sync-claude.yml workflow runs to repair drift.
+    --full --force), and what the daily sync-claude.yml workflow runs to repair drift.
     It lays down every workflow, the whole `.claude` symlink, the `standards`
     symlink, the local `adrs/` folder, and requirements -- everything a
     consuming repo needs to run the pipeline. Each
@@ -808,7 +836,6 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_label_cleanup_workflow(consuming_root, force, dry_run)
     install_sync_workflow(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
-    install_restart_workflow(consuming_root, force, dry_run)
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
     install_claude(consuming_root, force, dry_run)
@@ -820,10 +847,29 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
 
 def main() -> int:
     args = parse_args()
+
+    # Mode resolution -- there is NO DEFAULT. Exactly one run type is required:
+    # --seed (minimal) or --full (complete wiring). --force is an overwrite
+    # modifier usable with either, never a mode of its own. Refuse an ambiguous
+    # invocation before touching the consuming repo.
+    if args.seed and args.full:
+        sys.exit("ERROR: pass either --seed or --full, not both.")
+    if not args.seed and not args.full:
+        sys.exit(
+            "ERROR: no run type specified -- get_started.py has no default mode.\n"
+            "  Choose one:\n"
+            "    --seed    minimal local bootstrap (the two seed workflows + .gitignore),\n"
+            "              then commit, push, and run the Onboard job to finish.\n"
+            "    --full    complete wiring locally -- what the Onboard job and\n"
+            "              sync-claude.yml run on a Linux runner (they add --force).\n"
+            "  Add --force to overwrite existing files, --dry-run to preview."
+        )
+    full_mode = args.full
+
     consuming_root = find_consuming_repo_root()
     print(f"Consuming repo root: {consuming_root}")
     print(f"Submodule root:      {SUBMODULE_ROOT}")
-    print(f"Mode:                {'seed (orchestrator.yml only)' if args.seed else 'full (complete wiring)'}")
+    print(f"Mode:                {'full (complete wiring)' if full_mode else 'seed (orchestrator + emergency-stop)'}")
     if args.dry_run:
         print("(dry run -- no files will be written)")
     print()
@@ -831,10 +877,10 @@ def main() -> int:
     # One script, two modes -- see the module docstring. run_seed() is the
     # minimal local bootstrap; run_full() does the real wiring and is what the
     # Onboard job runs on a Linux runner.
-    if args.seed:
-        run_seed(consuming_root, args.force, args.dry_run)
-    else:
+    if full_mode:
         run_full(consuming_root, args.force, args.dry_run)
+    else:
+        run_seed(consuming_root, args.force, args.dry_run)
     return 0
 
 

@@ -1,4 +1,4 @@
-name: Pipeline Orchestrator
+name: AI - Orchestrator
 
 # Single orchestrator workflow -- evaluates every pipeline phase in one pass.
 #
@@ -56,8 +56,8 @@ concurrency:
 jobs:
   # --- Onboard ----------------------------------------------------------------
   # Run this job once after get_started.py --seed has copied orchestrator.yml:
-  #   Actions -> Pipeline Orchestrator -> Run workflow -> OK: Onboard
-  # It calls get_started.py --force on a Linux runner, which creates the
+  #   Actions -> AI - Orchestrator -> Run workflow -> OK: Onboard
+  # It calls get_started.py --full --force on a Linux runner, which creates the
   # .claude/agents symlink, copies slash commands and standards, and drops all
   # remaining workflow files -- then commits and pushes everything.
   # After this job completes, open an issue to start the normal pipeline.
@@ -80,9 +80,9 @@ jobs:
       - name: Run onboarding
         # Creates .claude/agents symlink, copies commands + standards,
         # writes sync-claude.yml, bootstrap-labels.yml, label-cleanup.yml,
-        # pipeline-emergency-stop.yml, pipeline-restart.yml,
-        # seeds requirements.txt, and updates .gitignore.
-        run: python ai-coding-standards2/get_started.py --force
+        # pipeline-emergency-stop.yml, seeds requirements.txt, and
+        # updates .gitignore.
+        run: python ai-coding-standards2/get_started.py --full --force
 
       - name: Stage and commit managed files
         run: |
@@ -100,8 +100,7 @@ jobs:
             .github/workflows/sync-claude.yml \
             .github/workflows/bootstrap-labels.yml \
             .github/workflows/label-cleanup.yml \
-            .github/workflows/pipeline-emergency-stop.yml \
-            .github/workflows/pipeline-restart.yml
+            .github/workflows/pipeline-emergency-stop.yml
 
           # Project-owned artifacts, committed normally (not gitignored):
           # local ADRs and requirements.txt.

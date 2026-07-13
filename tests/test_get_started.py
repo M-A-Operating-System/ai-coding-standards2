@@ -447,12 +447,12 @@ class TestInstallBootstrapLabelsWorkflow:
 
 
 # ---------------------------------------------------------------------------
-# TestInstallOperationalWorkflows -- emergency-stop / restart
+# TestInstallOperationalWorkflows -- emergency-stop
 # ---------------------------------------------------------------------------
 
 class TestInstallOperationalWorkflows:
-    """The stop/restart workflows read nothing from the submodule, so unlike
-    the other installers they must NOT get 'submodules: true' injected --
+    """The emergency-stop workflow reads nothing from the submodule, so unlike
+    the other installers it must NOT get 'submodules: true' injected --
     otherwise a private submodule that cannot be fetched would break the very
     workflow meant to stop the pipeline."""
 
@@ -475,25 +475,6 @@ class TestInstallOperationalWorkflows:
         assert dst.exists()
         assert "submodules: true" not in dst.read_text()
 
-    def test_restart_copied_without_submodule_injection(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "pipeline-restart.yml").write_text(
-            "steps:\n"
-            "  - name: Checkout\n"
-            "    uses: actions/checkout@v4\n"
-        )
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_restart_workflow(consuming, force=True, dry_run=False)
-
-        assert result is True
-        dst = consuming / ".github" / "workflows" / "pipeline-restart.yml"
-        assert dst.exists()
-        assert "submodules: true" not in dst.read_text()
-
     def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "empty"
         fake_src.mkdir()
@@ -502,7 +483,6 @@ class TestInstallOperationalWorkflows:
         consuming.mkdir()
 
         assert get_started.install_emergency_stop_workflow(consuming, force=True, dry_run=False) is False
-        assert get_started.install_restart_workflow(consuming, force=True, dry_run=False) is False
 
 
 # ---------------------------------------------------------------------------
@@ -1063,6 +1043,8 @@ class TestParseArgsAndMain:
     def test_parse_args_defaults(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["get_started.py"])
         args = get_started.parse_args()
+        assert args.seed is False
+        assert args.full is False
         assert args.force is False
         assert args.dry_run is False
 
@@ -1071,6 +1053,40 @@ class TestParseArgsAndMain:
         args = get_started.parse_args()
         assert args.force is True
         assert args.dry_run is True
+
+    def test_main_requires_explicit_run_type(self, monkeypatch):
+        """No run type => main() exits with an error (there is no default mode)."""
+        monkeypatch.setattr(sys, "argv", ["get_started.py"])
+        # find_consuming_repo_root must never be reached -- the guard runs first.
+        monkeypatch.setattr(
+            get_started, "find_consuming_repo_root",
+            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+        )
+        with pytest.raises(SystemExit) as exc:
+            get_started.main()
+        assert "no run type" in str(exc.value).lower()
+
+    def test_main_rejects_conflicting_run_types(self, monkeypatch):
+        """--seed together with --full => main() exits with a conflict error."""
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--seed", "--full"])
+        monkeypatch.setattr(
+            get_started, "find_consuming_repo_root",
+            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+        )
+        with pytest.raises(SystemExit) as exc:
+            get_started.main()
+        assert "not both" in str(exc.value).lower()
+
+    def test_main_rejects_force_without_a_mode(self, monkeypatch):
+        """--force is a modifier, not a mode: --force alone => no-run-type error."""
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--force"])
+        monkeypatch.setattr(
+            get_started, "find_consuming_repo_root",
+            lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+        )
+        with pytest.raises(SystemExit) as exc:
+            get_started.main()
+        assert "no run type" in str(exc.value).lower()
 
     def test_main_runs_dry_run_end_to_end(self, tmp_path, monkeypatch, capsys):
         """main() in --dry-run wires the consuming repo without writing files."""
@@ -1084,7 +1100,6 @@ class TestParseArgsAndMain:
             "label-cleanup.yml",
             "sync-claude.yml",
             "pipeline-emergency-stop.yml",
-            "pipeline-restart.yml",
         ):
             (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
         (fake_src / "standards").mkdir(parents=True)
@@ -1100,17 +1115,51 @@ class TestParseArgsAndMain:
         monkeypatch.setattr(
             get_started, "find_consuming_repo_root", lambda: consuming
         )
-        monkeypatch.setattr(sys, "argv", ["get_started.py", "--dry-run"])
+        monkeypatch.setattr(sys, "argv", ["get_started.py", "--full", "--dry-run"])
 
         rc = get_started.main()
 
         assert rc == 0
         out = capsys.readouterr().out
         assert "dry run" in out
+        assert "full" in out.lower()
         # Dry-run must not have written anything into the consuming repo.
         assert not (consuming / ".github").exists()
         assert not (consuming / "standards").exists()
         assert not (consuming / ".gitignore").exists()
+
+    def test_seed_installs_orchestrator_and_emergency_stop_only(self, tmp_path, monkeypatch):
+        """Seed mode installs exactly the two seed workflows (orchestrator +
+        emergency stop) and none of the full-only workflows."""
+        fake_src = tmp_path / "submodule"
+        wf = fake_src / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        all_workflows = (
+            "orchestrator.yml",
+            "bootstrap-labels.yml",
+            "label-cleanup.yml",
+            "sync-claude.yml",
+            "pipeline-emergency-stop.yml",
+        )
+        for name in all_workflows:
+            (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.run_seed(consuming, force=False, dry_run=False)
+
+        dst_wf = consuming / ".github" / "workflows"
+        # The two seed workflows are installed.
+        assert (dst_wf / "orchestrator.yml").exists()
+        assert (dst_wf / "pipeline-emergency-stop.yml").exists()
+        # The full-only workflows are NOT installed by seed.
+        for name in ("bootstrap-labels.yml", "label-cleanup.yml", "sync-claude.yml"):
+            assert not (dst_wf / name).exists(), f"seed must not install {name}"
+        # Seed does not lay down standards/.claude.
+        assert not (consuming / "standards").exists()
+        assert not (consuming / ".claude").exists()
 
 
 # ---------------------------------------------------------------------------
