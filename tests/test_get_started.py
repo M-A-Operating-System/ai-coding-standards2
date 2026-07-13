@@ -376,77 +376,6 @@ class TestInstallClaudeLinux:
 
 
 # ---------------------------------------------------------------------------
-# TestInstallSyncWorkflow
-# ---------------------------------------------------------------------------
-
-class TestInstallSyncWorkflow:
-    def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "ai_sync_claude.yml").write_text(
-            "steps:\n"
-            "  - uses: actions/checkout@v4\n"
-            "  - run: echo hi\n"
-        )
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_sync_workflow(consuming, force=True, dry_run=False)
-
-        assert result is True
-        dst = consuming / ".github" / "workflows" / "ai_sync_claude.yml"
-        assert dst.exists()
-        assert "submodules: true" in dst.read_text()
-
-    def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "empty"
-        fake_src.mkdir()
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_sync_workflow(consuming, force=True, dry_run=False)
-
-        assert result is False
-
-
-# ---------------------------------------------------------------------------
-# TestInstallBootstrapLabelsWorkflow
-# ---------------------------------------------------------------------------
-
-class TestInstallBootstrapLabelsWorkflow:
-    def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "ai_bootstrap_labels.yml").write_text(
-            "steps:\n"
-            "  - name: Checkout\n"
-            "    uses: actions/checkout@v4\n"
-        )
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_bootstrap_labels_workflow(consuming, force=True, dry_run=False)
-
-        assert result is True
-        dst = consuming / ".github" / "workflows" / "ai_bootstrap_labels.yml"
-        assert "submodules: true" in dst.read_text()
-
-    def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "empty"
-        fake_src.mkdir()
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_bootstrap_labels_workflow(consuming, force=True, dry_run=False)
-
-        assert result is False
-
-
-# ---------------------------------------------------------------------------
 # TestInstallOperationalWorkflows -- emergency-stop
 # ---------------------------------------------------------------------------
 
@@ -604,55 +533,6 @@ class TestRewritePaths:
         result = get_started.rewrite_paths(src)
         assert f"{self._name()}/docs/product/orchestrator/13-todos.md" in result
         assert "agent-todo-standard.md" not in result
-
-
-# ---------------------------------------------------------------------------
-# TestInstallLabelCleanupWorkflow
-# ---------------------------------------------------------------------------
-
-class TestInstallLabelCleanupWorkflow:
-    def test_copies_workflow_and_injects_submodules(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "ai_label_cleanup.yml").write_text(
-            "steps:\n"
-            "  - name: Checkout\n"
-            "    uses: actions/checkout@v4\n"
-        )
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=False)
-
-        assert result is True
-        dst = consuming / ".github" / "workflows" / "ai_label_cleanup.yml"
-        assert dst.exists()
-        assert "submodules: true" in dst.read_text()
-
-    def test_returns_false_when_src_missing(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "empty"
-        fake_src.mkdir()
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=False)
-
-        assert result is False
-
-    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
-        fake_src = tmp_path / "submodule"
-        (fake_src / ".github" / "workflows").mkdir(parents=True)
-        (fake_src / ".github" / "workflows" / "ai_label_cleanup.yml").write_text("steps: []")
-        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
-        consuming = tmp_path / "consuming"
-        consuming.mkdir()
-
-        result = get_started.install_label_cleanup_workflow(consuming, force=True, dry_run=True)
-
-        assert result is True
-        assert not (consuming / ".github" / "workflows" / "ai_label_cleanup.yml").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -814,7 +694,7 @@ class TestAddGitignoreEntries:
         first_line = text.splitlines()[0]
         assert first_line == (
             "# Managed by get_started.py -- do not commit these paths manually; "
-            "ai_sync_claude.yml is the authoritative committer"
+            "the Onboard job in ai_orchestrator.yml is the authoritative committer"
         )
 
     def test_single_separator_newline_before_header(self, tmp_path, monkeypatch):
@@ -831,7 +711,7 @@ class TestAddGitignoreEntries:
             "__pycache__/\n"
             "\n"
             "# Managed by get_started.py -- do not commit these paths manually; "
-            "ai_sync_claude.yml is the authoritative committer"
+            "the Onboard job in ai_orchestrator.yml is the authoritative committer"
         ) in text
 
     def test_appends_without_duplicate_header_when_header_present(self, tmp_path, monkeypatch):
@@ -841,7 +721,7 @@ class TestAddGitignoreEntries:
         consuming.mkdir()
         header = (
             "# Managed by get_started.py -- do not commit these paths manually; "
-            "ai_sync_claude.yml is the authoritative committer"
+            "the Onboard job in ai_orchestrator.yml is the authoritative committer"
         )
         # Seed with header + one managed pattern (.claude) already present.
         (consuming / ".gitignore").write_text(
@@ -1096,9 +976,6 @@ class TestParseArgsAndMain:
         wf.mkdir(parents=True)
         for name in (
             "ai_orchestrator.yml",
-            "ai_bootstrap_labels.yml",
-            "ai_label_cleanup.yml",
-            "ai_sync_claude.yml",
             "ai_emergency_stop.yml",
         ):
             (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
@@ -1136,9 +1013,6 @@ class TestParseArgsAndMain:
         wf.mkdir(parents=True)
         all_workflows = (
             "ai_orchestrator.yml",
-            "ai_bootstrap_labels.yml",
-            "ai_label_cleanup.yml",
-            "ai_sync_claude.yml",
             "ai_emergency_stop.yml",
         )
         for name in all_workflows:
@@ -1155,7 +1029,7 @@ class TestParseArgsAndMain:
         assert (dst_wf / "ai_orchestrator.yml").exists()
         assert (dst_wf / "ai_emergency_stop.yml").exists()
         # The full-only workflows are NOT installed by seed.
-        for name in ("ai_bootstrap_labels.yml", "ai_label_cleanup.yml", "ai_sync_claude.yml"):
+        for name in ("bootstrap-labels.yml", "label-cleanup.yml"):  # dropped/renamed workflows never installed by seed
             assert not (dst_wf / name).exists(), f"seed must not install {name}"
         # Seed does not lay down standards/.claude.
         assert not (consuming / "standards").exists()

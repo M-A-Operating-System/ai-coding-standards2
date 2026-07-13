@@ -169,9 +169,10 @@ Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run
 
 The workflow checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
-symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
-(`ai_sync_claude.yml`, `ai_bootstrap_labels.yml`, `ai_label_cleanup.yml`,
-`ai_emergency_stop.yml`), and commits everything.
+symlinks, seeds the local `adrs/` folder, bootstraps the pipeline labels, and
+commits the non-workflow files. It never pushes a `.github/workflows/*` file —
+the two pipeline workflows were committed in the seed step — so the Onboard
+token needs no `workflow` scope.
 
 After it completes, open an issue with a problem statement and acceptance
 criteria. The workflow fires on `issues.opened`; expect labels
@@ -230,9 +231,11 @@ git add .github/workflows/
 git commit -m "Refresh ai-coding-standards2 wrapper files"
 ```
 
-The `.claude` and `standards` symlinks are managed by the daily
-`ai_sync_claude.yml` workflow and should not be committed manually. Your local
-`adrs/` folder is yours — never overwritten by sync.
+The `.claude` and `standards` symlinks are committed once by the Onboard job and
+point live into the submodule — on a Linux runner they always resolve to the
+submodule's content, so there is nothing to keep in sync. Bump the submodule
+pointer to take a new framework version. Your local `adrs/` folder is yours —
+never overwritten.
 
 Compare the diff between tags to know whether re-running is
 needed. If neither the workflow nor any slash command changed, no
@@ -256,10 +259,9 @@ re-run is required.
 ├── tests/                                   # test suite (pytest)
 ├── .github/
 │   ├── scripts/status.sh                    # label transitions helper
-│   └── workflows/                           # orchestrator + sync + label + CI workflows
-│       ├── ai_orchestrator.yml                 # the pipeline (all phases) + Onboard job
-│       ├── ai_sync_claude.yml                  # daily submodule drift repair
-│       ├── ai_bootstrap_labels.yml / ai_label_cleanup.yml
+│   └── workflows/                           # pipeline + CI workflows
+│       ├── ai_orchestrator.yml                 # the pipeline (all phases) + Onboard job + label bootstrap
+│       ├── ai_emergency_stop.yml               # operator kill switch
 │       ├── test.yml / validate-pipeline.yml # this repo's own CI
 │       └── ...
 ├── .claude/
