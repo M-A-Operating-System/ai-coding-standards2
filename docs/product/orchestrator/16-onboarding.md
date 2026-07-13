@@ -203,6 +203,23 @@ committed copies. Running `get_started.py` (any version with
 path — including the whole `.claude` and `standards` paths — to remove them from
 the index without deleting local files.
 
+**Upgrading from a version with the retired workflows.** A repo onboarded before
+the workflow cleanup has `ai_sync_claude.yml`, `ai_bootstrap_labels.yml`, and
+`ai_label_cleanup.yml` committed in its own `.github/workflows/`. `get_started`
+does not delete stale workflow files, and those old crons keep firing (the old
+sync workflow will even re-commit removed files), so delete them by hand once:
+
+```bash
+git rm .github/workflows/ai_sync_claude.yml \
+       .github/workflows/ai_bootstrap_labels.yml \
+       .github/workflows/ai_label_cleanup.yml
+git commit -m "chore: remove retired AI Agile workflows"
+git push
+```
+
+Label creation now runs in the Onboard job, and the symlinks resolve live into
+the submodule, so nothing replaces those workflows.
+
 ---
 
 ## How paths resolve

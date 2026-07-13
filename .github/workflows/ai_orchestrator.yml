@@ -94,11 +94,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+        # Bare paths -- get_started's rewrite_paths prefixes them with the
+        # submodule dir name on copy, so this stays correct if the consuming
+        # repo checks the submodule out under a different name.
         run: |
-          bash ai-coding-standards2/.github/scripts/status.sh bootstrap-all \
-            ai-coding-standards2/pipeline/pipeline.json
-          bash ai-coding-standards2/.github/scripts/status.sh bootstrap-triggers
-          python ai-coding-standards2/.github/scripts/migrate_labels.py
+          bash .github/scripts/status.sh bootstrap-all pipeline/pipeline.json
+          bash .github/scripts/status.sh bootstrap-triggers
+          python .github/scripts/migrate_labels.py
 
       - name: Stage and commit managed files
         run: |

@@ -1011,11 +1011,9 @@ class TestParseArgsAndMain:
         fake_src = tmp_path / "submodule"
         wf = fake_src / ".github" / "workflows"
         wf.mkdir(parents=True)
-        all_workflows = (
-            "ai_orchestrator.yml",
-            "ai_emergency_stop.yml",
-        )
-        for name in all_workflows:
+        # The submodule offers the two seed workflows plus a decoy that seed
+        # must NOT install (proves seed installs exactly the seed set).
+        for name in ("ai_orchestrator.yml", "ai_emergency_stop.yml", "ai_decoy.yml"):
             (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
 
@@ -1025,12 +1023,9 @@ class TestParseArgsAndMain:
         get_started.run_seed(consuming, force=False, dry_run=False)
 
         dst_wf = consuming / ".github" / "workflows"
-        # The two seed workflows are installed.
-        assert (dst_wf / "ai_orchestrator.yml").exists()
-        assert (dst_wf / "ai_emergency_stop.yml").exists()
-        # The full-only workflows are NOT installed by seed.
-        for name in ("bootstrap-labels.yml", "label-cleanup.yml"):  # dropped/renamed workflows never installed by seed
-            assert not (dst_wf / name).exists(), f"seed must not install {name}"
+        # Seed installs EXACTLY the two seed workflows -- nothing else.
+        installed = {p.name for p in dst_wf.glob("*.yml")} if dst_wf.exists() else set()
+        assert installed == {"ai_orchestrator.yml", "ai_emergency_stop.yml"}, installed
         # Seed does not lay down standards/.claude.
         assert not (consuming / "standards").exists()
         assert not (consuming / ".claude").exists()
