@@ -82,11 +82,11 @@ echo "AI_AGILE_STATUS: complete"
 exit 0
 ```
 
-**If `CONFLICTING`:** continue to Step 1.5.
+**If `CONFLICTING`:** continue to Step 2.
 
 ---
 
-## Step 1.5 — Attempt rebase-first resolution
+## Step 2 — Attempt rebase-first resolution
 
 Before analysing individual conflicts, attempt a rebase of the PR branch onto
 the base branch. Most "conflicting" PRs are simply diverged from main — a clean
@@ -119,11 +119,11 @@ git checkout - 2>/dev/null || true
 git branch -D _rebase_attempt 2>/dev/null || true
 ```
 
-If the rebase itself conflicted, continue to Step 2 for manual conflict analysis.
+If the rebase itself conflicted, continue to Step 3 for manual conflict analysis.
 
 ---
 
-## Step 2 — Identify conflicting files and extract conflict hunks
+## Step 3 — Identify conflicting files and extract conflict hunks
 
 `gh pr diff` shows head-vs-base changes, not the synthetic merge result with
 conflict markers — it cannot be used to identify conflicts. Instead, simulate
@@ -165,7 +165,7 @@ Parse the conflict hunks to extract:
 
 ---
 
-## Step 3 — Assess each conflict
+## Step 4 — Assess each conflict
 
 For each conflicting file, read the full file content via the PR diff (or
 `gh api repos/$REPO/contents/{path}?ref=$HEAD_BRANCH` if more context is
@@ -203,7 +203,7 @@ Assign a **priority** to each conflict:
 
 ---
 
-## Step 4 — Post resolution plan
+## Step 5 — Post resolution plan
 
 Post a single structured assessment comment on the PR. Include a table summary
 and a detailed section per conflict:
@@ -263,7 +263,7 @@ Replace all `_PLACEHOLDER` tokens with the actual values before posting.
 
 ---
 
-## Step 5 — Signal the review gate
+## Step 6 — Signal the review gate
 
 ```
 AI_AGILE_STATUS: review
