@@ -731,12 +731,16 @@ orchestrator behaviour.
 There is no restart workflow. Restarting after an emergency stop is just
 clearing the `.pipeline-stop` marker, which an owner can do at any time:
 
-- **From anywhere:** delete the committed marker and push —
+- **To resume the hosted pipeline (authoritative):** delete the committed
+  marker and push —
   `git rm .pipeline-stop && git commit -m 'chore: clear emergency stop [skip ci]' && git push`.
-- **Locally:** `python pipeline_orchestrator.py --clear-stop`.
+- **Local only:** `python pipeline_orchestrator.py --clear-stop` deletes just
+  the local working-copy marker (useful when running the orchestrator locally).
+  Because the marker is committed to the default branch, this must still be
+  committed and pushed for a GitHub-hosted run to resume.
 
-Once the marker is gone, the next scheduled orchestrator tick (or any new
-issue/PR event) resumes normal operation; trigger a run manually to resume
+Once the committed marker is gone, the next scheduled orchestrator tick (or any
+new issue/PR event) resumes normal operation; trigger a run manually to resume
 immediately. The emergency-stop workflow's run summary prints these exact
 instructions.
 

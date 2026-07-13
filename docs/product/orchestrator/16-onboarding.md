@@ -148,8 +148,9 @@ direct push — in that case, open a PR from that branch).
 The `pipeline-emergency-stop.yml` workflow is the operator kill switch:
 emergency-stop writes a `.pipeline-stop` marker (which the orchestrator checks
 before invoking any agent) and cancels in-flight runs. There is no restart
-workflow — restarting is just clearing the marker (`git rm .pipeline-stop` and
-push, or `pipeline_orchestrator.py --clear-stop`), which an owner can run at any
+workflow — restarting is just clearing the committed marker (`git rm
+.pipeline-stop` and push; `--clear-stop` only removes the local file and must
+still be committed and pushed to resume the hosted pipeline), which an owner can run at any
 time; the stop workflow's run summary prints these instructions. Unlike the
 other installed workflows, the emergency stop is copied **without**
 `submodules: true` injected — it reads nothing from the submodule, so it must

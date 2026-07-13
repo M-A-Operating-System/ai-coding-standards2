@@ -5,7 +5,7 @@ get_started.py -- wire ai-coding-standards2 into a consuming repo.
 Run from the consuming repo's root after `git submodule add ...` has
 placed this repo at `<consuming-repo>/ai-coding-standards2/`:
 
-    python ai-coding-standards2/get_started.py [--seed] [--force] [--dry-run]
+    python ai-coding-standards2/get_started.py (--seed | --full) [--force] [--dry-run]
 
 ==============================================================================
 TWO MODES -- this is the same script, run twice during onboarding.
@@ -68,7 +68,7 @@ Options (a run type is REQUIRED -- there is no default):
     --seed       SEED mode: copy the two seed workflows (orchestrator.yml +
                  pipeline-emergency-stop.yml) + .gitignore, then stop. Commit
                  those, push, then trigger the "Onboard" job to finish wiring
-                 on a Linux runner (which runs --force).
+                 on a Linux runner (which runs --full --force).
     --full       FULL mode: install the complete managed set locally. This is
                  what the Onboard job and sync-claude.yml run on a Linux runner.
     --force      Overwrite existing files. A modifier, not a mode -- combine it
@@ -763,8 +763,8 @@ def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
     This is the minimal local bootstrap. It installs exactly two workflow files:
       - orchestrator.yml         -- all GitHub needs to run the "Onboard" job,
                                      which re-runs this script in full mode
-                                     (--force) on a Linux runner to install
-                                     everything else.
+                                     (--full --force) on a Linux runner to
+                                     install everything else.
       - pipeline-emergency-stop.yml -- the operator's kill switch. It reads
                                      nothing from the submodule, so it works
                                      from the first commit; shipping it in the
@@ -820,7 +820,7 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     """Full mode (--full): install the COMPLETE managed file set.
 
     This is what the Onboard job in orchestrator.yml runs (get_started.py
-    --force), and what the daily sync-claude.yml workflow runs to repair drift.
+    --full --force), and what the daily sync-claude.yml workflow runs to repair drift.
     It lays down every workflow, the whole `.claude` symlink, the `standards`
     symlink, the local `adrs/` folder, and requirements -- everything a
     consuming repo needs to run the pipeline. Each
