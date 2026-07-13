@@ -267,7 +267,25 @@ that apply.
 - For file removal, use `try: path.unlink() / except FileNotFoundError: pass` — never `if path.exists(): path.unlink()` (TOCTOU race)
 - Before adding a new `import` to a test file, read the CI install step (`.github/workflows/test.yml` or equivalent) and verify the package is installed there; if not, add it in the same commit
 
-**6c — Write Gherkin-traced tests.** For every Gherkin scenario in the
+**6c — Establish deploy and teardown scripts for any new deployable component.**
+If this sub-issue introduces a new deployable infrastructure component (a new
+resource, module, or service definition — e.g. a Bicep/Terraform/CDK module,
+a new deployed service), deploy and teardown are one deliverable, not
+deploy-now-teardown-later:
+- Wire the component into every existing per-component deploy-workflow
+  touchpoint (provider/dependency registration, component-existence check,
+  environment parameter files, params/output resolver, post-deploy
+  verification) — see STD-PROC-031.
+- Extend the matching teardown-workflow touchpoints (component-existence
+  check, pre-teardown verification), and confirm a human-gated teardown path
+  exists for the deploy workflow at all — see STD-PROC-030.
+
+A component that deploys but has no teardown path becomes an orphaned
+resource nobody can safely remove. This applies to every sub-issue that adds
+a component, not only the one that first introduces the deploy/teardown
+workflows.
+
+**6d — Write Gherkin-traced tests.** For every Gherkin scenario in the
 approved PRD, write at least one corresponding test. Each test must:
 - Be named after the scenario (e.g. `test_<scenario_slug>`)
 - Cover the happy path (Given/When/Then)
@@ -276,7 +294,7 @@ approved PRD, write at least one corresponding test. Each test must:
 
 Place tests in `tests/` adjacent to the code.
 
-**6d — Run the full test suite.** After implementing each sub-issue, run the
+**6e — Run the full test suite.** After implementing each sub-issue, run the
 test command defined in `docs/tech-spec/` or detected from the repo. For
 Python/pytest projects:
 
@@ -308,6 +326,7 @@ For each changed file, verify:
 - No unhandled exceptions or ignored error codes
 - No magic literals
 - No code beyond what the sub-issues required
+- Any new deployable infra component has matching deploy AND teardown wiring, not just deploy (STD-PROC-030/031)
 
 Produce a Gherkin→test coverage table. For every scenario in the approved PRD,
 list the scenario slug and the test(s) that cover it. If any scenario is
