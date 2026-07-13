@@ -272,13 +272,19 @@ If this sub-issue introduces a new deployable infrastructure component (a new
 resource, module, or service definition — e.g. a Bicep/Terraform/CDK module,
 a new deployed service), deploy and teardown are one deliverable, not
 deploy-now-teardown-later:
-- Wire the component into every existing per-component deploy-workflow
-  touchpoint (provider/dependency registration, component-existence check,
-  environment parameter files, params/output resolver, post-deploy
-  verification) — see STD-PROC-031.
-- Extend the matching teardown-workflow touchpoints (component-existence
-  check, pre-teardown verification), and confirm a human-gated teardown path
-  exists for the deploy workflow at all — see STD-PROC-030.
+- **A deploy workflow already exists for this stack/platform:** wire the
+  component into every existing per-component touchpoint (provider/dependency
+  registration, component-existence check, environment parameter files,
+  params/output resolver, post-deploy verification) — see STD-PROC-031. Extend
+  the matching teardown-workflow touchpoints (component-existence check,
+  pre-teardown verification) the same way.
+- **No deploy workflow exists yet for this component's stack/platform:**
+  build one, named `DEPLOY - {Platform}` and triggered on push to `main`
+  (STD-PROC-028) — and build its matching teardown workflow in the same PR:
+  `workflow_dispatch`-only, gated behind a required text input the operator
+  must type exactly as `TEARDOWN`, restricted to a limited privileged set of
+  roles (STD-PROC-030). A deploy workflow without a teardown workflow does
+  not satisfy this sub-issue.
 
 A component that deploys but has no teardown path becomes an orphaned
 resource nobody can safely remove. This applies to every sub-issue that adds
