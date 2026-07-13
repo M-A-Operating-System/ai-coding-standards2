@@ -138,7 +138,7 @@ Then follow the corresponding section below.
 
 ## MODE A — Initial build
 
-### A1 — Read the issue
+## Step 1 — Read the issue
 
 ```bash
 gh issue view $ISSUE_NUMBER --repo "$REPO" \
@@ -153,7 +153,7 @@ Extract:
 
 ---
 
-### A2 — Read the technical specification and authoritative standards
+## Step 2 — Read the technical specification and authoritative standards
 
 ```bash
 find docs/tech-spec -name "*.md" 2>/dev/null | sort
@@ -195,7 +195,7 @@ in any self-review note — do not raise it as a finding.
 
 ---
 
-### A3 — Read sub-issues
+## Step 3 — Read sub-issues
 
 ```bash
 gh issue view $ISSUE_NUMBER --repo "$REPO" --json body \
@@ -213,7 +213,7 @@ in the order they appear in the parent issue's task list.
 
 ---
 
-### A4 — Orient in the codebase
+## Step 4 — Orient in the codebase
 
 ```bash
 find . -maxdepth 3 -not -path './.git/*' -not -path './node_modules/*' \
@@ -227,7 +227,7 @@ and error-handling style.
 
 ---
 
-### A5 — Post opening announcement
+## Step 5 — Post opening announcement
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
@@ -250,15 +250,15 @@ EOF
 
 ---
 
-### A6 — Implement sub-issues
+## Step 6 — Implement sub-issues
 
 Work through each open sub-issue in order:
 
-**6a — Understand the requirement.** Read the sub-issue body. Identify the
+**Understand the requirement.** Read the sub-issue body. Identify the
 specific behaviour to add, the files affected, and any tech-spec constraints
 that apply.
 
-**6b — Write defensively.** Apply the full defensive canon:
+**Write defensively.** Apply the full defensive canon:
 - Guard clauses at the top of every new function
 - Explicit handling of every error path
 - Named constants for every magic literal
@@ -267,7 +267,25 @@ that apply.
 - For file removal, use `try: path.unlink() / except FileNotFoundError: pass` — never `if path.exists(): path.unlink()` (TOCTOU race)
 - Before adding a new `import` to a test file, read the CI install step (`.github/workflows/test.yml` or equivalent) and verify the package is installed there; if not, add it in the same commit
 
-**6c — Write Gherkin-traced tests.** For every Gherkin scenario in the
+**Establish deploy and teardown scripts for any new deployable component.**
+If this sub-issue introduces a new deployable infrastructure component (a new
+resource, module, or service definition — e.g. a Bicep/Terraform/CDK module,
+a new deployed service), deploy and teardown are one deliverable, not
+deploy-now-teardown-later:
+- Wire the component into every existing per-component deploy-workflow
+  touchpoint (provider/dependency registration, component-existence check,
+  environment parameter files, params/output resolver, post-deploy
+  verification) — see STD-PROC-031.
+- Extend the matching teardown-workflow touchpoints (component-existence
+  check, pre-teardown verification), and confirm a human-gated teardown path
+  exists for the deploy workflow at all — see STD-PROC-030.
+
+A component that deploys but has no teardown path becomes an orphaned
+resource nobody can safely remove. This applies to every sub-issue that adds
+a component, not only the one that first introduces the deploy/teardown
+workflows.
+
+**Write Gherkin-traced tests.** For every Gherkin scenario in the
 approved PRD, write at least one corresponding test. Each test must:
 - Be named after the scenario (e.g. `test_<scenario_slug>`)
 - Cover the happy path (Given/When/Then)
@@ -276,7 +294,7 @@ approved PRD, write at least one corresponding test. Each test must:
 
 Place tests in `tests/` adjacent to the code.
 
-**6d — Run the full test suite.** After implementing each sub-issue, run the
+**Run the full test suite.** After implementing each sub-issue, run the
 test command defined in `docs/tech-spec/` or detected from the repo. For
 Python/pytest projects:
 
@@ -295,7 +313,7 @@ signal completion — you do not need to commit between sub-issues.
 
 ---
 
-### A7 — Self-review before signalling complete
+## Step 7 — Self-review before signalling complete
 
 Review all changed files:
 
@@ -308,6 +326,7 @@ For each changed file, verify:
 - No unhandled exceptions or ignored error codes
 - No magic literals
 - No code beyond what the sub-issues required
+- Any new deployable infra component has matching deploy AND teardown wiring, not just deploy (STD-PROC-030/031)
 
 Produce a Gherkin→test coverage table. For every scenario in the approved PRD,
 list the scenario slug and the test(s) that cover it. If any scenario is
@@ -324,7 +343,7 @@ All tests must pass. Fix any failures before signalling complete.
 
 ---
 
-### A8 — Closing announcement and sentinel
+## Step 8 — Closing announcement and sentinel
 
 ```bash
 gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
@@ -363,7 +382,7 @@ AI_AGILE_STATUS: complete
 > findings (`SC-001`, `QA-001`, …) carried over from another ticket. They are
 > not yours to act on; do not chase them down.
 >
-> If, after reading and categorising (B1–B2), there are no actionable
+> If, after reading and categorising (Steps 9-10), there are no actionable
 > **Required** or **Expected** items for this PR, do not investigate further:
 > post a brief response noting nothing was actionable and emit
 > `AI_AGILE_STATUS: complete`.
@@ -396,10 +415,10 @@ head ${HEAD_SHA}; cannot edit safely"` and stop. **Do not** try to reconcile,
 checkout, or re-create the branch yourself.
 
 When the tree does match, the diff (`gh pr diff "$PR_NUMBER"`) and `read_pr_file`
-remain the authority on what this PR actually changed — see B3 before acting on
+remain the authority on what this PR actually changed — see Step 11 before acting on
 any "missing"/"dead code" finding.
 
-### B1 — Read all review feedback
+## Step 9 — Read all review feedback
 
 `$PR_NUMBER` was discovered in Step 0. Read all feedback from the PR.
 
@@ -427,7 +446,7 @@ gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
 
 ---
 
-### B2 — Categorise the feedback
+## Step 10 — Categorise the feedback
 
 Group every piece of feedback into:
 
@@ -442,10 +461,10 @@ open a follow-up issue and link it in a PR comment instead.
 
 ---
 
-### B3 — Read the spec and standards, then verify feedback
+## Step 11 — Read the spec and standards, then verify feedback
 
 Read the technical specification, machine-readable standards, and ADRs exactly
-as in A2. This is a fresh invocation — do not assume any prior context.
+as in Step 2. This is a fresh invocation — do not assume any prior context.
 
 ```bash
 find docs/tech-spec -name "*.md" 2>/dev/null | sort
@@ -470,7 +489,7 @@ Use these documents to decide whether each piece of feedback is valid:
   do not implement it — post a comment explaining the conflict and emit
   `AI_AGILE_STATUS: blocked`.
 - If a reviewer requests something that contradicts an ADR, do not implement
-  it — cite the ADR ID in your B6 response explaining why.
+  it — cite the ADR ID in your Step 14 response explaining why.
 
 **Verify "missing symbol / dead code / X doesn't exist" findings against the PR,
 not the local disk.** A reviewer (or you) reading the ambient working tree —
@@ -479,7 +498,7 @@ that a function is missing, undefined, dead, or "never called". Before you delet
 code or "fix" such a finding, confirm it against the PR itself: check
 `gh pr diff "$PR_NUMBER"` and `read_pr_file path/to/file` (PR head, from the
 block above). If the symbol *is* present at the PR head, the finding is a
-stale-working-tree false positive — do **not** act on it; note in your B6
+stale-working-tree false positive — do **not** act on it; note in your Step 14
 response that it could not be reproduced against the PR head and move on.
 Deleting code to satisfy a false "dead code" finding is a regression, not a fix.
 
@@ -489,7 +508,7 @@ that the reviewer is referencing).
 
 ---
 
-### B4 — Post opening announcement
+## Step 12 — Post opening announcement
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
@@ -510,18 +529,18 @@ EOF
 
 ---
 
-### B5 — Address each required and expected item
+## Step 13 — Address each required and expected item
 
 Work through Required items first, then Expected items. For each:
 
-**5a — Understand the feedback precisely.** Re-read the comment and the
+**Understand the feedback precisely.** Re-read the comment and the
 code it refers to. Understand the root cause, not just the surface symptom.
 
-**5b — Fix defensively.** Apply the full defensive canon to every change.
-If the fix reveals a related issue nearby, fix that too. Same rules as 6b apply:
+**Fix defensively.** Apply the full defensive canon to every change.
+If the fix reveals a related issue nearby, fix that too. Same rules as Step 6's "Write defensively" apply:
 exception-guarded file removal, CI dependency check before new test imports.
 
-**5c — Update or add tests.** If the feedback identified a missing test
+**Update or add tests.** If the feedback identified a missing test
 or a test that didn't catch a bug, fix or add the test now. After all
 fixes are applied, re-run the full test suite using the command from
 `docs/tech-spec/` or the repo default
@@ -533,7 +552,7 @@ The orchestrator will commit all changes when you signal completion.
 
 ---
 
-### B6 — Post feedback response on the PR
+## Step 14 — Post feedback response on the PR
 
 After completing all fixes, post a single summary comment:
 
@@ -557,7 +576,7 @@ REPLY
 
 ---
 
-### B7 — Closing announcement and sentinel
+## Step 15 — Closing announcement and sentinel
 
 ```bash
 gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
@@ -604,9 +623,9 @@ AI_AGILE_STATUS: complete
   constants, boundary validation — on every change, in every mode.
 - **JSON standards and ADRs are authoritative (P-2).** `${AI_AGILE_ROOT}/standards/*.json`
   and `${AI_AGILE_ROOT}/adrs/adrs.json` override conflicting guidance in prose docs
-  or reviewer feedback. Read them in A2/B3 before writing a line of code. Never
+  or reviewer feedback. Read them in Step 2/Step 11 before writing a line of code. Never
   implement a reviewer change that an ADR explicitly forbids — cite the ADR ID
-  in your B6 response.
+  in your Step 14 response.
 - **Cite standards in code and commits.** When a line of code follows a named
   standard or ADR, add the stable ID as a short inline comment
   (`# STD000000003`) and include it in the commit message. Never paraphrase
