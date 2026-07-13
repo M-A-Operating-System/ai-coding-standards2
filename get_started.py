@@ -22,13 +22,14 @@ neither clobber the consuming repo nor silently do the wrong amount of work).
                                         Nothing else.
 
   --full             -> run_full()  -> installs the COMPLETE managed set:
-                                        all workflows, the whole-.claude
-                                        symlink, the standards symlink, the
-                                        local adrs/ folder, requirements,
-                                        .gitignore.
+                                        the whole-.claude symlink, the standards
+                                        symlink, the local adrs/ folder,
+                                        requirements, .gitignore. (The two
+                                        pipeline workflows are committed during
+                                        seed, not here.)
 
   --force is an overwrite modifier (not a mode): add it to --seed or --full to
-  overwrite existing files. The Onboard job and ai_sync_claude.yml run --full --force.
+  overwrite existing files. The Onboard job runs --full --force.
 
 The two modes are two steps of ONE onboarding flow:
 
@@ -41,8 +42,7 @@ The two modes are two steps of ONE onboarding flow:
 
   Step 2 (on a Linux runner, by the Onboard job in ai_orchestrator.yml):
       python get_started.py --full --force
-      -> writes EVERYTHING else and commits it. This is also what the daily
-         ai_sync_claude.yml workflow runs to repair drift.
+      -> writes EVERYTHING else and commits it.
 
 So `--seed` deliberately copies almost nothing -- the whole-folder
 symlink/full wiring happens in Step 2, on a Linux runner, via the Onboard
@@ -51,8 +51,8 @@ the full install locally passes --full (adding --force to overwrite). See
 docs/product/orchestrator/16-onboarding.md for the full flow.
 
 What run_full() installs, in order (each is one install_* function below):
-    ai_orchestrator.yml, ai_bootstrap_labels.yml, ai_label_cleanup.yml,
-    ai_sync_claude.yml, ai_emergency_stop.yml,
+    ai_orchestrator.yml, ai_emergency_stop.yml (already committed during seed;
+    re-written locally but never pushed by the Onboard job),
     the standards/ symlink, the local adrs/ folder, the whole-.claude symlink,
     requirements.txt, .gitignore entries, and untracking of any
     previously-committed managed paths.
@@ -70,7 +70,7 @@ Options (a run type is REQUIRED -- there is no default):
                  those, push, then trigger the "Onboard" job to finish wiring
                  on a Linux runner (which runs --full --force).
     --full       FULL mode: install the complete managed set locally. This is
-                 what the Onboard job and ai_sync_claude.yml run on a Linux runner.
+                 what the Onboard job runs on a Linux runner.
     --force      Overwrite existing files. A modifier, not a mode -- combine it
                  with --seed or --full.
     --dry-run    Print what would be created/modified without writing.
@@ -451,21 +451,6 @@ def _install_workflow(
     return write_file(dst, content, force, dry_run)
 
 
-def install_bootstrap_labels_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy ai_bootstrap_labels.yml into the consuming repo (reads the submodule)."""
-    return _install_workflow("ai_bootstrap_labels.yml", consuming_root, force, dry_run)
-
-
-def install_label_cleanup_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy ai_label_cleanup.yml into the consuming repo (reads the submodule)."""
-    return _install_workflow("ai_label_cleanup.yml", consuming_root, force, dry_run)
-
-
-def install_sync_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
-    """Copy ai_sync_claude.yml into the consuming repo (reads the submodule)."""
-    return _install_workflow("ai_sync_claude.yml", consuming_root, force, dry_run)
-
-
 def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: bool) -> bool:
     """Copy ai_emergency_stop.yml into the consuming repo.
 
@@ -544,7 +529,7 @@ def add_gitignore_entries(
 
     Covers directories/files that get_started creates but that should not
     be committed to the consuming repo as normal files (they are symlinks
-    into the submodule, force-committed by the Onboard job / ai_sync_claude.yml):
+    into the submodule, force-committed by the Onboard job):
       - .claude     -- whole-folder symlink into the submodule
       - standards   -- whole-folder symlink into the submodule
 
@@ -572,7 +557,7 @@ def add_gitignore_entries(
         print(f"  SKIP   .gitignore  (all entries already present)")
         return 0
 
-    header = "# Managed by get_started.py -- do not commit these paths manually; ai_sync_claude.yml is the authoritative committer"
+    header = "# Managed by get_started.py -- do not commit these paths manually; the Onboard job in ai_orchestrator.yml is the authoritative committer"
     needs_header = header not in existing_lines
     separator = "\n" if existing_lines else ""
     if needs_header:
@@ -677,8 +662,10 @@ def print_followup_seed() -> None:
     print(f"     -> check 'Onboard' -> Run.")
     print()
     print(f"     The Onboard job runs on a Linux runner. It creates the")
-    print(f"     .claude/agents symlink, copies slash commands and standards,")
-    print(f"     drops ai_sync_claude.yml and other workflows, and commits everything.")
+    print(f"     .claude/standards symlinks, seeds adrs/ and requirements,")
+    print(f"     bootstraps the pipeline labels, and commits everything EXCEPT")
+    print(f"     workflow files (those were committed in the seed step, so the")
+    print(f"     Onboard token needs no workflow scope).")
     print(f"     After it completes, open a test issue to confirm the pipeline is live.")
     print()
     print(f"For full design + roadmap see {SUBMODULE_NAME}/docs/product/orchestrator/.")
@@ -697,9 +684,7 @@ def print_followup(consuming_root: Path) -> None:
     print(f"     git add .gitmodules \\")
     print(f"             {SUBMODULE_NAME} \\")
     print(f"             .github/workflows/ai_orchestrator.yml \\")
-    print(f"             .github/workflows/ai_bootstrap_labels.yml \\")
-    print(f"             .github/workflows/ai_label_cleanup.yml \\")
-    print(f"             .github/workflows/ai_sync_claude.yml \\")
+    print(f"             .github/workflows/ai_emergency_stop.yml \\")
     print(f"             .gitignore \\")
     print(f"             requirements.txt")
     print(f"     git commit -m 'Wire up ai-coding-standards2 orchestrator'")
@@ -738,7 +723,7 @@ def parse_args() -> argparse.Namespace:
             "FULL mode (one of --seed/--full is required): lay down every "
             "workflow, the whole-.claude and standards symlinks, adrs/, and "
             "requirements locally. This is what the Onboard job and "
-            "ai_sync_claude.yml run on a Linux runner (they add --force)."
+            "the Onboard job on a Linux runner (it adds --force)."
         ),
     )
     p.add_argument(
@@ -820,21 +805,20 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     """Full mode (--full): install the COMPLETE managed file set.
 
     This is what the Onboard job in ai_orchestrator.yml runs (get_started.py
-    --full --force), and what the daily ai_sync_claude.yml workflow runs to repair drift.
-    It lays down every workflow, the whole `.claude` symlink, the `standards`
-    symlink, the local `adrs/` folder, and requirements -- everything a
-    consuming repo needs to run the pipeline. Each
-    step is one install_* function; the order is stable so the printed log reads
-    top-to-bottom.
+    --full --force). It lays down the whole `.claude` symlink, the `standards`
+    symlink, the local `adrs/` folder, and requirements -- everything a consuming
+    repo needs to run the pipeline. The two pipeline workflows (ai_orchestrator,
+    ai_emergency_stop) are committed during the seed step, not here, so the
+    Onboard job never has to push `.github/workflows/*` (which would require a
+    workflow-scoped token); the Onboard job commits only non-workflow files.
+    Each step is one install_* function; the order is stable so the printed log
+    reads top-to-bottom.
     """
     # Pre-flight: refuse to clobber a consuming repo's own .claude. Runs before
     # any writes so a rejected onboard leaves no partial state.
     _guard_existing_claude(consuming_root)
 
     install_orchestrator_workflows(consuming_root, force, dry_run)
-    install_bootstrap_labels_workflow(consuming_root, force, dry_run)
-    install_label_cleanup_workflow(consuming_root, force, dry_run)
-    install_sync_workflow(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
@@ -861,7 +845,7 @@ def main() -> int:
             "    --seed    minimal local bootstrap (the two seed workflows + .gitignore),\n"
             "              then commit, push, and run the Onboard job to finish.\n"
             "    --full    complete wiring locally -- what the Onboard job and\n"
-            "              ai_sync_claude.yml run on a Linux runner (they add --force).\n"
+            "              the Onboard job on a Linux runner (it adds --force).\n"
             "  Add --force to overwrite existing files, --dry-run to preview."
         )
     full_mode = args.full

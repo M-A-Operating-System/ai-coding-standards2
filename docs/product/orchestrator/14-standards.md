@@ -15,7 +15,7 @@ submodule) owns them, and a consuming repo inherits them via the whole-folder
 
 | Scope | Canonical source | On-disk in a consuming repo | Who owns it | Purpose |
 |-------|-----------------|------------------------------|-------------|---------|
-| **org** | `ai-coding-standards2/standards/*.json` (submodule) | `{project-root}/standards` — a whole-folder symlink into the submodule (copied on Windows), kept live by `ai_sync_claude.yml` | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
+| **org** | `ai-coding-standards2/standards/*.json` (submodule) | `{project-root}/standards` — a whole-folder symlink into the submodule (copied on Windows) that resolves live to the submodule's content | Platform / architecture team | Baseline rules that apply across every project that installs AI Agile |
 
 A consuming repo does **not** add its own standards files. `standards/` is a
 symlink into the submodule, so there is nowhere project-local to put one, and

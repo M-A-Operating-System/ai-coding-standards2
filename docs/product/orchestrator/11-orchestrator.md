@@ -669,39 +669,42 @@ maps the triggering event to `--issue`/`--kind`/`--dry-run` arguments, and runs
 `issue_number`, `dry_run`, and `verbose` inputs for manual reprocessing and
 debugging.
 
-### `ai_sync_claude.yml`
+### No sync workflow — the symlinks are live
 
-`.github/workflows/ai_sync_claude.yml` keeps the consuming repo's pipeline
-artefacts in sync with the `ai-coding-standards2` submodule. It runs
-nightly (and on `workflow_dispatch`) and calls `get_started.py` in sync
-mode.
+There is no daily sync workflow. On a Linux runner `.claude` and `standards` are
+whole-folder symlinks into the submodule, so they always resolve to the
+submodule's current content — there is no drift to repair. To take a new
+framework version, bump the submodule pointer (a normal commit); the symlinks
+reflect the new content automatically. If a consuming repo ever needs its
+symlinks/labels re-laid (e.g. after switching the submodule to a version that
+adds agents), re-run the Onboard job, which runs `get_started.py --full --force`
+and re-bootstraps labels.
 
-**What it updates:**
+### Pipeline labels — bootstrap at onboarding, prune on demand
 
-| Install function | Destination | Stale-file cleanup |
-|---|---|---|
-| `install_agents` | `.claude/agents/` | Yes — removes agents no longer in the submodule |
-| `install_standards` | `standards/` | No — project-specific standards files are never deleted |
-| `install_slash_commands` | `.claude/commands/` | Yes |
-| `install_orchestrator_workflow` | `.github/workflows/ai_orchestrator.yml` | No (single file) |
-| `install_bootstrap_labels_workflow` | `.github/workflows/ai_bootstrap_labels.yml` | No (single file) |
-| `install_label_cleanup_workflow` | `.github/workflows/ai_label_cleanup.yml` | No (single file) |
-| `install_sync_workflow` | `.github/workflows/ai_sync_claude.yml` | No (self) |
+There is no labels workflow. The pipeline's status, trigger, and human-gate
+labels are created by the **Onboard job's label-bootstrap step** (`status.sh
+bootstrap-all` + `bootstrap-triggers` + `migrate_labels.py`), using the default
+`GITHUB_TOKEN` (`issues: write` — no workflow scope needed). Re-run the Onboard
+job to pick up labels for agents added by a later submodule version.
 
-The sync commit is made by the Actions bot if any files changed. If nothing
-changed, the workflow exits without a commit.
+To remove stale/non-conforming labels, an owner runs the prune command
+on demand (there is no cleanup workflow):
+
+```bash
+bash ai-coding-standards2/.github/scripts/status.sh prune ai-coding-standards2/pipeline/pipeline.json --dry-run   # preview
+bash ai-coding-standards2/.github/scripts/status.sh prune ai-coding-standards2/pipeline/pipeline.json             # delete
+```
 
 **Path rewriting.** Workflow files reference `ai-coding-standards2/` as a
-path prefix. `install_*_workflow` functions rewrite these paths to
-`{SUBMODULE_NAME}/` so they work regardless of the submodule directory name
-the consuming repo chose. `_add_submodules_to_checkout` injects
-`submodules: true` into any bare `actions/checkout` step that doesn't
-already have a `with:` block.
+path prefix. `get_started` rewrites bare paths to `{SUBMODULE_NAME}/` so they
+work regardless of the submodule directory name the consuming repo chose.
+`_add_submodules_to_checkout` injects `submodules: true` into any bare
+`actions/checkout` step that doesn't already have a `with:` block.
 
-**Initial setup.** The first time a consuming repo adopts the pipeline,
-run `python ai-coding-standards2/get_started.py --force` to install all
-artefacts. This is idempotent — re-running it updates without overwriting
-local additions (e.g. project-specific standards files not in the submodule).
+**Initial setup.** The first time a consuming repo adopts the pipeline, run
+`python ai-coding-standards2/get_started.py --seed` (commit the two workflows),
+then trigger the Onboard job. This is idempotent.
 
 **Scheduled reconciler.** The schedule trigger is the backstop for:
 

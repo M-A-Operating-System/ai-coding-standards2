@@ -27,8 +27,7 @@ and exits without touching the consuming repo — it never guesses a mode.
 The two runs are two steps of the same flow: seed drops the two seed workflows
 (ai_orchestrator.yml, which GitHub needs to run the Onboard job, plus the
 emergency-stop kill switch); the Onboard job then re-runs the script in full
-mode to lay down (and commit) the rest. The daily `ai_sync_claude.yml` workflow
-also runs the full mode (`--full --force`) to repair drift.
+mode to lay down (and commit) the rest of the non-workflow files.
 
 In code these are the `run_seed()` and `run_full()` functions in
 `get_started.py`; the module docstring lists exactly what each installs.
@@ -69,9 +68,9 @@ a Linux runner (as `--full --force`), and what you would run locally with
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
 
-Full mode is also how the orchestrator's built-in setup job and the daily
-`ai_sync_claude.yml` workflow call this script — they run `get_started.py --full --force`
-on a Linux runner to keep managed paths in sync.
+Full mode is also how the orchestrator's built-in setup (Onboard) job calls this
+script — it runs `get_started.py --full --force` on a Linux runner to lay down
+the managed paths.
 
 ---
 
@@ -90,7 +89,8 @@ Creating directory symlinks on Windows requires elevated privileges that most
 developers and VS builds do not have. Committing the symlink blob from a Linux
 runner means developers who clone the consuming repo on any platform inherit the
 framework's Claude setup and standards without running `get_started.py` again.
-The daily ai_sync_claude.yml workflow rebuilds the symlinks on every Linux runner run.
+On Linux the symlink resolves live to the submodule's content, so there is no
+drift to repair and no sync workflow.
 
 > **Local clones must init the submodule.** The `.claude` and `standards`
 > symlinks point **into** the submodule, so they only resolve when the submodule
@@ -139,11 +139,12 @@ Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run
 
 The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
-symlinks, seeds the local `adrs/` folder, drops the remaining workflow files
-(`ai_sync_claude.yml`, `ai_bootstrap_labels.yml`, `ai_label_cleanup.yml`,
-`ai_emergency_stop.yml`), and commits everything directly to the default
-branch (or to an `ai-standards-setup` branch if branch protection rules block a
-direct push — in that case, open a PR from that branch).
+symlinks, seeds the local `adrs/` folder, bootstraps the pipeline labels, and
+commits the **non-workflow** files directly to the default branch (or to an
+`ai-standards-setup` branch if branch protection rules block a direct push — in
+that case, open a PR from that branch). It never pushes a `.github/workflows/*`
+file — the two pipeline workflows were committed in the seed step — so the
+Onboard token needs no `workflow` scope.
 
 The `ai_emergency_stop.yml` workflow is the operator kill switch:
 emergency-stop writes a `.pipeline-stop` marker (which the orchestrator checks
@@ -161,25 +162,18 @@ acceptance criteria to confirm the pipeline is live.
 
 ---
 
-## ai_sync_claude.yml — daily sync workflow
+## Keeping in sync — no sync workflow
 
-The `ai_sync_claude.yml` workflow (installed by the setup job into the consuming
-repo's `.github/workflows/`) runs daily at 06:00 UTC and on demand:
+There is no daily sync workflow. On a Linux runner `.claude` and `standards` are
+whole-folder symlinks into the submodule, so they always resolve to the
+submodule's current content — there is no drift between a committed copy and the
+submodule to reconcile.
 
-1. Checks out the consuming repo **with submodules**
-2. Runs `python ai-coding-standards2/get_started.py --full --force`
-3. Force-stages all managed paths with `git add -f` (needed because managed
-   paths are listed in `.gitignore` to protect Windows developers)
-4. Commits and pushes if anything changed
-
-This keeps the consuming repo in sync with submodule updates automatically and
-recovers from any drift between the committed symlink blob and the submodule.
-It is not used for initial onboarding — the setup job in `ai_orchestrator.yml`
-handles first-time wiring.
-
-The workflow uses `AI_AGILE_BOT_TOKEN` (falls back to `GITHUB_TOKEN`) so the
-commit is attributed to the bot account and branch-protection rules that block
-`GITHUB_TOKEN` pushes are bypassed.
+To take a new framework version, **bump the submodule pointer** (a normal commit
+in the consuming repo); the symlinks reflect the new content automatically. If a
+consuming repo ever needs its symlinks re-laid or new-agent labels created after
+such a bump, re-run the Onboard job (`get_started.py --full --force` + label
+bootstrap).
 
 ---
 
@@ -194,8 +188,8 @@ standards
 
 These are the whole-folder symlinks; gitignoring them keeps them from being
 committed as normal files (and stops Windows copies being committed by hand).
-The setup job and `ai_sync_claude.yml` use `git add -f` to override `.gitignore`
-when committing the symlink blobs on behalf of the bot. The project-owned
+The setup (Onboard) job uses `git add -f` to override `.gitignore` when
+committing the symlink blobs on behalf of the bot. The project-owned
 `adrs/` folder is **not** gitignored — it is committed normally.
 
 ---
@@ -208,6 +202,23 @@ committed copies. Running `get_started.py` (any version with
 `untrack_managed_paths`) will call `git rm --cached -r` on each tracked managed
 path — including the whole `.claude` and `standards` paths — to remove them from
 the index without deleting local files.
+
+**Upgrading from a version with the retired workflows.** A repo onboarded before
+the workflow cleanup has `ai_sync_claude.yml`, `ai_bootstrap_labels.yml`, and
+`ai_label_cleanup.yml` committed in its own `.github/workflows/`. `get_started`
+does not delete stale workflow files, and those old crons keep firing (the old
+sync workflow will even re-commit removed files), so delete them by hand once:
+
+```bash
+git rm .github/workflows/ai_sync_claude.yml \
+       .github/workflows/ai_bootstrap_labels.yml \
+       .github/workflows/ai_label_cleanup.yml
+git commit -m "chore: remove retired AI Agile workflows"
+git push
+```
+
+Label creation now runs in the Onboard job, and the symlinks resolve live into
+the submodule, so nothing replaces those workflows.
 
 ---
 

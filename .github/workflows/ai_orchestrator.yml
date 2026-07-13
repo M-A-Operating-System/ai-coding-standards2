@@ -55,11 +55,13 @@ concurrency:
 
 jobs:
   # --- Onboard ----------------------------------------------------------------
-  # Run this job once after get_started.py --seed has copied ai_orchestrator.yml:
+  # Run this job once after get_started.py --seed has copied the two pipeline
+  # workflows (ai_orchestrator.yml, ai_emergency_stop.yml):
   #   Actions -> AI - Orchestrator -> Run workflow -> OK: Onboard
   # It calls get_started.py --full --force on a Linux runner, which creates the
-  # .claude/agents symlink, copies slash commands and standards, and drops all
-  # remaining workflow files -- then commits and pushes everything.
+  # .claude and standards symlinks, seeds adrs/ and requirements, bootstraps the
+  # pipeline labels, then commits and pushes the NON-workflow files. It never
+  # pushes a .github/workflows/* file, so the token needs no workflow scope.
   # After this job completes, open an issue to start the normal pipeline.
   onboard:
     name: Onboard
@@ -78,29 +80,42 @@ jobs:
           python-version: '3.12'
 
       - name: Run onboarding
-        # Creates .claude/agents symlink, copies commands + standards,
-        # writes ai_sync_claude.yml, ai_bootstrap_labels.yml, ai_label_cleanup.yml,
-        # ai_emergency_stop.yml, seeds requirements.txt, and
-        # updates .gitignore.
+        # Creates the .claude and standards symlinks, copies nothing else that
+        # is a workflow file: the two pipeline workflows (ai_orchestrator,
+        # ai_emergency_stop) were committed during the seed step. Seeds
+        # requirements.txt and updates .gitignore.
         run: python ai-coding-standards2/get_started.py --full --force
+
+      - name: Bootstrap pipeline labels
+        # Create the pipeline's status, trigger, and human-gate labels. Uses the
+        # default GITHUB_TOKEN (issues: write) -- labels do not need a
+        # workflow-scoped token. Idempotent; re-run onboarding after a submodule
+        # upgrade to pick up labels for any newly added agents.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        # Bare paths -- get_started's rewrite_paths prefixes them with the
+        # submodule dir name on copy, so this stays correct if the consuming
+        # repo checks the submodule out under a different name.
+        run: |
+          bash .github/scripts/status.sh bootstrap-all pipeline/pipeline.json
+          bash .github/scripts/status.sh bootstrap-triggers
+          python .github/scripts/migrate_labels.py
 
       - name: Stage and commit managed files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Force-stage the gitignored whole-folder symlinks (.claude and
-          # standards). Workflow files are not gitignored but included so any
-          # updates are committed too.
+          # Commit ONLY non-workflow files. The two pipeline workflows were
+          # committed during the seed step, so this job never pushes a
+          # .github/workflows/* file -- which means the token here needs no
+          # workflow scope; the default GITHUB_TOKEN suffices. Force-stage the
+          # gitignored whole-folder symlinks (.claude and standards).
           git add -f \
             .claude \
             standards \
-            .gitignore \
-            .github/workflows/ai_orchestrator.yml \
-            .github/workflows/ai_sync_claude.yml \
-            .github/workflows/ai_bootstrap_labels.yml \
-            .github/workflows/ai_label_cleanup.yml \
-            .github/workflows/ai_emergency_stop.yml
+            .gitignore
 
           # Project-owned artifacts, committed normally (not gitignored):
           # local ADRs and requirements.txt.
