@@ -1028,6 +1028,54 @@ class TestOrchestratorNonOverlapping:
 
 
 # ---------------------------------------------------------------------------
+# TestOrchestratorSkipsWhenStopped
+# ---------------------------------------------------------------------------
+
+class TestOrchestratorSkipsWhenStopped:
+    """Scenario: a stopped pipeline resolves to a cheap, green, skipped run
+    instead of paying for a full runner + Python + npm setup only to have
+    the orchestrator's own is_pipeline_stopped() check bail out afterwards."""
+
+    def _workflow_text(self) -> str:
+        path = Path(__file__).parent.parent / ".github" / "workflows" / "ai_orchestrator.yml"
+        assert path.exists(), f"Workflow file not found: {path}"
+        return path.read_text()
+
+    def test_check_stop_job_checks_pipeline_stop_marker(self):
+        content = self._workflow_text()
+        assert "check-stop:" in content, (
+            "ai_orchestrator.yml must define a check-stop job"
+        )
+        assert "contents/.pipeline-stop" in content, (
+            "check-stop must query the .pipeline-stop marker via the Contents API"
+        )
+
+    def test_check_stop_job_does_not_set_up_python(self):
+        """The whole point is to avoid the expensive setup -- check-stop must
+        never touch actions/setup-python or npm install."""
+        content = self._workflow_text()
+        check_stop_start = content.index("check-stop:")
+        orchestrate_start = content.index("orchestrate:")
+        check_stop_block = content[check_stop_start:orchestrate_start]
+        assert "setup-python" not in check_stop_block
+        assert "npm install" not in check_stop_block
+        assert "actions/checkout" not in check_stop_block
+
+    def test_orchestrate_job_depends_on_and_is_gated_by_check_stop(self):
+        content = self._workflow_text()
+        orchestrate_start = content.index("orchestrate:")
+        orchestrate_block = content[orchestrate_start:]
+        assert "needs: check-stop" in orchestrate_block, (
+            "orchestrate must declare 'needs: check-stop' so its if-condition "
+            "can reference the check-stop job's output"
+        )
+        assert "needs.check-stop.outputs.stopped != 'true'" in orchestrate_block, (
+            "orchestrate's if-condition must skip the job when check-stop "
+            "reports the pipeline is stopped"
+        )
+
+
+# ---------------------------------------------------------------------------
 # QA-001: invoke_agent timeout — timer fires and agent does not hang forever
 # ---------------------------------------------------------------------------
 

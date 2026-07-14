@@ -139,10 +139,42 @@ jobs:
             fi
           fi
 
+  # --- Emergency-stop check ---------------------------------------------------
+  # Checks for .pipeline-stop via the Contents API only -- no checkout, no
+  # Python, no npm install. Lets a stopped pipeline's triggers resolve to a
+  # green, skipped run in a few seconds instead of paying for a full runner
+  # setup only to have the orchestrator's own is_pipeline_stopped() check
+  # (pipeline_orchestrator.py) bail out after the expensive steps already ran.
+  # This is a cost optimisation, not the authoritative check: the orchestrator
+  # still re-checks the marker itself once the working tree is checked out, so
+  # a transient API failure here (treated as "not stopped") never causes a
+  # real stop to be missed -- it only costs one wasted expensive run at worst.
+  check-stop:
+    name: Check for emergency stop marker
+    if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true')"
+    runs-on: ubuntu-latest
+    outputs:
+      stopped: ${{ steps.check.outputs.stopped }}
+    steps:
+      - name: Check .pipeline-stop via the Contents API
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/.pipeline-stop" >/dev/null 2>&1; then
+            echo "stopped=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::.pipeline-stop marker present -- skipping the orchestrator run."
+          else
+            echo "stopped=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # --- Normal pipeline operation ----------------------------------------------
   orchestrate:
     name: Evaluate pipeline state
-    if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true')"
+    needs: check-stop
+    if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true') && needs.check-stop.outputs.stopped != 'true'"
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
