@@ -625,7 +625,9 @@ class TestInstallRequirements:
 
     def test_creates_file_when_missing(self, tmp_path, monkeypatch):
         """No requirements.txt in the consuming repo -- seed one from the
-        submodule's runtime deps, excluding the test-only pytest entry."""
+        submodule's runtime deps, excluding the test-only pytest/pyyaml entries
+        (pyyaml is used only by this submodule's own test_emergency_stop.py,
+        never by pipeline_orchestrator.py's runtime code)."""
         fake_src = self._make_submodule(
             tmp_path, "requests==2.33.1\npytest==9.0.3\npyyaml==6.0.1\n"
         )
@@ -638,8 +640,8 @@ class TestInstallRequirements:
         assert changed is True
         content = (consuming / "requirements.txt").read_text()
         assert "requests==2.33.1" in content
-        assert "pyyaml==6.0.1" in content
         assert "pytest" not in content
+        assert "pyyaml" not in content
 
     def test_defaults_to_requests_when_submodule_file_missing(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
@@ -690,6 +692,25 @@ class TestInstallRequirements:
         content = dst.read_text()
         assert content.count("requests") == 1
         assert "requests==2.28.0" in content
+
+    def test_does_not_duplicate_when_existing_dep_has_different_case(self, tmp_path, monkeypatch):
+        """Package names are case-insensitive (PyPI normalizes them) -- an
+        existing 'Requests' entry must satisfy our lowercase 'requests' dep,
+        end to end through install_requirements(), not just at the
+        _requirement_name() unit level."""
+        fake_src = self._make_submodule(tmp_path, "requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "requirements.txt"
+        dst.write_text("Requests==2.28.0\n")
+
+        changed = get_started.install_requirements(consuming, dry_run=False)
+
+        assert changed is False
+        content = dst.read_text()
+        assert content.lower().count("requests") == 1
+        assert "Requests==2.28.0" in content
 
     def test_idempotent_across_repeated_runs(self, tmp_path, monkeypatch):
         """Running onboarding twice must not append the same dep twice."""
