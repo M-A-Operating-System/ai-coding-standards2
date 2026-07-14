@@ -153,6 +153,10 @@ jobs:
     name: Check for emergency stop marker
     if: "!(github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true')"
     runs-on: ubuntu-latest
+    # A single gh api call should finish in seconds. Bounding it tightly means
+    # a hung/stalled call can never quietly burn hours of runner time -- which
+    # would defeat this job's whole cost-saving purpose in its own failure mode.
+    timeout-minutes: 5
     outputs:
       stopped: ${{ steps.check.outputs.stopped }}
     steps:

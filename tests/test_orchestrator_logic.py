@@ -4,6 +4,7 @@ import subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 import pytest
@@ -1060,6 +1061,21 @@ class TestOrchestratorSkipsWhenStopped:
         assert "setup-python" not in check_stop_block
         assert "npm install" not in check_stop_block
         assert "actions/checkout" not in check_stop_block
+
+    def test_check_stop_job_has_a_tight_timeout(self):
+        """A hung gh api call must not be free to burn hours of runner time --
+        that would defeat check-stop's whole cost-saving purpose in its own
+        failure mode. Must be well under the 360-minute platform default."""
+        content = self._workflow_text()
+        check_stop_start = content.index("check-stop:")
+        orchestrate_start = content.index("orchestrate:")
+        check_stop_block = content[check_stop_start:orchestrate_start]
+        match = re.search(r"timeout-minutes:\s*(\d+)", check_stop_block)
+        assert match, "check-stop must declare an explicit timeout-minutes"
+        assert int(match.group(1)) <= 10, (
+            "check-stop's timeout should be a few minutes, not close to the "
+            "360-minute platform default"
+        )
 
     def test_orchestrate_job_depends_on_and_is_gated_by_check_stop(self):
         content = self._workflow_text()
