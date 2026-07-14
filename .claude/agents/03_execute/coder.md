@@ -55,6 +55,12 @@ and stop instead:
   diverged `issue-{N}` branch, merge/rebase mechanics;
 - missing or broken pipeline scripts (`commit-agent-work.sh`, `mark-pr-ready.sh`,
   `ci-gate.sh`, …), or orchestrator / CI / GitHub Actions / workflow behaviour;
+- missing framework setup artefacts caused by incomplete onboarding in the
+  consuming repo (e.g. `requirements.txt` absent at the repo root, CI failing
+  on a step this framework's onboarding is supposed to have provisioned) — a
+  repo maintainer fixes this by re-running the `Onboard` workflow_dispatch job;
+  never author the missing artefact yourself, since a hand-written stand-in
+  can silently diverge from what onboarding actually provisions;
 - shallow-clone artefacts, label state, or the PR lifecycle.
 
 Spend near-zero effort here: if the environment blocks you, escalate within a
