@@ -464,44 +464,97 @@ def install_emergency_stop_workflow(consuming_root: Path, force: bool, dry_run: 
     )
 
 
+def _requirement_name(line: str) -> str:
+    """Extract the package name from a requirements.txt line, ignoring any
+    version specifier, extras, or environment marker (e.g. 'requests==2.33.1'
+    and 'requests[socks]>=2 ; python_version>"3.8"' both -> 'requests')."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return ""
+    name = re.split(r"[<>=!~;\[\s]", stripped, maxsplit=1)[0]
+    return name.strip().lower()
+
+
+#: Exact package names in this submodule's own requirements.txt that exist
+#: only for this submodule's own test suite, not for pipeline_orchestrator.py's
+#: runtime -- never merged into a consuming repo's requirements.txt. Matched
+#: via _requirement_name(), not a raw prefix, so e.g. a future 'pytest-cov'
+#: entry wouldn't be excluded just for sharing the 'pytest' prefix.
+_TEST_ONLY_DEP_NAMES = frozenset({"pytest", "pyyaml"})
+
+
+def _orchestrator_runtime_deps() -> list[str]:
+    """Return this submodule's own requirements.txt lines, minus its
+    test-only entries (pytest, pyyaml -- see _TEST_ONLY_DEP_NAMES), as the
+    set of deps the orchestrator itself needs at runtime in any consuming
+    repo."""
+    src = SUBMODULE_ROOT / "requirements.txt"
+    if not src.exists():
+        return ["requests"]
+    return [
+        ln.strip() for ln in src.read_text(encoding="utf-8").splitlines()
+        if ln.strip() and _requirement_name(ln) not in _TEST_ONLY_DEP_NAMES
+    ]
+
+
 def install_requirements(
     consuming_root: Path,
     dry_run: bool,
 ) -> bool:
-    """Seed requirements.txt in the consuming repo if it does not already exist.
+    """Ensure the orchestrator's runtime dependencies are present in the
+    consuming repo's requirements.txt -- creating the file if it doesn't
+    exist, or merging any missing entries into it if it does.
 
     The orchestrator workflow does `pip install -r requirements.txt` on every
-    run.  In this submodule's own CI that file lists the full test stack
-    (pytest, pyyaml, etc.).  In consuming repos the orchestrator only needs
-    `requests`; project teams extend the file via PR for anything their own
-    coder agents need at runtime.
-
-    This file is never overwritten once created -- project additions are
-    preserved across syncs.  When the submodule gains new runtime orchestrator
-    dependencies, check {SUBMODULE_NAME}/requirements.txt and mirror any
-    additions to this file manually.
+    run, so if a consuming repo already tracks its own requirements.txt (its
+    own app dependencies, unrelated to this pipeline), our runtime deps must
+    still land in it or CI never gets off the ground.  Merging is idempotent
+    and additive only: it appends whichever of our runtime deps aren't
+    already present (matched by package name, ignoring version pins), and
+    never removes, reorders, or rewrites anything the project already has.
+    Once an entry is present, later onboarding runs leave it alone -- this
+    only ever adds what's missing, so it converges to a no-op.
     """
     dst = consuming_root / "requirements.txt"
-    if dst.exists():
-        print(f"  SKIP   requirements.txt  (exists; add packages there directly)")
+    runtime_deps = _orchestrator_runtime_deps()
+
+    if not dst.exists():
+        content = (
+            "# Runtime dependencies for the AI Agile pipeline orchestrator.\n"
+            f"# Seeded from {SUBMODULE_NAME}/requirements.txt.\n"
+            "# Add project-specific packages below.\n"
+            + "\n".join(runtime_deps) + "\n"
+        )
+        print(f"  Requirements: -> {dst}")
+        return write_file(dst, content, force=False, dry_run=dry_run)
+
+    existing_text = dst.read_text(encoding="utf-8")
+    existing_names = {
+        _requirement_name(ln) for ln in existing_text.splitlines()
+    }
+    missing = [
+        dep for dep in runtime_deps
+        if _requirement_name(dep) not in existing_names
+    ]
+    if not missing:
+        print(f"  SKIP   requirements.txt  (orchestrator runtime deps already present)")
         return False
-    src = SUBMODULE_ROOT / "requirements.txt"
-    if src.exists():
-        runtime_deps = "\n".join(
-            ln for ln in src.read_text(encoding="utf-8").splitlines()
-            if ln.strip() and not ln.strip().startswith("pytest")
-        ) + "\n"
-    else:
-        runtime_deps = "requests\n"
-    content = (
-        "# Runtime dependencies for the AI Agile pipeline orchestrator.\n"
-        f"# Seeded from {SUBMODULE_NAME}/requirements.txt -- never overwritten by sync.\n"
-        "# When the submodule adds new runtime deps, mirror them here manually.\n"
-        "# Add project-specific packages below.\n"
-        f"{runtime_deps}"
+
+    if dry_run:
+        print(f"  WOULD  {dst}  (append {len(missing)} missing orchestrator dep(s): {', '.join(missing)})")
+        return True
+
+    needs_leading_newline = existing_text != "" and not existing_text.endswith("\n")
+    addition = (
+        ("\n" if needs_leading_newline else "")
+        + "\n# Runtime dependencies required by the AI Agile pipeline orchestrator\n"
+        + f"# (added by onboarding from {SUBMODULE_NAME}/requirements.txt).\n"
+        + "\n".join(missing) + "\n"
     )
-    print(f"  Requirements: -> {dst}")
-    return write_file(dst, content, force=False, dry_run=dry_run)
+    with dst.open("a", encoding="utf-8") as f:
+        f.write(addition)
+    print(f"  APPEND {dst}  ({len(missing)} orchestrator dep(s): {', '.join(missing)})")
+    return True
 
 
 def _managed_standards_files() -> list[str]:

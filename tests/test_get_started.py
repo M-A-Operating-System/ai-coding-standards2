@@ -613,6 +613,210 @@ class TestInstallOrchestratorWorkflows:
 
 
 # ---------------------------------------------------------------------------
+# TestInstallRequirements
+# ---------------------------------------------------------------------------
+
+class TestInstallRequirements:
+    def _make_submodule(self, tmp_path, requirements_text):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir(parents=True, exist_ok=True)
+        (fake_src / "requirements.txt").write_text(requirements_text)
+        return fake_src
+
+    def test_creates_file_when_missing(self, tmp_path, monkeypatch):
+        """No requirements.txt in the consuming repo -- seed one from the
+        submodule's runtime deps, excluding the test-only pytest/pyyaml entries
+        (pyyaml is used only by this submodule's own test_emergency_stop.py,
+        never by pipeline_orchestrator.py's runtime code)."""
+        fake_src = self._make_submodule(
+            tmp_path, "requests==2.33.1\npytest==9.0.3\npyyaml==6.0.1\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_requirements(consuming, dry_run=False)
+
+        assert changed is True
+        content = (consuming / "requirements.txt").read_text()
+        assert "requests==2.33.1" in content
+        assert "pytest" not in content
+        assert "pyyaml" not in content
+
+    def test_defaults_to_requests_when_submodule_file_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_requirements(consuming, dry_run=False)
+
+        lines = [
+            ln for ln in (consuming / "requirements.txt").read_text().splitlines()
+            if ln.strip() and not ln.strip().startswith("#")
+        ]
+        assert lines == ["requests"]
+
+    def test_appends_missing_deps_to_existing_file(self, tmp_path, monkeypatch):
+        """Scenario: the consuming repo already tracks its own requirements.txt
+        for its own app -- our runtime deps must be merged in, not skipped."""
+        fake_src = self._make_submodule(tmp_path, "requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "requirements.txt"
+        dst.write_text("flask==3.0.0\nsqlalchemy==2.0.0\n")
+
+        changed = get_started.install_requirements(consuming, dry_run=False)
+
+        assert changed is True
+        content = dst.read_text()
+        assert "flask==3.0.0" in content
+        assert "sqlalchemy==2.0.0" in content
+        assert "requests==2.33.1" in content
+
+    def test_does_not_duplicate_when_dep_already_present(self, tmp_path, monkeypatch):
+        """A dep already in the project's file (even with a different pin)
+        must not be added again."""
+        fake_src = self._make_submodule(tmp_path, "requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "requirements.txt"
+        dst.write_text("requests==2.28.0\n")
+
+        changed = get_started.install_requirements(consuming, dry_run=False)
+
+        assert changed is False
+        content = dst.read_text()
+        assert content.count("requests") == 1
+        assert "requests==2.28.0" in content
+
+    def test_does_not_duplicate_when_existing_dep_has_different_case(self, tmp_path, monkeypatch):
+        """Package names are case-insensitive (PyPI normalizes them) -- an
+        existing 'Requests' entry must satisfy our lowercase 'requests' dep,
+        end to end through install_requirements(), not just at the
+        _requirement_name() unit level."""
+        fake_src = self._make_submodule(tmp_path, "requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "requirements.txt"
+        dst.write_text("Requests==2.28.0\n")
+
+        changed = get_started.install_requirements(consuming, dry_run=False)
+
+        assert changed is False
+        content = dst.read_text()
+        assert content.lower().count("requests") == 1
+        assert "Requests==2.28.0" in content
+
+    def test_idempotent_across_repeated_runs(self, tmp_path, monkeypatch):
+        """Running onboarding twice must not append the same dep twice."""
+        fake_src = self._make_submodule(tmp_path, "requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "requirements.txt"
+        dst.write_text("flask==3.0.0\n")
+
+        get_started.install_requirements(consuming, dry_run=False)
+        first_pass = dst.read_text()
+        changed_second = get_started.install_requirements(consuming, dry_run=False)
+
+        assert changed_second is False
+        assert dst.read_text() == first_pass
+        assert first_pass.count("requests") == 1
+
+    def test_dry_run_does_not_modify_file(self, tmp_path, monkeypatch):
+        fake_src = self._make_submodule(tmp_path, "requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "requirements.txt"
+        dst.write_text("flask==3.0.0\n")
+
+        changed = get_started.install_requirements(consuming, dry_run=True)
+
+        assert changed is True
+        assert dst.read_text() == "flask==3.0.0\n"
+
+    def test_appends_cleanly_when_existing_file_has_no_trailing_newline(self, tmp_path, monkeypatch):
+        """A missing trailing newline in the project's file must not concatenate
+        onto the same line as the appended content."""
+        fake_src = self._make_submodule(tmp_path, "requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "requirements.txt"
+        dst.write_text("flask==3.0.0")  # no trailing newline
+
+        get_started.install_requirements(consuming, dry_run=False)
+
+        content = dst.read_text()
+        assert "flask==3.0.0\nrequests==2.33.1" not in content  # not concatenated
+        for line in content.splitlines():
+            assert line == line.strip() or line.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# TestOrchestratorRuntimeDeps
+# ---------------------------------------------------------------------------
+
+class TestOrchestratorRuntimeDeps:
+    def test_excludes_pytest_and_pyyaml_by_exact_name(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        (fake_src / "requirements.txt").write_text(
+            "requests==2.33.1\npytest==9.0.3\npyyaml==6.0.1\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+
+        deps = get_started._orchestrator_runtime_deps()
+
+        assert deps == ["requests==2.33.1"]
+
+    def test_does_not_exclude_a_package_merely_sharing_a_prefix(self, tmp_path, monkeypatch):
+        """Regression test: exclusion must be by exact package name, not a
+        raw string prefix -- a hypothetical 'pytest-cov' entry must survive,
+        since it is a different package from 'pytest'."""
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        (fake_src / "requirements.txt").write_text(
+            "requests==2.33.1\npytest-cov==4.0\npyyaml-include==1.0\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+
+        deps = get_started._orchestrator_runtime_deps()
+
+        assert deps == ["requests==2.33.1", "pytest-cov==4.0", "pyyaml-include==1.0"]
+
+
+# ---------------------------------------------------------------------------
+# TestRequirementName
+# ---------------------------------------------------------------------------
+
+class TestRequirementName:
+    def test_extracts_name_from_pinned_version(self):
+        assert get_started._requirement_name("requests==2.33.1") == "requests"
+
+    def test_extracts_name_from_bare_name(self):
+        assert get_started._requirement_name("requests") == "requests"
+
+    def test_extracts_name_from_extras_and_marker(self):
+        assert get_started._requirement_name('requests[socks]>=2 ; python_version>"3.8"') == "requests"
+
+    def test_lowercases_name(self):
+        assert get_started._requirement_name("Requests==2.33.1") == "requests"
+
+    def test_ignores_comments_and_blank_lines(self):
+        assert get_started._requirement_name("# a comment") == ""
+        assert get_started._requirement_name("") == ""
+        assert get_started._requirement_name("   ") == ""
+
+
+# ---------------------------------------------------------------------------
 # TestAddGitignoreEntries
 # ---------------------------------------------------------------------------
 
