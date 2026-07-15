@@ -761,6 +761,39 @@ class TestInstallRequirements:
 
 
 # ---------------------------------------------------------------------------
+# TestOrchestratorRuntimeDeps
+# ---------------------------------------------------------------------------
+
+class TestOrchestratorRuntimeDeps:
+    def test_excludes_pytest_and_pyyaml_by_exact_name(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        (fake_src / "requirements.txt").write_text(
+            "requests==2.33.1\npytest==9.0.3\npyyaml==6.0.1\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+
+        deps = get_started._orchestrator_runtime_deps()
+
+        assert deps == ["requests==2.33.1"]
+
+    def test_does_not_exclude_a_package_merely_sharing_a_prefix(self, tmp_path, monkeypatch):
+        """Regression test: exclusion must be by exact package name, not a
+        raw string prefix -- a hypothetical 'pytest-cov' entry must survive,
+        since it is a different package from 'pytest'."""
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        (fake_src / "requirements.txt").write_text(
+            "requests==2.33.1\npytest-cov==4.0\npyyaml-include==1.0\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+
+        deps = get_started._orchestrator_runtime_deps()
+
+        assert deps == ["requests==2.33.1", "pytest-cov==4.0", "pyyaml-include==1.0"]
+
+
+# ---------------------------------------------------------------------------
 # TestRequirementName
 # ---------------------------------------------------------------------------
 

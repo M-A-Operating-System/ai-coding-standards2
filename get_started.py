@@ -475,15 +475,17 @@ def _requirement_name(line: str) -> str:
     return name.strip().lower()
 
 
-#: Package names in this submodule's own requirements.txt that exist only
-#: for this submodule's own test suite, not for pipeline_orchestrator.py's
-#: runtime -- never merged into a consuming repo's requirements.txt.
-_TEST_ONLY_DEP_PREFIXES = ("pytest", "pyyaml")
+#: Exact package names in this submodule's own requirements.txt that exist
+#: only for this submodule's own test suite, not for pipeline_orchestrator.py's
+#: runtime -- never merged into a consuming repo's requirements.txt. Matched
+#: via _requirement_name(), not a raw prefix, so e.g. a future 'pytest-cov'
+#: entry wouldn't be excluded just for sharing the 'pytest' prefix.
+_TEST_ONLY_DEP_NAMES = frozenset({"pytest", "pyyaml"})
 
 
 def _orchestrator_runtime_deps() -> list[str]:
     """Return this submodule's own requirements.txt lines, minus its
-    test-only entries (pytest, pyyaml -- see _TEST_ONLY_DEP_PREFIXES), as the
+    test-only entries (pytest, pyyaml -- see _TEST_ONLY_DEP_NAMES), as the
     set of deps the orchestrator itself needs at runtime in any consuming
     repo."""
     src = SUBMODULE_ROOT / "requirements.txt"
@@ -491,7 +493,7 @@ def _orchestrator_runtime_deps() -> list[str]:
         return ["requests"]
     return [
         ln.strip() for ln in src.read_text(encoding="utf-8").splitlines()
-        if ln.strip() and not ln.strip().lower().startswith(_TEST_ONLY_DEP_PREFIXES)
+        if ln.strip() and _requirement_name(ln) not in _TEST_ONLY_DEP_NAMES
     ]
 
 
