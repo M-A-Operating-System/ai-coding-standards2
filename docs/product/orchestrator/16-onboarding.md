@@ -18,8 +18,8 @@ this first.
 
 | Run | Command | What it installs | Who runs it |
 |---|---|---|---|
-| **Seed** (step 1) | `get_started.py --seed` | The **two seed workflows** (`ai_orchestrator.yml` + `ai_emergency_stop.yml`) + `.gitignore` entries. Nothing else. | A developer, locally |
-| **Full** (step 2) | `get_started.py --full --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder, requirements. | The Onboard job, on a Linux runner |
+| **Seed** (step 1) | `get_started.py --seed` | The **two seed workflows** (`ai_orchestrator.yml` + `ai_emergency_stop.yml`), the root-level `CLAUDE.md` link, and `.gitignore` entries. Nothing else. | A developer, locally |
+| **Full** (step 2) | `get_started.py --full --force` | **Everything** — all workflows, the whole-`.claude` symlink, the `standards` symlink, the local `adrs/` folder, requirements, the root-level `CLAUDE.md` link. | The Onboard job, on a Linux runner |
 
 Running `get_started.py` with no run type prints an error listing the choices
 and exits without touching the consuming repo — it never guesses a mode.
@@ -36,13 +36,24 @@ In code these are the `run_seed()` and `run_full()` functions in
 
 Drops the two seed workflows — `ai_orchestrator.yml` and
 `ai_emergency_stop.yml` (the operator's kill switch) — into the consuming
-repo's `.github/workflows/` and adds `.gitignore` entries. The developer commits
-those and pushes. The orchestrator workflow's built-in setup job then does the
-rest on a Linux runner (see Bootstrap flow below). Seed mode deliberately
-installs almost nothing else — ai_orchestrator.yml is enough to bootstrap step 2,
-and the emergency stop ships alongside it so a runaway pipeline can be halted
-from the very first commit (it reads nothing from the submodule, so it works
-before the full wiring exists).
+repo's `.github/workflows/`, links the root-level `CLAUDE.md` to
+`.claude/CLAUDE.md` (see below), and adds `.gitignore` entries. The developer
+commits those and pushes. The orchestrator workflow's built-in setup job then
+does the rest on a Linux runner (see Bootstrap flow below). Seed mode
+deliberately installs almost nothing else — ai_orchestrator.yml is enough to
+bootstrap step 2, and the emergency stop ships alongside it so a runaway
+pipeline can be halted from the very first commit (it reads nothing from the
+submodule, so it works before the full wiring exists).
+
+`CLAUDE.md` is a relative symlink (a plain byte-copy on Windows, which has no
+unprivileged symlinks) to `.claude/CLAUDE.md` — the baseline behavioral
+guidelines and repo-navigation notes that ship with the submodule. Claude
+Code's project-memory auto-load and `coder.md`'s own spec-reading step both
+look for `CLAUDE.md` at the repo root, not inside `.claude/`, so this
+root-level link is what actually makes it discoverable. The symlink's target
+doesn't need to exist yet at seed time — it starts resolving once the Onboard
+job wires up the rest of `.claude/` — and a project's own pre-existing,
+hand-authored `CLAUDE.md` is never overwritten without `--force`.
 
 ```bash
 python ai-coding-standards2/get_started.py --seed
@@ -62,7 +73,8 @@ a Linux runner (as `--full --force`), and what you would run locally with
 | Install standards | On Linux/macOS: creates a single directory symlink `standards → submodule/standards`. On Windows: copies the tree. Standards are framework-owned and read verbatim |
 | Install ADRs | Seeds a project-owned `adrs/adrs.json` (once, never overwritten). ADRs live in their own local folder — outside the symlinked `standards/` — so `standards/` can be a whole-folder symlink |
 | Install Claude setup | On Linux/macOS: creates a single directory symlink `.claude → submodule/.claude`, so the consuming repo inherits its ENTIRE Claude Code setup (agents, slash commands, `AGENTS.md`, `settings.json`) from the submodule. On Windows: copies the tree. The parent keeps no Claude config of its own. **The run fails** if the consuming repo already has its own real `.claude` directory (it will not be silently deleted) — back it up and remove it, or set `AI_AGILE_REPLACE_CLAUDE=1` to replace it deliberately |
-| Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`) so they are not committed as normal files; the setup job force-commits the symlink blobs. The `adrs/` folder is NOT gitignored — it stays committed |
+| Link CLAUDE.md | Links the root-level `CLAUDE.md` to `.claude/CLAUDE.md` (a byte-copy on Windows). Also runs during `--seed`, so this step is a no-op here for a repo onboarded that way; it exists here too for a developer who runs `--full` directly. Never overwrites a project's own pre-existing `CLAUDE.md` without `--force` |
+| Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`, `CLAUDE.md`) so they are not committed as normal files; the setup job force-commits the symlink blobs. The `adrs/` folder is NOT gitignored — it stays committed |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 

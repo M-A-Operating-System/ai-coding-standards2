@@ -355,6 +355,74 @@ def _copy_dir_tree(
     return written
 
 
+def install_claude_md(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> bool:
+    """Make CLAUDE.md discoverable at the consuming repo's root.
+
+    Claude Code's project-memory auto-load and coder.md's own
+    `[ -f CLAUDE.md ]` check both look at the repo root, not inside `.claude/`
+    -- so the baseline content at `.claude/CLAUDE.md` (which ships as part of
+    the whole-folder `.claude` install) needs a root-level presence to ever
+    actually be read.
+
+    Called from both run_seed() and run_full(): --seed is a local step that
+    may run on Windows (unlike --full, always a Linux runner during Onboard),
+    so a developer who onboards via --seed gets the link immediately; calling
+    it again from run_full() covers a developer who runs --full directly,
+    without ever running --seed first. Two different mechanisms depending on
+    platform:
+      - Non-Windows: a relative symlink `CLAUDE.md -> .claude/CLAUDE.md`.
+        Its target doesn't need to exist yet -- when called from run_seed(),
+        `.claude/` itself is only wired up later by --full/Onboard -- the
+        symlink just starts resolving the moment that happens.
+      - Windows (no unprivileged symlinks): copy the file's actual bytes
+        from the submodule now. There is no later auto-resolution to rely
+        on here, since `.claude/` is also a plain copy on Windows, not a
+        symlink -- so the content has to land for real at call time.
+    """
+    dst = consuming_root / "CLAUDE.md"
+
+    if sys.platform == "win32":
+        src = SUBMODULE_ROOT / ".claude" / "CLAUDE.md"
+        if not src.is_file():
+            print(f"  SKIP   CLAUDE.md  ({src} missing)")
+            return False
+        print(f"  CLAUDE.md: {src} -> {dst}")
+        return write_file(dst, src.read_text(encoding="utf-8"), force, dry_run)
+
+    rel_target = ".claude/CLAUDE.md"
+    if dst.is_symlink():
+        if os.readlink(dst) == rel_target:
+            print(f"  SKIP   {dst}  (symlink already correct)")
+            return False
+        if not force:
+            print(f"  SKIP   {dst}  (symlink exists pointing elsewhere; pass --force to update)")
+            return False
+        if dry_run:
+            print(f"  WOULD  {dst} -> {rel_target}  (replace symlink)")
+            return True
+        dst.unlink()
+    elif dst.exists():
+        if not force:
+            print(f"  SKIP   {dst}  (exists; pass --force to overwrite)")
+            return False
+        if dry_run:
+            print(f"  WOULD  {dst} -> {rel_target}  (replace file with symlink)")
+            return True
+        dst.unlink()
+    elif dry_run:
+        print(f"  WOULD  {dst} -> {rel_target}")
+        return True
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    os.symlink(rel_target, dst)
+    print(f"  LINKED {dst} -> {rel_target}")
+    return True
+
+
 def _add_submodules_to_checkout(content: str) -> str:
     """Insert 'submodules: true' into every bare actions/checkout step.
 
@@ -585,6 +653,7 @@ def add_gitignore_entries(
     into the submodule, force-committed by the Onboard job):
       - .claude     -- whole-folder symlink into the submodule
       - standards   -- whole-folder symlink into the submodule
+      - CLAUDE.md   -- symlink (or, on Windows, a copy) to .claude/CLAUDE.md
 
     The project-owned adrs/ folder is intentionally NOT gitignored so it stays
     committed.
@@ -592,6 +661,8 @@ def add_gitignore_entries(
     ``include_standards`` should be False in --seed mode because the standards
     symlink has not been created yet; listing it before it exists confuses
     developers who try to place files there before the setup workflow runs.
+    CLAUDE.md is unconditional (like .claude) since install_claude_md() runs
+    in --seed itself, not --full.
 
     Idempotent: patterns already present in .gitignore are not re-added.
     Returns the number of new entries written (or that would be written).
@@ -600,6 +671,7 @@ def add_gitignore_entries(
 
     patterns: list[str] = [
         ".claude",
+        "CLAUDE.md",
         *(["standards"] if include_standards else []),
     ]
 
@@ -703,6 +775,7 @@ def print_followup_seed() -> None:
     print(f"             .github/workflows/ai_orchestrator.yml \\")
     print(f"             .github/workflows/ai_emergency_stop.yml \\")
     print(f"             .gitignore")
+    print(f"     git add -f CLAUDE.md   # gitignored like .claude/ -- force-add it")
     print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
     print(f"     git push")
     print()
@@ -814,9 +887,15 @@ def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
     include_standards=False because install_standards() does not run in seed
     mode -- listing gitignore entries for standards files that do not exist yet
     confuses developers who try to place them manually before the Onboard job.
+
+    Also links/copies CLAUDE.md at the repo root (see install_claude_md()) --
+    this step is local and may run on the developer's own machine, so it is
+    the one place that needs the Windows-vs-symlink platform branch, unlike
+    install_claude() which only ever runs on a Linux runner during --full.
     """
     install_orchestrator_workflows(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
+    install_claude_md(consuming_root, force, dry_run)
     add_gitignore_entries(consuming_root, dry_run, include_standards=False)
     untrack_managed_paths(consuming_root, dry_run)
     print_followup_seed()
@@ -859,13 +938,18 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
 
     This is what the Onboard job in ai_orchestrator.yml runs (get_started.py
     --full --force). It lays down the whole `.claude` symlink, the `standards`
-    symlink, the local `adrs/` folder, and requirements -- everything a consuming
-    repo needs to run the pipeline. The two pipeline workflows (ai_orchestrator,
-    ai_emergency_stop) are committed during the seed step, not here, so the
-    Onboard job never has to push `.github/workflows/*` (which would require a
-    workflow-scoped token); the Onboard job commits only non-workflow files.
-    Each step is one install_* function; the order is stable so the printed log
-    reads top-to-bottom.
+    symlink, the local `adrs/` folder, requirements, and the root-level
+    CLAUDE.md link -- everything a consuming repo needs to run the pipeline.
+    The two pipeline workflows (ai_orchestrator, ai_emergency_stop) are
+    committed during the seed step, not here, so the Onboard job never has to
+    push `.github/workflows/*` (which would require a workflow-scoped token);
+    the Onboard job commits only non-workflow files. Each step is one
+    install_* function; the order is stable so the printed log reads
+    top-to-bottom.
+
+    install_claude_md() also runs here (not just in run_seed()) so a developer
+    who runs --full directly, without ever running --seed first, still gets
+    the root-level CLAUDE.md link.
     """
     # Pre-flight: refuse to clobber a consuming repo's own .claude. Runs before
     # any writes so a rejected onboard leaves no partial state.
@@ -876,6 +960,7 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
     install_claude(consuming_root, force, dry_run)
+    install_claude_md(consuming_root, force, dry_run)
     install_requirements(consuming_root, dry_run)
     add_gitignore_entries(consuming_root, dry_run)
     untrack_managed_paths(consuming_root, dry_run)
