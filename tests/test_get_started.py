@@ -376,6 +376,120 @@ class TestInstallClaudeLinux:
 
 
 # ---------------------------------------------------------------------------
+# TestInstallClaudeMd -- root-level CLAUDE.md, linked from .claude/CLAUDE.md
+# ---------------------------------------------------------------------------
+
+class TestInstallClaudeMd:
+    def test_symlinks_on_non_windows_even_if_target_missing_yet(self, tmp_path, monkeypatch):
+        """install_claude_md() runs in --seed, before --full has ever wired up
+        .claude/ -- the symlink must still be created; its target doesn't need
+        to exist yet, since it starts resolving the moment --full/Onboard runs."""
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_claude_md(consuming, force=False, dry_run=False)
+
+        dst = consuming / "CLAUDE.md"
+        assert changed is True
+        assert dst.is_symlink()
+        assert os.readlink(dst) == ".claude/CLAUDE.md"
+
+    def test_symlink_idempotent_when_already_correct(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_claude_md(consuming, force=False, dry_run=False)
+        changed_second = get_started.install_claude_md(consuming, force=False, dry_run=False)
+
+        assert changed_second is False
+
+    def test_does_not_replace_real_file_without_force(self, tmp_path, monkeypatch):
+        """A project's own hand-authored CLAUDE.md must not be silently symlinked over."""
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "CLAUDE.md"
+        dst.write_text("# My project's own rules\n")
+
+        changed = get_started.install_claude_md(consuming, force=False, dry_run=False)
+
+        assert changed is False
+        assert dst.read_text() == "# My project's own rules\n"
+        assert not dst.is_symlink()
+
+    def test_replaces_real_file_with_force(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        dst = consuming / "CLAUDE.md"
+        dst.write_text("# stale\n")
+
+        changed = get_started.install_claude_md(consuming, force=True, dry_run=False)
+
+        assert changed is True
+        assert dst.is_symlink()
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_claude_md(consuming, force=False, dry_run=True)
+
+        assert changed is True
+        assert not (consuming / "CLAUDE.md").exists()
+
+    def test_windows_copies_actual_bytes_from_submodule(self, tmp_path, monkeypatch):
+        """Windows has no unprivileged symlinks, and .claude/ is also a plain
+        copy there (not a symlink) -- so there is no later auto-resolution to
+        rely on; the content must land for real at seed time."""
+        fake_src = tmp_path / "submodule"
+        (fake_src / ".claude").mkdir(parents=True)
+        (fake_src / ".claude" / "CLAUDE.md").write_text("# baseline rules\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "win32")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_claude_md(consuming, force=False, dry_run=False)
+
+        dst = consuming / "CLAUDE.md"
+        assert changed is True
+        assert not dst.is_symlink()
+        assert dst.read_text() == "# baseline rules\n"
+
+    def test_windows_skips_when_submodule_source_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "win32")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_claude_md(consuming, force=False, dry_run=False)
+
+        assert changed is False
+        assert not (consuming / "CLAUDE.md").exists()
+
+
+# ---------------------------------------------------------------------------
 # TestInstallOperationalWorkflows -- emergency-stop
 # ---------------------------------------------------------------------------
 
@@ -836,11 +950,12 @@ class TestAddGitignoreEntries:
 
         count = get_started.add_gitignore_entries(consuming, dry_run=False)
 
-        assert count == 2
+        assert count == 3
         text = (consuming / ".gitignore").read_text()
         # Whole-folder symlinks are gitignored (force-committed by the setup job).
         assert ".claude" in text
         assert "standards" in text
+        assert "CLAUDE.md" in text
         # Retired per-entry patterns must not appear.
         assert ".claude/agents" not in text
         assert ".claude/commands/" not in text
@@ -869,6 +984,7 @@ class TestAddGitignoreEntries:
 
         lines = (consuming / ".gitignore").read_text().splitlines()
         assert ".claude" in lines
+        assert "CLAUDE.md" in lines
         assert "standards" not in lines
 
     def test_appends_to_existing_gitignore(self, tmp_path, monkeypatch):
@@ -937,8 +1053,9 @@ class TestAddGitignoreEntries:
         text = (consuming / ".gitignore").read_text()
         assert text.count(header) == 1          # no duplicate header
         assert "standards" in text.splitlines()  # the missing pattern was appended
+        assert "CLAUDE.md" in text.splitlines()  # the missing pattern was appended
         assert text.split().count(".claude") == 1  # not re-added
-        assert count == 1
+        assert count == 2
 
     def test_idempotent_no_duplicate_entries(self, tmp_path, monkeypatch):
         fake_src = self._make_submodule(tmp_path)
@@ -949,7 +1066,7 @@ class TestAddGitignoreEntries:
         first = get_started.add_gitignore_entries(consuming, dry_run=False)
         second = get_started.add_gitignore_entries(consuming, dry_run=False)
 
-        assert first == 2  # .claude + standards
+        assert first == 3  # .claude + CLAUDE.md + standards
         assert second == 0
         text = (consuming / ".gitignore").read_text()
         assert text.split().count(".claude") == 1
@@ -977,7 +1094,8 @@ class TestAddGitignoreEntries:
         text = (consuming / ".gitignore").read_text()
         assert text.split().count(".claude") == 1
         assert "standards" in text.splitlines()
-        assert count == 1  # only 'standards' was missing
+        assert "CLAUDE.md" in text.splitlines()
+        assert count == 2  # 'standards' and 'CLAUDE.md' were missing
 
 
 # ---------------------------------------------------------------------------
