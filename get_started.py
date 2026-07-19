@@ -368,17 +368,20 @@ def install_claude_md(
     the whole-folder `.claude` install) needs a root-level presence to ever
     actually be read.
 
-    This runs as part of --seed, which is a local step that may run on
-    Windows, unlike --full (always a Linux runner). That means two different
-    mechanisms depending on platform:
+    Called from both run_seed() and run_full(): --seed is a local step that
+    may run on Windows (unlike --full, always a Linux runner during Onboard),
+    so a developer who onboards via --seed gets the link immediately; calling
+    it again from run_full() covers a developer who runs --full directly,
+    without ever running --seed first. Two different mechanisms depending on
+    platform:
       - Non-Windows: a relative symlink `CLAUDE.md -> .claude/CLAUDE.md`.
-        Its target doesn't need to exist yet -- `.claude/` itself is only
-        wired up later by --full/Onboard -- the symlink just starts
-        resolving the moment that happens.
+        Its target doesn't need to exist yet -- when called from run_seed(),
+        `.claude/` itself is only wired up later by --full/Onboard -- the
+        symlink just starts resolving the moment that happens.
       - Windows (no unprivileged symlinks): copy the file's actual bytes
         from the submodule now. There is no later auto-resolution to rely
         on here, since `.claude/` is also a plain copy on Windows, not a
-        symlink -- so the content has to land for real at seed time.
+        symlink -- so the content has to land for real at call time.
     """
     dst = consuming_root / "CLAUDE.md"
 
@@ -935,13 +938,18 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
 
     This is what the Onboard job in ai_orchestrator.yml runs (get_started.py
     --full --force). It lays down the whole `.claude` symlink, the `standards`
-    symlink, the local `adrs/` folder, and requirements -- everything a consuming
-    repo needs to run the pipeline. The two pipeline workflows (ai_orchestrator,
-    ai_emergency_stop) are committed during the seed step, not here, so the
-    Onboard job never has to push `.github/workflows/*` (which would require a
-    workflow-scoped token); the Onboard job commits only non-workflow files.
-    Each step is one install_* function; the order is stable so the printed log
-    reads top-to-bottom.
+    symlink, the local `adrs/` folder, requirements, and the root-level
+    CLAUDE.md link -- everything a consuming repo needs to run the pipeline.
+    The two pipeline workflows (ai_orchestrator, ai_emergency_stop) are
+    committed during the seed step, not here, so the Onboard job never has to
+    push `.github/workflows/*` (which would require a workflow-scoped token);
+    the Onboard job commits only non-workflow files. Each step is one
+    install_* function; the order is stable so the printed log reads
+    top-to-bottom.
+
+    install_claude_md() also runs here (not just in run_seed()) so a developer
+    who runs --full directly, without ever running --seed first, still gets
+    the root-level CLAUDE.md link.
     """
     # Pre-flight: refuse to clobber a consuming repo's own .claude. Runs before
     # any writes so a rejected onboard leaves no partial state.
@@ -952,6 +960,7 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
     install_claude(consuming_root, force, dry_run)
+    install_claude_md(consuming_root, force, dry_run)
     install_requirements(consuming_root, dry_run)
     add_gitignore_entries(consuming_root, dry_run)
     untrack_managed_paths(consuming_root, dry_run)

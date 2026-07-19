@@ -428,6 +428,42 @@ class TestInstallClaudeMd:
         assert dst.read_text() == "# My project's own rules\n"
         assert not dst.is_symlink()
 
+    def test_does_not_replace_symlink_pointing_elsewhere_without_force(self, tmp_path, monkeypatch):
+        """A project that already symlinked its own CLAUDE.md somewhere else
+        (before adopting this framework) must not have that silently repointed."""
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / "docs").mkdir()
+        (consuming / "docs" / "CLAUDE.md").write_text("# elsewhere\n")
+        dst = consuming / "CLAUDE.md"
+        os.symlink("docs/CLAUDE.md", dst)
+
+        changed = get_started.install_claude_md(consuming, force=False, dry_run=False)
+
+        assert changed is False
+        assert os.readlink(dst) == "docs/CLAUDE.md"
+
+    def test_replaces_symlink_pointing_elsewhere_with_force(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / "docs").mkdir()
+        (consuming / "docs" / "CLAUDE.md").write_text("# elsewhere\n")
+        dst = consuming / "CLAUDE.md"
+        os.symlink("docs/CLAUDE.md", dst)
+
+        changed = get_started.install_claude_md(consuming, force=True, dry_run=False)
+
+        assert changed is True
+        assert os.readlink(dst) == ".claude/CLAUDE.md"
+
     def test_replaces_real_file_with_force(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "submodule"
         fake_src.mkdir()
@@ -1351,6 +1387,32 @@ class TestParseArgsAndMain:
         # Seed does not lay down standards/.claude.
         assert not (consuming / "standards").exists()
         assert not (consuming / ".claude").exists()
+
+    def test_run_full_installs_claude_md_without_prior_seed(self, tmp_path, monkeypatch):
+        """A developer who runs --full directly, without ever running --seed
+        first, must still get the root-level CLAUDE.md link (SC-002 from the
+        PR #234 review: install_claude_md() must not only fire from
+        run_seed())."""
+        fake_src = tmp_path / "submodule"
+        wf = fake_src / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        for name in ("ai_orchestrator.yml", "ai_emergency_stop.yml"):
+            (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
+        (fake_src / "standards").mkdir(parents=True)
+        (fake_src / "standards" / "architecture.json").write_text("{}")
+        (fake_src / ".claude").mkdir(parents=True)
+        (fake_src / ".claude" / "CLAUDE.md").write_text("# baseline rules\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.run_full(consuming, force=False, dry_run=False)
+
+        dst = consuming / "CLAUDE.md"
+        assert dst.is_symlink()
+        assert os.readlink(dst) == ".claude/CLAUDE.md"
 
 
 # ---------------------------------------------------------------------------
