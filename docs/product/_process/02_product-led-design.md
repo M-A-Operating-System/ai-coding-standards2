@@ -234,7 +234,8 @@ Each capability should be traceable to:
 - Module
 - Component
 - Business outcome
-- BDD specification
+- Approved issue (Gherkin scenarios)
+- Feature file
 - Tests
 - Evidence
 
@@ -245,7 +246,9 @@ Product Design
     ↓
 Capability
     ↓
-BDD Specification
+Approved Issue (Gherkin scenarios) -- single approval gate
+    ↓
+Feature File (docs/features/{feature}.md)
     ↓
 Test
     ↓
@@ -309,14 +312,18 @@ The derivation should be traceable.
 Example:
 
 ```text
-Product Document:
+Product Document (docs/product/{capability}.md):
 Users can search public decision trees by keyword.
 
 Derived Capability:
 Search Public Trees
 
-Generated BDD:
+Approved Issue (Gherkin scenario, authored for human review):
+Scenario: Search returns matching public trees by keyword
+
+Copied on approval to Feature File (docs/features/search-public-trees.md):
 Feature: Search Public Trees
+  Scenario: Search returns matching public trees by keyword
 ```
 
 This makes the capability catalog an explicit representation of the product design.
@@ -340,6 +347,8 @@ docs/
             modules/
             components/
             capabilities/
+    features/
+        {feature}.md
 ```
 
 The process standards remain shared under:
@@ -352,6 +361,9 @@ The process folder defines how product documentation should work.
 
 The product folder contains the actual product definitions.
 
+The features folder holds the durable, versioned Gherkin scenarios copied from approved issues --
+one file per feature, shared across all products in the repository.
+
 ---
 
 ## Product-Led Design Workflow
@@ -363,10 +375,10 @@ Recommended workflow:
 2. AI analyzes the product document.
 3. AI proposes modules, components, and capabilities.
 4. Human reviews and approves the structure.
-5. AI generates capability definitions.
-6. Human reviews and approves capability definitions.
-7. AI generates BDD specifications from capabilities.
-8. BDD specifications become the basis for test and implementation work.
+5. AI drafts an issue with capability-derived Gherkin scenarios.
+6. Human reviews and approves the issue -- capability scope and scenarios approved together.
+7. AI copies the approved scenarios into docs/features/{feature}.md.
+8. The feature file becomes the basis for test and implementation work.
 ```
 
 This workflow keeps humans in control of intent and approval while using AI to perform analysis and generation.

@@ -325,17 +325,16 @@ Technical Debt Gap
 The intended delivery loop is:
 
 ```text
-Human defines intent
+Human defines or updates product intent (docs/product/{capability}.md)
     ↓
-AI proposes capability model
+AI drafts an issue: user story + Gherkin scenarios
     ↓
-Human reviews and approves
+Human reviews and approves the issue -- the single approval gate
     ↓
-AI generates BDD specifications
+AI copies the approved scenarios into docs/features/{feature}.md
+(create the file, append a new scenario, or replace a revised scenario by slug)
     ↓
-Human reviews and approves
-    ↓
-AI generates tests and implementation plan
+AI generates tests that realize the scenarios in docs/features/{feature}.md
     ↓
 AI generates or modifies code
     ↓
@@ -345,6 +344,12 @@ Human reviews evidence
     ↓
 Roadmap status is generated
 ```
+
+Capability scope and Gherkin scenarios are approved together, in the same issue review. There is
+no separate capability-approval step: the issue carries both, and human approval of the issue is
+the single gate that lets scenarios become a durable, versioned spec. Copying the approved
+scenarios into `docs/features/{feature}.md` is a mechanical step, not a second approval -- it
+preserves what was already approved.
 
 This loop makes human approval explicit while allowing AI to perform execution work.
 
@@ -357,8 +362,7 @@ AI-first does not mean unguided automation.
 Governance should apply at key control points:
 
 - Product intent approval
-- Capability approval
-- BDD specification approval
+- Issue/PRD approval (covers capability scope and Gherkin scenarios in one gate)
 - Architecture pattern approval
 - Security review
 - Test evidence review
