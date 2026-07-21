@@ -1,6 +1,6 @@
 # maos-prd-docs-updater
 
-Run the `01_product_docs/prd-docs-updater` pipeline agent. Cross-checks the approved PRD against existing product documentation in docs/product/.
+Run the `01_product_docs/prd-docs-updater` pipeline agent. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical….
 
 ## Input
 
