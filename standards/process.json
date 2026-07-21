@@ -94,12 +94,12 @@
         "STD-DOC-002",
         "STD-PROC-008"
       ],
-      "title": "Express intent in specs, coverage via the BDD .feature, gaps in the roadmap \u2014 one place each",
-      "description": "Every behaviour has three expressions, each in exactly one place: a Product/Capability Specification states what must be true (future/invariant voice); the Gherkin .feature (generated from the user story) and its test evidence state what is proven now; the roadmap and issues own the gap between intent and coverage. No hand-maintained coverage table exists (DOC-004), and no single artefact mixes intent, coverage, and gap.",
+      "title": "Express intent in specs, coverage via docs/features/, gaps in the roadmap \u2014 one place each",
+      "description": "Every behaviour has three expressions, each in exactly one place: a Product/Capability Specification states what must be true (future/invariant voice); docs/features/{feature}.md (the Gherkin scenarios approved on the issue, copied there by prd-docs-updater) and its test evidence state what is proven now; the roadmap and issues own the gap between intent and coverage. No hand-maintained coverage table exists (DOC-004), and no single artefact mixes intent, coverage, and gap.",
       "rationale": "Separating intent, coverage, and gap keeps each artefact trustworthy and lets a reader answer 'what does it do?' vs 'what's proven?' without inference; mixing them, or hand-maintaining coverage, makes all three rot. Source: docs/_process/02_product-led-design.md.",
       "acceptance_criteria": [
         "A behaviour change in the diff updates a Product/Capability Specification (future/invariant voice), not a 'we test that\u2026' claim.",
-        "A coverage change in the diff is reflected in the BDD .feature's executable test / evidence, not a hand-maintained coverage doc.",
+        "A coverage change in the diff is reflected in docs/features/{feature}.md's executable test / evidence, not a hand-maintained coverage doc.",
         "A gap (missing/flaky/failing test, known regression) is recorded in the roadmap / a GitHub issue, not a markdown gap table."
       ],
       "anti_patterns": [
@@ -120,11 +120,11 @@
         "STD-PROC-005"
       ],
       "title": "Every PR touches the artefacts its change type requires",
-      "description": "Before opening a PR, answer three questions: does it change behaviour? \u2192 a Product/Capability Specification (and its BDD .feature) changes; does it change what is proven? \u2192 the BDD .feature and/or its executable test changes; does it create or close a gap? \u2192 the roadmap and/or a GitHub issue changes state. A PR that answers no to all three is a pure refactor and says so. The PR description makes intent (spec changes), coverage (.feature/test changes), and gap (roadmap/issue state) explicit.",
+      "description": "Before opening a PR, answer three questions: does it change behaviour? \u2192 a Product/Capability Specification (and its docs/features/{feature}.md) changes; does it change what is proven? \u2192 docs/features/{feature}.md and/or its executable test changes; does it create or close a gap? \u2192 the roadmap and/or a GitHub issue changes state. A PR that answers no to all three is a pure refactor and says so. The PR description makes intent (spec changes), coverage (docs/features/test changes), and gap (roadmap/issue state) explicit.",
       "rationale": "Tying each change type to the artefacts it must touch keeps specs, tests, and backlog in lockstep with code.",
       "acceptance_criteria": [
         "A behaviour-changing PR in the diff updates the relevant Product/Capability Specification.",
-        "A coverage-changing PR updates the BDD .feature and/or lands the executable test.",
+        "A coverage-changing PR updates docs/features/{feature}.md and/or lands the executable test.",
         "The PR description states intent, coverage, and gap, or marks itself a pure refactor."
       ],
       "anti_patterns": [
@@ -168,16 +168,16 @@
         "STD-PROC-012",
         "STD-PROC-005"
       ],
-      "title": "The Gherkin spec is the authoritative testable spec, generated from the user story",
-      "description": "Each user story (realising a capability, STD-PROC-013) generates a BDD specification -- a Gherkin .feature that is the authoritative testable specification of the required behaviour and acceptance criteria. The .feature is realised by executable step definitions which produce evidence; the test code realises the .feature and is not itself the source of truth. The chain is capability -> user story -> Gherkin .feature -> test -> evidence. Applies to both API and web behaviour; pure unit tests are out of scope.",
+      "title": "docs/features/{feature}.md is the authoritative testable spec, generated from the user story",
+      "description": "Each user story (realising a capability, STD-PROC-013) generates Gherkin scenarios -- approved on the issue at the single prd-writer:approved gate, then copied mechanically into docs/features/{feature}.md, the authoritative testable specification of the required behaviour and acceptance criteria. docs/features/{feature}.md is realised by executable tests which produce evidence; the test code realises it and is not itself the source of truth. The chain is capability -> user story -> approved issue (Gherkin) -> docs/features/{feature}.md -> test -> evidence. Applies to both API and web behaviour; pure unit tests are out of scope.",
       "rationale": "Generating the testable spec from the user story keeps the acceptance criteria, the tests, and the evidence in lockstep with the stated behaviour, and prevents test code from silently becoming the de-facto spec.",
       "acceptance_criteria": [
-        "Behaviour introduced in the diff is specified as a Gherkin .feature generated from its user story, not asserted only in ad-hoc test code.",
-        "The .feature is the source of truth; step definitions realise it and produce evidence.",
-        "The chain capability -> user story -> .feature -> test -> evidence is intact for the behaviour in the diff."
+        "Behaviour introduced in the diff is specified as a Gherkin scenario in docs/features/{feature}.md, generated from its user story, not asserted only in ad-hoc test code.",
+        "docs/features/{feature}.md is the source of truth; tests realise it and produce evidence.",
+        "The chain capability -> user story -> docs/features/{feature}.md -> test -> evidence is intact for the behaviour in the diff."
       ],
       "anti_patterns": [
-        "Asserting new behaviour only in test code with no generating Gherkin .feature, or treating the test code as the specification."
+        "Asserting new behaviour only in test code with no generating Gherkin scenario in docs/features/{feature}.md, or treating the test code as the specification."
       ],
       "adr_overridable": true,
       "applies_to": [
@@ -197,11 +197,11 @@
         "STD-PROC-014"
       ],
       "title": "Work is product-led and AI-first: humans define intent, AI executes, evidence proves",
-      "description": "All work flows in one direction along a linear, generative chain: Product Specification -> Capability -> User Story (with Gherkin acceptance criteria) -> Test -> Implementation -> Evidence. Humans define intent and govern -- approving product intent, capabilities, user stories and their BDD, architecture, security, evidence, and releases; AI performs the decomposition, generation, implementation, verification, and reporting. Product specifications are the desired state; code plus verified evidence are the current state; the roadmap (STD-PROC-014) is the calculated gap. Work never starts from code or tests -- it starts from the product specification.",
+      "description": "All work flows in one direction along a linear, generative chain: Product Specification -> Capability -> Issue (user story with Gherkin acceptance criteria) -> docs/features/{feature}.md -> Test -> Implementation -> Evidence. Humans define intent and govern -- approving product intent, the issue (capability scope and Gherkin scenarios together, at the single prd-writer:approved gate), architecture, security, evidence, and releases; AI performs the decomposition, generation, implementation, verification, and reporting. Product specifications are the desired state; code plus verified evidence are the current state; the roadmap (STD-PROC-014) is the calculated gap. Work never starts from code or tests -- it starts from the product specification.",
       "rationale": "A single product-led, AI-first direction keeps intent authoritative and execution traceable; starting from code or tests divorces delivery from intent and lets the two drift. Source: docs/_process/01_ai-first-product-engineering.md; 04_ai-agile-implementation.md.",
       "acceptance_criteria": [
-        "New behaviour in the diff originates from a Product/Capability Specification (intended state) and flows capability \u2192 BDD \u2192 test \u2192 implementation \u2192 evidence, not from code/tests authored first.",
-        "Human approval control points are honoured for the change (intent, capability, BDD, architecture, security, evidence, release).",
+        "New behaviour in the diff originates from a Product/Capability Specification (intended state) and flows capability \u2192 issue (Gherkin) \u2192 docs/features/{feature}.md \u2192 test \u2192 implementation \u2192 evidence, not from code/tests authored first.",
+        "Human approval control points are honoured for the change (intent, issue/PRD approval covering capability scope and Gherkin scenarios together, architecture, security, evidence, release).",
         "The gap between desired state (specs) and current state (code + evidence) is reflected in the calculated roadmap (STD-PROC-014), not declared manually."
       ],
       "anti_patterns": [

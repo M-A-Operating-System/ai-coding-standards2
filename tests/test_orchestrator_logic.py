@@ -28,8 +28,11 @@ from pipeline_orchestrator import (
     parse_frontmatter,
     process_work_item,
     _compute_agent_session_id,
+    _resolve_applied_status,
     dependencies_complete,
     trigger_label_present,
+    load_pipeline,
+    pipeline_by_name,
     main,
 )
 
@@ -1540,6 +1543,137 @@ class TestPromoteGatedAgents:
         gh.add_label.assert_not_called()  # already present, skip
         gh.remove_label.assert_any_call(wi.number, agent.review_label)
         assert agent.review_label not in result
+
+
+# ---------------------------------------------------------------------------
+# TestSelfGates: self_gates lets an agent's own AI_AGILE_STATUS (review vs
+# complete) decide whether the human gate fires, instead of the orchestrator
+# force-overriding :complete to :review whenever human_gate_after is set.
+# Covers prd-docs-updater: gate only when it changed docs/product/ prose,
+# advance straight through when its only output was the mechanical
+# docs/features/{feature}.md copy.
+# ---------------------------------------------------------------------------
+
+class TestSelfGates:
+    def _gated_agent(self, self_gates: bool) -> AgentDef:
+        return AgentDef(
+            agent="01_product_docs/prd-docs-updater",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "create-pr:complete"},
+            dependencies=[],
+            human_gate_after=True,
+            human_gate_label="prd-docs-updater:approved",
+            description="test",
+            self_gates=self_gates,
+        )
+
+    def test_self_gates_defaults_false(self):
+        """AgentDef.self_gates defaults to False when not passed."""
+        assert _make_agent_def().self_gates is False
+
+    def test_self_gates_true_does_not_force_review_on_complete(self):
+        """self_gates=True: agent emits :complete → applied status stays :complete.
+
+        Without self_gates, human_gate_after=True would force this to :review.
+        """
+        agent = self._gated_agent(self_gates=True)
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_COMPLETE, gh)
+
+        assert applied == STATUS_COMPLETE
+        gh.add_label.assert_not_called()  # no auto-approve, no forced gate — nothing to apply here
+
+    def test_self_gates_true_leaves_review_untouched(self):
+        """self_gates=True: agent emits :review itself → applied status stays :review.
+
+        Mirrors the case where prd-docs-updater changed docs/product/ prose
+        and wants the human gate to fire; self_gates only suppresses the
+        forced-override on :complete, it never suppresses an agent-chosen
+        :review.
+        """
+        agent = self._gated_agent(self_gates=True)
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_REVIEW, gh)
+
+        assert applied == STATUS_REVIEW
+
+    def test_self_gates_false_still_forces_review_on_complete(self):
+        """Regression guard: self_gates=False (default) preserves existing
+        behaviour — human_gate_after=True still forces :complete to :review
+        for agents that haven't opted in (e.g. prd-writer)."""
+        agent = self._gated_agent(self_gates=False)
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_COMPLETE, gh)
+
+        assert applied == STATUS_REVIEW
+
+    def test_self_gates_true_does_not_auto_apply_gate_label(self):
+        """self_gates is not auto-approval: on :complete it neither forces
+        :review nor auto-applies the gate label — it simply lets :complete
+        stand, same as an agent with no gate at all."""
+        agent = self._gated_agent(self_gates=True)
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        _resolve_applied_status(agent, wi, STATUS_COMPLETE, gh)
+
+        gh.add_label.assert_not_called()
+
+    def test_load_pipeline_loads_self_gates(self, tmp_path):
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "01_product_docs/prd-docs-updater",
+                "phase": "01_product_docs",
+                "object": ["issue"],
+                "trigger": {"label": "create-pr:complete"},
+                "dependencies": [],
+                "human_gate_after": True,
+                "human_gate_label": "prd-docs-updater:approved",
+                "description": "test",
+                "self_gates": True,
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        agents, _ = load_pipeline(path)
+        assert agents[0].self_gates is True
+
+    def test_load_pipeline_self_gates_defaults_false(self, tmp_path):
+        import json
+        pipeline_data = {
+            "pipeline": [{
+                "agent": "01_product_docs/issue-classifier",
+                "phase": "01_product_docs",
+                "object": ["issue"],
+                "trigger": {"event": "issue.opened"},
+                "dependencies": [],
+                "human_gate_after": False,
+                "description": "test",
+            }]
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        agents, _ = load_pipeline(path)
+        assert agents[0].self_gates is False
+
+    def test_shipped_pipeline_json_sets_self_gates_on_prd_docs_updater(self):
+        """pipeline.json's real prd-docs-updater entry has self_gates: true —
+        the narrowed-gate design (STD-PROC-005 et al.) is actually wired up,
+        not just documented."""
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        agents, _ = load_pipeline(pipeline_path)
+        agent = pipeline_by_name(agents)["01_product_docs/prd-docs-updater"]
+        assert agent.self_gates is True
+        assert agent.human_gate_after is True
+        assert agent.human_gate_label == "prd-docs-updater:approved"
 
 
 # ---------------------------------------------------------------------------

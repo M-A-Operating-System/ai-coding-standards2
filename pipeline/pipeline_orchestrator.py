@@ -172,6 +172,7 @@ class AgentDef:
     max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
+    self_gates: bool = False  # if True, the agent's own AI_AGILE_STATUS (review vs complete) decides whether the gate fires -- :complete is NOT force-overridden to :review. human_gate_after/human_gate_label still apply for promotion when the agent itself emits :review.
     extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults and frontmatter
 
     @property
@@ -330,6 +331,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
+                self_gates=bool(entry.get("self_gates", False)),
                 extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
             ))
             if entry.get("git_ops", {}).get("mark_ready_on_complete"):
@@ -3361,13 +3363,19 @@ def _resolve_applied_status(
 
     An agent with a human gate completing applies :review (the "needs human
     action" state) instead of :complete, unless auto_approve_on_complete is set,
-    in which case the gate label is auto-applied and :complete stands.
+    in which case the gate label is auto-applied and :complete stands. If
+    self_gates is set, the agent's own emitted status is trusted verbatim
+    instead -- :complete never gets force-overridden to :review. The agent
+    decides per-run whether its work needs review by emitting
+    AI_AGILE_STATUS: review itself; human_gate_after/human_gate_label still
+    apply for promotion once the agent has emitted :review.
     """
     applied_status = final_status
     if (
         final_status == STATUS_COMPLETE
         and agent_def.human_gate_after
         and agent_def.human_gate_label
+        and not agent_def.self_gates
     ):
         if agent_def.auto_approve_on_complete:
             try:
