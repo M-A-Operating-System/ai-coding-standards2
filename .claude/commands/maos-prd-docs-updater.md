@@ -1,6 +1,6 @@
 # maos-prd-docs-updater
 
-Run the `01_product_docs/prd-docs-updater` pipeline agent. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical….
+Run the `01_product_docs/prd-docs-updater` pipeline agent. Runs after prd-writer completes.
 
 ## Input
 

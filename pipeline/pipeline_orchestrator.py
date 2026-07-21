@@ -1541,9 +1541,14 @@ def dependencies_complete(
             return False
 
         # Human gate only applies when the dep actually ran — a skipped dep
-        # never ran, so its gate label was never applied.
+        # never ran, so its gate label was never applied. self_gates deps
+        # decide their own gate (see _resolve_applied_status): if one reached
+        # :complete directly (no :review), the gate label was never meant to
+        # be required. A self_gates dep that legitimately needs review is
+        # still blocked above — it never reaches :complete until a human
+        # applies the gate label and promote_gated_agents promotes it.
         dep_skipped = dep.skipped_label in labels
-        if not dep_skipped and dep.human_gate_after and dep.human_gate_label:
+        if not dep_skipped and dep.human_gate_after and dep.human_gate_label and not dep.self_gates:
             if dep.human_gate_label not in labels:
                 log.debug(
                     "  %s complete but human gate '%s' not yet applied",

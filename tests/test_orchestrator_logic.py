@@ -1675,6 +1675,74 @@ class TestSelfGates:
         assert agent.human_gate_after is True
         assert agent.human_gate_label == "prd-docs-updater:approved"
 
+    def _downstream_agent(self) -> AgentDef:
+        """A single-dependency downstream agent, matching coder's real
+        dependency on prd-docs-updater."""
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "prd-docs-updater:complete"},
+            dependencies=["01_product_docs/prd-docs-updater"],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+        )
+
+    def test_dependencies_complete_true_for_self_gated_mechanical_only_run(self):
+        """CA-001 regression: a self_gates dependency that reached :complete
+        directly (mechanical-only run, no :review, no gate label ever applied)
+        must not block a downstream agent — that is the entire point of
+        self_gates. Before the fix, dependencies_complete() ignored self_gates
+        and returned False here forever, since prd-docs-updater:approved is
+        never applied on this path."""
+        prd_docs_updater = self._gated_agent(self_gates=True)
+        coder = self._downstream_agent()
+        pipeline_map = {prd_docs_updater.agent: prd_docs_updater, coder.agent: coder}
+
+        labels = {"prd-docs-updater:complete"}  # no :approved — never needed on this path
+
+        assert dependencies_complete(labels, coder, pipeline_map) is True
+
+    def test_dependencies_complete_false_without_self_gates_and_no_approval(self):
+        """Regression guard: self_gates=False (default) preserves existing
+        behaviour — a gated dependency at :complete with no gate label still
+        blocks the downstream agent (e.g. prd-writer, which always requires
+        human approval)."""
+        prd_docs_updater = self._gated_agent(self_gates=False)
+        coder = self._downstream_agent()
+        pipeline_map = {prd_docs_updater.agent: prd_docs_updater, coder.agent: coder}
+
+        labels = {"prd-docs-updater:complete"}
+
+        assert dependencies_complete(labels, coder, pipeline_map) is False
+
+    def test_dependencies_complete_false_for_self_gated_dep_still_in_review(self):
+        """A self_gates dependency that legitimately needs review (docs/product/
+        prose changed) is still blocked: it never reaches :complete until a
+        human applies the gate label and promote_gated_agents promotes it, so
+        dependencies_complete()'s first check (complete_label presence) already
+        blocks the downstream agent independent of the self_gates guard."""
+        prd_docs_updater = self._gated_agent(self_gates=True)
+        coder = self._downstream_agent()
+        pipeline_map = {prd_docs_updater.agent: prd_docs_updater, coder.agent: coder}
+
+        labels = {"prd-docs-updater:review"}  # mid-review — no :complete yet
+
+        assert dependencies_complete(labels, coder, pipeline_map) is False
+
+    def test_dependencies_complete_true_for_self_gated_dep_after_promotion(self):
+        """After a human approves a self_gates dependency's review path, both
+        :complete and the gate label are present (promote_gated_agents adds
+        :complete before removing :review) — downstream agent is eligible."""
+        prd_docs_updater = self._gated_agent(self_gates=True)
+        coder = self._downstream_agent()
+        pipeline_map = {prd_docs_updater.agent: prd_docs_updater, coder.agent: coder}
+
+        labels = {"prd-docs-updater:complete", "prd-docs-updater:approved"}
+
+        assert dependencies_complete(labels, coder, pipeline_map) is True
+
 
 # ---------------------------------------------------------------------------
 # --phases flag: phase-scoped agent filtering

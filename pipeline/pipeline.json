@@ -67,7 +67,7 @@
       "git_ops": { "commit_after": true },
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
-      "description": "Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool -- the orchestrator then invokes commit-agent-work.sh to stage, commit, and push those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight to the build agent (mechanical docs/features/ copy only, or no changes needed). Skipped for spike issues. Skipped for epic/blocked issues."
+      "description": "Runs after prd-writer completes. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool -- the orchestrator then invokes commit-agent-work.sh to stage, commit, and push those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight to the build agent (mechanical docs/features/ copy only, or no changes needed). Skipped for spike issues. Skipped for epic/blocked issues."
     },
 
     {
