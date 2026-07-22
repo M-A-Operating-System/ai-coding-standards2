@@ -89,6 +89,11 @@
           "default": false,
           "description": "When true and the agent emits :complete, the orchestrator automatically applies human_gate_label without requiring a human to act. Use for agents whose :review path needs a gate (conflicted PRs) but whose :complete path should advance uninterrupted (clean PRs)."
         },
+        "self_gates": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, the orchestrator trusts the agent's own AI_AGILE_STATUS (review vs complete) instead of force-overriding :complete to :review. Use for agents where only some runs warrant human review (e.g. prd-docs-updater: review only when docs/product/ prose changed, complete when the run was mechanical-only). human_gate_after/human_gate_label still apply for promotion once the agent itself emits :review. Mutually exclusive in practice with auto_approve_on_complete, which instead always suppresses the gate on :complete."
+        },
         "session": {
           "type": "object",
           "description": "Session management configuration for this agent. Controls whether the claude CLI is invoked with a per-issue session ID or a single shared session ID across all issues.",

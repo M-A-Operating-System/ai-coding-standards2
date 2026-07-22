@@ -30,15 +30,15 @@
         "STD-DOC-004"
       ],
       "title": "Every product-doc claim is traceable to a test or an open issue",
-      "description": "A claim of behaviour in a product/capability specification must either be specified as a scenario in a BDD .feature (generated from the capability) and realised by a passing executable test, or be accompanied by an open GitHub issue / roadmap gap that records it. New or changed behavioural claims are not left untraceable.",
+      "description": "A claim of behaviour in a product/capability specification must either be specified as a scenario in docs/features/{feature}.md (generated from the capability) and realised by a passing executable test, or be accompanied by an open GitHub issue / roadmap gap that records it. New or changed behavioural claims are not left untraceable.",
       "rationale": "Untraceable claims drift from the implementation and cannot be verified; tying each claim to a behaviour-spec scenario (with a test) or a tracked gap keeps the docs honest.",
       "acceptance_criteria": [
-        "Each new or changed behavioural claim in a specification in the diff has a corresponding BDD .feature scenario (realised by a passing test) or a referenced open issue/roadmap gap.",
+        "Each new or changed behavioural claim in a specification in the diff has a corresponding docs/features/{feature}.md scenario (realised by a passing test) or a referenced open issue/roadmap gap.",
         "A documented behaviour added in the diff without a passing test links the gap that tracks the missing coverage.",
-        "The diff does not add a behavioural claim with neither a BDD/test nor a tracked gap."
+        "The diff does not add a behavioural claim with neither a docs/features/test nor a tracked gap."
       ],
       "anti_patterns": [
-        "Documenting a new redirect/authorization behaviour with no BDD .feature/test and no open issue.",
+        "Documenting a new redirect/authorization behaviour with no docs/features/{feature}.md scenario/test and no open issue.",
         "Adding a spec claim that contradicts the BDD/tests without updating either."
       ],
       "adr_overridable": true,
@@ -79,17 +79,17 @@
         "STD-PROC-008",
         "STD-PROC-014"
       ],
-      "title": "Coverage is the BDD .feature's test evidence, not a hand-maintained doc",
-      "description": "Coverage \u2014 what is proven now \u2014 is the evidence status of the BDD specification: each BDD .feature scenario (generated from a capability) is either realised by a passing executable test (tests/features) or is an open gap tracked in the roadmap / a GitHub issue. Coverage is derived from the test evidence, not hand-maintained in a separate doc. A scenario with no passing test, or a failing one, signals an open gap (STD-PROC-005, STD-PROC-014).",
-      "rationale": "Deriving coverage from the .feature\u2194test evidence keeps it truthful and current; a hand-maintained coverage table drifts from reality and rots.",
+      "title": "Coverage is docs/features/{feature}.md's test evidence, not a hand-maintained doc",
+      "description": "Coverage \u2014 what is proven now \u2014 is the evidence status of the BDD specification: each docs/features/{feature}.md scenario (generated from a capability) is either realised by a passing executable test or is an open gap tracked in the roadmap / a GitHub issue. Coverage is derived from the test evidence, not hand-maintained in a separate doc. A scenario with no passing test, or a failing one, signals an open gap (STD-PROC-005, STD-PROC-014).",
+      "rationale": "Deriving coverage from the docs/features/{feature}.md\u2194test evidence keeps it truthful and current; a hand-maintained coverage table drifts from reality and rots.",
       "acceptance_criteria": [
-        "Every BDD .feature scenario touched in the diff is either realised by a passing executable test or has a tracked gap.",
-        "Coverage in the diff is expressed via the .feature\u2194test evidence, not a hand-maintained coverage table.",
+        "Every docs/features/{feature}.md scenario touched in the diff is either realised by a passing executable test or has a tracked gap.",
+        "Coverage in the diff is expressed via the docs/features/{feature}.md\u2194test evidence, not a hand-maintained coverage table.",
         "A capability/behaviour added in the diff with no passing test links the gap (roadmap/issue, STD-PROC-014)."
       ],
       "anti_patterns": [
         "Maintaining a separate coverage table that duplicates or drifts from the test evidence.",
-        "A BDD .feature scenario with no executable test and no tracked gap."
+        "A docs/features/{feature}.md scenario with no executable test and no tracked gap."
       ],
       "adr_overridable": true,
       "applies_to": [
@@ -108,11 +108,11 @@
         "STD-DOC-006"
       ],
       "title": "Follow the canonical AI-first repository structure and MAOS spec taxonomy",
-      "description": "The repo is a codified, AI-first product knowledge system. Specifications follow the MAOS taxonomy -- five human- and machine-readable spec types: Product Specification (Purpose, Scope, Capabilities, Roadmap Alignment, Success Measures); Capability Specifications (Outcome, Business Context, Inputs, Outputs, User Journeys, Dependencies -- STD-DOC-006); Roadmap Specification (Outcomes, Milestones, Dependencies, Risks, Measures; calculated -- STD-PROC-014); BDD Specifications (Gherkin .feature files, referenced by capabilities); Decision Specifications (rules, policies, operational decisions). Product definition lives under docs/product/; the governing process narrative under docs/_process/; the technical-architecture narrative under docs/_architecture/, which references the codified engineering standards in standards/ -- the detailed policing layer alongside the specs. Names are kebab-case.",
+      "description": "The repo is a codified, AI-first product knowledge system. Specifications follow the MAOS taxonomy -- five human- and machine-readable spec types: Product Specification (Purpose, Scope, Capabilities, Roadmap Alignment, Success Measures); Capability Specifications (Outcome, Business Context, Inputs, Outputs, User Journeys, Dependencies -- STD-DOC-006); Roadmap Specification (Outcomes, Milestones, Dependencies, Risks, Measures; calculated -- STD-PROC-014); BDD Specifications (Gherkin scenarios in docs/features/{feature}.md, referenced by capabilities); Decision Specifications (rules, policies, operational decisions). Product definition lives under docs/product/; the governing process narrative under docs/_process/; the technical-architecture narrative under docs/_architecture/, which references the codified engineering standards in standards/ -- the detailed policing layer alongside the specs. Names are kebab-case.",
       "rationale": "One home per spec type, on the MAOS taxonomy, keeps the linear, backward-traceable knowledge chain navigable by humans and AI; the standards police engineering quality alongside it. Source: MAOS Specification Framework; docs/_process/.",
       "acceptance_criteria": [
         "Specifications in the diff use the MAOS taxonomy (Product, Capability, Roadmap, BDD, Decision) and are both human- and machine-readable.",
-        "Product definition in the diff lives under docs/product/ (product spec, capabilities, decisions, roadmap); behaviour specs are Gherkin .feature files.",
+        "Product definition in the diff lives under docs/product/ (product spec, capabilities, decisions, roadmap); behaviour specs are Gherkin scenarios in docs/features/{feature}.md.",
         "Engineering policing rules in the diff live in standards/*.json (referenced by docs/_architecture/); process narrative in docs/_process/.",
         "Names are kebab-case."
       ],
@@ -135,10 +135,10 @@
         "STD-DOC-005"
       ],
       "title": "Specifications are codified to the MAOS templates (capability, product, decision)",
-      "description": "MAOS specifications are codified to a consistent, machine-readable template so humans and AI parse them identically. A Capability Specification has a stable kebab-case id and covers Outcome, Business Context, Inputs, Outputs, User Journeys, and Dependencies, and references its BDD .feature(s) \u2014 the capability is the canonical unit bridging product, roadmap, and verification (STD-PROC-013). A Product Specification covers Purpose, Scope, Capabilities, Roadmap Alignment, and Success Measures. A Decision Specification covers the rule/policy/operational decision, its context, and its consequences. Capabilities are named in business language, not implementation terms, and every spec links to its adjacent artifacts (module/outcome/BDD/evidence) by id.",
+      "description": "MAOS specifications are codified to a consistent, machine-readable template so humans and AI parse them identically. A Capability Specification has a stable kebab-case id and covers Outcome, Business Context, Inputs, Outputs, User Journeys, and Dependencies, and references its docs/features/{feature}.md \u2014 the capability is the canonical unit bridging product, roadmap, and verification (STD-PROC-013). A Product Specification covers Purpose, Scope, Capabilities, Roadmap Alignment, and Success Measures. A Decision Specification covers the rule/policy/operational decision, its context, and its consequences. Capabilities are named in business language, not implementation terms, and every spec links to its adjacent artifacts (module/outcome/BDD/evidence) by id.",
       "rationale": "Consistent codified specs let AI generate capabilities, BDD, tests, and reports from them and let humans review them; freeform specs cannot be reasoned over or traversed.",
       "acceptance_criteria": [
-        "A Capability Specification in the diff has a stable kebab-case id, the MAOS sections (Outcome, Business Context, Inputs, Outputs, User Journeys, Dependencies), and references its BDD .feature(s).",
+        "A Capability Specification in the diff has a stable kebab-case id, the MAOS sections (Outcome, Business Context, Inputs, Outputs, User Journeys, Dependencies), and references its docs/features/{feature}.md.",
         "Capabilities in the diff are named in business language (e.g. 'Search Public Trees'), not implementation terms (e.g. 'Build Search API').",
         "Product and Decision specifications in the diff follow their MAOS templates and link to adjacent artifacts by id."
       ],

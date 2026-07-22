@@ -173,15 +173,15 @@
         "STD-PROC-008",
         "STD-PROC-013"
       ],
-      "title": "Test artefacts live in their canonical locations; the Gherkin .feature is the testable spec",
-      "description": "Test artefacts have a single canonical home. Behaviour specifications are Gherkin .feature files, and their automated realisations live in the project's designated test directories (web and API/service suites in their conventional locations). The .feature spec is the testable specification -- tests realise it, they do not replace it.",
+      "title": "Test artefacts live in their canonical locations; docs/features/{feature}.md is the testable spec",
+      "description": "Test artefacts have a single canonical home. Behaviour specifications are Gherkin scenarios in docs/features/{feature}.md, and their automated realisations live in the project's designated test directories (web and API/service suites in their conventional locations). docs/features/{feature}.md is the testable specification -- tests realise it, they do not replace it.",
       "rationale": "One canonical location per artefact type keeps the suite discoverable and keeps the Gherkin spec, not ad-hoc test code, as the source of intended behaviour.",
       "acceptance_criteria": [
-        "Behaviour specs added in the diff are Gherkin .feature files in the project's designated specification location.",
+        "Behaviour specs added in the diff are Gherkin scenarios in docs/features/{feature}.md.",
         "Automated tests in the diff live in the project's conventional test directories for their tier (web vs API/service)."
       ],
       "anti_patterns": [
-        "Placing a behaviour spec or test outside the project's designated locations, or treating ad-hoc test code as the specification instead of the .feature."
+        "Placing a behaviour spec or test outside the project's designated locations, or treating ad-hoc test code as the specification instead of docs/features/{feature}.md."
       ],
       "adr_overridable": true,
       "applies_to": [
