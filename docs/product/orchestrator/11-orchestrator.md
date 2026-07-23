@@ -699,8 +699,11 @@ bash ai-coding-standards2/.github/scripts/status.sh prune ai-coding-standards2/p
 **Path rewriting.** Workflow files reference `ai-coding-standards2/` as a
 path prefix. `get_started` rewrites bare paths to `{SUBMODULE_NAME}/` so they
 work regardless of the submodule directory name the consuming repo chose.
-`_add_submodules_to_checkout` injects `submodules: true` into any bare
-`actions/checkout` step that doesn't already have a `with:` block.
+`_add_submodules_to_checkout` injects a scoped `git submodule update --init
+-- {SUBMODULE_NAME}` step after any bare `actions/checkout` step that doesn't
+already set `submodules:` itself in a `with:` block -- never the blanket
+`submodules: true`, which would recurse into every submodule the consuming
+repo has registered, not just this one.
 
 **Initial setup.** The first time a consuming repo adopts the pipeline, run
 `python ai-coding-standards2/get_started.py --seed` (commit the two workflows),
