@@ -24,9 +24,15 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled, closed]
 
-  # Catch anything the label events missed (agent took time, etc.)
+  # Periodic backstop that catches anything the event triggers missed (an agent
+  # that took a long time, a run that never fired on an event, etc.). Runs twice
+  # a day at 06:00 and 18:00 UTC. The issues/pull_request event triggers above
+  # still fire the orchestrator in real time -- this sweep is only the safety net
+  # for work those events did not pick up, so lowering its cadence does not delay
+  # event-driven pipeline progress. Times are UTC (GitHub Actions crons are
+  # always UTC); shift the hours if a local schedule is intended.
   schedule:
-    - cron: '*/30 * * * *'  # Every 30 min, 24/7
+    - cron: '0 6,18 * * *'  # 06:00 and 18:00 UTC (every 12h)
 
   workflow_dispatch:
     inputs:
