@@ -4,6 +4,8 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
+**Never edit `CLAUDE.md`** — it is framework-managed and symlinked from the submodule; keep all local project hints, knowledge, and patterns in `CLAUDE.local.md` instead.
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
