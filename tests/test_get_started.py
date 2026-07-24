@@ -526,6 +526,134 @@ class TestInstallClaudeMd:
 
 
 # ---------------------------------------------------------------------------
+# TestInstallClaudeLocalMd -- project-owned CLAUDE.local.md
+# ---------------------------------------------------------------------------
+
+class TestInstallClaudeLocalMd:
+    def _fake_submodule(self, tmp_path, template="TEMPLATE LOCAL\n", framework="FRAMEWORK\n"):
+        sub = tmp_path / "submodule"
+        (sub / ".claude").mkdir(parents=True)
+        (sub / "CLAUDE.local.md").write_text(template)
+        (sub / ".claude" / "CLAUDE.md").write_text(framework)
+        return sub
+
+    def test_creates_from_template_when_nothing_exists(self, tmp_path, monkeypatch):
+        sub = self._fake_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_claude_local_md(consuming, dry_run=False)
+
+        assert changed is True
+        assert (consuming / "CLAUDE.local.md").read_text() == "TEMPLATE LOCAL\n"
+
+    def test_copies_existing_real_claude_md_as_local(self, tmp_path, monkeypatch):
+        """The repo's own CLAUDE.md content is preserved as the local version."""
+        sub = self._fake_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / "CLAUDE.md").write_text("# my project rules\n")
+
+        changed = get_started.install_claude_local_md(consuming, dry_run=False)
+
+        assert changed is True
+        assert (consuming / "CLAUDE.local.md").read_text() == "# my project rules\n"
+
+    def test_never_overwrites_existing_local(self, tmp_path, monkeypatch):
+        sub = self._fake_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / "CLAUDE.local.md").write_text("KEEP ME\n")
+        (consuming / "CLAUDE.md").write_text("# project rules\n")
+
+        changed = get_started.install_claude_local_md(consuming, dry_run=False)
+
+        assert changed is False
+        assert (consuming / "CLAUDE.local.md").read_text() == "KEEP ME\n"
+
+    def test_framework_symlink_uses_template_not_link_content(self, tmp_path, monkeypatch):
+        """When root CLAUDE.md is the framework symlink (not the repo's own),
+        the local file comes from the template."""
+        sub = self._fake_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        os.symlink(".claude/CLAUDE.md", consuming / "CLAUDE.md")  # framework link
+
+        changed = get_started.install_claude_local_md(consuming, dry_run=False)
+
+        assert changed is True
+        assert (consuming / "CLAUDE.local.md").read_text() == "TEMPLATE LOCAL\n"
+
+    def test_windows_framework_copy_uses_template_not_copy(self, tmp_path, monkeypatch):
+        """On Windows the root CLAUDE.md is a byte-copy of the framework file;
+        it must be recognized as framework content (not the repo's own), so the
+        local file comes from the template, not the copy."""
+        sub = self._fake_submodule(tmp_path, framework="FRAMEWORK CONTENT\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / "CLAUDE.md").write_text("FRAMEWORK CONTENT\n")  # == framework
+
+        changed = get_started.install_claude_local_md(consuming, dry_run=False)
+
+        assert changed is True
+        assert (consuming / "CLAUDE.local.md").read_text() == "TEMPLATE LOCAL\n"
+
+    def test_dry_run_creates_nothing(self, tmp_path, monkeypatch):
+        sub = self._fake_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_claude_local_md(consuming, dry_run=True)
+
+        assert changed is True
+        assert not (consuming / "CLAUDE.local.md").exists()
+
+    def test_skips_when_template_missing(self, tmp_path, monkeypatch):
+        sub = tmp_path / "submodule"
+        (sub / ".claude").mkdir(parents=True)
+        (sub / ".claude" / "CLAUDE.md").write_text("FW\n")
+        # no CLAUDE.local.md template in the submodule
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        changed = get_started.install_claude_local_md(consuming, dry_run=False)
+
+        assert changed is False
+        assert not (consuming / "CLAUDE.local.md").exists()
+
+    def test_preserve_then_replace_flow(self, tmp_path, monkeypatch):
+        """The intended onboarding flow: an existing project CLAUDE.md is
+        preserved as CLAUDE.local.md, then install_claude_md replaces the root
+        CLAUDE.md with the framework link -- no content lost."""
+        sub = self._fake_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", sub)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        (consuming / "CLAUDE.md").write_text("# original project rules\n")
+
+        get_started.install_claude_local_md(consuming, dry_run=False)
+        get_started.install_claude_md(consuming, force=True, dry_run=False)
+
+        assert (consuming / "CLAUDE.local.md").read_text() == "# original project rules\n"
+        assert (consuming / "CLAUDE.md").is_symlink()
+        assert os.readlink(consuming / "CLAUDE.md") == ".claude/CLAUDE.md"
+
+    def test_repo_ships_a_template(self):
+        """The repo root carries a CLAUDE.local.md template for onboarding to
+        copy when a consuming repo has none."""
+        template = get_started.SUBMODULE_ROOT / "CLAUDE.local.md"
+        assert template.is_file()
+
+
+# ---------------------------------------------------------------------------
 # TestInstallOperationalWorkflows -- emergency-stop
 # ---------------------------------------------------------------------------
 
@@ -1111,6 +1239,21 @@ class TestAddGitignoreEntries:
 
         text = (consuming / ".gitignore").read_text()
         assert "adrs" not in text.split()
+
+    def test_excludes_project_owned_claude_local_md(self, tmp_path, monkeypatch):
+        """CLAUDE.local.md is project-owned and must stay committed (never
+        gitignored) so it travels with the repo -- only the framework CLAUDE.md
+        symlink is ignored."""
+        fake_src = self._make_submodule(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.add_gitignore_entries(consuming, dry_run=False)
+
+        lines = (consuming / ".gitignore").read_text().splitlines()
+        assert "CLAUDE.local.md" not in lines
+        assert "CLAUDE.md" in lines  # the framework symlink is still ignored
 
     def test_seed_mode_omits_standards(self, tmp_path, monkeypatch):
         fake_src = self._make_submodule(tmp_path)

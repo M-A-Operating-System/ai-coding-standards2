@@ -423,6 +423,73 @@ def install_claude_md(
     return True
 
 
+def install_claude_local_md(
+    consuming_root: Path,
+    dry_run: bool,
+) -> bool:
+    """Ensure a project-owned CLAUDE.local.md exists at the consuming repo root.
+
+    CLAUDE.local.md is where a repo keeps its own local hints, knowledge, and
+    patterns -- separate from the framework-managed CLAUDE.md (which is a
+    symlink into the submodule and must not be edited). Unlike CLAUDE.md it is a
+    NORMAL committed file: it is intentionally NOT gitignored, so it travels
+    with the repo and is maintained alongside the code.
+
+    Runs BEFORE install_claude_md() so an existing project CLAUDE.md is captured
+    before install_claude_md replaces the root CLAUDE.md with the framework
+    link. Initial content when CLAUDE.local.md is absent:
+      - the repo's existing CLAUDE.md content, if the root CLAUDE.md is the
+        repo's own file (not the framework link/copy) -- preserving whatever
+        instructions the repo already had; or
+      - the template CLAUDE.local.md shipped in the submodule, otherwise.
+
+    Never overwrites an existing CLAUDE.local.md (it is project-maintained), so
+    this takes no `force` -- it only ever creates the file when absent.
+    """
+    dst = consuming_root / "CLAUDE.local.md"
+    if dst.exists():
+        print("  SKIP   CLAUDE.local.md  (exists; project-owned, never overwritten)")
+        return False
+
+    root_claude = consuming_root / "CLAUDE.md"
+    rel_target = ".claude/CLAUDE.md"
+    framework_src = SUBMODULE_ROOT / ".claude" / "CLAUDE.md"
+
+    # Is the root CLAUDE.md the framework-managed file rather than the repo's
+    # own content? True when it is the framework symlink, or (on Windows, where
+    # install_claude_md byte-copies instead of symlinking) a copy whose content
+    # matches the framework file. In either case it is NOT the repo's own file.
+    is_framework = False
+    if root_claude.is_symlink() and os.readlink(root_claude) == rel_target:
+        is_framework = True
+    elif root_claude.is_file() and framework_src.is_file():
+        try:
+            is_framework = (
+                root_claude.read_text(encoding="utf-8")
+                == framework_src.read_text(encoding="utf-8")
+            )
+        except OSError:
+            is_framework = False
+
+    if root_claude.is_file() and not is_framework:
+        content = root_claude.read_text(encoding="utf-8")
+        source = "existing CLAUDE.md"
+    else:
+        template = SUBMODULE_ROOT / "CLAUDE.local.md"
+        if not template.is_file():
+            print(f"  SKIP   CLAUDE.local.md  (template {template} missing)")
+            return False
+        content = template.read_text(encoding="utf-8")
+        source = f"template {template.name}"
+
+    if dry_run:
+        print(f"  WOULD  CLAUDE.local.md  (create from {source})")
+        return True
+    dst.write_text(content, encoding="utf-8")
+    print(f"  CLAUDE.local.md: created from {source}")
+    return True
+
+
 def _add_submodules_to_checkout(content: str) -> str:
     """Insert a step to init only the ai-coding-standards2 submodule after
     every bare actions/checkout step.
@@ -672,8 +739,10 @@ def add_gitignore_entries(
       - standards   -- whole-folder symlink into the submodule
       - CLAUDE.md   -- symlink (or, on Windows, a copy) to .claude/CLAUDE.md
 
-    The project-owned adrs/ folder is intentionally NOT gitignored so it stays
-    committed.
+    The project-owned adrs/ folder and CLAUDE.local.md are intentionally NOT
+    gitignored so they stay committed and travel with the repo -- CLAUDE.local.md
+    is the repo's own maintained local guidance, distinct from the symlinked
+    CLAUDE.md.
 
     ``include_standards`` should be False in --seed mode because the standards
     symlink has not been created yet; listing it before it exists confuses
@@ -791,6 +860,7 @@ def print_followup_seed() -> None:
     print(f"             {SUBMODULE_NAME} \\")
     print(f"             .github/workflows/ai_orchestrator.yml \\")
     print(f"             .github/workflows/ai_emergency_stop.yml \\")
+    print(f"             CLAUDE.local.md \\")
     print(f"             .gitignore")
     print(f"     git add -f CLAUDE.md   # gitignored like .claude/ -- force-add it")
     print(f"     git commit -m 'Add ai-coding-standards2 submodule'")
@@ -912,6 +982,7 @@ def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
     """
     install_orchestrator_workflows(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
+    install_claude_local_md(consuming_root, dry_run)
     install_claude_md(consuming_root, force, dry_run)
     add_gitignore_entries(consuming_root, dry_run, include_standards=False)
     untrack_managed_paths(consuming_root, dry_run)
@@ -977,6 +1048,7 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
     install_claude(consuming_root, force, dry_run)
+    install_claude_local_md(consuming_root, dry_run)
     install_claude_md(consuming_root, force, dry_run)
     install_requirements(consuming_root, dry_run)
     add_gitignore_entries(consuming_root, dry_run)
