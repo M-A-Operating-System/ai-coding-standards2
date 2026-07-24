@@ -69,7 +69,7 @@ a Linux runner (as `--full --force`), and what you would run locally with
 | Step | What happens |
 |---|---|
 | Verify location | Confirms the script is running from inside a submodule of a consuming repo |
-| Install workflows | Copies orchestrator and sync workflows into `.github/workflows/`, inserting `submodules: true` into checkout steps |
+| Install workflows | Copies orchestrator and sync workflows into `.github/workflows/`, inserting a scoped `git submodule update --init -- {name}` step after checkout steps (only the ai-coding-standards2 submodule, never any other submodule the consuming repo may have registered) |
 | Install standards | On Linux/macOS: creates a single directory symlink `standards → submodule/standards`. On Windows: copies the tree. Standards are framework-owned and read verbatim |
 | Install ADRs | Seeds a project-owned `adrs/adrs.json` (once, never overwritten). ADRs live in their own local folder — outside the symlinked `standards/` — so `standards/` can be a whole-folder symlink |
 | Install Claude setup | On Linux/macOS: creates a single directory symlink `.claude → submodule/.claude`, so the consuming repo inherits its ENTIRE Claude Code setup (agents, slash commands, `AGENTS.md`, `settings.json`) from the submodule. On Windows: copies the tree. The parent keeps no Claude config of its own. **The run fails** if the consuming repo already has its own real `.claude` directory (it will not be silently deleted) — back it up and remove it, or set `AI_AGILE_REPLACE_CLAUDE=1` to replace it deliberately |
@@ -112,7 +112,9 @@ drift to repair and no sync workflow.
 > with `git clone --recurse-submodules`). The local `adrs/` folder is a real
 > folder and works without the submodule. CI is unaffected — the orchestrator
 > reads the framework straight from the submodule and every workflow checkout
-> uses `submodules: true`.
+> inits the ai-coding-standards2 submodule by name (`git submodule update
+> --init -- ai-coding-standards2`), never any other submodule the consuming
+> repo may have registered.
 
 ---
 
@@ -165,8 +167,8 @@ workflow — restarting is just clearing the committed marker (`git rm
 .pipeline-stop` and push; `--clear-stop` only removes the local file and must
 still be committed and pushed to resume the hosted pipeline), which an owner can run at any
 time; the stop workflow's run summary prints these instructions. Unlike the
-other installed workflows, the emergency stop is copied **without**
-`submodules: true` injected — it reads nothing from the submodule, so it must
+other installed workflows, the emergency stop is copied **without** the
+submodule-init step injected — it reads nothing from the submodule, so it must
 not depend on a submodule fetch to run when you need to stop the pipeline.
 
 After the job completes, open a test issue with a problem statement and

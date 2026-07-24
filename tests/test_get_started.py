@@ -569,7 +569,20 @@ class TestInstallOperationalWorkflows:
 # ---------------------------------------------------------------------------
 
 class TestAddSubmodulesToCheckout:
-    def test_named_form_inserts_submodules(self):
+    """Covers issue #238: a blanket `submodules: true` on actions/checkout is
+    all-or-nothing -- it recurses into every submodule the consuming repo has
+    registered, not just ai-coding-standards2, and fails if any of the others
+    are private and unrelated to this pipeline. The fix injects a follow-up
+    step that inits only ai-coding-standards2 by name."""
+
+    def _init_step_lines(self, dash_indent: str = "      ") -> str:
+        name = get_started.SUBMODULE_NAME
+        return (
+            f"{dash_indent}- name: Init {name} submodule\n"
+            f"{dash_indent}  run: git submodule update --init -- {name}\n"
+        )
+
+    def test_named_form_inserts_scoped_init_step(self):
         content = (
             "    steps:\n"
             "      - name: Checkout\n"
@@ -577,49 +590,103 @@ class TestAddSubmodulesToCheckout:
             "      - name: Setup Python\n"
         )
         result = get_started._add_submodules_to_checkout(content)
-        assert "        with:\n          submodules: true\n" in result
+        assert (
+            "    steps:\n"
+            "      - name: Checkout\n"
+            "        uses: actions/checkout@abc123\n"
+            + self._init_step_lines()
+            + "      - name: Setup Python\n"
+        ) == result
+        # The blanket boolean option must never come back.
+        assert "submodules: true" not in result
 
-    def test_shorthand_form_inserts_submodules(self):
+    def test_shorthand_form_inserts_scoped_init_step(self):
         content = (
             "    steps:\n"
             "      - uses: actions/checkout@abc123\n"
             "      - uses: actions/setup-python@def456\n"
         )
         result = get_started._add_submodules_to_checkout(content)
-        assert "with:\n" in result
-        assert "submodules: true\n" in result
         # Indentation is load-bearing: wrong indent = invalid YAML. The dash
-        # sits at 6 spaces, so with: must be at 8 and submodules: at 10.
+        # sits at 6 spaces, so the new step's dash must also sit at 6.
         assert (
+            "    steps:\n"
             "      - uses: actions/checkout@abc123\n"
-            "        with:\n"
-            "          submodules: true\n"
-        ) in result
-        # The non-checkout step below must remain untouched (no with: injected).
-        assert "      - uses: actions/setup-python@def456\n" in result
+            + self._init_step_lines()
+            + "      - uses: actions/setup-python@def456\n"
+        ) == result
+        assert "submodules: true" not in result
 
-    def test_already_expanded_form_left_untouched(self):
+    def test_with_block_without_submodules_key_still_gets_init_step(self):
+        """A checkout step with its own with: block (e.g. a token, for a
+        push made during this step to trigger downstream workflows) that does
+        NOT already set submodules: must still get the init step -- this is
+        exactly issue #238's reported case (the onboard job's checkout had a
+        with: block for `token:` only)."""
         content = (
             "    steps:\n"
             "      - name: Checkout\n"
             "        uses: actions/checkout@abc123\n"
             "        with:\n"
-            "          fetch-depth: 0\n"
+            "          token: ${{ secrets.FOO }}\n"
+            "      - name: Next\n"
         )
         result = get_started._add_submodules_to_checkout(content)
-        # submodules: true must NOT be injected when with: already present
-        assert result.count("with:") == 1
-        assert "submodules: true" not in result
+        assert (
+            "    steps:\n"
+            "      - name: Checkout\n"
+            "        uses: actions/checkout@abc123\n"
+            "        with:\n"
+            "          token: ${{ secrets.FOO }}\n"
+            + self._init_step_lines()
+            + "      - name: Next\n"
+        ) == result
 
-    def test_already_expanded_shorthand_left_untouched(self):
+    def test_with_block_without_submodules_key_shorthand_still_gets_init_step(self):
+        content = (
+            "    steps:\n"
+            "      - uses: actions/checkout@abc123\n"
+            "        with:\n"
+            "          fetch-depth: 0\n"
+            "      - name: Next\n"
+        )
+        result = get_started._add_submodules_to_checkout(content)
+        assert (
+            "    steps:\n"
+            "      - uses: actions/checkout@abc123\n"
+            "        with:\n"
+            "          fetch-depth: 0\n"
+            + self._init_step_lines()
+            + "      - name: Next\n"
+        ) == result
+
+    def test_with_block_already_setting_submodules_left_untouched(self):
+        """A caller that already explicitly sets submodules: itself (any
+        value) is assumed to handle submodule checkout on its own -- this
+        function must not override or duplicate that."""
+        content = (
+            "    steps:\n"
+            "      - name: Checkout\n"
+            "        uses: actions/checkout@abc123\n"
+            "        with:\n"
+            "          submodules: true\n"
+            "          token: ${{ secrets.FOO }}\n"
+            "      - name: Next\n"
+        )
+        result = get_started._add_submodules_to_checkout(content)
+        assert result == content
+        assert "Init" not in result
+
+    def test_with_block_already_setting_submodules_shorthand_left_untouched(self):
         content = (
             "    steps:\n"
             "      - uses: actions/checkout@abc123\n"
             "        with:\n"
             "          submodules: true\n"
+            "      - name: Next\n"
         )
         result = get_started._add_submodules_to_checkout(content)
-        assert result.count("submodules: true") == 1
+        assert result == content
 
     def test_non_checkout_uses_not_modified(self):
         content = (
@@ -628,7 +695,32 @@ class TestAddSubmodulesToCheckout:
         )
         result = get_started._add_submodules_to_checkout(content)
         assert "submodules" not in result
+        assert "Init" not in result
         assert result == content
+
+    def test_result_is_valid_yaml(self):
+        """The injected step must parse as valid YAML, not just look right."""
+        import yaml
+        content = (
+            "name: test\n"
+            "jobs:\n"
+            "  test:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - name: Checkout\n"
+            "        uses: actions/checkout@v4\n"
+            "      - name: Setup Python\n"
+            "        uses: actions/setup-python@v5\n"
+        )
+        result = get_started._add_submodules_to_checkout(content)
+        parsed = yaml.safe_load(result)
+        steps = parsed["jobs"]["test"]["steps"]
+        assert [s.get("name") for s in steps] == [
+            "Checkout",
+            f"Init {get_started.SUBMODULE_NAME} submodule",
+            "Setup Python",
+        ]
+        assert steps[1]["run"] == f"git submodule update --init -- {get_started.SUBMODULE_NAME}"
 
 
 # ---------------------------------------------------------------------------
@@ -710,7 +802,11 @@ class TestInstallOrchestratorWorkflows:
         assert count == 1
         assert (consuming / ".github" / "workflows" / "ai_orchestrator.yml").exists()
 
-    def test_injects_submodules_true(self, tmp_path, monkeypatch):
+    def test_injects_scoped_submodule_init_not_blanket_true(self, tmp_path, monkeypatch):
+        """Issue #238: the generated workflow must init only the
+        ai-coding-standards2 submodule, never the blanket `submodules: true`
+        that recurses into every submodule the consuming repo has registered
+        (breaking onboarding when any of those are private and unrelated)."""
         fake_src = self._make_src(tmp_path)
         monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
         consuming = tmp_path / "consuming"
@@ -719,7 +815,13 @@ class TestInstallOrchestratorWorkflows:
         get_started.install_orchestrator_workflows(consuming, force=True, dry_run=False)
 
         content = (consuming / ".github" / "workflows" / "ai_orchestrator.yml").read_text()
-        assert "submodules: true" in content, "ai_orchestrator.yml missing submodules: true"
+        name = get_started.SUBMODULE_NAME
+        assert "submodules: true" not in content, (
+            "ai_orchestrator.yml still uses the blanket submodules: true option"
+        )
+        assert f"git submodule update --init -- {name}" in content, (
+            "ai_orchestrator.yml missing the scoped submodule-init step"
+        )
 
     def test_returns_zero_when_src_missing(self, tmp_path, monkeypatch):
         fake_src = tmp_path / "empty"

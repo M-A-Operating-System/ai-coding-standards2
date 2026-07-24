@@ -424,37 +424,54 @@ def install_claude_md(
 
 
 def _add_submodules_to_checkout(content: str) -> str:
-    """Insert 'submodules: true' into every bare actions/checkout step.
+    """Insert a step to init only the ai-coding-standards2 submodule after
+    every bare actions/checkout step.
 
-    The standalone orchestrator workflows omit submodules: true because
-    this repo IS the submodule. Consuming repos need it to check out the
-    ai-coding-standards2 submodule at workflow runtime.
+    The standalone orchestrator workflows omit this because this repo IS the
+    submodule. Consuming repos need ai-coding-standards2 checked out at
+    workflow runtime -- but a blanket 'submodules: true' on actions/checkout
+    is all-or-nothing: it recurses into every submodule the consuming repo
+    has registered in .gitmodules, which fails if any of them are private and
+    unrelated to this pipeline (neither AI_AGILE_BOT_TOKEN nor GITHUB_TOKEN
+    has access). A scoped 'git submodule update --init -- {name}' clones only
+    this one submodule and needs no token for it (public repo).
 
     Handles both named form ('- name: Checkout\\n  uses: ...') and
-    shorthand form ('- uses: actions/checkout@...') in YAML steps.
-    Already-expanded steps (with: block present) are left untouched --
-    callers that add their own with: options (e.g. fetch-depth) must
-    include submodules: true themselves.
+    shorthand form ('- uses: actions/checkout@...') in YAML steps, whether or
+    not the step already has a with: block for unrelated options (token,
+    fetch-depth, ...). Skipped only when that with: block already sets
+    submodules: itself -- that caller has explicitly opted into its own
+    submodule handling and this function must not override or duplicate it.
     """
-    # Named form: the uses: line sits one level deeper than the name: line.
-    # Capture the indent of the uses: line to align with: correctly.
-    content = re.sub(
-        r"(- name: Checkout\n([ \t]+)uses: actions/checkout@[^\n]+\n)"
-        r"(?![ \t]+with:)",
-        r"\1\2with:\n\2  submodules: true\n",
-        content,
-    )
+    def _init_step(dash_indent: str) -> str:
+        """Render the submodule-init step as a sibling list item at dash_indent."""
+        return (
+            f"{dash_indent}- name: Init {SUBMODULE_NAME} submodule\n"
+            f"{dash_indent}  run: git submodule update --init -- {SUBMODULE_NAME}\n"
+        )
+
+    def _inject_after(checkout_pattern: str) -> None:
+        nonlocal content
+        content = re.sub(
+            checkout_pattern
+            # Optional existing with: block. Child lines must be indented
+            # strictly more than "with:" itself (via the withindent
+            # backreference) so a shallower sibling step is never absorbed.
+            + r"(?P<withblock>(?:(?P<withindent>[ \t]+)with:\n"
+            r"(?:(?P=withindent)[ \t]+\S[^\n]*\n)*)?)",
+            lambda m: (
+                m.group(0) if "submodules:" in m.group("withblock")
+                else m.group(0) + _init_step(m.group("dashindent"))
+            ),
+            content,
+        )
+
+    # Named form: capture the dash indent of "- name: Checkout" so the new
+    # step is inserted as a sibling list item at the same level.
+    _inject_after(r"(?P<dashindent>[ \t]*)- name: Checkout\n[ \t]+uses: actions/checkout@[^\n]+\n")
     # Shorthand form: "- uses: actions/checkout@..." with no name: line.
-    # Capture the indent of the dash to derive the correct with: indent.
-    content = re.sub(
-        r"([ \t]+)(- uses: actions/checkout@[^\n]+\n)(?![ \t]+with:)",
-        lambda m: (
-            m.group(0)
-            + m.group(1) + "  with:\n"
-            + m.group(1) + "    submodules: true\n"
-        ),
-        content,
-    )
+    # Capture the indent of the dash to derive the correct indent for the new step.
+    _inject_after(r"(?P<dashindent>[ \t]+)- uses: actions/checkout@[^\n]+\n")
     return content
 
 
