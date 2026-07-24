@@ -4103,6 +4103,151 @@ class TestCommitAfterExactlyOnce:
 
 
 # ---------------------------------------------------------------------------
+# TestOrchestrationScriptResolution (issue #196)
+#
+# Orchestration helper scripts must resolve from origin/main, not the
+# checked-out (possibly stale) issue-{N} branch. A branch cut from an old main
+# that predates a script must not be able to make the orchestrator fail to find
+# its own infrastructure.
+# ---------------------------------------------------------------------------
+
+class TestOrchestrationScriptResolution:
+    SCRIPT_REL = ".github/scripts/commit-agent-work.sh"
+
+    @pytest.fixture(autouse=True)
+    def _isolate_cache(self):
+        """Reset the module-global orchestration-script cache before and after
+        each test so state never leaks in or out of this class."""
+        import pipeline_orchestrator as po
+        po._ORCH_SCRIPT_CACHE.clear()
+        po._ORCH_SCRIPT_DIR = None
+        po._ORCH_MAIN_FETCHED = False
+        yield
+        po._ORCH_SCRIPT_CACHE.clear()
+        po._ORCH_SCRIPT_DIR = None
+        po._ORCH_MAIN_FETCHED = False
+
+    def _git(self, cwd, *args):
+        subprocess.run(
+            ["git", *args], cwd=str(cwd), check=True,
+            capture_output=True, text=True,
+        )
+
+    def _make_stale_branch_repo(self, tmp_path, main_script_body):
+        """Build an origin+clone where origin/main carries the orchestration
+        script but the checked-out issue-999 branch was cut before it existed.
+        Returns the work-tree path, checked out to the stale branch."""
+        origin = tmp_path / "origin.git"
+        self._git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+        work = tmp_path / "work"
+        self._git(tmp_path, "clone", str(origin), str(work))
+        self._git(work, "config", "user.email", "t@t")
+        self._git(work, "config", "user.name", "t")
+
+        # Initial main commit WITHOUT the script.
+        (work / "README.md").write_text("x\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "initial")
+        self._git(work, "push", "origin", "main")
+
+        # Stale issue branch, cut before the script exists.
+        self._git(work, "checkout", "-b", "issue-999")
+        self._git(work, "push", "origin", "issue-999")
+
+        # main gains the orchestration script AFTER the branch was cut.
+        self._git(work, "checkout", "main")
+        script = work / self.SCRIPT_REL
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(main_script_body)
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "add orchestration script on main")
+        self._git(work, "push", "origin", "main")
+
+        # Check out the STALE issue branch -- the script is absent on disk here.
+        self._git(work, "checkout", "issue-999")
+        assert not (work / self.SCRIPT_REL).exists()
+        return work
+
+    def test_resolves_from_main_when_issue_branch_lacks_script(self, tmp_path, monkeypatch):
+        import pipeline_orchestrator as po
+        work = self._make_stale_branch_repo(
+            tmp_path, "#!/usr/bin/env bash\necho MAIN_VERSION\n"
+        )
+        monkeypatch.setattr(po, "SUBMODULE_ROOT", work)
+
+        resolved = po._orchestration_script_path(self.SCRIPT_REL)
+
+        assert resolved.exists(), "resolver did not materialize the script from origin/main"
+        assert "MAIN_VERSION" in resolved.read_text()
+        # It must NOT be the (missing) working-tree path on the stale branch.
+        assert resolved != work / self.SCRIPT_REL
+
+    def test_commit_after_succeeds_when_issue_branch_lacks_script(self, tmp_path, monkeypatch):
+        """Acceptance criterion #196: a coder run on an issue branch missing
+        commit-agent-work.sh still succeeds, because commit-after sources the
+        script from main. The main version here is a no-op that exits 0."""
+        import pipeline_orchestrator as po
+        work = self._make_stale_branch_repo(
+            tmp_path, "#!/usr/bin/env bash\nexit 0\n"
+        )
+        monkeypatch.setattr(po, "SUBMODULE_ROOT", work)
+
+        agent = AgentDef(
+            agent="03_execute/coder", phase="03_execute", objects=["issue"],
+            trigger={"label": "x:complete"}, dependencies=[],
+            human_gate_after=False, human_gate_label=None, description="t",
+            commit_after=True,
+        )
+        wi = WorkItem(
+            number=999, kind="issue", title="T", labels=set(),
+            url="https://github.com/test/repo/issues/999",
+        )
+        result = po._invoke_commit_after(agent, wi)
+        assert result is None, f"commit-after should succeed, got failure: {result!r}"
+
+    def test_caches_resolution_across_calls(self, tmp_path, monkeypatch):
+        import pipeline_orchestrator as po
+        work = self._make_stale_branch_repo(
+            tmp_path, "#!/usr/bin/env bash\necho MAIN_VERSION\n"
+        )
+        monkeypatch.setattr(po, "SUBMODULE_ROOT", work)
+
+        first = po._orchestration_script_path(self.SCRIPT_REL)
+        second = po._orchestration_script_path(self.SCRIPT_REL)
+        assert first == second
+
+    def test_present_script_uses_working_tree_without_touching_main(self, tmp_path, monkeypatch):
+        """Fast path: when the script is present on the checked-out tree it is
+        returned directly, with no origin/main resolution."""
+        import pipeline_orchestrator as po
+        work = tmp_path / "solo"
+        work.mkdir()
+        self._git(work, "init", "-b", "main")
+        script = work / self.SCRIPT_REL
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("#!/usr/bin/env bash\necho LOCAL\n")
+        monkeypatch.setattr(po, "SUBMODULE_ROOT", work)
+
+        resolved = po._orchestration_script_path(self.SCRIPT_REL)
+        assert resolved == work / self.SCRIPT_REL
+
+    def test_falls_back_to_working_tree_when_missing_and_main_unavailable(self, tmp_path, monkeypatch):
+        """Recovery path with no reachable main (no remote): the script is
+        absent and origin/main can't be read, so the resolver returns the
+        (missing) working-tree path and the caller's existence check reports it."""
+        import pipeline_orchestrator as po
+        work = tmp_path / "solo"
+        work.mkdir()
+        self._git(work, "init", "-b", "main")
+        # No remote, and the script does not exist on disk.
+        monkeypatch.setattr(po, "SUBMODULE_ROOT", work)
+
+        resolved = po._orchestration_script_path(self.SCRIPT_REL)
+        assert resolved == work / self.SCRIPT_REL
+        assert not resolved.exists()
+
+
+# ---------------------------------------------------------------------------
 # TestNormalizeSkippedLabels
 # ---------------------------------------------------------------------------
 

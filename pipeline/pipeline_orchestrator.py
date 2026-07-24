@@ -44,6 +44,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -3101,13 +3102,94 @@ def _run_agent(
     return result, sentinel_status, sentinel_message, _pre_agent_branch, _invoked_at, _attempt
 
 
+# ---------------------------------------------------------------------------
+# Orchestration-script resolution (issue #196)
+#
+# The orchestrator's own helper scripts (commit-agent-work.sh, mark-pr-ready.sh,
+# ...) are infrastructure that ships with the orchestrator, not work-item
+# content. A commit_after agent checks out the issue branch before committing;
+# when that branch is stale (cut from an old main that predates a script), the
+# script is ABSENT from the checked-out tree and the step hard-fails even
+# though the agent's work is complete (orchestrator run #1207, issue #143).
+#
+# Resolution is working-tree-first, main-fallback:
+#   - If the script is present in the working tree, use it. This is the common
+#     case -- a healthy issue branch, or any agent (e.g. pr-reviewer) that never
+#     checked out an issue branch and is still on main. No network, no shadowing.
+#   - If the script is ABSENT (the stale-branch failure), read its blob from
+#     origin/main and materialize it into a temp dir. The returned path lives
+#     outside any work-item tree, so a stale branch cannot remove it. If
+#     origin/main is also unavailable, return the (missing) working-tree path
+#     and let the caller's existence check report the real problem.
+#
+# Mode-agnostic: cwd is SUBMODULE_ROOT (this repo in source mode, the pinned
+# submodule dir in submodule mode), so origin/main is always this framework's
+# main, never the consuming repo's issue branch.
+# ---------------------------------------------------------------------------
+_ORCH_SCRIPT_CACHE: dict[str, Path] = {}
+_ORCH_SCRIPT_DIR: Optional[Path] = None
+_ORCH_MAIN_FETCHED = False
+
+
+def _orchestration_script_path(rel_path: str) -> Path:
+    """Resolve an orchestration helper script to an executable path, recovering
+    from origin/main when a stale issue branch lacks it. See the block comment
+    above for the working-tree-first, main-fallback contract."""
+    global _ORCH_SCRIPT_DIR, _ORCH_MAIN_FETCHED
+    working_tree_path = SUBMODULE_ROOT / rel_path
+
+    # Fast path: script present on the checked-out tree (healthy branch, or on
+    # main). No network, no interference with a stale-branch recovery.
+    if working_tree_path.exists():
+        return working_tree_path
+
+    if rel_path in _ORCH_SCRIPT_CACHE:
+        return _ORCH_SCRIPT_CACHE[rel_path]
+
+    # Recovery path: the checked-out (stale) branch is missing this script.
+    # Fetch origin/main once per process, then read the script's blob from it.
+    if not _ORCH_MAIN_FETCHED:
+        _ORCH_MAIN_FETCHED = True
+        try:
+            subprocess.run(
+                ["git", "fetch", "--quiet", "origin", "main"],
+                cwd=SUBMODULE_ROOT, capture_output=True, text=True, timeout=120,
+            )
+        except Exception as exc:
+            log.debug("  orchestration-script: could not fetch origin/main: %s", exc)
+
+    try:
+        blob = subprocess.run(
+            ["git", "show", f"origin/main:{rel_path}"],
+            cwd=SUBMODULE_ROOT, capture_output=True, text=True, check=True, timeout=30,
+        ).stdout
+    except Exception as exc:
+        log.debug(
+            "  orchestration-script: origin/main:%s unavailable (%s) -- using working tree %s",
+            rel_path, exc, working_tree_path,
+        )
+        return working_tree_path
+
+    if _ORCH_SCRIPT_DIR is None:
+        _ORCH_SCRIPT_DIR = Path(tempfile.mkdtemp(prefix="ai-agile-orch-scripts-"))
+    dest = _ORCH_SCRIPT_DIR / rel_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(blob)
+    _ORCH_SCRIPT_CACHE[rel_path] = dest
+    log.info(
+        "  orchestration-script: %s missing on checked-out branch -- recovered from origin/main",
+        rel_path,
+    )
+    return dest
+
+
 def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[str]:
     """Run commit-agent-work.sh for a `commit_after` agent.
 
     Returns a human-readable failure reason, or None on success. The caller
     owns the label/branch side-effects on failure.
     """
-    _commit_script = SUBMODULE_ROOT / ".github/scripts/commit-agent-work.sh"
+    _commit_script = _orchestration_script_path(".github/scripts/commit-agent-work.sh")
     _commit_env = {
         **os.environ,
         "AGENT_NAME": agent_def.agent,
@@ -3179,8 +3261,12 @@ def _invoke_post_steps(
         _ps_env["PR_NUMBER"] = str(work_item.number)
     _ps_env["AI_AGILE_ROOT"] = os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
     for _ps_path_str in agent_def.post_steps:
-        _ps_file = SUBMODULE_ROOT / _ps_path_str
-        if not _ps_file.resolve().is_relative_to(SUBMODULE_ROOT.resolve()):
+        # Escape check on the DECLARED (working-tree) path: rejects a
+        # pipeline.json entry that tries to point outside the repo root. This
+        # must run before resolution-from-main, whose temp path legitimately
+        # lives outside SUBMODULE_ROOT.
+        _ps_declared = SUBMODULE_ROOT / _ps_path_str
+        if not _ps_declared.resolve().is_relative_to(SUBMODULE_ROOT.resolve()):
             log.error(
                 "  post_steps: path %s escapes repo root — blocked (agent %s on #%d)",
                 _ps_path_str, agent_def.agent, work_item.number,
@@ -3190,6 +3276,9 @@ def _invoke_post_steps(
                 f"This is a configuration error in pipeline.json. "
                 f"Remove the failed label to retry._"
             )
+        # Resolve the execution path from origin/main (issue #196) so a stale
+        # issue branch cannot shadow or remove the orchestrator's own scripts.
+        _ps_file = _orchestration_script_path(_ps_path_str)
         if not _ps_file.exists():
             log.error(
                 "  post_steps: %s not found at %s (agent %s on #%d)",
