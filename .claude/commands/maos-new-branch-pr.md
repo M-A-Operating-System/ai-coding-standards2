@@ -21,7 +21,7 @@ verifying the announcement comment rather than recreating anything.
 
 2. **Check for an existing PR first.** Call `mcp__github__list_pull_requests` filtered
    by `head: "{owner}:issue-{N}"` and `state: open`. If one is already open, skip to
-   step 6 (comment check) — do not create a second branch or PR for the same issue
+   step 7 (comment check) — do not create a second branch or PR for the same issue
    (STD-PROC-001/002: one issue = one branch = one draft PR).
 
 3. **Create the branch from the default branch, with a placeholder commit.**
@@ -38,8 +38,10 @@ verifying the announcement comment rather than recreating anything.
    run left agent work on it; stop and tell the user rather than force-pushing.
 
 4. **Get the issue title** (via `mcp__github__issue_read`, method `get`) to build the PR
-   title: `issue-{N}: {title, truncated to 60 chars}` — matches `create-pr.sh`'s exact
-   truncation so PR titles stay consistent with ones the real pipeline creates.
+   title: `issue-{N}: {title}`, where `{title}` is truncated to its first 60 characters
+   *before* the `"issue-{N}: "` prefix is added — matching `create-pr.sh`'s exact
+   `${ISSUE_TITLE:0:60}` behavior. The prefix is not counted against the 60, so the final
+   title is longer than 60 characters once it's prepended.
 
 5. **Open the draft PR** via `mcp__github__create_pull_request`:
    - `title`: from step 4

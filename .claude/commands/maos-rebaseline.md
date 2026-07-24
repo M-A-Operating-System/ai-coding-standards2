@@ -43,11 +43,17 @@ branch.
    ```bash
    git checkout {target}
    git reset --hard origin/{target}
-   git clean -fd  # only if there are untracked files the user has already agreed to discard in step 1
    ```
-   Do not run `git clean -fd` unless step 1 found untracked files and the user
-   explicitly agreed to discard them -- otherwise skip it entirely so no
-   untracked file the user still wants is removed.
+   If `git checkout {target}` fails because the branch doesn't exist locally yet
+   (e.g. a fresh checkout that never had it, or `$ARGUMENTS` named a branch that
+   was only ever fetched), use `git checkout -B {target} origin/{target}` instead
+   -- this both creates and resets it in one step, making the following
+   `git reset --hard` redundant but harmless in that path.
+
+   Step 1 already refuses to proceed while any untracked file is present, so
+   there is nothing left to clean here -- do not run `git clean -fd`. If step 1
+   let dirty state through some other path, that's a bug in step 1 to fix, not
+   a reason to add a cleanup step here.
 
 5. **Report the result:** the branch name, the commit it now points to
    (`git log -1 --oneline`), and whether any local-only commits were
