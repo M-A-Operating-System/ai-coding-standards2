@@ -71,14 +71,19 @@ else
   git config user.email "github-actions[bot]@users.noreply.github.com"
   git config user.name "github-actions[bot]"
 
-  # Create the branch from the default branch HEAD if it doesn't exist on the remote.
+  # Create the branch from the LATEST origin/${DEFAULT_BRANCH} if it doesn't
+  # exist on the remote. Cut from origin/${DEFAULT_BRANCH}, NOT the local
+  # ${DEFAULT_BRANCH} ref: `git fetch origin main` updates origin/main but
+  # leaves a stale local main behind, so `git checkout main && git checkout -b`
+  # would base the issue branch on an old main and lose the shared merge base
+  # with the current tip (issue #197). `checkout -B ... origin/main` bases the
+  # new branch on the freshly-fetched remote tip.
   if ! git ls-remote --exit-code --heads origin "${BRANCH}" &>/dev/null; then
     git fetch origin "${DEFAULT_BRANCH}"
-    git checkout "${DEFAULT_BRANCH}"
-    git checkout -b "${BRANCH}"
+    git checkout -B "${BRANCH}" "origin/${DEFAULT_BRANCH}"
     git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
     git push -u origin "${BRANCH}"
-    echo "Created branch ${BRANCH} from ${DEFAULT_BRANCH} with placeholder commit."
+    echo "Created branch ${BRANCH} from origin/${DEFAULT_BRANCH} with placeholder commit."
   else
     echo "Branch ${BRANCH} already exists on remote."
   fi
@@ -109,6 +114,16 @@ else
     else
       echo "Branch ${BRANCH} has non-placeholder commits ('${REMOTE_MSG}') — skipping force-push to preserve agent work." >&2
     fi
+  fi
+
+  # Flag a stale issue branch before the coder runs (issue #197). Non-fatal:
+  # a stale branch is surfaced as a warning, not a hard failure, so create-pr
+  # still opens the PR. A freshly-cut branch (from origin/${DEFAULT_BRANCH}
+  # above) reports FRESH; an existing branch that has fallen far behind main is
+  # flagged so the drift is visible rather than silently derailing later agents.
+  _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if ! bash "${_SCRIPT_DIR}/check-branch-freshness.sh" "${BRANCH}"; then
+    echo "WARNING: ${BRANCH} is stale relative to origin/${DEFAULT_BRANCH} (see above). Agents may hit merge-base issues until it is refreshed." >&2
   fi
 
   # Pre-flight: verify the token can access this repo.
