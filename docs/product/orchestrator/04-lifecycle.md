@@ -155,6 +155,45 @@ In the **Execute** phase, branch and PR ownership follows
 
 ---
 
+## Two-phase design-to-build delivery (target model)
+
+> **Status: target, rolling out via epic [#248](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/248).**
+> This subsection describes the delivery model the pipeline is moving to. The
+> live single-branch flow above (and `pipeline.json`) remains authoritative
+> until the implementation sub-issues land; per the note at the top of this
+> document, `pipeline.json` wins on any disagreement. The still-open epic is
+> the tracked gap, consistent with product-led delivery
+> ([P-15](02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)).
+
+Each issue is delivered in **two sequenced phases, each its own branch and PR**,
+so the approved design reaches `main` before any code is written:
+
+| Phase | Branch | PR | Closes issue? | Merges at |
+|---|---|---|---|---|
+| **Design** | `issue-{N}-docs` | design PR (`docs/product/` + `docs/features/{feature}.md`) | **No** | design approval (`prd-docs-updater:approved`) |
+| **Build** | `issue-{N}` | code PR (tests + implementation) | **Yes** (`Closes #{N}`) | end of code review, as today |
+
+- The **design PR must not carry a closing keyword** (`Closes`/`Fixes`/`Resolves`).
+  The issue stays open through the build phase; only the **code PR** closes it.
+  A premature close would also trip the branch-delete / epic-close automation.
+- The **code branch (`issue-{N}`) is cut from the post-design-merge `main`**, so
+  the build always starts from a tree that already contains the latest approved
+  design (and the latest pipeline infrastructure).
+- This keeps `main` continuously carrying the latest approved *desired state*
+  (design) while the *current state* (code) catches up. It also lets parallel
+  builds see each other's merged design, and surfaces overlapping-design
+  conflicts at the small docs merge rather than late in two colliding code PRs.
+- **Naming:** the code branch stays `issue-{N}` (unchanged, so all existing
+  tooling keyed on that pattern is untouched); only the new `issue-{N}-docs`
+  design branch is added. `delete-branch.sh` broadens its match to clean up both.
+
+This refines -- it does not abandon -- the one-branch-per-PR invariant
+([P-13](02-principles.md#p-13--draft-prs-early-one-branch-per-pr),
+[P-5](02-principles.md#p-5--one-shippable-unit-one-pr)): still exactly one PR
+per branch, now up to two phase-PRs per issue (design then code).
+
+---
+
 ## Forks in the path
 
 ### The ticket is too big
