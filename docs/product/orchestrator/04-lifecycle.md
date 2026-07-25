@@ -115,14 +115,18 @@ In the **Execute** phase, branch and PR ownership follows
 [P-16](02-principles.md#p-16--git-commit-ownership-two-modes)
 (agents own branch commits, orchestrator owns the PR lifecycle):
 
-- The `create-pr` script step opens a draft PR immediately after PRD
-  approval, establishing the branch and PR that all subsequent agent
-  commits accumulate into.
-- Agents (`prd-docs-updater`, `coder`) write files during their run;
-  the orchestrator commits and pushes those changes to the branch after
-  the agent signals `complete` (`git_ops.commit_after: true`). Agents
-  may read issues and PRs, but only the orchestrator may create, commit
-  to, or advance the PR.
+- The `create-pr` script step opens the draft **code** PR on the
+  `issue-{N}` branch, cut from the post-design-merge `main`, establishing
+  the branch and PR that subsequent coder commits accumulate into. The
+  design phase has already merged the approved `docs/product/` +
+  `docs/features/` to `main` via the `issue-{N}-docs` PR (see
+  [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)),
+  so the code branch starts from a tree that already contains the latest
+  design.
+- Agents (`coder`) write files during their run; the orchestrator commits
+  and pushes those changes to the branch after the agent signals
+  `complete` (`git_ops.commit_after: true`). Agents may read issues and
+  PRs, but only the orchestrator may create, commit to, or advance the PR.
 - `pr-reviewer` issues `REQUEST_CHANGES` for any Critical, High, or
   Medium severity finding; it issues `APPROVE` only when all findings
   are Low or Informational severity.
@@ -147,23 +151,18 @@ In the **Execute** phase, branch and PR ownership follows
   human feedback (this re-invocation does not count toward the
   three-cycle limit), then ci-gate and `pr-reviewer` run again.
 - The linked issue closes automatically on merge via the "Closes #{N}"
-  trailer in the PR body; the `issue-{N}` branch is deleted by the
-  orchestrator when it receives the `pull_request.closed` event with
-  `merged=true` — `_wake` calls `delete-branch.sh` for this.
-  Branches from PRs closed without merging are not auto-deleted; they
-  are handled by the `00_ondemand/branch-cleanup` agent on human request.
+  trailer in the **code** PR body. The design PR (`issue-{N}-docs`)
+  carries no closing keyword, so the issue stays open through the build
+  phase; only the code PR closes it. The `issue-{N}` and `issue-{N}-docs`
+  branches are deleted by the orchestrator when it receives the
+  `pull_request.closed` event with `merged=true` — `_wake` calls
+  `delete-branch.sh` for this. Branches from PRs closed without merging
+  are not auto-deleted; they are handled by the `00_ondemand/branch-cleanup`
+  agent on human request.
 
 ---
 
-## Two-phase design-to-build delivery (target model)
-
-> **Status: target, rolling out via epic [#248](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/248).**
-> This subsection describes the delivery model the pipeline is moving to. The
-> live single-branch flow above (and `pipeline.json`) remains authoritative
-> until the implementation sub-issues land; per the note at the top of this
-> document, `pipeline.json` wins on any disagreement. The still-open epic is
-> the tracked gap, consistent with product-led delivery
-> ([P-15](02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)).
+## Two-phase design-to-build delivery
 
 Each issue is delivered in **two sequenced phases, each its own branch and PR**,
 so the approved design reaches `main` before any code is written:
@@ -171,7 +170,7 @@ so the approved design reaches `main` before any code is written:
 | Phase | Branch | PR | Closes issue? | Merges at |
 |---|---|---|---|---|
 | **Design** | `issue-{N}-docs` | design PR (`docs/product/` + `docs/features/{feature}.md`) | **No** | design approval (`prd-docs-updater:approved`) |
-| **Build** | `issue-{N}` | code PR (tests + implementation) | **Yes** (`Closes #{N}`) | end of code review, as today |
+| **Build** | `issue-{N}` | code PR (tests + implementation) | **Yes** (`Closes #{N}`) | end of code review |
 
 - The **design PR must not carry a closing keyword** (`Closes`/`Fixes`/`Resolves`).
   The issue stays open through the build phase; only the **code PR** closes it.
@@ -264,13 +263,16 @@ there is no code to ship, so no branch or PR is created.
 | T+2m | Issue | `01_product_docs/issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` |
 | T+5m | Issue | `01_product_docs/prd-writer` | Drafts PRD; rewrites issue body in user-story + Gherkin format | `prd-writer:review` |
 | T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` → `prd-writer:complete` |
-| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Creates `issue-{N}` branch; opens draft PR with "Closes #{N}"; posts PR number and link as a comment on the issue | `create-pr:complete` |
-| T+5m | PR | `01_product_docs/prd-docs-updater` | Cross-checks PRD against product docs; commits any updates | `prd-docs-updater:review` |
-| T+30m | PR | Stakeholder | Approves doc updates | `prd-docs-updater:approved` → `prd-docs-updater:complete` |
+| | | | **Design phase — approved design publishes to `main`** | |
+| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` (no closing keyword); posts the link on the issue | `create-pr:complete` |
+| T+5m | PR | `01_product_docs/prd-docs-updater` | Writes the `docs/product/` + `docs/features/{feature}.md` changes on `issue-{N}-docs` | `prd-docs-updater:review` |
+| T+30m | PR | Stakeholder | Approves the design; the design PR merges to `main` | `prd-docs-updater:approved` → `prd-docs-updater:complete` → _design merged_ |
+| | | | **Build phase — code builds on the now-current `main`** | |
+| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`), cut from the post-design-merge `main` | `create-pr:complete` |
 | T+30m | Issue | `03_execute/coder` | Implements issue and sub-issues; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
-| T+10m | PR | `03_execute/pr-reviewer` | Reviews PR diff against spec; posts structured review | `pr-reviewer:review` |
+| T+10m | PR | `03_execute/pr-reviewer` | Reviews code PR diff against spec; posts structured review | `pr-reviewer:review` |
 | T+30m | PR | Engineer | Approves review | `pr-reviewer:approved` → orchestrator marks PR ready |
-| — | PR | Engineer | Reviews and merges PR | `pr.merged` → issue auto-closes |
+| — | PR | Engineer | Reviews and merges the code PR | `pr.merged` → issue auto-closes |
 
 The **Actor** column shows who performs each step — agent names
 formatted as `{phase}/{short-name}` (see
