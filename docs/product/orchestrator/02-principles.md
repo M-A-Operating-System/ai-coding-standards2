@@ -230,9 +230,13 @@ These are operator-only actions taken outside the pipeline.
 
 ### P-5 — One shippable unit, one PR
 
-**Statement.** Every PR closes exactly one *shippable-unit* issue.
-Every shippable-unit issue produces at most one PR. The orchestrator
-rejects multi-issue PRs at `pr.draft_opened`.
+**Statement.** No PR spans more than one *shippable-unit* issue, and
+every branch produces exactly one PR (P-13). A shippable-unit issue is
+delivered as up to **two sequenced phase-PRs** — a design PR
+(`issue-{N}-docs`, the `docs/product/` + `docs/features/` changes) then a
+code PR (`issue-{N}`, `Closes #{N}`) — each on its own branch; only the
+code PR closes the issue. The orchestrator rejects multi-issue PRs at
+`pr.draft_opened`.
 
 A **shippable unit** is an issue that owns a deliverable: a feature
 issue, a chore issue, or a super-issue grouping smaller items. Child
@@ -246,8 +250,10 @@ units that close when their parent's PR merges.
   it. The changelog entry refers to it.
 - Children attach via commit trailers (`Closes #{child}`) and close
   automatically on PR merge.
-- A second PR for the same shippable unit requires the first to be
-  closed and the session iteration to advance (P-7).
+- The two phase-PRs are sequenced — the design PR merges before the code
+  PR opens — so at most one PR for a shippable unit is open at a time. A
+  further code PR for the same unit still requires the prior one closed
+  and the session iteration to advance (P-7).
 - `task-decomposer` produces child task issues for tracking; `coder`
   opens **one PR for the parent**, with one commit per child task.
 

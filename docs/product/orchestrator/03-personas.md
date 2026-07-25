@@ -55,7 +55,8 @@ quality of the change.
   scenario.
 - The `task-decomposer` and `dependency-planner` propose an ordered build
   plan. The engineer approves it before any code is written.
-- The `coder` opens one PR per shippable-unit issue (per
+- The `coder` produces the code PR for each shippable-unit issue (the
+  design docs merge in a separate design PR first; per
   [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)) with one
   commit per child task from the build plan. The
   `standards-compliance-reviewer` flags violations with proposed
