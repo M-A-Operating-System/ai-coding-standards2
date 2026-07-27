@@ -305,7 +305,6 @@
         "Bash(gh issue view *)",
         "Bash(gh issue comment *)",
         "Bash(gh issue close *)",
-        "Bash(gh issue edit *)",
         "Bash(gh pr list *)"
       ],
       "description": "Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue."

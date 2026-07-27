@@ -165,13 +165,18 @@ Do not emit the sentinel here. Proceed to Step 6 (mode = propose).
 ## Step 5 -- Execute approved closures only (execute mode)
 
 Read every comment posted **after** `$PRIOR_REPORT` to find the human's
-approval reply:
+approval reply. Inline the timestamp via shell interpolation (`gh`'s `--jq`
+takes only a filter, not jq's `--arg`) and exclude the agent's own marker
+comments by body prefix -- `gh issue view --json comments` exposes `.author`,
+not a REST-style `.user.type`, so filter on the marker instead:
 
 ```bash
-PRIOR_TIME=$(printf '%s' "$PRIOR_REPORT" | jq -r '.createdAt')
+SINCE=$(printf '%s' "$PRIOR_REPORT" | jq -r '.createdAt')
 gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
-  --jq --arg since "$PRIOR_TIME" \
-  '.comments[] | select(.createdAt > $since) | select(.user.type != "Bot") | .body'
+  --jq '.comments[]
+    | select(.createdAt > "'"$SINCE"'")
+    | select(.body | startswith("<!-- ai-agile/") | not)
+    | .body'
 ```
 
 Parse the reply for explicit issue numbers and, for each duplicate, its
