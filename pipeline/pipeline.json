@@ -286,6 +286,29 @@
         "Bash(gh issue view *)"
       ],
       "description": "Ad-hoc sweep agent. Evaluates every remote branch, classifies each as a deletion candidate or one to keep, and posts the recommendation for human approval. On re-invocation after a human approves specific branches in a reply comment, deletes exactly those branches and posts a summary. Triggered by applying the branch-cleanup:requested label to any issue."
+    },
+
+    {
+      "agent": "00_ondemand/issue-cleanup",
+      "phase": "00_ondemand",
+      "object": ["issue"],
+      "trigger": {
+        "label": "issue-cleanup:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "session": { "scope": "global" },
+      "extra_allowedTools": [
+        "Bash(gh api *)",
+        "Bash(gh issue list *)",
+        "Bash(gh issue view *)",
+        "Bash(gh issue comment *)",
+        "Bash(gh issue close *)",
+        "Bash(gh issue edit *)",
+        "Bash(gh pr list *)"
+      ],
+      "description": "Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue."
     }
 
   ]
