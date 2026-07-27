@@ -7,19 +7,20 @@
   "standards": [
     {
       "id": "STD-PROC-001",
-      "title": "No work without a ticket: one issue = one branch = one draft PR (1:1:1)",
-      "description": "No work begins without a GitHub issue (ticket). Every distinct piece of work \u2014 including small fixes \u2014 traces 1:1:1 to exactly one issue: one issue \u2192 one branch (cut from main) \u2192 one draft PR. Never combine multiple issues into one branch or PR, never open more than one PR per issue, and never stack new work onto an existing open PR or reuse a feature branch from a prior session.",
-      "rationale": "A ticket-first, one-to-one issue/branch/PR mapping makes every change traceable to its rationale and reviewable; unticketed or stacked work entangles unrelated changes and loses traceability.",
+      "title": "No work without a ticket; 1:1 branch:PR, up to two phase-PRs per issue (design then code)",
+      "description": "No work begins without a GitHub issue (ticket). Every distinct piece of work -- including small fixes -- traces to exactly one issue. An issue is delivered as up to two sequenced phase-PRs, each on its own branch cut from the latest main (1:1 branch:PR): a design PR on issue-{N}-docs (the docs/product/ + docs/features/ changes, carrying NO closing keyword) then a code PR on issue-{N} (Closes #{N}). Only the code PR closes the issue, and the design PR merges before the code PR opens, so at most one PR per issue is open at a time. Never combine multiple issues into one branch or PR, never put more than one PR on a branch, and never stack new work onto an existing open PR or reuse a feature branch from a prior session.",
+      "rationale": "A ticket-first mapping with exactly one PR per branch keeps every change traceable to its rationale and reviewable; sequencing delivery as a design PR (published to main first) then a code PR keeps main carrying the latest approved design so parallel builds avoid design conflicts. Unticketed or stacked work entangles unrelated changes and loses traceability.",
       "acceptance_criteria": [
         "The change under review traces to exactly one GitHub issue (ticket); no unticketed work.",
-        "The branch was cut from main for that single issue, not reused from a prior session's feature branch.",
-        "There is exactly one open PR for the issue, and the diff does not bundle changes belonging to a separate issue."
+        "Each branch has exactly one PR, and no PR bundles changes belonging to a separate issue; an issue has at most one design PR (issue-{N}-docs) and one code PR (issue-{N}).",
+        "The design PR carries no closing keyword; only the code PR closes the issue (Closes #{N}).",
+        "Each branch was cut from the latest main, not reused from a prior session's feature branch."
       ],
       "anti_patterns": [
         "Starting work or opening a PR with no GitHub issue behind it.",
-        "Adding a second issue's fix as extra commits on an existing open PR.",
-        "Reusing last session's `claude/...` branch for new, unrelated work.",
-        "Two open PRs both claiming to close the same issue."
+        "Putting a closing keyword (Closes/Fixes/Resolves #{N}) on the design PR, so the issue closes before the code lands.",
+        "Adding a second issue's fix as extra commits on an existing open PR, or putting two PRs on one branch.",
+        "Reusing last session's `claude/...` branch for new, unrelated work."
       ],
       "adr_overridable": true,
       "applies_to": [
