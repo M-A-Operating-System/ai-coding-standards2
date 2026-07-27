@@ -34,8 +34,10 @@ See [`04-lifecycle.md`](04-lifecycle.md).
 **pull request**. "Object kind" is `issue` or `pr`.
 
 **Shippable unit** — An issue that owns a deliverable (a feature, a chore, or
-a super-issue). Each shippable unit produces at most one PR. Child issues are
-tracking units, not shippable units. See [`02-principles.md`](02-principles.md) (P-5).
+a super-issue). Each shippable unit is delivered as up to two sequenced
+phase-PRs — a design PR then a code PR, each on its own branch — and only the
+code PR closes it. Child issues are tracking units, not shippable units. See
+[`02-principles.md`](02-principles.md) (P-5).
 
 **Super-issue** — A parent issue that groups several small related items into
 one shippable unit. See [`02-principles.md`](02-principles.md) (P-6).

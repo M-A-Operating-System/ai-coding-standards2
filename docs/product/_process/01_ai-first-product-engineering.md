@@ -322,7 +322,8 @@ Technical Debt Gap
 
 ## AI-First Delivery Loop
 
-The intended delivery loop is:
+Delivery runs in **two sequenced phases -- design, then build** -- with the
+approved design published to `main` before any code is written:
 
 ```text
 Human defines or updates product intent (docs/product/{capability}.md)
@@ -331,16 +332,23 @@ AI drafts an issue: user story + Gherkin scenarios
     ↓
 Human reviews and approves the issue -- the single approval gate
     ↓
+=== Design phase ===
 AI copies the approved scenarios into docs/features/{feature}.md
 (create the file, append a new scenario, or replace a revised scenario by slug)
+and updates docs/product/ to match the approved intent
     ↓
-AI generates tests that realize the scenarios in docs/features/{feature}.md
+The approved DESIGN DOCUMENTATION merges to main -- ahead of any code
+    ↓
+=== Build phase ===
+AI cuts the code branch from the now-current main (it already contains the
+latest approved design) and generates tests that realize the scenarios in
+docs/features/{feature}.md
     ↓
 AI generates or modifies code
     ↓
 AI runs verification
     ↓
-Human reviews evidence
+Human reviews evidence; the code merges to main
     ↓
 Roadmap status is generated
 ```
@@ -350,6 +358,24 @@ no separate capability-approval step: the issue carries both, and human approval
 the single gate that lets scenarios become a durable, versioned spec. Copying the approved
 scenarios into `docs/features/{feature}.md` is a mechanical step, not a second approval -- it
 preserves what was already approved.
+
+**Why two phases.** The design phase ends by merging the approved documentation
+(the `docs/product/` + `docs/features/` changes) to `main`, *before* the build
+phase starts. This keeps `main` continuously carrying the latest approved
+*desired state* while the *current state* (code) catches up -- the product-led
+model made real across the design-to-build boundary. Two concrete benefits:
+
+- **Parallel builds see the latest design.** A build started (or refreshed)
+  after another issue's design has merged inherits that approved design instead
+  of working blind against a stale tree.
+- **Design conflicts surface early.** Two changes that touch the same design
+  (e.g. the same `docs/features/{feature}.md` scenario) collide at the small
+  docs merge, at design time -- not late, when both changes' code *and* docs
+  would conflict at once.
+
+Publishing approved design ahead of its implementation is consistent with the
+product-led model: the documentation is the destination and the still-open
+issue is the tracked gap until the code lands.
 
 This loop makes human approval explicit while allowing AI to perform execution work.
 
