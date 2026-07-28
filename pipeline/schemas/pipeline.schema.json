@@ -79,6 +79,10 @@
           "uniqueItems": true,
           "items": { "type": "string" }
         },
+        "branch_suffix": {
+          "type": "string",
+          "description": "Suffix appended to the issue-{N} branch name for this step's commit_after checkout (e.g. '-docs' targets issue-{N}-docs). Empty or absent means the default code branch issue-{N}. Used by the two-phase design-to-build flow (issue #247) so prd-docs-updater commits to the design branch while coder commits to the code branch."
+        },
         "human_gate_after": { "type": "boolean" },
         "human_gate_label": {
           "type": "string",

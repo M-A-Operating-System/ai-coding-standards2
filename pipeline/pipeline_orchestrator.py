@@ -167,6 +167,7 @@ class AgentDef:
     post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
+    branch_suffix: str = ""               # appended to issue-{N} for the commit_after checkout (e.g. "-docs" -> issue-{N}-docs); "" means the default code branch (two-phase design->build, issue #247)
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
@@ -326,6 +327,7 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 post_steps=list(entry.get("post_steps", [])),
                 review_gate=bool(entry.get("review_gate", False)),
                 commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
+                branch_suffix=entry.get("branch_suffix", ""),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
                 review_loop=entry.get("review_loop"),
@@ -3071,7 +3073,7 @@ def _run_agent(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 capture_output=True, text=True, check=True,
             ).stdout.strip()
-            _issue_branch = f"issue-{work_item.number}"
+            _issue_branch = f"issue-{work_item.number}{agent_def.branch_suffix}"
             subprocess.run(["git", "fetch", "origin", _issue_branch], check=True)
             subprocess.run(
                 ["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"],

@@ -26,7 +26,25 @@ if [[ ! "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-BRANCH="issue-${ISSUE_NUMBER}"
+# Phase parameterisation (issue #247, two-phase design->build delivery).
+# Defaults reproduce the original single-code-PR behaviour exactly, so the
+# code-PR step (create-pr) is unchanged. The design-PR step (create-docs-pr)
+# sets these to open issue-{N}-docs with a non-closing body under a distinct
+# announcement identity.
+BRANCH_SUFFIX="${BRANCH_SUFFIX:-}"                       # "" for code PR, "-docs" for design PR
+PR_CLOSES_ISSUE="${PR_CLOSES_ISSUE:-true}"              # "false" for the design PR (must not close the issue)
+CREATE_PR_AGENT="${CREATE_PR_AGENT:-01_product_docs/create-pr}"  # announcement identity + idempotency marker
+
+BRANCH="issue-${ISSUE_NUMBER}${BRANCH_SUFFIX}"
+PLACEHOLDER_MSG="chore: open branch for ${BRANCH}"
+
+if [[ "${PR_CLOSES_ISSUE}" == "false" ]]; then
+  # Design PR: merges to main at the prd-docs-updater:approved gate ahead of the
+  # build phase; it must NOT close the issue (only the code PR does -- STD-PROC-001).
+  PR_BODY="Design documentation for issue #${ISSUE_NUMBER} (branch ${BRANCH}). Merges to main at the prd-docs-updater:approved gate, ahead of the build phase; does not close the issue -- the code PR does."
+else
+  PR_BODY="Closes #${ISSUE_NUMBER}"
+fi
 
 # Idempotency: check for an existing open PR on this branch.
 # NOTE: gh pr list returns JSON; -q runs jq internally to extract the number.
@@ -65,7 +83,7 @@ else
 
   # Get issue title for the PR title.
   ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json title -q '.title')
-  PR_TITLE="issue-${ISSUE_NUMBER}: ${ISSUE_TITLE:0:60}"
+  PR_TITLE="${BRANCH}: ${ISSUE_TITLE:0:60}"
 
   # Git identity for commits.
   git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -81,7 +99,7 @@ else
   if ! git ls-remote --exit-code --heads origin "${BRANCH}" &>/dev/null; then
     git fetch origin "${DEFAULT_BRANCH}"
     git checkout -B "${BRANCH}" "origin/${DEFAULT_BRANCH}"
-    git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
+    git commit --allow-empty -m "${PLACEHOLDER_MSG}"
     git push -u origin "${BRANCH}"
     echo "Created branch ${BRANCH} from origin/${DEFAULT_BRANCH} with placeholder commit."
   else
@@ -101,14 +119,14 @@ else
     echo "GitHub sees no unique commits on ${BRANCH} — resetting to ${DEFAULT_BRANCH} and adding placeholder..."
     git fetch origin "${DEFAULT_BRANCH}"
     git checkout -B "${BRANCH}" "origin/${DEFAULT_BRANCH}"
-    git commit --allow-empty -m "chore: open branch for issue-${ISSUE_NUMBER}"
+    git commit --allow-empty -m "${PLACEHOLDER_MSG}"
     # Only force-push if the remote branch HEAD is still the known placeholder
     # commit (or the branch is brand-new). This prevents destroying agent commits
     # if create-pr is re-triggered after prd-docs-updater or coder has pushed work.
     # Fetch first so the local tracking ref reflects the true remote state.
     git fetch origin "${BRANCH}" 2>/dev/null || true
     REMOTE_MSG=$(git log -1 --format="%s" "origin/${BRANCH}" 2>/dev/null || echo "")
-    if [[ "${REMOTE_MSG}" == "chore: open branch for issue-${ISSUE_NUMBER}" || -z "${REMOTE_MSG}" ]]; then
+    if [[ "${REMOTE_MSG}" == "${PLACEHOLDER_MSG}" || -z "${REMOTE_MSG}" ]]; then
       git push -f origin "${BRANCH}"
       echo "Reset ${BRANCH} to ${DEFAULT_BRANCH} and pushed placeholder commit."
     else
@@ -140,7 +158,7 @@ else
       --method POST \
       "/repos/${REPO}/pulls" \
       -f "title=${PR_TITLE}" \
-      -f "body=Closes #${ISSUE_NUMBER}" \
+      -f "body=${PR_BODY}" \
       -f "head=${BRANCH}" \
       -f "base=${DEFAULT_BRANCH}" \
       -F "draft=true" 2>&1
@@ -169,7 +187,7 @@ fi
 ALREADY_COMMENTED=$(
   gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" \
     --json comments \
-    --jq '[.comments[] | select(.body | contains("01_product_docs/create-pr"))] | length' \
+    --jq "[.comments[] | select(.body | contains(\"${CREATE_PR_AGENT}\"))] | length" \
   2>/dev/null || echo "0"
 )
 
@@ -177,7 +195,7 @@ if [[ "${ALREADY_COMMENTED}" -eq 0 ]]; then
   gh issue comment "${ISSUE_NUMBER}" \
     --repo "${REPO}" \
     --body "$(cat <<EOF
-<!-- ai-agile/announcement/v1 by 01_product_docs/create-pr -->
+<!-- ai-agile/announcement/v1 by ${CREATE_PR_AGENT} -->
 Draft PR opened for this issue: [#${PR_NUMBER}](${PR_URL})
 EOF
 )" || {

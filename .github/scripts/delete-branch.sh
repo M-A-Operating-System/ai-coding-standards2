@@ -15,8 +15,9 @@ set -euo pipefail
 : "${REPO:?REPO must be set}"
 : "${BRANCH:?BRANCH must be set}"
 
-# Only delete branches that match the issue-{N} pattern.
-if ! [[ "${BRANCH}" =~ ^issue-[0-9]+$ ]]; then
+# Only delete branches that match the issue-{N} pattern, including the
+# design branch issue-{N}-docs (two-phase design->build, issue #247).
+if ! [[ "${BRANCH}" =~ ^issue-[0-9]+(-docs)?$ ]]; then
   echo "Branch '${BRANCH}' does not match issue-{N} pattern -- skipping."
   echo "AI_AGILE_STATUS: complete"
   exit 0

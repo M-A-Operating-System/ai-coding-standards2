@@ -4,9 +4,10 @@ description: >
   Runs after prd-writer completes. Copies the approved PRD's Gherkin
   scenarios into docs/features/{feature}.md (mechanical create/append/
   replace-by-slug merge) and cross-checks the PRD against existing product
-  documentation in docs/product/. Commits changes directly to the shared
-  issue branch (issue-{N}) so they accumulate in the same draft PR as the
-  code. Posts a summary comment on the issue. Requests human review
+  documentation in docs/product/. Commits changes to the design branch
+  (issue-{N}-docs) so they land in the design PR, which merges to main at the
+  prd-docs-updater:approved gate ahead of the build phase. Posts a summary
+  comment on the issue. Requests human review
   (prd-docs-updater:approved) only when docs/product/ prose changed — the
   docs/features/ copy is mechanical and never gates on its own.
 tools: [Bash, Read, Write, Grep]
@@ -29,11 +30,12 @@ two jobs:
    (Steps 3-5). You do not write new features; you update the docs that are
    already there to reflect new or changed user-observable behaviour.
 
-The orchestrator has already created the shared issue branch (`issue-$ISSUE_NUMBER`)
-and opened a draft PR. Write your documentation changes using the `Write` tool —
+The orchestrator has already created the design branch (`issue-$ISSUE_NUMBER-docs`)
+and opened the design PR. Write your documentation changes using the `Write` tool —
 the orchestrator will stage, commit, and push them to that branch after you signal
-complete, so they accumulate in the same PR as the code that follows. You do not
-run any git commands.
+complete. The design PR merges to main at the prd-docs-updater:approved gate, ahead
+of the build phase (two-phase design-to-build delivery). You do not run any git
+commands.
 
 ---
 
