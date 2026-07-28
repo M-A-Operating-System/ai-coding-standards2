@@ -36,9 +36,9 @@
     },
 
     {
-      "agent": "01_product_docs/create-pr",
+      "agent": "01_product_docs/create-docs-pr",
       "type": "script",
-      "script": ".github/scripts/create-pr.sh",
+      "script": ".github/scripts/create-docs-pr.sh",
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
@@ -48,7 +48,23 @@
       "dependencies": ["01_product_docs/prd-writer"],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
-      "description": "Scripted step: creates the shared issue branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Applies source-issue:{N} label via link-pr-to-issue.sh. All subsequent agent commits (docs, code) accumulate in this PR. Idempotent — exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues — spikes produce no code to ship. Skipped for epic/blocked issues."
+      "description": "Scripted step (two-phase design->build, issue #247): opens the DESIGN pull request on the issue-{N}-docs branch with a non-closing body. prd-docs-updater commits the docs/product/ and docs/features/ changes to this branch; merge-docs-pr merges it to main at the prd-docs-updater:approved gate, ahead of the build phase. Thin wrapper over create-pr.sh (BRANCH_SUFFIX=-docs, PR_CLOSES_ISSUE=false). Idempotent. Skipped for spike/epic/blocked issues."
+    },
+
+    {
+      "agent": "01_product_docs/create-pr",
+      "type": "script",
+      "script": ".github/scripts/create-pr.sh",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "merge-docs-pr:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["01_product_docs/merge-docs-pr"],
+      "exclude_classifications": ["spike"],
+      "exclude_labels": ["epic", "blocked"],
+      "description": "Scripted step: creates the CODE branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Runs after merge-docs-pr publishes the approved design to main (two-phase design->build, issue #247), so the code branch is cut from a main that already carries the latest design. Applies source-issue:{N} label via link-pr-to-issue.sh. Coder commits accumulate in this PR. Idempotent -- exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues (spikes produce no code to ship). Skipped for epic/blocked issues."
     },
 
     {
@@ -56,18 +72,35 @@
       "phase": "01_product_docs",
       "object": ["issue"],
       "trigger": {
-        "label": "create-pr:complete"
+        "label": "create-docs-pr:complete"
       },
       "human_gate_after": true,
       "human_gate_label": "prd-docs-updater:approved",
       "self_gates": true,
-      "dependencies": ["01_product_docs/create-pr"],
+      "dependencies": ["01_product_docs/create-docs-pr"],
+      "branch_suffix": "-docs",
       "max_retries": 2,
       "session": { "scope": "per_issue" },
       "git_ops": { "commit_after": true },
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
-      "description": "Runs after prd-writer completes. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool -- the orchestrator then invokes commit-agent-work.sh to stage, commit, and push those changes to the shared issue branch (issue-{N}) so they accumulate in the same draft PR as the code. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight to the build agent (mechanical docs/features/ copy only, or no changes needed). Skipped for spike issues. Skipped for epic/blocked issues."
+      "description": "Runs after create-docs-pr opens the design PR. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool -- the orchestrator then invokes commit-agent-work.sh to stage, commit, and push those changes to the DESIGN branch (issue-{N}-docs, via branch_suffix) so they land in the design PR. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight (mechanical docs/features/ copy only, or no changes needed); either way merge-docs-pr then publishes the design to main ahead of the build phase (two-phase design->build, issue #247). Skipped for spike issues. Skipped for epic/blocked issues."
+    },
+
+    {
+      "agent": "01_product_docs/merge-docs-pr",
+      "type": "script",
+      "script": ".github/scripts/merge-docs-pr.sh",
+      "phase": "01_product_docs",
+      "object": ["issue"],
+      "trigger": {
+        "label": "prd-docs-updater:complete"
+      },
+      "human_gate_after": false,
+      "dependencies": ["01_product_docs/prd-docs-updater"],
+      "exclude_classifications": ["spike"],
+      "exclude_labels": ["epic", "blocked"],
+      "description": "Scripted step (two-phase design->build, issue #247): merges the design PR (issue-{N}-docs) to main at the prd-docs-updater:approved gate, ahead of the build phase, so every subsequent (and parallel) build is cut from a main that already carries the latest approved design and design conflicts surface at this small docs merge. Idempotent -- if no open design PR exists it exits cleanly. Refuses to auto-merge a conflicting or protection-blocked PR (emits review for human resolution) rather than forcing it. Deterministic; does not invoke Claude CLI. Skipped for spike/epic/blocked issues."
     },
 
     {
@@ -75,10 +108,10 @@
       "phase": "03_execute",
       "object": ["issue"],
       "trigger": {
-        "label": "prd-docs-updater:complete"
+        "label": "create-pr:complete"
       },
       "human_gate_after": false,
-      "dependencies": ["01_product_docs/prd-docs-updater"],
+      "dependencies": ["01_product_docs/create-pr"],
       "max_retries": 1,
       "session": { "scope": "per_issue" },
       "extra_allowedTools": [

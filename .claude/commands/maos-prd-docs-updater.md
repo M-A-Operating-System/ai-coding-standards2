@@ -1,6 +1,6 @@
 # maos-prd-docs-updater
 
-Run the `01_product_docs/prd-docs-updater` pipeline agent. Runs after prd-writer completes.
+Run the `01_product_docs/prd-docs-updater` pipeline agent. Runs after create-docs-pr opens the design PR.
 
 ## Input
 
