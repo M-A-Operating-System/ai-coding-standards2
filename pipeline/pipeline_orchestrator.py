@@ -51,7 +51,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Mapping, Optional
 
 import requests
 
@@ -2187,6 +2187,105 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
     return sid
 
 
+# Explicit allowlist of environment variables passed through from the
+# orchestrator's own environment into each Claude agent subprocess.
+#
+# We deliberately do NOT hand the agent `{**os.environ}`: agents read UNTRUSTED
+# issue/PR content and a prompt-injected agent can read its own
+# /proc/self/environ. If the full environment were inherited, the agent could
+# exfiltrate any secret the orchestrator holds. In particular this list MUST
+# NOT contain AI_AGILE_BOT_TOKEN (workflow-scope push token) nor the
+# GIT_CONFIG_COUNT / GIT_CONFIG_KEY_0 / GIT_CONFIG_VALUE_0 git-auth header set
+# by _wake (that base64 header embeds GITHUB_TOKEN). Only process essentials,
+# the agent's own API key, and a gh token for the agent's read/comment calls
+# are passed through here. Work-item context vars (AI_AGILE_ROOT, REPO,
+# ISSUE_NUMBER, etc.) are set explicitly in _build_agent_env, not passed through.
+AGENT_ENV_PASSTHROUGH = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "ANTHROPIC_API_KEY",   # the agent's Claude CLI auth
+    "GH_TOKEN",            # the agent's gh read/comment calls
+    "GITHUB_TOKEN",
+    # Network reachability (non-secret): let the agent's Claude CLI and gh reach
+    # the API through a proxy / custom CA when the runner requires one. Harmless
+    # on GitHub-hosted runners where these are unset.
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+
+def _build_agent_env(
+    base_env: Mapping[str, str],
+    repo: str,
+    work_item: WorkItem,
+    agent_session_id: str,
+    session_scope: str,
+) -> dict[str, str]:
+    """Build the environment for a Claude agent subprocess.
+
+    Starts from an explicit allowlist of `base_env` keys (AGENT_ENV_PASSTHROUGH)
+    rather than the full environment, so orchestrator-only secrets
+    (AI_AGILE_BOT_TOKEN, GIT_CONFIG_* git-auth header) are never inherited by a
+    potentially prompt-injected agent. The work-item context vars are then set
+    explicitly, matching what agents document in AGENTS.md.
+    """
+    agent_env = {k: base_env[k] for k in AGENT_ENV_PASSTHROUGH if k in base_env}
+    # Export resolved paths so the agent prompt's bash snippets work regardless
+    # of CWD or where this repo is mounted in the consuming repo. Only one of
+    # ISSUE_NUMBER / PR_NUMBER is set, matching the work item's kind, so the
+    # agent's prompt cannot get them confused.
+    agent_env["AI_AGILE_ROOT"] = base_env.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
+    agent_env["AI_AGILE_CONTEXT"] = str(AI_AGILE_CONTEXT)
+    agent_env["REPO"] = repo
+    agent_env["WORK_ITEM_KIND"] = work_item.kind
+    agent_env["WORK_ITEM_NUMBER"] = str(work_item.number)
+    agent_env["SESSION_ID"] = agent_session_id
+    agent_env["SESSION_SCOPE"] = session_scope
+    if work_item.kind == "issue":
+        agent_env["ISSUE_NUMBER"] = str(work_item.number)
+    else:
+        agent_env["PR_NUMBER"] = str(work_item.number)
+    return agent_env
+
+
+# Scoped base tool allowlist granted to every Claude agent. Each entry is a
+# glob the bash command must match; keeping these narrow blocks a prompt-injected
+# agent from reaching secrets/settings/branches. NOTE: the orchestrator owns the
+# label lifecycle (AGENTS.md P-10/P-14). `gh pr edit` is NOT granted -- no agent
+# has a legitimate use for it, and it would let an injected agent add a PR gate
+# label. `gh issue edit` IS granted broadly because issue-classifier applies the
+# routing `classification: {type}` label and sizer applies `epic,blocked` at
+# runtime; narrowing it to specific --add-label globs is unsafe (a positive glob
+# cannot permit those legitimate labels while denying gate labels like
+# `prd-writer:approved` without risking the routing labels). The residual
+# `gh issue edit --add-label {gate}` self-approval vector must therefore be
+# closed ORCHESTRATOR-SIDE (verify a human applied any gate label) -- tracked as
+# follow-up on issue #259, not expressible here.
+BASE_AGENT_TOOLS = [
+    "Bash(gh issue view *)",       # read issue body / labels
+    "Bash(gh issue comment *)",    # post artefact comments
+    "Bash(gh issue edit *)",       # prd-writer/sizer body rewrites + classifier/sizer routing labels
+    "Bash(gh issue list *)",       # cross-issue reads (impact-assessor etc.)
+    "Bash(gh pr view *)",          # PR-side agents read PR
+    "Bash(gh pr comment *)",       # PR-side agents post comments
+    "Bash(gh pr list *)",
+    "Bash(gh pr diff *)",          # pr-reviewer reads the diff
+    "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
+    "Bash(gh api repos/*/pulls/*)",
+    "Bash(cat *)",                 # read prompt-side files
+    "Bash(grep *)",
+    "Bash(find *)",
+    "Read",
+    "Glob",
+    "Grep",
+]
+
+
 def invoke_agent(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -2312,28 +2411,10 @@ def invoke_agent(
         log.debug("    extra_allowedTools: %s", extra_tools)
     log.debug("    max_turns: %d | prompt: %d chars", max_turns, len(prompt))
 
-    # Scoped base allowlist. Each entry is a glob the bash command must
-    # match. Keeping these narrow blocks the agent from reaching
-    # secrets/settings/branches even if it is prompt-injected.
-    base_tools = [
-        "Bash(gh issue view *)",       # read issue body / labels
-        "Bash(gh issue comment *)",    # post artefact comments
-        "Bash(gh issue edit *)",       # apply classification/* and other labels
-        "Bash(gh issue list *)",       # cross-issue reads (impact-assessor etc.)
-        "Bash(gh pr view *)",          # PR-side agents read PR
-        "Bash(gh pr comment *)",       # PR-side agents post comments
-        "Bash(gh pr edit *)",          # PR-side label edits
-        "Bash(gh pr list *)",
-        "Bash(gh pr diff *)",          # pr-reviewer reads the diff
-        "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
-        "Bash(gh api repos/*/pulls/*)",
-        "Bash(cat *)",                 # read prompt-side files
-        "Bash(grep *)",
-        "Bash(find *)",
-        "Read",
-        "Glob",
-        "Grep",
-    ]
+    # Scoped base allowlist (module-level BASE_AGENT_TOOLS). Kept narrow so a
+    # prompt-injected agent cannot reach secrets/settings/branches or mutate
+    # reserved control/gate labels.
+    base_tools = BASE_AGENT_TOOLS
 
     cmd = [
         "claude",
@@ -2347,24 +2428,13 @@ def invoke_agent(
         cmd += ["--model", agent_model]
     cmd += ["-p", prompt]
 
-    # Export resolved paths so the agent prompt's bash snippets work
-    # regardless of CWD or where this repo is mounted in the consuming
-    # repo. Only one of ISSUE_NUMBER / PR_NUMBER is set, matching the
-    # work item's kind, so the agent's prompt cannot get them confused.
-    agent_env = {
-        **os.environ,
-        "AI_AGILE_ROOT": os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
-        "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
-        "REPO": repo,
-        "WORK_ITEM_KIND": work_item.kind,
-        "WORK_ITEM_NUMBER": str(work_item.number),
-        "SESSION_ID": agent_session_id,
-        "SESSION_SCOPE": agent_def.session_scope,
-    }
-    if work_item.kind == "issue":
-        agent_env["ISSUE_NUMBER"] = str(work_item.number)
-    else:
-        agent_env["PR_NUMBER"] = str(work_item.number)
+    # Build the agent env from an explicit allowlist (NOT {**os.environ}) so a
+    # prompt-injected agent cannot read orchestrator-only secrets (bot token,
+    # git-auth header) out of its own /proc/self/environ. See _build_agent_env
+    # and AGENT_ENV_PASSTHROUGH.
+    agent_env = _build_agent_env(
+        os.environ, repo, work_item, agent_session_id, agent_def.session_scope
+    )
 
     # Preflight: a missing ANTHROPIC_API_KEY produces an auth-error response
     # that the stream-json parser may misread as a rate-limit pause, masking
@@ -4167,6 +4237,15 @@ def _wake(args) -> "Optional[RunContext]":
                 check=False,
                 capture_output=True,
             )
+            # These GIT_CONFIG_* vars go into the process-global os.environ so
+            # the orchestrator's OWN git subprocesses inherit them: the git
+            # checkout/fetch calls (via subprocess.run) and commit-agent-work.sh
+            # / post_steps scripts all build their env from {**os.environ}, so
+            # they must stay here for authenticated git to work.
+            # SECURITY: this base64 header embeds GITHUB_TOKEN. It must NEVER be
+            # added to AGENT_ENV_PASSTHROUGH -- agent subprocesses build env via
+            # _build_agent_env, which does not pass GIT_CONFIG_* through, so a
+            # prompt-injected agent cannot read the token from /proc/self/environ.
             os.environ["GIT_CONFIG_COUNT"] = "1"
             os.environ["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
             os.environ["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {_git_auth_encoded}"
