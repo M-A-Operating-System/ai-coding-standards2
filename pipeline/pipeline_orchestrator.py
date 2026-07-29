@@ -1523,16 +1523,93 @@ def normalize_skipped_labels(
     return normalized
 
 
+def _gate_label_human_applied(gh, repo, work_item_number, gate_label) -> bool:
+    """Return True unless the gate label was verifiably applied by a bot.
+
+    A prompt-injected agent can self-approve its own gate by applying its
+    ``{agent}:approved`` label. Since PR #262 agents run with the repo-scoped
+    GITHUB_TOKEN, so an agent-applied label is authored by a bot account
+    (``actor.type == "Bot"`` and/or a login ending in ``[bot]``). A genuine
+    human approval is authored by a real user login.
+
+    This inspects the issue's ``labeled`` events, finds the most recent one for
+    ``gate_label``, and returns False only when that actor is determinably a
+    bot. It is FAIL-OPEN: if the events call raises, no matching labeled event
+    is found, or the actor cannot be determined, it logs a warning and returns
+    True (allow) so a transient API error never halts the pipeline. The only
+    case it blocks is the determinable bot-self-approval.
+    """
+    try:
+        events = gh._get(f"/repos/{repo}/issues/{work_item_number}/events")
+    except Exception as exc:
+        log.warning(
+            "  could not fetch events for #%s to verify gate '%s' applier: %s"
+            " - allowing (fail-open)",
+            work_item_number, gate_label, exc,
+        )
+        return True
+
+    if not isinstance(events, list):
+        log.warning(
+            "  unexpected events payload for #%s verifying gate '%s' - allowing (fail-open)",
+            work_item_number, gate_label,
+        )
+        return True
+
+    labeled = [
+        e for e in events
+        if isinstance(e, dict)
+        and e.get("event") == "labeled"
+        and isinstance(e.get("label"), dict)
+        and e["label"].get("name") == gate_label
+    ]
+    if not labeled:
+        log.warning(
+            "  no 'labeled' event found for gate '%s' on #%s - allowing (fail-open)",
+            gate_label, work_item_number,
+        )
+        return True
+
+    actor = labeled[-1].get("actor")
+    if not isinstance(actor, dict):
+        log.warning(
+            "  could not determine actor for gate '%s' on #%s - allowing (fail-open)",
+            gate_label, work_item_number,
+        )
+        return True
+
+    actor_type = actor.get("type")
+    actor_login = actor.get("login") or ""
+    if actor_type == "Bot" or actor_login.endswith("[bot]"):
+        log.warning(
+            "  gate '%s' on #%s was applied by bot '%s' - NOT treating gate as"
+            " satisfied (self-approval guard)",
+            gate_label, work_item_number, actor_login or actor_type,
+        )
+        return False
+
+    return True
+
+
 def dependencies_complete(
     labels: set[str],
     agent_def: AgentDef,
     pipeline_map: dict[str, AgentDef],
+    gh=None,
+    repo: str = "",
+    work_item_number: Optional[int] = None,
 ) -> bool:
     """Return True if every dependency's :complete label is present and its human gate is satisfied.
 
     ``labels`` must already be normalized via :func:`normalize_skipped_labels` before
     this call — a skipped dependency's synthesized ``:complete`` label must be present
     for it to be treated as done.
+
+    When ``gh`` and ``work_item_number`` are provided, a present gate label is
+    additionally verified to have been applied by a human (see
+    :func:`_gate_label_human_applied`); a bot-self-applied gate does not satisfy
+    the gate. When ``gh`` is None the verification is skipped (allow), so
+    pure-unit callers are unaffected.
     """
     for dep_name in agent_def.dependencies:
         dep = pipeline_map.get(dep_name)
@@ -1556,6 +1633,18 @@ def dependencies_complete(
                 log.debug(
                     "  %s complete but human gate '%s' not yet applied",
                     dep_name, dep.human_gate_label
+                )
+                return False
+            # The gate label is present, but a prompt-injected agent could have
+            # self-applied it. When we have a gh client, require a human applier.
+            if (
+                gh is not None
+                and work_item_number is not None
+                and not _gate_label_human_applied(gh, repo, work_item_number, dep.human_gate_label)
+            ):
+                log.warning(
+                    "  %s complete but human gate '%s' was not human-applied - treating as unmet",
+                    dep_name, dep.human_gate_label,
                 )
                 return False
 
@@ -2645,7 +2734,14 @@ def promote_gated_agents(
         gate_label = agent_def.human_gate_label
         requested_label = agent_def.status_label(STATUS_REQUESTED)
 
-        gate_present = gate_label in updated
+        # A gate label only counts when a human applied it. A prompt-injected
+        # agent that self-applied its own {agent}:approved label (a bot actor
+        # since PR #262) must NOT promote itself past the gate. Fail-open on any
+        # API error (see _gate_label_human_applied). Short-circuit avoids the
+        # events lookup entirely when the label is absent.
+        gate_present = gate_label in updated and _gate_label_human_applied(
+            gh, repo or gh.repo, work_item.number, gate_label,
+        )
         review_present = review_label in updated
         complete_present = complete_label in updated
         requested_present = requested_label in updated
@@ -2843,6 +2939,8 @@ def _should_run(
     labels: set,
     pipeline_map: dict,
     concurrency: Optional[ConcurrencyState],
+    gh=None,
+    repo: str = "",
 ) -> Optional[bool]:
     """Evaluate whether an agent should be dispatched for a work item.
 
@@ -2900,7 +2998,10 @@ def _should_run(
         )
         return False
 
-    if not dependencies_complete(labels, agent_def, pipeline_map):
+    if not dependencies_complete(
+        labels, agent_def, pipeline_map,
+        gh=gh, repo=repo, work_item_number=work_item.number,
+    ):
         log.debug("  skip %-40s  [dependencies unmet]", agent_def.agent)
         return False
 
@@ -3883,7 +3984,10 @@ def process_work_item(
     labels = normalize_skipped_labels(labels, pipeline_map)
 
     for agent_def in agents:
-        should_run = _should_run(agent_def, work_item, labels, pipeline_map, concurrency)
+        should_run = _should_run(
+            agent_def, work_item, labels, pipeline_map, concurrency,
+            gh=gh, repo=repo,
+        )
         if should_run is None:
             break
         if not should_run:
