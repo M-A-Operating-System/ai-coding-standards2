@@ -12,7 +12,8 @@ description: >
   and any unresolved human REQUEST_CHANGES reviews, addresses required
   and expected changes, and posts a response.
   The orchestrator owns all git operations (branch, commit, push) and the
-  PR lifecycle (create, ready, labels). Triggered by build:requested.
+  PR lifecycle (create, ready, labels). Triggered by create-pr:complete
+  (Mode A); re-invoked via review-cycle:N / human-review-pending (Mode B).
 tools: [Bash, Read, Edit, Write, Grep, Glob]
 model: claude-sonnet-4-6
 max_turns: 60

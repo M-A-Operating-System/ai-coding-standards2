@@ -178,8 +178,9 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 ## Product docs update
 
 Documentation changes have been written and will be committed to the
-shared issue branch by the orchestrator, appearing in the draft PR
-alongside the code changes.
+design branch (`issue-{N}-docs`) by the orchestrator, appearing in the
+design PR, which merges to main at the prd-docs-updater:approved gate
+ahead of the build phase.
 
 ### Files updated
 
