@@ -93,6 +93,11 @@ the base branch. Most "conflicting" PRs are simply diverged from main — a clea
 rebase resolves them automatically with no human input required.
 
 ```bash
+# Resolve the PR's base and head branches before using them -- they drive every
+# git command in this step. (Step 3 re-resolves them for the manual path.)
+BASE_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json baseRefName --jq '.baseRefName')
+HEAD_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')
+
 git config user.email "github-actions[bot]@users.noreply.github.com"
 git config user.name "github-actions[bot]"
 git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
@@ -104,9 +109,9 @@ if git rebase "origin/${BASE_BRANCH}"; then
     git checkout - 2>/dev/null || true
     git branch -D _rebase_attempt 2>/dev/null || true
 
-    gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+    gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
 <!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
-> **merge-conflict:** PR branch rebased onto `${BASE_BRANCH}` automatically — no conflicts remain. Advancing to pr-reviewer.
+> **merge-conflict:** PR branch rebased onto \`${BASE_BRANCH}\` automatically — no conflicts remain. Advancing to pr-reviewer.
 EOF
 )"
     echo "AI_AGILE_STATUS: complete"

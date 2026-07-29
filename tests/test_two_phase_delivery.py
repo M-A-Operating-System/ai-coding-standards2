@@ -187,6 +187,58 @@ class TestMergeDocsPrScript:
         assert rc != 0
         assert "not a valid integer" in output.lower()
 
+    def _run_with_pr(self, tmp_path, mergeable="MERGEABLE", merge_exit=0, pr_number="5"):
+        """Mock an OPEN design PR; configure its mergeable state and merge exit."""
+        mock_dir = tmp_path / "mocks"
+        mock_dir.mkdir()
+        mock_gh = mock_dir / "gh"
+        mock_gh.write_text(
+            "#!/usr/bin/env bash\n"
+            'case "$1 $2" in\n'
+            f'  "pr list") echo "{pr_number}" ;;\n'
+            f'  "pr view") echo "{mergeable}" ;;\n'
+            f'  "pr merge") exit {merge_exit} ;;\n'
+            '  "issue view") echo "0" ;;\n'
+            "esac\n"
+            "exit 0\n"
+        )
+        mock_gh.chmod(0o755)
+        env = {
+            **os.environ,
+            "PATH": f"{mock_dir}:{os.environ.get('PATH', '')}",
+            "REPO": "owner/repo",
+            "ISSUE_NUMBER": "247",
+            "GITHUB_TOKEN": "x",
+        }
+        result = subprocess.run(
+            ["bash", str(MERGE_DOCS_PR_SCRIPT)],
+            env=env, capture_output=True, text=True,
+        )
+        return result.stdout + result.stderr, result.returncode
+
+    def test_conflicting_design_pr_emits_review_not_merge(self, tmp_path):
+        """A design PR conflicting with main must emit review, never force a merge."""
+        out, rc = self._run_with_pr(tmp_path, mergeable="CONFLICTING")
+        assert rc == 0
+        assert "AI_AGILE_STATUS: review" in out
+        assert "AI_AGILE_STATUS: complete" not in out
+        assert "conflict" in out.lower()
+
+    def test_merge_failure_emits_review(self, tmp_path):
+        """A blocked/failed `gh pr merge` must emit review, not silently pass."""
+        out, rc = self._run_with_pr(tmp_path, mergeable="MERGEABLE", merge_exit=1)
+        assert rc == 0
+        assert "AI_AGILE_STATUS: review" in out
+        assert "AI_AGILE_STATUS: complete" not in out
+        assert "could not be merged" in out.lower()
+
+    def test_clean_design_pr_merges_and_completes(self, tmp_path):
+        """A mergeable design PR is merged and the step completes."""
+        out, rc = self._run_with_pr(tmp_path, mergeable="MERGEABLE", merge_exit=0)
+        assert rc == 0
+        assert "AI_AGILE_STATUS: complete" in out
+        assert "merged design pr" in out.lower()
+
 
 # ---------------------------------------------------------------------------
 # delete-branch.sh cleans up the design branch issue-{N}-docs

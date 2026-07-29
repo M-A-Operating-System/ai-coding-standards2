@@ -54,9 +54,9 @@
       "description": "Branch and PR names trace to their issue: the branch name includes the issue number and a short slug; the PR title follows a conventional `type(scope): description (#<N>)`; the PR body includes `Closes #<N>` so GitHub auto-links and closes the issue on merge.",
       "rationale": "Consistent, issue-traceable naming and the Closes link create a durable git relationship between branch, PR, and issue.",
       "acceptance_criteria": [
-        "The branch name in the diff includes the issue number and a short slug (this project: `claude/issue-<N>-<slug>`), unless a session assigned a specific branch name.",
+        "The branch name in the diff is the issue's code branch `issue-<N>` (or its design branch `issue-<N>-docs`), unless a session assigned a specific branch name.",
         "The PR title follows `type(scope): description (#<N>)`.",
-        "The PR body contains `Closes #<N>` referencing the issue."
+        "The code PR body contains `Closes #<N>` referencing the issue; the design PR (`issue-<N>-docs`) carries no closing keyword (STD-PROC-001)."
       ],
       "anti_patterns": [
         "A branch name with no issue number.",
@@ -99,7 +99,7 @@
       "description": "Every behaviour has three expressions, each in exactly one place: a Product/Capability Specification states what must be true (future/invariant voice); docs/features/{feature}.md (the Gherkin scenarios approved on the issue, copied there by prd-docs-updater) and its test evidence state what is proven now; the roadmap and issues own the gap between intent and coverage. No hand-maintained coverage table exists (DOC-004), and no single artefact mixes intent, coverage, and gap.",
       "rationale": "Separating intent, coverage, and gap keeps each artefact trustworthy and lets a reader answer 'what does it do?' vs 'what's proven?' without inference; mixing them, or hand-maintaining coverage, makes all three rot. Source: docs/_process/02_product-led-design.md.",
       "acceptance_criteria": [
-        "A behaviour change in the diff updates a Product/Capability Specification (future/invariant voice), not a 'we test that\u2026' claim.",
+        "A behaviour change updates a Product/Capability Specification (invariant voice) in the issue's design PR (`issue-<N>-docs`); under two-phase delivery it merges to main ahead of the code PR, so the code PR need not re-carry it.",
         "A coverage change in the diff is reflected in docs/features/{feature}.md's executable test / evidence, not a hand-maintained coverage doc.",
         "A gap (missing/flaky/failing test, known regression) is recorded in the roadmap / a GitHub issue, not a markdown gap table."
       ],
@@ -124,7 +124,7 @@
       "description": "Before opening a PR, answer three questions: does it change behaviour? \u2192 a Product/Capability Specification (and its docs/features/{feature}.md) changes; does it change what is proven? \u2192 docs/features/{feature}.md and/or its executable test changes; does it create or close a gap? \u2192 the roadmap and/or a GitHub issue changes state. A PR that answers no to all three is a pure refactor and says so. The PR description makes intent (spec changes), coverage (docs/features/test changes), and gap (roadmap/issue state) explicit.",
       "rationale": "Tying each change type to the artefacts it must touch keeps specs, tests, and backlog in lockstep with code.",
       "acceptance_criteria": [
-        "A behaviour-changing PR in the diff updates the relevant Product/Capability Specification.",
+        "The issue's design PR (`issue-<N>-docs`) updates the relevant Product/Capability Specification; the code PR (`issue-<N>`) need not, since the design merged to main ahead of it.",
         "A coverage-changing PR updates docs/features/{feature}.md and/or lands the executable test.",
         "The PR description states intent, coverage, and gap, or marks itself a pure refactor."
       ],
