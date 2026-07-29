@@ -260,7 +260,7 @@ Cite the P-N or STD ID in every finding.
 | P-10 Agents draft, humans decide | Agent applies `*:approved` label or emits `complete` for a gated step | High |
 | P-11 Resumable by default | Agent posts duplicate artefact comments instead of editing in place | Medium |
 | P-14 Deterministic orchestrator | Agent directly invokes another agent subprocess or API | High |
-| P-15 Product-led | Behaviour introduced with no corresponding `docs/product/` entry | High |
+| P-15 Product-led | Behaviour introduced with no corresponding `docs/product/` entry **on the PR base**. Under two-phase delivery the entry lands via the already-merged design PR (`issue-{N}-docs`), so it is on `main` (the code PR's base), not in the code PR diff — confirm it on the base before flagging, don't require it in the diff | High |
 | Any STD in `standards/*.json` | Check the standard's `acceptance_criteria` field | Per standard's `severity` |
 
 ADR coverage: append `[ADR: {id}]` and downgrade to Informational.
