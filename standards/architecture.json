@@ -496,6 +496,29 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-ARCH-034",
+      "title": "DNS Records Must Be Defined as Code",
+      "description": "Every DNS record for a product-offering domain or subdomain (A/AAAA/CNAME/MX/TXT/NS/SRV) is declared in a version-controlled DNS-as-code definition (e.g. Terraform, OctoDNS, Pulumi) and applied only through the automated pipeline; no record is created or edited directly in a DNS provider console or via ad hoc API/CLI calls.",
+      "rationale": "Manually created records are the largest source of DNS drift and orphaned entries; per STD-ARCH-033's precedent of enforcing infra invariants through a policy engine rather than convention, DNS ownership must be auditable from a diff, not tribal knowledge in a registrar console.",
+      "acceptance_criteria": [
+        "Every new or changed DNS record in the diff appears as a resource/record definition inside the repository's DNS-as-code configuration (e.g. a Terraform `*_record` resource, an OctoDNS zone file entry).",
+        "The diff contains no manual-change evidence such as a screenshot, ticket reference, or comment instructing a human to edit records in a provider console.",
+        "Each record definition includes an owning team or service label as a resource tag/comment."
+      ],
+      "anti_patterns": [
+        "A PR description says 'ask the SRE on-call to add a CNAME for foo.product.com in Cloudflare' instead of adding the record to the zone file.",
+        "A record is added via `aws route53 change-resource-record-sets` in a runbook step rather than through the Terraform/OctoDNS module."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "related": [
+        "STD-ARCH-033"
+      ]
     }
   ]
 }
