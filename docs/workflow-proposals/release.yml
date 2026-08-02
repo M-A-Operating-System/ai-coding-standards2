@@ -1,0 +1,133 @@
+# PROPOSED WORKFLOW -- release publishing (GitHub issue #270).
+#
+# ACTION REQUIRED (human): move this file to .github/workflows/release.yml.
+# The pipeline push token lacks the `workflow` scope, so it cannot push files
+# under .github/workflows/. This proposal lives under docs/ until a human with
+# a workflow-scoped token relocates it. See .claude/agents/03_execute/coder.md.
+#
+# What it does: on a weekly Wednesday cadence (and on manual dispatch) it cuts
+# the next PATCH release from the default branch and publishes a GitHub Release
+# with auto-generated, label-grouped notes (grouping is configured in
+# .github/release.yml). Pushing an explicit `v*` tag publishes that tag as an
+# off-cycle release instead.
+#
+# Versioning: the scheduled/manual path only ever bumps PATCH (v0.1.0 ->
+# v0.1.1). MAJOR and MINOR releases are cut deliberately by a human pushing an
+# explicit tag, e.g. `git tag v0.2.0 && git push origin v0.2.0` for a MINOR or
+# `git tag v1.0.0 && git push origin v1.0.0` for a MAJOR.
+
+name: RELEASE - publish
+
+on:
+  # Weekly cadence: 09:00 UTC every Wednesday. GitHub Actions crons are always
+  # UTC; shift the hour if a local schedule is intended.
+  schedule:
+    - cron: '0 9 * * 3'  # 09:00 UTC on Wednesdays
+
+  # Manual trigger for an on-demand release.
+  workflow_dispatch:
+
+  # Off-cycle release: pushing a vX.Y.Z tag publishes that exact tag. Pushes
+  # made with the default GITHUB_TOKEN (as the scheduled path below does) do not
+  # re-trigger this workflow, so tag creation here cannot cause a loop.
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          # Full history and all tags so version detection and
+          # `git rev-list <tag>..HEAD` work, and so `gh release --verify-tag`
+          # can see the tag.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Determine release tag
+        id: tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Off-cycle path: triggered by a v* tag push. Use that tag as-is.
+          if [ "$REF_TYPE" = "tag" ]; then
+            echo "Triggered by tag push: $REF_NAME"
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Scheduled or manual path: compute the next PATCH version.
+          # Latest existing vX.Y.Z tag by version order; default v0.0.0 if none.
+          LATEST="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n 1)"
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+          echo "Latest release tag: $LATEST"
+
+          # Count commits on the default branch since that tag. If the tag does
+          # not exist yet (first release), count all commits on HEAD.
+          if git rev-parse -q --verify "refs/tags/$LATEST" >/dev/null 2>&1; then
+            COUNT="$(git rev-list "$LATEST"..HEAD --count)"
+          else
+            COUNT="$(git rev-list HEAD --count)"
+          fi
+          echo "Commits since $LATEST: $COUNT"
+
+          # No new commits: skip cleanly. No empty tag, no empty release, no
+          # notification.
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No new commits since $LATEST -- skipping release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Bump PATCH only. MAJOR/MINOR bumps are cut by pushing an explicit
+          # vX.Y.0 / vX.0.0 tag (see the header comment).
+          VERSION="${LATEST#v}"
+          MAJOR="${VERSION%%.*}"
+          REST="${VERSION#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST#*.}"
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "Next release tag: $NEXT"
+
+          echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "create_tag=true" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push annotated tag
+        if: steps.tag.outputs.skip != 'true' && steps.tag.outputs.create_tag == 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "refs/tags/$TAG"
+
+      - name: Publish GitHub Release
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Auto-generated, label-grouped notes per .github/release.yml.
+          # --verify-tag aborts if the tag is not on the remote. No build
+          # artifacts are attached.
+          gh release create "$TAG" --generate-notes --verify-tag

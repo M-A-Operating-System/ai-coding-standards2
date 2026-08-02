@@ -1,0 +1,30 @@
+# Configuration for GitHub's auto-generated release notes
+# (`gh release create --generate-notes`, used by the RELEASE - publish
+# workflow). Merged PRs are grouped into the categories below by their labels.
+#
+# Labels follow this repo's issue taxonomy (STD-PROC-007): every item carries
+# one `type:` label (enhancement / bug / debt) plus `area:` and `feature:`
+# labels. A PR lands in the first category whose labels it matches, so ordering
+# matters; anything unmatched falls through to the catch-all "Other" category.
+changelog:
+  exclude:
+    labels:
+      - dependencies
+      - ignore-for-release
+  categories:
+    - title: Features
+      labels:
+        - "type:enhancement"
+    - title: Fixes
+      labels:
+        - "type:bug"
+    - title: Standards and Docs
+      labels:
+        - "area:standards"
+        - "area:docs"
+    - title: Maintenance
+      labels:
+        - "type:debt"
+    - title: Other
+      labels:
+        - "*"
