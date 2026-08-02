@@ -1,9 +1,4 @@
-# PROPOSED WORKFLOW -- release publishing (GitHub issue #270).
-#
-# ACTION REQUIRED (human): move this file to .github/workflows/release.yml.
-# The pipeline push token lacks the `workflow` scope, so it cannot push files
-# under .github/workflows/. This proposal lives under docs/ until a human with
-# a workflow-scoped token relocates it. See .claude/agents/03_execute/coder.md.
+# RELEASE - publish (GitHub issue #270).
 #
 # What it does: on a weekly Wednesday cadence (and on manual dispatch) it cuts
 # the next PATCH release from the default branch and publishes a GitHub Release
