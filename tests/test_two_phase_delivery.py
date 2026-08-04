@@ -16,11 +16,12 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
-from pipeline_orchestrator import load_pipeline
+from pipeline_orchestrator import AgentDef, _invoke_commit_after, load_pipeline
 
 REPO_ROOT = Path(__file__).parent.parent
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
@@ -275,3 +276,64 @@ class TestDeleteDesignBranch:
         output, rc = self._run(tmp_path, "feature-docs")
         assert rc == 0
         assert "skipping" in output.lower()
+
+
+# ---------------------------------------------------------------------------
+# commit_after passes branch_suffix through to commit-agent-work.sh (issue #273)
+# ---------------------------------------------------------------------------
+
+COMMIT_AGENT_WORK_SCRIPT = SCRIPTS / "commit-agent-work.sh"
+
+
+def _commit_after_agent(branch_suffix: str, name: str) -> AgentDef:
+    """Minimal commit_after AgentDef carrying a branch_suffix."""
+    return AgentDef(
+        agent=name,
+        phase=name.split("/")[0],
+        objects=["issue"],
+        trigger={},
+        dependencies=[],
+        human_gate_after=False,
+        human_gate_label=None,
+        description="test agent",
+        commit_after=True,
+        branch_suffix=branch_suffix,
+    )
+
+
+class TestCommitAfterBranchSuffix:
+    """_invoke_commit_after must forward branch_suffix so docs commits land on
+    issue-{N}-docs, not the not-yet-existing issue-{N} code branch."""
+
+    def _captured_env(self, branch_suffix, name):
+        agent = _commit_after_agent(branch_suffix, name)
+        work_item = MagicMock()
+        work_item.number = 247
+        with patch(
+            "pipeline_orchestrator.subprocess.run",
+            return_value=MagicMock(returncode=0, stdout="", stderr=""),
+        ) as run:
+            result = _invoke_commit_after(agent, work_item)
+        assert result is None
+        assert run.call_count == 1
+        return run.call_args.kwargs["env"]
+
+    def test_design_step_forwards_docs_suffix(self):
+        """prd-docs-updater (branch_suffix="-docs") resolves to issue-{N}-docs."""
+        env = self._captured_env("-docs", "01_product_docs/prd-docs-updater")
+        assert env["BRANCH_SUFFIX"] == "-docs"
+        assert f"issue-{env['ISSUE_NUMBER']}{env['BRANCH_SUFFIX']}" == "issue-247-docs"
+
+    def test_code_step_forwards_empty_suffix(self):
+        """The coder (default empty suffix) resolves to issue-{N}, unchanged."""
+        env = self._captured_env("", "03_execute/coder")
+        assert env["BRANCH_SUFFIX"] == ""
+        assert f"issue-{env['ISSUE_NUMBER']}{env['BRANCH_SUFFIX']}" == "issue-247"
+
+
+class TestCommitAgentWorkBranchDerivation:
+    """The script itself must honour BRANCH_SUFFIX when deriving BRANCH."""
+
+    def test_branch_line_uses_optional_suffix(self):
+        text = COMMIT_AGENT_WORK_SCRIPT.read_text()
+        assert 'BRANCH="issue-${ISSUE_NUMBER}${BRANCH_SUFFIX:-}"' in text
