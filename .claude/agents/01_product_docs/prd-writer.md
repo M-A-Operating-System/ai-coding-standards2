@@ -31,8 +31,8 @@ Check whether this is a first run or a revision after human rejection.
 
 ```bash
 # Find the timestamp of the most recent prd-writer artefact comment.
-PREV_ARTEFACT_TIME=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
-  --jq '[.[]
+PREV_ARTEFACT_TIME=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -rs '[.[]
         | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer"))
         ] | last | .created_at // ""')
 ```

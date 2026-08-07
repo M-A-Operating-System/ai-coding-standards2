@@ -89,9 +89,8 @@ fi
 # Post the design-merge announcement on the issue (idempotent -- skip if the
 # merge note is already present from a prior run).
 ALREADY_COMMENTED=$(
-  gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" --paginate \
-    --jq '[.[] | select(.body | contains("01_product_docs/merge-docs-pr")) | select(.body | contains("merged to `main`"))] | length' \
-  2>/dev/null || echo "0"
+  gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" --paginate --jq '.[]' 2>/dev/null \
+    | jq -s '[.[] | select(.body | contains("01_product_docs/merge-docs-pr")) | select(.body | contains("merged to `main`"))] | length' 2>/dev/null || echo "0"
 )
 
 if [[ "${ALREADY_COMMENTED}" -eq 0 ]]; then

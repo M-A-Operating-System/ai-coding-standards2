@@ -79,6 +79,18 @@ base_repo = (d.get('base') or {}).get('repo') or {}
 print(str(head_repo.get('full_name') != base_repo.get('full_name')).lower())
 ")
 
+# --- Let mergeability settle -----------------------------------------------
+# REST reports mergeable_state 'unknown' for a short window after a push while
+# GitHub recomputes it. Re-fetch a few times so a real conflict surfaces as
+# 'dirty' at the guard below, rather than as a raw 405 from the merge call.
+_tries=0
+while [[ "${MERGED}" != "true" && "${STATE}" == "OPEN" \
+         && ( -z "${MERGEABLE}" || "${MERGEABLE}" == "unknown" ) && ${_tries} -lt 3 ]]; do
+  sleep 2
+  MERGEABLE=$(gh api "repos/${REPO}/pulls/${PR}" --jq '.mergeable_state' 2>/dev/null || echo "unknown")
+  _tries=$((_tries + 1))
+done
+
 # --- Guard rails ------------------------------------------------------------
 if [[ "${MERGED}" == "true" ]]; then
   echo "PR #${PR} is already merged."
@@ -92,10 +104,22 @@ fi
 
 # --- Merge (unless already merged), deleting the branch ---------------------
 if [[ "${MERGED}" != "true" ]]; then
-  gh api --method PUT "repos/${REPO}/pulls/${PR}/merge" -f "merge_method=${METHOD#--}"
-  # --delete-branch equivalent: best-effort ref deletion (may be blocked; must not fail the script).
-  gh api --method DELETE "repos/${REPO}/git/refs/heads/${BRANCH}" 2>/dev/null || true
-  echo "Merged PR #${PR} (${METHOD#--}) and deleted branch '${BRANCH}'."
+  # REST returns 405 if GitHub still deems the PR unmergeable (conflicts,
+  # required checks, or a still-'unknown' state). Catch it and emit the friendly
+  # refusal instead of dying under set -e.
+  if ! MERGE_OUT=$(gh api --method PUT "repos/${REPO}/pulls/${PR}/merge" \
+                     -f "merge_method=${METHOD#--}" 2>&1); then
+    echo "ERROR: PR #${PR} could not be merged (not mergeable -- conflicts or required checks). API said: ${MERGE_OUT}" >&2
+    exit 1
+  fi
+  # --delete-branch equivalent: only for a branch in THIS repo (skip forks);
+  # best-effort ref deletion (may be blocked; must not fail the script).
+  if [[ -n "${BRANCH}" && "${CROSS}" != "true" ]]; then
+    gh api --method DELETE "repos/${REPO}/git/refs/heads/${BRANCH}" 2>/dev/null || true
+    echo "Merged PR #${PR} (${METHOD#--}) and deleted branch '${BRANCH}'."
+  else
+    echo "Merged PR #${PR} (${METHOD#--}); head branch '${BRANCH}' is in a fork -- not deleting."
+  fi
   exit 0
 fi
 

@@ -182,9 +182,8 @@ fi
 # Checks whether this step already commented before posting, so a comment that
 # failed on a prior run (after PR creation succeeded) is retried automatically.
 ALREADY_COMMENTED=$(
-  gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" --paginate \
-    --jq "[.[] | select(.body | contains(\"${CREATE_PR_AGENT}\"))] | length" \
-  2>/dev/null || echo "0"
+  gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" --paginate --jq '.[]' 2>/dev/null \
+    | jq -s "[.[] | select(.body | contains(\"${CREATE_PR_AGENT}\"))] | length" 2>/dev/null || echo "0"
 )
 
 if [[ "${ALREADY_COMMENTED}" -eq 0 ]]; then

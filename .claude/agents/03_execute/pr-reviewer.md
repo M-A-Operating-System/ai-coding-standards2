@@ -62,8 +62,8 @@ PR_NUMBER=$(gh api \
   echo "AI_AGILE_STATUS: complete"; exit 0; }
 
 TODAY=$(date -u +%Y-%m-%d)
-PRIOR=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-  --jq "[.[] | select(.body | contains(\"ai-agile/artefact/v1 by 03_execute/pr-reviewer\")) \
+PRIOR=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -rs "[.[] | select(.body | contains(\"ai-agile/artefact/v1 by 03_execute/pr-reviewer\")) \
   | select(.created_at | startswith(\"$TODAY\")) | .id] | first // empty")
 ```
 
@@ -180,8 +180,8 @@ combined report is useful to the coder.
 # Issue body from the issue endpoint; artefact comments from the comments
 # endpoint (bare array). REST has no combined body+comments read.
 gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.body'
-gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
-  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1")) | .body]'
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -s '[.[] | select(.body | contains("ai-agile/artefact/v1")) | .body]'
 ```
 
 Note all Gherkin acceptance criteria and non-functional requirements.

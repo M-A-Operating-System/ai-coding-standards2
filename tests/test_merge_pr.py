@@ -95,8 +95,10 @@ class TestMergePr:
     def test_method_override_squash(self, tmp_path):
         out, rc = _run(tmp_path, ["5", "--squash"], pr_exists=0, state_json=_OPEN)
         assert rc == 0, out
-        # The squash method reached the REST merge call, and the branch was deleted.
-        assert "merge_method=squash" in out
+        # The squash method is reflected in the success message (the merge call's
+        # own output is captured by the script for error handling), and the
+        # branch was deleted via the REST ref-delete call.
+        assert "(squash)" in out
         assert "git/refs/heads/issue-5" in out
 
     def test_already_merged_is_idempotent_and_deletes_branch(self, tmp_path):

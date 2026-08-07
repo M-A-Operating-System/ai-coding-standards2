@@ -457,24 +457,24 @@ before acting on any "missing"/"dead code" finding.
 ```bash
 # Structured review artefact from pr-reviewer agent (posted on the PR).
 # PR conversation comments live on the issues comments endpoint (bare array).
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
 
 # Inline review threads and human reviews on the PR (bare array; snake_case fields)
-gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
-  --jq '[.[] | {author: .user.login, state: .state, body: .body}]'
+gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --jq '.[]' \
+  | jq -s '[.[] | {author: .user.login, state: .state, body: .body}]'
 
 # Unresolved human REQUEST_CHANGES reviews — latest state per reviewer, bots excluded
-HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
-  --jq '[.[] | select(.user.type != "Bot")]
+HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" --paginate --jq '.[]' \
+  | jq -rs '[.[] | select(.user.type != "Bot")]
     | group_by(.user.login)
     | map(sort_by(.submitted_at) | last)
     | map(select(.state == "CHANGES_REQUESTED") | "@" + .user.login)
     | join(", ")')
 
 # Human comments on the PR (excluding agent artefacts)
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .user.login, body: .body}]'
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -s '[.[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .user.login, body: .body}]'
 ```
 
 ---
@@ -513,8 +513,8 @@ Also read the approved PRD from the issue comments, and the Gherkin scenarios
 from `docs/features/{feature}.md` (same `{feature}` derivation as Step 2):
 
 ```bash
-gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
-  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .body] | last // empty'
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .body] | last // empty'
 ```
 
 Use these documents to decide whether each piece of feedback is valid:

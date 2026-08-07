@@ -69,9 +69,15 @@ case "\$ARGS" in
     echo "1"
     ;;
   *"/comments"*)
-    # Idempotency comment-count check (converted from 'gh issue view --json comments'
-    # to 'gh api .../issues/N/comments')
-    echo "${mock_comments_count}"
+    # Idempotency check: the script streams comment objects
+    # (gh api --paginate --jq '.[]') and counts matches with an external jq -s.
+    # Emit mock_comments_count objects carrying the create-pr marker so the
+    # slurped count comes out right (0 objects -> length 0).
+    _n=${mock_comments_count}; _c=0
+    while [ "\$_c" -lt "\$_n" ]; do
+      echo '{"body":"ai-agile/announcement/v1 by 01_product_docs/create-pr"}'
+      _c=\$((_c + 1))
+    done
     ;;
   *"/pulls"*)
     # PR existence lookup (converted from 'gh pr list' to 'gh api .../pulls?head=')
