@@ -105,7 +105,7 @@ Add the `classification: {classification}` label so downstream agents
 can filter on type if needed:
 
 ```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/labels" -f "labels[]=classification: {classification}"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/labels" -f "labels[]=classification: {classification}" >/dev/null
 ```
 
 Then emit the sentinel:

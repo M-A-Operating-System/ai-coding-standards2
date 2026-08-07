@@ -47,9 +47,13 @@ confirm:
   auth), the **`gh` CLI** on PATH (the scripts and agents call `gh api` REST --
   install it if missing), and the **Claude CLI** on PATH for agent steps.
 
-The pipeline's scripts and agents call GitHub via `gh api` REST (not GraphQL),
-so they run in a restricted session as well as on the CI runner. The one
-exception is marking a PR ready for review -- see the core rule and step 4d.
+The **core** pipeline's scripts and agents (`01_product_docs/*`, `03_execute/*`,
+and the scripts they invoke) call GitHub via `gh api` REST (not GraphQL), so they
+run in a restricted session as well as on the CI runner. Two things still need
+the full API: marking a PR ready for review (see the core rule and step 4d), and
+the `00_ondemand/*` agents (`sizer`, the cleanup agents) which are not yet
+REST-converted -- so driving an epic (which invokes the sizer) or a cleanup step
+in a restricted session will halt on those ticks until they are converted.
 
 If the orchestrator cannot run in this session (missing token/CLI, offline),
 **stop and tell the user** -- do NOT fall back to hand-driving the steps. See

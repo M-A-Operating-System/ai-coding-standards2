@@ -86,7 +86,7 @@ _repo() {
     # so derive owner/repo from the origin remote instead of gh repo view
     # (which is GraphQL-backed and 403s in a restricted session).
     git config --get remote.origin.url 2>/dev/null \
-      | sed -E 's#^(https://|git@)github\.com[:/]##; s#\.git$##' \
+      | sed -E 's#^(https?://)?(ssh://)?(git@)?github\.com[:/]##; s#\.git$##; s#/$##' \
       | grep -E '^[^/]+/[^/]+$' || {
       echo "ERROR: Cannot determine repository. Set GITHUB_REPOSITORY or pass --repo." >&2
       exit 1
@@ -140,7 +140,7 @@ _set_status() {
 
   _ensure_label "$repo" "$label" "$colour" "$description"
   _remove_all_statuses "$repo" "$agent" "$number"
-  gh api --method POST "repos/${repo}/issues/${number}/labels" -f "labels[]=${label}"
+  gh api --method POST "repos/${repo}/issues/${number}/labels" -f "labels[]=${label}" >/dev/null
   echo "  $agent → $status  (#$number)"
 }
 

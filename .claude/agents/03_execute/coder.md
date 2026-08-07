@@ -151,9 +151,10 @@ Then follow the corresponding section below.
 
 ```bash
 # Issue fields (number, title, body, labels, url) — REST returns labels as
-# objects, so project their names.
+# objects, so project their names; use .html_url for the browser link (.url is
+# the api.github.com endpoint).
 gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
-  --jq '{number, title, body, url, labels: [.labels[].name]}'
+  --jq '{number, title, body, url: .html_url, labels: [.labels[].name]}'
 
 # Issue comments come from a separate REST endpoint and are a bare array.
 gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate

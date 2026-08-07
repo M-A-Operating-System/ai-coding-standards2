@@ -41,6 +41,6 @@ gh label create "${SOURCE_LABEL}" \
   2>/dev/null || true
 
 # Apply the label to the PR.
-gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/labels" -f "labels[]=${SOURCE_LABEL}"
+gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/labels" -f "labels[]=${SOURCE_LABEL}" >/dev/null
 
 echo "Applied ${SOURCE_LABEL} to PR #${PR_NUMBER}."
