@@ -9,6 +9,8 @@
 #   GITHUB_TOKEN or GH_TOKEN — for git auth (contents:write scope)
 #
 # Optional env:
+#   BRANCH_SUFFIX - appended to issue-{N} for design-phase steps (e.g. "-docs"
+#                   -> issue-{N}-docs); defaults to empty (the code branch).
 #   AI_AGILE_BOT_TOKEN — classic PAT with repo+workflow scopes;
 #                        required when the agent wrote .github/workflows/ files.
 
@@ -16,7 +18,10 @@ set -euo pipefail
 
 AGENT_NAME="${AGENT_NAME:?AGENT_NAME is required}"
 ISSUE_NUMBER="${ISSUE_NUMBER:?ISSUE_NUMBER is required}"
-BRANCH="issue-${ISSUE_NUMBER}"
+# BRANCH_SUFFIX is set by the orchestrator for design-phase steps (e.g. "-docs"
+# -> issue-{N}-docs); it defaults to empty so normal code-branch steps commit to
+# issue-{N} exactly as before.
+BRANCH="issue-${ISSUE_NUMBER}${BRANCH_SUFFIX:-}"
 
 # ---------------------------------------------------------------------------
 # Git auth — set GIT_CONFIG env vars so every git operation in this process

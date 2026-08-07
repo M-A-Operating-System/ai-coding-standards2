@@ -3367,6 +3367,7 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[s
         **os.environ,
         "AGENT_NAME": agent_def.agent,
         "ISSUE_NUMBER": str(work_item.number),
+        "BRANCH_SUFFIX": agent_def.branch_suffix,
     }
     log.info(
         "  commit-after: invoking commit-agent-work.sh for %s on #%d",
