@@ -21,8 +21,13 @@ the only thing that guarantees the labels, artefact placement, and updates match
 a real run. This command MUST NOT hand-apply `:wip`/`:complete`/`:review`
 labels, post artefacts, or run agent prompts by hand -- that hand-mirroring
 drifts state (misplaced artefacts, missing downstream labels, orphaned
-branches). The single exception is the human-gate `{agent}:approved` label,
-which represents your decision (see step 4c).
+branches). There are only two things `/maos-run` does itself: apply the
+human-gate `{agent}:approved` label (your decision, step 4c), and mark a PR
+ready for review via the GitHub MCP tool when the orchestrator cannot
+(step 4d) -- a restricted interactive session blocks the GraphQL
+`markPullRequestReadyForReview` op `gh pr ready` uses, and REST has no
+draft->ready endpoint, so that one op falls to the driver's MCP tool. On the
+GitHub Actions runner (full API) even that runs natively.
 
 ## Input
 
@@ -39,7 +44,12 @@ confirm:
 - A checked-out **working tree at the repo root** containing
   `pipeline/pipeline_orchestrator.py`.
 - **GitHub auth** the orchestrator can use (`GITHUB_TOKEN`/`GH_TOKEN`, or `gh`
-  auth) and the **Claude CLI** on PATH for agent steps.
+  auth), the **`gh` CLI** on PATH (the scripts and agents call `gh api` REST --
+  install it if missing), and the **Claude CLI** on PATH for agent steps.
+
+The pipeline's scripts and agents call GitHub via `gh api` REST (not GraphQL),
+so they run in a restricted session as well as on the CI runner. The one
+exception is marking a PR ready for review -- see the core rule and step 4d.
 
 If the orchestrator cannot run in this session (missing token/CLI, offline),
 **stop and tell the user** -- do NOT fall back to hand-driving the steps. See
@@ -102,7 +112,16 @@ self-approve (P-10):
   orchestrator applies the review-loop labels (`review-cycle:N` /
   `human-review-pending`) and re-invokes the coder per `review_loop`.
 
-**d. Review loop.** `pr-reviewer` REQUEST CHANGES and the coder re-invoke are
+**d. Mark-ready assist (restricted sessions only).** When a tick's
+`mark-pr-ready` / `merge-docs-pr` step needs a PR flipped from draft to ready
+and the session blocks `gh pr ready` (GraphQL 403), the orchestrator logs the
+failure and the PR stays draft. Detect this (the PR is still `draft` when the
+step expected it ready) and mark it ready via
+`mcp__github__update_pull_request(pullNumber, draft:false)` -- the only
+in-session path that un-drafts. This plus the gate label are the only actions
+the driver takes. On the CI runner the step does it itself; no assist needed.
+
+**e. Review loop.** `pr-reviewer` REQUEST CHANGES and the coder re-invoke are
 handled by the orchestrator via `review_loop` (up to `review_loop.max_cycles`).
 `/maos-run` only relays the human decision and runs the next tick.
 
