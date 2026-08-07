@@ -193,14 +193,26 @@ class TestMergeDocsPrScript:
         mock_dir = tmp_path / "mocks"
         mock_dir.mkdir()
         mock_gh = mock_dir / "gh"
+        # Map the old GraphQL mergeable values onto REST mergeable_state.
+        mergeable_state = "dirty" if mergeable == "CONFLICTING" else "clean"
         mock_gh.write_text(
             "#!/usr/bin/env bash\n"
-            'case "$1 $2" in\n'
-            f'  "pr list") echo "{pr_number}" ;;\n'
-            f'  "pr view") echo "{mergeable}" ;;\n'
-            f'  "pr merge") exit {merge_exit} ;;\n'
-            '  "issue view") echo "0" ;;\n'
-            "esac\n"
+            'if [[ "$1" == "api" ]]; then\n'
+            '  args="$*"\n'
+            '  case "$args" in\n'
+            # Merge (PUT .../pulls/N/merge): succeed or fail per merge_exit.
+            f'    *"--method PUT"*"/merge"*) exit {merge_exit} ;;\n'
+            # Best-effort branch ref delete.
+            '    *"--method DELETE"*) exit 0 ;;\n'
+            # Resolve the open design PR by head branch.
+            f'    *"pulls?head="*) echo "{pr_number}" ;;\n'
+            # Idempotency check on issue comments.
+            '    *"/comments"*) echo "0" ;;\n'
+            # Read the PR mergeable_state.
+            f'    *"mergeable_state"*) echo "{mergeable_state}" ;;\n'
+            "  esac\n"
+            "  exit 0\n"
+            "fi\n"
             "exit 0\n"
         )
         mock_gh.chmod(0o755)
