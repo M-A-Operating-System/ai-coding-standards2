@@ -82,7 +82,12 @@ _repo() {
   if [ -n "${1:-}" ]; then echo "$1"
   elif [ -n "$REPO" ]; then echo "$REPO"
   else
-    gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || {
+    # No REST endpoint resolves "the current repo" without already knowing it,
+    # so derive owner/repo from the origin remote instead of gh repo view
+    # (which is GraphQL-backed and 403s in a restricted session).
+    git config --get remote.origin.url 2>/dev/null \
+      | sed -E 's#^(https://|git@)github\.com[:/]##; s#\.git$##' \
+      | grep -E '^[^/]+/[^/]+$' || {
       echo "ERROR: Cannot determine repository. Set GITHUB_REPOSITORY or pass --repo." >&2
       exit 1
     }
@@ -114,7 +119,7 @@ _remove_all_statuses() {
     local lbl
     lbl=$(_label_name "$agent" "$s")
     gh label remove "$lbl" --repo "$repo" \
-      "$(gh issue view "$number" --repo "$repo" --json id -q .id 2>/dev/null || true)" \
+      "$(gh api "repos/${repo}/issues/${number}" --jq '.node_id' 2>/dev/null || true)" \
       2>/dev/null || true
     # Direct removal via issues API (more reliable).
     # Pass $lbl as argv[1] — never interpolate it into Python source code.
@@ -135,7 +140,7 @@ _set_status() {
 
   _ensure_label "$repo" "$label" "$colour" "$description"
   _remove_all_statuses "$repo" "$agent" "$number"
-  gh issue edit "$number" --repo "$repo" --add-label "$label"
+  gh api --method POST "repos/${repo}/issues/${number}/labels" -f "labels[]=${label}"
   echo "  $agent → $status  (#$number)"
 }
 
@@ -224,7 +229,7 @@ status_show() {
   # Usage: status_show <issue-or-pr-number> [repo]
   local number="$1" repo="${2:-$(_repo)}"
   local labels
-  labels=$(gh issue view "$number" --repo "$repo" --json labels -q '.labels[].name' 2>/dev/null)
+  labels=$(gh api "repos/${repo}/issues/${number}" --jq '.labels[].name' 2>/dev/null)
 
   echo "Status of #$number in $repo:"
   echo ""

@@ -28,10 +28,11 @@ decompose. You just classify and validate.
 ## Step 1 — Read the issue
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author
+gh api "repos/$REPO/issues/$ISSUE_NUMBER"
 ```
 
-You need the title, the body, the labels, and the author login.
+You need the title (`.title`), the body (`.body`), the labels
+(`.labels[].name`), and the author login (`.user.login`).
 
 ---
 
@@ -104,7 +105,7 @@ Add the `classification: {classification}` label so downstream agents
 can filter on type if needed:
 
 ```bash
-gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "classification: {classification}"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/labels" -f "labels[]=classification: {classification}"
 ```
 
 Then emit the sentinel:

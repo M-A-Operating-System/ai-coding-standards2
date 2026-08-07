@@ -47,16 +47,13 @@ else
 fi
 
 # Idempotency: check for an existing open PR on this branch.
-# NOTE: gh pr list returns JSON; -q runs jq internally to extract the number.
+# NOTE: gh api returns JSON; --jq runs jq internally to extract the number.
 # If the PR already exists we fall through to the comment-posting block below
 # rather than exiting here, so a comment that failed on a prior run is retried.
 EXISTING_PR=$(
-  gh pr list \
-    --repo "${REPO}" \
-    --head "${BRANCH}" \
-    --state open \
-    --json number \
-    -q '.[0].number // empty' \
+  gh api \
+    "repos/${REPO}/pulls?head=${REPO%%/*}:${BRANCH}&state=open&per_page=1" \
+    --jq '.[0].number // empty' \
   2>/dev/null || true
 )
 
@@ -67,7 +64,7 @@ if [[ -n "${EXISTING_PR}" ]]; then
 else
   # Resolve the repo's default branch for the PR base.
   DEFAULT_BRANCH=$(
-    gh repo view "${REPO}" --json defaultBranchRef -q '.defaultBranchRef.name' \
+    gh api "repos/${REPO}" --jq '.default_branch' \
     2>/dev/null || echo "main"
   )
   echo "DEBUG: DEFAULT_BRANCH='${DEFAULT_BRANCH}' BRANCH='${BRANCH}'"
@@ -82,7 +79,7 @@ else
   echo "PR token source: ${_TOKEN_SOURCE}, authenticated as: ${_TOKEN_USER}"
 
   # Get issue title for the PR title.
-  ISSUE_TITLE=$(gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" --json title -q '.title')
+  ISSUE_TITLE=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq '.title')
   PR_TITLE="${BRANCH}: ${ISSUE_TITLE:0:60}"
 
   # Git identity for commits.
@@ -185,9 +182,8 @@ fi
 # Checks whether this step already commented before posting, so a comment that
 # failed on a prior run (after PR creation succeeded) is retried automatically.
 ALREADY_COMMENTED=$(
-  gh issue view "${ISSUE_NUMBER}" --repo "${REPO}" \
-    --json comments \
-    --jq "[.comments[] | select(.body | contains(\"${CREATE_PR_AGENT}\"))] | length" \
+  gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" --paginate \
+    --jq "[.[] | select(.body | contains(\"${CREATE_PR_AGENT}\"))] | length" \
   2>/dev/null || echo "0"
 )
 

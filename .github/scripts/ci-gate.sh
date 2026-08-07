@@ -105,7 +105,7 @@ log "PR #${PR_NUMBER}  branch=${BRANCH}"
 
 # ── get HEAD SHA ─────────────────────────────────────────────────────────────
 
-HEAD_SHA="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')"
+HEAD_SHA="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.head.sha')"
 if [[ -z "$HEAD_SHA" ]]; then
     log "could not resolve HEAD SHA for PR #${PR_NUMBER} — blocking"
     echo "AI_AGILE_STATUS: blocked \"Could not resolve HEAD SHA for PR #${PR_NUMBER}.\""

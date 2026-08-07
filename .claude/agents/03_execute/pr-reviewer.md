@@ -34,9 +34,10 @@ interactively from Claude Code** (e.g. via `/maos-pr-reviewer`), where the local
 checkout is whatever branch the developer happens to have — usually **not** this
 PR's head, and missing this PR's changes. Therefore:
 
-- **The unified diff (`gh pr diff`) and the PR head ref are the only sources of
-  truth** for what this PR changes. Read any file content from GitHub *at the PR
-  head ref* (see `read_pr_file` in Step 1) — never from local disk.
+- **The unified diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`)
+  and the PR head ref are the only sources of truth** for what this PR changes.
+  Read any file content from GitHub *at the PR head ref* (see `read_pr_file` in
+  Step 1) — never from local disk.
 - **Never** conclude a symbol is "missing", "undefined", "dead code", "not
   introduced", or "doesn't exist" by reading a file from the local working tree.
   That tree does not contain this PR's changes: a symbol the diff *adds* exists
@@ -53,15 +54,17 @@ PR's head, and missing this PR's changes. Therefore:
 ```bash
 cat "$AI_AGILE_CONTEXT"
 
-PR_NUMBER=$(gh pr list --repo "$REPO" --head "issue-${ISSUE_NUMBER}" \
-  --state open --json number --jq '.[0].number // empty')
+OWNER="${REPO%%/*}"
+PR_NUMBER=$(gh api \
+  "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
+  --jq '.[0].number // empty')
 [[ -z "$PR_NUMBER" ]] && { echo "No open PR — skipping." >&2
   echo "AI_AGILE_STATUS: complete"; exit 0; }
 
 TODAY=$(date -u +%Y-%m-%d)
-PRIOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
-  --jq "[.comments[] | select(.body | contains(\"ai-agile/artefact/v1 by 03_execute/pr-reviewer\")) \
-  | select(.createdAt | startswith(\"$TODAY\")) | .id] | first // empty")
+PRIOR=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+  --jq "[.[] | select(.body | contains(\"ai-agile/artefact/v1 by 03_execute/pr-reviewer\")) \
+  | select(.created_at | startswith(\"$TODAY\")) | .id] | first // empty")
 ```
 
 If `$PRIOR` is set, head the artefact comment `## PR Review (Re-run)`.
@@ -91,11 +94,11 @@ EOF
 ## Step 1 — Read the PR
 
 ```bash
-gh pr view "$PR_NUMBER" --repo "$REPO" \
-  --json title,body,labels,baseRefName,headRefName,author,additions,deletions,changedFiles
-gh pr diff "$PR_NUMBER" --repo "$REPO"
-gh pr view "$PR_NUMBER" --repo "$REPO" --json commits \
-  --jq '.commits[] | "\(.oid[0:8]) \(.messageHeadline)"'
+gh api "repos/$REPO/pulls/$PR_NUMBER" \
+  --jq '{title, body, labels: [.labels[].name], base: .base.ref, head: .head.ref, author: .user.login, additions, deletions, changed_files}'
+gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"
+gh api "repos/$REPO/pulls/$PR_NUMBER/commits" --paginate \
+  --jq '.[] | "\(.sha[0:8]) \(.commit.message | split("\n")[0])"'
 ```
 
 Capture the PR head once, and use `read_pr_file` whenever you need a file's
@@ -103,7 +106,7 @@ contents beyond the diff hunks — it reads the file **at the PR's version**, no
 the local working tree (which may be a different branch entirely):
 
 ```bash
-HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')
+HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
 
 read_pr_file() {  # usage: read_pr_file path/to/file
   gh api "/repos/${REPO}/contents/$1?ref=${HEAD_SHA}" --jq '.content' | base64 -d
@@ -114,16 +117,16 @@ Check whether the branch has unresolved merge conflicts against its base
 using the GitHub API (authoritative; no local git operations required):
 
 ```bash
-MERGEABLE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json mergeable \
-  --jq '.mergeable')
-# Possible values: MERGEABLE, CONFLICTING, UNKNOWN
+MERGEABLE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state')
+# Possible values: dirty (conflicts), unknown (not yet computed),
+# clean/blocked/behind/unstable (all conflict-free)
 ```
 
-If `$MERGEABLE` is `CONFLICTING`, raise it as a Critical finding
+If `$MERGEABLE` is `dirty`, raise it as a Critical finding
 `DP-001[DP+SA] — Unresolved merge conflicts block clean merge` and set
 `VERDICT=REQUEST CHANGES` immediately (skip remaining review steps).
 
-If `$MERGEABLE` is `UNKNOWN` (GitHub is still computing mergeability),
+If `$MERGEABLE` is `unknown` (GitHub is still computing mergeability),
 raise it as a High finding `DP-001[DP+SA] — Merge status unknown; recheck
 before merge` but do not skip remaining review steps.
 
@@ -174,9 +177,11 @@ combined report is useful to the coder.
 ## Step 3 — Read the spec
 
 ```bash
-gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body,comments \
-  --jq '{body:.body, artefacts:[.comments[]
-    | select(.body | contains("ai-agile/artefact/v1")) | .body]}'
+# Issue body from the issue endpoint; artefact comments from the comments
+# endpoint (bare array). REST has no combined body+comments read.
+gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.body'
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
+  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1")) | .body]'
 ```
 
 Note all Gherkin acceptance criteria and non-functional requirements.
@@ -404,7 +409,7 @@ EOF
 
 ## Rules
 
-- **The diff and the PR head ref are the only source of truth — never the local working tree.** Do not raise "missing/undefined symbol", "dead code", "not introduced", or "X doesn't exist" from a local-disk read; the local checkout may be a different branch that lacks this PR's changes. Confirm against `gh pr diff` and `read_pr_file` (PR head) before any such finding. A false finding of this kind is itself a review defect.
+- **The diff and the PR head ref are the only source of truth — never the local working tree.** Do not raise "missing/undefined symbol", "dead code", "not introduced", or "X doesn't exist" from a local-disk read; the local checkout may be a different branch that lacks this PR's changes. Confirm against the unified diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`) and `read_pr_file` (PR head) before any such finding. A false finding of this kind is itself a review defect.
 - **Read-only.** Never write or modify source files, even for trivial fixes.
 - **Output via `gh pr comment` only.** Never write findings to stdout.
 - **Findings describe fixes; never apply them.**

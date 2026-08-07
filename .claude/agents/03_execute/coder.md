@@ -88,11 +88,11 @@ Check for Mode B trigger labels on the issue:
 Absence of both means Mode A (initial build).
 
 ```bash
-REVIEW_CYCLE_LABEL=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+REVIEW_CYCLE_LABEL=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '.labels[].name | select(startswith("review-cycle:"))' \
   | head -1)
 
-HUMAN_REVIEW_PENDING=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+HUMAN_REVIEW_PENDING=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '.labels[].name | select(. == "human-review-pending")' \
   | head -1)
 
@@ -108,20 +108,17 @@ if [ -n "$REVIEW_CYCLE_LABEL" ] || [ -n "$HUMAN_REVIEW_PENDING" ]; then
   # Try the canonical branch name first, then fall back to the source-issue
   # label (applied by link-pr-to-issue.sh) so that rebased branches (e.g.
   # issue-23-rebase) are found even when they don't match the issue-{N} pattern.
-  PR_NUMBER=$(gh pr list \
-    --repo "$REPO" \
-    --head "issue-${ISSUE_NUMBER}" \
-    --state open \
-    --json number \
+  OWNER="${REPO%%/*}"
+  PR_NUMBER=$(gh api \
+    "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
     --jq '.[0].number // empty')
 
   if [ -z "$PR_NUMBER" ]; then
-    PR_NUMBER=$(gh pr list \
-      --repo "$REPO" \
-      --state open \
-      --label "source-issue:${ISSUE_NUMBER}" \
-      --json number \
-      --jq '.[0].number // empty')
+    # REST has no label filter on the pulls endpoint; query the issues endpoint
+    # (which includes PRs) by label and keep only entries that are PRs.
+    PR_NUMBER=$(gh api \
+      "repos/$REPO/issues?labels=source-issue:${ISSUE_NUMBER}&state=open&per_page=100" \
+      --jq '[.[] | select(.pull_request) | .number] | first // empty')
   fi
 
   if [ -z "$PR_NUMBER" ]; then
@@ -131,7 +128,7 @@ if [ -n "$REVIEW_CYCLE_LABEL" ] || [ -n "$HUMAN_REVIEW_PENDING" ]; then
 
   # Capture the PR's actual head branch — may differ from issue-{N} if the
   # branch was rebased. Used in announcements and for the orchestrator push.
-  PR_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')
+  PR_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
   echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE}  PR=${PR_NUMBER}  BRANCH=${PR_BRANCH}"
 else
   echo "MODE=A"
@@ -153,8 +150,13 @@ Then follow the corresponding section below.
 ## Step 1 — Read the issue
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo "$REPO" \
-  --json number,title,body,labels,comments,url
+# Issue fields (number, title, body, labels, url) — REST returns labels as
+# objects, so project their names.
+gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
+  --jq '{number, title, body, url, labels: [.labels[].name]}'
+
+# Issue comments come from a separate REST endpoint and are a bare array.
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate
 ```
 
 Extract:
@@ -223,14 +225,14 @@ in any self-review note — do not raise it as a finding.
 ## Step 3 — Read sub-issues
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo "$REPO" --json body \
+gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '.body' | grep -oE '#[0-9]+' | tr -d '#'
 ```
 
 For each sub-issue number, read it in full:
 
 ```bash
-gh issue view {N} --repo "$REPO" --json number,title,body,state
+gh api "repos/$REPO/issues/{N}" --jq '{number, title, body, state}'
 ```
 
 Build an ordered work list. Skip already-closed sub-issues. Work open ones
@@ -425,7 +427,7 @@ this PR's head, and missing this PR's changes. Before you edit anything, confirm
 the working tree actually matches the PR head:
 
 ```bash
-HEAD_SHA=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq '.headRefOid')
+HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
 
 read_pr_file() {  # usage: read_pr_file path/to/file  — reads the file at the PR's version
   gh api "/repos/${REPO}/contents/$1?ref=${HEAD_SHA}" --jq '.content' | base64 -d
@@ -444,22 +446,23 @@ branch first. This is git/branch topology, which is out of your mandate: emit
 head ${HEAD_SHA}; cannot edit safely"` and stop. **Do not** try to reconcile,
 checkout, or re-create the branch yourself.
 
-When the tree does match, the diff (`gh pr diff "$PR_NUMBER"`) and `read_pr_file`
-remain the authority on what this PR actually changed — see Step 11 before acting on
-any "missing"/"dead code" finding.
+When the tree does match, the diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`)
+and `read_pr_file` remain the authority on what this PR actually changed — see Step 11
+before acting on any "missing"/"dead code" finding.
 
 ## Step 9 — Read all review feedback
 
 `$PR_NUMBER` was discovered in Step 0. Read all feedback from the PR.
 
 ```bash
-# Structured review artefact from pr-reviewer agent (posted on the PR)
-gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
+# Structured review artefact from pr-reviewer agent (posted on the PR).
+# PR conversation comments live on the issues comments endpoint (bare array).
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
 
-# Inline review threads and human reviews on the PR
-gh pr view "$PR_NUMBER" --repo "$REPO" --json reviews \
-  --jq '[.reviews[] | {author: .author.login, state: .state, body: .body}]'
+# Inline review threads and human reviews on the PR (bare array; snake_case fields)
+gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
+  --jq '[.[] | {author: .user.login, state: .state, body: .body}]'
 
 # Unresolved human REQUEST_CHANGES reviews — latest state per reviewer, bots excluded
 HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
@@ -470,8 +473,8 @@ HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
     | join(", ")')
 
 # Human comments on the PR (excluding agent artefacts)
-gh pr view "$PR_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .author.login, body: .body}]'
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .user.login, body: .body}]'
 ```
 
 ---
@@ -510,8 +513,8 @@ Also read the approved PRD from the issue comments, and the Gherkin scenarios
 from `docs/features/{feature}.md` (same `{feature}` derivation as Step 2):
 
 ```bash
-gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .body] | last // empty'
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
+  --jq '[.[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) | .body] | last // empty'
 ```
 
 Use these documents to decide whether each piece of feedback is valid:
@@ -527,8 +530,8 @@ not the local disk.** A reviewer (or you) reading the ambient working tree —
 which may be a different branch that lacks this PR's changes — can falsely report
 that a function is missing, undefined, dead, or "never called". Before you delete
 code or "fix" such a finding, confirm it against the PR itself: check
-`gh pr diff "$PR_NUMBER"` and `read_pr_file path/to/file` (PR head, from the
-block above). If the symbol *is* present at the PR head, the finding is a
+`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`
+and `read_pr_file path/to/file` (PR head, from the block above). If the symbol *is* present at the PR head, the finding is a
 stale-working-tree false positive — do **not** act on it; note in your Step 14
 response that it could not be reproduced against the PR head and move on.
 Deleting code to satisfy a false "dead code" finding is a regression, not a fix.

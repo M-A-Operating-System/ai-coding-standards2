@@ -31,19 +31,19 @@ Check whether this is a first run or a revision after human rejection.
 
 ```bash
 # Find the timestamp of the most recent prd-writer artefact comment.
-PREV_ARTEFACT_TIME=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[]
+PREV_ARTEFACT_TIME=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
+  --jq '[.[]
         | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer"))
-        ] | last | .createdAt // ""')
+        ] | last | .created_at // ""')
 ```
 
 If `$PREV_ARTEFACT_TIME` is **non-empty**, this is a revision run. Read the
 human feedback posted after the last artefact:
 
 ```bash
-HUMAN_FEEDBACK=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments --jq '.comments' \
-  | jq --arg since "$PREV_ARTEFACT_TIME" \
-  '[.[] | select(.createdAt > $since)
+HUMAN_FEEDBACK=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -s --arg since "$PREV_ARTEFACT_TIME" \
+  '[.[] | select(.created_at > $since)
        | select(.body | startswith("<!-- ai-agile/") | not)
        | "**\(.user.login):** \(.body)"
   ] | join("\n\n---\n\n")')
@@ -64,12 +64,12 @@ normally from Step 1.
 Fetch issue metadata and the classifier artefact in two calls:
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author
+gh api "repos/$REPO/issues/$ISSUE_NUMBER"
 ```
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo $REPO --json comments \
-  --jq '.comments[]
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
+  --jq '.[]
         | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/issue-classifier"))
         | .body' \
   | tail -1
@@ -92,7 +92,7 @@ find "${AI_AGILE_ROOT}/standards" -name "*.json" ! -name "*.schema.json" 2>/dev/
 Check whether this issue is a sub-issue created by the sizer:
 
 ```bash
-IS_SUB_ISSUE=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json labels \
+IS_SUB_ISSUE=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '[.labels[].name | select(startswith("parent-issue:"))] | length')
 ```
 
@@ -326,13 +326,13 @@ scope` is canonical and must not be altered. Only update the body.
 
 ```bash
 # For standalone issues: update both title and body
-gh issue edit $ISSUE_NUMBER --repo $REPO \
-  --title "${NEW_TITLE}" \
-  --body  "${NEW_BODY}"
+gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
+  -f title="${NEW_TITLE}" \
+  -f body="${NEW_BODY}"
 
 # For sub-issues: body only
-gh issue edit $ISSUE_NUMBER --repo $REPO \
-  --body  "${NEW_BODY}"
+gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
+  -f body="${NEW_BODY}"
 ```
 
 Then go directly to **Step 8** — signal review.
@@ -350,16 +350,15 @@ Check whether a snapshot exists and post it if not — all in one shell block
 so no state crosses tool-call boundaries:
 
 ```bash
-SNAPSHOT_ID=$(gh issue view $ISSUE_NUMBER --repo $REPO \
-  --json comments \
-  --jq '.comments[]
+SNAPSHOT_ID=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
+  --jq '.[]
         | select(.body | contains("ai-agile/snapshot/v1 by 01_product_docs/prd-writer"))
         | .id' \
   | head -1)
 
 if [ -z "$SNAPSHOT_ID" ]; then
-  ORIG_TITLE=$(gh issue view $ISSUE_NUMBER --repo $REPO --json title --jq '.title')
-  ORIG_BODY=$(gh issue view $ISSUE_NUMBER --repo $REPO --json body  --jq '.body')
+  ORIG_TITLE=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.title')
+  ORIG_BODY=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.body')
 
   gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->
@@ -409,9 +408,9 @@ NEW_BODY=$(cat <<EOF
 EOF
 )
 
-gh issue edit $ISSUE_NUMBER --repo $REPO \
-  --title "${NEW_TITLE}" \
-  --body  "${NEW_BODY}"
+gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
+  -f title="${NEW_TITLE}" \
+  -f body="${NEW_BODY}"
 ```
 
 ---

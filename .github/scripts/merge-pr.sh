@@ -41,11 +41,11 @@ esac
 # --- Resolve the target PR --------------------------------------------------
 # PR-number first (matches "merge <PR>"); fall back to the open PR whose head
 # branch is issue-${NUMBER} (matches "merge <issue>").
-if gh pr view "${NUMBER}" --repo "${REPO}" --json number >/dev/null 2>&1; then
+if gh api "repos/${REPO}/pulls/${NUMBER}" >/dev/null 2>&1; then
   PR="${NUMBER}"
 else
-  PR=$(gh pr list --repo "${REPO}" --head "issue-${NUMBER}" --state open \
-         --json number --jq '.[0].number // empty' 2>/dev/null || true)
+  PR=$(gh api "repos/${REPO}/pulls?head=${REPO%%/*}:issue-${NUMBER}&state=open&per_page=1" \
+         --jq '.[0].number // empty' 2>/dev/null || true)
   if [[ -z "${PR}" ]]; then
     echo "ERROR: no PR #${NUMBER} in ${REPO}, and no open PR for branch issue-${NUMBER}." >&2
     exit 2
@@ -53,8 +53,7 @@ else
 fi
 
 # --- Read PR state (one API call, parsed without an external jq) ------------
-PR_JSON=$(gh pr view "${PR}" --repo "${REPO}" \
-  --json state,merged,mergeable,headRefName,isCrossRepository 2>/dev/null) || {
+PR_JSON=$(gh api "repos/${REPO}/pulls/${PR}" 2>/dev/null) || {
     echo "ERROR: could not read pull request #${PR} in ${REPO}." >&2
     exit 2
   }
@@ -67,11 +66,17 @@ PR_JSON=$(gh pr view "${PR}" --repo "${REPO}" \
 } < <(printf '%s' "${PR_JSON}" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
-print(d['state'])
+# REST returns a lowercase state ('open'/'closed'); upper-case it so the
+# downstream comparisons ('OPEN') are preserved unchanged.
+print(d['state'].upper())
 print(str(d['merged']).lower())
-print(d['mergeable'])
-print(d['headRefName'])
-print(str(d['isCrossRepository']).lower())
+print(d['mergeable_state'])
+print(d['head']['ref'])
+# REST has no isCrossRepository field; derive it by comparing the head and
+# base repositories (a missing/deleted head repo is treated as cross-repo).
+head_repo = (d.get('head') or {}).get('repo') or {}
+base_repo = (d.get('base') or {}).get('repo') or {}
+print(str(head_repo.get('full_name') != base_repo.get('full_name')).lower())
 ")
 
 # --- Guard rails ------------------------------------------------------------
@@ -80,14 +85,16 @@ if [[ "${MERGED}" == "true" ]]; then
 elif [[ "${STATE}" != "OPEN" ]]; then
   echo "ERROR: PR #${PR} is ${STATE} (not open, not merged) -- refusing to merge." >&2
   exit 1
-elif [[ "${MERGEABLE}" == "CONFLICTING" ]]; then
+elif [[ "${MERGEABLE}" == "dirty" ]]; then
   echo "ERROR: PR #${PR} has merge conflicts (mergeable=${MERGEABLE}) -- resolve them first." >&2
   exit 1
 fi
 
 # --- Merge (unless already merged), deleting the branch ---------------------
 if [[ "${MERGED}" != "true" ]]; then
-  gh pr merge "${PR}" --repo "${REPO}" "${METHOD}" --delete-branch
+  gh api --method PUT "repos/${REPO}/pulls/${PR}/merge" -f "merge_method=${METHOD#--}"
+  # --delete-branch equivalent: best-effort ref deletion (may be blocked; must not fail the script).
+  gh api --method DELETE "repos/${REPO}/git/refs/heads/${BRANCH}" 2>/dev/null || true
   echo "Merged PR #${PR} (${METHOD#--}) and deleted branch '${BRANCH}'."
   exit 0
 fi
