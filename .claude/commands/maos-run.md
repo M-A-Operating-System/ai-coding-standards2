@@ -85,6 +85,12 @@ Repeat until Complete (step 5) or Halt (step 6):
 python3 pipeline/pipeline_orchestrator.py --repo "$REPO" --issue $ARGUMENTS
 ```
 
+Do **not** wrap this in a short shell `timeout`. Agent-heavy steps (`prd-writer`,
+`coder`, `pr-reviewer`) legitimately take a few minutes, and the orchestrator
+already enforces its own per-agent timeout. A short cap that kills the tick is
+caught by the SIGTERM handler (which clears the in-flight `:wip` so nothing is
+stranded), but the step will not finish -- let the tick run to completion.
+
 Add `--verbose` for live agent output, or `--dry-run` first to preview what the
 tick would trigger without modifying labels. The orchestrator selects the next
 eligible step from `pipeline.json` (honouring `trigger`, `dependencies`,

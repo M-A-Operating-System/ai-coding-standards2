@@ -2539,6 +2539,12 @@ def invoke_agent(
     cmd = [
         "claude",
         "--allowedTools", ",".join(base_tools + extra_tools),
+        # Pipeline agents do their work with the allowlisted tools only; they must
+        # NOT spawn sub-agents or invoke skills/slash-commands. In a trusted
+        # workspace the CLI exposes Task/Agent/Skill even though they are absent
+        # from --allowedTools, which let prd-writer recursively re-invoke itself
+        # via the run-agent skill (a ~440s nested sub-agent). Deny them explicitly.
+        "--disallowedTools", "Task,Agent,Skill",
         "--output-format", "stream-json",
         "--verbose",                    # required alongside stream-json in --print mode
         "--max-turns", str(max_turns),
