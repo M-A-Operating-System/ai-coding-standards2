@@ -48,7 +48,10 @@ get_check_runs_raw() {
 
 post_comment() {
     local pr_number="$1" body="$2"
-    gh pr comment "$pr_number" --repo "$REPO" --body "$body"
+    # gh pr comment is GraphQL-backed and 403s when this script runs as a direct
+    # subprocess (not inside a nested `claude` agent invocation); the issues
+    # comments REST endpoint serves PR comments identically.
+    gh api --method POST "repos/${REPO}/issues/${pr_number}/comments" -f body="$body" >/dev/null
 }
 
 # ── build exclusion filter for orchestrator check runs ───────────────────────

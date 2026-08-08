@@ -61,11 +61,13 @@ done
 
 if [[ "${MERGEABLE}" == "dirty" ]]; then
   echo "Design PR #${PR_NUMBER} conflicts with main -- needs human resolution." >&2
-  gh issue comment "${ISSUE_NUMBER}" --repo "${REPO}" --body "$(cat <<EOF
+  # gh issue comment is GraphQL-backed and 403s when this script runs as a
+  # direct subprocess (not inside a nested `claude` agent invocation).
+  gh api --method POST "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" -f body="$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 01_product_docs/merge-docs-pr -->
 Design PR [#${PR_NUMBER}](${PR_URL}) cannot be merged to \`main\` automatically -- it conflicts with the current \`main\`. Resolve the conflicts on \`${DOCS_BRANCH}\`, then re-trigger this step.
 EOF
-)" || true
+)" >/dev/null || true
   echo "AI_AGILE_STATUS: review \"Design PR #${PR_NUMBER} conflicts with main; needs human resolution before the docs merge.\""
   exit 0
 fi
@@ -84,11 +86,11 @@ if MERGE_OUTPUT=$(GH_TOKEN="${_MERGE_TOKEN}" gh api --method PUT \
   echo "Merged design PR #${PR_NUMBER} (${DOCS_BRANCH}) to main."
 else
   echo "Could not merge design PR #${PR_NUMBER}: ${MERGE_OUTPUT}" >&2
-  gh issue comment "${ISSUE_NUMBER}" --repo "${REPO}" --body "$(cat <<EOF
+  gh api --method POST "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" -f body="$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 01_product_docs/merge-docs-pr -->
 Design PR [#${PR_NUMBER}](${PR_URL}) could not be merged to \`main\` automatically (a branch-protection rule or required check may be blocking it). Merge it by hand, then re-trigger this step so the build phase proceeds from an updated \`main\`.
 EOF
-)" || true
+)" >/dev/null || true
   echo "AI_AGILE_STATUS: review \"Design PR #${PR_NUMBER} could not be merged automatically; needs a human merge.\""
   exit 0
 fi
@@ -101,11 +103,11 @@ ALREADY_COMMENTED=$(
 )
 
 if [[ "${ALREADY_COMMENTED}" -eq 0 ]]; then
-  gh issue comment "${ISSUE_NUMBER}" --repo "${REPO}" --body "$(cat <<EOF
+  gh api --method POST "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" -f body="$(cat <<EOF
 <!-- ai-agile/announcement/v1 by 01_product_docs/merge-docs-pr -->
 Approved design documentation merged to \`main\` via [#${PR_NUMBER}](${PR_URL}), ahead of the build phase. The code branch (\`issue-${ISSUE_NUMBER}\`) will be cut from the now-updated \`main\`.
 EOF
-)" || true
+)" >/dev/null || true
 fi
 
 echo "AI_AGILE_STATUS: complete"

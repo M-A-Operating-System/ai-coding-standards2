@@ -172,7 +172,9 @@ status_set_review() {
     body=$(printf "**%s** has completed its work and is requesting formal review.\n\n%s\n\n" \
       "$agent" "$message")
     body+=$(printf "> **Action required:** Review the artefact above and remove the \`%s:review\` label to approve and advance the pipeline. If changes are needed, add a comment with your feedback before removing the label." "$agent")
-    gh issue comment "$number" --repo "$repo" --body "$body"
+    # gh issue comment is GraphQL-backed and 403s when this script runs as a
+    # direct subprocess (not inside a nested `claude` agent invocation).
+    gh api --method POST "repos/${repo}/issues/${number}/comments" -f body="$body" >/dev/null
   fi
 }
 
@@ -191,7 +193,7 @@ status_set_blocked() {
   body=$(printf "**%s** is blocked and cannot proceed without human intervention.\n\n**Reason:**\n%s\n\n" \
     "$agent" "$reason")
   body+=$(printf "> **Action required:** Resolve the issue described above, then remove the \`%s:blocked\` label. The agent will re-run automatically." "$agent")
-  gh issue comment "$number" --repo "$repo" --body "$body"
+  gh api --method POST "repos/${repo}/issues/${number}/comments" -f body="$body" >/dev/null
 }
 
 # Mark an agent as failed (technical error, not a decision)
@@ -205,7 +207,7 @@ status_set_failed() {
     "$agent" "$detail")
   body+=$(printf "> **Action required:** Review the agent logs, fix the underlying error, then remove the \`%s:failed\` label to retry. Apply \`%s:skipped\` to bypass this agent entirely." \
     "$agent" "$agent")
-  gh issue comment "$number" --repo "$repo" --body "$body"
+  gh api --method POST "repos/${repo}/issues/${number}/comments" -f body="$body" >/dev/null
 }
 
 # Mark an agent as intentionally skipped
@@ -215,8 +217,8 @@ status_set_skipped() {
   _set_status "$agent" "skipped" "$number" "$repo"
 
   if [ -n "$reason" ]; then
-    gh issue comment "$number" --repo "$repo" \
-      --body "$(printf "**%s** was skipped.\n\n%s" "$agent" "$reason")"
+    gh api --method POST "repos/${repo}/issues/${number}/comments" \
+      -f body="$(printf "**%s** was skipped.\n\n%s" "$agent" "$reason")" >/dev/null
   fi
 }
 

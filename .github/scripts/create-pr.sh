@@ -187,13 +187,14 @@ ALREADY_COMMENTED=$(
 )
 
 if [[ "${ALREADY_COMMENTED}" -eq 0 ]]; then
-  gh issue comment "${ISSUE_NUMBER}" \
-    --repo "${REPO}" \
-    --body "$(cat <<EOF
+  # gh issue comment is GraphQL-backed and 403s when this script runs as a
+  # direct subprocess (not inside a nested `claude` agent invocation).
+  gh api --method POST "repos/${REPO}/issues/${ISSUE_NUMBER}/comments" \
+    -f body="$(cat <<EOF
 <!-- ai-agile/announcement/v1 by ${CREATE_PR_AGENT} -->
 Draft PR opened for this issue: [#${PR_NUMBER}](${PR_URL})
 EOF
-)" || {
+)" >/dev/null || {
     echo "ERROR: Failed to post PR link comment on issue #${ISSUE_NUMBER}." >&2
     exit 1
   }

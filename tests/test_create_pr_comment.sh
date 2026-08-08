@@ -58,6 +58,12 @@ GITEOF
 echo "gh \$*" >> "${CALLS_LOG}"
 ARGS="\$*"
 case "\$ARGS" in
+  *"api --method POST"*"/comments"*)
+    # Comment write (converted from 'gh issue comment' to
+    # 'gh api --method POST .../comments -f body=...').
+    echo "ISSUE_COMMENT_CALLED" >> "${CALLS_LOG}"
+    ${comment_exit}
+    ;;
   *"api --method"*)
     # PR creation (POST /repos/.../pulls) and label POST (link-pr-to-issue)
     echo '{"number":${PR_NUM},"html_url":"https://github.com/${TEST_REPO}/pull/${PR_NUM}"}'
@@ -86,10 +92,6 @@ case "\$ARGS" in
   *"/issues/"*)
     # Issue title lookup (converted from 'gh issue view --json title')
     echo "Test Issue"
-    ;;
-  *"issue comment"*)
-    echo "ISSUE_COMMENT_CALLED" >> "${CALLS_LOG}"
-    ${comment_exit}
     ;;
   *)
     # default branch (gh api repos/owner/repo), repo preflight, labels, etc.
