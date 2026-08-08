@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -2381,6 +2382,10 @@ BASE_AGENT_TOOLS = [
     "Bash(gh pr diff *)",          # pr-reviewer reads the diff
     "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
     "Bash(gh api repos/*/pulls/*)",
+    "Bash(gh api repos/*/issues*)",   # REST reads incl. list/query forms (issues?labels=...)
+    "Bash(gh api repos/*/pulls*)",    # REST reads incl. list/query forms (pulls?head=...)
+    "Bash(gh api --method * repos/*/issues*)",  # REST writes on issues: labels, comments, body/title
+    "Bash(gh api --method * repos/*/pulls*)",   # REST writes on pulls: merge, etc.
     "Bash(cat *)",                 # read prompt-side files
     "Bash(grep *)",
     "Bash(find *)",
@@ -2504,7 +2509,13 @@ def invoke_agent(
     # On retries (attempt > 0) we append "-r{attempt}" to the seed so each
     # retry gets a fresh UUID — avoids "Session ID already in use" when a
     # previous run's session was not cleaned up (e.g. CI job killed mid-run).
-    session_uuid_seed = agent_session_id if attempt == 0 else f"{agent_session_id}-r{attempt}"
+    # Mix the orchestrator process id into the seed so re-runs in a persistent
+    # environment get a fresh Claude session id rather than colliding with a
+    # prior run's stored session ("Session ID already in use"). The pid is
+    # stable within a run, so retries stay distinct via the -r{attempt} suffix.
+    session_uuid_seed = f"{agent_session_id}-p{os.getpid()}"
+    if attempt:
+        session_uuid_seed = f"{session_uuid_seed}-r{attempt}"
     agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, session_uuid_seed))
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
@@ -3077,6 +3088,10 @@ def _acquire_wip_and_announce(
             gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
             labels.add(agent_def.status_label(STATUS_WIP))
             work_item.labels = labels
+            # Track the in-flight :wip so a termination signal can clear it
+            # rather than stranding the mutex (see _clear_inflight_wip_on_signal).
+            global _CURRENT_WIP
+            _CURRENT_WIP = (gh, work_item.number, agent_def.status_label(STATUS_WIP))
             # Increment only on successful label application — a failed
             # add_label means no :wip was set so no slot is consumed.
             if concurrency is not None:
@@ -4500,9 +4515,38 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
         ))
 
 
+# Set to (gh, work_item_number, wip_label) while an agent is mid-flight so a
+# termination signal (e.g. a CI or interactive timeout sending SIGTERM) can
+# clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
+_CURRENT_WIP = None
+
+
+def _clear_inflight_wip_on_signal(signum, _frame) -> None:
+    """Best-effort: drop the in-flight :wip label, then exit.
+
+    A killed tick (SIGTERM/SIGINT) otherwise leaves the work item stuck at :wip
+    -- the mutex blocks the next tick from re-triggering the agent. Clearing that
+    one label makes the item immediately retryable.
+    """
+    wip = _CURRENT_WIP
+    if wip is not None:
+        gh, number, label = wip
+        try:
+            gh.remove_label(number, label)
+            log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
+        except Exception as exc:
+            log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
+    sys.exit(128 + signum)
+
+
 def main() -> None:
     # Wake up -> do the work -> close down.
     args = parse_args()
+
+    # Clear an in-flight :wip if this process is terminated (timeout/cancel) so a
+    # killed tick does not strand the mutex and block the next run.
+    signal.signal(signal.SIGTERM, _clear_inflight_wip_on_signal)
+    signal.signal(signal.SIGINT, _clear_inflight_wip_on_signal)
 
     global _VERBOSE
     _VERBOSE = args.verbose
