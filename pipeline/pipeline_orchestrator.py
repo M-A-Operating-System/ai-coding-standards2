@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -2308,6 +2309,21 @@ AGENT_ENV_PASSTHROUGH = (
 )
 
 
+def _claude_cli_logged_in() -> bool:
+    """True when the Claude CLI has stored login credentials (subscription /
+    OAuth) under $HOME, so a spawned agent can authenticate without
+    ANTHROPIC_API_KEY.
+
+    The CLI writes these on `claude login`. HOME is passed through to the agent
+    subprocess (AGENT_ENV_PASSTHROUGH), so when this file is present the spawned
+    `claude` authenticates via the logged-in session. This lets the orchestrator
+    run agents interactively on a subscription (no API-key billing); CI still
+    uses ANTHROPIC_API_KEY.
+    """
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    return os.path.isfile(os.path.join(home, ".claude", ".credentials.json"))
+
+
 def _build_agent_env(
     base_env: Mapping[str, str],
     repo: str,
@@ -2352,9 +2368,9 @@ def _build_agent_env(
 # runtime; narrowing it to specific --add-label globs is unsafe (a positive glob
 # cannot permit those legitimate labels while denying gate labels like
 # `prd-writer:approved` without risking the routing labels). The residual
-# `gh issue edit --add-label {gate}` self-approval vector must therefore be
-# closed ORCHESTRATOR-SIDE (verify a human applied any gate label) -- tracked as
-# follow-up on issue #259, not expressible here.
+# self-approval vector (via `gh issue edit` OR the REST issue-write grant below,
+# which reaches PRs too since PRs are issues) is closed ORCHESTRATOR-SIDE: the
+# gate check rejects any `{agent}:approved` label not applied by a human (#263).
 BASE_AGENT_TOOLS = [
     "Bash(gh issue view *)",       # read issue body / labels
     "Bash(gh issue comment *)",    # post artefact comments
@@ -2366,6 +2382,17 @@ BASE_AGENT_TOOLS = [
     "Bash(gh pr diff *)",          # pr-reviewer reads the diff
     "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
     "Bash(gh api repos/*/pulls/*)",
+    "Bash(gh api repos/*/issues*)",   # REST reads incl. list/query forms (issues?labels=...)
+    "Bash(gh api repos/*/pulls*)",     # REST reads incl. list/query forms (pulls?head=...)
+    # REST WRITES on issues only (labels/comments/body) -- the in-session
+    # equivalent of `gh issue edit`, needed because that command is GraphQL and
+    # 403s in a restricted session. It carries the SAME gate-label self-approval
+    # vector as `gh issue edit` (a positive glob cannot permit routing labels
+    # while denying gate labels), which is closed ORCHESTRATOR-SIDE by the
+    # human-actor gate check (#263). No `--method` grant on /pulls: agents never
+    # write PRs (merge/ready/close are the orchestrator's/driver's job), so
+    # granting it would hand an injected agent merge/close/retarget power.
+    "Bash(gh api --method * repos/*/issues*)",
     "Bash(cat *)",                 # read prompt-side files
     "Bash(grep *)",
     "Bash(find *)",
@@ -2492,6 +2519,17 @@ def invoke_agent(
     session_uuid_seed = agent_session_id if attempt == 0 else f"{agent_session_id}-r{attempt}"
     agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, session_uuid_seed))
 
+    # The session id is deterministic on purpose: an agent REUSES the same Claude
+    # conversation across orchestrator runs (continuity managed through the CLI).
+    # But passing --session-id for an id that already exists errors ("Session ID
+    # already in use") -- which strands re-runs in a persistent environment.
+    # Resume the session when it already exists; create it (--session-id) only
+    # when it does not (first run, or a fresh -r{attempt} retry id).
+    _proj_dir = os.getcwd().replace("/", "-")
+    _home = os.environ.get("HOME") or os.path.expanduser("~")
+    _session_file = os.path.join(_home, ".claude", "projects", _proj_dir, f"{agent_session_uuid}.jsonl")
+    _session_flag = "--resume" if os.path.isfile(_session_file) else "--session-id"
+
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
     if agent_model:
@@ -2508,10 +2546,16 @@ def invoke_agent(
     cmd = [
         "claude",
         "--allowedTools", ",".join(base_tools + extra_tools),
+        # Pipeline agents do their work with the allowlisted tools only; they must
+        # NOT spawn sub-agents or invoke skills/slash-commands. In a trusted
+        # workspace the CLI exposes Task/Agent/Skill even though they are absent
+        # from --allowedTools, which let prd-writer recursively re-invoke itself
+        # via the run-agent skill (a ~440s nested sub-agent). Deny them explicitly.
+        "--disallowedTools", "Task,Agent,Skill",
         "--output-format", "stream-json",
         "--verbose",                    # required alongside stream-json in --print mode
         "--max-turns", str(max_turns),
-        "--session-id", agent_session_uuid,
+        _session_flag, agent_session_uuid,
     ]
     if agent_model:
         cmd += ["--model", agent_model]
@@ -2525,20 +2569,25 @@ def invoke_agent(
         os.environ, repo, work_item, agent_session_id, agent_def.session_scope
     )
 
-    # Preflight: a missing ANTHROPIC_API_KEY produces an auth-error response
-    # that the stream-json parser may misread as a rate-limit pause, masking
-    # the real cause and leaving the work item stuck in :wip indefinitely.
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    # Preflight: the agent's Claude CLI needs some usable auth. Normally that is
+    # ANTHROPIC_API_KEY (CI secret); when it is absent the CLI can still be
+    # authenticated via a logged-in session (subscription / OAuth) whose
+    # credentials live under $HOME (passed through in AGENT_ENV_PASSTHROUGH).
+    # Only fail when NEITHER is available -- an unauthenticated launch otherwise
+    # produces an auth-error the stream-json parser may misread as a rate-limit
+    # pause, leaving the work item stuck in :wip.
+    if not os.environ.get("ANTHROPIC_API_KEY") and not _claude_cli_logged_in():
         log.error(
-            "  invoke_agent: ANTHROPIC_API_KEY is not set — cannot launch %s "
-            "on %s #%d; add the key to CI secrets and retry.",
+            "  invoke_agent: no Claude auth for %s on %s #%d -- neither "
+            "ANTHROPIC_API_KEY nor a logged-in Claude CLI (credentials under "
+            "$HOME/.claude). Set the key (CI) or run `claude login`, then retry.",
             agent_def.agent, work_item.kind, work_item.number,
         )
         return AgentRunResult(
             success=False,
             captured_tail=(
-                "Configuration error: ANTHROPIC_API_KEY is not set. "
-                "Add the key to CI secrets and retry."
+                "Configuration error: no Claude auth -- set ANTHROPIC_API_KEY "
+                "or log in the Claude CLI (`claude login`), then retry."
             ),
         )
 
@@ -3057,6 +3106,10 @@ def _acquire_wip_and_announce(
             gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
             labels.add(agent_def.status_label(STATUS_WIP))
             work_item.labels = labels
+            # Track the in-flight :wip so a termination signal can clear it
+            # rather than stranding the mutex (see _clear_inflight_wip_on_signal).
+            global _CURRENT_WIP
+            _CURRENT_WIP = (gh, work_item.number, agent_def.status_label(STATUS_WIP))
             # Increment only on successful label application — a failed
             # add_label means no :wip was set so no slot is consumed.
             if concurrency is not None:
@@ -3876,6 +3929,11 @@ def _apply_result(
 
     _apply_terminal_status(gh, agent_def, work_item, applied_status)
 
+    # The step has transitioned off :wip -- clear the in-flight marker so the
+    # SIGTERM handler only ever acts on a genuinely running step.
+    global _CURRENT_WIP
+    _CURRENT_WIP = None
+
     _announce_and_prompt(
         agent_def, work_item, session_id, applied_status, sentinel_message, gh,
     )
@@ -4480,9 +4538,38 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
         ))
 
 
+# Set to (gh, work_item_number, wip_label) while an agent is mid-flight so a
+# termination signal (e.g. a CI or interactive timeout sending SIGTERM) can
+# clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
+_CURRENT_WIP = None
+
+
+def _clear_inflight_wip_on_signal(signum, _frame) -> None:
+    """Best-effort: drop the in-flight :wip label, then exit.
+
+    A killed tick (SIGTERM/SIGINT) otherwise leaves the work item stuck at :wip
+    -- the mutex blocks the next tick from re-triggering the agent. Clearing that
+    one label makes the item immediately retryable.
+    """
+    wip = _CURRENT_WIP
+    if wip is not None:
+        gh, number, label = wip
+        try:
+            gh.remove_label(number, label)
+            log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
+        except Exception as exc:
+            log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
+    sys.exit(128 + signum)
+
+
 def main() -> None:
     # Wake up -> do the work -> close down.
     args = parse_args()
+
+    # Clear an in-flight :wip if this process is terminated (timeout/cancel) so a
+    # killed tick does not strand the mutex and block the next run.
+    signal.signal(signal.SIGTERM, _clear_inflight_wip_on_signal)
+    signal.signal(signal.SIGINT, _clear_inflight_wip_on_signal)
 
     global _VERBOSE
     _VERBOSE = args.verbose

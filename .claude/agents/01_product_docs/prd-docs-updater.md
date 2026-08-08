@@ -44,10 +44,10 @@ commands.
 Check whether this is a first run or a revision after human rejection.
 
 ```bash
-PREV_ARTEFACT_TIME=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
-  --jq '[.comments[]
+PREV_ARTEFACT_TIME=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -rs '[.[]
         | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater"))
-        ] | last | .createdAt // ""')
+        ] | last | .created_at // ""')
 ```
 
 If `$PREV_ARTEFACT_TIME` is **non-empty**, read the human feedback posted
@@ -55,9 +55,9 @@ after the last artefact and keep it in mind when reassessing which doc
 changes are needed:
 
 ```bash
-HUMAN_FEEDBACK=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments --jq '.comments' \
-  | jq --arg since "$PREV_ARTEFACT_TIME" \
-  '[.[] | select(.createdAt > $since)
+HUMAN_FEEDBACK=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -s --arg since "$PREV_ARTEFACT_TIME" \
+  '[.[] | select(.created_at > $since)
        | select(.body | startswith("<!-- ai-agile/") | not)
        | "**\(.user.login):** \(.body)"
   ] | join("\n\n---\n\n")')
@@ -74,7 +74,7 @@ prioritise that over your own initial assessment.
 Read the approved PRD from the issue body:
 
 ```bash
-gh issue view $ISSUE_NUMBER --repo $REPO --json title,body
+gh api "repos/$REPO/issues/$ISSUE_NUMBER"
 ```
 
 The PRD is in the issue body (marked with

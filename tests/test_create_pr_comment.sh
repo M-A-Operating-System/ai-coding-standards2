@@ -56,41 +56,45 @@ GITEOF
   cat >"${MOCK_DIR}/gh" <<GHEOF
 #!/usr/bin/env bash
 echo "gh \$*" >> "${CALLS_LOG}"
-CMD="\$1 \$2"
-case "\$CMD" in
-  "pr list")
-    echo "${mode_pr_list}"
-    ;;
-  "repo view")
-    echo "main"
-    ;;
-  "api /user")
-    echo "bot"
-    ;;
-  "api /repos/${TEST_REPO}/compare/"*)
-    echo "1"
-    ;;
-  "api /repos/${TEST_REPO}")
-    echo "${TEST_REPO}"
-    ;;
-  "api --method")
+ARGS="\$*"
+case "\$ARGS" in
+  *"api --method"*)
+    # PR creation (POST /repos/.../pulls) and label POST (link-pr-to-issue)
     echo '{"number":${PR_NUM},"html_url":"https://github.com/${TEST_REPO}/pull/${PR_NUM}"}'
     ;;
-  "issue view")
-    # Differentiate: title lookup vs comment-count idempotency check
-    if echo "\$*" | grep -q "comments"; then
-      echo "${mock_comments_count}"
-    else
-      echo "Test Issue"
-    fi
+  *"api /user"*)
+    echo "bot"
     ;;
-  "issue comment")
+  *"/compare/"*)
+    echo "1"
+    ;;
+  *"/comments"*)
+    # Idempotency check: the script streams comment objects
+    # (gh api --paginate --jq '.[]') and counts matches with an external jq -s.
+    # Emit mock_comments_count objects carrying the create-pr marker so the
+    # slurped count comes out right (0 objects -> length 0).
+    _n=${mock_comments_count}; _c=0
+    while [ "\$_c" -lt "\$_n" ]; do
+      echo '{"body":"ai-agile/announcement/v1 by 01_product_docs/create-pr"}'
+      _c=\$((_c + 1))
+    done
+    ;;
+  *"/pulls"*)
+    # PR existence lookup (converted from 'gh pr list' to 'gh api .../pulls?head=')
+    echo "${mode_pr_list}"
+    ;;
+  *"/issues/"*)
+    # Issue title lookup (converted from 'gh issue view --json title')
+    echo "Test Issue"
+    ;;
+  *"issue comment"*)
     echo "ISSUE_COMMENT_CALLED" >> "${CALLS_LOG}"
     ${comment_exit}
     ;;
-  "label create") exit 0 ;;
-  "pr edit")      exit 0 ;;
-  *)              exit 0 ;;
+  *)
+    # default branch (gh api repos/owner/repo), repo preflight, labels, etc.
+    echo "main"
+    ;;
 esac
 GHEOF
   chmod +x "${MOCK_DIR}/gh"

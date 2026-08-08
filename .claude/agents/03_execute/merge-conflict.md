@@ -27,8 +27,10 @@ Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope.
 ```bash
 cat "$AI_AGILE_CONTEXT"
 
-PR_NUMBER=$(gh pr list --repo "$REPO" --head "issue-${ISSUE_NUMBER}" \
-  --state open --json number --jq '.[0].number // empty')
+OWNER="${REPO%%/*}"
+PR_NUMBER=$(gh api \
+  "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
+  --jq '.[0].number // empty')
 ```
 
 If no open PR exists, complete immediately — there is nothing to check:
@@ -42,32 +44,32 @@ If no open PR exists, complete immediately — there is nothing to check:
 
 ## Step 1 — Check mergeability
 
-Use the GitHub API `.mergeable` field — it is authoritative and requires no
-local git operations:
+Use the GitHub API `.mergeable_state` field — it is authoritative and requires
+no local git operations:
 
 ```bash
-MERGEABLE=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-  --json mergeable --jq '.mergeable')
+MERGEABLE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state')
 ```
 
-`mergeable` will be `MERGEABLE`, `CONFLICTING`, or `UNKNOWN`. GitHub computes
-this asynchronously, so if `UNKNOWN` is returned retry once after 15 seconds:
+`mergeable_state` will be `dirty` (has conflicts), `unknown` (not yet computed),
+or one of `clean`/`blocked`/`behind`/`unstable` (all conflict-free). GitHub
+computes this asynchronously, so if `unknown` is returned retry once after 15
+seconds:
 
 ```bash
-if [[ "$MERGEABLE" == "UNKNOWN" ]]; then
+if [[ "$MERGEABLE" == "unknown" ]]; then
   sleep 15
-  MERGEABLE=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-    --json mergeable --jq '.mergeable')
+  MERGEABLE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state')
 fi
 ```
 
-**If `MERGEABLE`:**
+**If not `dirty` or `unknown` (e.g. `clean`):**
 Post no comment (clean PRs advance silently) and exit:
 ```
 AI_AGILE_STATUS: complete
 ```
 
-**If `UNKNOWN` after the retry:**
+**If `unknown` after the retry:**
 Post a brief warning that mergeability could not be determined, then exit
 `complete` — the pr-reviewer will flag persistent conflicts as Critical:
 
@@ -82,7 +84,7 @@ echo "AI_AGILE_STATUS: complete"
 exit 0
 ```
 
-**If `CONFLICTING`:** continue to Step 2.
+**If `dirty`:** continue to Step 2.
 
 ---
 
@@ -95,8 +97,8 @@ rebase resolves them automatically with no human input required.
 ```bash
 # Resolve the PR's base and head branches before using them -- they drive every
 # git command in this step. (Step 3 re-resolves them for the manual path.)
-BASE_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json baseRefName --jq '.baseRefName')
-HEAD_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')
+BASE_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')
+HEAD_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
 
 git config user.email "github-actions[bot]@users.noreply.github.com"
 git config user.name "github-actions[bot]"
@@ -130,15 +132,13 @@ If the rebase itself conflicted, continue to Step 3 for manual conflict analysis
 
 ## Step 3 — Identify conflicting files and extract conflict hunks
 
-`gh pr diff` shows head-vs-base changes, not the synthetic merge result with
-conflict markers — it cannot be used to identify conflicts. Instead, simulate
-the merge locally:
+The PR diff (head-vs-base) shows only head-vs-base changes, not the synthetic
+merge result with conflict markers — it cannot be used to identify conflicts.
+Instead, simulate the merge locally:
 
 ```bash
-BASE_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-  --json baseRefName --jq '.baseRefName')
-HEAD_BRANCH=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-  --json headRefName --jq '.headRefName')
+BASE_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')
+HEAD_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
 
 # Fetch both sides
 git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"

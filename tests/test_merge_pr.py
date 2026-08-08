@@ -9,29 +9,41 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 MERGE_PR = REPO_ROOT / ".github" / "scripts" / "merge-pr.sh"
 
-# A mock `gh` that branches on the subcommand:
-#   pr view <n> --json state,merged,...   -> prints $STATE_JSON
-#   pr view <n> --json number             -> exit $PR_EXISTS (0 = exists)
-#   pr list ... --json number --jq ...     -> prints $ISSUE_PR
-#   pr merge ...                           -> echoes args, exit $MERGE_RC
-#   api --method DELETE ...                -> exit $DELETE_RC
+# A mock `gh` that branches on the new REST `gh api` invocations:
+#   api repos/O/R/pulls?head=...&state=open  -> prints $ISSUE_PR (the resolved
+#                                               PR number, or empty), exit 0
+#   api repos/O/R/pulls/<N>  (probe or read) -> if the number is the input
+#                                               NUMBER and $PR_EXISTS != 0, exit
+#                                               $PR_EXISTS (the probe reports
+#                                               "not a PR"); otherwise print the
+#                                               REST pull object $STATE_JSON,
+#                                               exit 0 (both the existence probe
+#                                               and the state read hit this).
+#   api --method PUT   .../pulls/<N>/merge   -> logs the call, exit $MERGE_RC
+#   api --method DELETE .../git/refs/heads/B -> logs the call, exit $DELETE_RC
 MOCK_GH = r"""#!/usr/bin/env bash
 cmd="$1"; shift || true
-if [ "$cmd" = "pr" ]; then
-  action="$1"; shift || true
+if [ "$cmd" = "api" ]; then
   allargs="$*"
-  case "$action" in
-    view)
-      if printf '%s' "$allargs" | grep -q -- 'state,merged,mergeable,headRefName,isCrossRepository'; then
-        printf '%s' "$STATE_JSON"; exit 0
+  case "$allargs" in
+    *"--method PUT"*"/merge"*)
+      echo "MOCK-MERGE-PUT: $allargs"; exit "${MERGE_RC:-0}" ;;
+    *"--method DELETE"*)
+      echo "MOCK-DELETE-REF: $allargs"; exit "${DELETE_RC:-0}" ;;
+    *"pulls?head="*)
+      printf '%s\n' "${ISSUE_PR}"; exit 0 ;;
+    *)
+      # Bare .../pulls/<N>: the existence probe and the state read both land
+      # here. When the input number is not itself a PR (PR_EXISTS != 0), the
+      # probe on that exact number must fail so the script falls back to the
+      # issue-branch lookup.
+      if [ "${PR_EXISTS:-0}" != "0" ]; then
+        case "$allargs" in
+          *"pulls/${INPUT_NUMBER}") exit "${PR_EXISTS}" ;;
+        esac
       fi
-      exit "${PR_EXISTS:-0}"
-      ;;
-    list)  printf '%s' "$ISSUE_PR"; exit 0 ;;
-    merge) echo "gh-merge: $*"; exit "${MERGE_RC:-0}" ;;
+      printf '%s' "${STATE_JSON}"; exit 0 ;;
   esac
-elif [ "$cmd" = "api" ]; then
-  echo "gh-api: $*"; exit "${DELETE_RC:-0}"
 fi
 echo "mock gh: unhandled: $cmd $*" >&2
 exit 99
@@ -48,6 +60,7 @@ def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
     env = {
         "PATH": f"{mock_dir}:/usr/bin:/bin",
         "REPO": "owner/repo",
+        "INPUT_NUMBER": str(args[0]) if args else "",
         "PR_EXISTS": str(pr_exists),
         "STATE_JSON": state_json,
         "ISSUE_PR": issue_pr,
@@ -61,10 +74,14 @@ def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
     return result.stdout + result.stderr, result.returncode
 
 
-_OPEN = '{"state":"OPEN","merged":false,"mergeable":"MERGEABLE","headRefName":"issue-5","isCrossRepository":false}'
-_MERGED = '{"state":"MERGED","merged":true,"mergeable":"UNKNOWN","headRefName":"issue-5","isCrossRepository":false}'
-_CONFLICT = '{"state":"OPEN","merged":false,"mergeable":"CONFLICTING","headRefName":"issue-5","isCrossRepository":false}'
-_CLOSED = '{"state":"CLOSED","merged":false,"mergeable":"UNKNOWN","headRefName":"issue-5","isCrossRepository":false}'
+# REST pull objects (as `gh api repos/O/R/pulls/N` returns). state is lowercase;
+# mergeable_state is "clean"/"dirty"/...; cross-repo is derived by comparing
+# head.repo.full_name against base.repo.full_name.
+_SAME_REPO = '"head":{"ref":"issue-5","repo":{"full_name":"owner/repo"}},"base":{"repo":{"full_name":"owner/repo"}},"draft":false'
+_OPEN = '{"state":"open","merged":false,"mergeable_state":"clean",' + _SAME_REPO + '}'
+_MERGED = '{"state":"closed","merged":true,"mergeable_state":"unknown",' + _SAME_REPO + '}'
+_CONFLICT = '{"state":"open","merged":false,"mergeable_state":"dirty",' + _SAME_REPO + '}'
+_CLOSED = '{"state":"closed","merged":false,"mergeable_state":"unknown",' + _SAME_REPO + '}'
 
 
 class TestMergePr:
@@ -72,12 +89,17 @@ class TestMergePr:
         out, rc = _run(tmp_path, ["5"], pr_exists=0, state_json=_OPEN)
         assert rc == 0, out
         assert "Merged PR #5" in out
-        assert "--delete-branch" in out  # the flag reached gh pr merge
+        # The branch was deleted via the REST ref-delete call on issue-5.
+        assert "git/refs/heads/issue-5" in out
 
     def test_method_override_squash(self, tmp_path):
         out, rc = _run(tmp_path, ["5", "--squash"], pr_exists=0, state_json=_OPEN)
         assert rc == 0, out
-        assert "--squash" in out and "--delete-branch" in out
+        # The squash method is reflected in the success message (the merge call's
+        # own output is captured by the script for error handling), and the
+        # branch was deleted via the REST ref-delete call.
+        assert "(squash)" in out
+        assert "git/refs/heads/issue-5" in out
 
     def test_already_merged_is_idempotent_and_deletes_branch(self, tmp_path):
         out, rc = _run(tmp_path, ["5"], pr_exists=0, state_json=_MERGED, delete_rc=0)
