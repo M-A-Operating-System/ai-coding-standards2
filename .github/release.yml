@@ -2,10 +2,10 @@
 # (`gh release create --generate-notes`, used by the RELEASE - publish
 # workflow). Merged PRs are grouped into the categories below by their labels.
 #
-# Labels follow this repo's issue taxonomy (STD-PROC-007): every item carries
-# one `type:` label (enhancement / bug / debt) plus `area:` and `feature:`
-# labels. A PR lands in the first category whose labels it matches, so ordering
-# matters; anything unmatched falls through to the catch-all "Other" category.
+# Pipeline PRs carry a `classification: {type}` label copied from the issue
+# by link-pr-to-issue.sh. A PR lands in the first category whose labels it
+# matches; anything unmatched falls through to the catch-all "Other" category
+# (hand-authored PRs that skip the pipeline remain unlabeled and land there).
 changelog:
   exclude:
     labels:
@@ -14,17 +14,14 @@ changelog:
   categories:
     - title: Features
       labels:
-        - "type:enhancement"
+        - "classification: feature"
+        - "classification: enhancement"
     - title: Fixes
       labels:
-        - "type:bug"
-    - title: Standards and Docs
-      labels:
-        - "area:standards"
-        - "area:docs"
+        - "classification: bug"
     - title: Maintenance
       labels:
-        - "type:debt"
+        - "classification: toil"
     - title: Other
       labels:
         - "*"
