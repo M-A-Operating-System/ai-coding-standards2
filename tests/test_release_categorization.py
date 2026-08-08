@@ -136,13 +136,14 @@ case "$cmd" in
     exit 0
     ;;
   *"repos/"*"/issues/${ISSUE_NUMBER}"*)
-    # Issue detail lookup — return a label array with the configured classification.
-    printf '[{"name":"source-issue:1"},{"name":"%s"}]' "${CLASSIFICATION}"
+    # Simulate gh api --jq output: plain-text label name only (empty when absent).
+    # The real gh CLI applies --jq internally and writes only the matched text.
+    if [[ -n "${CLASSIFICATION}" ]]; then
+      printf '%s\n' "${CLASSIFICATION}"
+    fi
     exit 0
     ;;
   *"repos/"*"/issues/"*)
-    # Issue labels endpoint (from the --jq call on the issue object)
-    printf '[{"name":"%s"}]\n' "${CLASSIFICATION}"
     exit 0
     ;;
   *)
@@ -204,12 +205,16 @@ class TestLinkPrToIssueClassification:
         assert "classification: toil" in out
 
     def test_no_classification_label_does_not_fail(self, tmp_path):
-        """link-pr-to-issue.sh succeeds when the issue has no classification label.
+        """link-pr-to-issue.sh succeeds and skips label when issue has none.
 
-        Hand-authored PRs have no classification; the script must not crash.
+        Hand-authored PRs have no classification; the script must not crash or
+        apply a label.
         """
         out, rc = _run_link_script(tmp_path, "")
         assert rc == 0, f"Script failed: {out}"
+        assert "Applied classification:" not in out, (
+            "No classification label should be applied when the issue has none"
+        )
 
     def test_source_issue_label_always_applied(self, tmp_path):
         """source-issue:N is always applied regardless of classification presence."""
