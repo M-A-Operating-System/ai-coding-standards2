@@ -2308,6 +2308,21 @@ AGENT_ENV_PASSTHROUGH = (
 )
 
 
+def _claude_cli_logged_in() -> bool:
+    """True when the Claude CLI has stored login credentials (subscription /
+    OAuth) under $HOME, so a spawned agent can authenticate without
+    ANTHROPIC_API_KEY.
+
+    The CLI writes these on `claude login`. HOME is passed through to the agent
+    subprocess (AGENT_ENV_PASSTHROUGH), so when this file is present the spawned
+    `claude` authenticates via the logged-in session. This lets the orchestrator
+    run agents interactively on a subscription (no API-key billing); CI still
+    uses ANTHROPIC_API_KEY.
+    """
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    return os.path.isfile(os.path.join(home, ".claude", ".credentials.json"))
+
+
 def _build_agent_env(
     base_env: Mapping[str, str],
     repo: str,
@@ -2525,20 +2540,25 @@ def invoke_agent(
         os.environ, repo, work_item, agent_session_id, agent_def.session_scope
     )
 
-    # Preflight: a missing ANTHROPIC_API_KEY produces an auth-error response
-    # that the stream-json parser may misread as a rate-limit pause, masking
-    # the real cause and leaving the work item stuck in :wip indefinitely.
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    # Preflight: the agent's Claude CLI needs some usable auth. Normally that is
+    # ANTHROPIC_API_KEY (CI secret); when it is absent the CLI can still be
+    # authenticated via a logged-in session (subscription / OAuth) whose
+    # credentials live under $HOME (passed through in AGENT_ENV_PASSTHROUGH).
+    # Only fail when NEITHER is available -- an unauthenticated launch otherwise
+    # produces an auth-error the stream-json parser may misread as a rate-limit
+    # pause, leaving the work item stuck in :wip.
+    if not os.environ.get("ANTHROPIC_API_KEY") and not _claude_cli_logged_in():
         log.error(
-            "  invoke_agent: ANTHROPIC_API_KEY is not set — cannot launch %s "
-            "on %s #%d; add the key to CI secrets and retry.",
+            "  invoke_agent: no Claude auth for %s on %s #%d -- neither "
+            "ANTHROPIC_API_KEY nor a logged-in Claude CLI (credentials under "
+            "$HOME/.claude). Set the key (CI) or run `claude login`, then retry.",
             agent_def.agent, work_item.kind, work_item.number,
         )
         return AgentRunResult(
             success=False,
             captured_tail=(
-                "Configuration error: ANTHROPIC_API_KEY is not set. "
-                "Add the key to CI secrets and retry."
+                "Configuration error: no Claude auth -- set ANTHROPIC_API_KEY "
+                "or log in the Claude CLI (`claude login`), then retry."
             ),
         )
 
