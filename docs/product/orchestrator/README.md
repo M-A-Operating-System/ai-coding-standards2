@@ -27,6 +27,9 @@ Read these four, in this order, and you will understand the system:
 4. **[glossary.md](glossary.md)** — keep it open; the other docs assume the
    terms it defines (gate, sentinel, work item, `:wip`, session, …).
 
+Want to skip straight to running something? See **[quick-start.md](quick-start.md)**
+for the shortest path to a first pipeline run.
+
 Then read **[03-personas.md](03-personas.md)** to find your own role, and
 dip into the reference docs below as you need them. You do **not** need to
 read all 16 documents in order to get started.
@@ -83,6 +86,8 @@ rest as reference you consult when a question comes up.
 | 13 | [Todos](13-todos.md) | How task lists are stored in issue/PR bodies |
 | 14 | [Standards](14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
+| 17 | [Operating modes](17-operating-modes.md) | Scheduled (GitHub Actions) vs. in-session (`/maos-run`) — comparison and current limitations |
+| — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |
 
 ### Planning & status
 
