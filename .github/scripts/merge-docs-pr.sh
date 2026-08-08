@@ -47,10 +47,17 @@ _MERGE_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}"
 PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
 
 # Refuse to auto-merge a PR that conflicts with main -- a human resolves it.
-MERGEABLE=$(
-  gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.mergeable_state' \
-  2>/dev/null || echo "UNKNOWN"
-)
+# GitHub reports mergeable_state 'unknown' for a few seconds after the PR is
+# opened/updated while it recomputes mergeability; re-fetch a few times so a real
+# conflict surfaces as 'dirty' here rather than as a raw 405 at merge (mirrors
+# merge-pr.sh).
+MERGEABLE=""
+_tries=0
+while [[ ( -z "${MERGEABLE}" || "${MERGEABLE}" == "unknown" || "${MERGEABLE}" == "UNKNOWN" ) && ${_tries} -lt 3 ]]; do
+  [[ ${_tries} -gt 0 ]] && sleep 2
+  MERGEABLE=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.mergeable_state' 2>/dev/null || echo "UNKNOWN")
+  _tries=$((_tries + 1))
+done
 
 if [[ "${MERGEABLE}" == "dirty" ]]; then
   echo "Design PR #${PR_NUMBER} conflicts with main -- needs human resolution." >&2

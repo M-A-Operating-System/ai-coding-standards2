@@ -2368,9 +2368,9 @@ def _build_agent_env(
 # runtime; narrowing it to specific --add-label globs is unsafe (a positive glob
 # cannot permit those legitimate labels while denying gate labels like
 # `prd-writer:approved` without risking the routing labels). The residual
-# `gh issue edit --add-label {gate}` self-approval vector must therefore be
-# closed ORCHESTRATOR-SIDE (verify a human applied any gate label) -- tracked as
-# follow-up on issue #259, not expressible here.
+# self-approval vector (via `gh issue edit` OR the REST issue-write grant below,
+# which reaches PRs too since PRs are issues) is closed ORCHESTRATOR-SIDE: the
+# gate check rejects any `{agent}:approved` label not applied by a human (#263).
 BASE_AGENT_TOOLS = [
     "Bash(gh issue view *)",       # read issue body / labels
     "Bash(gh issue comment *)",    # post artefact comments
@@ -2383,9 +2383,16 @@ BASE_AGENT_TOOLS = [
     "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
     "Bash(gh api repos/*/pulls/*)",
     "Bash(gh api repos/*/issues*)",   # REST reads incl. list/query forms (issues?labels=...)
-    "Bash(gh api repos/*/pulls*)",    # REST reads incl. list/query forms (pulls?head=...)
-    "Bash(gh api --method * repos/*/issues*)",  # REST writes on issues: labels, comments, body/title
-    "Bash(gh api --method * repos/*/pulls*)",   # REST writes on pulls: merge, etc.
+    "Bash(gh api repos/*/pulls*)",     # REST reads incl. list/query forms (pulls?head=...)
+    # REST WRITES on issues only (labels/comments/body) -- the in-session
+    # equivalent of `gh issue edit`, needed because that command is GraphQL and
+    # 403s in a restricted session. It carries the SAME gate-label self-approval
+    # vector as `gh issue edit` (a positive glob cannot permit routing labels
+    # while denying gate labels), which is closed ORCHESTRATOR-SIDE by the
+    # human-actor gate check (#263). No `--method` grant on /pulls: agents never
+    # write PRs (merge/ready/close are the orchestrator's/driver's job), so
+    # granting it would hand an injected agent merge/close/retarget power.
+    "Bash(gh api --method * repos/*/issues*)",
     "Bash(cat *)",                 # read prompt-side files
     "Bash(grep *)",
     "Bash(find *)",
@@ -3921,6 +3928,11 @@ def _apply_result(
     applied_status = _resolve_applied_status(agent_def, work_item, final_status, gh)
 
     _apply_terminal_status(gh, agent_def, work_item, applied_status)
+
+    # The step has transitioned off :wip -- clear the in-flight marker so the
+    # SIGTERM handler only ever acts on a genuinely running step.
+    global _CURRENT_WIP
+    _CURRENT_WIP = None
 
     _announce_and_prompt(
         agent_def, work_item, session_id, applied_status, sentinel_message, gh,
