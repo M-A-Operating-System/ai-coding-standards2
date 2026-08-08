@@ -3820,9 +3820,9 @@ class TestPriorityScheduling:
             main()
 
         dispatched_numbers = [call[0][0].number for call in mock_process_wi.call_args_list]
-        assert dispatched_numbers[:2] == [3, 2], (
-            f"Security item #3 must be dispatched before priority item #2, "
-            f"which must be dispatched before normal item #1; got order {dispatched_numbers}"
+        assert dispatched_numbers == [3, 2, 1], (
+            f"Security item #3 must be dispatched first, priority item #2 second, "
+            f"normal item #1 last; got order {dispatched_numbers}"
         )
 
     def test_classification_types_includes_security(self):
