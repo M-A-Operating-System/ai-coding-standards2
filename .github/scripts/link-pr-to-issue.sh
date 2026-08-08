@@ -44,3 +44,22 @@ gh label create "${SOURCE_LABEL}" \
 gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/labels" -f "labels[]=${SOURCE_LABEL}" >/dev/null
 
 echo "Applied ${SOURCE_LABEL} to PR #${PR_NUMBER}."
+
+# Copy the issue's classification label to the PR so release notes can
+# categorise pipeline PRs (release.yml groups by classification: {type}).
+CLASSIFICATION_LABEL=$(
+  gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" \
+    --jq '.labels[].name | select(startswith("classification: "))' \
+  2>/dev/null | head -1 || true
+)
+
+if [[ -n "${CLASSIFICATION_LABEL}" ]]; then
+  gh label create "${CLASSIFICATION_LABEL}" \
+    --repo "${REPO}" \
+    --color "d93f0b" \
+    --description "Issue classification" \
+    2>/dev/null || true
+  gh api --method POST "repos/${REPO}/issues/${PR_NUMBER}/labels" \
+    -f "labels[]=${CLASSIFICATION_LABEL}" >/dev/null
+  echo "Applied ${CLASSIFICATION_LABEL} to PR #${PR_NUMBER}."
+fi
