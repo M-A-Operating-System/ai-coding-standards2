@@ -6,6 +6,8 @@ content that was added for issue #283 (scheduled vs in-session modes + Quick Sta
 """
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).parent.parent
 QUICK_START = REPO_ROOT / "docs" / "product" / "orchestrator" / "quick-start.md"
 OPERATING_MODES = REPO_ROOT / "docs" / "product" / "orchestrator" / "17-operating-modes.md"
@@ -36,9 +38,12 @@ def test_a_new_consumer_can_identify_which_mode_to_use():
 
 
 def test_a_new_consumer_can_identify_which_mode_to_use_error_path_missing_file(tmp_path):
-    """Absence of quick-start.md would leave a consumer without a first-run guide."""
+    """Reading a missing quick-start.md raises FileNotFoundError -- the real
+    error condition a consumer or tool would hit if the guide were absent."""
     absent = tmp_path / "quick-start.md"
     assert not absent.exists()
+    with pytest.raises(FileNotFoundError):
+        absent.read_text()
 
 
 # ---------------------------------------------------------------------------
