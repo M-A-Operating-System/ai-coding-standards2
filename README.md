@@ -186,6 +186,22 @@ For platform details (Windows vs Linux, how paths resolve, what is
 symlinked vs copied), see
 [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md).
 
+### Two operating modes
+
+The pipeline runs in two modes and both can be active on the same repo:
+
+- **Scheduled (background)** — the `ai_orchestrator.yml` workflow fires on
+  issue/PR events and on a schedule. No human present; gates wait for a label.
+  This is what the steps above set up.
+- **In-session (live)** — a human runs `/maos-run {issue}` inside an interactive
+  Claude Code session against a local checkout. Claude drives each step live and
+  pauses at gates for approval in the same conversation. Auth is the session's
+  own Claude subscription/OAuth rather than an API key secret.
+
+For a side-by-side comparison, prerequisites for each mode, and Quick Start
+guides, see
+[`docs/product/orchestrator/17-operating-modes.md`](docs/product/orchestrator/17-operating-modes.md).
+
 ---
 
 ## Updating the submodule
