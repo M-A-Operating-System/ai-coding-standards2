@@ -109,20 +109,20 @@ STATUSES_JSON = Path(__file__).parent / "statuses.json"
 # which is a different directory when installed as a submodule.
 SUBMODULE_ROOT = Path(__file__).resolve().parent.parent
 
-def load_statuses() -> tuple[list[dict], list[dict]]:
-    """Load status and standalone-label definitions from statuses.json."""
+def load_statuses() -> tuple[list[dict], list[dict], list[str]]:
+    """Load status, standalone-label, and priority-ordering definitions from statuses.json."""
     if not STATUSES_JSON.exists():
         log.error("statuses.json not found at %s — cannot start", STATUSES_JSON)
         sys.exit(1)
     try:
         with open(STATUSES_JSON) as f:
             data = json.load(f)
-        return data["statuses"], data.get("standalone_labels", [])
+        return data["statuses"], data.get("standalone_labels", []), data.get("priority_ordering", [])
     except (KeyError, json.JSONDecodeError) as e:
         log.error("statuses.json is malformed: %s", e)
         sys.exit(1)
 
-STATUSES, STANDALONE_LABELS = load_statuses()
+STATUSES, STANDALONE_LABELS, PRIORITY_LABEL_ORDERING = load_statuses()
 LABEL_COLOURS = {s["status"]: s["colour"] for s in STATUSES}
 # Standalone labels (no {agent}:{suffix} pattern) keyed by full label name.
 STANDALONE_LABEL_COLOURS = {sl["label"]: sl["colour"] for sl in STANDALONE_LABELS}
@@ -1668,7 +1668,7 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     return label in labels
 
 
-_CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike"}
+_CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike", "security"}
 
 def get_work_item_classification(work_item: WorkItem) -> Optional[str]:
     """
@@ -4463,20 +4463,33 @@ def _wake(args) -> "Optional[RunContext]":
     else:
         work_items = gh.list_open_issues(kind="all")
 
-    # Two-pass priority ordering: issues carrying the `priority` label are
-    # moved to the front so they receive the next available :wip slot before
-    # any non-priority work item. Concurrency limits apply unchanged to both
-    # passes. List comprehensions iterate in source order, so relative order
-    # within each group is preserved from the GitHub API response.
-    _priority_items = [wi for wi in work_items if "priority" in wi.labels]
-    _other_items    = [wi for wi in work_items if "priority" not in wi.labels]
-    if _priority_items:
-        log.info(
-            "Priority items: %d (will be evaluated first): %s",
-            len(_priority_items),
-            [wi.number for wi in _priority_items],
-        )
-    work_items = _priority_items + _other_items
+    # Multi-tier priority ordering driven by statuses.json priority_ordering.
+    # Each label in PRIORITY_LABEL_ORDERING forms one tier; items carrying an
+    # earlier-listed label are evaluated before items carrying a later-listed
+    # label, which are evaluated before items carrying none. Within each tier,
+    # relative order from the GitHub API response is preserved.
+    # Example: ["classification: security", "priority"] produces:
+    #   security items -> priority items -> all other items.
+    _tiers: list[list] = [[] for _ in PRIORITY_LABEL_ORDERING]
+    _other_items: list = []
+    for wi in work_items:
+        placed = False
+        for idx, lbl in enumerate(PRIORITY_LABEL_ORDERING):
+            if lbl in wi.labels:
+                _tiers[idx].append(wi)
+                placed = True
+                break
+        if not placed:
+            _other_items.append(wi)
+    for idx, lbl in enumerate(PRIORITY_LABEL_ORDERING):
+        if _tiers[idx]:
+            log.info(
+                "Priority tier %r: %d item(s) (will be evaluated first): %s",
+                lbl,
+                len(_tiers[idx]),
+                [wi.number for wi in _tiers[idx]],
+            )
+    work_items = [wi for tier in _tiers for wi in tier] + _other_items
 
     log.info("Work items to evaluate: %d", len(work_items))
 

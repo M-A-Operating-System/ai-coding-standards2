@@ -179,6 +179,7 @@ is what is required inside each section.
 
 | Classification | Problem | Goal | User stories | Gherkin scenarios | Out of scope | Success metrics |
 |---|---|---|---|---|---|---|
+| `security` | 1 paragraph: the vulnerability, what it enables an attacker to do, and affected components | One sentence: the fix and the regression test proving the hole is closed | 1--2 (the affected persona) | 2--4 (exploit path is closed + at least one regression scenario) | Include: related hardening out of scope | Include: the regression test passes in CI |
 | `bug` | 1–2 sentences naming the drift from target state | One sentence: the corrected behaviour | 0–1 (omit if the existing story already covers it) | 1–2 (the regression + one related path at most) | Omit unless reviewers might over-correct | Omit; the bug being fixed is the metric |
 | `toil` | 1–2 sentences naming the operational pain | One sentence: the post-change state | 0–1 | 1–3 | Omit unless scope creep is likely | Omit unless there is a measurable target (perf, cost) |
 | `spike` | 1–2 sentences naming the question and why now | One sentence: what artefact the spike delivers | 1 (the persona who consumes the findings) | 1–3 acceptance conditions on the **findings**, not on code | Often useful — list what is explicitly out of the spike's scope | Often omit — acceptance criteria already define "done" |
@@ -381,6 +382,7 @@ Map classification to prefix:
 
 | Classification | Prefix |
 |---|---|
+| `security` | `[SECURITY]` |
 | `bug` | `[BUG]` |
 | `toil` | `[TOIL]` |
 | `enhancement` | `[ENHANCEMENT]` |
