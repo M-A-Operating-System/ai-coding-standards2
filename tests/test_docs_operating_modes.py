@@ -4,6 +4,7 @@ Gherkin-traced tests for docs/features/docs.md.
 Each test corresponds to a Scenario in that file and verifies the documentation
 content that was added for issue #283 (scheduled vs in-session modes + Quick Start).
 """
+import sys
 from pathlib import Path
 
 import pytest
@@ -37,13 +38,14 @@ def test_a_new_consumer_can_identify_which_mode_to_use():
         "quick-start.md must cross-reference 17-operating-modes.md"
 
 
-def test_a_new_consumer_can_identify_which_mode_to_use_error_path_missing_file(tmp_path):
-    """Reading a missing quick-start.md raises FileNotFoundError -- the real
-    error condition a consumer or tool would hit if the guide were absent."""
+def test_a_new_consumer_can_identify_which_mode_to_use_error_path_missing_file(tmp_path, monkeypatch):
+    """When quick-start.md is absent, the production test fails with the
+    AssertionError its own existence guard raises -- not a stdlib exception."""
     absent = tmp_path / "quick-start.md"
     assert not absent.exists()
-    with pytest.raises(FileNotFoundError):
-        absent.read_text()
+    monkeypatch.setattr(sys.modules[__name__], "QUICK_START", absent)
+    with pytest.raises(AssertionError, match="must exist"):
+        test_a_new_consumer_can_identify_which_mode_to_use()
 
 
 # ---------------------------------------------------------------------------
