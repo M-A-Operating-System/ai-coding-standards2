@@ -3763,6 +3763,92 @@ class TestPriorityScheduling:
             f"got #{first_item.number}. The sort block in main() may not be exercised."
         )
 
+    # Scenario: Security items are scheduled first (PRD issue #280)
+    @patch("pipeline_orchestrator.process_work_item")
+    @patch("pipeline_orchestrator.load_pipeline")
+    @patch("pipeline_orchestrator.is_pipeline_paused")
+    @patch("pipeline_orchestrator.GitHubClient")
+    @patch("pipeline_orchestrator.parse_args")
+    @patch("pipeline_orchestrator._emit_audit_event")
+    def test_security_classified_item_dispatched_before_priority_and_normal(
+        self, mock_emit_audit, mock_parse_args, mock_gh_cls, mock_is_paused,
+        mock_load_pipeline, mock_process_wi,
+    ):
+        """Integration test: main()'s multi-tier sort (statuses.json priority_ordering)
+        places classification: security items ahead of priority-labeled items, which
+        are ahead of everything else.
+
+        Given gh.list_open_issues returns [normal #1, priority #2, security #3]
+              (API insertion order)
+        When main() runs
+        Then process_work_item is called with #3 (security) first, #2 (priority) second,
+             #1 (normal) last.
+        """
+        args_mock = MagicMock()
+        args_mock.clear_pause = False
+        args_mock.clear_stop = False
+        args_mock.verbose = False
+        args_mock.repo = "test/repo"
+        args_mock.issue = None
+        args_mock.kind = None
+        args_mock.dry_run = False
+        args_mock.pipeline = MagicMock()
+        args_mock.phases = None
+        mock_parse_args.return_value = args_mock
+
+        agent_def = self._make_agent_for_priority()
+        mock_load_pipeline.return_value = ([agent_def], [])
+        mock_is_paused.return_value = (False, None, None)
+
+        normal_wi = self._eligible_wi(1, priority=False)
+        priority_wi = self._eligible_wi(2, priority=True)
+        security_wi = WorkItem(
+            number=3,
+            kind="issue",
+            title="Security issue #3",
+            labels={"issue-classifier:complete", "classification: security"},
+            url="https://github.com/test/repo/issues/3",
+        )
+        mock_gh_instance = MagicMock()
+        mock_gh_instance.list_open_issues.return_value = [normal_wi, priority_wi, security_wi]
+        mock_gh_cls.return_value = mock_gh_instance
+
+        mock_process_wi.return_value = 0
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)), \
+             patch.dict("os.environ", {"GITHUB_TOKEN": "fake-token"}):
+            main()
+
+        dispatched_numbers = [call[0][0].number for call in mock_process_wi.call_args_list]
+        assert dispatched_numbers[:2] == [3, 2], (
+            f"Security item #3 must be dispatched before priority item #2, "
+            f"which must be dispatched before normal item #1; got order {dispatched_numbers}"
+        )
+
+    def test_classification_types_includes_security(self):
+        """Given the security classification was added (PRD issue #280)
+        Then _CLASSIFICATION_TYPES includes "security" alongside the original five.
+        """
+        import pipeline_orchestrator as orch
+        assert orch._CLASSIFICATION_TYPES == {
+            "bug", "toil", "enhancement", "feature", "spike", "security",
+        }
+
+    def test_load_statuses_returns_priority_ordering(self):
+        """Given statuses.json declares a priority_ordering array
+        When load_statuses() parses it
+        Then it returns a 3-tuple whose third element is that ordering, with
+        classification: security ahead of priority (security is the highest tier).
+        """
+        import pipeline_orchestrator as orch
+        statuses, standalone_labels, priority_ordering = orch.load_statuses()
+        assert isinstance(priority_ordering, list) and priority_ordering, (
+            "priority_ordering must be a non-empty list"
+        )
+        assert priority_ordering.index("classification: security") < priority_ordering.index("priority"), (
+            f"classification: security must rank above priority in the ordering; got {priority_ordering}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestProcessWorkItemDecomposition  (PRD issue #156)

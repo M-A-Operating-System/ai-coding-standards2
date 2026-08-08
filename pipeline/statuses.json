@@ -124,7 +124,23 @@
       "blocks_pipeline": false,
       "terminal": false,
       "human_action_required": false
+    },
+    {
+      "label": "classification: security",
+      "colour": "B60205",
+      "colour_name": "red",
+      "meaning": "Applied by issue-classifier when the issue body describes a concrete security vulnerability (injection, auth bypass, credential exposure, SSRF, path traversal, insecure deserialization, missing access control, or known-vulnerable dependency with exploit path). Security items are scheduled by the orchestrator before all other work items -- the highest priority tier. Expedited scheduling does not skip review gates: pr-reviewer and human gates still run.",
+      "set_by": "orchestrator (issue-classifier agent)",
+      "cleared_by": "never",
+      "blocks_pipeline": false,
+      "terminal": false,
+      "human_action_required": false
     }
+  ],
+
+  "priority_ordering": [
+    "classification: security",
+    "priority"
   ],
 
   "label_format": "{agent-name}:{status}",

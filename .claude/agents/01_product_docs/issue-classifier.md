@@ -38,15 +38,16 @@ You need the title (`.title`), the body (`.body`), the labels
 
 ## Step 2 — Classify the issue
 
-Pick exactly one of the five classifications based on the body content:
+Pick exactly one of the six classifications based on the body content:
 
 | Classification | When | Title prefix (used by `prd-writer`) |
 |---|---|---|
+| `security` | The body describes a **concrete security vulnerability** with a clear exploit path: injection (SQL/command/template), authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. Classify conservatively -- only when the security impact is **clear and concrete**. Ambiguous "might be a security concern" items are NOT `security`; classify them as `bug` or other. A human-applied `[SECURITY]` title prefix or `classification: security` label is honoured. | `[SECURITY]` |
 | `bug` | Broken behaviour, an unexpected error, or something that used to work and no longer does. By definition the code has drifted from the product-docs target ([P-15](../../docs/product/orchestrator/02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)). | `[BUG]` |
-| `toil` | Operational / maintenance work that does not change product capability — dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes. Tied to a non-functional requirement in the product docs, not a user-facing feature. | `[TOIL]` |
-| `enhancement` | An improvement to an **existing** capability — making a feature richer, faster, more accessible, or more reliable. The capability exists in production today; the issue moves it closer to the target state. | `[ENHANCEMENT]` |
+| `toil` | Operational / maintenance work that does not change product capability -- dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes. Tied to a non-functional requirement in the product docs, not a user-facing feature. | `[TOIL]` |
+| `enhancement` | An improvement to an **existing** capability -- making a feature richer, faster, more accessible, or more reliable. The capability exists in production today; the issue moves it closer to the target state. | `[ENHANCEMENT]` |
 | `feature` | A **new** capability the product cannot do today. Adds a fresh user-observable outcome to the target state. | `[FEATURE]` |
-| `spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, a prototype — not shipped code. Time-boxed; the result feeds a later issue that ships the actual change. | `[SPIKE]` |
+| `spike` | Research or investigation whose primary output is knowledge -- a recommendation, an ADR, a prototype -- not shipped code. Time-boxed; the result feeds a later issue that ships the actual change. | `[SPIKE]` |
 
 The distinction between `feature` and `enhancement` matters because
 they have different review weight: a feature adds new product
@@ -56,6 +57,8 @@ surface (heavier review); an enhancement refines an existing one
 If the body is genuinely ambiguous between two of these, prefer the
 classification that has the higher review bar:
 
+- `security` over `bug` (a bug that is a concrete vulnerability is a
+  security item first; security items receive top scheduling priority)
 - `bug` over `toil` (a bug means the product has drifted; a toil is
   preventative maintenance with no observed regression)
 - `feature` over `enhancement` (if the capability is genuinely new,
@@ -92,7 +95,7 @@ gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
 <!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue classification
 
-**Type:** {bug | toil | enhancement | feature | spike}
+**Type:** {security | bug | toil | enhancement | feature | spike}
 
 **Rationale:** {one or two sentences naming the signals in the body that led to this classification}
 
