@@ -163,3 +163,10 @@ machine to get past a halt.
   The only supported ways to advance state are running the orchestrator (here,
   once per step) or letting the scheduled GitHub Actions orchestrator pick the
   issue up.
+
+## See also
+
+- **Operating modes** (concept, comparison, and current limitations for scheduled
+  vs. in-session): [`docs/product/orchestrator/17-operating-modes.md`](../../../docs/product/orchestrator/17-operating-modes.md)
+- **Quick Start** (shortest path to a first run in either mode, prerequisites
+  listed): [`docs/product/orchestrator/quick-start.md`](../../../docs/product/orchestrator/quick-start.md)
