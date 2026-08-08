@@ -2509,14 +2509,19 @@ def invoke_agent(
     # On retries (attempt > 0) we append "-r{attempt}" to the seed so each
     # retry gets a fresh UUID — avoids "Session ID already in use" when a
     # previous run's session was not cleaned up (e.g. CI job killed mid-run).
-    # Mix the orchestrator process id into the seed so re-runs in a persistent
-    # environment get a fresh Claude session id rather than colliding with a
-    # prior run's stored session ("Session ID already in use"). The pid is
-    # stable within a run, so retries stay distinct via the -r{attempt} suffix.
-    session_uuid_seed = f"{agent_session_id}-p{os.getpid()}"
-    if attempt:
-        session_uuid_seed = f"{session_uuid_seed}-r{attempt}"
+    session_uuid_seed = agent_session_id if attempt == 0 else f"{agent_session_id}-r{attempt}"
     agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, session_uuid_seed))
+
+    # The session id is deterministic on purpose: an agent REUSES the same Claude
+    # conversation across orchestrator runs (continuity managed through the CLI).
+    # But passing --session-id for an id that already exists errors ("Session ID
+    # already in use") -- which strands re-runs in a persistent environment.
+    # Resume the session when it already exists; create it (--session-id) only
+    # when it does not (first run, or a fresh -r{attempt} retry id).
+    _proj_dir = os.getcwd().replace("/", "-")
+    _home = os.environ.get("HOME") or os.path.expanduser("~")
+    _session_file = os.path.join(_home, ".claude", "projects", _proj_dir, f"{agent_session_uuid}.jsonl")
+    _session_flag = "--resume" if os.path.isfile(_session_file) else "--session-id"
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
@@ -2537,7 +2542,7 @@ def invoke_agent(
         "--output-format", "stream-json",
         "--verbose",                    # required alongside stream-json in --print mode
         "--max-turns", str(max_turns),
-        "--session-id", agent_session_uuid,
+        _session_flag, agent_session_uuid,
     ]
     if agent_model:
         cmd += ["--model", agent_model]
