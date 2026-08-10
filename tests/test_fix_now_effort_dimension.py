@@ -34,6 +34,8 @@ def _load_coder() -> str:
     return CODER_MD.read_text()
 
 
+# Duplicates test_pr_reviewer_verdict._extract_verdict_section to keep this
+# module self-contained and independent of sibling test module internals.
 def _extract_verdict_section(text: str) -> str:
     m = re.search(r"## Step 10 .* Verdict\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     assert m, "Step 10 Verdict section not found in pr-reviewer.md"

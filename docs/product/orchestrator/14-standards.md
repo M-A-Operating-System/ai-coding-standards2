@@ -131,7 +131,7 @@ ADR exists:
 | `true` | No | **Blocks** — REQUEST_CHANGES |
 | `true` | Yes | **Informational** — noted in findings, does not block APPROVE |
 
-The pr-reviewer verdict rule: **APPROVE if and only if zero unwaived findings.**
+The pr-reviewer verdict rule: **APPROVE** when no `[fix-now]`-tagged findings and no Critical/High/Medium findings remain unwaived. **REQUEST CHANGES** when any `[fix-now]`-tagged finding exists (regardless of severity) or any Critical/High/Medium finding is present. Low/Informational findings tagged `[defer-ok]` never block APPROVE on their own.
 
 ---
 
