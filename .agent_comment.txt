@@ -1,8 +1,0 @@
-<!-- ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater -->
-## Product docs check -- no updates required
-
-Reviewed `docs/product/` against the approved PRD. The `_process` docs describe the AI-agile delivery loop at a conceptual level and do not document pr-reviewer verdict rules or finding classification behaviour; the `docs/product/orchestrator/` files are off-limits per agent rules. No non-orchestrator doc makes a claim this feature would contradict.
-
-### Feature file (docs/features/)
-
-- `docs/features/pr-reviewer.md` -- **created** with 5 scenarios (a-trivially-fixable-low-finding-forces-a-fix-cycle, a-genuinely-subjective-low-finding-does-not-block, coder-treats-a-fix-now-finding-as-required-not-suggested, no-new-pipeline-machinery-is-introduced, cycle-budget-is-not-abused)
