@@ -333,13 +333,25 @@ Assemble all findings from Steps 4–8 into `FINDING_BODY`.
 
 **Sort**: Critical → High → Medium → Low → Informational.
 
+**Effort tag** (required on every finding): classify each finding as
+`[fix-now]` if ALL of the following are true; classify as `[defer-ok]` otherwise:
+- The fix is mechanically obvious from the Remediation text -- no design
+  judgment or human decision is required.
+- The fix is small: fewer than 30 lines (reusing STD-ARCH-007's threshold).
+- The fix carries no risk of an externally-observable behaviour change that
+  would require a new test written from scratch.
+
+Genuinely subjective findings (style preferences, naming suggestions, "consider
+refactoring X") are always `[defer-ok]` regardless of severity. `[fix-now]`
+applies to mechanical correctness defects only.
+
 **Format**:
 ```
-### {ID} — {short imperative title}   [{severity}]
+### {ID} -- {short imperative title}   [{severity}] [{fix-now|defer-ok}]
 
 **File:** `path/to/file.ext:{line}`
-**Persona:** DP | SA | QA | SC | DP+SA | …
-**Standard:** {P-N or STD ID} [ADR: {id}]        ← SC findings only
+**Persona:** DP | SA | QA | SC | DP+SA | ...
+**Standard:** {P-N or STD ID} [ADR: {id}]        <- SC findings only
 
 **Description:** What is wrong. Name the exact variable, function, or line.
 
@@ -353,6 +365,7 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 ## Step 10 — Verdict
 
 - `$HUMAN_BLOCK_REVIEWERS` is non-empty → **REQUEST CHANGES** (hard block; takes priority over all other findings)
+- Any `[fix-now]`-tagged finding → **REQUEST CHANGES** (regardless of severity; STD-ARCH-006 -- fix now, not later)
 - Any Critical, High, or Medium finding → **REQUEST CHANGES**
 - Low or Informational only (or zero findings) AND `$HUMAN_BLOCK_REVIEWERS` is empty → **APPROVE**
 - ADR-covered findings downgraded to Informational never block APPROVE (but human block still does)
