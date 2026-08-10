@@ -486,9 +486,12 @@ Group every piece of feedback into:
 
 | Category | What it means | Must address? |
 |---|---|---|
-| **Required** | Correctness bug, security issue, spec violation, failing test, or unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`) | Yes — block merge if not fixed |
-| **Expected** | Design improvement, missing guard clause, error handling gap | Yes — within scope of this agent's mandate |
-| **Suggested** | Style preference, future improvement, nice-to-have | No — acknowledge, open a follow-up issue if valuable |
+| **Required** | Correctness bug, security issue, spec violation, failing test, unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any pr-reviewer finding tagged `[fix-now]` | Yes -- block merge if not fixed |
+| **Expected** | Design improvement, missing guard clause, error handling gap | Yes -- within scope of this agent's mandate |
+| **Suggested** | Style preference, future improvement, nice-to-have | No -- acknowledge, open a follow-up issue if valuable |
+
+A `[fix-now]`-tagged finding is Required regardless of its severity label --
+STD-ARCH-006 applies. It is never Suggested.
 
 Do not address "Suggested" items in code. If a suggestion looks valuable,
 open a follow-up issue and link it in a PR comment instead.
