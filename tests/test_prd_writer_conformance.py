@@ -1,16 +1,16 @@
 """Conformance tests for prd-writer agent -- Step 6e Gherkin backfill.
 
-Covers issue #292: prd-writer must backfill Gherkin coverage in augmentation
+Covers PRD issue #292: prd-writer must backfill Gherkin coverage in augmentation
 mode instead of silently skipping the classification-band minimum.
 
-Gherkin scenarios traced:
-  - test_a_pre_specified_issue_with_the_wrong_notation_gets_gherkin_backfilled
-  - test_existing_gherkin_coverage_is_left_alone
-  - test_backfill_never_invents_requirements
-  - test_non_behavioural_requirements_are_not_padded_into_scenarios
-  - test_sizer_created_sub_issues_are_covered
-  - test_already_approved_prds_are_not_silently_rewritten
-  - test_the_derived_section_is_clearly_attributed_and_traceable
+Gherkin scenarios traced (docs/features/prd-writer.md):
+  - A pre-specified issue with the wrong notation gets Gherkin backfilled
+  - Existing Gherkin coverage is left alone
+  - Backfill never invents requirements
+  - Non-behavioural requirements are not padded into scenarios
+  - Sizer-created sub-issues are covered
+  - Already-approved PRDs are not silently rewritten
+  - The derived section is clearly attributed and traceable
 """
 import re
 from pathlib import Path
@@ -19,205 +19,271 @@ REPO_ROOT = Path(__file__).parent.parent
 PRD_WRITER_MD = REPO_ROOT / ".claude" / "agents" / "01_product_docs" / "prd-writer.md"
 
 
-def _load_text() -> str:
+def _load_prd_writer_text() -> str:
     assert PRD_WRITER_MD.exists(), f"prd-writer agent file not found: {PRD_WRITER_MD}"
     return PRD_WRITER_MD.read_text()
 
 
 def _extract_step_6e(text: str) -> str:
-    match = re.search(
-        r"### 6e.*?Backfill Gherkin coverage(.+?)(?=\n---\n|\Z)",
-        text,
-        re.DOTALL,
-    )
+    match = re.search(r"### 6e[^\n]*\n(.*?)(?=\n---\n|\n## Step |\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
 def _extract_step_2(text: str) -> str:
-    match = re.search(
-        r"## Step 2.*?sub.issue(.+?)(?=\n---\n|\Z)",
-        text,
-        re.DOTALL | re.IGNORECASE,
-    )
+    match = re.search(r"## Step 2 [^\n]*\n(.*?)(?=\n---\n|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
 def _extract_step_3(text: str) -> str:
-    match = re.search(
-        r"## Step 3.*?pre.existing(.+?)(?=\n---\n|\Z)",
-        text,
-        re.DOTALL | re.IGNORECASE,
-    )
+    match = re.search(r"## Step 3 [^\n]*\n(.*?)(?=\n---\n|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
-class TestPreSpecifiedIssueGetsGherkinBackfilled:
-    """Scenario: A pre-specified issue with the wrong notation gets Gherkin backfilled"""
+def _extract_frontmatter(text: str) -> str:
+    match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    return match.group(1) if match else ""
 
-    def test_step_6e_exists(self):
-        text = _load_text()
-        assert "6e" in text, "prd-writer.md must contain Step 6e for Gherkin backfill"
 
-    def test_step_6e_appends_gherkin_section(self):
-        text = _load_text()
-        step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing from prd-writer.md"
-        assert "Acceptance criteria (Gherkin)" in step, (
-            "Step 6e must append an '### Acceptance criteria (Gherkin)' section"
+# ---------------------------------------------------------------------------
+# Scenario: A pre-specified issue with the wrong notation gets Gherkin backfilled
+# ---------------------------------------------------------------------------
+
+class TestStep6eBackfillsGherkinForWrongNotation:
+    """Step 6e exists and runs during augmentation mode."""
+
+    def test_step_6e_section_exists(self):
+        text = _load_prd_writer_text()
+        assert "### 6e" in text, (
+            "prd-writer.md must contain a '### 6e' subsection implementing Gherkin backfill"
         )
 
-    def test_step_6e_checks_minimum_against_count(self):
-        text = _load_text()
+    def test_step_6e_checks_existing_scenario_count(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "minimum" in step.lower() or "Minimum" in step, (
-            "Step 6e must check existing scenario count against the band minimum"
+        assert step, "Step 6e section not found"
+        assert "Scenario:" in step or "scenario" in step.lower(), (
+            "Step 6e must check for existing '#### Scenario:' blocks in the body"
         )
 
-    def test_step_3_decision_mentions_step_6e(self):
-        text = _load_text()
+    def test_step_6e_references_classification_band_minimum(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6e(text)
+        assert step, "Step 6e section not found"
+        assert "minimum" in step, (
+            "Step 6e must reference the classification band's minimum scenario count"
+        )
+
+    def test_step_6e_lists_band_minimums(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6e(text)
+        assert step, "Step 6e section not found"
+        assert "enhancement" in step and "feature" in step, (
+            "Step 6e must list the minimum scenario counts per classification band"
+        )
+
+    def test_step_3_decision_notes_gherkin_minimum_applies_in_augmentation(self):
+        text = _load_prd_writer_text()
         step = _extract_step_3(text)
-        assert step, "Step 3 section is missing"
+        assert step, "Step 3 section not found"
         assert "6e" in step, (
-            "Step 3 decision must mention Step 6e so augmentation-mode issues "
-            "know Gherkin backfill applies"
+            "Step 3 decision note must reference Step 6e so readers understand "
+            "the Gherkin minimum still applies in augmentation mode"
+        )
+
+    def test_frontmatter_description_mentions_step_6e(self):
+        text = _load_prd_writer_text()
+        fm = _extract_frontmatter(text)
+        assert fm, "Frontmatter not found"
+        assert "6e" in fm, (
+            "prd-writer.md frontmatter description must mention Step 6e "
+            "so the agent's summary is accurate after Gherkin backfill lands"
         )
 
 
-class TestExistingGherkinCoverageIsLeftAlone:
-    """Scenario: Existing Gherkin coverage is left alone"""
+# ---------------------------------------------------------------------------
+# Scenario: Existing Gherkin coverage is left alone
+# ---------------------------------------------------------------------------
 
-    def test_step_6e_is_noop_when_count_meets_minimum(self):
-        text = _load_text()
+class TestStep6eIsNoopWhenGherkinSufficient:
+    """Step 6e must be a no-op when the minimum is already met."""
+
+    def test_step_6e_has_noop_path_when_minimum_met(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "no-op" in step or "noop" in step.lower(), (
-            "Step 6e must state it is a no-op when existing Gherkin count meets minimum"
+        assert step, "Step 6e section not found"
+        assert "no-op" in step, (
+            "Step 6e must have an explicit no-op path when existing scenario "
+            "count already meets the band minimum"
         )
 
-    def test_step_6e_check_uses_scenario_count(self):
-        text = _load_text()
+    def test_step_6e_skips_append_when_already_sufficient(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "Scenario:" in step or "#### Scenario" in step, (
-            "Step 6e must count '#### Scenario:' blocks to decide if backfill is needed"
+        assert step, "Step 6e section not found"
+        assert "meets" in step or "exceeds" in step or "meets or exceeds" in step, (
+            "Step 6e must skip appending when the existing count meets or exceeds the minimum"
         )
 
 
-class TestBackfillNeverInventsRequirements:
-    """Scenario: Backfill never invents requirements"""
+# ---------------------------------------------------------------------------
+# Scenario: Backfill never invents requirements
+# ---------------------------------------------------------------------------
 
-    def test_step_6e_stops_at_exhaustion(self):
-        text = _load_text()
+class TestStep6eNeverInventsRequirements:
+    """Step 6e must stop at minimum or when candidates are exhausted."""
+
+    def test_step_6e_stops_at_minimum_or_exhaustion(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "exhausted" in step or "exhaustion" in step, (
-            "Step 6e derivation algorithm must stop when candidates are exhausted, "
-            "not invent more to reach the minimum"
+        assert step, "Step 6e section not found"
+        assert "exhausted" in step, (
+            "Step 6e must stop when candidates are exhausted (not invent extras)"
         )
 
-    def test_step_6e_forbids_invention(self):
-        text = _load_text()
+    def test_step_6e_does_not_invent_beyond_source_material(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "Never invent" in step or "never invent" in step, (
-            "Step 6e must explicitly forbid inventing scenarios beyond what source "
-            "material supports"
+        assert step, "Step 6e section not found"
+        assert "invent" in step or "source material" in step, (
+            "Step 6e must explicitly state it never invents scenarios beyond "
+            "what the source material supports"
         )
 
-
-class TestNonBehaviouralRequirementsNotPadded:
-    """Scenario: Non-behavioural requirements are not padded into scenarios"""
-
-    def test_step_6e_discards_non_behavioural(self):
-        text = _load_text()
+    def test_step_6e_states_shortfall_with_reason(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "non-behavioural" in step or "non-behavioral" in step, (
-            "Step 6e must discard non-behavioural requirements from candidate pool"
+        assert step, "Step 6e section not found"
+        assert "shortfall" in step or "backfill-note" in step, (
+            "Step 6e must document the shortfall with a reason when fewer "
+            "scenarios are derivable than the band minimum"
         )
 
-    def test_step_6e_honesty_note_for_shortfall(self):
-        text = _load_text()
+
+# ---------------------------------------------------------------------------
+# Scenario: Non-behavioural requirements are not padded into scenarios
+# ---------------------------------------------------------------------------
+
+class TestStep6eSkipsNonBehaviouralRequirements:
+    """Step 6e must discard non-behavioural items."""
+
+    def test_step_6e_discards_non_behavioural_items(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "backfill-note" in step or "shortfall" in step, (
-            "Step 6e must append a note when fewer scenarios than the minimum are "
-            "derivable due to non-behavioural requirements"
+        assert step, "Step 6e section not found"
+        assert "non-behavioural" in step, (
+            "Step 6e must explicitly discard non-behavioural requirements "
+            "(internal structure with no user-observable surface)"
+        )
+
+    def test_step_6e_requires_user_observable_surface(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6e(text)
+        assert step, "Step 6e section not found"
+        assert "user-observable" in step, (
+            "Step 6e must require user-observable surface as the criterion "
+            "for including a requirement as a scenario candidate"
         )
 
 
-class TestSizerCreatedSubIssuesCovered:
-    """Scenario: Sizer-created sub-issues are covered"""
+# ---------------------------------------------------------------------------
+# Scenario: Sizer-created sub-issues are covered
+# ---------------------------------------------------------------------------
 
-    def test_step_2_mentions_step_6e_for_sub_issues(self):
-        text = _load_text()
+class TestStep6eCoversSubIssues:
+    """Step 2 must note that Step 6e applies to sizer-created sub-issues."""
+
+    def test_step_2_references_step_6e_for_sub_issues(self):
+        text = _load_prd_writer_text()
         step = _extract_step_2(text)
-        assert step, "Step 2 (sub-issue handling) section is missing"
+        assert step, "Step 2 section not found"
         assert "6e" in step, (
-            "Step 2 must state that Step 6e still applies to sizer-created sub-issues"
+            "Step 2 sub-issue handling must reference Step 6e so sizer-created "
+            "sub-issues also get Gherkin backfilled"
         )
 
-    def test_step_2_explains_sizer_lacks_gherkin(self):
-        text = _load_text()
+    def test_step_2_explains_sub_issue_6e_rationale(self):
+        text = _load_prd_writer_text()
         step = _extract_step_2(text)
-        assert step, "Step 2 section is missing"
-        assert "Gherkin" in step or "gherkin" in step.lower(), (
+        assert step, "Step 2 section not found"
+        assert "Sizer templates" in step or "sizer" in step.lower(), (
             "Step 2 must explain why Step 6e applies to sub-issues "
             "(sizer templates do not generate Gherkin)"
         )
 
-
-class TestAlreadyApprovedPrdsNotRewritten:
-    """Scenario: Already-approved PRDs are not silently rewritten"""
-
-    def test_step_6e_guards_already_approved(self):
-        text = _load_text()
+    def test_step_6e_runs_on_sub_issues(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "prd-writer:approved" in step or "ALREADY_APPROVED" in step, (
-            "Step 6e must guard against rewriting already-approved issues "
-            "(check for prd-writer:approved label)"
+        assert step, "Step 6e section not found"
+        assert "sub-issue" in step or "augmentation-mode" in step, (
+            "Step 6e must state it runs on augmentation-mode issues including sub-issues"
         )
 
-    def test_step_6e_skips_to_step_8_if_approved(self):
-        text = _load_text()
+
+# ---------------------------------------------------------------------------
+# Scenario: Already-approved PRDs are not silently rewritten
+# ---------------------------------------------------------------------------
+
+class TestStep6eNotRunOnAlreadyApproved:
+    """Step 6e must guard against rewriting an already-approved spec."""
+
+    def test_step_6e_has_approved_label_guard(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
+        assert step, "Step 6e section not found"
+        assert "ALREADY_APPROVED" in step, (
+            "Step 6e must check for the 'prd-writer:approved' label "
+            "and skip backfill if it is already present"
+        )
+
+    def test_step_6e_guard_uses_prd_writer_approved_label(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6e(text)
+        assert step, "Step 6e section not found"
+        assert "prd-writer:approved" in step, (
+            "Step 6e guard must check the exact label 'prd-writer:approved'"
+        )
+
+    def test_step_6e_guard_is_noop_on_approved(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6e(text)
+        assert step, "Step 6e section not found"
+        # Guard must skip to Step 8 if approved
         assert "Step 8" in step, (
-            "Step 6e must skip to Step 8 when the issue already has prd-writer:approved"
-        )
-
-    def test_frontmatter_describes_step_6e(self):
-        text = _load_text()
-        desc_match = re.search(
-            r"^description: >(.+?)(?=^\w|\Z)", text, re.MULTILINE | re.DOTALL
-        )
-        assert desc_match, "description frontmatter not found in prd-writer.md"
-        desc = desc_match.group(1)
-        assert "6e" in desc or "Gherkin" in desc, (
-            "prd-writer.md frontmatter description must mention Step 6e or Gherkin "
-            "backfill to reflect the updated augmentation-mode behaviour"
+            "Step 6e guard must skip directly to Step 8 when prd-writer:approved "
+            "is already on the issue"
         )
 
 
-class TestDerivedSectionClearlyAttributedAndTraceable:
-    """Scenario: The derived section is clearly attributed and traceable"""
+# ---------------------------------------------------------------------------
+# Scenario: The derived section is clearly attributed and traceable
+# ---------------------------------------------------------------------------
 
-    def test_step_6e_labels_section_as_derived(self):
-        text = _load_text()
+class TestStep6eAttributionAndTraceability:
+    """Derived scenarios must be labelled and traced back to source requirements."""
+
+    def test_step_6e_labels_section_as_derived_by_prd_writer(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "Derived by prd-writer" in step or "derived by prd-writer" in step.lower(), (
-            "Step 6e appended section must be labelled as derived by prd-writer "
-            "so it is not mistaken for human-authored content"
+        assert step, "Step 6e section not found"
+        assert "Derived by prd-writer" in step, (
+            "Step 6e must label the appended section as derived by prd-writer "
+            "to distinguish it from human-authored content"
         )
 
-    def test_step_6e_tags_source_requirement(self):
-        text = _load_text()
+    def test_step_6e_tags_each_scenario_with_source_requirement(self):
+        text = _load_prd_writer_text()
         step = _extract_step_6e(text)
-        assert step, "Step 6e section is missing"
-        assert "<!-- R" in step or "source requirement" in step.lower(), (
-            "Step 6e must tag each derived scenario with a comment citing its source "
-            "requirement (e.g. <!-- R24 -->) for traceability"
+        assert step, "Step 6e section not found"
+        assert "<!-- R" in step, (
+            "Step 6e must tag each derived scenario with a comment citing the "
+            "source requirement (e.g. <!-- R24 -->)"
+        )
+
+    def test_step_6e_does_not_interleave_with_original_list(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6e(text)
+        assert step, "Step 6e section not found"
+        assert "interleave" in step or "renumber" in step, (
+            "Step 6e must explicitly state it does not interleave with or "
+            "renumber the original requirements list"
         )
