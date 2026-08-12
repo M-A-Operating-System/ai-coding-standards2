@@ -4,10 +4,12 @@ description: >
   Drafts a Product Requirements Document for an issue that has passed
   classification. First checks whether the issue body already contains a
   complete specification (Gherkin, acceptance criteria, user stories, problem
-  statement) — if so, preserves it and only appends missing governance elements
-  (header comment, title prefix, standards check). If no pre-existing spec is
-  found, rewrites the issue body with a full PRD in user-story and Gherkin
-  format. Waits for the prd-writer:approved gate.
+  statement) -- if so, preserves it and appends missing governance elements
+  (header comment, title prefix, standards check) plus any missing Gherkin
+  coverage (Step 6e: derives scenarios from existing requirements to satisfy
+  the classification band's minimum, never inventing new requirements). If no
+  pre-existing spec is found, rewrites the issue body with a full PRD in
+  user-story and Gherkin format. Waits for the prd-writer:approved gate.
 tools: [Bash, Read, Grep]
 model: claude-sonnet-4-6
 max_turns: 45
@@ -105,10 +107,14 @@ This content is the source of truth — do **not** overwrite it.
 1. Skip Steps 3, 4, 5, and 7 entirely.
 2. Go directly to **Step 6 (Augmentation mode)**, treating the existing body
    as fully pre-specified.
-3. In Step 6d (rewrite title and body): **do not change the title** — the
+3. In Step 6d (rewrite title and body): **do not change the title** -- the
    sizer already set a canonical title in the form `[#PARENT - N/TOTAL] scope`.
    Only add the governance header comment to the body.
-4. After updating the body, go to **Step 8** to signal review.
+4. **Step 6e (Gherkin backfill) still applies.** Sizer templates do not
+   generate Gherkin, so Step 6e is the only point in the pipeline where a
+   sub-issue's acceptance criteria get translated into scenarios. Run Step 6e
+   on the sub-issue body exactly as for any augmentation-mode issue.
+5. After Step 6e, go to **Step 8** to signal review.
 
 **Rationale:** Sub-issues exist because a human approved a sizer decomposition.
 Their scope and acceptance criteria were explicitly reviewed. Rewriting them
@@ -140,7 +146,11 @@ Score the following signals against the current issue body:
 
 - **≥4 signals present** → the issue is **pre-specified**. Go to
   **Step 6 (Augmentation mode)** — skip Steps 4 and 5. The existing
-  specification is preserved; only governance elements are added.
+  specification is preserved; governance elements are added, and Step 6e
+  backfills any missing Gherkin coverage. Note: "pre-specified" is a statement
+  about completeness, not notation — the classification band's Gherkin minimum
+  from Step 5a still applies via Step 6e even when the body uses a
+  numbered-requirements or checklist format.
 - **<4 signals present** → the issue needs a full PRD. Continue to
   **Step 4 (Sanity-check)** and **Step 5 (Draft)** as normal.
 
@@ -336,7 +346,84 @@ gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
   -f body="${NEW_BODY}"
 ```
 
-Then go directly to **Step 8** — signal review.
+Then go directly to **Step 6e** — Backfill Gherkin coverage.
+
+---
+
+### 6e — Backfill Gherkin coverage
+
+**Guard — already-approved issues:** Check whether the issue already carries
+the `prd-writer:approved` label. If so, Step 6e is a no-op — backfill only
+applies on prd-writer's first pass and must not retroactively rewrite an
+already-approved spec.
+
+```bash
+ALREADY_APPROVED=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
+  --jq '[.labels[].name | select(. == "prd-writer:approved")] | length')
+```
+
+If `$ALREADY_APPROVED` is non-zero, skip to **Step 8** immediately.
+
+**Check for existing Gherkin coverage:**
+
+Count `#### Scenario:` blocks already in the body. Look up the classification
+band minimum from Step 5a:
+
+| Classification | Minimum scenarios |
+|---|---|
+| `security` | 2 |
+| `bug` | 1 |
+| `toil` | 1 |
+| `spike` | 1 |
+| `enhancement` | 2 |
+| `feature` | 3 |
+
+If the existing count meets or exceeds the minimum, Step 6e is a no-op —
+go directly to **Step 8**.
+
+**Derivation algorithm (only runs when count is below minimum):**
+
+1. Enumerate atomic, falsifiable requirements from the body: numbered list
+   items (`R1`, `R2`, … or `1.`, `2.`, …), checklist items (`- [ ]`), or
+   prose containing "must"/"shall"/"is required to".
+2. Split compound items ("X does A and B") into separate candidates; do not
+   split a single behaviour into multiple scenarios to pad the count.
+3. Discard non-behavioural candidates — items that describe only internal
+   structure with no user-observable surface. They may support a scenario
+   but are not one themselves.
+4. For each remaining candidate, write one `#### Scenario:` block with
+   Given/When/Then. The Then-clause must be falsifiable. Tag each scenario
+   with a trailing comment citing the source requirement for traceability
+   (e.g. `<!-- R24 -->`). When the source states only a behaviour with no
+   explicit precondition, infer the Given from surrounding context using the
+   same technique Step 5 uses when drafting from a looser problem statement.
+5. Stop when the minimum is reached or when candidates are exhausted,
+   whichever comes first. Never invent scenarios beyond what the source
+   material supports.
+6. If fewer scenarios can be derived than the minimum (e.g. a schema-only
+   or infrastructure-only sub-issue), derive however many are legitimate and
+   append one note line:
+   `<!-- backfill-note: N of MINIMUM scenarios derivable; remaining requirements are non-behavioural -->`
+
+**Append the new section** directly after the existing acceptance-criteria
+content (do not interleave with or renumber the original list):
+
+```markdown
+### Acceptance criteria (Gherkin)
+
+*Derived by prd-writer from requirements above.*
+
+#### Scenario: {short imperative name}
+**Given** {precondition as fact about system state}
+**When** {single user action or event, present tense}
+**Then** {observable outcome, present tense, falsifiable}
+<!-- R1 -->
+```
+
+The section label ("Derived by prd-writer") distinguishes machine-derived
+scenarios from human-authored content.
+
+Then go to **Step 8** — signal review.
 
 ---
 
