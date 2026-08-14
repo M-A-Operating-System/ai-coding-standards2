@@ -42,7 +42,9 @@ confirm:
 
 - **REPO** -- `owner/repo` (from the git remote or the GitHub MCP context).
 - A checked-out **working tree at the repo root** containing
-  `pipeline/pipeline_orchestrator.py`.
+  `pipeline/pipeline_orchestrator.py` (standalone checkout) or
+  `ai-coding-standards2/pipeline/pipeline_orchestrator.py` (submodule layout).
+  If neither exists, stop and report the missing prerequisite per **Fallback**.
 - **GitHub auth** the orchestrator can use (`GITHUB_TOKEN`/`GH_TOKEN`, or `gh`
   auth), the **`gh` CLI** on PATH (the scripts and agents call `gh api` REST --
   install it if missing), and the **Claude CLI** on PATH for agent steps.
@@ -82,7 +84,9 @@ Repeat until Complete (step 5) or Halt (step 6):
 **a. Run one orchestrator tick scoped to this issue.** From the repo root:
 
 ```bash
-python3 pipeline/pipeline_orchestrator.py --repo "$REPO" --issue $ARGUMENTS
+SCRIPT=pipeline/pipeline_orchestrator.py
+[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/pipeline/pipeline_orchestrator.py
+python3 "$SCRIPT" --repo "$REPO" --issue $ARGUMENTS
 ```
 
 Do **not** wrap this in a short shell `timeout`. Agent-heavy steps (`prd-writer`,
