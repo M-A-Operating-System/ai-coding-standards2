@@ -15,6 +15,14 @@ Before implementing:
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
+- A tool/API failure in one context (one repo, one call, one session) is not
+  evidence of a platform-wide restriction. Verify with a different call or
+  repo before generalizing a capability as categorically unavailable —
+  especially for GitHub access: a `gh`/API 403 on one repo usually means that
+  repo lacks token/App access, not that direct API access is disabled
+  entirely. Read the actual error body, not just the status code, and don't
+  mistake a system-prompt policy line ("use MCP tools") for a technical fact
+  about what the environment can or cannot do — test it.
 
 ## 2. Simplicity First
 
