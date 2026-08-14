@@ -117,6 +117,52 @@ def test_current_limitations_error_path_no_planned_sections():
 
 
 # ---------------------------------------------------------------------------
+# Scenario: Why gh CLI/REST is used instead of GitHub MCP tools is explained
+# ---------------------------------------------------------------------------
+
+def test_why_gh_cli_rest_is_used_instead_of_github_mcp_tools_is_explained():
+    """17-operating-modes.md explains why pipeline scripts/agents use gh/REST, not MCP."""
+    text = OPERATING_MODES.read_text()
+
+    assert "GitHub MCP" in text, \
+        "17-operating-modes.md must explain the gh/REST vs GitHub MCP tools decision"
+    assert "pipeline_orchestrator.py" in text and "no" in text.lower(), \
+        "17-operating-modes.md must explain that pipeline_orchestrator.py has no MCP access"
+    assert "scheduled" in text.lower() and "guaranteed" in text.lower(), \
+        "17-operating-modes.md must explain the scheduled runner has no interactive session or guaranteed MCP"
+
+
+# ---------------------------------------------------------------------------
+# Scenario: Checking gh availability correctly is documented
+# ---------------------------------------------------------------------------
+
+def test_checking_gh_availability_correctly_is_documented():
+    """17-operating-modes.md documents the gh auth status pitfall and the correct check."""
+    text = OPERATING_MODES.read_text()
+
+    assert "gh auth status" in text, \
+        "17-operating-modes.md must mention `gh auth status`"
+    assert "gh api user" in text, \
+        "17-operating-modes.md must document `gh api user` (or an equivalent REST call) as the correct availability check"
+    assert "false" in text.lower(), \
+        "17-operating-modes.md must state that `gh auth status` can produce a false negative"
+
+
+# ---------------------------------------------------------------------------
+# Scenario: A session's own "no gh CLI" instruction is correctly framed
+# ---------------------------------------------------------------------------
+
+def test_a_sessions_own_no_gh_cli_instruction_is_correctly_framed():
+    """17-operating-modes.md frames the "no gh CLI" system-prompt line as policy, not fact."""
+    text = OPERATING_MODES.read_text()
+
+    assert "policy" in text.lower(), \
+        "17-operating-modes.md must frame the 'no gh CLI' system-prompt line as a policy instruction"
+    assert "gh CLI" in text, \
+        "17-operating-modes.md must reference the gh CLI system-prompt line it is clarifying"
+
+
+# ---------------------------------------------------------------------------
 # Scenario: Docs stay in sync with the command implementation
 # ---------------------------------------------------------------------------
 
