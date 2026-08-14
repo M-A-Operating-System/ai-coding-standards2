@@ -4140,12 +4140,14 @@ def _ensure_gh_cli() -> None:
         log.warning("gh CLI not found on PATH -- installing via apt (script-type steps call `gh api`)")
         try:
             subprocess.run(["apt-get", "update", "-qq"], check=True,
-                            capture_output=True, timeout=120)
+                            capture_output=True, text=True, timeout=120)
             subprocess.run(["apt-get", "install", "-y", "-qq", "gh"], check=True,
-                            capture_output=True, timeout=120)
+                            capture_output=True, text=True, timeout=120)
         except Exception as exc:
-            log.error("Could not install gh CLI automatically (%s); script-type "
-                       "steps calling `gh api` will fail until it is installed manually", exc)
+            stderr = getattr(exc, "stderr", None) or ""
+            log.error("Could not install gh CLI automatically (%s; stderr: %s); script-type "
+                       "steps calling `gh api` will fail until it is installed manually",
+                       exc, stderr.strip())
             return
         if not shutil.which("gh"):
             log.error("apt install of gh exited cleanly but `gh` is still not on PATH")

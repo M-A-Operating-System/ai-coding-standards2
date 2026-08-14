@@ -34,6 +34,7 @@ from pipeline_orchestrator import (
     load_pipeline,
     pipeline_by_name,
     main,
+    _ensure_gh_cli,
 )
 
 
@@ -4491,3 +4492,53 @@ class TestTriggerLabelPresent:
         agent = self._agent_with_trigger({"label": None})
         assert trigger_label_present(set(), agent) is False
         assert trigger_label_present({"anything:complete"}, agent) is False
+
+
+class TestEnsureGhCli:
+    """_ensure_gh_cli(): gh present/absent, REST auth probe success/failure."""
+
+    def test_gh_present_and_probe_succeeds_logs_info(self, caplog):
+        with patch("pipeline_orchestrator.shutil.which", return_value="/usr/bin/gh"), \
+             patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="agbush2\n", stderr="")
+            with caplog.at_level("INFO", logger="orchestrator"):
+                _ensure_gh_cli()
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[0][:3] == ["gh", "api", "user"]
+        assert "REST-authenticated as agbush2" in caplog.text
+
+    def test_gh_missing_installs_via_apt_then_probes(self, caplog):
+        which_results = iter([None, "/usr/bin/gh"])
+        with patch("pipeline_orchestrator.shutil.which",
+                    side_effect=lambda *_a, **_k: next(which_results)), \
+             patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="agbush2\n", stderr="")
+            with caplog.at_level("INFO", logger="orchestrator"):
+                _ensure_gh_cli()
+
+        assert mock_run.call_count == 3
+        assert mock_run.call_args_list[0].args[0][:2] == ["apt-get", "update"]
+        assert mock_run.call_args_list[1].args[0][:3] == ["apt-get", "install", "-y"]
+        assert mock_run.call_args_list[2].args[0][:3] == ["gh", "api", "user"]
+        assert "gh CLI installed" in caplog.text
+
+    def test_apt_install_failure_logs_captured_stderr(self, caplog):
+        error = subprocess.CalledProcessError(100, ["apt-get", "install", "-y", "-qq", "gh"])
+        error.stderr = "E: Unable to locate package gh\n"
+        with patch("pipeline_orchestrator.shutil.which", return_value=None), \
+             patch("pipeline_orchestrator.subprocess.run", side_effect=[MagicMock(), error]), \
+             caplog.at_level("ERROR", logger="orchestrator"):
+            _ensure_gh_cli()
+
+        assert "Unable to locate package gh" in caplog.text
+
+    def test_probe_failure_logs_warning(self, caplog):
+        with patch("pipeline_orchestrator.shutil.which", return_value="/usr/bin/gh"), \
+             patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="HTTP 401: Bad credentials")
+            with caplog.at_level("WARNING", logger="orchestrator"):
+                _ensure_gh_cli()
+
+        assert "gh api user" in caplog.text
+        assert "HTTP 401: Bad credentials" in caplog.text
