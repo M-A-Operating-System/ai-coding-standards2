@@ -36,6 +36,12 @@
 **When** a consumer reads the docs
 **Then** the docs clarify this is a policy instruction to that interactive assistant (use MCP for its own actions), not evidence that the gh binary or its token are unavailable to scripts/agents it invokes via Bash
 
+## Scenario: The two related decisions stay distinguishable
+
+**Given** the docs after this change
+**When** a reader compares them against the #276/#284 GraphQL->REST conversion
+**Then** the docs clearly separate "gh's own GraphQL vs REST split" (rationale: restricted-session GraphQL 403s) from "gh/REST vs GitHub MCP" (rationale: bare subprocesses and the scheduled runner cannot reach MCP at all)
+
 ## Scenario: Docs stay in sync with the command implementation
 
 **Given** `.claude/commands/maos-run.md` and the new consumer docs

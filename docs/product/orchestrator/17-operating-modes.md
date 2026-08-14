@@ -72,10 +72,8 @@ regardless. Verify rather than infer this from the wording alone.
 **Checking gh availability correctly.** `gh auth status` performs a
 GraphQL-backed validation call, so it can report failure under the same
 restriction as `gh pr ready` even when `gh api` REST calls work fine --
-producing a false "not authenticated" reading. Use `gh api user` (or another
-REST call) to check whether gh is actually usable, not `gh auth status`.
-`pipeline_orchestrator.py`'s `_ensure_gh_cli()` installs `gh` if missing and
-probes it this way at startup, for exactly this reason.
+producing a false "not authenticated" reading. The correct orchestrator
+startup probe therefore uses `gh api user` rather than `gh auth status`.
 
 ---
 

@@ -126,7 +126,9 @@ def test_why_gh_cli_rest_is_used_instead_of_github_mcp_tools_is_explained():
 
     assert "GitHub MCP" in text, \
         "17-operating-modes.md must explain the gh/REST vs GitHub MCP tools decision"
-    assert "pipeline_orchestrator.py" in text and "no" in text.lower(), \
+    assert "pipeline_orchestrator.py" in text, \
+        "17-operating-modes.md must mention pipeline_orchestrator.py"
+    assert "no GitHub MCP access" in text or "no MCP access" in text, \
         "17-operating-modes.md must explain that pipeline_orchestrator.py has no MCP access"
     assert "scheduled" in text.lower() and "guaranteed" in text.lower(), \
         "17-operating-modes.md must explain the scheduled runner has no interactive session or guaranteed MCP"
@@ -160,6 +162,20 @@ def test_a_sessions_own_no_gh_cli_instruction_is_correctly_framed():
         "17-operating-modes.md must frame the 'no gh CLI' system-prompt line as a policy instruction"
     assert "gh CLI" in text, \
         "17-operating-modes.md must reference the gh CLI system-prompt line it is clarifying"
+
+
+# ---------------------------------------------------------------------------
+# Scenario: The two related decisions stay distinguishable
+# ---------------------------------------------------------------------------
+
+def test_the_two_related_decisions_stay_distinguishable():
+    """17-operating-modes.md keeps the GraphQL/REST split and the gh/REST vs MCP decision distinct."""
+    text = OPERATING_MODES.read_text()
+
+    assert "GraphQL" in text, \
+        "17-operating-modes.md must reference the GraphQL->REST conversion to distinguish it"
+    assert "separate decision" in text.lower(), \
+        "17-operating-modes.md must explicitly separate the two decisions"
 
 
 # ---------------------------------------------------------------------------
