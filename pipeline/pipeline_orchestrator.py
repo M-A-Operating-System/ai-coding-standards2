@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -4123,6 +4124,49 @@ def _discover_github_token() -> str | None:
         return None
 
 
+def _ensure_gh_cli() -> None:
+    """Ensure `gh` is on PATH and can make authenticated REST calls, installing
+    it via apt if missing.
+
+    Script-type pipeline steps (.github/scripts/*.sh) shell out to `gh api`
+    REST calls, not gh's GraphQL-backed subcommands (some of which 403 in
+    restricted sessions -- see #276/#284), so this only needs the binary plus
+    GITHUB_TOKEN/GH_TOKEN in the environment. Verification below uses
+    `gh api user` rather than `gh auth status`: the latter performs a
+    GraphQL-backed validation call that can 403 in a restricted session even
+    when `gh api` works fine, producing a false "not authenticated" reading.
+    """
+    if not shutil.which("gh"):
+        log.warning("gh CLI not found on PATH -- installing via apt (script-type steps call `gh api`)")
+        try:
+            subprocess.run(["apt-get", "update", "-qq"], check=True,
+                            capture_output=True, text=True, timeout=120)
+            subprocess.run(["apt-get", "install", "-y", "-qq", "gh"], check=True,
+                            capture_output=True, text=True, timeout=120)
+        except Exception as exc:
+            stderr = getattr(exc, "stderr", None) or ""
+            log.error("Could not install gh CLI automatically (%s; stderr: %s); script-type "
+                       "steps calling `gh api` will fail until it is installed manually",
+                       exc, stderr.strip())
+            return
+        if not shutil.which("gh"):
+            log.error("apt install of gh exited cleanly but `gh` is still not on PATH")
+            return
+        log.info("gh CLI installed")
+
+    try:
+        probe = subprocess.run(["gh", "api", "user", "--jq", ".login"],
+                                capture_output=True, text=True, timeout=30)
+    except Exception as exc:
+        log.warning("Could not probe gh CLI REST auth: %s", exc)
+        return
+    if probe.returncode == 0:
+        log.info("gh CLI REST-authenticated as %s", probe.stdout.strip())
+    else:
+        log.warning("gh CLI present but `gh api user` failed -- script-type steps "
+                     "calling `gh api` may fail: %s", probe.stderr.strip())
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -4374,6 +4418,8 @@ def _wake(args) -> "Optional[RunContext]":
     if not args.repo:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
         sys.exit(1)
+
+    _ensure_gh_cli()
 
     token = _discover_github_token()
     if not token:
