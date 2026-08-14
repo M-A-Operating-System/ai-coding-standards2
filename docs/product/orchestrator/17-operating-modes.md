@@ -45,6 +45,36 @@ mutation that a restricted interactive session blocks with a 403. The
 (`update_pull_request(draft: false)`) as the only in-session path that
 un-drafts a PR. The GitHub Actions runner does not need this fallback.
 
+**Why gh CLI/REST, not GitHub MCP tools.** This is a separate decision from
+the GraphQL->REST conversion above: that was `gh`'s *own* GraphQL vs REST
+split (a restricted session blocks GraphQL); this is gh/REST *vs* GitHub MCP
+tools. `pipeline_orchestrator.py` is a bare Python process with no Claude
+tool-calling context, so it has no GitHub MCP access at all -- only a token
+(`GITHUB_TOKEN` / `GH_TOKEN` / `AI_AGILE_BOT_TOKEN`) and the `gh` CLI reach
+GitHub, for the orchestrator itself, its `.github/scripts/*.sh` subprocesses,
+and `.claude/agents/*.md` (run headless via `claude -p`). The **scheduled
+GitHub Actions runner** -- the pipeline's primary mode -- has no interactive
+session and no guaranteed MCP server at all, so token-based gh/REST is the
+one mechanism that works identically whether a step is triggered by cron or
+by `/maos-run` in a live session. GitHub MCP tools are only reachable from
+the top-level interactive session itself, which is why `/maos-run` reaches
+for MCP for exactly one thing -- the mark-ready assist above, which has no
+REST equivalent -- and nothing else.
+
+**A session's own "no gh CLI" instruction is a policy, not a provisioning
+fact.** Some interactive sessions carry a system-prompt line stating they
+have no `gh` CLI access and must use GitHub MCP tools instead. That is an
+instruction to *that assistant* about which tool to reach for -- it does not
+mean the `gh` binary or its token are absent from the underlying environment,
+and scripts/agents that assistant invokes via Bash may use `gh` successfully
+regardless. Verify rather than infer this from the wording alone.
+
+**Checking gh availability correctly.** `gh auth status` performs a
+GraphQL-backed validation call, so it can report failure under the same
+restriction as `gh pr ready` even when `gh api` REST calls work fine --
+producing a false "not authenticated" reading. The correct orchestrator
+startup probe therefore uses `gh api user` rather than `gh auth status`.
+
 ---
 
 ## See also
