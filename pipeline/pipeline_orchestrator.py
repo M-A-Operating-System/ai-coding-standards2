@@ -584,6 +584,14 @@ class GitHubClient:
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
 
+    def close_issue(self, number: int) -> None:
+        r = self._request(
+            "PATCH",
+            f"/repos/{self.repo}/issues/{number}",
+            json_body={"state": "closed", "state_reason": "completed"},
+        )
+        r.raise_for_status()
+
     def mark_pr_ready(self, pr_number: int) -> None:
         """Convert a draft PR to ready-for-review. Safe to call if already ready (GitHub returns 200)."""
         r = self._request("PATCH", f"/repos/{self.repo}/pulls/{pr_number}",
@@ -4561,6 +4569,105 @@ def _wake(args) -> "Optional[RunContext]":
     )
 
 
+def _find_epic_siblings(gh: "GitHubClient", issue_number: int) -> list:
+    """Return state info for all issues carrying parent-issue:{issue_number} label.
+
+    Returns a list of {"number": N, "state": "open"|"closed"} dicts.
+    Returns an empty list on any API error so the check is safely skipped.
+    PRs are excluded (they carry pull_request in the API response).
+    """
+    label = f"parent-issue:{issue_number}"
+    results = []
+    page = 1
+    try:
+        while True:
+            data = gh._get(
+                f"/repos/{gh.repo}/issues",
+                params={"labels": label, "state": "all", "per_page": 100, "page": page},
+            )
+            if not data:
+                break
+            for item in data:
+                if "pull_request" not in item:
+                    results.append({"number": item["number"], "state": item["state"]})
+            if len(data) < 100:
+                break
+            page += 1
+    except Exception as exc:
+        log.warning("could not fetch siblings for epic #%d: %s", issue_number, exc)
+        return []
+    return results
+
+
+def _check_epic_completions(ctx: "RunContext") -> None:
+    """For each open epic-labeled issue, check whether all child issues are closed.
+
+    If all siblings are closed, re-processes the epic as a work item so it
+    advances through its own next eligible pipeline step.  When no agent fires
+    (today's default: no pipeline steps target epics), falls back to posting a
+    completion comment and closing the epic directly.
+
+    Runs after the normal work-item loop in _do_work().
+    """
+    for item in ctx.work_items:
+        if "epic" not in item.labels:
+            continue
+        if item.is_closed:
+            continue
+
+        siblings = _find_epic_siblings(ctx.gh, item.number)
+        if not siblings:
+            log.debug("epic #%d: no parent-issue siblings found — skipping", item.number)
+            continue
+
+        open_siblings = [s for s in siblings if s["state"].lower() == "open"]
+        if open_siblings:
+            log.info(
+                "epic #%d: %d/%d sub-issue(s) still open — keeping open",
+                item.number, len(open_siblings), len(siblings),
+            )
+            continue
+
+        log.info(
+            "epic #%d: all %d sub-issue(s) closed — re-processing as work item",
+            item.number, len(siblings),
+        )
+
+        triggered = process_work_item(
+            item, ctx.agents, ctx.pipeline_map, ctx.gh, ctx.dry_run, ctx.repo,
+            session_id=ctx.session_id,
+            default_extra_tools=ctx.default_extra_tools,
+            concurrency=ctx.concurrency,
+        )
+
+        if triggered == 0 and ctx.dry_run:
+            log.info(
+                "  [DRY RUN] would close epic #%d (%d sub-issue(s) all closed)",
+                item.number, len(siblings),
+            )
+        elif triggered == 0:
+            # No pipeline agent matched — fall back to direct close with comment.
+            # Future pipeline steps (e.g. a whole-feature review) plug in by adding
+            # an agent that matches epics; once triggered > 0 this block is skipped.
+            try:
+                ctx.gh.post_comment(
+                    item.number,
+                    (
+                        "<!-- ai-agile/announcement/v1 by orchestrator -->\n"
+                        "## Epic complete\n\n"
+                        f"All {len(siblings)} sub-issue(s) have been closed. "
+                        "Closing this epic."
+                    ),
+                )
+            except Exception as exc:
+                log.warning("could not post completion comment on epic #%d: %s", item.number, exc)
+            try:
+                ctx.gh.close_issue(item.number)
+                log.info("epic #%d: closed", item.number)
+            except Exception as exc:
+                log.warning("could not close epic #%d: %s", item.number, exc)
+
+
 def _do_work(ctx: "RunContext") -> int:
     """Do the work: evaluate each work item, honouring the pipeline-wide
     aggregate concurrency ceiling. Returns the number of agents triggered."""
@@ -4582,6 +4689,7 @@ def _do_work(ctx: "RunContext") -> int:
         if n > 0:
             # Brief pause between agent invocations to avoid rate limits
             time.sleep(2)
+    _check_epic_completions(ctx)
     return total_triggered
 
 

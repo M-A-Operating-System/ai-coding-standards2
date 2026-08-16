@@ -35,6 +35,9 @@ from pipeline_orchestrator import (
     pipeline_by_name,
     main,
     _ensure_gh_cli,
+    RunContext,
+    _find_epic_siblings,
+    _check_epic_completions,
 )
 
 
@@ -4542,3 +4545,128 @@ class TestEnsureGhCli:
 
         assert "gh api user" in caplog.text
         assert "HTTP 401: Bad credentials" in caplog.text
+
+
+class TestFindEpicSiblings:
+    """_find_epic_siblings(): reads parent-issue:{N}-labeled issues."""
+
+    def test_returns_sibling_number_and_state(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = [
+            {"number": 10, "state": "closed"},
+            {"number": 11, "state": "open"},
+        ]
+
+        result = _find_epic_siblings(gh, 5)
+
+        assert result == [{"number": 10, "state": "closed"}, {"number": 11, "state": "open"}]
+        _args, kwargs = gh._get.call_args
+        assert kwargs["params"]["labels"] == "parent-issue:5"
+
+    def test_excludes_pull_requests(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = [
+            {"number": 10, "state": "closed"},
+            {"number": 20, "state": "open", "pull_request": {}},
+        ]
+
+        result = _find_epic_siblings(gh, 5)
+
+        assert result == [{"number": 10, "state": "closed"}]
+
+    def test_returns_empty_list_on_api_error(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.side_effect = Exception("boom")
+
+        result = _find_epic_siblings(gh, 5)
+
+        assert result == []
+
+
+class TestCheckEpicCompletions:
+    """_check_epic_completions(): scheduled-sweep epic-completion check + loop-back."""
+
+    def _epic_item(self, number=100, closed=False):
+        return WorkItem(
+            number=number, kind="issue", title="Epic",
+            labels={"epic", "blocked"}, url="https://github.com/test/repo/issues/100",
+            is_closed=closed,
+        )
+
+    def _ctx(self, work_items):
+        return RunContext(
+            gh=MagicMock(), agents=[], pipeline_map={}, work_items=work_items,
+            concurrency=MagicMock(), repo="org/repo", session_id="s", dry_run=False,
+            default_extra_tools=None,
+        )
+
+    def test_non_epic_items_are_skipped(self):
+        item = WorkItem(number=1, kind="issue", title="x", labels=set(), url="u")
+        ctx = self._ctx([item])
+
+        with patch("pipeline_orchestrator._find_epic_siblings") as mock_find:
+            _check_epic_completions(ctx)
+
+        mock_find.assert_not_called()
+
+    def test_closed_epics_are_skipped(self):
+        item = self._epic_item(closed=True)
+        ctx = self._ctx([item])
+
+        with patch("pipeline_orchestrator._find_epic_siblings") as mock_find:
+            _check_epic_completions(ctx)
+
+        mock_find.assert_not_called()
+
+    def test_some_open_siblings_keeps_epic_open(self):
+        item = self._epic_item()
+        ctx = self._ctx([item])
+
+        with patch("pipeline_orchestrator._find_epic_siblings",
+                    return_value=[{"number": 1, "state": "closed"}, {"number": 2, "state": "open"}]), \
+             patch("pipeline_orchestrator.process_work_item") as mock_process:
+            _check_epic_completions(ctx)
+
+        mock_process.assert_not_called()
+        ctx.gh.close_issue.assert_not_called()
+
+    def test_all_siblings_closed_reprocesses_parent_and_falls_back_to_close(self):
+        item = self._epic_item()
+        ctx = self._ctx([item])
+
+        with patch("pipeline_orchestrator._find_epic_siblings",
+                    return_value=[{"number": 1, "state": "closed"}, {"number": 2, "state": "closed"}]), \
+             patch("pipeline_orchestrator.process_work_item", return_value=0) as mock_process:
+            _check_epic_completions(ctx)
+
+        mock_process.assert_called_once()
+        ctx.gh.close_issue.assert_called_once_with(item.number)
+        ctx.gh.post_comment.assert_called_once()
+
+    def test_all_siblings_closed_and_agent_triggered_skips_fallback_close(self):
+        """When a real pipeline agent matches the epic, the orchestrator-native
+        fallback (direct close + comment) must not also fire."""
+        item = self._epic_item()
+        ctx = self._ctx([item])
+
+        with patch("pipeline_orchestrator._find_epic_siblings",
+                    return_value=[{"number": 1, "state": "closed"}]), \
+             patch("pipeline_orchestrator.process_work_item", return_value=1) as mock_process:
+            _check_epic_completions(ctx)
+
+        mock_process.assert_called_once()
+        ctx.gh.close_issue.assert_not_called()
+
+    def test_no_siblings_found_is_skipped(self):
+        item = self._epic_item()
+        ctx = self._ctx([item])
+
+        with patch("pipeline_orchestrator._find_epic_siblings", return_value=[]), \
+             patch("pipeline_orchestrator.process_work_item") as mock_process:
+            _check_epic_completions(ctx)
+
+        mock_process.assert_not_called()
+        ctx.gh.close_issue.assert_not_called()

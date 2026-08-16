@@ -343,5 +343,14 @@
       "description": "Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue."
     }
 
+  ],
+
+  "orchestrator_checks": [
+    {
+      "name": "epic-completion",
+      "description": "On each scheduled sweep, checks every open issue labeled 'epic'. If all its parent-issue:{N}-labeled siblings are closed, re-processes the parent as a work item so it advances through its own next eligible step.",
+      "runs": "orchestrator-native (no registered agent, no LLM invocation)",
+      "trigger": "scheduled_sweep"
+    }
   ]
 }
