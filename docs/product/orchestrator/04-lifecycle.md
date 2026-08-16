@@ -174,7 +174,8 @@ so the approved design reaches `main` before any code is written:
 
 - The **design PR must not carry a closing keyword** (`Closes`/`Fixes`/`Resolves`).
   The issue stays open through the build phase; only the **code PR** closes it.
-  A premature close would also trip the branch-delete / epic-close automation.
+  A premature close would also trip the branch-delete / epic-close automation
+  (see [Epic completion](#the-ticket-is-too-big) below).
 - The **code branch (`issue-{N}`) is cut from the post-design-merge `main`**, so
   the build always starts from a tree that already contains the latest approved
   design (and the latest pipeline infrastructure).
@@ -203,8 +204,29 @@ outcome — and posts the roadmap as a comment on the parent. A human
 approves the decomposition by applying `decomposition:approved`. On
 approval, the agent auto-creates the child issues and links them back
 to the parent. Each child re-enters the pipeline at `issue-classifier`
-and runs through its own full lifecycle. The parent waits and closes
-when all children close, with a roll-up retrospective.
+and runs through its own full lifecycle.
+
+**Epic completion.** The parent (labeled `epic`) is excluded from every
+pipeline stage until its children finish. On each scheduled sweep, the
+orchestrator checks every open `epic`-labeled issue: if all of its
+`parent-issue:{N}`-labeled children are closed, the orchestrator
+re-processes the parent as a work item so it advances through its own next
+eligible step — today, that means closing it with a completion comment.
+This is orchestrator-native logic, not a registered agent step (a
+mechanical label check needs no LLM invocation), declared in
+`pipeline.json` as an `orchestrator_checks` entry rather than a pipeline
+step — see [`05-pipeline-config.md`](05-pipeline-config.md#orchestrator_checks--standalone-orchestrator-behaviour).
+The mechanism is intentionally general: future pipeline steps added to
+epics (such as a whole-feature review before release) plug in by extending
+what the parent's "next eligible step" is, without revisiting this check.
+
+Because the check runs on the periodic sweep rather than on an
+`issues.closed` event, there is an inherent delay of up to one sweep
+interval (currently ~30 minutes between weekday ticks) between the last
+child closing and the parent being processed — an accepted trade-off for a
+simpler mechanism with no dependency on catching a specific webhook event.
+This replaces the standalone `close-epic-on-children-complete.yml` workflow,
+which is retired.
 
 Distinct from `task-decomposer` (Design phase): `task-decomposer`
 breaks a *sized* feature into implementation tasks (one file, one
