@@ -297,6 +297,39 @@ for git operations; use `post_steps` for everything else (e.g. calling
 
 ---
 
+## `orchestrator_checks` — standalone orchestrator behaviour
+
+Some pipeline behaviour is a mechanical, periodic check against work items
+rather than a step in the `issue-classifier` → ... → `pr-reviewer` chain —
+it has no trigger label, no agent, and no human gate of its own. These are
+declared in the top-level `orchestrator_checks` array, a sibling of
+`pipeline`, not an entry inside it:
+
+```json
+"orchestrator_checks": [
+  {
+    "name": "epic-completion",
+    "description": "On each scheduled sweep, checks every open issue labeled 'epic'. If all its parent-issue:{N}-labeled siblings are closed, re-processes the parent as a work item so it advances through its own next eligible step.",
+    "runs": "orchestrator-native (no registered agent, no LLM invocation)",
+    "trigger": "scheduled_sweep"
+  }
+]
+```
+
+Use `orchestrator_checks` instead of a pipeline agent step when the check:
+
+- Requires no judgment call — a label/state comparison a script can decide.
+- Has no meaningful `:review`/`:blocked` outcome of its own; it either finds
+  a work item ready to advance or it doesn't.
+- Isn't triggered by a label transition on the object it inspects — it
+  sweeps a *class* of work items (every open `epic`-labeled issue) rather
+  than reacting to one.
+
+If a check later needs judgment, human review, or per-issue triggering,
+promote it to a real pipeline step instead of stretching this array to fit.
+
+---
+
 ## Session management
 
 Each agent in `pipeline.json` may carry an optional `session` object that
