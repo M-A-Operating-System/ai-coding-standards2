@@ -191,6 +191,39 @@ bootstrap).
 
 ---
 
+## Epic auto-close — no separate workflow needed
+
+Epic completion is handled by the orchestrator's existing scheduled sweep —
+no extra workflow file is installed for this behaviour.
+
+On each sweep tick, the orchestrator checks every open issue that carries
+the `epic` label. If all `parent-issue:{N}`-labeled siblings of that epic
+are closed, the orchestrator re-processes the parent as a work item so it
+can advance through its own next eligible pipeline step. Today that step is
+closure with a completion comment (replicating what the former
+`close-epic-on-children-complete.yml` workflow did). The mechanism is
+intentionally general: future pipeline steps added to epics (such as a
+whole-feature review) plug in without revisiting this check.
+
+**Accepted latency trade-off.** Because the check runs on the periodic sweep
+rather than on an `issues.closed` event, there is an inherent delay of up to
+one sweep interval (currently ~30 minutes between weekday ticks, 6 AM–8 PM)
+between the last sub-issue being closed and the parent epic being processed.
+This is an explicit, accepted trade-off in exchange for a simpler mechanism
+with no dependency on catching a specific webhook event.
+
+`close-epic-on-children-complete.yml` has been retired; it is neither
+installed by `get_started.py` nor needed by consuming repos. If a consuming
+repo has this workflow committed from an older install, it can be removed:
+
+```bash
+git rm .github/workflows/close-epic-on-children-complete.yml
+git commit -m "chore: remove retired epic-close workflow (handled by orchestrator sweep)"
+git push
+```
+
+---
+
 ## Managed paths and .gitignore
 
 `get_started.py` adds the following entries to the consuming repo's `.gitignore`:
