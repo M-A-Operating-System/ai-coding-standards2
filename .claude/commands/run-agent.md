@@ -46,24 +46,33 @@ Examples:
    `--allowedTools` when it spawns this agent as a subprocess — the agent was
    written and tested against exactly that set.
 
-   **Tool-scope rule:** follow only the agent's declared tool allowlist for the
-   duration of this run. Before invoking any tool that is **not** in the
-   agent's `tools:` list (e.g. `Glob` when the agent declares
-   `tools: [Bash, Read, Grep]`), stop and explicitly warn:
+   **Tool-scope rule (enforced, not advisory):** write the declared allowlist
+   to a scope file before following any of the agent's own instructions:
 
-   ```
-   WARNING: agent declares tools: [...] -- <ToolName> is outside that allowlist.
-   The real orchestrator would not have this tool available. Proceeding anyway
-   only if there is no declared-tool alternative.
+   ```bash
+   mkdir -p .claude
+   jq -n --arg agent "$AGENT_NAME" --argjson allowed '["Bash","Read","Grep"]' \
+     '{agent: $agent, allowed: $allowed}' > .claude/.run-agent-scope.json
    ```
 
-   This prevents silent capability drift between interactive runs and real
-   orchestrator-spawned runs. `Glob` in particular silently returns empty results
-   through symlinked directories (`standards/`, `.claude/`) -- see
-   `.claude/CLAUDE.md` Section 6 -- so using it when the agent does not declare
-   it both violates the allowlist and produces wrong results.
+   Replace the `--argjson allowed` value with the exact `tools:` list from the
+   frontmatter you just read (as a JSON array), and `$AGENT_NAME` with the
+   agent name parsed in step 1.
+
+   A `PreToolUse` hook (`.claude/hooks/run-agent-scope.sh`, registered in
+   `.claude/settings.json`) reads this file for the rest of the run and
+   **denies** any tool call outside the declared list — the same restriction
+   the real orchestrator applies via `--allowedTools`. This is a real block,
+   not a warning: if a tool call is denied, do not retry it — find a
+   declared-tool alternative or stop and tell the user the agent's allowlist
+   doesn't cover what this run needs.
+
+   `Glob` in particular is absent from most agents' allowlists and silently
+   returns empty results through symlinked directories (`standards/`,
+   `.claude/`) rather than an error — see `.claude/CLAUDE.md` Section 6.
 
 4. Set the following variables for use in the agent's bash snippets:
+   - `AGENT_NAME` = the agent name parsed in step 1
    - `ISSUE_NUMBER` = the parsed issue number
    - `REPO` = the detected repo
    - `STATUS_SH` = the resolved path to status.sh
@@ -81,3 +90,12 @@ Examples:
    ✅ Agent 01_product_docs/prd-writer completed on issue #42.
    Final status: complete
    ```
+
+7. Remove the scope file so it doesn't affect unrelated tool use later in this
+   session:
+   ```bash
+   rm -f .claude/.run-agent-scope.json
+   ```
+   Do this even if the run halts early (error, `:blocked`, user interruption,
+   a denied tool with no alternative) — remove the scope file before ending
+   your turn either way.

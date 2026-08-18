@@ -6,5 +6,18 @@
     "allow": [
       "Edit(.claude/agents/**)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/run-agent-scope.sh"
+          }
+        ]
+      }
+    ]
   }
 }
