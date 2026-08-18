@@ -41,9 +41,27 @@ Examples:
    ```
    Then stop.
 
-3. Read the agent file. Note the `model:` and `max_turns:` frontmatter values
-   (for reference — they are used by the automated orchestrator, not enforced
-   interactively, but worth knowing).
+3. Read the agent file. Note the `model:`, `max_turns:`, and `tools:` frontmatter
+   values. `tools:` is the allowlist the real orchestrator passes as
+   `--allowedTools` when it spawns this agent as a subprocess — the agent was
+   written and tested against exactly that set.
+
+   **Tool-scope rule:** follow only the agent's declared tool allowlist for the
+   duration of this run. Before invoking any tool that is **not** in the
+   agent's `tools:` list (e.g. `Glob` when the agent declares
+   `tools: [Bash, Read, Grep]`), stop and explicitly warn:
+
+   ```
+   WARNING: agent declares tools: [...] -- <ToolName> is outside that allowlist.
+   The real orchestrator would not have this tool available. Proceeding anyway
+   only if there is no declared-tool alternative.
+   ```
+
+   This prevents silent capability drift between interactive runs and real
+   orchestrator-spawned runs. `Glob` in particular silently returns empty results
+   through symlinked directories (`standards/`, `.claude/`) -- see
+   `.claude/CLAUDE.md` Section 6 -- so using it when the agent does not declare
+   it both violates the allowlist and produces wrong results.
 
 4. Set the following variables for use in the agent's bash snippets:
    - `ISSUE_NUMBER` = the parsed issue number

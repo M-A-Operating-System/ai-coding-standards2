@@ -79,6 +79,28 @@ This project runs on the AI Agile pipeline:
 - **Standards** (`standards/*.json`) — enforceable coding rules, checked on every diff. Check the relevant category before writing code in an unfamiliar area.
 - **ADRs** (`adrs/adrs.json`) — approved, cited exceptions to a standard. Check here before assuming a standard was violated by mistake.
 
+When checking for content under `standards/` or `.claude/`, use `Grep` or a
+symlink-following `find` invocation — see Section 6 below. `Glob` silently
+returns nothing through these paths in every consuming repo.
+
+## 6. Symlink trap: reading standards and .claude files
+
+**`Glob` returns nothing through a symlinked directory -- use `Grep` or `find -L` instead.**
+
+Every consuming repo installs `standards/` and `.claude/` as whole-folder
+symlinks pointing into the submodule (see `16-onboarding.md`). `Glob` does not
+follow a symlinked directory and returns an empty result silently, with no error
+to signal the miss. A naive `find standards -name "*.json"` (no flags, no
+trailing slash) has the same trap for the same reason.
+
+When reading content under `standards/` or `.claude/`:
+- Use **`Grep`** -- it follows symlinked directories correctly.
+- Or use **`find -L standards -name "*.json"`** (the `-L` flag follows symlinks).
+- Or use **`find standards/ -name "*.json"`** (trailing slash also works).
+
+Do **not** use `Glob("standards/*.json")` or `find standards -name "*.json"`
+(no `-L`, no trailing slash) -- both silently return nothing through a symlink.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
