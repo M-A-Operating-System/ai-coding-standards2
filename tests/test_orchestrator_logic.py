@@ -2959,8 +2959,8 @@ class TestPostSteps:
 
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_post_steps_nonzero_exit_applies_failed(self, mock_failed, mock_invoke):
-        """When a post_steps script exits non-zero, _apply_failed is called."""
+    def test_post_steps_nonzero_exit_posts_warning_keeps_complete(self, mock_failed, mock_invoke):
+        """When a post_steps script exits non-zero, :complete is preserved and a warning comment is posted."""
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -2978,12 +2978,14 @@ class TestPostSteps:
         with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_fail)):
             process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
-        mock_failed.assert_called_once()
+        mock_failed.assert_not_called()
+        all_bodies = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert any("post_steps warning" in b for b in all_bodies)
 
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_post_steps_timeout_applies_failed(self, mock_failed, mock_invoke):
-        """When a post_steps script times out, _apply_failed is called."""
+    def test_post_steps_timeout_posts_warning_keeps_complete(self, mock_failed, mock_invoke):
+        """When a post_steps script times out, :complete is preserved and a warning comment is posted."""
         import subprocess as _sp
 
         mock_invoke.return_value = AgentRunResult(
@@ -3005,12 +3007,14 @@ class TestPostSteps:
         with patch("subprocess.run", side_effect=_timeout_side_effect):
             process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
-        mock_failed.assert_called_once()
+        mock_failed.assert_not_called()
+        all_bodies = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert any("post_steps warning" in b for b in all_bodies)
 
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_post_steps_script_not_found_applies_failed(self, mock_failed, mock_invoke):
-        """When a post_steps script does not exist on disk, _apply_failed is called."""
+    def test_post_steps_script_not_found_posts_warning_keeps_complete(self, mock_failed, mock_invoke):
+        """When a post_steps script does not exist on disk, :complete is preserved and a warning comment is posted."""
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -3032,7 +3036,9 @@ class TestPostSteps:
              patch("pathlib.Path.exists", return_value=False):
             process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
-        mock_failed.assert_called_once()
+        mock_failed.assert_not_called()
+        all_bodies = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert any("post_steps warning" in b for b in all_bodies)
 
     @patch("pipeline_orchestrator.invoke_agent")
     def test_post_steps_all_succeed_in_order(self, mock_invoke):
@@ -3080,7 +3086,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_breaks_on_first_failure(self, mock_failed, mock_invoke):
-        """When the first post_steps script fails, subsequent scripts do NOT run."""
+        """When the first post_steps script fails, subsequent scripts do NOT run; :complete is preserved."""
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -3125,13 +3131,15 @@ class TestPostSteps:
              patch("pathlib.Path.exists", _exists_for_scripts):
             process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
-        mock_failed.assert_called_once()
+        mock_failed.assert_not_called()
+        all_bodies = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert any("post_steps warning" in b for b in all_bodies)
         assert call_count["n"] == 1, f"Expected only 1 bash call before break, got {call_count['n']}"
 
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_path_traversal_blocked(self, mock_failed, mock_invoke):
-        """A post_steps path that resolves outside the repo root is blocked and applies :failed."""
+        """A post_steps path that resolves outside the repo root is blocked; :complete is preserved."""
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -3155,7 +3163,9 @@ class TestPostSteps:
         with patch("subprocess.run", side_effect=self._sub_side_effect_factory(MagicMock(returncode=0))) as mock_sub:
             process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
 
-        mock_failed.assert_called_once()
+        mock_failed.assert_not_called()
+        all_bodies = [c[0][1] for c in gh.post_comment.call_args_list]
+        assert any("post_steps warning" in b for b in all_bodies)
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
@@ -3204,6 +3214,122 @@ class TestPostSteps:
         assert first_line.startswith("#!/"), (
             f"mark-pr-ready.sh must start with a shebang; got: {first_line!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestPostStepFailureDecoupling — Gherkin-traced tests for issue #315
+# ---------------------------------------------------------------------------
+
+class TestPostStepFailureDecoupling:
+    """Tests for the post_step failure decoupling change (issue #315).
+
+    Scenario: A post_step failure after a genuinely successful agent run does not discard that success
+    Scenario: mark-pr-ready.sh does not fail when the PR is already ready
+    Scenario: Retrying after this specific failure converges instead of looping
+    """
+
+    def _pr_reviewer_agent(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["pr"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            review_gate=True,
+        )
+
+    def _sub_side_effect_factory(self, bash_result):
+        import subprocess as _sp
+
+        def _side_effect(cmd, **kwargs):
+            if isinstance(cmd, list) and cmd and cmd[0] == "git":
+                raise _sp.CalledProcessError(1, cmd)
+            return bash_result
+
+        return _side_effect
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_post_step_failure_after_successful_agent_run_does_not_discard_success(
+        self, mock_failed, mock_invoke
+    ):
+        """Scenario: A post_step failure after a genuinely successful agent run does not discard that success.
+
+        Given an agent completes its own work correctly
+        When a subsequent post_steps script for that same pipeline entry fails
+        Then the issue does not end up labeled {agent}:failed
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        bash_fail = MagicMock()
+        bash_fail.returncode = 1
+        bash_fail.stdout = "gh pr ready: GraphQL error"
+        bash_fail.stderr = ""
+        agent = self._pr_reviewer_agent()
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=313, kind="pr", title="PR", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/pull/313",
+        )
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_fail)):
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        mock_failed.assert_not_called()
+        gh.post_comment.assert_called()
+        posted_body = gh.post_comment.call_args[0][1]
+        assert "post_steps warning" in posted_body
+        assert "complete" in posted_body.lower()
+
+    def test_mark_pr_ready_sh_does_not_fail_when_pr_is_already_ready(self):
+        """Scenario: mark-pr-ready.sh does not fail when the PR is already ready.
+
+        Given a PR that is already draft: false
+        When mark-pr-ready.sh runs as a post_step
+        Then it detects the PR is already ready and exits 0
+        """
+        import pipeline_orchestrator as orch
+        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "mark-pr-ready.sh"
+        content = script_path.read_text()
+        assert 'draft' in content, "Script must check the 'draft' field of the PR"
+        assert 'exit 0' in content, "Script must exit 0 when the PR is already ready"
+        assert 'gh api' in content, "Script must use gh api to check draft status"
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
+    def test_retrying_after_this_specific_failure_converges_instead_of_looping(
+        self, mock_failed, mock_invoke
+    ):
+        """Scenario: Retrying after this specific failure converges instead of looping.
+
+        Given pr-reviewer:failed was applied solely because of a post_step failure
+        When a human clears the label and the orchestrator retries
+        Then the retry does not deterministically hit the identical failure again
+        """
+        bash_ok = MagicMock()
+        bash_ok.returncode = 0
+        bash_ok.stdout = ""
+        bash_ok.stderr = ""
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        agent = self._pr_reviewer_agent()
+        gh = _make_gh_mock()
+        wi = WorkItem(
+            number=313, kind="pr", title="PR", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/pull/313",
+        )
+
+        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)):
+            n = process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        mock_failed.assert_not_called()
+        assert n == 1
 
 
 # ---------------------------------------------------------------------------

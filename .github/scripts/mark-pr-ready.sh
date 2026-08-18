@@ -21,6 +21,16 @@ if [ -z "${pr_number}" ]; then
     exit 0
 fi
 
+# Check whether the PR is already ready (draft: false) before attempting the call.
+# gh pr ready has no REST equivalent and is blocked in restricted interactive sessions;
+# the idempotency check avoids a deterministic failure when the PR was already marked
+# ready by the driver's MCP assist or the agent's own action.
+_pr_draft=$(gh api "repos/${REPO}/pulls/${pr_number}" --jq '.draft')
+if [ "${_pr_draft}" = "false" ]; then
+    echo "mark-pr-ready: PR #${pr_number} is already ready for review — skipping"
+    exit 0
+fi
+
 echo "mark-pr-ready: marking PR #${pr_number} ready for review"
 # gh pr ready has no REST equivalent; works on the CI runner. In a restricted interactive session the /maos-run driver marks the PR ready via the GitHub MCP tool.
 gh pr ready "${pr_number}" --repo "${REPO}"
