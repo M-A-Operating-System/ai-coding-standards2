@@ -47,3 +47,27 @@
 **Given** `.claude/commands/maos-run.md` and the new consumer docs
 **When** either changes
 **Then** they cross-reference each other so a reader lands on the authoritative source for mechanism (`maos-run.md`) vs. concept/onboarding (product docs)
+
+## Scenario: A session checking standards content is warned about the symlink trap
+
+**Given** `.claude/CLAUDE.md` after this change
+**When** a session is about to check `standards/*.json` (or any path under `.claude/`) for content
+**Then** the doc instructs using `Grep` or a symlink-following `find` invocation instead of `Glob`, and explains that `Glob` can silently return an empty result through a symlinked directory
+
+## Scenario: The guidance specifies a correct invocation, not just a tool name
+
+**Given** the same doc
+**When** a reader looks for the recommended alternative
+**Then** it names a concrete, verified-correct invocation (`Grep`, or `find -L` / a trailing-slash `find`) rather than just "use find," which would not by itself avoid the same trap
+
+## Scenario: The affected paths are named explicitly
+
+**Given** the same doc
+**When** a reader wants to know which paths this actually affects
+**Then** `standards/` and `.claude/` are named as the whole-folder symlinks every consuming repo installs, per `16-onboarding.md`
+
+## Scenario: An interactively-run agent is scoped to its declared tool allowlist
+
+**Given** `/run-agent` invoked on an agent whose frontmatter declares `tools: [Bash, Read, Grep]` (no `Glob`)
+**When** the interactive session follows that agent's instructions
+**Then** it is constrained to (or explicitly warned before stepping outside) the same tool set the real orchestrator-spawned subprocess would have -- `Glob` is not silently available just because the ambient session happens to have it
