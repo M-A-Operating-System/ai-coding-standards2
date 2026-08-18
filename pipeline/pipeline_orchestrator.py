@@ -3510,7 +3510,8 @@ def _invoke_post_steps(
             return (
                 f"_post_steps path `{_ps_path_str}` escapes the repository root. "
                 f"This is a configuration error in pipeline.json. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         # Resolve the execution path from origin/main (issue #196) so a stale
         # issue branch cannot shadow or remove the orchestrator's own scripts.
@@ -3523,7 +3524,8 @@ def _invoke_post_steps(
             return (
                 f"_post_steps script `{_ps_path_str}` not found. "
                 f"Check that the script exists on the orchestrator branch. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         log.info(
             "  post_steps: running %s for %s on #%d",
@@ -3541,13 +3543,15 @@ def _invoke_post_steps(
             )
             return (
                 f"_post_steps script `{_ps_path_str}` timed out after 300s. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         except FileNotFoundError:
             log.error("  post_steps: bash not found in PATH")
             return (
                 "_bash not found in PATH; post_steps script could not run. "
-                "Remove the failed label to retry._"
+                "The agent is :complete; this post_step failure is surfaced as a "
+                "warning comment on the work item._"
             )
         if _ps_result.returncode != 0:
             _ps_output = (_ps_result.stderr or _ps_result.stdout)[:2000]
@@ -3559,7 +3563,8 @@ def _invoke_post_steps(
             return (
                 f"_post_steps script `{_ps_path_str}` exited {_ps_result.returncode}. "
                 f"Check the orchestrator CI log for details. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         log.info(
             "  post_steps: %s completed for %s on #%d",
