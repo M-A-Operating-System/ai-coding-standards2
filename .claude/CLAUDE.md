@@ -1,12 +1,20 @@
 # CLAUDE.md
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+Behavioral guidelines for AI sessions across this repo family — used both in
+repos that ship code and in repos that produce assessments, policies, and
+other non-code deliverables. Merge with project-specific instructions as
+needed.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial
+tasks, use judgment.
 
-**Never edit `CLAUDE.md`** — it is framework-managed and symlinked from the submodule; keep all local project hints, knowledge, and patterns in `CLAUDE.local.md` instead.
+**Never edit `CLAUDE.md`** — it is framework-managed and symlinked from the
+submodule in consuming repos; keep local hints, knowledge, and patterns in
+`CLAUDE.local.md` instead.
 
-## 1. Think Before Coding
+## Part 1 — For every session
+
+### 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
@@ -24,7 +32,7 @@ Before implementing:
   mistake a system-prompt policy line ("use MCP tools") for a technical fact
   about what the environment can or cannot do — test it.
 
-## 2. Simplicity First
+### 2. Simplicity First
 
 **Minimum code that solves the problem. Nothing speculative.**
 
@@ -36,7 +44,7 @@ Before implementing:
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-## 3. Surgical Changes
+### 3. Surgical Changes
 
 **Touch only what you must. Clean up only your own mess.**
 
@@ -52,7 +60,7 @@ When your changes create orphans:
 
 The test: Every changed line should trace directly to the user's request.
 
-## 4. Goal-Driven Execution
+### 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
 
@@ -70,7 +78,12 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## 5. Finding Your Way Around
+## Part 2 — Additional, when working as a coding AI
+
+Applies when the repo is a codebase (`pipeline/pipeline_orchestrator.py`
+present) and the task is a code change.
+
+### 5. Finding Your Way Around
 
 This project runs on the AI Agile pipeline:
 
@@ -83,7 +96,7 @@ When checking for content under `standards/` or `.claude/`, use `Grep` or a
 symlink-following `find` invocation — see Section 6 below. `Glob` silently
 returns nothing through these paths in every consuming repo.
 
-## 6. Symlink trap: reading standards and .claude files
+### 6. Symlink trap: reading standards and .claude files
 
 **`Glob` returns nothing through a symlinked directory -- use `Grep` or `find -L` instead.**
 
@@ -101,6 +114,60 @@ When reading content under `standards/` or `.claude/`:
 Do **not** use `Glob("standards/*.json")` or `find standards -name "*.json"`
 (no `-L`, no trailing slash) -- both silently return nothing through a symlink.
 
+### 7. Code deliverables go through the orchestrator
+
+**If the deliverable is code, drive it through the pipeline — don't implement ad hoc.**
+
+- Before implementing, confirm a GitHub issue describes the change. If none
+  exists, create one — don't start editing files ad hoc.
+- Drive the work through the orchestrator (`/maos-run`, or let the scheduled
+  pipeline pick it up) instead of committing code directly in the session.
+  Agents follow the protocol in `.claude/AGENTS.md`; don't reimplement it
+  by hand.
+- Pure exploration, debugging, or a throwaway prototype is fine ad hoc — say
+  so explicitly, and keep it out of version control until it becomes real
+  work.
+
+## Part 3 — Additional, when working as a content AI (assessments, policy, non-code deliverables)
+
+Applies when the repo's deliverable is a document — an assessment, a
+policy, a report — rather than code.
+
+### 8. Evidence over assertion
+
+**State evidence, not just conclusions.**
+
+Every claim or judgment should be traceable to a source, a citation, or a
+stated assumption — a reader should be able to tell "the data shows X" apart
+from "I inferred X." Don't present an inference with the same confidence as
+a sourced fact.
+
+### 9. Preserve structure and voice
+
+**The same "surgical changes" discipline as code, applied to prose.**
+
+Match the existing document's section structure, tone, and terminology
+unless the request specifically asks to change them. Don't restructure a
+document, rewrite its voice, or "improve" unrelated sections while making a
+scoped edit.
+
+### 10. Define the rubric before writing
+
+**State the standard you're judging against before producing the judgment.**
+
+For an assessment or review, name the criteria first, so the standard is
+visible and auditable in the deliverable itself — not implicit in the
+author's head.
+
+### 11. Flag gaps, don't fill them
+
+**An unanswered question is safer than a confidently wrong answer.**
+
+If information needed for a complete assessment or policy is missing, say so
+explicitly rather than producing plausible-sounding text to cover the gap.
+
 ---
 
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+**These guidelines are working if:** fewer unnecessary changes in diffs,
+fewer rewrites due to overcomplication, and clarifying questions come before
+implementation rather than after mistakes.
