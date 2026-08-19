@@ -3510,7 +3510,8 @@ def _invoke_post_steps(
             return (
                 f"_post_steps path `{_ps_path_str}` escapes the repository root. "
                 f"This is a configuration error in pipeline.json. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         # Resolve the execution path from origin/main (issue #196) so a stale
         # issue branch cannot shadow or remove the orchestrator's own scripts.
@@ -3523,7 +3524,8 @@ def _invoke_post_steps(
             return (
                 f"_post_steps script `{_ps_path_str}` not found. "
                 f"Check that the script exists on the orchestrator branch. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         log.info(
             "  post_steps: running %s for %s on #%d",
@@ -3541,13 +3543,15 @@ def _invoke_post_steps(
             )
             return (
                 f"_post_steps script `{_ps_path_str}` timed out after 300s. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         except FileNotFoundError:
             log.error("  post_steps: bash not found in PATH")
             return (
                 "_bash not found in PATH; post_steps script could not run. "
-                "Remove the failed label to retry._"
+                "The agent is :complete; this post_step failure is surfaced as a "
+                "warning comment on the work item._"
             )
         if _ps_result.returncode != 0:
             _ps_output = (_ps_result.stderr or _ps_result.stdout)[:2000]
@@ -3559,7 +3563,8 @@ def _invoke_post_steps(
             return (
                 f"_post_steps script `{_ps_path_str}` exited {_ps_result.returncode}. "
                 f"Check the orchestrator CI log for details. "
-                f"Remove the failed label to retry._"
+                f"The agent is :complete; this post_step failure is surfaced as a "
+                f"warning comment on the work item._"
             )
         log.info(
             "  post_steps: %s completed for %s on #%d",
@@ -3967,26 +3972,30 @@ def _apply_result(
         _mark_pr_ready_if_requested(agent_def, work_item, gh)
 
     # post_steps: run per-agent completion hooks after the agent signals :complete.
-    # Each hook is a repo-relative path to a bash script. A non-zero exit removes
-    # :complete and applies :failed, halting the pipeline for this work item.
+    # Each hook is a repo-relative path to a bash script. A non-zero exit is
+    # surfaced as a warning comment on the work item; :complete is preserved so
+    # that a genuine agent success is not misrepresented by an auxiliary failure.
     if applied_status == STATUS_COMPLETE and agent_def.post_steps:
         _ps_fail_reason = _invoke_post_steps(agent_def, work_item, repo, gh)
         if _ps_fail_reason:
-            try:
-                gh.remove_label(work_item.number, agent_def.complete_label)
-            except Exception as exc:
-                log.debug(
-                    "  could not remove %s before post_steps failure on #%d: %s",
-                    agent_def.complete_label, work_item.number, exc,
-                )
-            _apply_failed(gh, agent_def, work_item, result, reason=_ps_fail_reason)
-            applied_status = STATUS_FAILED
-            log.error(
-                "  FAILED  %-38s  post_steps failed on #%d",
-                agent_def.agent, work_item.number,
+            log.warning(
+                "  post_steps: failure after :complete on #%d — keeping :complete, posting warning",
+                work_item.number,
             )
-            _restore_pre_agent_branch(pre_agent_branch)
-            return True
+            _ps_warning = (
+                f"<!-- ai-agile/announcement/v1 by orchestrator -->\n"
+                f"**post_steps warning on #{work_item.number}** "
+                f"(agent `{agent_def.agent}`):\n\n{_ps_fail_reason}\n\n"
+                f"The agent's own work completed successfully; `:complete` is preserved. "
+                f"The post_step failure is logged here for visibility."
+            )
+            try:
+                gh.post_comment(work_item.number, _ps_warning)
+            except Exception as exc:
+                log.warning(
+                    "  could not post post_steps warning comment on #%d: %s",
+                    work_item.number, exc,
+                )
 
     # Halt if blocked, awaiting review, or failed — stop dispatching further agents.
     if applied_status in (STATUS_BLOCKED, STATUS_REVIEW, STATUS_FAILED):
