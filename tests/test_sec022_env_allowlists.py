@@ -202,3 +202,64 @@ class TestTheAgentPathIsUntouched:
             assert "ANTHROPIC_API_KEY" not in var_set, (
                 f"{name}: ANTHROPIC_API_KEY must not appear in a non-agent env allowlist"
             )
+
+
+# ---------------------------------------------------------------------------
+# Scenario: the bot PAT reaches only the script steps that consume it
+# ---------------------------------------------------------------------------
+
+class TestBotTokenIsScopedToPrWritingScripts:
+    """AI_AGILE_BOT_TOKEN is a classic PAT with repo+workflow scopes -- the
+    broadest credential the orchestrator holds. Only the script steps that
+    demonstrably reference it should receive it."""
+
+    from pipeline_orchestrator import _script_step_env_vars as _resolve
+
+    def test_pr_writing_scripts_receive_the_bot_token(self):
+        for script in ("create-pr.sh", "create-docs-pr.sh", "merge-docs-pr.sh"):
+            got = type(self)._resolve(f".github/scripts/{script}")
+            assert "AI_AGILE_BOT_TOKEN" in got, (
+                f"{script} opens or merges a PR and needs the bot PAT"
+            )
+
+    def test_ci_gate_does_not_receive_the_bot_token(self):
+        """ci-gate.sh only reads check runs; it never references the variable."""
+        got = type(self)._resolve(".github/scripts/ci-gate.sh")
+        assert "AI_AGILE_BOT_TOKEN" not in got
+
+    def test_unknown_or_missing_script_does_not_receive_the_bot_token(self):
+        """Fail closed: a step whose script is unrecognised gets the base list."""
+        for path in (None, "", ".github/scripts/some-future-step.sh"):
+            got = type(self)._resolve(path)
+            assert "AI_AGILE_BOT_TOKEN" not in got, f"{path!r} should not be granted the PAT"
+
+    def test_matching_is_on_file_name_not_full_path(self):
+        """A repo that relocates the scripts directory must still resolve."""
+        got = type(self)._resolve("vendor/ai-coding-standards2/.github/scripts/create-pr.sh")
+        assert "AI_AGILE_BOT_TOKEN" in got
+
+    def test_base_list_is_otherwise_unchanged(self):
+        base = type(self)._resolve(".github/scripts/ci-gate.sh")
+        assert set(base) == set(_SCRIPT_AGENT_ENV_VARS)
+        granted = type(self)._resolve(".github/scripts/create-pr.sh")
+        assert set(granted) - set(base) == {"AI_AGILE_BOT_TOKEN"}, (
+            "the split must add exactly the bot token, nothing else"
+        )
+
+    def test_every_script_step_in_pipeline_json_is_classified_deliberately(self):
+        """Any new script step defaults to no bot token -- and if it needs one,
+        this test is where that decision becomes visible."""
+        import json
+        from pathlib import Path as _P
+        spec = json.loads((_P(__file__).parent.parent / "pipeline" / "pipeline.json").read_text())
+        script_steps = [s for s in spec["pipeline"] if s.get("type") == "script"]
+        assert script_steps, "expected at least one script-type step"
+        granted = {
+            s["agent"] for s in script_steps
+            if "AI_AGILE_BOT_TOKEN" in type(self)._resolve(s.get("script"))
+        }
+        assert granted == {
+            "01_product_docs/create-pr",
+            "01_product_docs/create-docs-pr",
+            "01_product_docs/merge-docs-pr",
+        }, f"unexpected set of steps granted the bot PAT: {granted}"

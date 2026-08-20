@@ -2184,13 +2184,41 @@ def _apply_terminal_status(
 # :blocked. Neither is a credential.
 _SCRIPT_AGENT_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN", "AI_AGILE_BOT_TOKEN",
+    "GH_TOKEN", "GITHUB_TOKEN",
     "CI_GATE_EXCLUDE_JOB_NAMES", "GITHUB_RUN_ID",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
     "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
     "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 )
+
+# Scripts that open or merge a PR, and so may need the bot PAT when org policy
+# blocks GITHUB_TOKEN from those operations:
+#   create-pr.sh      -- _PR_TOKEN, for `gh pr create`
+#   merge-docs-pr.sh  -- _MERGE_TOKEN, for the design-PR merge
+#   create-docs-pr.sh -- execs into create-pr.sh, so it needs it too
+# ci-gate.sh only reads check runs and never references the variable, so it is
+# not on this list. AI_AGILE_BOT_TOKEN is a classic PAT with repo+workflow
+# scopes -- the broadest credential the orchestrator holds -- so it goes only to
+# the steps that demonstrably use it.
+_PR_WRITING_SCRIPTS = (
+    "create-pr.sh",
+    "create-docs-pr.sh",
+    "merge-docs-pr.sh",
+)
+
+
+def _script_step_env_vars(script_path: Optional[str]) -> tuple[str, ...]:
+    """Env allowlist for a script-type step, per STD-SEC-022.
+
+    Returns the base list, plus AI_AGILE_BOT_TOKEN only for the scripts that
+    actually consume it. Matching is on the file name so a repo that relocates
+    the scripts directory still resolves correctly.
+    """
+    name = Path(script_path).name if script_path else ""
+    if name in _PR_WRITING_SCRIPTS:
+        return _SCRIPT_AGENT_ENV_VARS + ("AI_AGILE_BOT_TOKEN",)
+    return _SCRIPT_AGENT_ENV_VARS
 
 def invoke_script(
     agent_def: AgentDef,
@@ -2232,8 +2260,9 @@ def invoke_script(
     log.info("    Invoking script: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.debug("    script_file: %s", script_file)
 
+    _step_env_vars = _script_step_env_vars(agent_def.script_path)
     agent_env = {  # STD-SEC-022
-        **{k: os.environ[k] for k in _SCRIPT_AGENT_ENV_VARS if k in os.environ},
+        **{k: os.environ[k] for k in _step_env_vars if k in os.environ},
         "STATUS_SH":        str(STATUS_SH),
         "AI_AGILE_ROOT":    os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
