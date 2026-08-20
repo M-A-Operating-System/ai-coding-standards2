@@ -2173,13 +2173,19 @@ def _apply_terminal_status(
 # Script invocation (type: script pipeline steps)
 # ---------------------------------------------------------------------------
 
-# STD-SEC-022 — env vars passed to bash script-type pipeline steps (create-pr.sh,
+# STD-SEC-022 -- env vars passed to bash script-type pipeline steps (create-pr.sh,
 # create-docs-pr.sh, merge-docs-pr.sh, ci-gate.sh). These scripts invoke gh/git
 # but not Claude CLI, so no ANTHROPIC_API_KEY. Work-item context vars (REPO,
 # ISSUE_NUMBER, etc.) are set explicitly below, not passed through.
+#
+# CI_GATE_EXCLUDE_JOB_NAMES and GITHUB_RUN_ID are read by ci-gate.sh to exclude
+# the orchestrator's own in-flight job from the checks it waits on. Without them
+# the exclusion list is empty and the gate counts its own run, stalling on
+# :blocked. Neither is a credential.
 _SCRIPT_AGENT_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
     "GH_TOKEN", "GITHUB_TOKEN", "AI_AGILE_BOT_TOKEN",
+    "CI_GATE_EXCLUDE_JOB_NAMES", "GITHUB_RUN_ID",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
     "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",

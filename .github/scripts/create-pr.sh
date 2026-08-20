@@ -13,10 +13,40 @@
 #   REPO            — owner/repo
 #   ISSUE_NUMBER    — the issue being processed
 #   GITHUB_TOKEN    — token with repo write access (used for all git/gh calls)
+#                     Also used to build this script's own git auth header: since
+#                     STD-SEC-022 the orchestrator no longer forwards GIT_CONFIG_*.
 #   AI_AGILE_BOT_TOKEN — optional PAT used only for gh pr create when org policy
 #                        blocks GITHUB_TOKEN from creating pull requests
 
 set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Git auth -- set GIT_CONFIG env vars so every git operation in this process
+# authenticates with GITHUB_TOKEN (contents:write scope). The token is never
+# embedded in a URL, keeping it out of `git remote -v`, `ps`, and CI logs.
+# GitHub git transport uses HTTP Basic auth; format: base64("x-access-token:TOKEN").
+#
+# This script derives its own header rather than inheriting GIT_CONFIG_* from the
+# orchestrator: since STD-SEC-022 the script-step env is a named allowlist that
+# deliberately omits those vars, so the embedded token is not handed to every
+# script step. Same shape as commit-agent-work.sh.
+# ---------------------------------------------------------------------------
+_GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [[ -z "$_GITHUB_TOKEN" ]]; then
+    echo "WARNING: no GITHUB_TOKEN or GH_TOKEN -- git push may fail" >&2
+else
+    # base64 -w 0 (GNU) suppresses line-wrapping; macOS base64 has no -w flag.
+    _ENCODED=$(printf 'x-access-token:%s' "$_GITHUB_TOKEN" \
+        | base64 -w 0 2>/dev/null \
+        || printf 'x-access-token:%s' "$_GITHUB_TOKEN" | base64)
+    # Remove any extraHeader written by actions/checkout into .git/config.
+    # Without this, git collects both entries and sends two Authorization
+    # headers, causing HTTP 400.
+    git config --local --unset-all "http.https://github.com/.extraHeader" 2>/dev/null || true
+    export GIT_CONFIG_COUNT=1
+    export GIT_CONFIG_KEY_0="http.https://github.com/.extraHeader"
+    export GIT_CONFIG_VALUE_0="Authorization: Basic ${_ENCODED}"
+fi
 
 : "${REPO:?REPO must be set}"
 : "${ISSUE_NUMBER:?ISSUE_NUMBER must be set}"
