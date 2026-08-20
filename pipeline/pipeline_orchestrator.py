@@ -2393,6 +2393,16 @@ BASE_AGENT_TOOLS = [
     "Bash(gh api repos/*/pulls/*)",
     "Bash(gh api repos/*/issues*)",   # REST reads incl. list/query forms (issues?labels=...)
     "Bash(gh api repos/*/pulls*)",     # REST reads incl. list/query forms (pulls?head=...)
+    # Quoted-URL counterparts of the four patterns above. Permission-rule matching
+    # is literal-text prefix matching (a `*` spans characters, not shell tokens), so
+    # an agent that quotes its URL argument (idiomatic, defensively-reasonable shell
+    # style -- e.g. `gh api "repos/o/r/issues/1"`) needs its own pattern; the
+    # unquoted pattern's literal ` repos/` never appears in that command's text
+    # (issue #326).
+    "Bash(gh api \"repos/*/issues/*)",
+    "Bash(gh api \"repos/*/pulls/*)",
+    "Bash(gh api \"repos/*/issues*)",
+    "Bash(gh api \"repos/*/pulls*)",
     # REST WRITES on issues only (labels/comments/body) -- the in-session
     # equivalent of `gh issue edit`, needed because that command is GraphQL and
     # 403s in a restricted session. It carries the SAME gate-label self-approval
@@ -2402,6 +2412,7 @@ BASE_AGENT_TOOLS = [
     # write PRs (merge/ready/close are the orchestrator's/driver's job), so
     # granting it would hand an injected agent merge/close/retarget power.
     "Bash(gh api --method * repos/*/issues*)",
+    "Bash(gh api --method * \"repos/*/issues*)",  # quoted-URL counterpart (#326)
     "Bash(cat *)",                 # read prompt-side files
     "Bash(grep *)",
     "Bash(find *)",
