@@ -40,6 +40,22 @@ Specificity that matters is expressed as attributes on a record or as an
 entry in a registry, so the depth of the tree stays fixed while the detail it
 carries can grow.
 
+The arity is fixed as well as capped: every canonical identifier has four
+parts, always. A consumer can therefore parse one without a lookup, validate
+it by position, and rely on every identifier carrying the same amount of
+information. Variable depth would move that cost onto every consumer — each
+would have to handle two-, three- and four-part identifiers — and the
+positional checks CI performs today would have nothing fixed to check
+against. This is settled: a proposal to vary depth by branch was considered
+and rejected.
+
+A class with a single subclass is a defect in the class, not evidence for
+variable depth. It means one of two things. Either the subclass restates the
+class and no discriminating subclass has been written yet — `data/lake` with
+only `data-lake` beneath it — or the class was drawn too narrowly and belongs
+merged with a sibling. Both are repaired by improving the class. Neither is
+repaired by removing the level.
+
 Every record declares the `id`, `parent`, and `level` that its position
 implies. A record whose declaration disagrees with its position is
 unreachable by the composed lookup every consumer uses, so the disagreement

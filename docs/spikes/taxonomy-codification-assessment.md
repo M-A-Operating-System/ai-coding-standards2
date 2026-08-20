@@ -49,8 +49,9 @@ with views over one entry set. ArchiMate draws the metamodel/model line the inhe
 missing. The `concepts` domain reinvents ISO/IEC 25010 and disagrees with it on six of nine
 characteristics.
 
-Fourteen recommendations follow. **R-1, R-3, R-9 and R-11 are cheap now and expensive after adoption**
-— they change the shape of records while nothing consumes them.
+Fifteen recommendations follow. **R-1, R-3, R-9 and R-11 are cheap now and expensive after adoption**
+— they change the shape of records while nothing consumes them. Variable-depth identity was considered
+and rejected; the padding it was meant to solve is repaired by R-15 instead.
 
 ---
 
@@ -147,8 +148,32 @@ examples  architecture/data/lake/data-lake
 ```
 
 Nearly half the classes have a single child, and in many the class and subclass are the same concept
-spelled twice. A level that never discriminates carries no information; it exists to satisfy the rule
-that there must be three.
+spelled twice. A level that never discriminates carries no information.
+
+The 72 split into two distinct defects, which need different repairs:
+
+```text
+A. subclass merely restates the class ......... 46  (63.9%)
+     messaging/queue/message-queue
+     data/lake/data-lake
+     code/domain/service/domain-service
+     concepts/performance/latency/latency-budget
+
+B. subclass genuinely narrows, class is thin ... 26  (36.1%)
+     security/key-management/kms
+     ai-ml/inference/model-endpoint
+     code/persistence/transaction/unit-of-work
+     networking/subnet/network-segment
+```
+
+**A is the real padding.** The class carries the concept and the subclass adds a word. The class
+level is doing the work, and the subclass level is empty ceremony.
+
+**B is thin but sound.** The class is a real category that happens to have one member written so
+far. These need filling in, not restructuring. A secondary observation on B: many of its subclasses
+are product-category names — `kms`, `siem`, `secrets-manager`, `alert-manager`, `model-registry` —
+which sit closer to implementation than to canonical meaning, and may belong in the implementation
+registry under TX-1 rather than in the semantic tree.
 
 **Severity:** structural cost, no correctness impact.
 
@@ -425,14 +450,53 @@ properly rather than deferring it again.
 
 ### R-2 / R-10 — Make the family level a view, not a tree level
 
-*Serves F-2 and F-3. Medium effort.*
+*Serves F-2. Medium effort. Revised — see the decision below.*
 
 Follow CWE: keep one set of entries and define views over them. A `concern` view groups by `data`,
 `compute`, `security`; a `lifecycle` view could group by build-time, deploy-time, run-time. An entry
 appears in several views without duplication — which is what `policy-engine` and `package-registry`
-need and cannot have today. Drop the requirement of exactly three levels and collapse the 72
-single-child classes; `architecture/data/lake/data-lake` becomes `architecture/data-lake` with facet
-`concern: data`.
+need and cannot have today.
+
+Views do not require variable depth, and this recommendation no longer proposes it.
+
+> **Decision — variable-depth canonical identity is rejected.** Identifiers keep four parts, always.
+> The reasoning is recorded in [`03-model.md`](../product/taxonomy/03-model.md): fixed arity lets a
+> consumer parse an identifier without a lookup, validate it by position, and rely on every
+> identifier carrying the same information. Variable depth moves that cost onto every consumer and
+> leaves the CI positional checks nothing fixed to check against. The padding criticism in F-3 is
+> accepted; it is repaired by R-15, not by varying depth.
+
+### R-15 — Repair the padded classes by improving the classes
+
+*Serves F-3. Supersedes the depth half of R-2/R-10. Medium effort, incremental.*
+
+The 46 pattern-A classes are the work. For each, the class names a real concept and the subclass
+level needs genuine discriminating members written beneath it. The test for a candidate subclass is
+whether a standard, a classification rule, or an architecture comparison would ever treat it
+differently from its siblings.
+
+```text
+now                              repaired
+messaging/queue/message-queue    messaging/queue/fifo-queue
+                                 messaging/queue/priority-queue
+                                 messaging/queue/dead-letter-queue
+                                 messaging/queue/delay-queue
+
+data/lake/data-lake              data/lake/raw-zone-lake
+                                 data/lake/curated-zone-lake
+
+code/domain/service/            code/domain/service/domain-service
+  domain-service                 code/domain/service/application-service
+```
+
+Those candidates are illustrative, not ratified — choosing them is domain judgement and belongs with
+the vocabulary's owners. What is not a judgement call is the shape of the fix: add discriminating
+siblings, or merge the class into a neighbour where no discrimination exists. Never delete the level.
+
+Sequence it with R-4 rather than as a separate campaign: repair the classes inside the vertical slice
+being populated, so each repair is tested against real classification work rather than argued in the
+abstract. The 26 pattern-B classes are a fill-in backlog and need no restructuring; check first
+whether their subclass belongs in the implementation registry instead.
 
 ### R-13 — Separate the metamodel from the model
 
@@ -582,7 +646,7 @@ grouping leaf names. Version comparisons re-run the same counts against each tre
   needs 14 families is a domain judgement that cannot be settled from the files; this assessment
   measures structure and coverage, not the aptness of the vocabulary.
 - **Implementing any recommendation.** #351 merges v0.3.0's content but implements none of R-1 to
-  R-14.
+  R-15.
 - **Distributing `taxonomy/` to consuming repos**, unresolved from #329.
 
 ### Limits of the prior-art survey
@@ -599,7 +663,8 @@ assessment describes the mechanism rather than quoting a number.
 - `[TOIL] - taxonomy - split the parent edge into broader and specialises` (R-1)
 - `[TOIL] - taxonomy - add status, replaced_by, aliases and since to every record` (R-3, R-11)
 - `[FEATURE] - taxonomy - introduce a central attribute registry with stability levels` (R-9)
-- `[FEATURE] - taxonomy - model families as views and collapse single-child classes` (R-2, R-10)
+- `[FEATURE] - taxonomy - model families as views over one entry set` (R-2, R-10)
+- `[ENHANCEMENT] - taxonomy - write discriminating subclasses for the 46 padded classes` (R-15)
 - `[SPIKE] - taxonomy - populate one vertical slice and measure classifier accuracy on this repo` (R-4)
 - `[TOIL] - taxonomy - rebase the concepts domain on ISO/IEC 25010` (R-12)
 
