@@ -381,6 +381,30 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-SEC-022",
+      "title": "Build an exported environment by naming what it needs, never by copying the ambient one",
+      "description": "An environment handed to a subprocess, written to a file, logged, or printed is constructed by naming the variables it requires. Copying the ambient environment wholesale -- `{**os.environ}`, `dict(os.environ)`, `env=os.environ`, or a shell equivalent -- and then deleting the keys that look sensitive is not an acceptable substitute. The distinction matters because the two shapes fail in opposite directions: an allowlist that has not been updated omits a variable the callee needed, which surfaces as an immediate, visible error; a denylist that has not been updated exports a credential nobody remembered to add to it, silently. This applies with no exception to any environment that is serialised -- printed to stdout, written to a log or artefact, or embedded in a message -- because that output outlives the process and is routinely captured into transcripts and CI logs.",
+      "rationale": "A denylist is only correct for as long as someone remembers to update it every time a new secret enters the environment; its failure mode is silent disclosure. An allowlist's failure mode is a missing variable and a loud error, so the safe state is the default one.",
+      "acceptance_criteria": [
+        "An environment built in the diff for a subprocess, a serialised payload, or a log line is assembled by naming its keys (an explicit tuple/list/dict of variable names), not by spreading or copying the ambient environment.",
+        "No environment in the diff is derived by copying the ambient environment and then removing, popping, or filtering out keys judged sensitive.",
+        "An environment in the diff that is printed, logged, or otherwise serialised contains no credential value, and omits by default any key its allowlist does not name.",
+        "Where a name-what-you-need environment omits keys the callee also received before, the omitted key names (not their values) are reported or documented, so a consumer can distinguish 'not needed' from 'not shown'.",
+        "Broad inheritance of the ambient environment by a first-party trusted script is a deliberate, commented decision citing an ADR -- never the incidental default for new code."
+      ],
+      "anti_patterns": [
+        "env = {**os.environ, \"REPO\": repo} to hand a subprocess a couple of extra variables while also passing every credential in the parent process.",
+        "printable = {k: v for k, v in env.items() if k not in SECRET_KEYS} -- a denylist that starts leaking the moment a new credential is added upstream.",
+        "Serialising a subprocess environment into JSON for debugging or hand-off without restricting which keys are included.",
+        "Dropping an allowlist in favour of full inheritance because a callee failed on a missing variable, instead of adding that one variable to the list."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }

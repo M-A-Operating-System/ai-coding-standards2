@@ -2344,7 +2344,9 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
 # GIT_CONFIG_COUNT / GIT_CONFIG_KEY_0 / GIT_CONFIG_VALUE_0 git-auth header set
 # by _wake (that base64 header embeds GITHUB_TOKEN). Only process essentials,
 # the agent's own API key, and a gh token for the agent's read/comment calls
-# are passed through here. Work-item context vars (AI_AGILE_ROOT, REPO,
+# are passed through here. ANTHROPIC_API_KEY is then dropped again for
+# interactive runs, which inherit the session's own auth instead (issue #346);
+# see _build_agent_env. Work-item context vars (AI_AGILE_ROOT, REPO,
 # ISSUE_NUMBER, etc.) are set explicitly in _build_agent_env, not passed through.
 AGENT_ENV_PASSTHROUGH = (
     "PATH",
@@ -2388,19 +2390,50 @@ PRINT_PROMPT_ENV_KEYS = (
 )
 
 
-def _claude_cli_logged_in() -> bool:
-    """True when the Claude CLI has stored login credentials (subscription /
-    OAuth) under $HOME, so a spawned agent can authenticate without
-    ANTHROPIC_API_KEY.
+# How long the auth probe below waits for the CLI to answer a trivial prompt.
+CLAUDE_PROBE_TIMEOUT_SECONDS = 90
 
-    The CLI writes these on `claude login`. HOME is passed through to the agent
-    subprocess (AGENT_ENV_PASSTHROUGH), so when this file is present the spawned
-    `claude` authenticates via the logged-in session. This lets the orchestrator
-    run agents interactively on a subscription (no API-key billing); CI still
-    uses ANTHROPIC_API_KEY.
+# Probe results, keyed by whether the probed env carried an ANTHROPIC_API_KEY.
+# The probe spawns a CLI process, so each distinct case runs at most once per
+# orchestrator run.
+_CLAUDE_CLI_PROBE: dict[bool, bool] = {}
+
+
+def _claude_cli_usable(env: Mapping[str, str]) -> bool:
+    """True when the Claude CLI can actually authenticate using ``env``.
+
+    Determined by running the CLI, not by guessing from where credentials
+    happen to be stored. The previous check tested for
+    ``$HOME/.claude/.credentials.json``, which is only one of the ways the CLI
+    can be authenticated: inside a Claude Code session the CLI is authenticated
+    by the harness with no API key and no credentials file, so the file test
+    false-negatived and refused spawns that would have succeeded (issue #346).
+
+    ``env`` is the environment the agent subprocess will actually receive, so a
+    successful probe means that spawn can authenticate -- not merely that this
+    process could. Cached per run; failures are cached too, since a static
+    environment will not start working on a retry.
     """
-    home = os.environ.get("HOME") or os.path.expanduser("~")
-    return os.path.isfile(os.path.join(home, ".claude", ".credentials.json"))
+    key = env.get("ANTHROPIC_API_KEY") is not None
+    if key not in _CLAUDE_CLI_PROBE:
+        try:
+            probe = subprocess.run(
+                ["claude", "-p", "Reply with exactly: ok"],
+                env=dict(env),
+                capture_output=True,
+                text=True,
+                timeout=CLAUDE_PROBE_TIMEOUT_SECONDS,
+            )
+            _CLAUDE_CLI_PROBE[key] = probe.returncode == 0
+            if probe.returncode != 0:
+                log.debug(
+                    "  claude CLI auth probe failed (rc=%d): %s",
+                    probe.returncode, (probe.stderr or "").strip()[:300],
+                )
+        except Exception as exc:
+            log.debug("  claude CLI auth probe could not run: %s", exc)
+            _CLAUDE_CLI_PROBE[key] = False
+    return _CLAUDE_CLI_PROBE[key]
 
 
 def _build_agent_env(
@@ -2437,6 +2470,18 @@ def _build_agent_env(
     # Axis B: every orchestrator-spawned subprocess is always headless/opaque,
     # regardless of whether the tick itself was triggered by cron or interactively.
     agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
+    # An interactive run authenticates its agents the same way the surrounding
+    # session is authenticated, never with a separate API key (issue #346). Only
+    # the headless/CI path, which has no session to inherit, uses
+    # ANTHROPIC_API_KEY. The key is kept as a fallback when the session's own
+    # auth turns out not to work, so a developer running interactively with only
+    # an API key is not locked out.
+    if not _HEADLESS and "ANTHROPIC_API_KEY" in agent_env:
+        _session_auth_env = {
+            k: v for k, v in agent_env.items() if k != "ANTHROPIC_API_KEY"
+        }
+        if _claude_cli_usable(_session_auth_env):
+            del agent_env["ANTHROPIC_API_KEY"]
     return agent_env
 
 
@@ -2697,18 +2742,20 @@ def invoke_agent(
     # Only fail when NEITHER is available -- an unauthenticated launch otherwise
     # produces an auth-error the stream-json parser may misread as a rate-limit
     # pause, leaving the work item stuck in :wip.
-    if not os.environ.get("ANTHROPIC_API_KEY") and not _claude_cli_logged_in():
+    if not _claude_cli_usable(agent_env):
         log.error(
-            "  invoke_agent: no Claude auth for %s on %s #%d -- neither "
-            "ANTHROPIC_API_KEY nor a logged-in Claude CLI (credentials under "
-            "$HOME/.claude). Set the key (CI) or run `claude login`, then retry.",
+            "  invoke_agent: the Claude CLI cannot authenticate with the agent's "
+            "environment for %s on %s #%d. An interactive run inherits the "
+            "session's own auth; a headless run needs ANTHROPIC_API_KEY or a "
+            "logged-in CLI (`claude login`). Fix the auth, then retry.",
             agent_def.agent, work_item.kind, work_item.number,
         )
         return AgentRunResult(
             success=False,
             captured_tail=(
-                "Configuration error: no Claude auth -- set ANTHROPIC_API_KEY "
-                "or log in the Claude CLI (`claude login`), then retry."
+                "Configuration error: the Claude CLI cannot authenticate with "
+                "the agent's environment. Interactive runs use this session's "
+                "auth; headless runs need ANTHROPIC_API_KEY or `claude login`."
             ),
         )
 
