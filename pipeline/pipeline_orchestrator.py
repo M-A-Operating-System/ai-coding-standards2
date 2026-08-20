@@ -4828,9 +4828,16 @@ def _wake(args) -> "Optional[RunContext]":
             )
             # These GIT_CONFIG_* vars go into the process-global os.environ so
             # the orchestrator's OWN git subprocesses inherit them: the git
-            # checkout/fetch calls (via subprocess.run) and commit-agent-work.sh
-            # / post_steps scripts all build their env from {**os.environ}, so
-            # they must stay here for authenticated git to work.
+            # checkout/fetch calls run via subprocess.run with no env= argument,
+            # so they read the header from here and authenticate.
+            #
+            # commit-agent-work.sh and post_steps do NOT inherit these any more.
+            # Since STD-SEC-022 they build their env from named allowlists
+            # (_COMMIT_AFTER_ENV_VARS / _POST_STEPS_ENV_VARS) that deliberately
+            # omit GIT_CONFIG_*; commit-agent-work.sh derives its own auth
+            # header from GH_TOKEN/GITHUB_TOKEN instead. Do not re-add
+            # GIT_CONFIG_* to those lists -- the scripts do not need it, and it
+            # would hand the embedded token to every post_steps hook.
             # SECURITY: this base64 header embeds GITHUB_TOKEN. It must NEVER be
             # added to AGENT_ENV_PASSTHROUGH -- agent subprocesses build env via
             # _build_agent_env, which does not pass GIT_CONFIG_* through, so a
