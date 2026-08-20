@@ -1260,11 +1260,7 @@ def _check_controls(repo: str) -> Literal["run", "pause", "stop"]:
     if stopped:
         if _HEADLESS:
             return "stop"
-        log.warning(
-            "Pipeline is STOPPED (%s) but --headless was not passed; "
-            "interactive run will proceed.",
-            _stop_reason or "no reason recorded",
-        )
+        log.warning("Operating in interactive mode, ignoring pipeline stop.")
     paused, _pause_reason, _until = is_pipeline_paused()
     if paused:
         return "pause"
@@ -4687,11 +4683,7 @@ def _wake(args) -> "Optional[RunContext]":
                 outcome_detail=stop_reason or "no reason recorded",
             ))
             return None
-        log.warning(
-            "Pipeline is STOPPED (%s) but --headless was not passed; "
-            "interactive run will proceed.",
-            stop_reason or "no reason recorded",
-        )
+        log.warning("Operating in interactive mode, ignoring pipeline stop.")
 
     if not args.repo:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
