@@ -1,0 +1,6 @@
+These two documents audit an EARLIER draft, published under a different
+title ("The Cost Structure of AI-First Engineering Teams") and built on a
+different model (Configuration A/B, productivity-lift based).
+
+They are SUPERSEDED. They do not describe the current report and should not
+be read as if they do. Retained for provenance only.
