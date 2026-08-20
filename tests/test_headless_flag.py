@@ -382,3 +382,103 @@ class TestResolveOnlyModeExportsOnlyNamedEnvKeys:
         assert not set(PRINT_PROMPT_ENV_KEYS) & set(self.SECRETS), (
             "no credential key may appear in the print allowlist"
         )
+
+
+class TestInteractiveSessionAuth:
+    """Interactive runs authenticate agents with the session's own auth rather
+    than a separate ANTHROPIC_API_KEY, and the preflight probes the CLI instead
+    of guessing from where credentials are stored (issue #346)."""
+
+    @staticmethod
+    def _reset_probe():
+        pipeline_orchestrator._CLAUDE_CLI_PROBE.clear()
+
+    def _probe(self, ok, recorder=None):
+        """Patch subprocess.run so the CLI probe returns `ok`, recording envs."""
+        def fake_run(cmd, **kw):
+            if recorder is not None:
+                recorder.append(kw.get("env") or {})
+            return MagicMock(returncode=0 if ok else 1, stdout="ok", stderr="")
+        return patch.object(pipeline_orchestrator.subprocess, "run", side_effect=fake_run)
+
+    def test_probe_runs_the_cli_rather_than_checking_for_a_credentials_file(self, tmp_path):
+        """The old heuristic was os.path.isfile($HOME/.claude/.credentials.json),
+        which false-negatives when the harness authenticates the CLI."""
+        self._reset_probe()
+        envs = []
+        with self._probe(True, envs):
+            assert pipeline_orchestrator._claude_cli_usable({"HOME": str(tmp_path)}) is True
+        assert envs, "the probe must actually invoke the CLI"
+        assert not (tmp_path / ".claude" / ".credentials.json").exists(), (
+            "no credentials file exists, yet the probe reports the CLI usable"
+        )
+
+    def test_probe_result_is_cached_per_run(self):
+        self._reset_probe()
+        calls = []
+        with self._probe(True, calls):
+            pipeline_orchestrator._claude_cli_usable({"X": "1"})
+            pipeline_orchestrator._claude_cli_usable({"X": "1"})
+        assert len(calls) == 1, "the probe spawns a process; it must not re-run per agent"
+
+    def test_probe_failure_is_cached_too(self):
+        """A static environment will not start working on a retry."""
+        self._reset_probe()
+        calls = []
+        with self._probe(False, calls):
+            assert pipeline_orchestrator._claude_cli_usable({"X": "1"}) is False
+            assert pipeline_orchestrator._claude_cli_usable({"X": "1"}) is False
+        assert len(calls) == 1
+
+    def test_interactive_run_drops_the_api_key_when_session_auth_works(self):
+        self._reset_probe()
+        pipeline_orchestrator._HEADLESS = False
+        with self._probe(True), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-should-not-be-used"}):
+            env = _build_agent_env(
+                os.environ, "test/repo", _make_work_item(), "sid", "per_issue"
+            )
+        assert "ANTHROPIC_API_KEY" not in env, (
+            "an interactive run must use the session's auth, not an API key"
+        )
+
+    def test_interactive_run_keeps_the_api_key_when_session_auth_does_not_work(self):
+        """A developer running interactively with only an API key is not locked out."""
+        self._reset_probe()
+        pipeline_orchestrator._HEADLESS = False
+        with self._probe(False), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-the-only-auth"}):
+            env = _build_agent_env(
+                os.environ, "test/repo", _make_work_item(), "sid", "per_issue"
+            )
+        assert env.get("ANTHROPIC_API_KEY") == "sk-the-only-auth"
+
+    def test_headless_run_always_keeps_the_api_key(self):
+        """CI has no session to inherit."""
+        self._reset_probe()
+        pipeline_orchestrator._HEADLESS = True
+        try:
+            with self._probe(True), \
+                 patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ci-key"}):
+                env = _build_agent_env(
+                    os.environ, "test/repo", _make_work_item(), "sid", "per_issue"
+                )
+            assert env.get("ANTHROPIC_API_KEY") == "sk-ci-key"
+        finally:
+            pipeline_orchestrator._HEADLESS = False
+
+    def test_probe_is_given_the_env_the_agent_will_receive(self):
+        """A probe against the orchestrator's own env would prove nothing about
+        the subprocess, which gets a restricted AGENT_ENV_PASSTHROUGH env."""
+        self._reset_probe()
+        pipeline_orchestrator._HEADLESS = False
+        envs = []
+        with self._probe(True, envs), \
+             patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-x", "HOME": "/home/probe"}):
+            _build_agent_env(os.environ, "test/repo", _make_work_item(), "sid", "per_issue")
+        assert envs, "probe must have run"
+        probed = envs[0]
+        assert probed.get("REPO") == "test/repo", "probe env must be the agent's env"
+        assert "ANTHROPIC_API_KEY" not in probed, (
+            "the probe must test whether session auth works WITHOUT the key"
+        )
