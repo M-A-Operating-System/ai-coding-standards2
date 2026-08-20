@@ -30,6 +30,8 @@ if [ "$cmd" = "api" ]; then
       echo "MOCK-MERGE-PUT: $allargs"; exit "${MERGE_RC:-0}" ;;
     *"--method DELETE"*)
       echo "MOCK-DELETE-REF: $allargs"; exit "${DELETE_RC:-0}" ;;
+    *"git/refs/heads/"*)
+      exit "${BRANCH_REF_RC:-0}" ;;
     *"pulls?head="*)
       printf '%s\n' "${ISSUE_PR}"; exit 0 ;;
     *)
@@ -50,8 +52,9 @@ exit 99
 """
 
 
-def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
-         merge_rc=0, delete_rc=0):
+def _run_split(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
+               merge_rc=0, delete_rc=0, branch_ref_rc=0):
+    """Returns (stdout, stderr, rc) for stream-sensitive assertions."""
     mock_dir = tmp_path / "bin"
     mock_dir.mkdir()
     gh = mock_dir / "gh"
@@ -66,12 +69,22 @@ def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
         "ISSUE_PR": issue_pr,
         "MERGE_RC": str(merge_rc),
         "DELETE_RC": str(delete_rc),
+        "BRANCH_REF_RC": str(branch_ref_rc),
     }
     result = subprocess.run(
         ["bash", str(MERGE_PR), *args],
         env=env, capture_output=True, text=True,
     )
-    return result.stdout + result.stderr, result.returncode
+    return result.stdout, result.stderr, result.returncode
+
+
+def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
+         merge_rc=0, delete_rc=0, branch_ref_rc=0):
+    stdout, stderr, rc = _run_split(tmp_path, args, pr_exists=pr_exists,
+                                    state_json=state_json, issue_pr=issue_pr,
+                                    merge_rc=merge_rc, delete_rc=delete_rc,
+                                    branch_ref_rc=branch_ref_rc)
+    return stdout + stderr, rc
 
 
 # REST pull objects (as `gh api repos/O/R/pulls/N` returns). state is lowercase;
@@ -89,17 +102,13 @@ class TestMergePr:
         out, rc = _run(tmp_path, ["5"], pr_exists=0, state_json=_OPEN)
         assert rc == 0, out
         assert "Merged PR #5" in out
-        # The branch was deleted via the REST ref-delete call on issue-5.
-        assert "git/refs/heads/issue-5" in out
+        assert "deleted branch 'issue-5'" in out
 
     def test_method_override_squash(self, tmp_path):
         out, rc = _run(tmp_path, ["5", "--squash"], pr_exists=0, state_json=_OPEN)
         assert rc == 0, out
-        # The squash method is reflected in the success message (the merge call's
-        # own output is captured by the script for error handling), and the
-        # branch was deleted via the REST ref-delete call.
         assert "(squash)" in out
-        assert "git/refs/heads/issue-5" in out
+        assert "deleted branch 'issue-5'" in out
 
     def test_already_merged_is_idempotent_and_deletes_branch(self, tmp_path):
         out, rc = _run(tmp_path, ["5"], pr_exists=0, state_json=_MERGED, delete_rc=0)
@@ -141,3 +150,58 @@ class TestMergePr:
         out, rc = _run(tmp_path, ["999"], pr_exists=1, issue_pr="")
         assert rc == 2, out
         assert "no PR #999" in out or "no open PR" in out
+
+    # --- Gherkin-traced: docs/features/merge-pr-sh.md ---
+
+    def test_delete_denied_after_successful_merge(self, tmp_path):
+        # Scenario: The head branch delete is denied after a successful merge
+        # DELETE fails (non-zero) and the branch ref still exists (GET succeeds).
+        stdout, stderr, rc = _run_split(
+            tmp_path, ["5"], pr_exists=0, state_json=_OPEN,
+            merge_rc=0, delete_rc=1, branch_ref_rc=0,
+        )
+        assert rc == 0, stdout + stderr
+        assert "deleted branch" not in stdout
+        assert "could not delete" in stderr
+        assert "Merged PR #5" in stdout
+
+    def test_no_api_error_body_in_stdout(self, tmp_path):
+        # Scenario: No API error body reaches stdout
+        # Mock DELETE prints to stdout; script must suppress it via >/dev/null.
+        stdout, stderr, rc = _run_split(
+            tmp_path, ["5"], pr_exists=0, state_json=_OPEN,
+            merge_rc=0, delete_rc=1, branch_ref_rc=0,
+        )
+        assert rc == 0, stdout + stderr
+        assert "MOCK-DELETE-REF" not in stdout
+
+    def test_delete_succeeds_after_merge(self, tmp_path):
+        # Scenario: The head branch delete succeeds
+        stdout, stderr, rc = _run_split(
+            tmp_path, ["5"], pr_exists=0, state_json=_OPEN,
+            merge_rc=0, delete_rc=0,
+        )
+        assert rc == 0, stdout + stderr
+        assert "Merged PR #5" in stdout
+        assert "deleted branch 'issue-5'" in stdout
+
+    def test_branch_already_gone_by_delete_branch_on_merge(self, tmp_path):
+        # Scenario: The branch was already removed by delete_branch_on_merge
+        # DELETE fails and the subsequent GET also fails (branch is gone).
+        stdout, stderr, rc = _run_split(
+            tmp_path, ["5"], pr_exists=0, state_json=_OPEN,
+            merge_rc=0, delete_rc=1, branch_ref_rc=1,
+        )
+        assert rc == 0, stdout + stderr
+        assert "already gone" in stdout
+        assert "deleted branch" not in stdout
+
+    def test_unmergeable_pr_fails_loudly(self, tmp_path):
+        # Scenario: A PR that cannot be merged still fails loudly
+        stdout, stderr, rc = _run_split(
+            tmp_path, ["5"], pr_exists=0, state_json=_OPEN,
+            merge_rc=1, delete_rc=0,
+        )
+        assert rc == 1, stdout + stderr
+        assert "could not be merged" in stderr
+        assert "Merged PR #5" not in stdout

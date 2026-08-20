@@ -115,8 +115,14 @@ if [[ "${MERGED}" != "true" ]]; then
   # --delete-branch equivalent: only for a branch in THIS repo (skip forks);
   # best-effort ref deletion (may be blocked; must not fail the script).
   if [[ -n "${BRANCH}" && "${CROSS}" != "true" ]]; then
-    gh api --method DELETE "repos/${REPO}/git/refs/heads/${BRANCH}" 2>/dev/null || true
-    echo "Merged PR #${PR} (${METHOD#--}) and deleted branch '${BRANCH}'."
+    if gh api --method DELETE "repos/${REPO}/git/refs/heads/${BRANCH}" >/dev/null 2>&1; then
+      echo "Merged PR #${PR} (${METHOD#--}) and deleted branch '${BRANCH}'."
+    elif ! gh api "repos/${REPO}/git/refs/heads/${BRANCH}" >/dev/null 2>&1; then
+      echo "Merged PR #${PR} (${METHOD#--}); branch '${BRANCH}' already gone."
+    else
+      echo "Warning: could not delete branch '${BRANCH}'." >&2
+      echo "Merged PR #${PR} (${METHOD#--})."
+    fi
   else
     echo "Merged PR #${PR} (${METHOD#--}); head branch '${BRANCH}' is in a fork -- not deleting."
   fi
