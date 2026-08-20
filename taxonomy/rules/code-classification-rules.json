@@ -1,10 +1,10 @@
 {
-  "schema_version": "0.2.0",
-  "description": "Starter deterministic classification rules; refine against the selected CodeQL/CPG fact shape.",
+  "schema_version": "0.3.1",
+  "definition": "Starter deterministic rules mapping static-analysis facts into taxonomy IDs.",
   "rules": [
     {
       "id": "PY_FASTAPI_ROUTE_HANDLER",
-      "description": "Classify FastAPI route functions as request handlers.",
+      "description": "FastAPI-decorated route functions are request handlers.",
       "match": {
         "language": "python",
         "imports_any": [
@@ -19,8 +19,8 @@
       }
     },
     {
-      "id": "PY_REPOSITORY_CLASS",
-      "description": "Classify repository implementations from naming plus persistence evidence.",
+      "id": "PY_REPOSITORY_IMPLEMENTATION",
+      "description": "Repository naming plus persistence API evidence identifies repository implementations.",
       "match": {
         "language": "python",
         "class_regex": ".*Repository$",
@@ -41,7 +41,7 @@
     },
     {
       "id": "PY_TEST_FUNCTION",
-      "description": "Classify conventional Python test functions.",
+      "description": "Conventional Python test functions are unit-test candidates.",
       "match": {
         "language": "python",
         "file_regex": "(^|/)test_.*\\.py$|(^|/)tests?/",
@@ -55,7 +55,7 @@
     },
     {
       "id": "MESSAGE_CONSUMER",
-      "description": "Classify functions/methods that consume from known messaging clients.",
+      "description": "Known message-consumption APIs identify message consumer roles.",
       "match": {
         "calls_any_prefix": [
           "kafka.",

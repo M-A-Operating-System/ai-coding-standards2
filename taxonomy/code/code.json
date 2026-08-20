@@ -1,15 +1,14 @@
 {
   "$schema": "../schemas/domain-taxonomy.schema.json",
-  "schema_version": "0.2.0",
+  "schema_version": "0.3.1",
   "domain": "code",
-  "description": "Canonical taxonomy for the code domain.",
+  "purpose": "Higher-order source-code roles derived deterministically from static-analysis facts.",
   "inheritance": {
     "levels": [
       "family",
       "class",
       "subclass"
     ],
-    "canonical_id_format": "code/<family>/<class>/<subclass>",
     "resolution": "parent-first",
     "operations": [
       "add",
@@ -24,20 +23,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for api.",
+      "description": "Higher-order source-code roles that implement inbound API behavior and contracts.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -52,20 +68,19 @@
           "level": "class",
           "parent": "code/api",
           "abstract": true,
-          "description": "Canonical code class for handler.",
+          "description": "Handler groups code elements that provide handler responsibilities within the Api family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -80,20 +95,27 @@
               "level": "subclass",
               "parent": "code/api/handler",
               "abstract": false,
-              "description": "Canonical code subclass for request handler.",
+              "description": "Function or method responsible for receiving an API request and coordinating application behavior.",
+              "aliases": [],
               "attributes": {
-                "add": {},
+                "add": {
+                  "entry_point": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Marks an externally triggered entry point."
+                  }
+                },
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [
+                  "request-coordination"
+                ],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -108,20 +130,19 @@
               "level": "subclass",
               "parent": "code/api/handler",
               "abstract": false,
-              "description": "Canonical code subclass for command handler.",
+              "description": "Command Handler is a code specialization of Handler within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -138,20 +159,19 @@
           "level": "class",
           "parent": "code/api",
           "abstract": true,
-          "description": "Canonical code class for middleware.",
+          "description": "Middleware groups code elements that provide middleware responsibilities within the Api family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -166,20 +186,19 @@
               "level": "subclass",
               "parent": "code/api/middleware",
               "abstract": false,
-              "description": "Canonical code subclass for request middleware.",
+              "description": "Request Middleware is a code specialization of Middleware within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -194,20 +213,19 @@
               "level": "subclass",
               "parent": "code/api/middleware",
               "abstract": false,
-              "description": "Canonical code subclass for error middleware.",
+              "description": "Error Middleware is a code specialization of Middleware within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -224,20 +242,19 @@
           "level": "class",
           "parent": "code/api",
           "abstract": true,
-          "description": "Canonical code class for contract.",
+          "description": "Contract groups code elements that provide contract responsibilities within the Api family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -252,20 +269,19 @@
               "level": "subclass",
               "parent": "code/api/contract",
               "abstract": false,
-              "description": "Canonical code subclass for request schema.",
+              "description": "Request Schema is a code specialization of Contract within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -280,20 +296,19 @@
               "level": "subclass",
               "parent": "code/api/contract",
               "abstract": false,
-              "description": "Canonical code subclass for response schema.",
+              "description": "Response Schema is a code specialization of Contract within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -312,20 +327,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for domain.",
+      "description": "Domain is a canonical code family used to classify domain concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -340,20 +372,19 @@
           "level": "class",
           "parent": "code/domain",
           "abstract": true,
-          "description": "Canonical code class for model.",
+          "description": "Model groups code elements that provide model responsibilities within the Domain family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -368,20 +399,19 @@
               "level": "subclass",
               "parent": "code/domain/model",
               "abstract": false,
-              "description": "Canonical code subclass for entity.",
+              "description": "Entity is a code specialization of Model within the Domain family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -396,20 +426,19 @@
               "level": "subclass",
               "parent": "code/domain/model",
               "abstract": false,
-              "description": "Canonical code subclass for value object.",
+              "description": "Value Object is a code specialization of Model within the Domain family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -424,20 +453,19 @@
               "level": "subclass",
               "parent": "code/domain/model",
               "abstract": false,
-              "description": "Canonical code subclass for aggregate root.",
+              "description": "Aggregate Root is a code specialization of Model within the Domain family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -454,20 +482,19 @@
           "level": "class",
           "parent": "code/domain",
           "abstract": true,
-          "description": "Canonical code class for service.",
+          "description": "Service groups code elements that provide service responsibilities within the Domain family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -482,20 +509,19 @@
               "level": "subclass",
               "parent": "code/domain/service",
               "abstract": false,
-              "description": "Canonical code subclass for domain service.",
+              "description": "Domain Service is a code specialization of Service within the Domain family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -512,20 +538,19 @@
           "level": "class",
           "parent": "code/domain",
           "abstract": true,
-          "description": "Canonical code class for event.",
+          "description": "Event groups code elements that provide event responsibilities within the Domain family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -540,20 +565,19 @@
               "level": "subclass",
               "parent": "code/domain/event",
               "abstract": false,
-              "description": "Canonical code subclass for domain event.",
+              "description": "Domain Event is a code specialization of Event within the Domain family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -572,20 +596,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for persistence.",
+      "description": "Higher-order source-code roles that encapsulate durable data access and transactions.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -600,20 +641,19 @@
           "level": "class",
           "parent": "code/persistence",
           "abstract": true,
-          "description": "Canonical code class for repository.",
+          "description": "Repository groups code elements that provide repository responsibilities within the Persistence family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -628,20 +668,19 @@
               "level": "subclass",
               "parent": "code/persistence/repository",
               "abstract": false,
-              "description": "Canonical code subclass for repository interface.",
+              "description": "Repository Interface is a code specialization of Repository within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -656,20 +695,19 @@
               "level": "subclass",
               "parent": "code/persistence/repository",
               "abstract": false,
-              "description": "Canonical code subclass for repository implementation.",
+              "description": "Concrete source-code implementation of a repository abstraction performing persistence operations.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -686,20 +724,19 @@
           "level": "class",
           "parent": "code/persistence",
           "abstract": true,
-          "description": "Canonical code class for mapper.",
+          "description": "Mapper groups code elements that provide mapper responsibilities within the Persistence family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -714,20 +751,19 @@
               "level": "subclass",
               "parent": "code/persistence/mapper",
               "abstract": false,
-              "description": "Canonical code subclass for data mapper.",
+              "description": "Data Mapper is a code specialization of Mapper within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -744,20 +780,19 @@
           "level": "class",
           "parent": "code/persistence",
           "abstract": true,
-          "description": "Canonical code class for transaction.",
+          "description": "Transaction groups code elements that provide transaction responsibilities within the Persistence family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -772,20 +807,19 @@
               "level": "subclass",
               "parent": "code/persistence/transaction",
               "abstract": false,
-              "description": "Canonical code subclass for unit of work.",
+              "description": "Unit Of Work is a code specialization of Transaction within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -804,20 +838,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for messaging.",
+      "description": "Messaging is a canonical code family used to classify messaging concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -832,20 +883,19 @@
           "level": "class",
           "parent": "code/messaging",
           "abstract": true,
-          "description": "Canonical code class for consumer.",
+          "description": "Consumer groups code elements that provide consumer responsibilities within the Messaging family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -860,20 +910,19 @@
               "level": "subclass",
               "parent": "code/messaging/consumer",
               "abstract": false,
-              "description": "Canonical code subclass for message consumer.",
+              "description": "Function, method, or object that receives asynchronous messages and invokes processing behavior.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -890,20 +939,19 @@
           "level": "class",
           "parent": "code/messaging",
           "abstract": true,
-          "description": "Canonical code class for producer.",
+          "description": "Producer groups code elements that provide producer responsibilities within the Messaging family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -918,20 +966,19 @@
               "level": "subclass",
               "parent": "code/messaging/producer",
               "abstract": false,
-              "description": "Canonical code subclass for message producer.",
+              "description": "Message Producer is a code specialization of Producer within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -948,20 +995,19 @@
           "level": "class",
           "parent": "code/messaging",
           "abstract": true,
-          "description": "Canonical code class for contract.",
+          "description": "Contract groups code elements that provide contract responsibilities within the Messaging family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -976,20 +1022,19 @@
               "level": "subclass",
               "parent": "code/messaging/contract",
               "abstract": false,
-              "description": "Canonical code subclass for message schema.",
+              "description": "Message Schema is a code specialization of Contract within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1008,20 +1053,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for testing.",
+      "description": "Testing is a canonical code family used to classify testing concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1036,20 +1098,19 @@
           "level": "class",
           "parent": "code/testing",
           "abstract": true,
-          "description": "Canonical code class for double.",
+          "description": "Double groups code elements that provide double responsibilities within the Testing family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1064,20 +1125,19 @@
               "level": "subclass",
               "parent": "code/testing/double",
               "abstract": false,
-              "description": "Canonical code subclass for mock.",
+              "description": "Mock is a code specialization of Double within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1092,20 +1152,19 @@
               "level": "subclass",
               "parent": "code/testing/double",
               "abstract": false,
-              "description": "Canonical code subclass for stub.",
+              "description": "Stub is a code specialization of Double within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1120,20 +1179,19 @@
               "level": "subclass",
               "parent": "code/testing/double",
               "abstract": false,
-              "description": "Canonical code subclass for fake.",
+              "description": "Fake is a code specialization of Double within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1150,20 +1208,19 @@
           "level": "class",
           "parent": "code/testing",
           "abstract": true,
-          "description": "Canonical code class for fixture.",
+          "description": "Fixture groups code elements that provide fixture responsibilities within the Testing family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1178,20 +1235,19 @@
               "level": "subclass",
               "parent": "code/testing/fixture",
               "abstract": false,
-              "description": "Canonical code subclass for test fixture.",
+              "description": "Test Fixture is a code specialization of Fixture within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1208,20 +1264,19 @@
           "level": "class",
           "parent": "code/testing",
           "abstract": true,
-          "description": "Canonical code class for test.",
+          "description": "Test groups code elements that provide test responsibilities within the Testing family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1236,20 +1291,19 @@
               "level": "subclass",
               "parent": "code/testing/test",
               "abstract": false,
-              "description": "Canonical code subclass for unit test.",
+              "description": "Unit Test is a code specialization of Test within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1264,20 +1318,19 @@
               "level": "subclass",
               "parent": "code/testing/test",
               "abstract": false,
-              "description": "Canonical code subclass for integration test.",
+              "description": "Integration Test is a code specialization of Test within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1292,20 +1345,19 @@
               "level": "subclass",
               "parent": "code/testing/test",
               "abstract": false,
-              "description": "Canonical code subclass for contract test.",
+              "description": "Contract Test is a code specialization of Test within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1320,20 +1372,19 @@
               "level": "subclass",
               "parent": "code/testing/test",
               "abstract": false,
-              "description": "Canonical code subclass for end to end test.",
+              "description": "End To End Test is a code specialization of Test within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1352,20 +1403,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for configuration.",
+      "description": "Configuration is a canonical code family used to classify configuration concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1380,20 +1448,19 @@
           "level": "class",
           "parent": "code/configuration",
           "abstract": true,
-          "description": "Canonical code class for settings.",
+          "description": "Settings groups code elements that provide settings responsibilities within the Configuration family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1408,20 +1475,19 @@
               "level": "subclass",
               "parent": "code/configuration/settings",
               "abstract": false,
-              "description": "Canonical code subclass for application settings.",
+              "description": "Application Settings is a code specialization of Settings within the Configuration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1436,20 +1502,19 @@
               "level": "subclass",
               "parent": "code/configuration/settings",
               "abstract": false,
-              "description": "Canonical code subclass for environment settings.",
+              "description": "Environment Settings is a code specialization of Settings within the Configuration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1466,20 +1531,19 @@
           "level": "class",
           "parent": "code/configuration",
           "abstract": true,
-          "description": "Canonical code class for feature.",
+          "description": "Feature groups code elements that provide feature responsibilities within the Configuration family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1494,20 +1558,19 @@
               "level": "subclass",
               "parent": "code/configuration/feature",
               "abstract": false,
-              "description": "Canonical code subclass for feature flag.",
+              "description": "Feature Flag is a code specialization of Feature within the Configuration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1526,20 +1589,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for security.",
+      "description": "Security is a canonical code family used to classify security concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1554,20 +1634,19 @@
           "level": "class",
           "parent": "code/security",
           "abstract": true,
-          "description": "Canonical code class for authentication.",
+          "description": "Authentication groups code elements that provide authentication responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1582,20 +1661,19 @@
               "level": "subclass",
               "parent": "code/security/authentication",
               "abstract": false,
-              "description": "Canonical code subclass for authentication handler.",
+              "description": "Authentication Handler is a code specialization of Authentication within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1612,20 +1690,19 @@
           "level": "class",
           "parent": "code/security",
           "abstract": true,
-          "description": "Canonical code class for authorization.",
+          "description": "Authorization groups code elements that provide authorization responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1640,20 +1717,19 @@
               "level": "subclass",
               "parent": "code/security/authorization",
               "abstract": false,
-              "description": "Canonical code subclass for authorization handler.",
+              "description": "Authorization Handler is a code specialization of Authorization within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1670,20 +1746,19 @@
           "level": "class",
           "parent": "code/security",
           "abstract": true,
-          "description": "Canonical code class for validation.",
+          "description": "Validation groups code elements that provide validation responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1698,20 +1773,19 @@
               "level": "subclass",
               "parent": "code/security/validation",
               "abstract": false,
-              "description": "Canonical code subclass for input validator.",
+              "description": "Input Validator is a code specialization of Validation within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1730,20 +1804,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for observability.",
+      "description": "Observability is a canonical code family used to classify observability concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1758,20 +1849,19 @@
           "level": "class",
           "parent": "code/observability",
           "abstract": true,
-          "description": "Canonical code class for logging.",
+          "description": "Logging groups code elements that provide logging responsibilities within the Observability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1786,20 +1876,19 @@
               "level": "subclass",
               "parent": "code/observability/logging",
               "abstract": false,
-              "description": "Canonical code subclass for structured logger.",
+              "description": "Structured Logger is a code specialization of Logging within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1816,20 +1905,19 @@
           "level": "class",
           "parent": "code/observability",
           "abstract": true,
-          "description": "Canonical code class for metrics.",
+          "description": "Metrics groups code elements that provide metrics responsibilities within the Observability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1844,20 +1932,19 @@
               "level": "subclass",
               "parent": "code/observability/metrics",
               "abstract": false,
-              "description": "Canonical code subclass for metrics instrumentation.",
+              "description": "Metrics Instrumentation is a code specialization of Metrics within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1874,20 +1961,19 @@
           "level": "class",
           "parent": "code/observability",
           "abstract": true,
-          "description": "Canonical code class for tracing.",
+          "description": "Tracing groups code elements that provide tracing responsibilities within the Observability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1902,20 +1988,19 @@
               "level": "subclass",
               "parent": "code/observability/tracing",
               "abstract": false,
-              "description": "Canonical code subclass for trace instrumentation.",
+              "description": "Trace Instrumentation is a code specialization of Tracing within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1934,20 +2019,37 @@
       "level": "family",
       "parent": "code",
       "abstract": true,
-      "description": "Canonical code family for integration.",
+      "description": "Integration is a canonical code family used to classify integration concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "internal",
+              "private"
+            ],
+            "description": "Intended visibility."
+          },
+          "stateful": {
+            "type": "boolean",
+            "description": "Whether the code role maintains state across an invocation."
+          },
+          "side_effects": {
+            "type": "boolean",
+            "description": "Whether execution may mutate external state."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1962,20 +2064,19 @@
           "level": "class",
           "parent": "code/integration",
           "abstract": true,
-          "description": "Canonical code class for client.",
+          "description": "Client groups code elements that provide client responsibilities within the Integration family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1990,20 +2091,19 @@
               "level": "subclass",
               "parent": "code/integration/client",
               "abstract": false,
-              "description": "Canonical code subclass for api client.",
+              "description": "Api Client is a code specialization of Client within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -2018,20 +2118,19 @@
               "level": "subclass",
               "parent": "code/integration/client",
               "abstract": false,
-              "description": "Canonical code subclass for database client.",
+              "description": "Database Client is a code specialization of Client within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -2046,20 +2145,19 @@
               "level": "subclass",
               "parent": "code/integration/client",
               "abstract": false,
-              "description": "Canonical code subclass for message client.",
+              "description": "Message Client is a code specialization of Client within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -2076,20 +2174,19 @@
           "level": "class",
           "parent": "code/integration",
           "abstract": true,
-          "description": "Canonical code class for adapter.",
+          "description": "Adapter groups code elements that provide adapter responsibilities within the Integration family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -2104,20 +2201,19 @@
               "level": "subclass",
               "parent": "code/integration/adapter",
               "abstract": false,
-              "description": "Canonical code subclass for integration adapter.",
+              "description": "Integration Adapter is a code specialization of Adapter within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {

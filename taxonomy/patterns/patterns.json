@@ -1,15 +1,14 @@
 {
   "$schema": "../schemas/domain-taxonomy.schema.json",
-  "schema_version": "0.2.0",
+  "schema_version": "0.3.1",
   "domain": "patterns",
-  "description": "Canonical taxonomy for the patterns domain.",
+  "purpose": "Reusable solution approaches for recurring engineering problems.",
   "inheritance": {
     "levels": [
       "family",
       "class",
       "subclass"
     ],
-    "canonical_id_format": "patterns/<family>/<class>/<subclass>",
     "resolution": "parent-first",
     "operations": [
       "add",
@@ -24,20 +23,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for api.",
+      "description": "Reusable approaches governing request handling and externally consumed APIs.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -52,20 +72,19 @@
           "level": "class",
           "parent": "patterns/api",
           "abstract": true,
-          "description": "Canonical patterns class for request processing.",
+          "description": "Request Processing groups patterns elements that provide request processing responsibilities within the Api family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -80,24 +99,41 @@
               "level": "subclass",
               "parent": "patterns/api/request-processing",
               "abstract": false,
-              "description": "Canonical patterns subclass for idempotent handler.",
+              "description": "Ensures repeated equivalent requests do not create duplicate externally visible effects.",
+              "aliases": [],
               "attributes": {
-                "add": {},
+                "add": {
+                  "idempotency_key_source": {
+                    "type": "string",
+                    "description": "Where the idempotency key is obtained."
+                  },
+                  "retention_window": {
+                    "type": "string",
+                    "description": "How long idempotency records are retained."
+                  }
+                },
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [
+                  "duplicate-request-suppression"
+                ],
                 "drop": []
               },
               "relationships": {
-                "add": {},
-                "override": {},
+                "add": {
+                  "supports_concept": {
+                    "target": "concepts/reliability/idempotency/request-idempotency",
+                    "cardinality": "one"
+                  }
+                },
                 "drop": []
               },
               "constraints": {
-                "add": {},
+                "add": {
+                  "stable_key": "The same logical request must resolve to the same key within the retention window."
+                },
                 "override": {},
                 "drop": []
               }
@@ -108,20 +144,19 @@
               "level": "subclass",
               "parent": "patterns/api/request-processing",
               "abstract": false,
-              "description": "Canonical patterns subclass for validation handler.",
+              "description": "Validation Handler is a pattern specialization of Request Processing within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -136,20 +171,19 @@
               "level": "subclass",
               "parent": "patterns/api/request-processing",
               "abstract": false,
-              "description": "Canonical patterns subclass for request context.",
+              "description": "Request Context is a pattern specialization of Request Processing within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -166,20 +200,19 @@
           "level": "class",
           "parent": "patterns/api",
           "abstract": true,
-          "description": "Canonical patterns class for error handling.",
+          "description": "Error Handling groups patterns elements that provide error handling responsibilities within the Api family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -194,20 +227,19 @@
               "level": "subclass",
               "parent": "patterns/api/error-handling",
               "abstract": false,
-              "description": "Canonical patterns subclass for problem details.",
+              "description": "Problem Details is a pattern specialization of Error Handling within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -222,20 +254,19 @@
               "level": "subclass",
               "parent": "patterns/api/error-handling",
               "abstract": false,
-              "description": "Canonical patterns subclass for exception mapping.",
+              "description": "Exception Mapping is a pattern specialization of Error Handling within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -252,20 +283,19 @@
           "level": "class",
           "parent": "patterns/api",
           "abstract": true,
-          "description": "Canonical patterns class for versioning.",
+          "description": "Versioning groups patterns elements that provide versioning responsibilities within the Api family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -280,20 +310,19 @@
               "level": "subclass",
               "parent": "patterns/api/versioning",
               "abstract": false,
-              "description": "Canonical patterns subclass for url versioning.",
+              "description": "Url Versioning is a pattern specialization of Versioning within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -308,20 +337,19 @@
               "level": "subclass",
               "parent": "patterns/api/versioning",
               "abstract": false,
-              "description": "Canonical patterns subclass for header versioning.",
+              "description": "Header Versioning is a pattern specialization of Versioning within the Api family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -340,20 +368,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for persistence.",
+      "description": "Reusable approaches for durable data access, transaction management, and caching.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -368,20 +417,19 @@
           "level": "class",
           "parent": "patterns/persistence",
           "abstract": true,
-          "description": "Canonical patterns class for data access.",
+          "description": "Data Access groups patterns elements that provide data access responsibilities within the Persistence family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -396,20 +444,27 @@
               "level": "subclass",
               "parent": "patterns/persistence/data-access",
               "abstract": false,
-              "description": "Canonical patterns subclass for repository.",
+              "description": "Encapsulates persistence behind a collection-like abstraction aligned to domain or application needs.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [
+                  "data-access-abstraction",
+                  "persistence-decoupling"
+                ],
                 "drop": []
               },
               "relationships": {
-                "add": {},
-                "override": {},
+                "add": {
+                  "typically_implemented_as": {
+                    "target": "code/persistence/repository/repository-implementation",
+                    "cardinality": "one-or-more"
+                  }
+                },
                 "drop": []
               },
               "constraints": {
@@ -424,20 +479,19 @@
               "level": "subclass",
               "parent": "patterns/persistence/data-access",
               "abstract": false,
-              "description": "Canonical patterns subclass for unit of work.",
+              "description": "Unit Of Work is a pattern specialization of Data Access within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -452,20 +506,19 @@
               "level": "subclass",
               "parent": "patterns/persistence/data-access",
               "abstract": false,
-              "description": "Canonical patterns subclass for data mapper.",
+              "description": "Data Mapper is a pattern specialization of Data Access within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -482,20 +535,19 @@
           "level": "class",
           "parent": "patterns/persistence",
           "abstract": true,
-          "description": "Canonical patterns class for transaction.",
+          "description": "Transaction groups patterns elements that provide transaction responsibilities within the Persistence family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -510,20 +562,19 @@
               "level": "subclass",
               "parent": "patterns/persistence/transaction",
               "abstract": false,
-              "description": "Canonical patterns subclass for local transaction.",
+              "description": "Local Transaction is a pattern specialization of Transaction within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -538,20 +589,19 @@
               "level": "subclass",
               "parent": "patterns/persistence/transaction",
               "abstract": false,
-              "description": "Canonical patterns subclass for transactional outbox.",
+              "description": "Persists state and outbound event records atomically, then publishes events asynchronously.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -568,20 +618,19 @@
           "level": "class",
           "parent": "patterns/persistence",
           "abstract": true,
-          "description": "Canonical patterns class for caching.",
+          "description": "Caching groups patterns elements that provide caching responsibilities within the Persistence family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -596,20 +645,19 @@
               "level": "subclass",
               "parent": "patterns/persistence/caching",
               "abstract": false,
-              "description": "Canonical patterns subclass for cache aside.",
+              "description": "Cache Aside is a pattern specialization of Caching within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -624,20 +672,19 @@
               "level": "subclass",
               "parent": "patterns/persistence/caching",
               "abstract": false,
-              "description": "Canonical patterns subclass for write through.",
+              "description": "Write Through is a pattern specialization of Caching within the Persistence family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -656,20 +703,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for messaging.",
+      "description": "Messaging is a canonical patterns family used to classify messaging concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -684,20 +752,19 @@
           "level": "class",
           "parent": "patterns/messaging",
           "abstract": true,
-          "description": "Canonical patterns class for delivery.",
+          "description": "Delivery groups patterns elements that provide delivery responsibilities within the Messaging family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -712,20 +779,19 @@
               "level": "subclass",
               "parent": "patterns/messaging/delivery",
               "abstract": false,
-              "description": "Canonical patterns subclass for at least once.",
+              "description": "At Least Once is a pattern specialization of Delivery within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -740,20 +806,19 @@
               "level": "subclass",
               "parent": "patterns/messaging/delivery",
               "abstract": false,
-              "description": "Canonical patterns subclass for deduplication.",
+              "description": "Deduplication is a pattern specialization of Delivery within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -768,20 +833,19 @@
               "level": "subclass",
               "parent": "patterns/messaging/delivery",
               "abstract": false,
-              "description": "Canonical patterns subclass for dead letter.",
+              "description": "Dead Letter is a pattern specialization of Delivery within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -798,20 +862,19 @@
           "level": "class",
           "parent": "patterns/messaging",
           "abstract": true,
-          "description": "Canonical patterns class for publishing.",
+          "description": "Publishing groups patterns elements that provide publishing responsibilities within the Messaging family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -826,20 +889,19 @@
               "level": "subclass",
               "parent": "patterns/messaging/publishing",
               "abstract": false,
-              "description": "Canonical patterns subclass for transactional outbox.",
+              "description": "Transactional Outbox is a pattern specialization of Publishing within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -854,20 +916,19 @@
               "level": "subclass",
               "parent": "patterns/messaging/publishing",
               "abstract": false,
-              "description": "Canonical patterns subclass for event publisher.",
+              "description": "Event Publisher is a pattern specialization of Publishing within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -884,20 +945,19 @@
           "level": "class",
           "parent": "patterns/messaging",
           "abstract": true,
-          "description": "Canonical patterns class for consumption.",
+          "description": "Consumption groups patterns elements that provide consumption responsibilities within the Messaging family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -912,20 +972,19 @@
               "level": "subclass",
               "parent": "patterns/messaging/consumption",
               "abstract": false,
-              "description": "Canonical patterns subclass for competing consumer.",
+              "description": "Competing Consumer is a pattern specialization of Consumption within the Messaging family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -940,20 +999,19 @@
               "level": "subclass",
               "parent": "patterns/messaging/consumption",
               "abstract": false,
-              "description": "Canonical patterns subclass for idempotent consumer.",
+              "description": "Ensures repeated delivery of the same message does not repeat business side effects.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -972,20 +1030,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for resilience.",
+      "description": "Reusable approaches that contain failures and improve continuity.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1000,20 +1079,25 @@
           "level": "class",
           "parent": "patterns/resilience",
           "abstract": true,
-          "description": "Canonical patterns class for retry.",
+          "description": "Retry groups patterns elements that provide retry responsibilities within the Resilience family.",
+          "aliases": [],
           "attributes": {
-            "add": {},
+            "add": {
+              "max_attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum attempts including the initial call."
+              }
+            },
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1028,24 +1112,26 @@
               "level": "subclass",
               "parent": "patterns/resilience/retry",
               "abstract": false,
-              "description": "Canonical patterns subclass for exponential backoff.",
+              "description": "Retries transient failures using delays that increase between attempts.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
-                "add": {},
+                "add": {
+                  "bounded": "Retry behavior must be bounded.",
+                  "safe_operation": "Repeated invocation must be safe or idempotent."
+                },
                 "override": {},
                 "drop": []
               }
@@ -1056,20 +1142,19 @@
               "level": "subclass",
               "parent": "patterns/resilience/retry",
               "abstract": false,
-              "description": "Canonical patterns subclass for bounded retry.",
+              "description": "Bounded Retry is a pattern specialization of Retry within the Resilience family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1086,20 +1171,19 @@
           "level": "class",
           "parent": "patterns/resilience",
           "abstract": true,
-          "description": "Canonical patterns class for isolation.",
+          "description": "Isolation groups patterns elements that provide isolation responsibilities within the Resilience family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1114,20 +1198,19 @@
               "level": "subclass",
               "parent": "patterns/resilience/isolation",
               "abstract": false,
-              "description": "Canonical patterns subclass for circuit breaker.",
+              "description": "Temporarily blocks calls to an unhealthy dependency after failures exceed a threshold.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1142,20 +1225,19 @@
               "level": "subclass",
               "parent": "patterns/resilience/isolation",
               "abstract": false,
-              "description": "Canonical patterns subclass for bulkhead.",
+              "description": "Bulkhead is a pattern specialization of Isolation within the Resilience family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1172,20 +1254,19 @@
           "level": "class",
           "parent": "patterns/resilience",
           "abstract": true,
-          "description": "Canonical patterns class for timeout.",
+          "description": "Timeout groups patterns elements that provide timeout responsibilities within the Resilience family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1200,20 +1281,19 @@
               "level": "subclass",
               "parent": "patterns/resilience/timeout",
               "abstract": false,
-              "description": "Canonical patterns subclass for bounded timeout.",
+              "description": "Bounded Timeout is a pattern specialization of Timeout within the Resilience family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1232,20 +1312,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for security.",
+      "description": "Security is a canonical patterns family used to classify security concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1260,20 +1361,19 @@
           "level": "class",
           "parent": "patterns/security",
           "abstract": true,
-          "description": "Canonical patterns class for authentication.",
+          "description": "Authentication groups patterns elements that provide authentication responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1288,20 +1388,19 @@
               "level": "subclass",
               "parent": "patterns/security/authentication",
               "abstract": false,
-              "description": "Canonical patterns subclass for bearer token.",
+              "description": "Bearer Token is a pattern specialization of Authentication within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1316,20 +1415,19 @@
               "level": "subclass",
               "parent": "patterns/security/authentication",
               "abstract": false,
-              "description": "Canonical patterns subclass for mutual tls.",
+              "description": "Mutual Tls is a pattern specialization of Authentication within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1346,20 +1444,19 @@
           "level": "class",
           "parent": "patterns/security",
           "abstract": true,
-          "description": "Canonical patterns class for authorization.",
+          "description": "Authorization groups patterns elements that provide authorization responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1374,20 +1471,19 @@
               "level": "subclass",
               "parent": "patterns/security/authorization",
               "abstract": false,
-              "description": "Canonical patterns subclass for role based access control.",
+              "description": "Role Based Access Control is a pattern specialization of Authorization within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1402,20 +1498,19 @@
               "level": "subclass",
               "parent": "patterns/security/authorization",
               "abstract": false,
-              "description": "Canonical patterns subclass for policy based access control.",
+              "description": "Policy Based Access Control is a pattern specialization of Authorization within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1432,20 +1527,19 @@
           "level": "class",
           "parent": "patterns/security",
           "abstract": true,
-          "description": "Canonical patterns class for secrets.",
+          "description": "Secrets groups patterns elements that provide secrets responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1460,20 +1554,19 @@
               "level": "subclass",
               "parent": "patterns/security/secrets",
               "abstract": false,
-              "description": "Canonical patterns subclass for external secret store.",
+              "description": "External Secret Store is a pattern specialization of Secrets within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1492,20 +1585,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for integration.",
+      "description": "Integration is a canonical patterns family used to classify integration concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1520,20 +1634,19 @@
           "level": "class",
           "parent": "patterns/integration",
           "abstract": true,
-          "description": "Canonical patterns class for coordination.",
+          "description": "Coordination groups patterns elements that provide coordination responsibilities within the Integration family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1548,20 +1661,19 @@
               "level": "subclass",
               "parent": "patterns/integration/coordination",
               "abstract": false,
-              "description": "Canonical patterns subclass for saga.",
+              "description": "Saga is a pattern specialization of Coordination within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1576,20 +1688,19 @@
               "level": "subclass",
               "parent": "patterns/integration/coordination",
               "abstract": false,
-              "description": "Canonical patterns subclass for orchestration.",
+              "description": "Orchestration is a pattern specialization of Coordination within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1604,20 +1715,19 @@
               "level": "subclass",
               "parent": "patterns/integration/coordination",
               "abstract": false,
-              "description": "Canonical patterns subclass for choreography.",
+              "description": "Choreography is a pattern specialization of Coordination within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1634,20 +1744,19 @@
           "level": "class",
           "parent": "patterns/integration",
           "abstract": true,
-          "description": "Canonical patterns class for translation.",
+          "description": "Translation groups patterns elements that provide translation responsibilities within the Integration family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1662,20 +1771,19 @@
               "level": "subclass",
               "parent": "patterns/integration/translation",
               "abstract": false,
-              "description": "Canonical patterns subclass for anti corruption layer.",
+              "description": "Anti Corruption Layer is a pattern specialization of Translation within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1690,20 +1798,19 @@
               "level": "subclass",
               "parent": "patterns/integration/translation",
               "abstract": false,
-              "description": "Canonical patterns subclass for canonical data model.",
+              "description": "Canonical Data Model is a pattern specialization of Translation within the Integration family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1722,20 +1829,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for observability.",
+      "description": "Observability is a canonical patterns family used to classify observability concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1750,20 +1878,19 @@
           "level": "class",
           "parent": "patterns/observability",
           "abstract": true,
-          "description": "Canonical patterns class for correlation.",
+          "description": "Correlation groups patterns elements that provide correlation responsibilities within the Observability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1778,20 +1905,19 @@
               "level": "subclass",
               "parent": "patterns/observability/correlation",
               "abstract": false,
-              "description": "Canonical patterns subclass for correlation id propagation.",
+              "description": "Correlation Id Propagation is a pattern specialization of Correlation within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1806,20 +1932,19 @@
               "level": "subclass",
               "parent": "patterns/observability/correlation",
               "abstract": false,
-              "description": "Canonical patterns subclass for trace context propagation.",
+              "description": "Trace Context Propagation is a pattern specialization of Correlation within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1836,20 +1961,19 @@
           "level": "class",
           "parent": "patterns/observability",
           "abstract": true,
-          "description": "Canonical patterns class for instrumentation.",
+          "description": "Instrumentation groups patterns elements that provide instrumentation responsibilities within the Observability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1864,20 +1988,19 @@
               "level": "subclass",
               "parent": "patterns/observability/instrumentation",
               "abstract": false,
-              "description": "Canonical patterns subclass for structured logging.",
+              "description": "Structured Logging is a pattern specialization of Instrumentation within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1892,20 +2015,19 @@
               "level": "subclass",
               "parent": "patterns/observability/instrumentation",
               "abstract": false,
-              "description": "Canonical patterns subclass for distributed tracing.",
+              "description": "Distributed Tracing is a pattern specialization of Instrumentation within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1924,20 +2046,41 @@
       "level": "family",
       "parent": "patterns",
       "abstract": true,
-      "description": "Canonical patterns family for testing.",
+      "description": "Testing is a canonical patterns family used to classify testing concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1952,20 +2095,19 @@
           "level": "class",
           "parent": "patterns/testing",
           "abstract": true,
-          "description": "Canonical patterns class for structure.",
+          "description": "Structure groups patterns elements that provide structure responsibilities within the Testing family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1980,20 +2122,19 @@
               "level": "subclass",
               "parent": "patterns/testing/structure",
               "abstract": false,
-              "description": "Canonical patterns subclass for test pyramid.",
+              "description": "Test Pyramid is a pattern specialization of Structure within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -2008,20 +2149,19 @@
               "level": "subclass",
               "parent": "patterns/testing/structure",
               "abstract": false,
-              "description": "Canonical patterns subclass for contract testing.",
+              "description": "Contract Testing is a pattern specialization of Structure within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -2038,20 +2178,19 @@
           "level": "class",
           "parent": "patterns/testing",
           "abstract": true,
-          "description": "Canonical patterns class for isolation.",
+          "description": "Isolation groups patterns elements that provide isolation responsibilities within the Testing family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -2066,20 +2205,19 @@
               "level": "subclass",
               "parent": "patterns/testing/isolation",
               "abstract": false,
-              "description": "Canonical patterns subclass for test double.",
+              "description": "Test Double is a pattern specialization of Isolation within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -2094,20 +2232,19 @@
               "level": "subclass",
               "parent": "patterns/testing/isolation",
               "abstract": false,
-              "description": "Canonical patterns subclass for fixture factory.",
+              "description": "Fixture Factory is a pattern specialization of Isolation within the Testing family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
