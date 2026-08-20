@@ -764,6 +764,22 @@ Options:
                         (orchestrator probes the API if omitted)
   --dry-run             Log decisions without invoking agents or changing labels
   --pipeline PATH       Path to pipeline.json (default: pipeline/pipeline.json)
+  --headless            Declare this as an unattended/scheduled invocation.
+                        Added unconditionally by ai_orchestrator.yml; omit for
+                        interactive runs (/maos-run, developer). Has two
+                        effects: (1) the audit actor field records the real
+                        trigger identity instead of a hardcoded value; (2) the
+                        .pipeline-stop check only halts headless runs -- an
+                        interactive run logs the marker but proceeds.
+  --agent AGENT         Agent name override (e.g. "01_product_docs/prd-writer").
+                        Required when using --print-prompt.
+  --print-prompt        Resolve-only mode: print the named agent's prompt text,
+                        tool allowlist, and env without spawning a subprocess or
+                        mutating any GitHub state (no label writes, no :wip).
+                        Used by /run-agent to obtain authoritative invocation
+                        parameters from the orchestrator's own resolution logic
+                        instead of hand-parsing the agent file. Requires
+                        --agent.
   --clear-pause         Clear the rate-limit pause marker if set, then exit
                         (manual override for operators; see "Anthropic API"
                         in Rate limit handling)
@@ -1012,12 +1028,21 @@ until explicitly cleared.
 ### Stop marker
 
 The orchestrator checks for `.pipeline-stop` at the submodule root at
-the very start of `main()`, **after** the pause-marker check. If the
-marker exists, the orchestrator:
+the very start of `main()`, **after** the pause-marker check. The marker's
+effect depends on the invocation mode:
+
+**Headless/scheduled runs** (`--headless` passed, i.e. from `ai_orchestrator.yml`):
+If the marker exists, the orchestrator:
 
 1. Logs the stop reason.
 2. Emits a `system.emergency_stop` audit event.
 3. Exits 0 — no labels are changed, no agents are invoked.
+
+**Interactive runs** (`--headless` omitted, i.e. `/maos-run` or a developer):
+If the marker exists, the orchestrator logs that the pipeline is stopped but
+proceeds to evaluate eligible work and invoke agents as if the marker were
+absent. An operator halting unattended automation is not also halting themselves
+from driving a specific issue interactively.
 
 The marker is not auto-cleared on the next tick. It persists until an owner
 clears it — by deleting the committed marker (`git rm .pipeline-stop`) or
@@ -1042,6 +1067,7 @@ invoking `--clear-stop`.
 | Cancels in-flight runs | No | Yes (if `cancel_runs` is `true`) |
 | Clear mechanism | Auto on expiry; `--clear-pause` | `git rm .pipeline-stop`; `--clear-stop` |
 | Check order in `main()` | First | Immediately after pause check |
+| Scope | All invocations | Headless (`--headless`) only; interactive runs log and proceed |
 
 ### Manual override
 
