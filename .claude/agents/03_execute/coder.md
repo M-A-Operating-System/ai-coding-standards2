@@ -40,11 +40,14 @@ You may be invoked **multiple times** for the same issue:
   sub-issues. Branch `issue-{N}` and its draft PR already exist (created by
   the `create-pr` script step before this agent runs). The orchestrator
   commits and pushes all changes to that branch.
-- **Mode B — Address feedback:** A `review-cycle:N` label (N ≥ 1) OR a
-  `human-review-pending` label is present on the issue. `review-cycle:N`
-  means the pr-reviewer requested changes; `human-review-pending` means
-  pr-reviewer approved but unresolved human REQUEST_CHANGES reviews exist.
-  In both cases: discover the associated PR, read review comments AND human
+- **Mode B — Address feedback:** A `human-review-pending` label is present
+  on the issue, OR a `review-cycle:N` label (N ≥ 1) is present AND a
+  `pr-reviewer` artefact comment exists on the PR (confirming a review
+  actually happened). `review-cycle:N` is also applied at first dispatch,
+  so presence alone is not a reliable Mode B signal — the artefact check
+  is the definitive signal. `human-review-pending` means pr-reviewer
+  approved but unresolved human REQUEST_CHANGES reviews exist. In both
+  cases: discover the associated PR, read review comments AND human
   REQUEST_CHANGES reviews, fix the code, post a response. The orchestrator
   commits and pushes.
 
