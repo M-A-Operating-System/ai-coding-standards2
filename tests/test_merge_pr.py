@@ -52,34 +52,9 @@ exit 99
 """
 
 
-def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
-         merge_rc=0, delete_rc=0, branch_ref_rc=0):
-    mock_dir = tmp_path / "bin"
-    mock_dir.mkdir()
-    gh = mock_dir / "gh"
-    gh.write_text(MOCK_GH)
-    gh.chmod(0o755)
-    env = {
-        "PATH": f"{mock_dir}:/usr/bin:/bin",
-        "REPO": "owner/repo",
-        "INPUT_NUMBER": str(args[0]) if args else "",
-        "PR_EXISTS": str(pr_exists),
-        "STATE_JSON": state_json,
-        "ISSUE_PR": issue_pr,
-        "MERGE_RC": str(merge_rc),
-        "DELETE_RC": str(delete_rc),
-        "BRANCH_REF_RC": str(branch_ref_rc),
-    }
-    result = subprocess.run(
-        ["bash", str(MERGE_PR), *args],
-        env=env, capture_output=True, text=True,
-    )
-    return result.stdout + result.stderr, result.returncode
-
-
 def _run_split(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
                merge_rc=0, delete_rc=0, branch_ref_rc=0):
-    """Like _run but returns (stdout, stderr, rc) for stream-sensitive assertions."""
+    """Returns (stdout, stderr, rc) for stream-sensitive assertions."""
     mock_dir = tmp_path / "bin"
     mock_dir.mkdir()
     gh = mock_dir / "gh"
@@ -101,6 +76,15 @@ def _run_split(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
         env=env, capture_output=True, text=True,
     )
     return result.stdout, result.stderr, result.returncode
+
+
+def _run(tmp_path, args, *, pr_exists=0, state_json="", issue_pr="",
+         merge_rc=0, delete_rc=0, branch_ref_rc=0):
+    stdout, stderr, rc = _run_split(tmp_path, args, pr_exists=pr_exists,
+                                    state_json=state_json, issue_pr=issue_pr,
+                                    merge_rc=merge_rc, delete_rc=delete_rc,
+                                    branch_ref_rc=branch_ref_rc)
+    return stdout + stderr, rc
 
 
 # REST pull objects (as `gh api repos/O/R/pulls/N` returns). state is lowercase;
