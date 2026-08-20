@@ -134,21 +134,37 @@ Environment variables the orchestrator exports for you:
 ## Scratch files
 
 When an agent needs a working file mid-run (e.g. staging a multi-line comment
-body before posting it with `gh api`), write it under `$AI_AGILE_SCRATCH` --
+body before posting it with `gh api`), write it under the scratch directory --
 never in the repo root or any tracked path.
 
 | Variable | Value | Guarantee |
 |---|---|---|
-| `AI_AGILE_SCRATCH` | `/tmp/${SESSION_ID}` | Created empty by the orchestrator before each invocation; removed by the orchestrator after the run exits (any outcome). |
+| `AI_AGILE_SCRATCH` | `/tmp/${SESSION_ID}` | Set by the orchestrator only. Created empty before each invocation; removed after the run exits (any outcome). |
 
 **The orchestrator manages the full lifecycle** -- you do not need a cleanup
-instruction in your prompt. Writing under `$AI_AGILE_SCRATCH` is the entire
+instruction in your prompt. Writing under the scratch directory is the entire
 contract.
+
+**Always resolve it with a fallback.** `AI_AGILE_SCRATCH` is set by the
+orchestrator, so it is *unset* when a human runs one of these agents
+interactively via a `/maos-*` slash command. Expanding it unguarded then
+yields `/your-file` -- a write to the filesystem root. Resolve it once at
+the top of any step that needs a working file:
+
+```bash
+SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"
+mkdir -p "$SCRATCH"
+```
+
+The fallback lands under `/tmp` either way, so it is never in the repo.
 
 **Example:**
 
 ```bash
-SCRATCH_FILE="$AI_AGILE_SCRATCH/comment_body.md"
+SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"
+mkdir -p "$SCRATCH"
+
+SCRATCH_FILE="$SCRATCH/comment_body.md"
 cat > "$SCRATCH_FILE" << 'EOF'
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
 ...
@@ -163,6 +179,7 @@ gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
 - Inventing an ad hoc `.{agent}_{purpose}` dot-file naming scheme instead of using `$AI_AGILE_SCRATCH`.
 - Including a cleanup instruction in an agent prompt -- the agent is not responsible for removal.
 - Assuming a repo-root cleanup glob will catch a self-invented filename -- it won't, by construction.
+- Expanding `$AI_AGILE_SCRATCH` without the `:-` fallback. Unset, it resolves to the filesystem root.
 
 ---
 

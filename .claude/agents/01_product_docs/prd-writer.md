@@ -577,7 +577,9 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 - When in doubt about size, decompose.
 - Do not call `status.sh` — the orchestrator handles all label
   transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
-- Write any working files (staged comment bodies, snapshots) under
-  `$AI_AGILE_SCRATCH`. The orchestrator creates this directory empty
-  before invocation and removes it afterward -- no cleanup command
-  is needed in this prompt.
+- Write any working files (staged comment bodies, snapshots) under the
+  scratch directory, resolved with a fallback so an interactive run does
+  not write to the filesystem root:
+  `SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"`.
+  The orchestrator creates and removes `AI_AGILE_SCRATCH` itself -- no
+  cleanup command is needed in this prompt.
