@@ -78,3 +78,30 @@ finding recurring unclassified structures, proposing new entries or rules,
 explaining ambiguous mappings, and proposing consolidation of overlapping
 patterns. Every AI-generated proposal becomes a reviewed, deterministic
 definition before it carries authority.
+
+## TX-5 — Identity is immutable; names and paths are not
+
+**Statement.** Every node carries a stable unique identifier that never
+changes and is never reused. Its name and its path are separate, mutable
+properties. Everything that refers to a node refers to it by identifier; the
+path resolves to the same node but is a statement of where the node currently
+sits, not of what it is.
+
+**Why.** A path-shaped identifier is only stable while every name in it is
+stable. Renaming one class rewrites the identifier of every descendant, and
+every standard, decision, mapping, rule and classification that cited them.
+The taxonomy is meant to be depended on as a contract, and a contract whose
+keys change when a word is improved is not one.
+
+Separating the two also makes the vocabulary safe to improve. A class can be
+renamed, split, merged, or moved to a better parent, and the nodes keep their
+identity through it — so the structural repairs the taxonomy needs cost
+nothing to the consumers already citing it.
+
+**Consequence.** Identifiers are opaque and sequential within a domain
+(`ARCH-0042`), assigned once and retired only by deprecation. Paths remain
+unique at any point in time and remain positionally validated, so
+`<domain>/<family>/<class>/<subclass>` keeps every property that made it
+worth fixing at four parts. A node's former paths are retained so a stale
+reference resolves with a warning rather than failing. Facets attach to the
+identifier, never to the path.

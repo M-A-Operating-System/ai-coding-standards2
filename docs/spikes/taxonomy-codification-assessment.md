@@ -49,9 +49,11 @@ with views over one entry set. ArchiMate draws the metamodel/model line the inhe
 missing. The `concepts` domain reinvents ISO/IEC 25010 and disagrees with it on six of nine
 characteristics.
 
-Fifteen recommendations follow. **R-1, R-3, R-9 and R-11 are cheap now and expensive after adoption**
-— they change the shape of records while nothing consumes them. Variable-depth identity was considered
-and rejected; the padding it was meant to solve is repaired by R-15 instead.
+Sixteen recommendations follow. **R-16 comes first** — separating immutable identity from mutable name
+and path turns every other structural repair here from a breaking change into a routine one. R-1, R-3,
+R-9 and R-11 are likewise cheap now and expensive after adoption, since they change the shape of
+records while nothing consumes them. Variable-depth paths were considered and rejected; facets are
+adopted as the orthogonal mechanism instead, and the padding is repaired by R-15.
 
 ---
 
@@ -136,7 +138,7 @@ instinct expressed the wrong way: the fix is to name the relation, not to empty 
 
 **Severity:** was latent; now active.
 
-### F-3 — Fixed three-level depth is padding the tree
+### F-3 — Half the classes do not discriminate
 
 ```text
 classes with exactly one subclass ..... 72 of 151   (47.7%)
@@ -457,14 +459,57 @@ Follow CWE: keep one set of entries and define views over them. A `concern` view
 appears in several views without duplication — which is what `policy-engine` and `package-registry`
 need and cannot have today.
 
-Views do not require variable depth, and this recommendation no longer proposes it.
+Views do not require variable depth, and facets are the mechanism that makes them possible. Both are
+adopted; only the depth half of the original proposal is rejected.
 
-> **Decision — variable-depth canonical identity is rejected.** Identifiers keep four parts, always.
-> The reasoning is recorded in [`03-model.md`](../product/taxonomy/03-model.md): fixed arity lets a
-> consumer parse an identifier without a lookup, validate it by position, and rely on every
-> identifier carrying the same information. Variable depth moves that cost onto every consumer and
-> leaves the CI positional checks nothing fixed to check against. The padding criticism in F-3 is
-> accepted; it is repaired by R-15, not by varying depth.
+> **Decision — variable-depth path is rejected; facets are adopted as an orthogonal mechanism.**
+> Paths keep four parts, always. The reasoning is recorded in
+> [`03-model.md`](../product/taxonomy/03-model.md): fixed arity lets a consumer parse a path without
+> a lookup, validate it by position, and rely on every path carrying the same information. Variable
+> depth moves that cost onto every consumer and leaves the CI positional checks nothing fixed to
+> check against.
+>
+> Facets carry the dimensions that position cannot. A facet is a named dimension with a controlled
+> value set, attached to a node's identifier; it never changes identity, never changes the path, and
+> never participates in inheritance. A node may hold several values in one facet — `policy-engine` is
+> both an identity and a security concern, a fact about the concept that no single position can
+> express, and the reason it is currently duplicated in the tree.
+>
+> A view is then a query over facets rather than a second hierarchy. The padding criticism in F-3 is
+> still accepted, and is repaired by R-15.
+
+### R-16 — Separate immutable identity from mutable name and path
+
+*Serves F-7, and de-risks F-3, R-12 and R-15. Medium effort, and the prerequisite for all of them.*
+
+Today a node's `id` **is** its path, so identity is only as stable as every name in it. Renaming one
+class rewrites the identifier of every descendant, and of every standard, decision, mapping, rule and
+recorded classification that cited them.
+
+```text
+now       id      architecture/data/database/relational-database
+
+proposed  id      ARCH-0042                                        immutable, never reused
+          path    architecture/data/database/relational-database   current location
+          name    Relational Database                              freely improvable
+```
+
+Identifiers are opaque and sequential within a domain, prefixed `ARCH`, `PAT`, `CODE`, `CON`, so a
+citation is legible in a standard the way `CWE-79` is. Stored references — in standards, decisions,
+rules, mappings, and classifications against real systems — use the identifier. The resolver accepts
+either, and former paths are retained so a stale path resolves with a warning rather than failing.
+
+This is recorded as [TX-5](../product/taxonomy/02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not).
+
+**Why it is the prerequisite.** Three of the recommendations here are structural repairs: R-15 rewrites
+46 padded classes, R-12 rebases the concepts families on ISO/IEC 25010, R-2/R-10 reorganises what the
+family level means. Under path-as-identity every one of those is a breaking change to a published
+contract. Under TX-5 they are all minor changes — the nodes keep their identity, their former paths
+still resolve, and no consumer has to migrate. Doing R-16 first converts the rest of this list from
+expensive to routine.
+
+It also settles the rename that has already come up twice: `description` → `definition` at the field
+level, and every name correction the 36 hand-written definitions imply at the record level.
 
 ### R-15 — Repair the padded classes by improving the classes
 
@@ -646,7 +691,7 @@ grouping leaf names. Version comparisons re-run the same counts against each tre
   needs 14 families is a domain judgement that cannot be settled from the files; this assessment
   measures structure and coverage, not the aptness of the vocabulary.
 - **Implementing any recommendation.** #351 merges v0.3.0's content but implements none of R-1 to
-  R-15.
+  R-16.
 - **Distributing `taxonomy/` to consuming repos**, unresolved from #329.
 
 ### Limits of the prior-art survey
@@ -665,6 +710,8 @@ assessment describes the mechanism rather than quoting a number.
 - `[FEATURE] - taxonomy - introduce a central attribute registry with stability levels` (R-9)
 - `[FEATURE] - taxonomy - model families as views over one entry set` (R-2, R-10)
 - `[ENHANCEMENT] - taxonomy - write discriminating subclasses for the 46 padded classes` (R-15)
+- `[FEATURE] - taxonomy - separate immutable node identity from mutable name and path` (R-16)
+- `[FEATURE] - taxonomy - add facets as an orthogonal dimension with a value registry` (R-2, R-10)
 - `[SPIKE] - taxonomy - populate one vertical slice and measure classifier accuracy on this repo` (R-4)
 - `[TOIL] - taxonomy - rebase the concepts domain on ISO/IEC 25010` (R-12)
 
