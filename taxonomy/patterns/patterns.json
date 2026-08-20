@@ -1,0 +1,2124 @@
+{
+  "$schema": "../schemas/domain-taxonomy.schema.json",
+  "schema_version": "0.2.0",
+  "domain": "patterns",
+  "description": "Canonical taxonomy for the patterns domain.",
+  "inheritance": {
+    "levels": [
+      "family",
+      "class",
+      "subclass"
+    ],
+    "canonical_id_format": "patterns/<family>/<class>/<subclass>",
+    "resolution": "parent-first",
+    "operations": [
+      "add",
+      "override",
+      "drop"
+    ]
+  },
+  "families": {
+    "api": {
+      "id": "patterns/api",
+      "name": "Api",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for api.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "request-processing": {
+          "id": "patterns/api/request-processing",
+          "name": "Request Processing",
+          "level": "class",
+          "parent": "patterns/api",
+          "abstract": true,
+          "description": "Canonical patterns class for request processing.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "idempotent-handler": {
+              "id": "patterns/api/request-processing/idempotent-handler",
+              "name": "Idempotent Handler",
+              "level": "subclass",
+              "parent": "patterns/api/request-processing",
+              "abstract": false,
+              "description": "Canonical patterns subclass for idempotent handler.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "validation-handler": {
+              "id": "patterns/api/request-processing/validation-handler",
+              "name": "Validation Handler",
+              "level": "subclass",
+              "parent": "patterns/api/request-processing",
+              "abstract": false,
+              "description": "Canonical patterns subclass for validation handler.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "request-context": {
+              "id": "patterns/api/request-processing/request-context",
+              "name": "Request Context",
+              "level": "subclass",
+              "parent": "patterns/api/request-processing",
+              "abstract": false,
+              "description": "Canonical patterns subclass for request context.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "error-handling": {
+          "id": "patterns/api/error-handling",
+          "name": "Error Handling",
+          "level": "class",
+          "parent": "patterns/api",
+          "abstract": true,
+          "description": "Canonical patterns class for error handling.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "problem-details": {
+              "id": "patterns/api/error-handling/problem-details",
+              "name": "Problem Details",
+              "level": "subclass",
+              "parent": "patterns/api/error-handling",
+              "abstract": false,
+              "description": "Canonical patterns subclass for problem details.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "exception-mapping": {
+              "id": "patterns/api/error-handling/exception-mapping",
+              "name": "Exception Mapping",
+              "level": "subclass",
+              "parent": "patterns/api/error-handling",
+              "abstract": false,
+              "description": "Canonical patterns subclass for exception mapping.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "versioning": {
+          "id": "patterns/api/versioning",
+          "name": "Versioning",
+          "level": "class",
+          "parent": "patterns/api",
+          "abstract": true,
+          "description": "Canonical patterns class for versioning.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "url-versioning": {
+              "id": "patterns/api/versioning/url-versioning",
+              "name": "Url Versioning",
+              "level": "subclass",
+              "parent": "patterns/api/versioning",
+              "abstract": false,
+              "description": "Canonical patterns subclass for url versioning.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "header-versioning": {
+              "id": "patterns/api/versioning/header-versioning",
+              "name": "Header Versioning",
+              "level": "subclass",
+              "parent": "patterns/api/versioning",
+              "abstract": false,
+              "description": "Canonical patterns subclass for header versioning.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "persistence": {
+      "id": "patterns/persistence",
+      "name": "Persistence",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for persistence.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "data-access": {
+          "id": "patterns/persistence/data-access",
+          "name": "Data Access",
+          "level": "class",
+          "parent": "patterns/persistence",
+          "abstract": true,
+          "description": "Canonical patterns class for data access.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "repository": {
+              "id": "patterns/persistence/data-access/repository",
+              "name": "Repository",
+              "level": "subclass",
+              "parent": "patterns/persistence/data-access",
+              "abstract": false,
+              "description": "Canonical patterns subclass for repository.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "unit-of-work": {
+              "id": "patterns/persistence/data-access/unit-of-work",
+              "name": "Unit Of Work",
+              "level": "subclass",
+              "parent": "patterns/persistence/data-access",
+              "abstract": false,
+              "description": "Canonical patterns subclass for unit of work.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "data-mapper": {
+              "id": "patterns/persistence/data-access/data-mapper",
+              "name": "Data Mapper",
+              "level": "subclass",
+              "parent": "patterns/persistence/data-access",
+              "abstract": false,
+              "description": "Canonical patterns subclass for data mapper.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "transaction": {
+          "id": "patterns/persistence/transaction",
+          "name": "Transaction",
+          "level": "class",
+          "parent": "patterns/persistence",
+          "abstract": true,
+          "description": "Canonical patterns class for transaction.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "local-transaction": {
+              "id": "patterns/persistence/transaction/local-transaction",
+              "name": "Local Transaction",
+              "level": "subclass",
+              "parent": "patterns/persistence/transaction",
+              "abstract": false,
+              "description": "Canonical patterns subclass for local transaction.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "transactional-outbox": {
+              "id": "patterns/persistence/transaction/transactional-outbox",
+              "name": "Transactional Outbox",
+              "level": "subclass",
+              "parent": "patterns/persistence/transaction",
+              "abstract": false,
+              "description": "Canonical patterns subclass for transactional outbox.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "caching": {
+          "id": "patterns/persistence/caching",
+          "name": "Caching",
+          "level": "class",
+          "parent": "patterns/persistence",
+          "abstract": true,
+          "description": "Canonical patterns class for caching.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "cache-aside": {
+              "id": "patterns/persistence/caching/cache-aside",
+              "name": "Cache Aside",
+              "level": "subclass",
+              "parent": "patterns/persistence/caching",
+              "abstract": false,
+              "description": "Canonical patterns subclass for cache aside.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "write-through": {
+              "id": "patterns/persistence/caching/write-through",
+              "name": "Write Through",
+              "level": "subclass",
+              "parent": "patterns/persistence/caching",
+              "abstract": false,
+              "description": "Canonical patterns subclass for write through.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "messaging": {
+      "id": "patterns/messaging",
+      "name": "Messaging",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for messaging.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "delivery": {
+          "id": "patterns/messaging/delivery",
+          "name": "Delivery",
+          "level": "class",
+          "parent": "patterns/messaging",
+          "abstract": true,
+          "description": "Canonical patterns class for delivery.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "at-least-once": {
+              "id": "patterns/messaging/delivery/at-least-once",
+              "name": "At Least Once",
+              "level": "subclass",
+              "parent": "patterns/messaging/delivery",
+              "abstract": false,
+              "description": "Canonical patterns subclass for at least once.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "deduplication": {
+              "id": "patterns/messaging/delivery/deduplication",
+              "name": "Deduplication",
+              "level": "subclass",
+              "parent": "patterns/messaging/delivery",
+              "abstract": false,
+              "description": "Canonical patterns subclass for deduplication.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "dead-letter": {
+              "id": "patterns/messaging/delivery/dead-letter",
+              "name": "Dead Letter",
+              "level": "subclass",
+              "parent": "patterns/messaging/delivery",
+              "abstract": false,
+              "description": "Canonical patterns subclass for dead letter.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "publishing": {
+          "id": "patterns/messaging/publishing",
+          "name": "Publishing",
+          "level": "class",
+          "parent": "patterns/messaging",
+          "abstract": true,
+          "description": "Canonical patterns class for publishing.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "transactional-outbox": {
+              "id": "patterns/messaging/publishing/transactional-outbox",
+              "name": "Transactional Outbox",
+              "level": "subclass",
+              "parent": "patterns/messaging/publishing",
+              "abstract": false,
+              "description": "Canonical patterns subclass for transactional outbox.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "event-publisher": {
+              "id": "patterns/messaging/publishing/event-publisher",
+              "name": "Event Publisher",
+              "level": "subclass",
+              "parent": "patterns/messaging/publishing",
+              "abstract": false,
+              "description": "Canonical patterns subclass for event publisher.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "consumption": {
+          "id": "patterns/messaging/consumption",
+          "name": "Consumption",
+          "level": "class",
+          "parent": "patterns/messaging",
+          "abstract": true,
+          "description": "Canonical patterns class for consumption.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "competing-consumer": {
+              "id": "patterns/messaging/consumption/competing-consumer",
+              "name": "Competing Consumer",
+              "level": "subclass",
+              "parent": "patterns/messaging/consumption",
+              "abstract": false,
+              "description": "Canonical patterns subclass for competing consumer.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "idempotent-consumer": {
+              "id": "patterns/messaging/consumption/idempotent-consumer",
+              "name": "Idempotent Consumer",
+              "level": "subclass",
+              "parent": "patterns/messaging/consumption",
+              "abstract": false,
+              "description": "Canonical patterns subclass for idempotent consumer.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "resilience": {
+      "id": "patterns/resilience",
+      "name": "Resilience",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for resilience.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "retry": {
+          "id": "patterns/resilience/retry",
+          "name": "Retry",
+          "level": "class",
+          "parent": "patterns/resilience",
+          "abstract": true,
+          "description": "Canonical patterns class for retry.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "exponential-backoff": {
+              "id": "patterns/resilience/retry/exponential-backoff",
+              "name": "Exponential Backoff",
+              "level": "subclass",
+              "parent": "patterns/resilience/retry",
+              "abstract": false,
+              "description": "Canonical patterns subclass for exponential backoff.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "bounded-retry": {
+              "id": "patterns/resilience/retry/bounded-retry",
+              "name": "Bounded Retry",
+              "level": "subclass",
+              "parent": "patterns/resilience/retry",
+              "abstract": false,
+              "description": "Canonical patterns subclass for bounded retry.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "isolation": {
+          "id": "patterns/resilience/isolation",
+          "name": "Isolation",
+          "level": "class",
+          "parent": "patterns/resilience",
+          "abstract": true,
+          "description": "Canonical patterns class for isolation.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "circuit-breaker": {
+              "id": "patterns/resilience/isolation/circuit-breaker",
+              "name": "Circuit Breaker",
+              "level": "subclass",
+              "parent": "patterns/resilience/isolation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for circuit breaker.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "bulkhead": {
+              "id": "patterns/resilience/isolation/bulkhead",
+              "name": "Bulkhead",
+              "level": "subclass",
+              "parent": "patterns/resilience/isolation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for bulkhead.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "timeout": {
+          "id": "patterns/resilience/timeout",
+          "name": "Timeout",
+          "level": "class",
+          "parent": "patterns/resilience",
+          "abstract": true,
+          "description": "Canonical patterns class for timeout.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "bounded-timeout": {
+              "id": "patterns/resilience/timeout/bounded-timeout",
+              "name": "Bounded Timeout",
+              "level": "subclass",
+              "parent": "patterns/resilience/timeout",
+              "abstract": false,
+              "description": "Canonical patterns subclass for bounded timeout.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "id": "patterns/security",
+      "name": "Security",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for security.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "authentication": {
+          "id": "patterns/security/authentication",
+          "name": "Authentication",
+          "level": "class",
+          "parent": "patterns/security",
+          "abstract": true,
+          "description": "Canonical patterns class for authentication.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "bearer-token": {
+              "id": "patterns/security/authentication/bearer-token",
+              "name": "Bearer Token",
+              "level": "subclass",
+              "parent": "patterns/security/authentication",
+              "abstract": false,
+              "description": "Canonical patterns subclass for bearer token.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "mutual-tls": {
+              "id": "patterns/security/authentication/mutual-tls",
+              "name": "Mutual Tls",
+              "level": "subclass",
+              "parent": "patterns/security/authentication",
+              "abstract": false,
+              "description": "Canonical patterns subclass for mutual tls.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "authorization": {
+          "id": "patterns/security/authorization",
+          "name": "Authorization",
+          "level": "class",
+          "parent": "patterns/security",
+          "abstract": true,
+          "description": "Canonical patterns class for authorization.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "role-based-access-control": {
+              "id": "patterns/security/authorization/role-based-access-control",
+              "name": "Role Based Access Control",
+              "level": "subclass",
+              "parent": "patterns/security/authorization",
+              "abstract": false,
+              "description": "Canonical patterns subclass for role based access control.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "policy-based-access-control": {
+              "id": "patterns/security/authorization/policy-based-access-control",
+              "name": "Policy Based Access Control",
+              "level": "subclass",
+              "parent": "patterns/security/authorization",
+              "abstract": false,
+              "description": "Canonical patterns subclass for policy based access control.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "secrets": {
+          "id": "patterns/security/secrets",
+          "name": "Secrets",
+          "level": "class",
+          "parent": "patterns/security",
+          "abstract": true,
+          "description": "Canonical patterns class for secrets.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "external-secret-store": {
+              "id": "patterns/security/secrets/external-secret-store",
+              "name": "External Secret Store",
+              "level": "subclass",
+              "parent": "patterns/security/secrets",
+              "abstract": false,
+              "description": "Canonical patterns subclass for external secret store.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "integration": {
+      "id": "patterns/integration",
+      "name": "Integration",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for integration.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "coordination": {
+          "id": "patterns/integration/coordination",
+          "name": "Coordination",
+          "level": "class",
+          "parent": "patterns/integration",
+          "abstract": true,
+          "description": "Canonical patterns class for coordination.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "saga": {
+              "id": "patterns/integration/coordination/saga",
+              "name": "Saga",
+              "level": "subclass",
+              "parent": "patterns/integration/coordination",
+              "abstract": false,
+              "description": "Canonical patterns subclass for saga.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "orchestration": {
+              "id": "patterns/integration/coordination/orchestration",
+              "name": "Orchestration",
+              "level": "subclass",
+              "parent": "patterns/integration/coordination",
+              "abstract": false,
+              "description": "Canonical patterns subclass for orchestration.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "choreography": {
+              "id": "patterns/integration/coordination/choreography",
+              "name": "Choreography",
+              "level": "subclass",
+              "parent": "patterns/integration/coordination",
+              "abstract": false,
+              "description": "Canonical patterns subclass for choreography.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "translation": {
+          "id": "patterns/integration/translation",
+          "name": "Translation",
+          "level": "class",
+          "parent": "patterns/integration",
+          "abstract": true,
+          "description": "Canonical patterns class for translation.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "anti-corruption-layer": {
+              "id": "patterns/integration/translation/anti-corruption-layer",
+              "name": "Anti Corruption Layer",
+              "level": "subclass",
+              "parent": "patterns/integration/translation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for anti corruption layer.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "canonical-data-model": {
+              "id": "patterns/integration/translation/canonical-data-model",
+              "name": "Canonical Data Model",
+              "level": "subclass",
+              "parent": "patterns/integration/translation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for canonical data model.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "observability": {
+      "id": "patterns/observability",
+      "name": "Observability",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for observability.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "correlation": {
+          "id": "patterns/observability/correlation",
+          "name": "Correlation",
+          "level": "class",
+          "parent": "patterns/observability",
+          "abstract": true,
+          "description": "Canonical patterns class for correlation.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "correlation-id-propagation": {
+              "id": "patterns/observability/correlation/correlation-id-propagation",
+              "name": "Correlation Id Propagation",
+              "level": "subclass",
+              "parent": "patterns/observability/correlation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for correlation id propagation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "trace-context-propagation": {
+              "id": "patterns/observability/correlation/trace-context-propagation",
+              "name": "Trace Context Propagation",
+              "level": "subclass",
+              "parent": "patterns/observability/correlation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for trace context propagation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "instrumentation": {
+          "id": "patterns/observability/instrumentation",
+          "name": "Instrumentation",
+          "level": "class",
+          "parent": "patterns/observability",
+          "abstract": true,
+          "description": "Canonical patterns class for instrumentation.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "structured-logging": {
+              "id": "patterns/observability/instrumentation/structured-logging",
+              "name": "Structured Logging",
+              "level": "subclass",
+              "parent": "patterns/observability/instrumentation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for structured logging.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "distributed-tracing": {
+              "id": "patterns/observability/instrumentation/distributed-tracing",
+              "name": "Distributed Tracing",
+              "level": "subclass",
+              "parent": "patterns/observability/instrumentation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for distributed tracing.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "testing": {
+      "id": "patterns/testing",
+      "name": "Testing",
+      "level": "family",
+      "parent": "patterns",
+      "abstract": true,
+      "description": "Canonical patterns family for testing.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "structure": {
+          "id": "patterns/testing/structure",
+          "name": "Structure",
+          "level": "class",
+          "parent": "patterns/testing",
+          "abstract": true,
+          "description": "Canonical patterns class for structure.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "test-pyramid": {
+              "id": "patterns/testing/structure/test-pyramid",
+              "name": "Test Pyramid",
+              "level": "subclass",
+              "parent": "patterns/testing/structure",
+              "abstract": false,
+              "description": "Canonical patterns subclass for test pyramid.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "contract-testing": {
+              "id": "patterns/testing/structure/contract-testing",
+              "name": "Contract Testing",
+              "level": "subclass",
+              "parent": "patterns/testing/structure",
+              "abstract": false,
+              "description": "Canonical patterns subclass for contract testing.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "isolation": {
+          "id": "patterns/testing/isolation",
+          "name": "Isolation",
+          "level": "class",
+          "parent": "patterns/testing",
+          "abstract": true,
+          "description": "Canonical patterns class for isolation.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "test-double": {
+              "id": "patterns/testing/isolation/test-double",
+              "name": "Test Double",
+              "level": "subclass",
+              "parent": "patterns/testing/isolation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for test double.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "fixture-factory": {
+              "id": "patterns/testing/isolation/fixture-factory",
+              "name": "Fixture Factory",
+              "level": "subclass",
+              "parent": "patterns/testing/isolation",
+              "abstract": false,
+              "description": "Canonical patterns subclass for fixture factory.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "symbol_id": "src/api/orders.py::get_order",
+  "semantic_source": "codeql",
+  "facts": {
+    "kind": "function",
+    "imports": [
+      "fastapi"
+    ],
+    "decorators": [
+      "router.get"
+    ],
+    "calls": [
+      "order_service.get"
+    ]
+  },
+  "classifications": [
+    {
+      "taxonomy_id": "code/api/handler/request-handler",
+      "rule_id": "PY_FASTAPI_ROUTE_HANDLER",
+      "classification_mode": "deterministic"
+    }
+  ]
+}

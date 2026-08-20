@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "runtimes.schema.json",
+  "title": "Runtime Registry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "providers"
+  ]
+}
