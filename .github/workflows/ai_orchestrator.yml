@@ -253,5 +253,6 @@ jobs:
           [ "${ORCHESTRATOR_DEBUG:-false}" = "true" ] && DEBUG_FLAG="--verbose"
           python pipeline/pipeline_orchestrator.py \
             --repo "$GITHUB_REPOSITORY" \
+            --headless \
             ${DEBUG_FLAG} \
             "${EXTRA_ARGS[@]}"
