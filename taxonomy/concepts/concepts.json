@@ -1,15 +1,14 @@
 {
   "$schema": "../schemas/domain-taxonomy.schema.json",
-  "schema_version": "0.2.0",
+  "schema_version": "0.3.1",
   "domain": "concepts",
-  "description": "Canonical taxonomy for the concepts domain.",
+  "purpose": "Technology-neutral engineering properties and principles.",
   "inheritance": {
     "levels": [
       "family",
       "class",
       "subclass"
     ],
-    "canonical_id_format": "concepts/<family>/<class>/<subclass>",
     "resolution": "parent-first",
     "operations": [
       "add",
@@ -24,20 +23,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for reliability.",
+      "description": "Engineering properties concerned with predictable operation under failure and retry.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -52,20 +63,19 @@
           "level": "class",
           "parent": "concepts/reliability",
           "abstract": true,
-          "description": "Canonical concepts class for idempotency.",
+          "description": "Idempotency groups concepts elements that provide idempotency responsibilities within the Reliability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -80,20 +90,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/idempotency",
               "abstract": false,
-              "description": "Canonical concepts subclass for request idempotency.",
+              "description": "Property that repeated equivalent requests do not repeat externally visible side effects.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -108,20 +117,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/idempotency",
               "abstract": false,
-              "description": "Canonical concepts subclass for message idempotency.",
+              "description": "Message Idempotency is a concept specialization of Idempotency within the Reliability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -138,20 +146,19 @@
           "level": "class",
           "parent": "concepts/reliability",
           "abstract": true,
-          "description": "Canonical concepts class for fault tolerance.",
+          "description": "Fault Tolerance groups concepts elements that provide fault tolerance responsibilities within the Reliability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -166,20 +173,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/fault-tolerance",
               "abstract": false,
-              "description": "Canonical concepts subclass for circuit breaking.",
+              "description": "Circuit Breaking is a concept specialization of Fault Tolerance within the Reliability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -194,20 +200,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/fault-tolerance",
               "abstract": false,
-              "description": "Canonical concepts subclass for graceful degradation.",
+              "description": "Graceful Degradation is a concept specialization of Fault Tolerance within the Reliability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -224,20 +229,19 @@
           "level": "class",
           "parent": "concepts/reliability",
           "abstract": true,
-          "description": "Canonical concepts class for availability.",
+          "description": "Availability groups concepts elements that provide availability responsibilities within the Reliability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -252,20 +256,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/availability",
               "abstract": false,
-              "description": "Canonical concepts subclass for redundancy.",
+              "description": "Redundancy is a concept specialization of Availability within the Reliability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -280,20 +283,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/availability",
               "abstract": false,
-              "description": "Canonical concepts subclass for failover.",
+              "description": "Failover is a concept specialization of Availability within the Reliability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -310,20 +312,19 @@
           "level": "class",
           "parent": "concepts/reliability",
           "abstract": true,
-          "description": "Canonical concepts class for retry.",
+          "description": "Retry groups concepts elements that provide retry responsibilities within the Reliability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -338,20 +339,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/retry",
               "abstract": false,
-              "description": "Canonical concepts subclass for bounded retry.",
+              "description": "Bounded Retry is a concept specialization of Retry within the Reliability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -366,20 +366,19 @@
               "level": "subclass",
               "parent": "concepts/reliability/retry",
               "abstract": false,
-              "description": "Canonical concepts subclass for exponential backoff.",
+              "description": "Exponential Backoff is a concept specialization of Retry within the Reliability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -398,20 +397,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for security.",
+      "description": "Engineering properties that protect identity, access, confidentiality, and integrity.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -426,20 +437,19 @@
           "level": "class",
           "parent": "concepts/security",
           "abstract": true,
-          "description": "Canonical concepts class for authentication.",
+          "description": "Authentication groups concepts elements that provide authentication responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -454,20 +464,19 @@
               "level": "subclass",
               "parent": "concepts/security/authentication",
               "abstract": false,
-              "description": "Canonical concepts subclass for identity verification.",
+              "description": "Identity Verification is a concept specialization of Authentication within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -482,20 +491,19 @@
               "level": "subclass",
               "parent": "concepts/security/authentication",
               "abstract": false,
-              "description": "Canonical concepts subclass for service authentication.",
+              "description": "Service Authentication is a concept specialization of Authentication within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -512,20 +520,19 @@
           "level": "class",
           "parent": "concepts/security",
           "abstract": true,
-          "description": "Canonical concepts class for authorization.",
+          "description": "Authorization groups concepts elements that provide authorization responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -540,20 +547,19 @@
               "level": "subclass",
               "parent": "concepts/security/authorization",
               "abstract": false,
-              "description": "Canonical concepts subclass for least privilege.",
+              "description": "Property that identities receive only permissions required for intended responsibilities.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -568,20 +574,19 @@
               "level": "subclass",
               "parent": "concepts/security/authorization",
               "abstract": false,
-              "description": "Canonical concepts subclass for separation of duties.",
+              "description": "Separation Of Duties is a concept specialization of Authorization within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -598,20 +603,19 @@
           "level": "class",
           "parent": "concepts/security",
           "abstract": true,
-          "description": "Canonical concepts class for confidentiality.",
+          "description": "Confidentiality groups concepts elements that provide confidentiality responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -626,20 +630,19 @@
               "level": "subclass",
               "parent": "concepts/security/confidentiality",
               "abstract": false,
-              "description": "Canonical concepts subclass for encryption at rest.",
+              "description": "Encryption At Rest is a concept specialization of Confidentiality within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -654,20 +657,19 @@
               "level": "subclass",
               "parent": "concepts/security/confidentiality",
               "abstract": false,
-              "description": "Canonical concepts subclass for encryption in transit.",
+              "description": "Encryption In Transit is a concept specialization of Confidentiality within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -684,20 +686,19 @@
           "level": "class",
           "parent": "concepts/security",
           "abstract": true,
-          "description": "Canonical concepts class for integrity.",
+          "description": "Integrity groups concepts elements that provide integrity responsibilities within the Security family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -712,20 +713,19 @@
               "level": "subclass",
               "parent": "concepts/security/integrity",
               "abstract": false,
-              "description": "Canonical concepts subclass for tamper resistance.",
+              "description": "Tamper Resistance is a concept specialization of Integrity within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -740,20 +740,19 @@
               "level": "subclass",
               "parent": "concepts/security/integrity",
               "abstract": false,
-              "description": "Canonical concepts subclass for signature verification.",
+              "description": "Signature Verification is a concept specialization of Integrity within the Security family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -772,20 +771,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for consistency.",
+      "description": "Consistency is a canonical concepts family used to classify consistency concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -800,20 +811,19 @@
           "level": "class",
           "parent": "concepts/consistency",
           "abstract": true,
-          "description": "Canonical concepts class for transaction.",
+          "description": "Transaction groups concepts elements that provide transaction responsibilities within the Consistency family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -828,20 +838,19 @@
               "level": "subclass",
               "parent": "concepts/consistency/transaction",
               "abstract": false,
-              "description": "Canonical concepts subclass for atomicity.",
+              "description": "Atomicity is a concept specialization of Transaction within the Consistency family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -856,20 +865,19 @@
               "level": "subclass",
               "parent": "concepts/consistency/transaction",
               "abstract": false,
-              "description": "Canonical concepts subclass for distributed consistency.",
+              "description": "Distributed Consistency is a concept specialization of Transaction within the Consistency family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -886,20 +894,19 @@
           "level": "class",
           "parent": "concepts/consistency",
           "abstract": true,
-          "description": "Canonical concepts class for concurrency.",
+          "description": "Concurrency groups concepts elements that provide concurrency responsibilities within the Consistency family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -914,20 +921,19 @@
               "level": "subclass",
               "parent": "concepts/consistency/concurrency",
               "abstract": false,
-              "description": "Canonical concepts subclass for optimistic concurrency.",
+              "description": "Optimistic Concurrency is a concept specialization of Concurrency within the Consistency family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -942,20 +948,19 @@
               "level": "subclass",
               "parent": "concepts/consistency/concurrency",
               "abstract": false,
-              "description": "Canonical concepts subclass for pessimistic concurrency.",
+              "description": "Pessimistic Concurrency is a concept specialization of Concurrency within the Consistency family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -974,20 +979,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for observability.",
+      "description": "Observability is a canonical concepts family used to classify observability concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1002,20 +1019,19 @@
           "level": "class",
           "parent": "concepts/observability",
           "abstract": true,
-          "description": "Canonical concepts class for telemetry.",
+          "description": "Telemetry groups concepts elements that provide telemetry responsibilities within the Observability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1030,20 +1046,19 @@
               "level": "subclass",
               "parent": "concepts/observability/telemetry",
               "abstract": false,
-              "description": "Canonical concepts subclass for logging.",
+              "description": "Logging is a concept specialization of Telemetry within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1058,20 +1073,19 @@
               "level": "subclass",
               "parent": "concepts/observability/telemetry",
               "abstract": false,
-              "description": "Canonical concepts subclass for metrics.",
+              "description": "Metrics is a concept specialization of Telemetry within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1086,20 +1100,19 @@
               "level": "subclass",
               "parent": "concepts/observability/telemetry",
               "abstract": false,
-              "description": "Canonical concepts subclass for tracing.",
+              "description": "Tracing is a concept specialization of Telemetry within the Observability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1116,20 +1129,19 @@
           "level": "class",
           "parent": "concepts/observability",
           "abstract": true,
-          "description": "Canonical concepts class for correlation.",
+          "description": "Correlation groups concepts elements that provide correlation responsibilities within the Observability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1144,20 +1156,21 @@
               "level": "subclass",
               "parent": "concepts/observability/correlation",
               "abstract": false,
-              "description": "Canonical concepts subclass for request correlation.",
+              "description": "Ability to trace related processing across components using a stable correlation context.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [
+                  "cross-component-traceability"
+                ],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1176,20 +1189,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for maintainability.",
+      "description": "Engineering properties that keep systems modular, understandable, and evolvable.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1204,20 +1229,19 @@
           "level": "class",
           "parent": "concepts/maintainability",
           "abstract": true,
-          "description": "Canonical concepts class for modularity.",
+          "description": "Modularity groups concepts elements that provide modularity responsibilities within the Maintainability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1232,20 +1256,19 @@
               "level": "subclass",
               "parent": "concepts/maintainability/modularity",
               "abstract": false,
-              "description": "Canonical concepts subclass for separation of concerns.",
+              "description": "Property that distinct responsibilities are isolated behind clear boundaries.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1260,20 +1283,19 @@
               "level": "subclass",
               "parent": "concepts/maintainability/modularity",
               "abstract": false,
-              "description": "Canonical concepts subclass for dependency inversion.",
+              "description": "Dependency Inversion is a concept specialization of Modularity within the Maintainability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1290,20 +1312,19 @@
           "level": "class",
           "parent": "concepts/maintainability",
           "abstract": true,
-          "description": "Canonical concepts class for compatibility.",
+          "description": "Compatibility groups concepts elements that provide compatibility responsibilities within the Maintainability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1318,20 +1339,19 @@
               "level": "subclass",
               "parent": "concepts/maintainability/compatibility",
               "abstract": false,
-              "description": "Canonical concepts subclass for backward compatibility.",
+              "description": "Backward Compatibility is a concept specialization of Compatibility within the Maintainability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1346,20 +1366,19 @@
               "level": "subclass",
               "parent": "concepts/maintainability/compatibility",
               "abstract": false,
-              "description": "Canonical concepts subclass for versioning.",
+              "description": "Versioning is a concept specialization of Compatibility within the Maintainability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1378,20 +1397,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for performance.",
+      "description": "Performance is a canonical concepts family used to classify performance concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1406,20 +1437,19 @@
           "level": "class",
           "parent": "concepts/performance",
           "abstract": true,
-          "description": "Canonical concepts class for latency.",
+          "description": "Latency groups concepts elements that provide latency responsibilities within the Performance family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1434,20 +1464,19 @@
               "level": "subclass",
               "parent": "concepts/performance/latency",
               "abstract": false,
-              "description": "Canonical concepts subclass for latency budget.",
+              "description": "Latency Budget is a concept specialization of Latency within the Performance family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1464,20 +1493,19 @@
           "level": "class",
           "parent": "concepts/performance",
           "abstract": true,
-          "description": "Canonical concepts class for throughput.",
+          "description": "Throughput groups concepts elements that provide throughput responsibilities within the Performance family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1492,20 +1520,19 @@
               "level": "subclass",
               "parent": "concepts/performance/throughput",
               "abstract": false,
-              "description": "Canonical concepts subclass for throughput capacity.",
+              "description": "Throughput Capacity is a concept specialization of Throughput within the Performance family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1522,20 +1549,19 @@
           "level": "class",
           "parent": "concepts/performance",
           "abstract": true,
-          "description": "Canonical concepts class for caching.",
+          "description": "Caching groups concepts elements that provide caching responsibilities within the Performance family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1550,20 +1576,19 @@
               "level": "subclass",
               "parent": "concepts/performance/caching",
               "abstract": false,
-              "description": "Canonical concepts subclass for cache locality.",
+              "description": "Cache Locality is a concept specialization of Caching within the Performance family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1582,20 +1607,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for scalability.",
+      "description": "Scalability is a canonical concepts family used to classify scalability concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1610,20 +1647,19 @@
           "level": "class",
           "parent": "concepts/scalability",
           "abstract": true,
-          "description": "Canonical concepts class for scale.",
+          "description": "Scale groups concepts elements that provide scale responsibilities within the Scalability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1638,20 +1674,19 @@
               "level": "subclass",
               "parent": "concepts/scalability/scale",
               "abstract": false,
-              "description": "Canonical concepts subclass for horizontal scaling.",
+              "description": "Horizontal Scaling is a concept specialization of Scale within the Scalability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1666,20 +1701,19 @@
               "level": "subclass",
               "parent": "concepts/scalability/scale",
               "abstract": false,
-              "description": "Canonical concepts subclass for vertical scaling.",
+              "description": "Vertical Scaling is a concept specialization of Scale within the Scalability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1696,20 +1730,19 @@
           "level": "class",
           "parent": "concepts/scalability",
           "abstract": true,
-          "description": "Canonical concepts class for partitioning.",
+          "description": "Partitioning groups concepts elements that provide partitioning responsibilities within the Scalability family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1724,20 +1757,19 @@
               "level": "subclass",
               "parent": "concepts/scalability/partitioning",
               "abstract": false,
-              "description": "Canonical concepts subclass for sharding.",
+              "description": "Sharding is a concept specialization of Partitioning within the Scalability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1752,20 +1784,19 @@
               "level": "subclass",
               "parent": "concepts/scalability/partitioning",
               "abstract": false,
-              "description": "Canonical concepts subclass for work partitioning.",
+              "description": "Work Partitioning is a concept specialization of Partitioning within the Scalability family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1784,20 +1815,32 @@
       "level": "family",
       "parent": "concepts",
       "abstract": true,
-      "description": "Canonical concepts family for data management.",
+      "description": "Data Management is a canonical concepts family used to classify data management concerns.",
+      "aliases": [],
       "attributes": {
-        "add": {},
+        "add": {
+          "verification_modes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ways the concept may be verified."
+          },
+          "quality_attribute": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the concept is a quality/property."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1812,20 +1855,19 @@
           "level": "class",
           "parent": "concepts/data-management",
           "abstract": true,
-          "description": "Canonical concepts class for governance.",
+          "description": "Governance groups concepts elements that provide governance responsibilities within the Data Management family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1840,20 +1882,19 @@
               "level": "subclass",
               "parent": "concepts/data-management/governance",
               "abstract": false,
-              "description": "Canonical concepts subclass for data classification.",
+              "description": "Data Classification is a concept specialization of Governance within the Data Management family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1868,20 +1909,19 @@
               "level": "subclass",
               "parent": "concepts/data-management/governance",
               "abstract": false,
-              "description": "Canonical concepts subclass for retention.",
+              "description": "Retention is a concept specialization of Governance within the Data Management family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1898,20 +1938,19 @@
           "level": "class",
           "parent": "concepts/data-management",
           "abstract": true,
-          "description": "Canonical concepts class for quality.",
+          "description": "Quality groups concepts elements that provide quality responsibilities within the Data Management family.",
+          "aliases": [],
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1926,20 +1965,19 @@
               "level": "subclass",
               "parent": "concepts/data-management/quality",
               "abstract": false,
-              "description": "Canonical concepts subclass for validation.",
+              "description": "Validation is a concept specialization of Quality within the Data Management family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
@@ -1954,20 +1992,19 @@
               "level": "subclass",
               "parent": "concepts/data-management/quality",
               "abstract": false,
-              "description": "Canonical concepts subclass for lineage.",
+              "description": "Lineage is a concept specialization of Quality within the Data Management family.",
+              "aliases": [],
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {

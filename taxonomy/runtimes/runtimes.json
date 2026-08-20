@@ -1,51 +1,60 @@
 {
   "$schema": "../schemas/runtimes.schema.json",
-  "schema_version": "0.2.0",
-  "description": "Provider/runtime realizations mapped to canonical architecture classes.",
+  "schema_version": "0.3.1",
+  "definition": "Cloud and on-prem runtime realizations mapped to canonical architecture classes.",
   "providers": {
     "aws": {
       "services": {
         "rds": {
+          "name": "Amazon RDS",
           "supports": [
             "architecture/data/database/relational-database"
           ]
         },
         "documentdb": {
+          "name": "Amazon DocumentDB",
           "supports": [
             "architecture/data/database/document-database"
           ]
         },
         "dynamodb": {
+          "name": "Amazon DynamoDB",
           "supports": [
             "architecture/data/database/key-value-database"
           ]
         },
         "lambda": {
+          "name": "AWS Lambda",
           "supports": [
             "architecture/compute/function/serverless-function"
           ]
         },
         "eks": {
+          "name": "Amazon EKS",
           "supports": [
             "architecture/compute/runtime/container-cluster"
           ]
         },
         "ec2": {
+          "name": "Amazon EC2",
           "supports": [
             "architecture/compute/runtime/virtual-machine"
           ]
         },
         "s3": {
+          "name": "Amazon S3",
           "supports": [
             "architecture/storage/object-store/managed-object-store"
           ]
         },
         "sqs": {
+          "name": "Amazon SQS",
           "supports": [
             "architecture/messaging/queue/message-queue"
           ]
         },
         "sns": {
+          "name": "Amazon SNS",
           "supports": [
             "architecture/messaging/topic/pub-sub-topic"
           ]
@@ -60,27 +69,32 @@
     "azure": {
       "services": {
         "postgresql-flexible-server": {
+          "name": "Azure Database for PostgreSQL Flexible Server",
           "supports": [
             "architecture/data/database/relational-database"
           ]
         },
         "cosmos-db": {
+          "name": "Azure Cosmos DB",
           "supports": [
             "architecture/data/database/document-database",
             "architecture/data/database/key-value-database"
           ]
         },
         "functions": {
+          "name": "Azure Functions",
           "supports": [
             "architecture/compute/function/serverless-function"
           ]
         },
         "aks": {
+          "name": "Azure Kubernetes Service",
           "supports": [
             "architecture/compute/runtime/container-cluster"
           ]
         },
         "blob-storage": {
+          "name": "Azure Blob Storage",
           "supports": [
             "architecture/storage/object-store/managed-object-store"
           ]
@@ -90,26 +104,31 @@
     "gcp": {
       "services": {
         "cloud-sql": {
+          "name": "Cloud SQL",
           "supports": [
             "architecture/data/database/relational-database"
           ]
         },
         "firestore": {
+          "name": "Firestore",
           "supports": [
             "architecture/data/database/document-database"
           ]
         },
         "cloud-run": {
+          "name": "Cloud Run",
           "supports": [
             "architecture/compute/service/api-service"
           ]
         },
         "gke": {
+          "name": "Google Kubernetes Engine",
           "supports": [
             "architecture/compute/runtime/container-cluster"
           ]
         },
         "cloud-storage": {
+          "name": "Cloud Storage",
           "supports": [
             "architecture/storage/object-store/managed-object-store"
           ]
@@ -124,21 +143,25 @@
     "on-prem": {
       "services": {
         "bare-metal": {
+          "name": "Bare Metal",
           "supports": [
             "architecture/compute/runtime/bare-metal-host"
           ]
         },
         "virtual-machine": {
+          "name": "Virtual Machine",
           "supports": [
             "architecture/compute/runtime/virtual-machine"
           ]
         },
         "kubernetes": {
+          "name": "Kubernetes",
           "supports": [
             "architecture/compute/runtime/container-cluster"
           ]
         },
         "physical-network": {
+          "name": "Physical Network",
           "supports": [
             "architecture/networking/network/physical-network"
           ]

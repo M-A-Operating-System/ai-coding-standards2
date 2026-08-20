@@ -1,6 +1,6 @@
 {
-  "schema_version": "0.2.0",
-  "description": "Starter semantic relationships across taxonomy domains.",
+  "schema_version": "0.3.1",
+  "definition": "Explicit semantic links across domains.",
   "relationships": [
     {
       "from": "patterns/persistence/data-access/repository",
@@ -23,14 +23,14 @@
       "to": "concepts/reliability/retry/exponential-backoff"
     },
     {
-      "from": "patterns/observability/correlation/trace-context-propagation",
-      "type": "supports-concept",
-      "to": "concepts/observability/correlation/request-correlation"
-    },
-    {
       "from": "code/api/handler/request-handler",
       "type": "typically-realizes",
       "to": "architecture/compute/service/api-service"
+    },
+    {
+      "from": "patterns/observability/correlation/trace-context-propagation",
+      "type": "supports-concept",
+      "to": "concepts/observability/correlation/request-correlation"
     }
   ]
 }

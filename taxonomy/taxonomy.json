@@ -1,8 +1,8 @@
 {
   "$schema": "schemas/taxonomy.schema.json",
-  "schema_version": "0.2.0",
+  "schema_version": "0.3.1",
   "name": "Master Engineering Taxonomy",
-  "root": "taxonomy",
+  "definition": "Shared semantic vocabulary for architecture, patterns, code roles, concepts, technology implementations, runtime realizations, standards applicability, and deterministic context selection.",
   "classification_model": {
     "semantic_levels": [
       "family",
@@ -10,8 +10,8 @@
       "subclass"
     ],
     "canonical_id_format": "<domain>/<family>/<class>/<subclass>",
-    "implementation_is_separate": true,
-    "runtime_is_separate": true,
+    "technology_products_are_implementations": true,
+    "runtime_provider_is_separate": true,
     "primitive_code_semantics_are_external": true
   },
   "domains": {
