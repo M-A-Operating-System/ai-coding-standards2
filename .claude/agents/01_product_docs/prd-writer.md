@@ -504,14 +504,7 @@ gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
 
 ---
 
-## Step 8 — Clean up temp files, then signal outcome
-
-Remove any working files created in the repo root during this run before the
-orchestrator's commit sweep picks them up:
-
-```bash
-rm -f .prd_body_*.md .prd_snapshot_*.md .tmp_*.md 2>/dev/null || true
-```
+## Step 8 — Signal outcome
 
 Emit the sentinel:
 
@@ -555,11 +548,7 @@ EOF
 )"
 ```
 
-Then clean up temp files and emit:
-
-```bash
-rm -f .prd_body_*.md .prd_snapshot_*.md .tmp_*.md 2>/dev/null || true
-```
+Then emit:
 
 ```
 AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition recommendation."
@@ -588,3 +577,7 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 - When in doubt about size, decompose.
 - Do not call `status.sh` — the orchestrator handles all label
   transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
+- Write any working files (staged comment bodies, snapshots) under
+  `$AI_AGILE_SCRATCH`. The orchestrator creates this directory empty
+  before invocation and removes it afterward -- no cleanup command
+  is needed in this prompt.

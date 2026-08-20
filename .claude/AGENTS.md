@@ -131,6 +131,41 @@ Environment variables the orchestrator exports for you:
 
 ---
 
+## Scratch files
+
+When an agent needs a working file mid-run (e.g. staging a multi-line comment
+body before posting it with `gh api`), write it under `$AI_AGILE_SCRATCH` --
+never in the repo root or any tracked path.
+
+| Variable | Value | Guarantee |
+|---|---|---|
+| `AI_AGILE_SCRATCH` | `/tmp/${SESSION_ID}` | Created empty by the orchestrator before each invocation; removed by the orchestrator after the run exits (any outcome). |
+
+**The orchestrator manages the full lifecycle** -- you do not need a cleanup
+instruction in your prompt. Writing under `$AI_AGILE_SCRATCH` is the entire
+contract.
+
+**Example:**
+
+```bash
+SCRATCH_FILE="$AI_AGILE_SCRATCH/comment_body.md"
+cat > "$SCRATCH_FILE" << 'EOF'
+<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
+...
+EOF
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -f body="$(cat "$SCRATCH_FILE")"
+```
+
+**Anti-patterns:**
+
+- Writing a scratch or staging file inside the repo root or any tracked directory.
+- Inventing an ad hoc `.{agent}_{purpose}` dot-file naming scheme instead of using `$AI_AGILE_SCRATCH`.
+- Including a cleanup instruction in an agent prompt -- the agent is not responsible for removal.
+- Assuming a repo-root cleanup glob will catch a self-invented filename -- it won't, by construction.
+
+---
+
 ## In-run task tracking
 
 Use the `TodoWrite` tool freely during your run to maintain a working

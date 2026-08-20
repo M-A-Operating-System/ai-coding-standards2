@@ -2526,6 +2526,10 @@ def _build_agent_env(
     # Axis B: every orchestrator-spawned subprocess is always headless/opaque,
     # regardless of whether the tick itself was triggered by cron or interactively.
     agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
+    # Per-run scratch directory under /tmp — outside the working tree, so it
+    # can never appear in git status or be swept into a commit. The orchestrator
+    # creates it empty before each invoke_agent call and removes it afterward.
+    agent_env["AI_AGILE_SCRATCH"] = f"/tmp/{agent_session_id}"
     # An interactive run authenticates its agents the same way the surrounding
     # session is authenticated, never with a separate API key (issue #346). Only
     # the headless/CI path, which has no session to inherit, uses
@@ -2739,6 +2743,16 @@ def invoke_agent(
     agent_env = _build_agent_env(
         os.environ, repo, work_item, agent_session_id, agent_def.session_scope
     )
+
+    # Create the per-run scratch directory empty so the agent always starts with
+    # a clean slate. Remove first to discard any debris from a prior retry or
+    # a previously-crashed run on the same SESSION_ID path.
+    scratch_dir = agent_env.get("AI_AGILE_SCRATCH", "")
+    if scratch_dir and not dry_run:
+        shutil.rmtree(scratch_dir, ignore_errors=True)
+        os.makedirs(scratch_dir, exist_ok=True)
+        global _CURRENT_SCRATCH
+        _CURRENT_SCRATCH = scratch_dir
 
     if dry_run:
         log.info(
@@ -3548,6 +3562,15 @@ def _run_agent(
             agent_def, work_item, dry_run, repo, gh,
             default_extra_tools, _agent_text_snapshot,
         )
+
+    # Remove the per-run scratch directory unconditionally after all retries
+    # complete — whether the outcome is complete, review, blocked, or failed.
+    # Read the path back from _CURRENT_SCRATCH rather than recomputing it: the
+    # formula lives in _build_agent_env alone, so the two can never diverge.
+    global _CURRENT_SCRATCH
+    if _CURRENT_SCRATCH:
+        shutil.rmtree(_CURRENT_SCRATCH, ignore_errors=True)
+        _CURRENT_SCRATCH = None
 
     return result, sentinel_status, sentinel_message, _pre_agent_branch, _invoked_at, _attempt
 
@@ -5123,10 +5146,14 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
 # termination signal (e.g. a CI or interactive timeout sending SIGTERM) can
 # clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
 _CURRENT_WIP = None
+# Scratch directory for the currently-running agent. Set in invoke_agent before
+# spawning the subprocess; cleared and removed in _run_agent after all retries.
+# Also cleaned up by _clear_inflight_wip_on_signal on SIGTERM/SIGINT.
+_CURRENT_SCRATCH: Optional[str] = None
 
 
 def _clear_inflight_wip_on_signal(signum, _frame) -> None:
-    """Best-effort: drop the in-flight :wip label, then exit.
+    """Best-effort: drop the in-flight :wip label and scratch dir, then exit.
 
     A killed tick (SIGTERM/SIGINT) otherwise leaves the work item stuck at :wip
     -- the mutex blocks the next tick from re-triggering the agent. Clearing that
@@ -5140,6 +5167,9 @@ def _clear_inflight_wip_on_signal(signum, _frame) -> None:
             log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
         except Exception as exc:
             log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
+    scratch = _CURRENT_SCRATCH
+    if scratch:
+        shutil.rmtree(scratch, ignore_errors=True)
     sys.exit(128 + signum)
 
 

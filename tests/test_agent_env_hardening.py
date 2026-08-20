@@ -118,6 +118,28 @@ class TestAgentEnvAllowlist:
         assert env["PR_NUMBER"] == "42"
         assert "ISSUE_NUMBER" not in env
 
+    def test_build_agent_env_sets_ai_agile_scratch_under_tmp(self):
+        env = _build_agent_env(
+            {"PATH": "/usr/bin"},
+            repo="owner/repo",
+            work_item=_work_item(kind="issue", number=321),
+            agent_session_id="ais-v1-coder-issue-321",
+            session_scope="per_issue",
+        )
+        assert env["AI_AGILE_SCRATCH"] == "/tmp/ais-v1-coder-issue-321"
+
+    def test_build_agent_env_scratch_path_contains_session_id(self):
+        session_id = "ais-v1-01-product-docs-prd-writer-issue-42"
+        env = _build_agent_env(
+            {"PATH": "/usr/bin"},
+            repo="owner/repo",
+            work_item=_work_item(kind="issue", number=42),
+            agent_session_id=session_id,
+            session_scope="per_issue",
+        )
+        assert env["AI_AGILE_SCRATCH"].startswith("/tmp/")
+        assert session_id in env["AI_AGILE_SCRATCH"]
+
 
 # ---------------------------------------------------------------------------
 # CR-02: base tool allowlist must not grant broad label edits
