@@ -2568,14 +2568,14 @@ def invoke_agent(
 
     The orchestrator parses the sentinel, applies the matching label, and
     posts the closing announcement. Agents must NOT call status.sh for
-    ceremony — set-wip, opening/closing announcements, and final label
+    ceremony -- set-wip, opening/closing announcements, and final label
     transitions are all handled here. set-failed is applied by the
     orchestrator when the agent exits non-zero without a sentinel after
     all retries are exhausted.
 
     Returns an AgentRunResult with success/returncode/captured_tail and
     a rate_limited flag (set when a pause was written). Caller MUST NOT
-    apply :failed when rate_limited is True — the agent never got a fair
+    apply :failed when rate_limited is True -- the agent never got a fair
     run.
     """
     resolved = _resolve_agent_invocation(
@@ -2592,7 +2592,7 @@ def invoke_agent(
     agent_model = resolved.model
     max_turns = resolved.max_turns
     agent_session_id = resolved.session_id
-    # Build env with headless execution mode — every orchestrator-spawned
+    # Build env with headless execution mode -- every orchestrator-spawned
     # subprocess is axis-B headless regardless of the tick's trigger source.
     # _build_agent_env already sets AI_AGILE_EXECUTION_MODE="headless".
     agent_env = _build_agent_env(
@@ -4544,7 +4544,7 @@ def _run_print_prompt(args) -> None:
         log.error("Could not resolve invocation for agent %s", agent_name)
         sys.exit(1)
 
-    # Build env with interactive mode — this path is used by /run-agent, not
+    # Build env with interactive mode -- this path is used by /run-agent, not
     # by a real orchestrator subprocess spawn.
     env = _build_agent_env(os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope)
     env["AI_AGILE_EXECUTION_MODE"] = "interactive"
