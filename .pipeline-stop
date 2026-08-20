@@ -1,5 +1,0 @@
-{
-  "stopped_at": "2026-08-20T00:11:39Z",
-  "reason": "User-requested halt of the scheduled orchestrator: repeated concurrent races against interactive /maos-run sessions this session (create-pr, coder, and merge-docs-pr collisions), plus unwanted ANTHROPIC_API_KEY credit usage on the scheduled path. Driving continues interactively via /maos-run.",
-  "stopped_by": "github-actions"
-}
