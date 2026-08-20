@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taxonomy.schema.json",
+  "title": "Master Taxonomy Registry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "domains",
+    "registries",
+    "mappings"
+  ]
+}

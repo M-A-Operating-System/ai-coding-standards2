@@ -1,0 +1,149 @@
+{
+  "$schema": "../schemas/runtimes.schema.json",
+  "schema_version": "0.2.0",
+  "description": "Provider/runtime realizations mapped to canonical architecture classes.",
+  "providers": {
+    "aws": {
+      "services": {
+        "rds": {
+          "supports": [
+            "architecture/data/database/relational-database"
+          ]
+        },
+        "documentdb": {
+          "supports": [
+            "architecture/data/database/document-database"
+          ]
+        },
+        "dynamodb": {
+          "supports": [
+            "architecture/data/database/key-value-database"
+          ]
+        },
+        "lambda": {
+          "supports": [
+            "architecture/compute/function/serverless-function"
+          ]
+        },
+        "eks": {
+          "supports": [
+            "architecture/compute/runtime/container-cluster"
+          ]
+        },
+        "ec2": {
+          "supports": [
+            "architecture/compute/runtime/virtual-machine"
+          ]
+        },
+        "s3": {
+          "supports": [
+            "architecture/storage/object-store/managed-object-store"
+          ]
+        },
+        "sqs": {
+          "supports": [
+            "architecture/messaging/queue/message-queue"
+          ]
+        },
+        "sns": {
+          "supports": [
+            "architecture/messaging/topic/pub-sub-topic"
+          ]
+        },
+        "eventbridge": {
+          "supports": [
+            "architecture/messaging/event-bus/event-router"
+          ]
+        }
+      }
+    },
+    "azure": {
+      "services": {
+        "postgresql-flexible-server": {
+          "supports": [
+            "architecture/data/database/relational-database"
+          ]
+        },
+        "cosmos-db": {
+          "supports": [
+            "architecture/data/database/document-database",
+            "architecture/data/database/key-value-database"
+          ]
+        },
+        "functions": {
+          "supports": [
+            "architecture/compute/function/serverless-function"
+          ]
+        },
+        "aks": {
+          "supports": [
+            "architecture/compute/runtime/container-cluster"
+          ]
+        },
+        "blob-storage": {
+          "supports": [
+            "architecture/storage/object-store/managed-object-store"
+          ]
+        }
+      }
+    },
+    "gcp": {
+      "services": {
+        "cloud-sql": {
+          "supports": [
+            "architecture/data/database/relational-database"
+          ]
+        },
+        "firestore": {
+          "supports": [
+            "architecture/data/database/document-database"
+          ]
+        },
+        "cloud-run": {
+          "supports": [
+            "architecture/compute/service/api-service"
+          ]
+        },
+        "gke": {
+          "supports": [
+            "architecture/compute/runtime/container-cluster"
+          ]
+        },
+        "cloud-storage": {
+          "supports": [
+            "architecture/storage/object-store/managed-object-store"
+          ]
+        },
+        "pubsub": {
+          "supports": [
+            "architecture/messaging/topic/pub-sub-topic"
+          ]
+        }
+      }
+    },
+    "on-prem": {
+      "services": {
+        "bare-metal": {
+          "supports": [
+            "architecture/compute/runtime/bare-metal-host"
+          ]
+        },
+        "virtual-machine": {
+          "supports": [
+            "architecture/compute/runtime/virtual-machine"
+          ]
+        },
+        "kubernetes": {
+          "supports": [
+            "architecture/compute/runtime/container-cluster"
+          ]
+        },
+        "physical-network": {
+          "supports": [
+            "architecture/networking/network/physical-network"
+          ]
+        }
+      }
+    }
+  }
+}

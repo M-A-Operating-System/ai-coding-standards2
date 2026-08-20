@@ -1,0 +1,1984 @@
+{
+  "$schema": "../schemas/domain-taxonomy.schema.json",
+  "schema_version": "0.2.0",
+  "domain": "concepts",
+  "description": "Canonical taxonomy for the concepts domain.",
+  "inheritance": {
+    "levels": [
+      "family",
+      "class",
+      "subclass"
+    ],
+    "canonical_id_format": "concepts/<family>/<class>/<subclass>",
+    "resolution": "parent-first",
+    "operations": [
+      "add",
+      "override",
+      "drop"
+    ]
+  },
+  "families": {
+    "reliability": {
+      "id": "concepts/reliability",
+      "name": "Reliability",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for reliability.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "idempotency": {
+          "id": "concepts/reliability/idempotency",
+          "name": "Idempotency",
+          "level": "class",
+          "parent": "concepts/reliability",
+          "abstract": true,
+          "description": "Canonical concepts class for idempotency.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "request-idempotency": {
+              "id": "concepts/reliability/idempotency/request-idempotency",
+              "name": "Request Idempotency",
+              "level": "subclass",
+              "parent": "concepts/reliability/idempotency",
+              "abstract": false,
+              "description": "Canonical concepts subclass for request idempotency.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "message-idempotency": {
+              "id": "concepts/reliability/idempotency/message-idempotency",
+              "name": "Message Idempotency",
+              "level": "subclass",
+              "parent": "concepts/reliability/idempotency",
+              "abstract": false,
+              "description": "Canonical concepts subclass for message idempotency.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "fault-tolerance": {
+          "id": "concepts/reliability/fault-tolerance",
+          "name": "Fault Tolerance",
+          "level": "class",
+          "parent": "concepts/reliability",
+          "abstract": true,
+          "description": "Canonical concepts class for fault tolerance.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "circuit-breaking": {
+              "id": "concepts/reliability/fault-tolerance/circuit-breaking",
+              "name": "Circuit Breaking",
+              "level": "subclass",
+              "parent": "concepts/reliability/fault-tolerance",
+              "abstract": false,
+              "description": "Canonical concepts subclass for circuit breaking.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "graceful-degradation": {
+              "id": "concepts/reliability/fault-tolerance/graceful-degradation",
+              "name": "Graceful Degradation",
+              "level": "subclass",
+              "parent": "concepts/reliability/fault-tolerance",
+              "abstract": false,
+              "description": "Canonical concepts subclass for graceful degradation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "availability": {
+          "id": "concepts/reliability/availability",
+          "name": "Availability",
+          "level": "class",
+          "parent": "concepts/reliability",
+          "abstract": true,
+          "description": "Canonical concepts class for availability.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "redundancy": {
+              "id": "concepts/reliability/availability/redundancy",
+              "name": "Redundancy",
+              "level": "subclass",
+              "parent": "concepts/reliability/availability",
+              "abstract": false,
+              "description": "Canonical concepts subclass for redundancy.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "failover": {
+              "id": "concepts/reliability/availability/failover",
+              "name": "Failover",
+              "level": "subclass",
+              "parent": "concepts/reliability/availability",
+              "abstract": false,
+              "description": "Canonical concepts subclass for failover.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "retry": {
+          "id": "concepts/reliability/retry",
+          "name": "Retry",
+          "level": "class",
+          "parent": "concepts/reliability",
+          "abstract": true,
+          "description": "Canonical concepts class for retry.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "bounded-retry": {
+              "id": "concepts/reliability/retry/bounded-retry",
+              "name": "Bounded Retry",
+              "level": "subclass",
+              "parent": "concepts/reliability/retry",
+              "abstract": false,
+              "description": "Canonical concepts subclass for bounded retry.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "exponential-backoff": {
+              "id": "concepts/reliability/retry/exponential-backoff",
+              "name": "Exponential Backoff",
+              "level": "subclass",
+              "parent": "concepts/reliability/retry",
+              "abstract": false,
+              "description": "Canonical concepts subclass for exponential backoff.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "id": "concepts/security",
+      "name": "Security",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for security.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "authentication": {
+          "id": "concepts/security/authentication",
+          "name": "Authentication",
+          "level": "class",
+          "parent": "concepts/security",
+          "abstract": true,
+          "description": "Canonical concepts class for authentication.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "identity-verification": {
+              "id": "concepts/security/authentication/identity-verification",
+              "name": "Identity Verification",
+              "level": "subclass",
+              "parent": "concepts/security/authentication",
+              "abstract": false,
+              "description": "Canonical concepts subclass for identity verification.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "service-authentication": {
+              "id": "concepts/security/authentication/service-authentication",
+              "name": "Service Authentication",
+              "level": "subclass",
+              "parent": "concepts/security/authentication",
+              "abstract": false,
+              "description": "Canonical concepts subclass for service authentication.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "authorization": {
+          "id": "concepts/security/authorization",
+          "name": "Authorization",
+          "level": "class",
+          "parent": "concepts/security",
+          "abstract": true,
+          "description": "Canonical concepts class for authorization.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "least-privilege": {
+              "id": "concepts/security/authorization/least-privilege",
+              "name": "Least Privilege",
+              "level": "subclass",
+              "parent": "concepts/security/authorization",
+              "abstract": false,
+              "description": "Canonical concepts subclass for least privilege.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "separation-of-duties": {
+              "id": "concepts/security/authorization/separation-of-duties",
+              "name": "Separation Of Duties",
+              "level": "subclass",
+              "parent": "concepts/security/authorization",
+              "abstract": false,
+              "description": "Canonical concepts subclass for separation of duties.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "confidentiality": {
+          "id": "concepts/security/confidentiality",
+          "name": "Confidentiality",
+          "level": "class",
+          "parent": "concepts/security",
+          "abstract": true,
+          "description": "Canonical concepts class for confidentiality.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "encryption-at-rest": {
+              "id": "concepts/security/confidentiality/encryption-at-rest",
+              "name": "Encryption At Rest",
+              "level": "subclass",
+              "parent": "concepts/security/confidentiality",
+              "abstract": false,
+              "description": "Canonical concepts subclass for encryption at rest.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "encryption-in-transit": {
+              "id": "concepts/security/confidentiality/encryption-in-transit",
+              "name": "Encryption In Transit",
+              "level": "subclass",
+              "parent": "concepts/security/confidentiality",
+              "abstract": false,
+              "description": "Canonical concepts subclass for encryption in transit.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "integrity": {
+          "id": "concepts/security/integrity",
+          "name": "Integrity",
+          "level": "class",
+          "parent": "concepts/security",
+          "abstract": true,
+          "description": "Canonical concepts class for integrity.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "tamper-resistance": {
+              "id": "concepts/security/integrity/tamper-resistance",
+              "name": "Tamper Resistance",
+              "level": "subclass",
+              "parent": "concepts/security/integrity",
+              "abstract": false,
+              "description": "Canonical concepts subclass for tamper resistance.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "signature-verification": {
+              "id": "concepts/security/integrity/signature-verification",
+              "name": "Signature Verification",
+              "level": "subclass",
+              "parent": "concepts/security/integrity",
+              "abstract": false,
+              "description": "Canonical concepts subclass for signature verification.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "consistency": {
+      "id": "concepts/consistency",
+      "name": "Consistency",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for consistency.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "transaction": {
+          "id": "concepts/consistency/transaction",
+          "name": "Transaction",
+          "level": "class",
+          "parent": "concepts/consistency",
+          "abstract": true,
+          "description": "Canonical concepts class for transaction.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "atomicity": {
+              "id": "concepts/consistency/transaction/atomicity",
+              "name": "Atomicity",
+              "level": "subclass",
+              "parent": "concepts/consistency/transaction",
+              "abstract": false,
+              "description": "Canonical concepts subclass for atomicity.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "distributed-consistency": {
+              "id": "concepts/consistency/transaction/distributed-consistency",
+              "name": "Distributed Consistency",
+              "level": "subclass",
+              "parent": "concepts/consistency/transaction",
+              "abstract": false,
+              "description": "Canonical concepts subclass for distributed consistency.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "concurrency": {
+          "id": "concepts/consistency/concurrency",
+          "name": "Concurrency",
+          "level": "class",
+          "parent": "concepts/consistency",
+          "abstract": true,
+          "description": "Canonical concepts class for concurrency.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "optimistic-concurrency": {
+              "id": "concepts/consistency/concurrency/optimistic-concurrency",
+              "name": "Optimistic Concurrency",
+              "level": "subclass",
+              "parent": "concepts/consistency/concurrency",
+              "abstract": false,
+              "description": "Canonical concepts subclass for optimistic concurrency.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "pessimistic-concurrency": {
+              "id": "concepts/consistency/concurrency/pessimistic-concurrency",
+              "name": "Pessimistic Concurrency",
+              "level": "subclass",
+              "parent": "concepts/consistency/concurrency",
+              "abstract": false,
+              "description": "Canonical concepts subclass for pessimistic concurrency.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "observability": {
+      "id": "concepts/observability",
+      "name": "Observability",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for observability.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "telemetry": {
+          "id": "concepts/observability/telemetry",
+          "name": "Telemetry",
+          "level": "class",
+          "parent": "concepts/observability",
+          "abstract": true,
+          "description": "Canonical concepts class for telemetry.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "logging": {
+              "id": "concepts/observability/telemetry/logging",
+              "name": "Logging",
+              "level": "subclass",
+              "parent": "concepts/observability/telemetry",
+              "abstract": false,
+              "description": "Canonical concepts subclass for logging.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "metrics": {
+              "id": "concepts/observability/telemetry/metrics",
+              "name": "Metrics",
+              "level": "subclass",
+              "parent": "concepts/observability/telemetry",
+              "abstract": false,
+              "description": "Canonical concepts subclass for metrics.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "tracing": {
+              "id": "concepts/observability/telemetry/tracing",
+              "name": "Tracing",
+              "level": "subclass",
+              "parent": "concepts/observability/telemetry",
+              "abstract": false,
+              "description": "Canonical concepts subclass for tracing.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "correlation": {
+          "id": "concepts/observability/correlation",
+          "name": "Correlation",
+          "level": "class",
+          "parent": "concepts/observability",
+          "abstract": true,
+          "description": "Canonical concepts class for correlation.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "request-correlation": {
+              "id": "concepts/observability/correlation/request-correlation",
+              "name": "Request Correlation",
+              "level": "subclass",
+              "parent": "concepts/observability/correlation",
+              "abstract": false,
+              "description": "Canonical concepts subclass for request correlation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "maintainability": {
+      "id": "concepts/maintainability",
+      "name": "Maintainability",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for maintainability.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "modularity": {
+          "id": "concepts/maintainability/modularity",
+          "name": "Modularity",
+          "level": "class",
+          "parent": "concepts/maintainability",
+          "abstract": true,
+          "description": "Canonical concepts class for modularity.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "separation-of-concerns": {
+              "id": "concepts/maintainability/modularity/separation-of-concerns",
+              "name": "Separation Of Concerns",
+              "level": "subclass",
+              "parent": "concepts/maintainability/modularity",
+              "abstract": false,
+              "description": "Canonical concepts subclass for separation of concerns.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "dependency-inversion": {
+              "id": "concepts/maintainability/modularity/dependency-inversion",
+              "name": "Dependency Inversion",
+              "level": "subclass",
+              "parent": "concepts/maintainability/modularity",
+              "abstract": false,
+              "description": "Canonical concepts subclass for dependency inversion.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "compatibility": {
+          "id": "concepts/maintainability/compatibility",
+          "name": "Compatibility",
+          "level": "class",
+          "parent": "concepts/maintainability",
+          "abstract": true,
+          "description": "Canonical concepts class for compatibility.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "backward-compatibility": {
+              "id": "concepts/maintainability/compatibility/backward-compatibility",
+              "name": "Backward Compatibility",
+              "level": "subclass",
+              "parent": "concepts/maintainability/compatibility",
+              "abstract": false,
+              "description": "Canonical concepts subclass for backward compatibility.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "versioning": {
+              "id": "concepts/maintainability/compatibility/versioning",
+              "name": "Versioning",
+              "level": "subclass",
+              "parent": "concepts/maintainability/compatibility",
+              "abstract": false,
+              "description": "Canonical concepts subclass for versioning.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "performance": {
+      "id": "concepts/performance",
+      "name": "Performance",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for performance.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "latency": {
+          "id": "concepts/performance/latency",
+          "name": "Latency",
+          "level": "class",
+          "parent": "concepts/performance",
+          "abstract": true,
+          "description": "Canonical concepts class for latency.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "latency-budget": {
+              "id": "concepts/performance/latency/latency-budget",
+              "name": "Latency Budget",
+              "level": "subclass",
+              "parent": "concepts/performance/latency",
+              "abstract": false,
+              "description": "Canonical concepts subclass for latency budget.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "throughput": {
+          "id": "concepts/performance/throughput",
+          "name": "Throughput",
+          "level": "class",
+          "parent": "concepts/performance",
+          "abstract": true,
+          "description": "Canonical concepts class for throughput.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "throughput-capacity": {
+              "id": "concepts/performance/throughput/throughput-capacity",
+              "name": "Throughput Capacity",
+              "level": "subclass",
+              "parent": "concepts/performance/throughput",
+              "abstract": false,
+              "description": "Canonical concepts subclass for throughput capacity.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "caching": {
+          "id": "concepts/performance/caching",
+          "name": "Caching",
+          "level": "class",
+          "parent": "concepts/performance",
+          "abstract": true,
+          "description": "Canonical concepts class for caching.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "cache-locality": {
+              "id": "concepts/performance/caching/cache-locality",
+              "name": "Cache Locality",
+              "level": "subclass",
+              "parent": "concepts/performance/caching",
+              "abstract": false,
+              "description": "Canonical concepts subclass for cache locality.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "scalability": {
+      "id": "concepts/scalability",
+      "name": "Scalability",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for scalability.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "scale": {
+          "id": "concepts/scalability/scale",
+          "name": "Scale",
+          "level": "class",
+          "parent": "concepts/scalability",
+          "abstract": true,
+          "description": "Canonical concepts class for scale.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "horizontal-scaling": {
+              "id": "concepts/scalability/scale/horizontal-scaling",
+              "name": "Horizontal Scaling",
+              "level": "subclass",
+              "parent": "concepts/scalability/scale",
+              "abstract": false,
+              "description": "Canonical concepts subclass for horizontal scaling.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "vertical-scaling": {
+              "id": "concepts/scalability/scale/vertical-scaling",
+              "name": "Vertical Scaling",
+              "level": "subclass",
+              "parent": "concepts/scalability/scale",
+              "abstract": false,
+              "description": "Canonical concepts subclass for vertical scaling.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "partitioning": {
+          "id": "concepts/scalability/partitioning",
+          "name": "Partitioning",
+          "level": "class",
+          "parent": "concepts/scalability",
+          "abstract": true,
+          "description": "Canonical concepts class for partitioning.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "sharding": {
+              "id": "concepts/scalability/partitioning/sharding",
+              "name": "Sharding",
+              "level": "subclass",
+              "parent": "concepts/scalability/partitioning",
+              "abstract": false,
+              "description": "Canonical concepts subclass for sharding.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "work-partitioning": {
+              "id": "concepts/scalability/partitioning/work-partitioning",
+              "name": "Work Partitioning",
+              "level": "subclass",
+              "parent": "concepts/scalability/partitioning",
+              "abstract": false,
+              "description": "Canonical concepts subclass for work partitioning.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "data-management": {
+      "id": "concepts/data-management",
+      "name": "Data Management",
+      "level": "family",
+      "parent": "concepts",
+      "abstract": true,
+      "description": "Canonical concepts family for data management.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "governance": {
+          "id": "concepts/data-management/governance",
+          "name": "Governance",
+          "level": "class",
+          "parent": "concepts/data-management",
+          "abstract": true,
+          "description": "Canonical concepts class for governance.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "data-classification": {
+              "id": "concepts/data-management/governance/data-classification",
+              "name": "Data Classification",
+              "level": "subclass",
+              "parent": "concepts/data-management/governance",
+              "abstract": false,
+              "description": "Canonical concepts subclass for data classification.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "retention": {
+              "id": "concepts/data-management/governance/retention",
+              "name": "Retention",
+              "level": "subclass",
+              "parent": "concepts/data-management/governance",
+              "abstract": false,
+              "description": "Canonical concepts subclass for retention.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "quality": {
+          "id": "concepts/data-management/quality",
+          "name": "Quality",
+          "level": "class",
+          "parent": "concepts/data-management",
+          "abstract": true,
+          "description": "Canonical concepts class for quality.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "validation": {
+              "id": "concepts/data-management/quality/validation",
+              "name": "Validation",
+              "level": "subclass",
+              "parent": "concepts/data-management/quality",
+              "abstract": false,
+              "description": "Canonical concepts subclass for validation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "lineage": {
+              "id": "concepts/data-management/quality/lineage",
+              "name": "Lineage",
+              "level": "subclass",
+              "parent": "concepts/data-management/quality",
+              "abstract": false,
+              "description": "Canonical concepts subclass for lineage.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

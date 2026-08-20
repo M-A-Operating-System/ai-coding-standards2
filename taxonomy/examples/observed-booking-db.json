@@ -1,0 +1,11 @@
+{
+  "id": "booking-db",
+  "classification": "architecture/data/database/relational-database",
+  "implementation": "postgresql",
+  "runtime": "aws/rds",
+  "provenance": {
+    "mode": "observed",
+    "source_type": "aws-discovery",
+    "source_id": "arn:aws:rds:us-east-1:123456789012:db:booking-db"
+  }
+}

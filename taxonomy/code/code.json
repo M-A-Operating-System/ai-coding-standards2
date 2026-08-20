@@ -1,0 +1,2134 @@
+{
+  "$schema": "../schemas/domain-taxonomy.schema.json",
+  "schema_version": "0.2.0",
+  "domain": "code",
+  "description": "Canonical taxonomy for the code domain.",
+  "inheritance": {
+    "levels": [
+      "family",
+      "class",
+      "subclass"
+    ],
+    "canonical_id_format": "code/<family>/<class>/<subclass>",
+    "resolution": "parent-first",
+    "operations": [
+      "add",
+      "override",
+      "drop"
+    ]
+  },
+  "families": {
+    "api": {
+      "id": "code/api",
+      "name": "Api",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for api.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "handler": {
+          "id": "code/api/handler",
+          "name": "Handler",
+          "level": "class",
+          "parent": "code/api",
+          "abstract": true,
+          "description": "Canonical code class for handler.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "request-handler": {
+              "id": "code/api/handler/request-handler",
+              "name": "Request Handler",
+              "level": "subclass",
+              "parent": "code/api/handler",
+              "abstract": false,
+              "description": "Canonical code subclass for request handler.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "command-handler": {
+              "id": "code/api/handler/command-handler",
+              "name": "Command Handler",
+              "level": "subclass",
+              "parent": "code/api/handler",
+              "abstract": false,
+              "description": "Canonical code subclass for command handler.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "middleware": {
+          "id": "code/api/middleware",
+          "name": "Middleware",
+          "level": "class",
+          "parent": "code/api",
+          "abstract": true,
+          "description": "Canonical code class for middleware.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "request-middleware": {
+              "id": "code/api/middleware/request-middleware",
+              "name": "Request Middleware",
+              "level": "subclass",
+              "parent": "code/api/middleware",
+              "abstract": false,
+              "description": "Canonical code subclass for request middleware.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "error-middleware": {
+              "id": "code/api/middleware/error-middleware",
+              "name": "Error Middleware",
+              "level": "subclass",
+              "parent": "code/api/middleware",
+              "abstract": false,
+              "description": "Canonical code subclass for error middleware.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "contract": {
+          "id": "code/api/contract",
+          "name": "Contract",
+          "level": "class",
+          "parent": "code/api",
+          "abstract": true,
+          "description": "Canonical code class for contract.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "request-schema": {
+              "id": "code/api/contract/request-schema",
+              "name": "Request Schema",
+              "level": "subclass",
+              "parent": "code/api/contract",
+              "abstract": false,
+              "description": "Canonical code subclass for request schema.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "response-schema": {
+              "id": "code/api/contract/response-schema",
+              "name": "Response Schema",
+              "level": "subclass",
+              "parent": "code/api/contract",
+              "abstract": false,
+              "description": "Canonical code subclass for response schema.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "domain": {
+      "id": "code/domain",
+      "name": "Domain",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for domain.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "model": {
+          "id": "code/domain/model",
+          "name": "Model",
+          "level": "class",
+          "parent": "code/domain",
+          "abstract": true,
+          "description": "Canonical code class for model.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "entity": {
+              "id": "code/domain/model/entity",
+              "name": "Entity",
+              "level": "subclass",
+              "parent": "code/domain/model",
+              "abstract": false,
+              "description": "Canonical code subclass for entity.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "value-object": {
+              "id": "code/domain/model/value-object",
+              "name": "Value Object",
+              "level": "subclass",
+              "parent": "code/domain/model",
+              "abstract": false,
+              "description": "Canonical code subclass for value object.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "aggregate-root": {
+              "id": "code/domain/model/aggregate-root",
+              "name": "Aggregate Root",
+              "level": "subclass",
+              "parent": "code/domain/model",
+              "abstract": false,
+              "description": "Canonical code subclass for aggregate root.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "service": {
+          "id": "code/domain/service",
+          "name": "Service",
+          "level": "class",
+          "parent": "code/domain",
+          "abstract": true,
+          "description": "Canonical code class for service.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "domain-service": {
+              "id": "code/domain/service/domain-service",
+              "name": "Domain Service",
+              "level": "subclass",
+              "parent": "code/domain/service",
+              "abstract": false,
+              "description": "Canonical code subclass for domain service.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "event": {
+          "id": "code/domain/event",
+          "name": "Event",
+          "level": "class",
+          "parent": "code/domain",
+          "abstract": true,
+          "description": "Canonical code class for event.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "domain-event": {
+              "id": "code/domain/event/domain-event",
+              "name": "Domain Event",
+              "level": "subclass",
+              "parent": "code/domain/event",
+              "abstract": false,
+              "description": "Canonical code subclass for domain event.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "persistence": {
+      "id": "code/persistence",
+      "name": "Persistence",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for persistence.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "repository": {
+          "id": "code/persistence/repository",
+          "name": "Repository",
+          "level": "class",
+          "parent": "code/persistence",
+          "abstract": true,
+          "description": "Canonical code class for repository.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "repository-interface": {
+              "id": "code/persistence/repository/repository-interface",
+              "name": "Repository Interface",
+              "level": "subclass",
+              "parent": "code/persistence/repository",
+              "abstract": false,
+              "description": "Canonical code subclass for repository interface.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "repository-implementation": {
+              "id": "code/persistence/repository/repository-implementation",
+              "name": "Repository Implementation",
+              "level": "subclass",
+              "parent": "code/persistence/repository",
+              "abstract": false,
+              "description": "Canonical code subclass for repository implementation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "mapper": {
+          "id": "code/persistence/mapper",
+          "name": "Mapper",
+          "level": "class",
+          "parent": "code/persistence",
+          "abstract": true,
+          "description": "Canonical code class for mapper.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "data-mapper": {
+              "id": "code/persistence/mapper/data-mapper",
+              "name": "Data Mapper",
+              "level": "subclass",
+              "parent": "code/persistence/mapper",
+              "abstract": false,
+              "description": "Canonical code subclass for data mapper.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "transaction": {
+          "id": "code/persistence/transaction",
+          "name": "Transaction",
+          "level": "class",
+          "parent": "code/persistence",
+          "abstract": true,
+          "description": "Canonical code class for transaction.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "unit-of-work": {
+              "id": "code/persistence/transaction/unit-of-work",
+              "name": "Unit Of Work",
+              "level": "subclass",
+              "parent": "code/persistence/transaction",
+              "abstract": false,
+              "description": "Canonical code subclass for unit of work.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "messaging": {
+      "id": "code/messaging",
+      "name": "Messaging",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for messaging.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "consumer": {
+          "id": "code/messaging/consumer",
+          "name": "Consumer",
+          "level": "class",
+          "parent": "code/messaging",
+          "abstract": true,
+          "description": "Canonical code class for consumer.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "message-consumer": {
+              "id": "code/messaging/consumer/message-consumer",
+              "name": "Message Consumer",
+              "level": "subclass",
+              "parent": "code/messaging/consumer",
+              "abstract": false,
+              "description": "Canonical code subclass for message consumer.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "producer": {
+          "id": "code/messaging/producer",
+          "name": "Producer",
+          "level": "class",
+          "parent": "code/messaging",
+          "abstract": true,
+          "description": "Canonical code class for producer.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "message-producer": {
+              "id": "code/messaging/producer/message-producer",
+              "name": "Message Producer",
+              "level": "subclass",
+              "parent": "code/messaging/producer",
+              "abstract": false,
+              "description": "Canonical code subclass for message producer.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "contract": {
+          "id": "code/messaging/contract",
+          "name": "Contract",
+          "level": "class",
+          "parent": "code/messaging",
+          "abstract": true,
+          "description": "Canonical code class for contract.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "message-schema": {
+              "id": "code/messaging/contract/message-schema",
+              "name": "Message Schema",
+              "level": "subclass",
+              "parent": "code/messaging/contract",
+              "abstract": false,
+              "description": "Canonical code subclass for message schema.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "testing": {
+      "id": "code/testing",
+      "name": "Testing",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for testing.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "double": {
+          "id": "code/testing/double",
+          "name": "Double",
+          "level": "class",
+          "parent": "code/testing",
+          "abstract": true,
+          "description": "Canonical code class for double.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "mock": {
+              "id": "code/testing/double/mock",
+              "name": "Mock",
+              "level": "subclass",
+              "parent": "code/testing/double",
+              "abstract": false,
+              "description": "Canonical code subclass for mock.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "stub": {
+              "id": "code/testing/double/stub",
+              "name": "Stub",
+              "level": "subclass",
+              "parent": "code/testing/double",
+              "abstract": false,
+              "description": "Canonical code subclass for stub.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "fake": {
+              "id": "code/testing/double/fake",
+              "name": "Fake",
+              "level": "subclass",
+              "parent": "code/testing/double",
+              "abstract": false,
+              "description": "Canonical code subclass for fake.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "fixture": {
+          "id": "code/testing/fixture",
+          "name": "Fixture",
+          "level": "class",
+          "parent": "code/testing",
+          "abstract": true,
+          "description": "Canonical code class for fixture.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "test-fixture": {
+              "id": "code/testing/fixture/test-fixture",
+              "name": "Test Fixture",
+              "level": "subclass",
+              "parent": "code/testing/fixture",
+              "abstract": false,
+              "description": "Canonical code subclass for test fixture.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "test": {
+          "id": "code/testing/test",
+          "name": "Test",
+          "level": "class",
+          "parent": "code/testing",
+          "abstract": true,
+          "description": "Canonical code class for test.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "unit-test": {
+              "id": "code/testing/test/unit-test",
+              "name": "Unit Test",
+              "level": "subclass",
+              "parent": "code/testing/test",
+              "abstract": false,
+              "description": "Canonical code subclass for unit test.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "integration-test": {
+              "id": "code/testing/test/integration-test",
+              "name": "Integration Test",
+              "level": "subclass",
+              "parent": "code/testing/test",
+              "abstract": false,
+              "description": "Canonical code subclass for integration test.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "contract-test": {
+              "id": "code/testing/test/contract-test",
+              "name": "Contract Test",
+              "level": "subclass",
+              "parent": "code/testing/test",
+              "abstract": false,
+              "description": "Canonical code subclass for contract test.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "end-to-end-test": {
+              "id": "code/testing/test/end-to-end-test",
+              "name": "End To End Test",
+              "level": "subclass",
+              "parent": "code/testing/test",
+              "abstract": false,
+              "description": "Canonical code subclass for end to end test.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "configuration": {
+      "id": "code/configuration",
+      "name": "Configuration",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for configuration.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "settings": {
+          "id": "code/configuration/settings",
+          "name": "Settings",
+          "level": "class",
+          "parent": "code/configuration",
+          "abstract": true,
+          "description": "Canonical code class for settings.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "application-settings": {
+              "id": "code/configuration/settings/application-settings",
+              "name": "Application Settings",
+              "level": "subclass",
+              "parent": "code/configuration/settings",
+              "abstract": false,
+              "description": "Canonical code subclass for application settings.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "environment-settings": {
+              "id": "code/configuration/settings/environment-settings",
+              "name": "Environment Settings",
+              "level": "subclass",
+              "parent": "code/configuration/settings",
+              "abstract": false,
+              "description": "Canonical code subclass for environment settings.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "feature": {
+          "id": "code/configuration/feature",
+          "name": "Feature",
+          "level": "class",
+          "parent": "code/configuration",
+          "abstract": true,
+          "description": "Canonical code class for feature.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "feature-flag": {
+              "id": "code/configuration/feature/feature-flag",
+              "name": "Feature Flag",
+              "level": "subclass",
+              "parent": "code/configuration/feature",
+              "abstract": false,
+              "description": "Canonical code subclass for feature flag.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "id": "code/security",
+      "name": "Security",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for security.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "authentication": {
+          "id": "code/security/authentication",
+          "name": "Authentication",
+          "level": "class",
+          "parent": "code/security",
+          "abstract": true,
+          "description": "Canonical code class for authentication.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "authentication-handler": {
+              "id": "code/security/authentication/authentication-handler",
+              "name": "Authentication Handler",
+              "level": "subclass",
+              "parent": "code/security/authentication",
+              "abstract": false,
+              "description": "Canonical code subclass for authentication handler.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "authorization": {
+          "id": "code/security/authorization",
+          "name": "Authorization",
+          "level": "class",
+          "parent": "code/security",
+          "abstract": true,
+          "description": "Canonical code class for authorization.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "authorization-handler": {
+              "id": "code/security/authorization/authorization-handler",
+              "name": "Authorization Handler",
+              "level": "subclass",
+              "parent": "code/security/authorization",
+              "abstract": false,
+              "description": "Canonical code subclass for authorization handler.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "validation": {
+          "id": "code/security/validation",
+          "name": "Validation",
+          "level": "class",
+          "parent": "code/security",
+          "abstract": true,
+          "description": "Canonical code class for validation.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "input-validator": {
+              "id": "code/security/validation/input-validator",
+              "name": "Input Validator",
+              "level": "subclass",
+              "parent": "code/security/validation",
+              "abstract": false,
+              "description": "Canonical code subclass for input validator.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "observability": {
+      "id": "code/observability",
+      "name": "Observability",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for observability.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "logging": {
+          "id": "code/observability/logging",
+          "name": "Logging",
+          "level": "class",
+          "parent": "code/observability",
+          "abstract": true,
+          "description": "Canonical code class for logging.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "structured-logger": {
+              "id": "code/observability/logging/structured-logger",
+              "name": "Structured Logger",
+              "level": "subclass",
+              "parent": "code/observability/logging",
+              "abstract": false,
+              "description": "Canonical code subclass for structured logger.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "metrics": {
+          "id": "code/observability/metrics",
+          "name": "Metrics",
+          "level": "class",
+          "parent": "code/observability",
+          "abstract": true,
+          "description": "Canonical code class for metrics.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "metrics-instrumentation": {
+              "id": "code/observability/metrics/metrics-instrumentation",
+              "name": "Metrics Instrumentation",
+              "level": "subclass",
+              "parent": "code/observability/metrics",
+              "abstract": false,
+              "description": "Canonical code subclass for metrics instrumentation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "tracing": {
+          "id": "code/observability/tracing",
+          "name": "Tracing",
+          "level": "class",
+          "parent": "code/observability",
+          "abstract": true,
+          "description": "Canonical code class for tracing.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "trace-instrumentation": {
+              "id": "code/observability/tracing/trace-instrumentation",
+              "name": "Trace Instrumentation",
+              "level": "subclass",
+              "parent": "code/observability/tracing",
+              "abstract": false,
+              "description": "Canonical code subclass for trace instrumentation.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "integration": {
+      "id": "code/integration",
+      "name": "Integration",
+      "level": "family",
+      "parent": "code",
+      "abstract": true,
+      "description": "Canonical code family for integration.",
+      "attributes": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "capabilities": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "relationships": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "constraints": {
+        "add": {},
+        "override": {},
+        "drop": []
+      },
+      "classes": {
+        "client": {
+          "id": "code/integration/client",
+          "name": "Client",
+          "level": "class",
+          "parent": "code/integration",
+          "abstract": true,
+          "description": "Canonical code class for client.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "api-client": {
+              "id": "code/integration/client/api-client",
+              "name": "Api Client",
+              "level": "subclass",
+              "parent": "code/integration/client",
+              "abstract": false,
+              "description": "Canonical code subclass for api client.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "database-client": {
+              "id": "code/integration/client/database-client",
+              "name": "Database Client",
+              "level": "subclass",
+              "parent": "code/integration/client",
+              "abstract": false,
+              "description": "Canonical code subclass for database client.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            },
+            "message-client": {
+              "id": "code/integration/client/message-client",
+              "name": "Message Client",
+              "level": "subclass",
+              "parent": "code/integration/client",
+              "abstract": false,
+              "description": "Canonical code subclass for message client.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        },
+        "adapter": {
+          "id": "code/integration/adapter",
+          "name": "Adapter",
+          "level": "class",
+          "parent": "code/integration",
+          "abstract": true,
+          "description": "Canonical code class for adapter.",
+          "attributes": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "capabilities": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "relationships": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "constraints": {
+            "add": {},
+            "override": {},
+            "drop": []
+          },
+          "subclasses": {
+            "integration-adapter": {
+              "id": "code/integration/adapter/integration-adapter",
+              "name": "Integration Adapter",
+              "level": "subclass",
+              "parent": "code/integration/adapter",
+              "abstract": false,
+              "description": "Canonical code subclass for integration adapter.",
+              "attributes": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "capabilities": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "relationships": {
+                "add": {},
+                "override": {},
+                "drop": []
+              },
+              "constraints": {
+                "add": {},
+                "override": {},
+                "drop": []
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

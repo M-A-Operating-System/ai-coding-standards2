@@ -1,0 +1,55 @@
+{
+  "$schema": "schemas/taxonomy.schema.json",
+  "schema_version": "0.2.0",
+  "name": "Master Engineering Taxonomy",
+  "root": "taxonomy",
+  "classification_model": {
+    "semantic_levels": [
+      "family",
+      "class",
+      "subclass"
+    ],
+    "canonical_id_format": "<domain>/<family>/<class>/<subclass>",
+    "implementation_is_separate": true,
+    "runtime_is_separate": true,
+    "primitive_code_semantics_are_external": true
+  },
+  "domains": {
+    "architecture": {
+      "source": "architecture/architecture.json"
+    },
+    "patterns": {
+      "source": "patterns/patterns.json"
+    },
+    "code": {
+      "source": "code/code.json"
+    },
+    "concepts": {
+      "source": "concepts/concepts.json"
+    }
+  },
+  "registries": {
+    "implementations": {
+      "source": "implementations/implementations.json"
+    },
+    "runtimes": {
+      "source": "runtimes/runtimes.json"
+    }
+  },
+  "mappings": {
+    "calm": {
+      "source": "mappings/calm-to-canonical.json"
+    },
+    "cross_domain": {
+      "source": "mappings/cross-domain.json"
+    },
+    "semantic_analysis_boundary": {
+      "source": "mappings/semantic-analysis-boundary.json"
+    }
+  },
+  "rules": {
+    "code_classification": {
+      "source": "rules/code-classification-rules.json"
+    }
+  }
+}
