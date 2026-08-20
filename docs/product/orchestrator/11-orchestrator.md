@@ -321,13 +321,13 @@ The system prompt injected by the orchestrator provides:
 - The work item type, number, title, and URL
 - A `## Runtime context` block with pre-resolved values for `REPO`,
   `ISSUE_NUMBER` (or `PR_NUMBER`), `WORK_ITEM_KIND`, `SESSION_ID`,
-  `SESSION_SCOPE`, `AI_AGILE_ROOT`, and `AI_AGILE_CONTEXT` — readable
-  directly from the prompt without any shell command. Each value is
-  also exported as a subprocess environment variable so that bash
-  snippets using `$VAR` syntax continue to work unchanged. Each
-  injected string value is stripped of leading/trailing whitespace
-  before embedding as a defense-in-depth measure against newline
-  injection from a compromised CI environment.
+  `SESSION_SCOPE`, `AI_AGILE_ROOT`, `AI_AGILE_CONTEXT`, and
+  `AI_AGILE_SCRATCH` — readable directly from the prompt without any
+  shell command. Each value is also exported as a subprocess environment
+  variable so that bash snippets using `$VAR` syntax continue to work
+  unchanged. Each injected string value is stripped of leading/trailing
+  whitespace before embedding as a defense-in-depth measure against
+  newline injection from a compromised CI environment.
 - The sentinel format agents use to signal their terminal state:
   `AI_AGILE_STATUS: complete`, `AI_AGILE_STATUS: review`, or
   `AI_AGILE_STATUS: blocked`, emitted as the last line of stdout.
@@ -342,6 +342,17 @@ auditable place.
 The Claude CLI subprocess inherits `GITHUB_TOKEN` and `ANTHROPIC_API_KEY`
 from the orchestrator's environment. Per-agent tool restrictions are
 enforced via `--allowedTools`.
+
+**Scratch directory.** Before invoking the agent subprocess, the
+orchestrator creates an empty directory at `$AI_AGILE_SCRATCH`
+(`/tmp/${SESSION_ID}`) and exports `AI_AGILE_SCRATCH` as an environment
+variable. After the subprocess exits — on any outcome: `complete`,
+`review`, `blocked`, or non-zero exit — the orchestrator removes
+`$AI_AGILE_SCRATCH` unconditionally with `rm -rf`. Agents write
+scratch/working files under `$AI_AGILE_SCRATCH`; they never write temp
+files into the repo root or any tracked path (P-1). The directory is
+always empty at the start of a run, so a retry cannot read a prior
+attempt's files.
 
 **Timeout.** Default 1800 seconds (30 minutes). On timeout, the orchestrator
 applies `:failed` and posts a recovery comment.
