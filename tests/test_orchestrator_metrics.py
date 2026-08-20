@@ -16,6 +16,7 @@ Covers the acceptance criteria from issue #121:
 
 import base64
 import json
+import subprocess
 import sys
 import os
 from unittest.mock import MagicMock, call, patch
@@ -751,91 +752,114 @@ class TestEnsureMetricsBranch:
 # ---------------------------------------------------------------------------
 
 class TestAppendMetricsRecord:
-    """_append_metrics_record appends JSON lines to records.jsonl."""
+    """_append_metrics_record appends JSON lines to records.jsonl via git plumbing
+    (not the GitHub Contents API -- some restricted sessions 403 on a direct
+    Contents API PUT even though `git push` over the same credential succeeds)."""
 
-    def _make_successful_put(self, status_code: int = 200) -> MagicMock:
-        r = MagicMock(spec=requests.Response)
-        r.status_code = status_code
-        r.raise_for_status.return_value = None
-        return r
+    def _make_git_run(self, *, existing_content: str = "", push_returncodes=(0,)):
+        """Fake subprocess.run for the git plumbing sequence _append_metrics_record
+        issues. existing_content simulates `git show <sha>:records.jsonl`'s output
+        (empty simulates the file not existing yet). push_returncodes is consumed
+        one-per-push-attempt. Returns (run_stub, calls) where calls records every
+        (cmd, kwargs) pair for assertions."""
+        push_codes = list(push_returncodes)
+        calls = []
+
+        def _run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""
+            result.stderr = ""
+            sub = cmd[1]
+            if sub == "rev-parse":
+                result.stdout = "parent-sha-abc\n"
+            elif sub == "show":
+                if existing_content:
+                    result.stdout = existing_content
+                else:
+                    result.returncode = 128  # simulates file not found on branch
+            elif sub == "hash-object":
+                result.stdout = "blob-sha-xyz\n"
+            elif sub == "write-tree":
+                result.stdout = "tree-sha-123\n"
+            elif sub == "commit-tree":
+                result.stdout = "commit-sha-999\n"
+            elif sub == "push":
+                result.returncode = push_codes.pop(0)
+                if result.returncode != 0:
+                    result.stderr = "! [rejected]"
+            if kwargs.get("check") and result.returncode != 0:
+                raise subprocess.CalledProcessError(result.returncode, cmd)
+            return result
+
+        return _run, calls
+
+    def _call(self, cmd_list, sub):
+        """Return the (cmd, kwargs) tuple for the first call whose git subcommand matches."""
+        return next(c for c in cmd_list if c[0][1] == sub)
 
     def test_creates_file_when_not_found(self):
-        gh = _make_gh_client()
-        not_found = requests.HTTPError(response=MagicMock(status_code=404))
-        gh._get.side_effect = not_found
-        gh._put.return_value = self._make_successful_put(201)
-
+        run, calls = self._make_git_run(existing_content="")
         record = {"agent_id": "coder", "github_issue_number": 42}
-        _append_metrics_record(gh, "owner/repo", record, _retries=0)
 
-        gh._put.assert_called_once()
-        put_body = gh._put.call_args[0][1]
-        decoded = base64.b64decode(put_body["content"].replace("\n", "")).decode()
-        assert json.loads(decoded.strip()) == record
-        assert "sha" not in put_body  # no prior SHA when file doesn't exist
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
+            _append_metrics_record(None, "owner/repo", record, _retries=0)
+
+        hash_call = self._call(calls, "hash-object")
+        assert json.loads(hash_call[1]["input"].strip()) == record
+        push_call = self._call(calls, "push")
+        assert f"refs/heads/{METRICS_BRANCH}" in push_call[0][3]
 
     def test_appends_to_existing_file(self):
-        gh = _make_gh_client()
         existing_record = {"agent_id": "prd-writer", "github_issue_number": 10}
         existing_line = json.dumps(existing_record, separators=(",", ":")) + "\n"
-        existing_b64 = base64.b64encode(existing_line.encode()).decode()
-        gh._get.return_value = {"content": existing_b64, "sha": "file-sha-123"}
-        gh._put.return_value = self._make_successful_put(200)
-
+        run, calls = self._make_git_run(existing_content=existing_line)
         new_record = {"agent_id": "coder", "github_issue_number": 42}
-        _append_metrics_record(gh, "owner/repo", new_record, _retries=0)
 
-        put_body = gh._put.call_args[0][1]
-        assert put_body["sha"] == "file-sha-123"
-        decoded = base64.b64decode(put_body["content"].replace("\n", "")).decode()
-        lines = [l for l in decoded.strip().splitlines() if l]
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
+            _append_metrics_record(None, "owner/repo", new_record, _retries=0)
+
+        hash_call = self._call(calls, "hash-object")
+        lines = [l for l in hash_call[1]["input"].strip().splitlines() if l]
         assert len(lines) == 2
         assert json.loads(lines[0]) == existing_record
         assert json.loads(lines[1]) == new_record
 
-    def test_retries_on_409_conflict(self):
-        gh = _make_gh_client()
-        not_found = requests.HTTPError(response=MagicMock(status_code=404))
-        gh._get.side_effect = not_found
+    def test_retries_on_rejected_push(self):
+        run, calls = self._make_git_run(existing_content="", push_returncodes=(1, 0))
 
-        conflict_resp = MagicMock(spec=requests.Response)
-        conflict_resp.status_code = 409
-        conflict_resp.raise_for_status.side_effect = requests.HTTPError(response=conflict_resp)
-        success_resp = self._make_successful_put(201)
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=run), \
+             patch("pipeline_orchestrator.time.sleep"):
+            _append_metrics_record(None, "owner/repo", {"agent_id": "test"}, _retries=1)
 
-        gh._put.side_effect = [conflict_resp, success_resp]
-
-        with patch("pipeline_orchestrator.time.sleep"):
-            _append_metrics_record(gh, "owner/repo", {"agent_id": "test"}, _retries=1)
-
-        assert gh._put.call_count == 2
+        push_calls = [c for c in calls if c[0][1] == "push"]
+        assert len(push_calls) == 2
 
     def test_commit_message_contains_agent_and_issue(self):
-        gh = _make_gh_client()
-        not_found = requests.HTTPError(response=MagicMock(status_code=404))
-        gh._get.side_effect = not_found
-        gh._put.return_value = self._make_successful_put(201)
+        run, calls = self._make_git_run(existing_content="")
 
-        _append_metrics_record(
-            gh, "owner/repo",
-            {"agent_id": "03_execute/coder", "github_issue_number": 55},
-            _retries=0,
-        )
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
+            _append_metrics_record(
+                None, "owner/repo",
+                {"agent_id": "03_execute/coder", "github_issue_number": 55},
+                _retries=0,
+            )
 
-        put_body = gh._put.call_args[0][1]
-        assert "03_execute/coder" in put_body["message"]
-        assert "55" in put_body["message"]
+        commit_call = self._call(calls, "commit-tree")
+        cmd = commit_call[0]
+        message = cmd[cmd.index("-m") + 1]
+        assert "03_execute/coder" in message
+        assert "55" in message
 
-    def test_put_targets_correct_branch(self):
-        gh = _make_gh_client()
-        not_found = requests.HTTPError(response=MagicMock(status_code=404))
-        gh._get.side_effect = not_found
-        gh._put.return_value = self._make_successful_put(201)
+    def test_push_targets_correct_branch(self):
+        run, calls = self._make_git_run(existing_content="")
 
-        _append_metrics_record(gh, "owner/repo", {"agent_id": "test"}, _retries=0)
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
+            _append_metrics_record(None, "owner/repo", {"agent_id": "test"}, _retries=0)
 
-        put_body = gh._put.call_args[0][1]
-        assert put_body["branch"] == METRICS_BRANCH
+        push_call = self._call(calls, "push")
+        assert push_call[0][-1].endswith(f":refs/heads/{METRICS_BRANCH}")
 
 
 # ---------------------------------------------------------------------------
