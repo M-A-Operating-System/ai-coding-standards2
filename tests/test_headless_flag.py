@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 import pipeline_orchestrator
 from pipeline_orchestrator import (
     _make_audit_event,
+    _run_print_prompt,
+    PRINT_PROMPT_WITHHELD_ENV_KEYS,
     _build_agent_env,
     _resolve_agent_invocation,
     BASE_AGENT_TOOLS,
@@ -283,3 +285,73 @@ class TestResolveOnlyMode:
         assert not gh_write_calls, (
             f"No GitHub write calls expected in resolve-only mode; got {gh_write_calls}"
         )
+
+
+class TestResolveOnlyModeWithholdsCredentials:
+    """Resolve-only output is captured into an interactive session's transcript,
+    so it must never carry credential values (AGENT_ENV_PASSTHROUGH passes
+    ANTHROPIC_API_KEY / GH_TOKEN / GITHUB_TOKEN through to the real subprocess
+    env, and _run_print_prompt prints that same env)."""
+
+    SECRETS = {
+        "ANTHROPIC_API_KEY": "canary-anthropic-key",
+        "GH_TOKEN": "canary-gh-token",
+        "GITHUB_TOKEN": "canary-github-token",
+    }
+
+    def _run(self, capsys, tmp_path):
+        agent_dir = tmp_path / ".claude" / "agents" / "03_execute"
+        agent_dir.mkdir(parents=True)
+        (agent_dir / "coder.md").write_text(
+            "---\nname: 03_execute/coder\nmodel: claude-sonnet-4-6\n---\n\nDo the work.\n"
+        )
+
+        gh_mock = MagicMock()
+        gh_mock._get.return_value = {
+            "number": 1,
+            "title": "Test issue",
+            "labels": [],
+            "html_url": "https://github.com/test/repo/issues/1",
+        }
+
+        with patch.object(pipeline_orchestrator, "SUBMODULE_ROOT", tmp_path), \
+             patch.object(pipeline_orchestrator, "AI_AGILE_CONTEXT", tmp_path / "AGENTS.md"), \
+             patch.object(pipeline_orchestrator, "GitHubClient", return_value=gh_mock), \
+             patch.object(pipeline_orchestrator, "_discover_github_token",
+                          return_value="canary-github-token"), \
+             patch.dict(os.environ, self.SECRETS):
+            _run_print_prompt(_make_args(
+                print_prompt=True, agent="03_execute/coder", issue=1, repo="test/repo",
+            ))
+        return capsys.readouterr().out
+
+    def test_no_credential_value_appears_in_output(self, capsys, tmp_path):
+        out = self._run(capsys, tmp_path)
+        for name, value in self.SECRETS.items():
+            assert value not in out, f"{name}'s value leaked into --print-prompt output"
+
+    def test_withheld_keys_are_reported_not_silently_dropped(self, capsys, tmp_path):
+        payload = json.loads(self._run(capsys, tmp_path))
+        assert set(payload["env_withheld_keys"]) == set(self.SECRETS), (
+            "every withheld credential key must be named so a consumer can tell "
+            "'not needed' from 'not shown'"
+        )
+        for key in self.SECRETS:
+            assert key not in payload["env"]
+
+    def test_non_secret_env_is_still_printed(self, capsys, tmp_path):
+        """Withholding must not gut the env the spec asks resolve-only mode to emit."""
+        payload = json.loads(self._run(capsys, tmp_path))
+        assert payload["env"]["AI_AGILE_EXECUTION_MODE"] == "interactive"
+        assert payload["env"]["REPO"] == "test/repo"
+        assert payload["env"]["ISSUE_NUMBER"] == "1"
+
+    def test_real_subprocess_env_still_carries_credentials(self):
+        """The withholding is print-only -- a real spawn still needs the values."""
+        with patch.dict(os.environ, self.SECRETS):
+            env = _build_agent_env(
+                os.environ, "test/repo", _make_work_item(), "session-X", "per_issue"
+            )
+        for name, value in self.SECRETS.items():
+            assert env[name] == value, f"{name} must still reach the spawned agent"
+        assert PRINT_PROMPT_WITHHELD_ENV_KEYS == set(self.SECRETS)

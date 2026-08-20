@@ -2336,6 +2336,17 @@ AGENT_ENV_PASSTHROUGH = (
     "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 )
 
+# Credential-bearing keys from AGENT_ENV_PASSTHROUGH. A real subprocess spawn
+# needs their values, but resolve-only mode (--print-prompt) writes its JSON to
+# stdout, which /run-agent captures inside an interactive session -- so the
+# values would land in a session transcript. Withheld from that output only;
+# invoke_agent's real env is unaffected.
+PRINT_PROMPT_WITHHELD_ENV_KEYS = frozenset({
+    "ANTHROPIC_API_KEY",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+})
+
 
 def _claude_cli_logged_in() -> bool:
     """True when the Claude CLI has stored login credentials (subscription /
@@ -4347,6 +4358,8 @@ def parse_args() -> argparse.Namespace:
             "allowlist, and env as JSON without spawning a subprocess or "
             "mutating any GitHub state (no label writes, no :wip). "
             "Used by /run-agent to obtain authoritative invocation parameters. "
+            "Credential env values (API key, GitHub tokens) are withheld from "
+            "the output; their key names are listed under env_withheld_keys. "
             "Requires --agent and --issue (or --repo + --issue)."
         ),
     )
@@ -4462,6 +4475,11 @@ def _run_print_prompt(args) -> None:
     are made. Called when --print-prompt is passed; used by /run-agent to obtain
     authoritative invocation parameters from the orchestrator's own resolution
     logic instead of hand-parsing the agent file.
+
+    Credential values are withheld from the printed env
+    (PRINT_PROMPT_WITHHELD_ENV_KEYS): this output is captured into an
+    interactive session, unlike invoke_agent's env which is only ever handed to
+    subprocess. The withheld key names are reported under env_withheld_keys.
     """
     if not args.agent:
         log.error("--print-prompt requires --agent <agent-name>")
@@ -4531,13 +4549,20 @@ def _run_print_prompt(args) -> None:
     env = _build_agent_env(os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope)
     env["AI_AGILE_EXECUTION_MODE"] = "interactive"
 
+    # Never print credential values -- see PRINT_PROMPT_WITHHELD_ENV_KEYS. The
+    # withheld key names are still reported so a consumer can tell the
+    # difference between "not needed" and "not shown".
+    withheld = sorted(k for k in env if k in PRINT_PROMPT_WITHHELD_ENV_KEYS)
+    printable_env = {k: v for k, v in env.items() if k not in PRINT_PROMPT_WITHHELD_ENV_KEYS}
+
     output = {
         "agent": agent_name,
         "session_id": resolved.session_id,
         "allowed_tools": resolved.allowed_tools,
         "model": resolved.model,
         "max_turns": resolved.max_turns,
-        "env": env,
+        "env": printable_env,
+        "env_withheld_keys": withheld,
         "prompt": resolved.prompt,
     }
     print(json.dumps(output, indent=2))
@@ -4565,12 +4590,6 @@ def _wake(args) -> "Optional[RunContext]":
             log.info("Stop marker cleared. Re-run without --clear-stop to resume work.")
         else:
             log.info("No stop marker was set.")
-        return None
-
-    # Resolve-only mode: print the named agent's prompt/tools/env as JSON
-    # without spawning a subprocess or mutating any GitHub state.
-    if args.print_prompt:
-        _run_print_prompt(args)
         return None
 
     # Handle pull_request.closed (merged only): delete the branch and exit
