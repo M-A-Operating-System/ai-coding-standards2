@@ -8,8 +8,9 @@ description: >
   invocation (Mode A):
   writes code for all sub-issues and posts a closing announcement. On
   subsequent invocations after review feedback (Mode B -- triggered by
-  review-cycle:N or human-review-pending label): reads review comments
-  and any unresolved human REQUEST_CHANGES reviews, addresses required
+  human-review-pending label, or review-cycle:N combined with a pr-reviewer
+  artefact on the PR confirming a review actually happened): reads review
+  comments and any unresolved human REQUEST_CHANGES reviews, addresses required
   and expected changes, and posts a response.
   The orchestrator owns all git operations (branch, commit, push) and the
   PR lifecycle (create, ready, labels). Triggered by create-pr:complete
@@ -81,9 +82,13 @@ Write defensively. Apply project standards exactly as loaded from
 ## Step 0 — Detect mode
 
 Check for Mode B trigger labels on the issue:
-- `review-cycle:N` (N ≥ 1): the pr-reviewer previously requested changes
 - `human-review-pending`: pr-reviewer approved but unresolved human
-  REQUEST_CHANGES reviews exist — a free re-invoke was triggered
+  REQUEST_CHANGES reviews exist — a free re-invoke was triggered. Always Mode B.
+- `review-cycle:N` (N ≥ 1): the orchestrator increments this counter at
+  dispatch time, **including the very first dispatch**, so presence alone is
+  not a reliable Mode B signal. Confirm that a `pr-reviewer` artefact comment
+  exists on the PR (concrete evidence a review actually happened). If no such
+  artefact is found, this is a genuine first dispatch: Mode A.
 
 Absence of both means Mode A (initial build).
 
@@ -96,15 +101,22 @@ HUMAN_REVIEW_PENDING=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '.labels[].name | select(. == "human-review-pending")' \
   | head -1)
 
-if [ -n "$REVIEW_CYCLE_LABEL" ] || [ -n "$HUMAN_REVIEW_PENDING" ]; then
-  # Strip prefix in bash so an empty suffix (review-cycle:) is reliably caught
+MODE=A
+
+if [ -n "$HUMAN_REVIEW_PENDING" ]; then
+  # human-review-pending is applied only after a real human review — always Mode B.
+  MODE=B
+elif [ -n "$REVIEW_CYCLE_LABEL" ]; then
+  # review-cycle:N is applied at dispatch time including the very first dispatch,
+  # so presence alone is not a reliable Mode B signal. Discover the PR and check
+  # for a pr-reviewer artefact comment — that is concrete evidence a review ran.
   REVIEW_CYCLE="${REVIEW_CYCLE_LABEL#review-cycle:}"
   # Validate: must be a positive integer (orchestrator always sets N >= 1)
   if ! printf '%s' "$REVIEW_CYCLE" | grep -qE '^[1-9][0-9]*$'; then
     echo "AI_AGILE_STATUS: blocked \"'${REVIEW_CYCLE_LABEL}' is malformed — expected review-cycle:N where N is a positive integer\""
     exit 1
   fi
-  # Mode B — self-discover the associated PR via GitHub data model.
+  # Self-discover the associated PR via GitHub data model.
   # Try the canonical branch name first, then fall back to the source-issue
   # label (applied by link-pr-to-issue.sh) so that rebased branches (e.g.
   # issue-23-rebase) are found even when they don't match the issue-{N} pattern.
@@ -126,10 +138,36 @@ if [ -n "$REVIEW_CYCLE_LABEL" ] || [ -n "$HUMAN_REVIEW_PENDING" ]; then
     exit 1
   fi
 
+  # Verify a pr-reviewer artefact exists on the PR. Without it, review-cycle:N
+  # reflects only the dispatch-time counter, not an actual review — Mode A.
+  PR_REVIEWER_ARTEFACT=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+    --jq '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer"))] | length')
+  if [ "${PR_REVIEWER_ARTEFACT:-0}" -gt 0 ]; then
+    MODE=B
+  fi
+fi
+
+if [ "$MODE" = "B" ]; then
+  if [ -z "$PR_NUMBER" ]; then
+    # Entered Mode B via human-review-pending — discover the PR now.
+    OWNER="${REPO%%/*}"
+    PR_NUMBER=$(gh api \
+      "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
+      --jq '.[0].number // empty')
+    if [ -z "$PR_NUMBER" ]; then
+      PR_NUMBER=$(gh api \
+        "repos/$REPO/issues?labels=source-issue:${ISSUE_NUMBER}&state=open&per_page=100" \
+        --jq '[.[] | select(.pull_request) | .number] | first // empty')
+    fi
+    if [ -z "$PR_NUMBER" ]; then
+      echo "AI_AGILE_STATUS: blocked \"human-review-pending present but no open PR found for issue #${ISSUE_NUMBER} (checked head branch issue-${ISSUE_NUMBER} and source-issue:${ISSUE_NUMBER} label)\""
+      exit 1
+    fi
+  fi
   # Capture the PR's actual head branch — may differ from issue-{N} if the
   # branch was rebased. Used in announcements and for the orchestrator push.
   PR_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
-  echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE}  PR=${PR_NUMBER}  BRANCH=${PR_BRANCH}"
+  echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE:-0}  PR=${PR_NUMBER}  BRANCH=${PR_BRANCH}"
 else
   echo "MODE=A"
 fi
