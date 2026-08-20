@@ -1,0 +1,66 @@
+<!-- ai-agile/artefact/v1 by 03_execute/pr-reviewer -->
+## PR Review (Re-run)
+
+**Verdict: REQUEST CHANGES**
+**Summary:** 0 Critical · 1 High · 1 Medium · 1 Low · 0 Informational
+
+### SC-001 -- Live workflow missing --headless: two acceptance criteria unreachable in production   [High] [fix-now]
+
+**File:** `.github/workflows/ai_orchestrator.yml:254`
+**Persona:** SC
+**Standard:** STD-ARCH-004; P-15 (Product-led)
+
+**Description:** The PRD (step 2 of proposed approach) explicitly states "`ai_orchestrator.yml` updated to pass [--headless]." Both Gherkin scenarios "A scheduled tick's audit trail correctly identifies itself as unattended" and "`.pipeline-stop` halts the scheduled/headless path" have "Given `ai_orchestrator.yml` invokes the orchestrator with `--headless`" as their precondition. The live workflow at `.github/workflows/ai_orchestrator.yml` (PR head `8d4726c`) invokes the orchestrator without `--headless`:
+
+```
+python pipeline/pipeline_orchestrator.py \
+  --repo "$GITHUB_REPOSITORY" \
+  ${DEBUG_FLAG} \
+  "${EXTRA_ARGS[@]}"
+```
+
+The coder added `docs/workflow-proposals/ai_orchestrator.yml` (which does include `--headless`) but that file is a standalone proposal document, not the live workflow. Two acceptance criteria will never fire in production: (1) scheduled CI runs still record actor.id="interactive" and actor.human=true (audit trail fix non-functional); (2) `.pipeline-stop` will log a warning and proceed rather than halting CI (emergency stop broken for the headless path).
+
+**Remediation:** Add `--headless` to the orchestrator invocation in `.github/workflows/ai_orchestrator.yml`, in the `Run orchestrator` step:
+
+```
+python pipeline/pipeline_orchestrator.py \
+  --repo "$GITHUB_REPOSITORY" \
+  --headless \
+  ${DEBUG_FLAG} \
+  "${EXTRA_ARGS[@]}"
+```
+
+---
+
+### CA-001 -- AGENTS.md claims AI_AGILE_EXECUTION_MODE=interactive is set by /run-agent path but it is never applied   [Medium] [defer-ok]
+
+**File:** `.claude/AGENTS.md:130`
+**Persona:** CA
+
+**Description:** `.claude/AGENTS.md` adds the row: "`AI_AGILE_EXECUTION_MODE` | Always `headless` for orchestrator-spawned subprocesses. The `/run-agent` interactive path sets it to `interactive` instead." However, the updated `.claude/commands/run-agent.md` only extracts `.allowed_tools` from the orchestrator's JSON output:
+
+```
+echo "$RESOLVED" | jq \
+  --arg agent "$AGENT_NAME" \
+  '{agent: $agent, allowed: .allowed_tools}' \
+  > .claude/.run-agent-scope.json
+```
+
+The `.env` key of the JSON (which contains `AI_AGILE_EXECUTION_MODE=interactive`, set by `_run_print_prompt` at pipeline_orchestrator.py around line 2542) is never exported to the shell environment. Agents invoked via `/run-agent` will not have this env var set in their session, making the interactive/headless distinction invisible to agent code despite the documentation claiming otherwise.
+
+**Remediation:** Either (a) update `/run-agent.md` to export `AI_AGILE_EXECUTION_MODE` from the resolved JSON before running the agent prompt (e.g. `export AI_AGILE_EXECUTION_MODE=$(echo "$RESOLVED" | jq -r '.env.AI_AGILE_EXECUTION_MODE')`), or (b) update AGENTS.md to clarify that the env var is present in the resolve-only JSON output but must be manually applied rather than automatically set.
+
+---
+
+### DP-001 -- Duplicate args.print_prompt guard in _wake() is unreachable from main()   [Low] [defer-ok]
+
+**File:** `pipeline/pipeline_orchestrator.py:4567`
+**Persona:** DP
+
+**Description:** `main()` adds an early guard (`if args.print_prompt: _run_print_prompt(args); return`) before ever calling `_wake()`. `_wake()` also adds its own identical guard for the same condition. Since `main()` returns before calling `_wake()` when `--print-prompt` is set, the `_wake()` guard is unreachable from the `main()` call path. If `_run_print_prompt`'s signature changes, both guards must be updated but only one path is exercised.
+
+**Remediation:** Remove one guard. If `_wake()` must be callable independently (e.g. directly in tests with `print_prompt=True`), keep only the `_wake()` guard and remove the one from `main()`; otherwise keep only the `main()` guard and remove the one from `_wake()`.
+
+---
+_On APPROVE: PR is marked ready for human review. On REQUEST CHANGES: the orchestrator will automatically re-invoke the coder (up to 3 cycles). After 3 cycles without agreement, human sign-off is required._
