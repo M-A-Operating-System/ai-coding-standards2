@@ -12,9 +12,12 @@ from validate_taxonomy import (
     DOMAINS,
     EXEMPT_FROM_SCHEMA,
     FILE_SCHEMAS,
+    ID_PATTERN,
     build_schema_registry,
+    check_facets,
+    check_lifecycle,
     check_schema_coverage,
-    collect_canonical_ids,
+    collect_nodes,
     discover_json_files,
     validate,
 )
@@ -24,7 +27,7 @@ REAL_TAXONOMY_DIR = HERE.parent / "taxonomy"
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures and helpers
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
@@ -43,8 +46,22 @@ def _write(taxonomy_dir: Path, rel: str, data: dict) -> None:
     (taxonomy_dir / rel).write_text(json.dumps(data, indent=2))
 
 
+def _first_subclass(domain_doc: dict) -> dict:
+    """The first subclass record in a domain document."""
+    family = next(iter(domain_doc["families"].values()))
+    klass = next(iter(family["classes"].values()))
+    return next(iter(klass["subclasses"].values()))
+
+
 def _errors_matching(errors: list[str], needle: str) -> list[str]:
     return [e for e in errors if needle in e]
+
+
+def _mutate_first_subclass(taxonomy_dir: Path, domain: str, change):
+    rel = f"{domain}/{domain}.json"
+    doc = _read(taxonomy_dir, rel)
+    change(_first_subclass(doc))
+    _write(taxonomy_dir, rel, doc)
 
 
 # ---------------------------------------------------------------------------
@@ -52,10 +69,10 @@ def _errors_matching(errors: list[str], needle: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def test_real_taxonomy_validates_clean():
-    errors, file_count, id_count = validate(REAL_TAXONOMY_DIR)
+    errors, file_count, node_count = validate(REAL_TAXONOMY_DIR)
     assert errors == []
     assert file_count == len(FILE_SCHEMAS) + len(EXEMPT_FROM_SCHEMA)
-    assert id_count > 0
+    assert node_count > 0
 
 
 def test_copied_taxonomy_validates_clean(taxonomy):
@@ -64,182 +81,311 @@ def test_copied_taxonomy_validates_clean(taxonomy):
 
 
 def test_missing_taxonomy_dir_is_an_error(tmp_path):
-    errors, file_count, id_count = validate(tmp_path / "nope")
+    errors, file_count, node_count = validate(tmp_path / "nope")
     assert len(errors) == 1
     assert "not found" in errors[0]
-    assert (file_count, id_count) == (0, 0)
+    assert (file_count, node_count) == (0, 0)
 
 
 # ---------------------------------------------------------------------------
-# Injected defects named in the acceptance criteria
+# Identity is a primary key
 # ---------------------------------------------------------------------------
 
-def test_domain_file_missing_families_fails(taxonomy):
-    data = _read(taxonomy, "architecture/architecture.json")
-    del data["families"]
-    _write(taxonomy, "architecture/architecture.json", data)
+def test_every_node_has_a_well_formed_identifier():
+    by_id, _, errors = collect_nodes(
+        {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
+         for d in DOMAINS}
+    )
+    assert errors == []
+    assert by_id
+    assert all(ID_PATTERN.match(node_id) for node_id in by_id)
 
+
+def test_identifiers_are_unique_across_the_taxonomy():
+    by_id, _, _ = collect_nodes(
+        {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
+         for d in DOMAINS}
+    )
+    # collect_nodes would have reported a reuse error; assert the count instead
+    _, _, errors = collect_nodes(
+        {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
+         for d in DOMAINS}
+    )
+    assert not _errors_matching(errors, "never reused")
+    assert len(by_id) == 453
+
+
+def test_reused_identifier_fails(taxonomy):
+    _mutate_first_subclass(taxonomy, "architecture", lambda n: n.update({"id": "ARCH-0001"}))
     errors, _, _ = validate(taxonomy)
-    assert _errors_matching(errors, "'families' is a required property")
+    assert _errors_matching(errors, "identifiers are never reused")
 
 
-def test_implementation_naming_unknown_class_fails(taxonomy):
+def test_malformed_identifier_fails(taxonomy):
+    _mutate_first_subclass(taxonomy, "architecture", lambda n: n.update({"id": "nope"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "is not a valid identifier")
+
+
+def test_identifier_prefix_must_match_domain(taxonomy):
+    _mutate_first_subclass(taxonomy, "patterns", lambda n: n.update({"id": "ARCH-9999"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "prefix does not match domain")
+
+
+# ---------------------------------------------------------------------------
+# Position: path, parent, level
+# ---------------------------------------------------------------------------
+
+def test_path_must_match_position(taxonomy):
+    _mutate_first_subclass(taxonomy, "code", lambda n: n.update({"path": "code/wrong/place/here"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "path is 'code/wrong/place/here'")
+
+
+def test_parent_must_be_the_identifier_above(taxonomy):
+    _mutate_first_subclass(taxonomy, "code", lambda n: n.update({"parent": "CODE-9999"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "parent is 'CODE-9999'")
+
+
+def test_level_must_match_position(taxonomy):
+    _mutate_first_subclass(taxonomy, "concepts", lambda n: n.update({"level": "family"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "level is 'family'")
+
+
+def test_duplicate_path_fails(taxonomy):
+    doc = _read(taxonomy, "architecture/architecture.json")
+    family = next(iter(doc["families"].values()))
+    klass = next(iter(family["classes"].values()))
+    subs = list(klass["subclasses"].values())
+    if len(subs) < 2:
+        pytest.skip("first class has a single subclass")
+    subs[1]["path"] = subs[0]["path"]
+    _write(taxonomy, "architecture/architecture.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "is claimed by both")
+
+
+def test_wrong_declared_domain_fails(taxonomy):
+    doc = _read(taxonomy, "patterns/patterns.json")
+    doc["domain"] = "architecture"
+    _write(taxonomy, "patterns/patterns.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "domain is 'architecture', expected 'patterns'")
+
+
+# ---------------------------------------------------------------------------
+# Facets
+# ---------------------------------------------------------------------------
+
+def test_every_node_carries_a_declared_concern():
+    loaded = {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
+              for d in DOMAINS}
+    loaded["facets/facets.json"] = json.loads(
+        (REAL_TAXONOMY_DIR / "facets" / "facets.json").read_text())
+    by_id, _, _ = collect_nodes(loaded)
+    assert check_facets(by_id, loaded) == []
+    assert all(node.get("facets", {}).get("concern") for node in by_id.values())
+
+
+def test_undeclared_facet_value_fails(taxonomy):
+    _mutate_first_subclass(taxonomy, "concepts",
+                           lambda n: n.update({"facets": {"concern": ["not-a-concern"]}}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "is not declared")
+
+
+def test_undeclared_facet_name_fails(taxonomy):
+    _mutate_first_subclass(taxonomy, "concepts",
+                           lambda n: n.update({"facets": {"invented": ["x"]}}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "not in the facet registry")
+
+
+def test_single_valued_facet_rejects_two_values(taxonomy):
+    reg = _read(taxonomy, "facets/facets.json")
+    reg["facets"]["concern"]["multi_valued"] = False
+    _write(taxonomy, "facets/facets.json", reg)
+    _mutate_first_subclass(taxonomy, "concepts",
+                           lambda n: n.update({"facets": {"concern": ["security", "observability"]}}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "is single-valued")
+
+
+def test_concern_facet_spans_domains():
+    """The point of facets: one value reaches nodes in several domains."""
+    reg = json.loads((REAL_TAXONOMY_DIR / "facets" / "facets.json").read_text())
+    spanning = [v for v, spec in reg["facets"]["concern"]["values"].items()
+                if len(spec.get("domains", [])) > 1]
+    assert "security" in spanning
+    assert len(spanning) >= 5
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
+
+def test_deprecated_node_must_name_a_replacement(taxonomy):
+    _mutate_first_subclass(taxonomy, "patterns", lambda n: n.update({"status": "deprecated"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "names no replaced_by")
+
+
+def test_replaced_by_must_resolve(taxonomy):
+    _mutate_first_subclass(taxonomy, "patterns",
+                           lambda n: n.update({"status": "deprecated", "replaced_by": "PAT-9999"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "does not resolve")
+
+
+def test_replacement_may_not_itself_be_deprecated(taxonomy):
+    doc = _read(taxonomy, "patterns/patterns.json")
+    family = next(iter(doc["families"].values()))
+    klass = next(iter(family["classes"].values()))
+    subs = list(klass["subclasses"].values())
+    if len(subs) < 2:
+        pytest.skip("first class has a single subclass")
+    subs[0].update({"status": "deprecated", "replaced_by": subs[1]["id"]})
+    subs[1].update({"status": "deprecated", "replaced_by": subs[0]["id"]})
+    _write(taxonomy, "patterns/patterns.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "is itself deprecated")
+
+
+def test_replaced_by_without_deprecation_fails(taxonomy):
+    _mutate_first_subclass(taxonomy, "patterns", lambda n: n.update({"replaced_by": "PAT-0001"}))
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "names replaced_by but status is")
+
+
+def test_lifecycle_clean_on_real_taxonomy():
+    loaded = {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
+              for d in DOMAINS}
+    by_id, _, _ = collect_nodes(loaded)
+    assert check_lifecycle(by_id) == []
+
+
+# ---------------------------------------------------------------------------
+# References point at identity
+# ---------------------------------------------------------------------------
+
+def test_reference_by_path_is_rejected_with_the_identifier(taxonomy):
     data = _read(taxonomy, "implementations/implementations.json")
     data["implementations"]["postgresql"]["implements"] = [
-        "architecture/data/database/no-such-database"
+        "architecture/data/database/relational-database"
     ]
     _write(taxonomy, "implementations/implementations.json", data)
-
     errors, _, _ = validate(taxonomy)
-    matched = _errors_matching(errors, "no-such-database")
+    matched = _errors_matching(errors, "is a path, not an identifier")
     assert matched
-    assert "not declared in any domain file" in matched[0]
-    assert "implementations/postgresql" in matched[0]
+    assert "ARCH-" in matched[0]
 
 
-def test_rule_assigning_unknown_id_fails(taxonomy):
+def test_reference_to_unknown_identifier_fails(taxonomy):
     data = _read(taxonomy, "rules/code-classification-rules.json")
-    data["rules"][0]["assign"]["code"] = ["code/api/handler/no-such-handler"]
+    data["rules"][0]["assign"]["code"] = ["CODE-9999"]
     _write(taxonomy, "rules/code-classification-rules.json", data)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "not declared in any domain file")
+
+
+def test_reference_to_deprecated_node_fails(taxonomy):
+    doc = _read(taxonomy, "code/code.json")
+    target = _first_subclass(doc)
+    family = next(iter(doc["families"].values()))
+    klass = next(iter(family["classes"].values()))
+    subs = list(klass["subclasses"].values())
+    replacement = subs[1]["id"] if len(subs) > 1 else next(
+        iter(next(iter(doc["families"].values()))["classes"].values()))["id"]
+    target.update({"status": "deprecated", "replaced_by": replacement})
+    _write(taxonomy, "code/code.json", doc)
+
+    rules = _read(taxonomy, "rules/code-classification-rules.json")
+    rules["rules"][0]["assign"]["code"] = [target["id"]]
+    _write(taxonomy, "rules/code-classification-rules.json", rules)
 
     errors, _, _ = validate(taxonomy)
-    matched = _errors_matching(errors, "no-such-handler")
-    assert matched
-    assert "not declared in any domain file" in matched[0]
-
-
-def test_unmapped_json_file_fails(taxonomy):
-    (taxonomy / "concepts" / "extra.json").write_text('{"hello": "world"}')
-
-    errors, _, _ = validate(taxonomy)
-    matched = _errors_matching(errors, "concepts/extra.json")
-    assert matched
-    assert "no schema mapped" in matched[0]
-
-
-# ---------------------------------------------------------------------------
-# Further referential and structural defects
-# ---------------------------------------------------------------------------
-
-def test_mapping_referencing_unknown_id_fails(taxonomy):
-    data = _read(taxonomy, "mappings/cross-domain.json")
-    data["relationships"][0]["to"] = "code/persistence/repository/ghost"
-    _write(taxonomy, "mappings/cross-domain.json", data)
-
-    errors, _, _ = validate(taxonomy)
-    matched = _errors_matching(errors, "ghost")
-    assert matched
-    assert "relationships[0].to" in matched[0]
-
-
-def test_calm_mapping_referencing_unknown_id_fails(taxonomy):
-    data = _read(taxonomy, "mappings/calm-to-canonical.json")
-    data["mappings"]["service"] = ["architecture/compute/service/ghost-service"]
-    _write(taxonomy, "mappings/calm-to-canonical.json", data)
-
-    errors, _, _ = validate(taxonomy)
-    assert _errors_matching(errors, "ghost-service")
-
-
-def test_runtime_supporting_unknown_id_fails(taxonomy):
-    data = _read(taxonomy, "runtimes/runtimes.json")
-    data["providers"]["aws"]["services"]["rds"]["supports"] = [
-        "architecture/data/database/ghost-database"
-    ]
-    _write(taxonomy, "runtimes/runtimes.json", data)
-
-    errors, _, _ = validate(taxonomy)
-    matched = _errors_matching(errors, "ghost-database")
-    assert matched
-    assert "providers/aws/services/rds" in matched[0]
+    assert _errors_matching(errors, "is deprecated")
 
 
 def test_example_citing_unknown_implementation_fails(taxonomy):
     data = _read(taxonomy, "examples/observed-booking-db.json")
     data["implementation"] = "not-a-real-database"
     _write(taxonomy, "examples/observed-booking-db.json", data)
-
     errors, _, _ = validate(taxonomy)
-    matched = _errors_matching(errors, "not-a-real-database")
-    assert matched
-    assert "not in the implementation registry" in matched[0]
+    assert _errors_matching(errors, "not in the implementation registry")
 
 
 def test_example_citing_unknown_runtime_fails(taxonomy):
     data = _read(taxonomy, "examples/observed-booking-db.json")
     data["runtime"] = "aws/not-a-real-service"
     _write(taxonomy, "examples/observed-booking-db.json", data)
-
     errors, _, _ = validate(taxonomy)
     assert _errors_matching(errors, "not in the runtime registry")
 
 
-def test_node_id_disagreeing_with_position_fails(taxonomy):
-    data = _read(taxonomy, "code/code.json")
-    family_key = next(iter(data["families"]))
-    data["families"][family_key]["id"] = "code/wrong-id"
-    _write(taxonomy, "code/code.json", data)
+# ---------------------------------------------------------------------------
+# Structure and coverage
+# ---------------------------------------------------------------------------
 
+def test_domain_file_missing_families_fails(taxonomy):
+    data = _read(taxonomy, "architecture/architecture.json")
+    del data["families"]
+    _write(taxonomy, "architecture/architecture.json", data)
     errors, _, _ = validate(taxonomy)
-    assert _errors_matching(errors, "declares id 'code/wrong-id'")
+    assert _errors_matching(errors, "'families' is a required property")
 
 
-def test_node_parent_disagreeing_with_position_fails(taxonomy):
-    data = _read(taxonomy, "code/code.json")
-    family_key = next(iter(data["families"]))
-    class_key = next(iter(data["families"][family_key]["classes"]))
-    data["families"][family_key]["classes"][class_key]["parent"] = "code/elsewhere"
-    _write(taxonomy, "code/code.json", data)
-
+def test_node_missing_required_field_fails(taxonomy):
+    _mutate_first_subclass(taxonomy, "architecture", lambda n: n.pop("stability"))
     errors, _, _ = validate(taxonomy)
-    assert _errors_matching(errors, "parent is 'code/elsewhere'")
+    assert _errors_matching(errors, "'stability' is a required property")
 
 
-def test_wrong_declared_domain_fails(taxonomy):
-    data = _read(taxonomy, "patterns/patterns.json")
-    data["domain"] = "architecture"
-    _write(taxonomy, "patterns/patterns.json", data)
-
+def test_unmapped_json_file_fails(taxonomy):
+    (taxonomy / "concepts" / "extra.json").write_text('{"hello": "world"}')
     errors, _, _ = validate(taxonomy)
-    assert _errors_matching(errors, "domain is 'architecture', expected 'patterns'")
+    matched = _errors_matching(errors, "concepts/extra.json")
+    assert matched
+    assert "no schema mapped" in matched[0]
 
 
 def test_dangling_source_in_taxonomy_json_fails(taxonomy):
     data = _read(taxonomy, "taxonomy.json")
     data["domains"]["architecture"]["source"] = "architecture/missing.json"
     _write(taxonomy, "taxonomy.json", data)
-
     errors, _, _ = validate(taxonomy)
     matched = _errors_matching(errors, "architecture/missing.json")
     assert matched
     assert "does not exist" in matched[0]
 
 
+def test_facet_registry_is_declared_in_the_master_registry():
+    root = json.loads((REAL_TAXONOMY_DIR / "taxonomy.json").read_text())
+    assert root["registries"]["facets"]["source"] == "facets/facets.json"
+
+
 def test_invalid_json_is_reported_not_raised(taxonomy):
     (taxonomy / "runtimes" / "runtimes.json").write_text("{ not json")
-
     errors, _, _ = validate(taxonomy)
     assert _errors_matching(errors, "invalid JSON")
 
 
 def test_deleted_file_still_declared_fails(taxonomy):
     (taxonomy / "mappings" / "cross-domain.json").unlink()
-
     errors, _, _ = validate(taxonomy)
     matched = _errors_matching(errors, "mappings/cross-domain.json")
-    assert matched
     assert any("no such file exists" in e for e in matched)
 
-
-# ---------------------------------------------------------------------------
-# Units
-# ---------------------------------------------------------------------------
 
 def test_discover_excludes_the_schemas_themselves():
     files = discover_json_files(REAL_TAXONOMY_DIR)
     rels = {p.relative_to(REAL_TAXONOMY_DIR).as_posix() for p in files}
     assert not any(rel.startswith("schemas/") for rel in rels)
     assert "taxonomy.json" in rels
+    assert "facets/facets.json" in rels
 
 
 def test_every_discovered_file_is_declared():
@@ -252,16 +398,7 @@ def test_every_discovered_file_is_declared():
 def test_schema_registry_resolves_sibling_refs():
     registry = build_schema_registry(REAL_TAXONOMY_DIR / "schemas")
     resolver = registry.resolver()
-    resolved = resolver.lookup("classification-rule.schema.json")
-    assert resolved.contents["title"] == "Deterministic Code Classification Rule"
-
-
-def test_canonical_ids_cover_every_domain():
-    loaded = {
-        f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
-        for d in DOMAINS
-    }
-    ids, errors = collect_canonical_ids(loaded)
-    assert errors == []
-    for domain in DOMAINS:
-        assert any(i.startswith(f"{domain}/") for i in ids)
+    assert resolver.lookup("node.schema.json").contents["title"] == "Taxonomy Node"
+    assert resolver.lookup("classification-rule.schema.json").contents["title"] == (
+        "Deterministic Code Classification Rule"
+    )

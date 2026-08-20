@@ -1,6 +1,6 @@
 {
   "$schema": "schemas/taxonomy.schema.json",
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "name": "Master Engineering Taxonomy",
   "definition": "Shared semantic vocabulary for architecture, patterns, code roles, concepts, technology implementations, runtime realizations, standards applicability, and deterministic context selection.",
   "classification_model": {
@@ -34,6 +34,9 @@
     },
     "runtimes": {
       "source": "runtimes/runtimes.json"
+    },
+    "facets": {
+      "source": "facets/facets.json"
     }
   },
   "mappings": {

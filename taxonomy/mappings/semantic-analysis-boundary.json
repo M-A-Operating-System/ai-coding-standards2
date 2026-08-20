@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "definition": "Primitive source semantics remain owned by deterministic static-analysis systems.",
   "external_semantic_sources": {
     "codeql": {

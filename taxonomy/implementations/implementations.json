@@ -1,6 +1,6 @@
 {
   "$schema": "../schemas/implementations.schema.json",
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "definition": "Concrete technologies and frameworks mapped to canonical semantic classes.",
   "implementations": {
     "postgresql": {
@@ -8,7 +8,7 @@
       "vendor": "PostgreSQL Global Development Group",
       "category": "database",
       "implements": [
-        "architecture/data/database/relational-database"
+        "ARCH-0033"
       ],
       "capabilities": [
         "sql",
@@ -25,7 +25,7 @@
       "vendor": "Oracle",
       "category": "database",
       "implements": [
-        "architecture/data/database/relational-database"
+        "ARCH-0033"
       ],
       "capabilities": [
         "sql",
@@ -39,7 +39,7 @@
       "vendor": "MongoDB",
       "category": "database",
       "implements": [
-        "architecture/data/database/document-database"
+        "ARCH-0034"
       ],
       "capabilities": [
         "document-query",
@@ -53,7 +53,7 @@
       "vendor": "AWS",
       "category": "database",
       "implements": [
-        "architecture/data/database/key-value-database"
+        "ARCH-0035"
       ],
       "capabilities": [
         "key-value-access",
@@ -67,7 +67,7 @@
       "vendor": "Neo4j",
       "category": "database",
       "implements": [
-        "architecture/data/database/graph-database"
+        "ARCH-0037"
       ],
       "capabilities": [
         "graph-traversal",
@@ -80,8 +80,8 @@
       "vendor": "Redis",
       "category": "data",
       "implements": [
-        "architecture/data/cache/distributed-cache",
-        "architecture/data/database/key-value-database"
+        "ARCH-0043",
+        "ARCH-0035"
       ],
       "capabilities": [
         "in-memory-access",
@@ -95,7 +95,7 @@
       "vendor": "Apache Software Foundation",
       "category": "messaging",
       "implements": [
-        "architecture/messaging/stream/event-stream"
+        "ARCH-0074"
       ],
       "capabilities": [
         "ordered-partitions",
@@ -109,7 +109,7 @@
       "vendor": "Broadcom",
       "category": "messaging",
       "implements": [
-        "architecture/messaging/broker/message-broker"
+        "ARCH-0078"
       ],
       "capabilities": [
         "queues",
@@ -123,12 +123,12 @@
       "vendor": "FastAPI project",
       "category": "framework",
       "implements": [
-        "architecture/compute/service/api-service"
+        "ARCH-0013"
       ],
       "related_code": [
-        "code/api/handler/request-handler",
-        "code/api/contract/request-schema",
-        "code/api/contract/response-schema"
+        "CODE-0003",
+        "CODE-0009",
+        "CODE-0010"
       ],
       "capabilities": [
         "http-api",
@@ -142,8 +142,8 @@
       "vendor": "Broadcom",
       "category": "framework",
       "implements": [
-        "architecture/compute/service/api-service",
-        "architecture/compute/service/domain-service"
+        "ARCH-0013",
+        "ARCH-0014"
       ],
       "capabilities": [
         "http-api",
@@ -157,7 +157,7 @@
       "vendor": "Microsoft",
       "category": "framework",
       "implements": [
-        "architecture/compute/service/api-service"
+        "ARCH-0013"
       ],
       "capabilities": [
         "http-api",
@@ -171,8 +171,8 @@
       "vendor": "CNCF",
       "category": "observability",
       "implements": [
-        "concepts/observability/telemetry/tracing",
-        "code/observability/tracing/trace-instrumentation"
+        "CON-0038",
+        "CODE-0066"
       ],
       "capabilities": [
         "traces",
@@ -188,7 +188,7 @@
       "name": "Kubernetes",
       "category": "platform",
       "implements": [
-        "architecture/platform/orchestration/container-orchestrator"
+        "ARCH-0210"
       ]
     }
   }

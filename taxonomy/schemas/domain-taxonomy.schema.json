@@ -23,7 +23,11 @@
       "type": "object"
     },
     "families": {
-      "type": "object"
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "node.schema.json"
+      }
     }
   },
   "additionalProperties": true

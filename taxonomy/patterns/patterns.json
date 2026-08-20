@@ -1,6 +1,6 @@
 {
   "$schema": "../schemas/domain-taxonomy.schema.json",
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "domain": "patterns",
   "purpose": "Reusable solution approaches for recurring engineering problems.",
   "inheritance": {
@@ -18,13 +18,17 @@
   },
   "families": {
     "api": {
-      "id": "patterns/api",
+      "id": "PAT-0001",
+      "path": "patterns/api",
       "name": "Api",
+      "description": "Reusable approaches governing request handling and externally consumed APIs.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Reusable approaches governing request handling and externally consumed APIs.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "api"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -65,15 +69,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "request-processing": {
-          "id": "patterns/api/request-processing",
+          "id": "PAT-0002",
+          "path": "patterns/api/request-processing",
           "name": "Request Processing",
-          "level": "class",
-          "parent": "patterns/api",
-          "abstract": true,
           "description": "Request Processing groups patterns elements that provide request processing responsibilities within the Api family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0001",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -92,15 +103,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "idempotent-handler": {
-              "id": "patterns/api/request-processing/idempotent-handler",
+              "id": "PAT-0003",
+              "path": "patterns/api/request-processing/idempotent-handler",
               "name": "Idempotent Handler",
-              "level": "subclass",
-              "parent": "patterns/api/request-processing",
-              "abstract": false,
               "description": "Ensures repeated equivalent requests do not create duplicate externally visible effects.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0002",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {
                   "idempotency_key_source": {
@@ -136,16 +154,23 @@
                 },
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "validation-handler": {
-              "id": "patterns/api/request-processing/validation-handler",
+              "id": "PAT-0004",
+              "path": "patterns/api/request-processing/validation-handler",
               "name": "Validation Handler",
-              "level": "subclass",
-              "parent": "patterns/api/request-processing",
-              "abstract": false,
               "description": "Validation Handler is a pattern specialization of Request Processing within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0002",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -163,16 +188,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "request-context": {
-              "id": "patterns/api/request-processing/request-context",
+              "id": "PAT-0005",
+              "path": "patterns/api/request-processing/request-context",
               "name": "Request Context",
-              "level": "subclass",
-              "parent": "patterns/api/request-processing",
-              "abstract": false,
               "description": "Request Context is a pattern specialization of Request Processing within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0002",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -190,18 +222,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "error-handling": {
-          "id": "patterns/api/error-handling",
+          "id": "PAT-0006",
+          "path": "patterns/api/error-handling",
           "name": "Error Handling",
-          "level": "class",
-          "parent": "patterns/api",
-          "abstract": true,
           "description": "Error Handling groups patterns elements that provide error handling responsibilities within the Api family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0001",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -220,15 +259,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "problem-details": {
-              "id": "patterns/api/error-handling/problem-details",
+              "id": "PAT-0007",
+              "path": "patterns/api/error-handling/problem-details",
               "name": "Problem Details",
-              "level": "subclass",
-              "parent": "patterns/api/error-handling",
-              "abstract": false,
               "description": "Problem Details is a pattern specialization of Error Handling within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0006",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -246,16 +292,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "exception-mapping": {
-              "id": "patterns/api/error-handling/exception-mapping",
+              "id": "PAT-0008",
+              "path": "patterns/api/error-handling/exception-mapping",
               "name": "Exception Mapping",
-              "level": "subclass",
-              "parent": "patterns/api/error-handling",
-              "abstract": false,
               "description": "Exception Mapping is a pattern specialization of Error Handling within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0006",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -273,18 +326,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "versioning": {
-          "id": "patterns/api/versioning",
+          "id": "PAT-0009",
+          "path": "patterns/api/versioning",
           "name": "Versioning",
-          "level": "class",
-          "parent": "patterns/api",
-          "abstract": true,
           "description": "Versioning groups patterns elements that provide versioning responsibilities within the Api family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0001",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -303,15 +363,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "url-versioning": {
-              "id": "patterns/api/versioning/url-versioning",
+              "id": "PAT-0010",
+              "path": "patterns/api/versioning/url-versioning",
               "name": "Url Versioning",
-              "level": "subclass",
-              "parent": "patterns/api/versioning",
-              "abstract": false,
               "description": "Url Versioning is a pattern specialization of Versioning within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0009",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -329,16 +396,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "header-versioning": {
-              "id": "patterns/api/versioning/header-versioning",
+              "id": "PAT-0011",
+              "path": "patterns/api/versioning/header-versioning",
               "name": "Header Versioning",
-              "level": "subclass",
-              "parent": "patterns/api/versioning",
-              "abstract": false,
               "description": "Header Versioning is a pattern specialization of Versioning within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0009",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -356,20 +430,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "persistence": {
-      "id": "patterns/persistence",
+      "id": "PAT-0012",
+      "path": "patterns/persistence",
       "name": "Persistence",
+      "description": "Reusable approaches for durable data access, transaction management, and caching.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Reusable approaches for durable data access, transaction management, and caching.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "persistence"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -410,15 +491,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "data-access": {
-          "id": "patterns/persistence/data-access",
+          "id": "PAT-0013",
+          "path": "patterns/persistence/data-access",
           "name": "Data Access",
-          "level": "class",
-          "parent": "patterns/persistence",
-          "abstract": true,
           "description": "Data Access groups patterns elements that provide data access responsibilities within the Persistence family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0012",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -437,15 +525,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "repository": {
-              "id": "patterns/persistence/data-access/repository",
+              "id": "PAT-0014",
+              "path": "patterns/persistence/data-access/repository",
               "name": "Repository",
-              "level": "subclass",
-              "parent": "patterns/persistence/data-access",
-              "abstract": false,
               "description": "Encapsulates persistence behind a collection-like abstraction aligned to domain or application needs.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0013",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -471,16 +566,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "unit-of-work": {
-              "id": "patterns/persistence/data-access/unit-of-work",
+              "id": "PAT-0015",
+              "path": "patterns/persistence/data-access/unit-of-work",
               "name": "Unit Of Work",
-              "level": "subclass",
-              "parent": "patterns/persistence/data-access",
-              "abstract": false,
               "description": "Unit Of Work is a pattern specialization of Data Access within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0013",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -498,16 +600,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "data-mapper": {
-              "id": "patterns/persistence/data-access/data-mapper",
+              "id": "PAT-0016",
+              "path": "patterns/persistence/data-access/data-mapper",
               "name": "Data Mapper",
-              "level": "subclass",
-              "parent": "patterns/persistence/data-access",
-              "abstract": false,
               "description": "Data Mapper is a pattern specialization of Data Access within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0013",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -525,18 +634,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "transaction": {
-          "id": "patterns/persistence/transaction",
+          "id": "PAT-0017",
+          "path": "patterns/persistence/transaction",
           "name": "Transaction",
-          "level": "class",
-          "parent": "patterns/persistence",
-          "abstract": true,
           "description": "Transaction groups patterns elements that provide transaction responsibilities within the Persistence family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0012",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -555,15 +671,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "local-transaction": {
-              "id": "patterns/persistence/transaction/local-transaction",
+              "id": "PAT-0018",
+              "path": "patterns/persistence/transaction/local-transaction",
               "name": "Local Transaction",
-              "level": "subclass",
-              "parent": "patterns/persistence/transaction",
-              "abstract": false,
               "description": "Local Transaction is a pattern specialization of Transaction within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0017",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -581,16 +704,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "transactional-outbox": {
-              "id": "patterns/persistence/transaction/transactional-outbox",
+              "id": "PAT-0019",
+              "path": "patterns/persistence/transaction/transactional-outbox",
               "name": "Transactional Outbox",
-              "level": "subclass",
-              "parent": "patterns/persistence/transaction",
-              "abstract": false,
               "description": "Persists state and outbound event records atomically, then publishes events asynchronously.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0017",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -608,18 +738,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "caching": {
-          "id": "patterns/persistence/caching",
+          "id": "PAT-0020",
+          "path": "patterns/persistence/caching",
           "name": "Caching",
-          "level": "class",
-          "parent": "patterns/persistence",
-          "abstract": true,
           "description": "Caching groups patterns elements that provide caching responsibilities within the Persistence family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0012",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -638,15 +775,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "cache-aside": {
-              "id": "patterns/persistence/caching/cache-aside",
+              "id": "PAT-0021",
+              "path": "patterns/persistence/caching/cache-aside",
               "name": "Cache Aside",
-              "level": "subclass",
-              "parent": "patterns/persistence/caching",
-              "abstract": false,
               "description": "Cache Aside is a pattern specialization of Caching within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0020",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -664,16 +808,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "write-through": {
-              "id": "patterns/persistence/caching/write-through",
+              "id": "PAT-0022",
+              "path": "patterns/persistence/caching/write-through",
               "name": "Write Through",
-              "level": "subclass",
-              "parent": "patterns/persistence/caching",
-              "abstract": false,
               "description": "Write Through is a pattern specialization of Caching within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0020",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -691,20 +842,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "messaging": {
-      "id": "patterns/messaging",
+      "id": "PAT-0023",
+      "path": "patterns/messaging",
       "name": "Messaging",
+      "description": "Messaging is a canonical patterns family used to classify messaging concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Messaging is a canonical patterns family used to classify messaging concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "messaging"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -745,15 +903,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "delivery": {
-          "id": "patterns/messaging/delivery",
+          "id": "PAT-0024",
+          "path": "patterns/messaging/delivery",
           "name": "Delivery",
-          "level": "class",
-          "parent": "patterns/messaging",
-          "abstract": true,
           "description": "Delivery groups patterns elements that provide delivery responsibilities within the Messaging family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0023",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -772,15 +937,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "at-least-once": {
-              "id": "patterns/messaging/delivery/at-least-once",
+              "id": "PAT-0025",
+              "path": "patterns/messaging/delivery/at-least-once",
               "name": "At Least Once",
-              "level": "subclass",
-              "parent": "patterns/messaging/delivery",
-              "abstract": false,
               "description": "At Least Once is a pattern specialization of Delivery within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0024",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -798,16 +970,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "deduplication": {
-              "id": "patterns/messaging/delivery/deduplication",
+              "id": "PAT-0026",
+              "path": "patterns/messaging/delivery/deduplication",
               "name": "Deduplication",
-              "level": "subclass",
-              "parent": "patterns/messaging/delivery",
-              "abstract": false,
               "description": "Deduplication is a pattern specialization of Delivery within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0024",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -825,16 +1004,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "dead-letter": {
-              "id": "patterns/messaging/delivery/dead-letter",
+              "id": "PAT-0027",
+              "path": "patterns/messaging/delivery/dead-letter",
               "name": "Dead Letter",
-              "level": "subclass",
-              "parent": "patterns/messaging/delivery",
-              "abstract": false,
               "description": "Dead Letter is a pattern specialization of Delivery within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0024",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -852,18 +1038,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "publishing": {
-          "id": "patterns/messaging/publishing",
+          "id": "PAT-0028",
+          "path": "patterns/messaging/publishing",
           "name": "Publishing",
-          "level": "class",
-          "parent": "patterns/messaging",
-          "abstract": true,
           "description": "Publishing groups patterns elements that provide publishing responsibilities within the Messaging family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0023",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -882,15 +1075,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "transactional-outbox": {
-              "id": "patterns/messaging/publishing/transactional-outbox",
+              "id": "PAT-0029",
+              "path": "patterns/messaging/publishing/transactional-outbox",
               "name": "Transactional Outbox",
-              "level": "subclass",
-              "parent": "patterns/messaging/publishing",
-              "abstract": false,
               "description": "Transactional Outbox is a pattern specialization of Publishing within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0028",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -908,16 +1108,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "event-publisher": {
-              "id": "patterns/messaging/publishing/event-publisher",
+              "id": "PAT-0030",
+              "path": "patterns/messaging/publishing/event-publisher",
               "name": "Event Publisher",
-              "level": "subclass",
-              "parent": "patterns/messaging/publishing",
-              "abstract": false,
               "description": "Event Publisher is a pattern specialization of Publishing within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0028",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -935,18 +1142,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "consumption": {
-          "id": "patterns/messaging/consumption",
+          "id": "PAT-0031",
+          "path": "patterns/messaging/consumption",
           "name": "Consumption",
-          "level": "class",
-          "parent": "patterns/messaging",
-          "abstract": true,
           "description": "Consumption groups patterns elements that provide consumption responsibilities within the Messaging family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0023",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -965,15 +1179,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "competing-consumer": {
-              "id": "patterns/messaging/consumption/competing-consumer",
+              "id": "PAT-0032",
+              "path": "patterns/messaging/consumption/competing-consumer",
               "name": "Competing Consumer",
-              "level": "subclass",
-              "parent": "patterns/messaging/consumption",
-              "abstract": false,
               "description": "Competing Consumer is a pattern specialization of Consumption within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0031",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -991,16 +1212,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "idempotent-consumer": {
-              "id": "patterns/messaging/consumption/idempotent-consumer",
+              "id": "PAT-0033",
+              "path": "patterns/messaging/consumption/idempotent-consumer",
               "name": "Idempotent Consumer",
-              "level": "subclass",
-              "parent": "patterns/messaging/consumption",
-              "abstract": false,
               "description": "Ensures repeated delivery of the same message does not repeat business side effects.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0031",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1018,20 +1246,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "resilience": {
-      "id": "patterns/resilience",
+      "id": "PAT-0034",
+      "path": "patterns/resilience",
       "name": "Resilience",
+      "description": "Reusable approaches that contain failures and improve continuity.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Reusable approaches that contain failures and improve continuity.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "resilience"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -1072,15 +1307,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "retry": {
-          "id": "patterns/resilience/retry",
+          "id": "PAT-0035",
+          "path": "patterns/resilience/retry",
           "name": "Retry",
-          "level": "class",
-          "parent": "patterns/resilience",
-          "abstract": true,
           "description": "Retry groups patterns elements that provide retry responsibilities within the Resilience family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0034",
+          "facets": {
+            "concern": [
+              "resilience"
+            ]
+          },
           "attributes": {
             "add": {
               "max_attempts": {
@@ -1105,15 +1347,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "exponential-backoff": {
-              "id": "patterns/resilience/retry/exponential-backoff",
+              "id": "PAT-0036",
+              "path": "patterns/resilience/retry/exponential-backoff",
               "name": "Exponential Backoff",
-              "level": "subclass",
-              "parent": "patterns/resilience/retry",
-              "abstract": false,
               "description": "Retries transient failures using delays that increase between attempts.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0035",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1134,16 +1383,23 @@
                 },
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "bounded-retry": {
-              "id": "patterns/resilience/retry/bounded-retry",
+              "id": "PAT-0037",
+              "path": "patterns/resilience/retry/bounded-retry",
               "name": "Bounded Retry",
-              "level": "subclass",
-              "parent": "patterns/resilience/retry",
-              "abstract": false,
               "description": "Bounded Retry is a pattern specialization of Retry within the Resilience family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0035",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1161,18 +1417,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "isolation": {
-          "id": "patterns/resilience/isolation",
+          "id": "PAT-0038",
+          "path": "patterns/resilience/isolation",
           "name": "Isolation",
-          "level": "class",
-          "parent": "patterns/resilience",
-          "abstract": true,
           "description": "Isolation groups patterns elements that provide isolation responsibilities within the Resilience family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0034",
+          "facets": {
+            "concern": [
+              "resilience"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1191,15 +1454,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "circuit-breaker": {
-              "id": "patterns/resilience/isolation/circuit-breaker",
+              "id": "PAT-0039",
+              "path": "patterns/resilience/isolation/circuit-breaker",
               "name": "Circuit Breaker",
-              "level": "subclass",
-              "parent": "patterns/resilience/isolation",
-              "abstract": false,
               "description": "Temporarily blocks calls to an unhealthy dependency after failures exceed a threshold.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0038",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1217,16 +1487,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "bulkhead": {
-              "id": "patterns/resilience/isolation/bulkhead",
+              "id": "PAT-0040",
+              "path": "patterns/resilience/isolation/bulkhead",
               "name": "Bulkhead",
-              "level": "subclass",
-              "parent": "patterns/resilience/isolation",
-              "abstract": false,
               "description": "Bulkhead is a pattern specialization of Isolation within the Resilience family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0038",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1244,18 +1521,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "timeout": {
-          "id": "patterns/resilience/timeout",
+          "id": "PAT-0041",
+          "path": "patterns/resilience/timeout",
           "name": "Timeout",
-          "level": "class",
-          "parent": "patterns/resilience",
-          "abstract": true,
           "description": "Timeout groups patterns elements that provide timeout responsibilities within the Resilience family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0034",
+          "facets": {
+            "concern": [
+              "resilience"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1274,15 +1558,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "bounded-timeout": {
-              "id": "patterns/resilience/timeout/bounded-timeout",
+              "id": "PAT-0042",
+              "path": "patterns/resilience/timeout/bounded-timeout",
               "name": "Bounded Timeout",
-              "level": "subclass",
-              "parent": "patterns/resilience/timeout",
-              "abstract": false,
               "description": "Bounded Timeout is a pattern specialization of Timeout within the Resilience family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0041",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1300,20 +1591,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "security": {
-      "id": "patterns/security",
+      "id": "PAT-0043",
+      "path": "patterns/security",
       "name": "Security",
+      "description": "Security is a canonical patterns family used to classify security concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Security is a canonical patterns family used to classify security concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "security"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -1354,15 +1652,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "authentication": {
-          "id": "patterns/security/authentication",
+          "id": "PAT-0044",
+          "path": "patterns/security/authentication",
           "name": "Authentication",
-          "level": "class",
-          "parent": "patterns/security",
-          "abstract": true,
           "description": "Authentication groups patterns elements that provide authentication responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0043",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1381,15 +1686,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "bearer-token": {
-              "id": "patterns/security/authentication/bearer-token",
+              "id": "PAT-0045",
+              "path": "patterns/security/authentication/bearer-token",
               "name": "Bearer Token",
-              "level": "subclass",
-              "parent": "patterns/security/authentication",
-              "abstract": false,
               "description": "Bearer Token is a pattern specialization of Authentication within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0044",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1407,16 +1719,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "mutual-tls": {
-              "id": "patterns/security/authentication/mutual-tls",
+              "id": "PAT-0046",
+              "path": "patterns/security/authentication/mutual-tls",
               "name": "Mutual Tls",
-              "level": "subclass",
-              "parent": "patterns/security/authentication",
-              "abstract": false,
               "description": "Mutual Tls is a pattern specialization of Authentication within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0044",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1434,18 +1753,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "authorization": {
-          "id": "patterns/security/authorization",
+          "id": "PAT-0047",
+          "path": "patterns/security/authorization",
           "name": "Authorization",
-          "level": "class",
-          "parent": "patterns/security",
-          "abstract": true,
           "description": "Authorization groups patterns elements that provide authorization responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0043",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1464,15 +1790,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "role-based-access-control": {
-              "id": "patterns/security/authorization/role-based-access-control",
+              "id": "PAT-0048",
+              "path": "patterns/security/authorization/role-based-access-control",
               "name": "Role Based Access Control",
-              "level": "subclass",
-              "parent": "patterns/security/authorization",
-              "abstract": false,
               "description": "Role Based Access Control is a pattern specialization of Authorization within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0047",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1490,16 +1823,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "policy-based-access-control": {
-              "id": "patterns/security/authorization/policy-based-access-control",
+              "id": "PAT-0049",
+              "path": "patterns/security/authorization/policy-based-access-control",
               "name": "Policy Based Access Control",
-              "level": "subclass",
-              "parent": "patterns/security/authorization",
-              "abstract": false,
               "description": "Policy Based Access Control is a pattern specialization of Authorization within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0047",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1517,18 +1857,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "secrets": {
-          "id": "patterns/security/secrets",
+          "id": "PAT-0050",
+          "path": "patterns/security/secrets",
           "name": "Secrets",
-          "level": "class",
-          "parent": "patterns/security",
-          "abstract": true,
           "description": "Secrets groups patterns elements that provide secrets responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0043",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1547,15 +1894,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "external-secret-store": {
-              "id": "patterns/security/secrets/external-secret-store",
+              "id": "PAT-0051",
+              "path": "patterns/security/secrets/external-secret-store",
               "name": "External Secret Store",
-              "level": "subclass",
-              "parent": "patterns/security/secrets",
-              "abstract": false,
               "description": "External Secret Store is a pattern specialization of Secrets within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0050",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1573,20 +1927,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "integration": {
-      "id": "patterns/integration",
+      "id": "PAT-0052",
+      "path": "patterns/integration",
       "name": "Integration",
+      "description": "Integration is a canonical patterns family used to classify integration concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Integration is a canonical patterns family used to classify integration concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "integration"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -1627,15 +1988,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "coordination": {
-          "id": "patterns/integration/coordination",
+          "id": "PAT-0053",
+          "path": "patterns/integration/coordination",
           "name": "Coordination",
-          "level": "class",
-          "parent": "patterns/integration",
-          "abstract": true,
           "description": "Coordination groups patterns elements that provide coordination responsibilities within the Integration family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0052",
+          "facets": {
+            "concern": [
+              "integration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1654,15 +2022,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "saga": {
-              "id": "patterns/integration/coordination/saga",
+              "id": "PAT-0054",
+              "path": "patterns/integration/coordination/saga",
               "name": "Saga",
-              "level": "subclass",
-              "parent": "patterns/integration/coordination",
-              "abstract": false,
               "description": "Saga is a pattern specialization of Coordination within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0053",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1680,16 +2055,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "orchestration": {
-              "id": "patterns/integration/coordination/orchestration",
+              "id": "PAT-0055",
+              "path": "patterns/integration/coordination/orchestration",
               "name": "Orchestration",
-              "level": "subclass",
-              "parent": "patterns/integration/coordination",
-              "abstract": false,
               "description": "Orchestration is a pattern specialization of Coordination within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0053",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1707,16 +2089,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "choreography": {
-              "id": "patterns/integration/coordination/choreography",
+              "id": "PAT-0056",
+              "path": "patterns/integration/coordination/choreography",
               "name": "Choreography",
-              "level": "subclass",
-              "parent": "patterns/integration/coordination",
-              "abstract": false,
               "description": "Choreography is a pattern specialization of Coordination within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0053",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1734,18 +2123,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "translation": {
-          "id": "patterns/integration/translation",
+          "id": "PAT-0057",
+          "path": "patterns/integration/translation",
           "name": "Translation",
-          "level": "class",
-          "parent": "patterns/integration",
-          "abstract": true,
           "description": "Translation groups patterns elements that provide translation responsibilities within the Integration family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0052",
+          "facets": {
+            "concern": [
+              "integration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1764,15 +2160,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "anti-corruption-layer": {
-              "id": "patterns/integration/translation/anti-corruption-layer",
+              "id": "PAT-0058",
+              "path": "patterns/integration/translation/anti-corruption-layer",
               "name": "Anti Corruption Layer",
-              "level": "subclass",
-              "parent": "patterns/integration/translation",
-              "abstract": false,
               "description": "Anti Corruption Layer is a pattern specialization of Translation within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0057",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1790,16 +2193,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "canonical-data-model": {
-              "id": "patterns/integration/translation/canonical-data-model",
+              "id": "PAT-0059",
+              "path": "patterns/integration/translation/canonical-data-model",
               "name": "Canonical Data Model",
-              "level": "subclass",
-              "parent": "patterns/integration/translation",
-              "abstract": false,
               "description": "Canonical Data Model is a pattern specialization of Translation within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0057",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1817,20 +2227,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "observability": {
-      "id": "patterns/observability",
+      "id": "PAT-0060",
+      "path": "patterns/observability",
       "name": "Observability",
+      "description": "Observability is a canonical patterns family used to classify observability concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Observability is a canonical patterns family used to classify observability concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "observability"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -1871,15 +2288,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "correlation": {
-          "id": "patterns/observability/correlation",
+          "id": "PAT-0061",
+          "path": "patterns/observability/correlation",
           "name": "Correlation",
-          "level": "class",
-          "parent": "patterns/observability",
-          "abstract": true,
           "description": "Correlation groups patterns elements that provide correlation responsibilities within the Observability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0060",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1898,15 +2322,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "correlation-id-propagation": {
-              "id": "patterns/observability/correlation/correlation-id-propagation",
+              "id": "PAT-0062",
+              "path": "patterns/observability/correlation/correlation-id-propagation",
               "name": "Correlation Id Propagation",
-              "level": "subclass",
-              "parent": "patterns/observability/correlation",
-              "abstract": false,
               "description": "Correlation Id Propagation is a pattern specialization of Correlation within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0061",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1924,16 +2355,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "trace-context-propagation": {
-              "id": "patterns/observability/correlation/trace-context-propagation",
+              "id": "PAT-0063",
+              "path": "patterns/observability/correlation/trace-context-propagation",
               "name": "Trace Context Propagation",
-              "level": "subclass",
-              "parent": "patterns/observability/correlation",
-              "abstract": false,
               "description": "Trace Context Propagation is a pattern specialization of Correlation within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0061",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1951,18 +2389,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "instrumentation": {
-          "id": "patterns/observability/instrumentation",
+          "id": "PAT-0064",
+          "path": "patterns/observability/instrumentation",
           "name": "Instrumentation",
-          "level": "class",
-          "parent": "patterns/observability",
-          "abstract": true,
           "description": "Instrumentation groups patterns elements that provide instrumentation responsibilities within the Observability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0060",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1981,15 +2426,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "structured-logging": {
-              "id": "patterns/observability/instrumentation/structured-logging",
+              "id": "PAT-0065",
+              "path": "patterns/observability/instrumentation/structured-logging",
               "name": "Structured Logging",
-              "level": "subclass",
-              "parent": "patterns/observability/instrumentation",
-              "abstract": false,
               "description": "Structured Logging is a pattern specialization of Instrumentation within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0064",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2007,16 +2459,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "distributed-tracing": {
-              "id": "patterns/observability/instrumentation/distributed-tracing",
+              "id": "PAT-0066",
+              "path": "patterns/observability/instrumentation/distributed-tracing",
               "name": "Distributed Tracing",
-              "level": "subclass",
-              "parent": "patterns/observability/instrumentation",
-              "abstract": false,
               "description": "Distributed Tracing is a pattern specialization of Instrumentation within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0064",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2034,20 +2493,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "testing": {
-      "id": "patterns/testing",
+      "id": "PAT-0067",
+      "path": "patterns/testing",
       "name": "Testing",
+      "description": "Testing is a canonical patterns family used to classify testing concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Testing is a canonical patterns family used to classify testing concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "testing"
+        ]
+      },
       "attributes": {
         "add": {
           "maturity": {
@@ -2088,15 +2554,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "structure": {
-          "id": "patterns/testing/structure",
+          "id": "PAT-0068",
+          "path": "patterns/testing/structure",
           "name": "Structure",
-          "level": "class",
-          "parent": "patterns/testing",
-          "abstract": true,
           "description": "Structure groups patterns elements that provide structure responsibilities within the Testing family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0067",
+          "facets": {
+            "concern": [
+              "testing"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -2115,15 +2588,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "test-pyramid": {
-              "id": "patterns/testing/structure/test-pyramid",
+              "id": "PAT-0069",
+              "path": "patterns/testing/structure/test-pyramid",
               "name": "Test Pyramid",
-              "level": "subclass",
-              "parent": "patterns/testing/structure",
-              "abstract": false,
               "description": "Test Pyramid is a pattern specialization of Structure within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0068",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2141,16 +2621,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "contract-testing": {
-              "id": "patterns/testing/structure/contract-testing",
+              "id": "PAT-0070",
+              "path": "patterns/testing/structure/contract-testing",
               "name": "Contract Testing",
-              "level": "subclass",
-              "parent": "patterns/testing/structure",
-              "abstract": false,
               "description": "Contract Testing is a pattern specialization of Structure within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0068",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2168,18 +2655,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "isolation": {
-          "id": "patterns/testing/isolation",
+          "id": "PAT-0071",
+          "path": "patterns/testing/isolation",
           "name": "Isolation",
-          "level": "class",
-          "parent": "patterns/testing",
-          "abstract": true,
           "description": "Isolation groups patterns elements that provide isolation responsibilities within the Testing family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "PAT-0067",
+          "facets": {
+            "concern": [
+              "testing"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -2198,15 +2692,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "test-double": {
-              "id": "patterns/testing/isolation/test-double",
+              "id": "PAT-0072",
+              "path": "patterns/testing/isolation/test-double",
               "name": "Test Double",
-              "level": "subclass",
-              "parent": "patterns/testing/isolation",
-              "abstract": false,
               "description": "Test Double is a pattern specialization of Isolation within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0071",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2224,16 +2725,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "fixture-factory": {
-              "id": "patterns/testing/isolation/fixture-factory",
+              "id": "PAT-0073",
+              "path": "patterns/testing/isolation/fixture-factory",
               "name": "Fixture Factory",
-              "level": "subclass",
-              "parent": "patterns/testing/isolation",
-              "abstract": false,
               "description": "Fixture Factory is a pattern specialization of Isolation within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "PAT-0071",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2251,7 +2759,10 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }

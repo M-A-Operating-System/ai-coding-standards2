@@ -1,6 +1,6 @@
 {
   "$schema": "../schemas/domain-taxonomy.schema.json",
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "domain": "code",
   "purpose": "Higher-order source-code roles derived deterministically from static-analysis facts.",
   "inheritance": {
@@ -18,13 +18,17 @@
   },
   "families": {
     "api": {
-      "id": "code/api",
+      "id": "CODE-0001",
+      "path": "code/api",
       "name": "Api",
+      "description": "Higher-order source-code roles that implement inbound API behavior and contracts.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Higher-order source-code roles that implement inbound API behavior and contracts.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "api"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -61,15 +65,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "handler": {
-          "id": "code/api/handler",
+          "id": "CODE-0002",
+          "path": "code/api/handler",
           "name": "Handler",
-          "level": "class",
-          "parent": "code/api",
-          "abstract": true,
           "description": "Handler groups code elements that provide handler responsibilities within the Api family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0001",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -88,15 +99,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "request-handler": {
-              "id": "code/api/handler/request-handler",
+              "id": "CODE-0003",
+              "path": "code/api/handler/request-handler",
               "name": "Request Handler",
-              "level": "subclass",
-              "parent": "code/api/handler",
-              "abstract": false,
               "description": "Function or method responsible for receiving an API request and coordinating application behavior.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0002",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {
                   "entry_point": {
@@ -122,16 +140,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "command-handler": {
-              "id": "code/api/handler/command-handler",
+              "id": "CODE-0004",
+              "path": "code/api/handler/command-handler",
               "name": "Command Handler",
-              "level": "subclass",
-              "parent": "code/api/handler",
-              "abstract": false,
               "description": "Command Handler is a code specialization of Handler within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0002",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -149,18 +174,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "middleware": {
-          "id": "code/api/middleware",
+          "id": "CODE-0005",
+          "path": "code/api/middleware",
           "name": "Middleware",
-          "level": "class",
-          "parent": "code/api",
-          "abstract": true,
           "description": "Middleware groups code elements that provide middleware responsibilities within the Api family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0001",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -179,15 +211,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "request-middleware": {
-              "id": "code/api/middleware/request-middleware",
+              "id": "CODE-0006",
+              "path": "code/api/middleware/request-middleware",
               "name": "Request Middleware",
-              "level": "subclass",
-              "parent": "code/api/middleware",
-              "abstract": false,
               "description": "Request Middleware is a code specialization of Middleware within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0005",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -205,16 +244,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "error-middleware": {
-              "id": "code/api/middleware/error-middleware",
+              "id": "CODE-0007",
+              "path": "code/api/middleware/error-middleware",
               "name": "Error Middleware",
-              "level": "subclass",
-              "parent": "code/api/middleware",
-              "abstract": false,
               "description": "Error Middleware is a code specialization of Middleware within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0005",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -232,18 +278,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "contract": {
-          "id": "code/api/contract",
+          "id": "CODE-0008",
+          "path": "code/api/contract",
           "name": "Contract",
-          "level": "class",
-          "parent": "code/api",
-          "abstract": true,
           "description": "Contract groups code elements that provide contract responsibilities within the Api family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0001",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -262,15 +315,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "request-schema": {
-              "id": "code/api/contract/request-schema",
+              "id": "CODE-0009",
+              "path": "code/api/contract/request-schema",
               "name": "Request Schema",
-              "level": "subclass",
-              "parent": "code/api/contract",
-              "abstract": false,
               "description": "Request Schema is a code specialization of Contract within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0008",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -288,16 +348,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "response-schema": {
-              "id": "code/api/contract/response-schema",
+              "id": "CODE-0010",
+              "path": "code/api/contract/response-schema",
               "name": "Response Schema",
-              "level": "subclass",
-              "parent": "code/api/contract",
-              "abstract": false,
               "description": "Response Schema is a code specialization of Contract within the Api family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0008",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -315,20 +382,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "domain": {
-      "id": "code/domain",
+      "id": "CODE-0011",
+      "path": "code/domain",
       "name": "Domain",
+      "description": "Domain is a canonical code family used to classify domain concerns.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Domain is a canonical code family used to classify domain concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "domain"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -365,15 +439,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "model": {
-          "id": "code/domain/model",
+          "id": "CODE-0012",
+          "path": "code/domain/model",
           "name": "Model",
-          "level": "class",
-          "parent": "code/domain",
-          "abstract": true,
           "description": "Model groups code elements that provide model responsibilities within the Domain family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0011",
+          "facets": {
+            "concern": [
+              "domain"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -392,15 +473,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "entity": {
-              "id": "code/domain/model/entity",
+              "id": "CODE-0013",
+              "path": "code/domain/model/entity",
               "name": "Entity",
-              "level": "subclass",
-              "parent": "code/domain/model",
-              "abstract": false,
               "description": "Entity is a code specialization of Model within the Domain family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0012",
+              "facets": {
+                "concern": [
+                  "domain"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -418,16 +506,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "value-object": {
-              "id": "code/domain/model/value-object",
+              "id": "CODE-0014",
+              "path": "code/domain/model/value-object",
               "name": "Value Object",
-              "level": "subclass",
-              "parent": "code/domain/model",
-              "abstract": false,
               "description": "Value Object is a code specialization of Model within the Domain family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0012",
+              "facets": {
+                "concern": [
+                  "domain"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -445,16 +540,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "aggregate-root": {
-              "id": "code/domain/model/aggregate-root",
+              "id": "CODE-0015",
+              "path": "code/domain/model/aggregate-root",
               "name": "Aggregate Root",
-              "level": "subclass",
-              "parent": "code/domain/model",
-              "abstract": false,
               "description": "Aggregate Root is a code specialization of Model within the Domain family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0012",
+              "facets": {
+                "concern": [
+                  "domain"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -472,18 +574,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "service": {
-          "id": "code/domain/service",
+          "id": "CODE-0016",
+          "path": "code/domain/service",
           "name": "Service",
-          "level": "class",
-          "parent": "code/domain",
-          "abstract": true,
           "description": "Service groups code elements that provide service responsibilities within the Domain family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0011",
+          "facets": {
+            "concern": [
+              "domain"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -502,15 +611,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "domain-service": {
-              "id": "code/domain/service/domain-service",
+              "id": "CODE-0017",
+              "path": "code/domain/service/domain-service",
               "name": "Domain Service",
-              "level": "subclass",
-              "parent": "code/domain/service",
-              "abstract": false,
               "description": "Domain Service is a code specialization of Service within the Domain family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0016",
+              "facets": {
+                "concern": [
+                  "domain"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -528,18 +644,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "event": {
-          "id": "code/domain/event",
+          "id": "CODE-0018",
+          "path": "code/domain/event",
           "name": "Event",
-          "level": "class",
-          "parent": "code/domain",
-          "abstract": true,
           "description": "Event groups code elements that provide event responsibilities within the Domain family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0011",
+          "facets": {
+            "concern": [
+              "domain"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -558,15 +681,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "domain-event": {
-              "id": "code/domain/event/domain-event",
+              "id": "CODE-0019",
+              "path": "code/domain/event/domain-event",
               "name": "Domain Event",
-              "level": "subclass",
-              "parent": "code/domain/event",
-              "abstract": false,
               "description": "Domain Event is a code specialization of Event within the Domain family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0018",
+              "facets": {
+                "concern": [
+                  "domain"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -584,20 +714,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "persistence": {
-      "id": "code/persistence",
+      "id": "CODE-0020",
+      "path": "code/persistence",
       "name": "Persistence",
+      "description": "Higher-order source-code roles that encapsulate durable data access and transactions.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Higher-order source-code roles that encapsulate durable data access and transactions.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "persistence"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -634,15 +771,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "repository": {
-          "id": "code/persistence/repository",
+          "id": "CODE-0021",
+          "path": "code/persistence/repository",
           "name": "Repository",
-          "level": "class",
-          "parent": "code/persistence",
-          "abstract": true,
           "description": "Repository groups code elements that provide repository responsibilities within the Persistence family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0020",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -661,15 +805,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "repository-interface": {
-              "id": "code/persistence/repository/repository-interface",
+              "id": "CODE-0022",
+              "path": "code/persistence/repository/repository-interface",
               "name": "Repository Interface",
-              "level": "subclass",
-              "parent": "code/persistence/repository",
-              "abstract": false,
               "description": "Repository Interface is a code specialization of Repository within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0021",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -687,16 +838,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "repository-implementation": {
-              "id": "code/persistence/repository/repository-implementation",
+              "id": "CODE-0023",
+              "path": "code/persistence/repository/repository-implementation",
               "name": "Repository Implementation",
-              "level": "subclass",
-              "parent": "code/persistence/repository",
-              "abstract": false,
               "description": "Concrete source-code implementation of a repository abstraction performing persistence operations.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0021",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -714,18 +872,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "mapper": {
-          "id": "code/persistence/mapper",
+          "id": "CODE-0024",
+          "path": "code/persistence/mapper",
           "name": "Mapper",
-          "level": "class",
-          "parent": "code/persistence",
-          "abstract": true,
           "description": "Mapper groups code elements that provide mapper responsibilities within the Persistence family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0020",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -744,15 +909,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "data-mapper": {
-              "id": "code/persistence/mapper/data-mapper",
+              "id": "CODE-0025",
+              "path": "code/persistence/mapper/data-mapper",
               "name": "Data Mapper",
-              "level": "subclass",
-              "parent": "code/persistence/mapper",
-              "abstract": false,
               "description": "Data Mapper is a code specialization of Mapper within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0024",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -770,18 +942,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "transaction": {
-          "id": "code/persistence/transaction",
+          "id": "CODE-0026",
+          "path": "code/persistence/transaction",
           "name": "Transaction",
-          "level": "class",
-          "parent": "code/persistence",
-          "abstract": true,
           "description": "Transaction groups code elements that provide transaction responsibilities within the Persistence family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0020",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -800,15 +979,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "unit-of-work": {
-              "id": "code/persistence/transaction/unit-of-work",
+              "id": "CODE-0027",
+              "path": "code/persistence/transaction/unit-of-work",
               "name": "Unit Of Work",
-              "level": "subclass",
-              "parent": "code/persistence/transaction",
-              "abstract": false,
               "description": "Unit Of Work is a code specialization of Transaction within the Persistence family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0026",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -826,20 +1012,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "messaging": {
-      "id": "code/messaging",
+      "id": "CODE-0028",
+      "path": "code/messaging",
       "name": "Messaging",
+      "description": "Messaging is a canonical code family used to classify messaging concerns.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Messaging is a canonical code family used to classify messaging concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "messaging"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -876,15 +1069,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "consumer": {
-          "id": "code/messaging/consumer",
+          "id": "CODE-0029",
+          "path": "code/messaging/consumer",
           "name": "Consumer",
-          "level": "class",
-          "parent": "code/messaging",
-          "abstract": true,
           "description": "Consumer groups code elements that provide consumer responsibilities within the Messaging family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0028",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -903,15 +1103,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "message-consumer": {
-              "id": "code/messaging/consumer/message-consumer",
+              "id": "CODE-0030",
+              "path": "code/messaging/consumer/message-consumer",
               "name": "Message Consumer",
-              "level": "subclass",
-              "parent": "code/messaging/consumer",
-              "abstract": false,
               "description": "Function, method, or object that receives asynchronous messages and invokes processing behavior.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0029",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -929,18 +1136,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "producer": {
-          "id": "code/messaging/producer",
+          "id": "CODE-0031",
+          "path": "code/messaging/producer",
           "name": "Producer",
-          "level": "class",
-          "parent": "code/messaging",
-          "abstract": true,
           "description": "Producer groups code elements that provide producer responsibilities within the Messaging family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0028",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -959,15 +1173,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "message-producer": {
-              "id": "code/messaging/producer/message-producer",
+              "id": "CODE-0032",
+              "path": "code/messaging/producer/message-producer",
               "name": "Message Producer",
-              "level": "subclass",
-              "parent": "code/messaging/producer",
-              "abstract": false,
               "description": "Message Producer is a code specialization of Producer within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0031",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -985,18 +1206,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "contract": {
-          "id": "code/messaging/contract",
+          "id": "CODE-0033",
+          "path": "code/messaging/contract",
           "name": "Contract",
-          "level": "class",
-          "parent": "code/messaging",
-          "abstract": true,
           "description": "Contract groups code elements that provide contract responsibilities within the Messaging family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0028",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1015,15 +1243,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "message-schema": {
-              "id": "code/messaging/contract/message-schema",
+              "id": "CODE-0034",
+              "path": "code/messaging/contract/message-schema",
               "name": "Message Schema",
-              "level": "subclass",
-              "parent": "code/messaging/contract",
-              "abstract": false,
               "description": "Message Schema is a code specialization of Contract within the Messaging family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0033",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1041,20 +1276,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "testing": {
-      "id": "code/testing",
+      "id": "CODE-0035",
+      "path": "code/testing",
       "name": "Testing",
+      "description": "Testing is a canonical code family used to classify testing concerns.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Testing is a canonical code family used to classify testing concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "testing"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -1091,15 +1333,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "double": {
-          "id": "code/testing/double",
+          "id": "CODE-0036",
+          "path": "code/testing/double",
           "name": "Double",
-          "level": "class",
-          "parent": "code/testing",
-          "abstract": true,
           "description": "Double groups code elements that provide double responsibilities within the Testing family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0035",
+          "facets": {
+            "concern": [
+              "testing"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1118,15 +1367,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "mock": {
-              "id": "code/testing/double/mock",
+              "id": "CODE-0037",
+              "path": "code/testing/double/mock",
               "name": "Mock",
-              "level": "subclass",
-              "parent": "code/testing/double",
-              "abstract": false,
               "description": "Mock is a code specialization of Double within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0036",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1144,16 +1400,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "stub": {
-              "id": "code/testing/double/stub",
+              "id": "CODE-0038",
+              "path": "code/testing/double/stub",
               "name": "Stub",
-              "level": "subclass",
-              "parent": "code/testing/double",
-              "abstract": false,
               "description": "Stub is a code specialization of Double within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0036",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1171,16 +1434,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "fake": {
-              "id": "code/testing/double/fake",
+              "id": "CODE-0039",
+              "path": "code/testing/double/fake",
               "name": "Fake",
-              "level": "subclass",
-              "parent": "code/testing/double",
-              "abstract": false,
               "description": "Fake is a code specialization of Double within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0036",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1198,18 +1468,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "fixture": {
-          "id": "code/testing/fixture",
+          "id": "CODE-0040",
+          "path": "code/testing/fixture",
           "name": "Fixture",
-          "level": "class",
-          "parent": "code/testing",
-          "abstract": true,
           "description": "Fixture groups code elements that provide fixture responsibilities within the Testing family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0035",
+          "facets": {
+            "concern": [
+              "testing"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1228,15 +1505,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "test-fixture": {
-              "id": "code/testing/fixture/test-fixture",
+              "id": "CODE-0041",
+              "path": "code/testing/fixture/test-fixture",
               "name": "Test Fixture",
-              "level": "subclass",
-              "parent": "code/testing/fixture",
-              "abstract": false,
               "description": "Test Fixture is a code specialization of Fixture within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0040",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1254,18 +1538,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "test": {
-          "id": "code/testing/test",
+          "id": "CODE-0042",
+          "path": "code/testing/test",
           "name": "Test",
-          "level": "class",
-          "parent": "code/testing",
-          "abstract": true,
           "description": "Test groups code elements that provide test responsibilities within the Testing family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0035",
+          "facets": {
+            "concern": [
+              "testing"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1284,15 +1575,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "unit-test": {
-              "id": "code/testing/test/unit-test",
+              "id": "CODE-0043",
+              "path": "code/testing/test/unit-test",
               "name": "Unit Test",
-              "level": "subclass",
-              "parent": "code/testing/test",
-              "abstract": false,
               "description": "Unit Test is a code specialization of Test within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0042",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1310,16 +1608,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "integration-test": {
-              "id": "code/testing/test/integration-test",
+              "id": "CODE-0044",
+              "path": "code/testing/test/integration-test",
               "name": "Integration Test",
-              "level": "subclass",
-              "parent": "code/testing/test",
-              "abstract": false,
               "description": "Integration Test is a code specialization of Test within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0042",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1337,16 +1642,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "contract-test": {
-              "id": "code/testing/test/contract-test",
+              "id": "CODE-0045",
+              "path": "code/testing/test/contract-test",
               "name": "Contract Test",
-              "level": "subclass",
-              "parent": "code/testing/test",
-              "abstract": false,
               "description": "Contract Test is a code specialization of Test within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0042",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1364,16 +1676,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "end-to-end-test": {
-              "id": "code/testing/test/end-to-end-test",
+              "id": "CODE-0046",
+              "path": "code/testing/test/end-to-end-test",
               "name": "End To End Test",
-              "level": "subclass",
-              "parent": "code/testing/test",
-              "abstract": false,
               "description": "End To End Test is a code specialization of Test within the Testing family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0042",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1391,20 +1710,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "configuration": {
-      "id": "code/configuration",
+      "id": "CODE-0047",
+      "path": "code/configuration",
       "name": "Configuration",
+      "description": "Configuration is a canonical code family used to classify configuration concerns.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Configuration is a canonical code family used to classify configuration concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "configuration"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -1441,15 +1767,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "settings": {
-          "id": "code/configuration/settings",
+          "id": "CODE-0048",
+          "path": "code/configuration/settings",
           "name": "Settings",
-          "level": "class",
-          "parent": "code/configuration",
-          "abstract": true,
           "description": "Settings groups code elements that provide settings responsibilities within the Configuration family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0047",
+          "facets": {
+            "concern": [
+              "configuration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1468,15 +1801,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "application-settings": {
-              "id": "code/configuration/settings/application-settings",
+              "id": "CODE-0049",
+              "path": "code/configuration/settings/application-settings",
               "name": "Application Settings",
-              "level": "subclass",
-              "parent": "code/configuration/settings",
-              "abstract": false,
               "description": "Application Settings is a code specialization of Settings within the Configuration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0048",
+              "facets": {
+                "concern": [
+                  "configuration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1494,16 +1834,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "environment-settings": {
-              "id": "code/configuration/settings/environment-settings",
+              "id": "CODE-0050",
+              "path": "code/configuration/settings/environment-settings",
               "name": "Environment Settings",
-              "level": "subclass",
-              "parent": "code/configuration/settings",
-              "abstract": false,
               "description": "Environment Settings is a code specialization of Settings within the Configuration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0048",
+              "facets": {
+                "concern": [
+                  "configuration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1521,18 +1868,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "feature": {
-          "id": "code/configuration/feature",
+          "id": "CODE-0051",
+          "path": "code/configuration/feature",
           "name": "Feature",
-          "level": "class",
-          "parent": "code/configuration",
-          "abstract": true,
           "description": "Feature groups code elements that provide feature responsibilities within the Configuration family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0047",
+          "facets": {
+            "concern": [
+              "configuration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1551,15 +1905,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "feature-flag": {
-              "id": "code/configuration/feature/feature-flag",
+              "id": "CODE-0052",
+              "path": "code/configuration/feature/feature-flag",
               "name": "Feature Flag",
-              "level": "subclass",
-              "parent": "code/configuration/feature",
-              "abstract": false,
               "description": "Feature Flag is a code specialization of Feature within the Configuration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0051",
+              "facets": {
+                "concern": [
+                  "configuration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1577,20 +1938,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "security": {
-      "id": "code/security",
+      "id": "CODE-0053",
+      "path": "code/security",
       "name": "Security",
+      "description": "Security is a canonical code family used to classify security concerns.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Security is a canonical code family used to classify security concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "security"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -1627,15 +1995,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "authentication": {
-          "id": "code/security/authentication",
+          "id": "CODE-0054",
+          "path": "code/security/authentication",
           "name": "Authentication",
-          "level": "class",
-          "parent": "code/security",
-          "abstract": true,
           "description": "Authentication groups code elements that provide authentication responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0053",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1654,15 +2029,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "authentication-handler": {
-              "id": "code/security/authentication/authentication-handler",
+              "id": "CODE-0055",
+              "path": "code/security/authentication/authentication-handler",
               "name": "Authentication Handler",
-              "level": "subclass",
-              "parent": "code/security/authentication",
-              "abstract": false,
               "description": "Authentication Handler is a code specialization of Authentication within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0054",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1680,18 +2062,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "authorization": {
-          "id": "code/security/authorization",
+          "id": "CODE-0056",
+          "path": "code/security/authorization",
           "name": "Authorization",
-          "level": "class",
-          "parent": "code/security",
-          "abstract": true,
           "description": "Authorization groups code elements that provide authorization responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0053",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1710,15 +2099,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "authorization-handler": {
-              "id": "code/security/authorization/authorization-handler",
+              "id": "CODE-0057",
+              "path": "code/security/authorization/authorization-handler",
               "name": "Authorization Handler",
-              "level": "subclass",
-              "parent": "code/security/authorization",
-              "abstract": false,
               "description": "Authorization Handler is a code specialization of Authorization within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0056",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1736,18 +2132,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "validation": {
-          "id": "code/security/validation",
+          "id": "CODE-0058",
+          "path": "code/security/validation",
           "name": "Validation",
-          "level": "class",
-          "parent": "code/security",
-          "abstract": true,
           "description": "Validation groups code elements that provide validation responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0053",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1766,15 +2169,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "input-validator": {
-              "id": "code/security/validation/input-validator",
+              "id": "CODE-0059",
+              "path": "code/security/validation/input-validator",
               "name": "Input Validator",
-              "level": "subclass",
-              "parent": "code/security/validation",
-              "abstract": false,
               "description": "Input Validator is a code specialization of Validation within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0058",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1792,20 +2202,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "observability": {
-      "id": "code/observability",
+      "id": "CODE-0060",
+      "path": "code/observability",
       "name": "Observability",
+      "description": "Observability is a canonical code family used to classify observability concerns.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Observability is a canonical code family used to classify observability concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "observability"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -1842,15 +2259,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "logging": {
-          "id": "code/observability/logging",
+          "id": "CODE-0061",
+          "path": "code/observability/logging",
           "name": "Logging",
-          "level": "class",
-          "parent": "code/observability",
-          "abstract": true,
           "description": "Logging groups code elements that provide logging responsibilities within the Observability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0060",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1869,15 +2293,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "structured-logger": {
-              "id": "code/observability/logging/structured-logger",
+              "id": "CODE-0062",
+              "path": "code/observability/logging/structured-logger",
               "name": "Structured Logger",
-              "level": "subclass",
-              "parent": "code/observability/logging",
-              "abstract": false,
               "description": "Structured Logger is a code specialization of Logging within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0061",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1895,18 +2326,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "metrics": {
-          "id": "code/observability/metrics",
+          "id": "CODE-0063",
+          "path": "code/observability/metrics",
           "name": "Metrics",
-          "level": "class",
-          "parent": "code/observability",
-          "abstract": true,
           "description": "Metrics groups code elements that provide metrics responsibilities within the Observability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0060",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1925,15 +2363,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "metrics-instrumentation": {
-              "id": "code/observability/metrics/metrics-instrumentation",
+              "id": "CODE-0064",
+              "path": "code/observability/metrics/metrics-instrumentation",
               "name": "Metrics Instrumentation",
-              "level": "subclass",
-              "parent": "code/observability/metrics",
-              "abstract": false,
               "description": "Metrics Instrumentation is a code specialization of Metrics within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0063",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1951,18 +2396,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "tracing": {
-          "id": "code/observability/tracing",
+          "id": "CODE-0065",
+          "path": "code/observability/tracing",
           "name": "Tracing",
-          "level": "class",
-          "parent": "code/observability",
-          "abstract": true,
           "description": "Tracing groups code elements that provide tracing responsibilities within the Observability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0060",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1981,15 +2433,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "trace-instrumentation": {
-              "id": "code/observability/tracing/trace-instrumentation",
+              "id": "CODE-0066",
+              "path": "code/observability/tracing/trace-instrumentation",
               "name": "Trace Instrumentation",
-              "level": "subclass",
-              "parent": "code/observability/tracing",
-              "abstract": false,
               "description": "Trace Instrumentation is a code specialization of Tracing within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0065",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2007,20 +2466,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "integration": {
-      "id": "code/integration",
+      "id": "CODE-0067",
+      "path": "code/integration",
       "name": "Integration",
+      "description": "Integration is a canonical code family used to classify integration concerns.",
       "level": "family",
       "parent": "code",
-      "abstract": true,
-      "description": "Integration is a canonical code family used to classify integration concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "integration"
+        ]
+      },
       "attributes": {
         "add": {
           "visibility": {
@@ -2057,15 +2523,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "client": {
-          "id": "code/integration/client",
+          "id": "CODE-0068",
+          "path": "code/integration/client",
           "name": "Client",
-          "level": "class",
-          "parent": "code/integration",
-          "abstract": true,
           "description": "Client groups code elements that provide client responsibilities within the Integration family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0067",
+          "facets": {
+            "concern": [
+              "integration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -2084,15 +2557,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "api-client": {
-              "id": "code/integration/client/api-client",
+              "id": "CODE-0069",
+              "path": "code/integration/client/api-client",
               "name": "Api Client",
-              "level": "subclass",
-              "parent": "code/integration/client",
-              "abstract": false,
               "description": "Api Client is a code specialization of Client within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0068",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2110,16 +2590,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "database-client": {
-              "id": "code/integration/client/database-client",
+              "id": "CODE-0070",
+              "path": "code/integration/client/database-client",
               "name": "Database Client",
-              "level": "subclass",
-              "parent": "code/integration/client",
-              "abstract": false,
               "description": "Database Client is a code specialization of Client within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0068",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2137,16 +2624,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "message-client": {
-              "id": "code/integration/client/message-client",
+              "id": "CODE-0071",
+              "path": "code/integration/client/message-client",
               "name": "Message Client",
-              "level": "subclass",
-              "parent": "code/integration/client",
-              "abstract": false,
               "description": "Message Client is a code specialization of Client within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0068",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2164,18 +2658,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "adapter": {
-          "id": "code/integration/adapter",
+          "id": "CODE-0072",
+          "path": "code/integration/adapter",
           "name": "Adapter",
-          "level": "class",
-          "parent": "code/integration",
-          "abstract": true,
           "description": "Adapter groups code elements that provide adapter responsibilities within the Integration family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CODE-0067",
+          "facets": {
+            "concern": [
+              "integration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -2194,15 +2695,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "integration-adapter": {
-              "id": "code/integration/adapter/integration-adapter",
+              "id": "CODE-0073",
+              "path": "code/integration/adapter/integration-adapter",
               "name": "Integration Adapter",
-              "level": "subclass",
-              "parent": "code/integration/adapter",
-              "abstract": false,
               "description": "Integration Adapter is a code specialization of Adapter within the Integration family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CODE-0072",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2220,7 +2728,10 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }

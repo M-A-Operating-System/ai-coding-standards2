@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "definition": "Starter deterministic rules mapping static-analysis facts into taxonomy IDs.",
   "rules": [
     {
@@ -14,7 +14,7 @@
       },
       "assign": {
         "code": [
-          "code/api/handler/request-handler"
+          "CODE-0003"
         ]
       }
     },
@@ -32,10 +32,10 @@
       },
       "assign": {
         "code": [
-          "code/persistence/repository/repository-implementation"
+          "CODE-0023"
         ],
         "patterns": [
-          "patterns/persistence/data-access/repository"
+          "PAT-0014"
         ]
       }
     },
@@ -49,7 +49,7 @@
       },
       "assign": {
         "code": [
-          "code/testing/test/unit-test"
+          "CODE-0043"
         ]
       }
     },
@@ -67,7 +67,7 @@
       },
       "assign": {
         "code": [
-          "code/messaging/consumer/message-consumer"
+          "CODE-0030"
         ]
       }
     }

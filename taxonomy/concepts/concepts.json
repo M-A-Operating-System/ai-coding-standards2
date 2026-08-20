@@ -1,6 +1,6 @@
 {
   "$schema": "../schemas/domain-taxonomy.schema.json",
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "domain": "concepts",
   "purpose": "Technology-neutral engineering properties and principles.",
   "inheritance": {
@@ -18,13 +18,17 @@
   },
   "families": {
     "reliability": {
-      "id": "concepts/reliability",
+      "id": "CON-0001",
+      "path": "concepts/reliability",
       "name": "Reliability",
+      "description": "Engineering properties concerned with predictable operation under failure and retry.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Engineering properties concerned with predictable operation under failure and retry.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "reliability"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -56,15 +60,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "idempotency": {
-          "id": "concepts/reliability/idempotency",
+          "id": "CON-0002",
+          "path": "concepts/reliability/idempotency",
           "name": "Idempotency",
-          "level": "class",
-          "parent": "concepts/reliability",
-          "abstract": true,
           "description": "Idempotency groups concepts elements that provide idempotency responsibilities within the Reliability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0001",
+          "facets": {
+            "concern": [
+              "reliability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -83,15 +94,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "request-idempotency": {
-              "id": "concepts/reliability/idempotency/request-idempotency",
+              "id": "CON-0003",
+              "path": "concepts/reliability/idempotency/request-idempotency",
               "name": "Request Idempotency",
-              "level": "subclass",
-              "parent": "concepts/reliability/idempotency",
-              "abstract": false,
               "description": "Property that repeated equivalent requests do not repeat externally visible side effects.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0002",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -109,16 +127,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "message-idempotency": {
-              "id": "concepts/reliability/idempotency/message-idempotency",
+              "id": "CON-0004",
+              "path": "concepts/reliability/idempotency/message-idempotency",
               "name": "Message Idempotency",
-              "level": "subclass",
-              "parent": "concepts/reliability/idempotency",
-              "abstract": false,
               "description": "Message Idempotency is a concept specialization of Idempotency within the Reliability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0002",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -136,18 +161,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "fault-tolerance": {
-          "id": "concepts/reliability/fault-tolerance",
+          "id": "CON-0005",
+          "path": "concepts/reliability/fault-tolerance",
           "name": "Fault Tolerance",
-          "level": "class",
-          "parent": "concepts/reliability",
-          "abstract": true,
           "description": "Fault Tolerance groups concepts elements that provide fault tolerance responsibilities within the Reliability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0001",
+          "facets": {
+            "concern": [
+              "reliability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -166,15 +198,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "circuit-breaking": {
-              "id": "concepts/reliability/fault-tolerance/circuit-breaking",
+              "id": "CON-0006",
+              "path": "concepts/reliability/fault-tolerance/circuit-breaking",
               "name": "Circuit Breaking",
-              "level": "subclass",
-              "parent": "concepts/reliability/fault-tolerance",
-              "abstract": false,
               "description": "Circuit Breaking is a concept specialization of Fault Tolerance within the Reliability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0005",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -192,16 +231,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "graceful-degradation": {
-              "id": "concepts/reliability/fault-tolerance/graceful-degradation",
+              "id": "CON-0007",
+              "path": "concepts/reliability/fault-tolerance/graceful-degradation",
               "name": "Graceful Degradation",
-              "level": "subclass",
-              "parent": "concepts/reliability/fault-tolerance",
-              "abstract": false,
               "description": "Graceful Degradation is a concept specialization of Fault Tolerance within the Reliability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0005",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -219,18 +265,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "availability": {
-          "id": "concepts/reliability/availability",
+          "id": "CON-0008",
+          "path": "concepts/reliability/availability",
           "name": "Availability",
-          "level": "class",
-          "parent": "concepts/reliability",
-          "abstract": true,
           "description": "Availability groups concepts elements that provide availability responsibilities within the Reliability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0001",
+          "facets": {
+            "concern": [
+              "reliability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -249,15 +302,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "redundancy": {
-              "id": "concepts/reliability/availability/redundancy",
+              "id": "CON-0009",
+              "path": "concepts/reliability/availability/redundancy",
               "name": "Redundancy",
-              "level": "subclass",
-              "parent": "concepts/reliability/availability",
-              "abstract": false,
               "description": "Redundancy is a concept specialization of Availability within the Reliability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0008",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -275,16 +335,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "failover": {
-              "id": "concepts/reliability/availability/failover",
+              "id": "CON-0010",
+              "path": "concepts/reliability/availability/failover",
               "name": "Failover",
-              "level": "subclass",
-              "parent": "concepts/reliability/availability",
-              "abstract": false,
               "description": "Failover is a concept specialization of Availability within the Reliability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0008",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -302,18 +369,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "retry": {
-          "id": "concepts/reliability/retry",
+          "id": "CON-0011",
+          "path": "concepts/reliability/retry",
           "name": "Retry",
-          "level": "class",
-          "parent": "concepts/reliability",
-          "abstract": true,
           "description": "Retry groups concepts elements that provide retry responsibilities within the Reliability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0001",
+          "facets": {
+            "concern": [
+              "reliability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -332,15 +406,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "bounded-retry": {
-              "id": "concepts/reliability/retry/bounded-retry",
+              "id": "CON-0012",
+              "path": "concepts/reliability/retry/bounded-retry",
               "name": "Bounded Retry",
-              "level": "subclass",
-              "parent": "concepts/reliability/retry",
-              "abstract": false,
               "description": "Bounded Retry is a concept specialization of Retry within the Reliability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0011",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -358,16 +439,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "exponential-backoff": {
-              "id": "concepts/reliability/retry/exponential-backoff",
+              "id": "CON-0013",
+              "path": "concepts/reliability/retry/exponential-backoff",
               "name": "Exponential Backoff",
-              "level": "subclass",
-              "parent": "concepts/reliability/retry",
-              "abstract": false,
               "description": "Exponential Backoff is a concept specialization of Retry within the Reliability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0011",
+              "facets": {
+                "concern": [
+                  "reliability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -385,20 +473,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "security": {
-      "id": "concepts/security",
+      "id": "CON-0014",
+      "path": "concepts/security",
       "name": "Security",
+      "description": "Engineering properties that protect identity, access, confidentiality, and integrity.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Engineering properties that protect identity, access, confidentiality, and integrity.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "security"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -430,15 +525,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "authentication": {
-          "id": "concepts/security/authentication",
+          "id": "CON-0015",
+          "path": "concepts/security/authentication",
           "name": "Authentication",
-          "level": "class",
-          "parent": "concepts/security",
-          "abstract": true,
           "description": "Authentication groups concepts elements that provide authentication responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0014",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -457,15 +559,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "identity-verification": {
-              "id": "concepts/security/authentication/identity-verification",
+              "id": "CON-0016",
+              "path": "concepts/security/authentication/identity-verification",
               "name": "Identity Verification",
-              "level": "subclass",
-              "parent": "concepts/security/authentication",
-              "abstract": false,
               "description": "Identity Verification is a concept specialization of Authentication within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0015",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -483,16 +592,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "service-authentication": {
-              "id": "concepts/security/authentication/service-authentication",
+              "id": "CON-0017",
+              "path": "concepts/security/authentication/service-authentication",
               "name": "Service Authentication",
-              "level": "subclass",
-              "parent": "concepts/security/authentication",
-              "abstract": false,
               "description": "Service Authentication is a concept specialization of Authentication within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0015",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -510,18 +626,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "authorization": {
-          "id": "concepts/security/authorization",
+          "id": "CON-0018",
+          "path": "concepts/security/authorization",
           "name": "Authorization",
-          "level": "class",
-          "parent": "concepts/security",
-          "abstract": true,
           "description": "Authorization groups concepts elements that provide authorization responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0014",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -540,15 +663,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "least-privilege": {
-              "id": "concepts/security/authorization/least-privilege",
+              "id": "CON-0019",
+              "path": "concepts/security/authorization/least-privilege",
               "name": "Least Privilege",
-              "level": "subclass",
-              "parent": "concepts/security/authorization",
-              "abstract": false,
               "description": "Property that identities receive only permissions required for intended responsibilities.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0018",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -566,16 +696,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "separation-of-duties": {
-              "id": "concepts/security/authorization/separation-of-duties",
+              "id": "CON-0020",
+              "path": "concepts/security/authorization/separation-of-duties",
               "name": "Separation Of Duties",
-              "level": "subclass",
-              "parent": "concepts/security/authorization",
-              "abstract": false,
               "description": "Separation Of Duties is a concept specialization of Authorization within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0018",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -593,18 +730,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "confidentiality": {
-          "id": "concepts/security/confidentiality",
+          "id": "CON-0021",
+          "path": "concepts/security/confidentiality",
           "name": "Confidentiality",
-          "level": "class",
-          "parent": "concepts/security",
-          "abstract": true,
           "description": "Confidentiality groups concepts elements that provide confidentiality responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0014",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -623,15 +767,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "encryption-at-rest": {
-              "id": "concepts/security/confidentiality/encryption-at-rest",
+              "id": "CON-0022",
+              "path": "concepts/security/confidentiality/encryption-at-rest",
               "name": "Encryption At Rest",
-              "level": "subclass",
-              "parent": "concepts/security/confidentiality",
-              "abstract": false,
               "description": "Encryption At Rest is a concept specialization of Confidentiality within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0021",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -649,16 +800,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "encryption-in-transit": {
-              "id": "concepts/security/confidentiality/encryption-in-transit",
+              "id": "CON-0023",
+              "path": "concepts/security/confidentiality/encryption-in-transit",
               "name": "Encryption In Transit",
-              "level": "subclass",
-              "parent": "concepts/security/confidentiality",
-              "abstract": false,
               "description": "Encryption In Transit is a concept specialization of Confidentiality within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0021",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -676,18 +834,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "integrity": {
-          "id": "concepts/security/integrity",
+          "id": "CON-0024",
+          "path": "concepts/security/integrity",
           "name": "Integrity",
-          "level": "class",
-          "parent": "concepts/security",
-          "abstract": true,
           "description": "Integrity groups concepts elements that provide integrity responsibilities within the Security family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0014",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -706,15 +871,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "tamper-resistance": {
-              "id": "concepts/security/integrity/tamper-resistance",
+              "id": "CON-0025",
+              "path": "concepts/security/integrity/tamper-resistance",
               "name": "Tamper Resistance",
-              "level": "subclass",
-              "parent": "concepts/security/integrity",
-              "abstract": false,
               "description": "Tamper Resistance is a concept specialization of Integrity within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0024",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -732,16 +904,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "signature-verification": {
-              "id": "concepts/security/integrity/signature-verification",
+              "id": "CON-0026",
+              "path": "concepts/security/integrity/signature-verification",
               "name": "Signature Verification",
-              "level": "subclass",
-              "parent": "concepts/security/integrity",
-              "abstract": false,
               "description": "Signature Verification is a concept specialization of Integrity within the Security family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0024",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -759,20 +938,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "consistency": {
-      "id": "concepts/consistency",
+      "id": "CON-0027",
+      "path": "concepts/consistency",
       "name": "Consistency",
+      "description": "Consistency is a canonical concepts family used to classify consistency concerns.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Consistency is a canonical concepts family used to classify consistency concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "consistency"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -804,15 +990,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "transaction": {
-          "id": "concepts/consistency/transaction",
+          "id": "CON-0028",
+          "path": "concepts/consistency/transaction",
           "name": "Transaction",
-          "level": "class",
-          "parent": "concepts/consistency",
-          "abstract": true,
           "description": "Transaction groups concepts elements that provide transaction responsibilities within the Consistency family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0027",
+          "facets": {
+            "concern": [
+              "consistency"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -831,15 +1024,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "atomicity": {
-              "id": "concepts/consistency/transaction/atomicity",
+              "id": "CON-0029",
+              "path": "concepts/consistency/transaction/atomicity",
               "name": "Atomicity",
-              "level": "subclass",
-              "parent": "concepts/consistency/transaction",
-              "abstract": false,
               "description": "Atomicity is a concept specialization of Transaction within the Consistency family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0028",
+              "facets": {
+                "concern": [
+                  "consistency"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -857,16 +1057,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "distributed-consistency": {
-              "id": "concepts/consistency/transaction/distributed-consistency",
+              "id": "CON-0030",
+              "path": "concepts/consistency/transaction/distributed-consistency",
               "name": "Distributed Consistency",
-              "level": "subclass",
-              "parent": "concepts/consistency/transaction",
-              "abstract": false,
               "description": "Distributed Consistency is a concept specialization of Transaction within the Consistency family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0028",
+              "facets": {
+                "concern": [
+                  "consistency"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -884,18 +1091,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "concurrency": {
-          "id": "concepts/consistency/concurrency",
+          "id": "CON-0031",
+          "path": "concepts/consistency/concurrency",
           "name": "Concurrency",
-          "level": "class",
-          "parent": "concepts/consistency",
-          "abstract": true,
           "description": "Concurrency groups concepts elements that provide concurrency responsibilities within the Consistency family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0027",
+          "facets": {
+            "concern": [
+              "consistency"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -914,15 +1128,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "optimistic-concurrency": {
-              "id": "concepts/consistency/concurrency/optimistic-concurrency",
+              "id": "CON-0032",
+              "path": "concepts/consistency/concurrency/optimistic-concurrency",
               "name": "Optimistic Concurrency",
-              "level": "subclass",
-              "parent": "concepts/consistency/concurrency",
-              "abstract": false,
               "description": "Optimistic Concurrency is a concept specialization of Concurrency within the Consistency family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0031",
+              "facets": {
+                "concern": [
+                  "consistency"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -940,16 +1161,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "pessimistic-concurrency": {
-              "id": "concepts/consistency/concurrency/pessimistic-concurrency",
+              "id": "CON-0033",
+              "path": "concepts/consistency/concurrency/pessimistic-concurrency",
               "name": "Pessimistic Concurrency",
-              "level": "subclass",
-              "parent": "concepts/consistency/concurrency",
-              "abstract": false,
               "description": "Pessimistic Concurrency is a concept specialization of Concurrency within the Consistency family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0031",
+              "facets": {
+                "concern": [
+                  "consistency"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -967,20 +1195,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "observability": {
-      "id": "concepts/observability",
+      "id": "CON-0034",
+      "path": "concepts/observability",
       "name": "Observability",
+      "description": "Observability is a canonical concepts family used to classify observability concerns.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Observability is a canonical concepts family used to classify observability concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "observability"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -1012,15 +1247,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "telemetry": {
-          "id": "concepts/observability/telemetry",
+          "id": "CON-0035",
+          "path": "concepts/observability/telemetry",
           "name": "Telemetry",
-          "level": "class",
-          "parent": "concepts/observability",
-          "abstract": true,
           "description": "Telemetry groups concepts elements that provide telemetry responsibilities within the Observability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0034",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1039,15 +1281,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "logging": {
-              "id": "concepts/observability/telemetry/logging",
+              "id": "CON-0036",
+              "path": "concepts/observability/telemetry/logging",
               "name": "Logging",
-              "level": "subclass",
-              "parent": "concepts/observability/telemetry",
-              "abstract": false,
               "description": "Logging is a concept specialization of Telemetry within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0035",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1065,16 +1314,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "metrics": {
-              "id": "concepts/observability/telemetry/metrics",
+              "id": "CON-0037",
+              "path": "concepts/observability/telemetry/metrics",
               "name": "Metrics",
-              "level": "subclass",
-              "parent": "concepts/observability/telemetry",
-              "abstract": false,
               "description": "Metrics is a concept specialization of Telemetry within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0035",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1092,16 +1348,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "tracing": {
-              "id": "concepts/observability/telemetry/tracing",
+              "id": "CON-0038",
+              "path": "concepts/observability/telemetry/tracing",
               "name": "Tracing",
-              "level": "subclass",
-              "parent": "concepts/observability/telemetry",
-              "abstract": false,
               "description": "Tracing is a concept specialization of Telemetry within the Observability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0035",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1119,18 +1382,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "correlation": {
-          "id": "concepts/observability/correlation",
+          "id": "CON-0039",
+          "path": "concepts/observability/correlation",
           "name": "Correlation",
-          "level": "class",
-          "parent": "concepts/observability",
-          "abstract": true,
           "description": "Correlation groups concepts elements that provide correlation responsibilities within the Observability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0034",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1149,15 +1419,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "request-correlation": {
-              "id": "concepts/observability/correlation/request-correlation",
+              "id": "CON-0040",
+              "path": "concepts/observability/correlation/request-correlation",
               "name": "Request Correlation",
-              "level": "subclass",
-              "parent": "concepts/observability/correlation",
-              "abstract": false,
               "description": "Ability to trace related processing across components using a stable correlation context.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0039",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1177,20 +1454,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "maintainability": {
-      "id": "concepts/maintainability",
+      "id": "CON-0041",
+      "path": "concepts/maintainability",
       "name": "Maintainability",
+      "description": "Engineering properties that keep systems modular, understandable, and evolvable.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Engineering properties that keep systems modular, understandable, and evolvable.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "maintainability"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -1222,15 +1506,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "modularity": {
-          "id": "concepts/maintainability/modularity",
+          "id": "CON-0042",
+          "path": "concepts/maintainability/modularity",
           "name": "Modularity",
-          "level": "class",
-          "parent": "concepts/maintainability",
-          "abstract": true,
           "description": "Modularity groups concepts elements that provide modularity responsibilities within the Maintainability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0041",
+          "facets": {
+            "concern": [
+              "maintainability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1249,15 +1540,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "separation-of-concerns": {
-              "id": "concepts/maintainability/modularity/separation-of-concerns",
+              "id": "CON-0043",
+              "path": "concepts/maintainability/modularity/separation-of-concerns",
               "name": "Separation Of Concerns",
-              "level": "subclass",
-              "parent": "concepts/maintainability/modularity",
-              "abstract": false,
               "description": "Property that distinct responsibilities are isolated behind clear boundaries.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0042",
+              "facets": {
+                "concern": [
+                  "maintainability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1275,16 +1573,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "dependency-inversion": {
-              "id": "concepts/maintainability/modularity/dependency-inversion",
+              "id": "CON-0044",
+              "path": "concepts/maintainability/modularity/dependency-inversion",
               "name": "Dependency Inversion",
-              "level": "subclass",
-              "parent": "concepts/maintainability/modularity",
-              "abstract": false,
               "description": "Dependency Inversion is a concept specialization of Modularity within the Maintainability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0042",
+              "facets": {
+                "concern": [
+                  "maintainability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1302,18 +1607,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "compatibility": {
-          "id": "concepts/maintainability/compatibility",
+          "id": "CON-0045",
+          "path": "concepts/maintainability/compatibility",
           "name": "Compatibility",
-          "level": "class",
-          "parent": "concepts/maintainability",
-          "abstract": true,
           "description": "Compatibility groups concepts elements that provide compatibility responsibilities within the Maintainability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0041",
+          "facets": {
+            "concern": [
+              "maintainability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1332,15 +1644,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "backward-compatibility": {
-              "id": "concepts/maintainability/compatibility/backward-compatibility",
+              "id": "CON-0046",
+              "path": "concepts/maintainability/compatibility/backward-compatibility",
               "name": "Backward Compatibility",
-              "level": "subclass",
-              "parent": "concepts/maintainability/compatibility",
-              "abstract": false,
               "description": "Backward Compatibility is a concept specialization of Compatibility within the Maintainability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0045",
+              "facets": {
+                "concern": [
+                  "maintainability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1358,16 +1677,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "versioning": {
-              "id": "concepts/maintainability/compatibility/versioning",
+              "id": "CON-0047",
+              "path": "concepts/maintainability/compatibility/versioning",
               "name": "Versioning",
-              "level": "subclass",
-              "parent": "concepts/maintainability/compatibility",
-              "abstract": false,
               "description": "Versioning is a concept specialization of Compatibility within the Maintainability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0045",
+              "facets": {
+                "concern": [
+                  "maintainability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1385,20 +1711,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "performance": {
-      "id": "concepts/performance",
+      "id": "CON-0048",
+      "path": "concepts/performance",
       "name": "Performance",
+      "description": "Performance is a canonical concepts family used to classify performance concerns.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Performance is a canonical concepts family used to classify performance concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "performance"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -1430,15 +1763,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "latency": {
-          "id": "concepts/performance/latency",
+          "id": "CON-0049",
+          "path": "concepts/performance/latency",
           "name": "Latency",
-          "level": "class",
-          "parent": "concepts/performance",
-          "abstract": true,
           "description": "Latency groups concepts elements that provide latency responsibilities within the Performance family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0048",
+          "facets": {
+            "concern": [
+              "performance"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1457,15 +1797,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "latency-budget": {
-              "id": "concepts/performance/latency/latency-budget",
+              "id": "CON-0050",
+              "path": "concepts/performance/latency/latency-budget",
               "name": "Latency Budget",
-              "level": "subclass",
-              "parent": "concepts/performance/latency",
-              "abstract": false,
               "description": "Latency Budget is a concept specialization of Latency within the Performance family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0049",
+              "facets": {
+                "concern": [
+                  "performance"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1483,18 +1830,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "throughput": {
-          "id": "concepts/performance/throughput",
+          "id": "CON-0051",
+          "path": "concepts/performance/throughput",
           "name": "Throughput",
-          "level": "class",
-          "parent": "concepts/performance",
-          "abstract": true,
           "description": "Throughput groups concepts elements that provide throughput responsibilities within the Performance family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0048",
+          "facets": {
+            "concern": [
+              "performance"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1513,15 +1867,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "throughput-capacity": {
-              "id": "concepts/performance/throughput/throughput-capacity",
+              "id": "CON-0052",
+              "path": "concepts/performance/throughput/throughput-capacity",
               "name": "Throughput Capacity",
-              "level": "subclass",
-              "parent": "concepts/performance/throughput",
-              "abstract": false,
               "description": "Throughput Capacity is a concept specialization of Throughput within the Performance family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0051",
+              "facets": {
+                "concern": [
+                  "performance"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1539,18 +1900,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "caching": {
-          "id": "concepts/performance/caching",
+          "id": "CON-0053",
+          "path": "concepts/performance/caching",
           "name": "Caching",
-          "level": "class",
-          "parent": "concepts/performance",
-          "abstract": true,
           "description": "Caching groups concepts elements that provide caching responsibilities within the Performance family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0048",
+          "facets": {
+            "concern": [
+              "performance"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1569,15 +1937,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "cache-locality": {
-              "id": "concepts/performance/caching/cache-locality",
+              "id": "CON-0054",
+              "path": "concepts/performance/caching/cache-locality",
               "name": "Cache Locality",
-              "level": "subclass",
-              "parent": "concepts/performance/caching",
-              "abstract": false,
               "description": "Cache Locality is a concept specialization of Caching within the Performance family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0053",
+              "facets": {
+                "concern": [
+                  "performance"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1595,20 +1970,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "scalability": {
-      "id": "concepts/scalability",
+      "id": "CON-0055",
+      "path": "concepts/scalability",
       "name": "Scalability",
+      "description": "Scalability is a canonical concepts family used to classify scalability concerns.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Scalability is a canonical concepts family used to classify scalability concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "scalability"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -1640,15 +2022,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "scale": {
-          "id": "concepts/scalability/scale",
+          "id": "CON-0056",
+          "path": "concepts/scalability/scale",
           "name": "Scale",
-          "level": "class",
-          "parent": "concepts/scalability",
-          "abstract": true,
           "description": "Scale groups concepts elements that provide scale responsibilities within the Scalability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0055",
+          "facets": {
+            "concern": [
+              "scalability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1667,15 +2056,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "horizontal-scaling": {
-              "id": "concepts/scalability/scale/horizontal-scaling",
+              "id": "CON-0057",
+              "path": "concepts/scalability/scale/horizontal-scaling",
               "name": "Horizontal Scaling",
-              "level": "subclass",
-              "parent": "concepts/scalability/scale",
-              "abstract": false,
               "description": "Horizontal Scaling is a concept specialization of Scale within the Scalability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0056",
+              "facets": {
+                "concern": [
+                  "scalability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1693,16 +2089,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "vertical-scaling": {
-              "id": "concepts/scalability/scale/vertical-scaling",
+              "id": "CON-0058",
+              "path": "concepts/scalability/scale/vertical-scaling",
               "name": "Vertical Scaling",
-              "level": "subclass",
-              "parent": "concepts/scalability/scale",
-              "abstract": false,
               "description": "Vertical Scaling is a concept specialization of Scale within the Scalability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0056",
+              "facets": {
+                "concern": [
+                  "scalability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1720,18 +2123,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "partitioning": {
-          "id": "concepts/scalability/partitioning",
+          "id": "CON-0059",
+          "path": "concepts/scalability/partitioning",
           "name": "Partitioning",
-          "level": "class",
-          "parent": "concepts/scalability",
-          "abstract": true,
           "description": "Partitioning groups concepts elements that provide partitioning responsibilities within the Scalability family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0055",
+          "facets": {
+            "concern": [
+              "scalability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1750,15 +2160,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "sharding": {
-              "id": "concepts/scalability/partitioning/sharding",
+              "id": "CON-0060",
+              "path": "concepts/scalability/partitioning/sharding",
               "name": "Sharding",
-              "level": "subclass",
-              "parent": "concepts/scalability/partitioning",
-              "abstract": false,
               "description": "Sharding is a concept specialization of Partitioning within the Scalability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0059",
+              "facets": {
+                "concern": [
+                  "scalability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1776,16 +2193,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "work-partitioning": {
-              "id": "concepts/scalability/partitioning/work-partitioning",
+              "id": "CON-0061",
+              "path": "concepts/scalability/partitioning/work-partitioning",
               "name": "Work Partitioning",
-              "level": "subclass",
-              "parent": "concepts/scalability/partitioning",
-              "abstract": false,
               "description": "Work Partitioning is a concept specialization of Partitioning within the Scalability family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0059",
+              "facets": {
+                "concern": [
+                  "scalability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1803,20 +2227,27 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "data-management": {
-      "id": "concepts/data-management",
+      "id": "CON-0062",
+      "path": "concepts/data-management",
       "name": "Data Management",
+      "description": "Data Management is a canonical concepts family used to classify data management concerns.",
       "level": "family",
       "parent": "concepts",
-      "abstract": true,
-      "description": "Data Management is a canonical concepts family used to classify data management concerns.",
-      "aliases": [],
+      "facets": {
+        "concern": [
+          "data-management"
+        ]
+      },
       "attributes": {
         "add": {
           "verification_modes": {
@@ -1848,15 +2279,22 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "governance": {
-          "id": "concepts/data-management/governance",
+          "id": "CON-0063",
+          "path": "concepts/data-management/governance",
           "name": "Governance",
-          "level": "class",
-          "parent": "concepts/data-management",
-          "abstract": true,
           "description": "Governance groups concepts elements that provide governance responsibilities within the Data Management family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0062",
+          "facets": {
+            "concern": [
+              "data-management"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1875,15 +2313,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "data-classification": {
-              "id": "concepts/data-management/governance/data-classification",
+              "id": "CON-0064",
+              "path": "concepts/data-management/governance/data-classification",
               "name": "Data Classification",
-              "level": "subclass",
-              "parent": "concepts/data-management/governance",
-              "abstract": false,
               "description": "Data Classification is a concept specialization of Governance within the Data Management family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0063",
+              "facets": {
+                "concern": [
+                  "data-management"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1901,16 +2346,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "retention": {
-              "id": "concepts/data-management/governance/retention",
+              "id": "CON-0065",
+              "path": "concepts/data-management/governance/retention",
               "name": "Retention",
-              "level": "subclass",
-              "parent": "concepts/data-management/governance",
-              "abstract": false,
               "description": "Retention is a concept specialization of Governance within the Data Management family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0063",
+              "facets": {
+                "concern": [
+                  "data-management"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1928,18 +2380,25 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "quality": {
-          "id": "concepts/data-management/quality",
+          "id": "CON-0066",
+          "path": "concepts/data-management/quality",
           "name": "Quality",
-          "level": "class",
-          "parent": "concepts/data-management",
-          "abstract": true,
           "description": "Quality groups concepts elements that provide quality responsibilities within the Data Management family.",
-          "aliases": [],
+          "level": "class",
+          "parent": "CON-0062",
+          "facets": {
+            "concern": [
+              "data-management"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
@@ -1958,15 +2417,22 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "validation": {
-              "id": "concepts/data-management/quality/validation",
+              "id": "CON-0067",
+              "path": "concepts/data-management/quality/validation",
               "name": "Validation",
-              "level": "subclass",
-              "parent": "concepts/data-management/quality",
-              "abstract": false,
               "description": "Validation is a concept specialization of Quality within the Data Management family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0066",
+              "facets": {
+                "concern": [
+                  "data-management"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -1984,16 +2450,23 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "lineage": {
-              "id": "concepts/data-management/quality/lineage",
+              "id": "CON-0068",
+              "path": "concepts/data-management/quality/lineage",
               "name": "Lineage",
-              "level": "subclass",
-              "parent": "concepts/data-management/quality",
-              "abstract": false,
               "description": "Lineage is a concept specialization of Quality within the Data Management family.",
-              "aliases": [],
+              "level": "subclass",
+              "parent": "CON-0066",
+              "facets": {
+                "concern": [
+                  "data-management"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
@@ -2011,7 +2484,10 @@
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }

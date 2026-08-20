@@ -1,36 +1,36 @@
 {
-  "schema_version": "0.3.1",
+  "schema_version": "0.4.0",
   "definition": "Explicit semantic links across domains.",
   "relationships": [
     {
-      "from": "patterns/persistence/data-access/repository",
+      "from": "PAT-0014",
       "type": "typically-implemented-as",
-      "to": "code/persistence/repository/repository-implementation"
+      "to": "CODE-0023"
     },
     {
-      "from": "patterns/api/request-processing/idempotent-handler",
+      "from": "PAT-0003",
       "type": "supports-concept",
-      "to": "concepts/reliability/idempotency/request-idempotency"
+      "to": "CON-0003"
     },
     {
-      "from": "patterns/messaging/consumption/idempotent-consumer",
+      "from": "PAT-0033",
       "type": "supports-concept",
-      "to": "concepts/reliability/idempotency/message-idempotency"
+      "to": "CON-0004"
     },
     {
-      "from": "patterns/resilience/retry/exponential-backoff",
+      "from": "PAT-0036",
       "type": "supports-concept",
-      "to": "concepts/reliability/retry/exponential-backoff"
+      "to": "CON-0013"
     },
     {
-      "from": "code/api/handler/request-handler",
+      "from": "CODE-0003",
       "type": "typically-realizes",
-      "to": "architecture/compute/service/api-service"
+      "to": "ARCH-0013"
     },
     {
-      "from": "patterns/observability/correlation/trace-context-propagation",
+      "from": "PAT-0063",
       "type": "supports-concept",
-      "to": "concepts/observability/correlation/request-correlation"
+      "to": "CON-0040"
     }
   ]
 }
