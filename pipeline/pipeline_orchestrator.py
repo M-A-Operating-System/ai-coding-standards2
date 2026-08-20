@@ -2336,16 +2336,28 @@ AGENT_ENV_PASSTHROUGH = (
     "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 )
 
-# Credential-bearing keys from AGENT_ENV_PASSTHROUGH. A real subprocess spawn
-# needs their values, but resolve-only mode (--print-prompt) writes its JSON to
-# stdout, which /run-agent captures inside an interactive session -- so the
-# values would land in a session transcript. Withheld from that output only;
-# invoke_agent's real env is unaffected.
-PRINT_PROMPT_WITHHELD_ENV_KEYS = frozenset({
-    "ANTHROPIC_API_KEY",
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
-})
+# The env keys resolve-only mode (--print-prompt) may print. That output goes to
+# stdout and /run-agent captures it inside an interactive session, so it is built
+# by naming exactly what may be exported -- never by subtracting known-bad keys
+# from the full env. A denylist would start leaking the moment a new credential
+# joined AGENT_ENV_PASSTHROUGH; this list stays silent about anything it does not
+# name. These are the agent-facing context vars documented in AGENTS.md. Host
+# plumbing inherited from the ambient environment (PATH, HOME, proxy and CA
+# settings, and every credential) is deliberately absent: it is not part of the
+# agent contract, and a consumer that needs it already has it. invoke_agent's
+# real subprocess env is unaffected.
+PRINT_PROMPT_ENV_KEYS = (
+    "AI_AGILE_ROOT",
+    "AI_AGILE_CONTEXT",
+    "AI_AGILE_EXECUTION_MODE",
+    "REPO",
+    "WORK_ITEM_KIND",
+    "WORK_ITEM_NUMBER",
+    "SESSION_ID",
+    "SESSION_SCOPE",
+    "ISSUE_NUMBER",
+    "PR_NUMBER",
+)
 
 
 def _claude_cli_logged_in() -> bool:
@@ -4358,8 +4370,9 @@ def parse_args() -> argparse.Namespace:
             "allowlist, and env as JSON without spawning a subprocess or "
             "mutating any GitHub state (no label writes, no :wip). "
             "Used by /run-agent to obtain authoritative invocation parameters. "
-            "Credential env values (API key, GitHub tokens) are withheld from "
-            "the output; their key names are listed under env_withheld_keys. "
+            "The printed env carries only the agent-facing context vars; every "
+            "other key, credentials included, is omitted by name only under "
+            "env_omitted_keys. "
             "Requires --agent and --issue (or --repo + --issue)."
         ),
     )
@@ -4476,10 +4489,12 @@ def _run_print_prompt(args) -> None:
     authoritative invocation parameters from the orchestrator's own resolution
     logic instead of hand-parsing the agent file.
 
-    Credential values are withheld from the printed env
-    (PRINT_PROMPT_WITHHELD_ENV_KEYS): this output is captured into an
-    interactive session, unlike invoke_agent's env which is only ever handed to
-    subprocess. The withheld key names are reported under env_withheld_keys.
+    The printed env is built by naming exactly the keys that may be exported
+    (PRINT_PROMPT_ENV_KEYS), not by removing known-bad ones: this output is
+    captured into an interactive session, unlike invoke_agent's env which is
+    only ever handed to subprocess. Everything else, credentials included, is
+    omitted by default; the omitted key names are reported under
+    env_omitted_keys.
     """
     if not args.agent:
         log.error("--print-prompt requires --agent <agent-name>")
@@ -4549,11 +4564,11 @@ def _run_print_prompt(args) -> None:
     env = _build_agent_env(os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope)
     env["AI_AGILE_EXECUTION_MODE"] = "interactive"
 
-    # Never print credential values -- see PRINT_PROMPT_WITHHELD_ENV_KEYS. The
-    # withheld key names are still reported so a consumer can tell the
-    # difference between "not needed" and "not shown".
-    withheld = sorted(k for k in env if k in PRINT_PROMPT_WITHHELD_ENV_KEYS)
-    printable_env = {k: v for k, v in env.items() if k not in PRINT_PROMPT_WITHHELD_ENV_KEYS}
+    # Export only the named keys -- see PRINT_PROMPT_ENV_KEYS. The names of the
+    # keys left out are still reported so a consumer can tell the difference
+    # between "not needed" and "not shown"; only their values are withheld.
+    printable_env = {k: env[k] for k in PRINT_PROMPT_ENV_KEYS if k in env}
+    omitted = sorted(k for k in env if k not in printable_env)
 
     output = {
         "agent": agent_name,
@@ -4562,7 +4577,7 @@ def _run_print_prompt(args) -> None:
         "model": resolved.model,
         "max_turns": resolved.max_turns,
         "env": printable_env,
-        "env_withheld_keys": withheld,
+        "env_omitted_keys": omitted,
         "prompt": resolved.prompt,
     }
     print(json.dumps(output, indent=2))
