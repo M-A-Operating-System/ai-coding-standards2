@@ -65,3 +65,33 @@
 **Given** the orchestrator is invoked in resolve-only mode for a specific agent
 **When** it prints the resolved prompt/tools/env
 **Then** no labels are changed, no `:wip` is applied, and no GitHub API write calls are made
+
+## Scenario: Each call site builds env from a named variable list
+
+**Given** the five call sites in `pipeline/pipeline_orchestrator.py`
+**When** the work is complete
+**Then** each builds its env from an explicit named collection of variable names, never by spreading `os.environ`, and each site has its own distinct list
+
+## Scenario: An ADR exception requires demonstrated necessity
+
+**Given** a call site where investigation shows broad inheritance is genuinely required
+**When** an ADR is filed in `adrs/adrs.json` citing STD-SEC-022
+**Then** the ADR includes the specific demonstration of why narrowing is not possible, and the call site is annotated with a reference to the ADR
+
+## Scenario: A narrowed script still works
+
+**Given** a call site narrowed to a named variable set
+**When** its script runs in a real orchestrator tick
+**Then** it succeeds, and no variable it needs is missing
+
+## Scenario: pr-reviewer stops flagging the excused sites
+
+**Given** an ADR covers a call site that keeps broad inheritance
+**When** `pr-reviewer` checks a diff touching that line against STD-SEC-022
+**Then** it treats the standard as overridden rather than violated
+
+## Scenario: The agent path is untouched
+
+**Given** this work
+**When** `_build_agent_env` is inspected
+**Then** it is unchanged -- it already allowlists, and is not in scope here
