@@ -1000,6 +1000,11 @@ def _ensure_metrics_branch(gh: "GitHubClient", repo: str) -> None:
         log.warning("metrics branch: could not push schema — %s", exc)
 
 
+# STD-SEC-022 — git plumbing (read-tree, update-index, write-tree): purely local
+# object-store ops; no network, no auth token needed. GIT_INDEX_FILE is set explicitly.
+_GIT_PLUMBING_ENV_VARS = ("PATH", "HOME")
+
+
 def _append_metrics_record(
     gh: "GitHubClient",
     repo: str,
@@ -1049,7 +1054,10 @@ def _append_metrics_record(
         with tempfile.NamedTemporaryFile(delete=False) as idx_file:
             index_path = idx_file.name
         try:
-            git_env = {**os.environ, "GIT_INDEX_FILE": index_path}
+            git_env = {  # STD-SEC-022
+                **{k: os.environ[k] for k in _GIT_PLUMBING_ENV_VARS if k in os.environ},
+                "GIT_INDEX_FILE": index_path,
+            }
             subprocess.run(
                 ["git", "read-tree", parent_sha],
                 check=True, env=git_env, capture_output=True,
@@ -2165,6 +2173,53 @@ def _apply_terminal_status(
 # Script invocation (type: script pipeline steps)
 # ---------------------------------------------------------------------------
 
+# STD-SEC-022 -- env vars passed to bash script-type pipeline steps (create-pr.sh,
+# create-docs-pr.sh, merge-docs-pr.sh, ci-gate.sh). These scripts invoke gh/git
+# but not Claude CLI, so no ANTHROPIC_API_KEY. Work-item context vars (REPO,
+# ISSUE_NUMBER, etc.) are set explicitly below, not passed through.
+#
+# CI_GATE_EXCLUDE_JOB_NAMES and GITHUB_RUN_ID are read by ci-gate.sh to exclude
+# the orchestrator's own in-flight job from the checks it waits on. Without them
+# the exclusion list is empty and the gate counts its own run, stalling on
+# :blocked. Neither is a credential.
+_SCRIPT_AGENT_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
+    "GH_TOKEN", "GITHUB_TOKEN",
+    "CI_GATE_EXCLUDE_JOB_NAMES", "GITHUB_RUN_ID",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+# Scripts that open or merge a PR, and so may need the bot PAT when org policy
+# blocks GITHUB_TOKEN from those operations:
+#   create-pr.sh      -- _PR_TOKEN, for `gh pr create`
+#   merge-docs-pr.sh  -- _MERGE_TOKEN, for the design-PR merge
+#   create-docs-pr.sh -- execs into create-pr.sh, so it needs it too
+# ci-gate.sh only reads check runs and never references the variable, so it is
+# not on this list. AI_AGILE_BOT_TOKEN is a classic PAT with repo+workflow
+# scopes -- the broadest credential the orchestrator holds -- so it goes only to
+# the steps that demonstrably use it.
+_PR_WRITING_SCRIPTS = (
+    "create-pr.sh",
+    "create-docs-pr.sh",
+    "merge-docs-pr.sh",
+)
+
+
+def _script_step_env_vars(script_path: Optional[str]) -> tuple[str, ...]:
+    """Env allowlist for a script-type step, per STD-SEC-022.
+
+    Returns the base list, plus AI_AGILE_BOT_TOKEN only for the scripts that
+    actually consume it. Matching is on the file name so a repo that relocates
+    the scripts directory still resolves correctly.
+    """
+    name = Path(script_path).name if script_path else ""
+    if name in _PR_WRITING_SCRIPTS:
+        return _SCRIPT_AGENT_ENV_VARS + ("AI_AGILE_BOT_TOKEN",)
+    return _SCRIPT_AGENT_ENV_VARS
+
 def invoke_script(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -2205,8 +2260,9 @@ def invoke_script(
     log.info("    Invoking script: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.debug("    script_file: %s", script_file)
 
-    agent_env = {
-        **os.environ,
+    _step_env_vars = _script_step_env_vars(agent_def.script_path)
+    agent_env = {  # STD-SEC-022
+        **{k: os.environ[k] for k in _step_env_vars if k in os.environ},
         "STATUS_SH":        str(STATUS_SH),
         "AI_AGILE_ROOT":    os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
@@ -3577,6 +3633,19 @@ def _orchestration_script_path(rel_path: str) -> Path:
     return dest
 
 
+# STD-SEC-022 — env vars for commit-agent-work.sh: git stash/fetch/checkout/commit/push
+# plus base64 for the auth header. AGENT_NAME, ISSUE_NUMBER, BRANCH_SUFFIX are set
+# explicitly below.
+_COMMIT_AFTER_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
+    "GH_TOKEN", "GITHUB_TOKEN", "AI_AGILE_BOT_TOKEN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+
 def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[str]:
     """Run commit-agent-work.sh for a `commit_after` agent.
 
@@ -3584,8 +3653,8 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[s
     owns the label/branch side-effects on failure.
     """
     _commit_script = _orchestration_script_path(".github/scripts/commit-agent-work.sh")
-    _commit_env = {
-        **os.environ,
+    _commit_env = {  # STD-SEC-022
+        **{k: os.environ[k] for k in _COMMIT_AFTER_ENV_VARS if k in os.environ},
         "AGENT_NAME": agent_def.agent,
         "ISSUE_NUMBER": str(work_item.number),
         "BRANCH_SUFFIX": agent_def.branch_suffix,
@@ -3635,6 +3704,19 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[s
     return None
 
 
+# STD-SEC-022 — env vars for post_steps hooks (e.g. mark-pr-ready.sh): gh API/CLI
+# calls only, no git commits. REPO, WORK_ITEM_*, AGENT_NAME, ISSUE/PR_NUMBER, and
+# AI_AGILE_ROOT are set explicitly below.
+_POST_STEPS_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
+    "GH_TOKEN", "GITHUB_TOKEN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+
 def _invoke_post_steps(
     agent_def: AgentDef, work_item: WorkItem, repo: str, gh: "GitHubClient"
 ) -> Optional[str]:
@@ -3643,8 +3725,8 @@ def _invoke_post_steps(
     Returns the first failure reason, or None if all hooks succeed. Each hook is
     a repo-relative bash script; a path escaping the repo root is rejected.
     """
-    _ps_env = {
-        **os.environ,
+    _ps_env = {  # STD-SEC-022
+        **{k: os.environ[k] for k in _POST_STEPS_ENV_VARS if k in os.environ},
         "REPO": repo or gh.repo,
         "WORK_ITEM_KIND": work_item.kind,
         "WORK_ITEM_NUMBER": str(work_item.number),
@@ -4512,6 +4594,18 @@ def _read_pr_event_merged() -> bool:
         return False
 
 
+# STD-SEC-022 — env vars for delete-branch.sh: gh API only, no git commands,
+# no bot token needed. REPO and BRANCH are set explicitly below.
+_DELETE_BRANCH_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
+    "GH_TOKEN", "GITHUB_TOKEN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+
 def _call_delete_branch(repo: str, branch: str) -> None:
     """Invoke delete-branch.sh to remove a branch when a PR closes.
 
@@ -4533,7 +4627,11 @@ def _call_delete_branch(repo: str, branch: str) -> None:
         )
         return
 
-    env = {**os.environ, "REPO": repo, "BRANCH": branch}
+    env = {  # STD-SEC-022
+        **{k: os.environ[k] for k in _DELETE_BRANCH_ENV_VARS if k in os.environ},
+        "REPO": repo,
+        "BRANCH": branch,
+    }
     log.info("Deleting branch '%s' from %s (pull_request.closed)", branch, repo)
     try:
         result = subprocess.run(
@@ -4765,9 +4863,16 @@ def _wake(args) -> "Optional[RunContext]":
             )
             # These GIT_CONFIG_* vars go into the process-global os.environ so
             # the orchestrator's OWN git subprocesses inherit them: the git
-            # checkout/fetch calls (via subprocess.run) and commit-agent-work.sh
-            # / post_steps scripts all build their env from {**os.environ}, so
-            # they must stay here for authenticated git to work.
+            # checkout/fetch calls run via subprocess.run with no env= argument,
+            # so they read the header from here and authenticate.
+            #
+            # commit-agent-work.sh and post_steps do NOT inherit these any more.
+            # Since STD-SEC-022 they build their env from named allowlists
+            # (_COMMIT_AFTER_ENV_VARS / _POST_STEPS_ENV_VARS) that deliberately
+            # omit GIT_CONFIG_*; commit-agent-work.sh derives its own auth
+            # header from GH_TOKEN/GITHUB_TOKEN instead. Do not re-add
+            # GIT_CONFIG_* to those lists -- the scripts do not need it, and it
+            # would hand the embedded token to every post_steps hook.
             # SECURITY: this base64 header embeds GITHUB_TOKEN. It must NEVER be
             # added to AGENT_ENV_PASSTHROUGH -- agent subprocesses build env via
             # _build_agent_env, which does not pass GIT_CONFIG_* through, so a
