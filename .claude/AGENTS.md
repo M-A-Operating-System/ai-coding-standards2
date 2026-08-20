@@ -127,6 +127,7 @@ Environment variables the orchestrator exports for you:
 | `WORK_ITEM_NUMBER` | Numeric ID, regardless of kind |
 | `SESSION_ID` | Human-readable session key (e.g. `ais-v1-01-product-docs-prd-writer-issue-42`). Use in `session_id` fields of announcement/artefact JSON. |
 | `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
+| `AI_AGILE_EXECUTION_MODE` | Always `headless` for orchestrator-spawned subprocesses. The `/run-agent` interactive path sets it to `interactive` instead. |
 
 ---
 

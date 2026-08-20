@@ -319,13 +319,18 @@ def test_the_affected_paths_are_named_error_path_incomplete_guidance(
 # ---------------------------------------------------------------------------
 
 def test_an_interactively_run_agent_is_scoped_to_its_declared_tool_allowlist():
-    """.claude/commands/run-agent.md constrains the session to the agent's tools: list."""
+    """.claude/commands/run-agent.md constrains the session to the agent's allowed_tools list.
+
+    Since issue #316, run-agent uses the orchestrator's resolve-only mode
+    (--print-prompt) as the single source of truth instead of hand-parsing
+    the agent file's frontmatter directly.
+    """
     assert RUN_AGENT.exists(), ".claude/commands/run-agent.md must exist"
     text = RUN_AGENT.read_text()
 
-    # Must read the tools: frontmatter field
-    assert "tools:" in text, \
-        "run-agent.md must instruct reading the agent's `tools:` frontmatter field"
+    # Must obtain the allowlist from the orchestrator's resolve-only mode, not hand-parse
+    assert "allowed_tools" in text or "--print-prompt" in text, \
+        "run-agent.md must obtain the tool allowlist via the orchestrator's resolve-only mode"
 
     # Must warn or constrain before using tools outside the declared allowlist
     assert "allowlist" in text.lower() or "allowed" in text.lower(), \
@@ -342,13 +347,13 @@ def test_an_interactively_run_agent_is_scoped_to_its_declared_tool_allowlist():
 
 def test_an_interactively_run_agent_is_scoped_error_path_missing_tools_field(
         tmp_path, monkeypatch):
-    """When run-agent.md does not mention the tools: field the test surfaces the gap."""
+    """When run-agent.md does not reference the orchestrator allowlist the test surfaces the gap."""
     fake = tmp_path / "run-agent.md"
     fake.write_text(
         "# Run Agent\n\nRead the agent file. Note the model: and max_turns: values.\n"
     )
     monkeypatch.setattr(sys.modules[__name__], "RUN_AGENT", fake)
-    with pytest.raises(AssertionError, match="tools:"):
+    with pytest.raises(AssertionError, match="allowed_tools|print-prompt"):
         test_an_interactively_run_agent_is_scoped_to_its_declared_tool_allowlist()
 
 
@@ -356,5 +361,5 @@ def test_an_interactively_run_agent_is_scoped_idempotent():
     """Tool-scope check is stable on repeated reads."""
     for _ in range(2):
         text = RUN_AGENT.read_text()
-        assert "tools:" in text
+        assert "allowed_tools" in text or "--print-prompt" in text
         assert "allowlist" in text.lower() or "allowed" in text.lower()
