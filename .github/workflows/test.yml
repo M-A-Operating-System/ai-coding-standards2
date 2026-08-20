@@ -10,7 +10,9 @@ on:
     paths:
       - 'pipeline/pipeline_orchestrator.py'
       - 'pipeline/validate_standards.py'
+      - 'pipeline/validate_taxonomy.py'
       - 'standards/**'
+      - 'taxonomy/**'
       - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
 permissions:
