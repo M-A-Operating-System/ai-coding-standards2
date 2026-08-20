@@ -1,0 +1,43 @@
+{
+  "schema_version": "0.2.0",
+  "description": "Boundary between external static-analysis ontologies and this taxonomy.",
+  "external_semantic_sources": {
+    "codeql": {
+      "owns": [
+        "function",
+        "method",
+        "class",
+        "module",
+        "call",
+        "import",
+        "control-flow",
+        "data-flow",
+        "api-graph"
+      ],
+      "role": "deterministic semantic fact source"
+    },
+    "joern-cpg": {
+      "owns": [
+        "METHOD",
+        "CALL",
+        "TYPE_DECL",
+        "LOCAL",
+        "PARAMETER",
+        "CONTROL_STRUCTURE",
+        "CALL_GRAPH",
+        "DATA_FLOW",
+        "TAG",
+        "FINDING"
+      ],
+      "role": "deterministic code property graph fact source"
+    }
+  },
+  "taxonomy_owns": [
+    "architecture meaning",
+    "coding-role meaning",
+    "design-pattern meaning",
+    "engineering-concept meaning",
+    "implementation mappings",
+    "runtime mappings"
+  ]
+}

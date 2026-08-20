@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "classification-rule.schema.json",
+  "title": "Deterministic Code Classification Rule",
+  "type": "object",
+  "required": [
+    "id",
+    "match",
+    "assign"
+  ]
+}

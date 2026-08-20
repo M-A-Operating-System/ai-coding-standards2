@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domain-taxonomy.schema.json",
+  "title": "Domain Taxonomy",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "domain",
+    "inheritance",
+    "families"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "domain": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "inheritance": {
+      "type": "object"
+    },
+    "families": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

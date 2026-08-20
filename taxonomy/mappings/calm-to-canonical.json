@@ -1,0 +1,26 @@
+{
+  "schema_version": "0.2.0",
+  "source": "CALM",
+  "description": "Starter mapping from broad CALM node types to canonical architecture classes. CALM remains intended architecture; canonical classes provide finer normalization.",
+  "mappings": {
+    "service": [
+      "architecture/compute/service/api-service",
+      "architecture/compute/service/domain-service",
+      "architecture/compute/service/background-service"
+    ],
+    "database": [
+      "architecture/data/database/relational-database",
+      "architecture/data/database/document-database",
+      "architecture/data/database/key-value-database",
+      "architecture/data/database/graph-database"
+    ],
+    "network": [
+      "architecture/networking/network/virtual-network",
+      "architecture/networking/network/physical-network"
+    ],
+    "system": [
+      "architecture/system/system/software-system",
+      "architecture/system/system/business-system"
+    ]
+  }
+}

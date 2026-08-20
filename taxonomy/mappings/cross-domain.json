@@ -1,0 +1,36 @@
+{
+  "schema_version": "0.2.0",
+  "description": "Starter semantic relationships across taxonomy domains.",
+  "relationships": [
+    {
+      "from": "patterns/persistence/data-access/repository",
+      "type": "typically-implemented-as",
+      "to": "code/persistence/repository/repository-implementation"
+    },
+    {
+      "from": "patterns/api/request-processing/idempotent-handler",
+      "type": "supports-concept",
+      "to": "concepts/reliability/idempotency/request-idempotency"
+    },
+    {
+      "from": "patterns/messaging/consumption/idempotent-consumer",
+      "type": "supports-concept",
+      "to": "concepts/reliability/idempotency/message-idempotency"
+    },
+    {
+      "from": "patterns/resilience/retry/exponential-backoff",
+      "type": "supports-concept",
+      "to": "concepts/reliability/retry/exponential-backoff"
+    },
+    {
+      "from": "patterns/observability/correlation/trace-context-propagation",
+      "type": "supports-concept",
+      "to": "concepts/observability/correlation/request-correlation"
+    },
+    {
+      "from": "code/api/handler/request-handler",
+      "type": "typically-realizes",
+      "to": "architecture/compute/service/api-service"
+    }
+  ]
+}

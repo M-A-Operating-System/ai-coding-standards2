@@ -1,0 +1,103 @@
+{
+  "$schema": "../schemas/implementations.schema.json",
+  "schema_version": "0.2.0",
+  "description": "Concrete technologies mapped to canonical semantic classes.",
+  "implementations": {
+    "postgresql": {
+      "name": "PostgreSQL",
+      "kind": "database",
+      "implements": [
+        "architecture/data/database/relational-database"
+      ]
+    },
+    "mysql": {
+      "name": "MySQL",
+      "kind": "database",
+      "implements": [
+        "architecture/data/database/relational-database"
+      ]
+    },
+    "mongodb": {
+      "name": "MongoDB",
+      "kind": "database",
+      "implements": [
+        "architecture/data/database/document-database"
+      ]
+    },
+    "dynamodb": {
+      "name": "Amazon DynamoDB",
+      "kind": "database",
+      "implements": [
+        "architecture/data/database/key-value-database"
+      ]
+    },
+    "neo4j": {
+      "name": "Neo4j",
+      "kind": "database",
+      "implements": [
+        "architecture/data/database/graph-database"
+      ]
+    },
+    "redis": {
+      "name": "Redis",
+      "kind": "data",
+      "implements": [
+        "architecture/data/cache/distributed-cache",
+        "architecture/data/database/key-value-database"
+      ]
+    },
+    "kafka": {
+      "name": "Apache Kafka",
+      "kind": "messaging",
+      "implements": [
+        "architecture/messaging/stream/event-stream"
+      ]
+    },
+    "rabbitmq": {
+      "name": "RabbitMQ",
+      "kind": "messaging",
+      "implements": [
+        "architecture/messaging/broker/message-broker"
+      ]
+    },
+    "fastapi": {
+      "name": "FastAPI",
+      "kind": "framework",
+      "implements": [
+        "architecture/compute/service/api-service"
+      ],
+      "related_code": [
+        "code/api/handler/request-handler"
+      ]
+    },
+    "spring-boot": {
+      "name": "Spring Boot",
+      "kind": "framework",
+      "implements": [
+        "architecture/compute/service/api-service"
+      ]
+    },
+    "aspnet-core": {
+      "name": "ASP.NET Core",
+      "kind": "framework",
+      "implements": [
+        "architecture/compute/service/api-service"
+      ]
+    },
+    "kubernetes": {
+      "name": "Kubernetes",
+      "kind": "platform",
+      "implements": [
+        "architecture/platform/orchestration/container-orchestrator"
+      ]
+    },
+    "opentelemetry": {
+      "name": "OpenTelemetry",
+      "kind": "observability",
+      "implements": [
+        "concepts/observability/telemetry/tracing",
+        "code/observability/tracing/trace-instrumentation"
+      ]
+    }
+  }
+}
