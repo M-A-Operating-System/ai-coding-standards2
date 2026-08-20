@@ -1,5 +1,0 @@
-{
-  "stopped_at": "2026-08-20T00:26:10Z",
-  "reason": "Re-applying after a temporary clear to drive issue #310 interactively (now merged via PR #325). Halting the scheduled orchestrator per user request: repeated concurrent races against interactive /maos-run sessions, plus unwanted ANTHROPIC_API_KEY credit usage on the scheduled path. Driving continues interactively via /maos-run.",
-  "stopped_by": "github-actions"
-}
