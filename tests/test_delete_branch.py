@@ -226,6 +226,8 @@ def _minimal_wake_args(**overrides):
         pipeline=REPO_ROOT / "pipeline" / "pipeline.json",
         phases=None,
         verbose=False,
+        headless=False,
+        print_prompt=False,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

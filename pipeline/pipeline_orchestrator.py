@@ -146,6 +146,10 @@ AGENT_TIMEOUT_SECONDS = 1800
 # Set once in main() after arg parsing; non-JSON lines are always forwarded.
 _VERBOSE: bool = False
 
+# True when the orchestrator was invoked with --headless (the scheduled/CI path).
+# Set once in main() after arg parsing; read by _make_audit_event to populate actor.
+_HEADLESS: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -655,7 +659,11 @@ def _make_audit_event(
         "detail": outcome_detail,
         "object": obj,
         "agent": agent,
-        "actor": {"kind": "orchestrator", "id": "github-actions", "human": None},
+        "actor": {
+            "kind": "orchestrator",
+            "id": "github-actions" if _HEADLESS else "interactive",
+            "human": None if _HEADLESS else True,
+        },
         "ref": None,
         "duration_ms": duration_ms,
     }
@@ -1237,15 +1245,26 @@ def _check_controls(repo: str) -> Literal["run", "pause", "stop"]:
     """Check repository-level pause and stop signals.
 
     Called once per work item at the entry of process_work_item(). Returns
-    "stop" if an emergency stop marker is active, "pause" if a rate-limit
-    pause marker is active, or "run" if the pipeline should proceed.
+    "stop" if an emergency stop marker is active (headless runs only),
+    "pause" if a rate-limit pause marker is active, or "run" if the pipeline
+    should proceed.
+
+    Stop is gated on _HEADLESS: interactive runs log the marker but return
+    "run" so a human driving a specific issue is not blocked by a scheduled
+    automation stop. Pause always applies regardless of invocation mode.
 
     repo is accepted for future multi-repo extensibility but unused in the
     current file-based implementation.
     """
     stopped, _stop_reason = is_pipeline_stopped()
     if stopped:
-        return "stop"
+        if _HEADLESS:
+            return "stop"
+        log.warning(
+            "Pipeline is STOPPED (%s) but --headless was not passed; "
+            "interactive run will proceed.",
+            _stop_reason or "no reason recorded",
+        )
     paused, _pause_reason, _until = is_pipeline_paused()
     if paused:
         return "pause"
@@ -2349,6 +2368,29 @@ AGENT_ENV_PASSTHROUGH = (
     "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 )
 
+# The env keys resolve-only mode (--print-prompt) may print. That output goes to
+# stdout and /run-agent captures it inside an interactive session, so it is built
+# by naming exactly what may be exported -- never by subtracting known-bad keys
+# from the full env. A denylist would start leaking the moment a new credential
+# joined AGENT_ENV_PASSTHROUGH; this list stays silent about anything it does not
+# name. These are the agent-facing context vars documented in AGENTS.md. Host
+# plumbing inherited from the ambient environment (PATH, HOME, proxy and CA
+# settings, and every credential) is deliberately absent: it is not part of the
+# agent contract, and a consumer that needs it already has it. invoke_agent's
+# real subprocess env is unaffected.
+PRINT_PROMPT_ENV_KEYS = (
+    "AI_AGILE_ROOT",
+    "AI_AGILE_CONTEXT",
+    "AI_AGILE_EXECUTION_MODE",
+    "REPO",
+    "WORK_ITEM_KIND",
+    "WORK_ITEM_NUMBER",
+    "SESSION_ID",
+    "SESSION_SCOPE",
+    "ISSUE_NUMBER",
+    "PR_NUMBER",
+)
+
 
 def _claude_cli_logged_in() -> bool:
     """True when the Claude CLI has stored login credentials (subscription /
@@ -2396,6 +2438,9 @@ def _build_agent_env(
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
     else:
         agent_env["PR_NUMBER"] = str(work_item.number)
+    # Axis B: every orchestrator-spawned subprocess is always headless/opaque,
+    # regardless of whether the tick itself was triggered by cron or interactively.
+    agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
     return agent_env
 
 
@@ -2454,58 +2499,48 @@ BASE_AGENT_TOOLS = [
 ]
 
 
-def invoke_agent(
+@dataclass
+class ResolvedInvocation:
+    """The fully-resolved parameters for one agent invocation, before spawning.
+
+    env is not included: callers build it via _build_agent_env and set
+    AI_AGILE_EXECUTION_MODE according to their context (headless for real
+    subprocess spawns, interactive for the resolve-only /run-agent path).
+    """
+    prompt: str
+    allowed_tools: list[str]
+    model: Optional[str]
+    max_turns: int
+    session_id: str
+
+
+def _resolve_agent_invocation(
     agent_def: AgentDef,
     work_item: WorkItem,
-    dry_run: bool,
     repo: str,
-    attempt: int = 0,
     agent_text_override: Optional[str] = None,
     default_extra_tools: Optional[list[str]] = None,
-) -> AgentRunResult:
-    """
-    Invoke the agent via claude CLI.
+) -> Optional["ResolvedInvocation"]:
+    """Resolve an agent invocation's prompt and tool allowlist without spawning.
 
-    Agents signal their outcome by emitting a sentinel line to stdout:
-
-      AI_AGILE_STATUS: complete
-      AI_AGILE_STATUS: review "short message for stakeholder"
-      AI_AGILE_STATUS: blocked "reason the agent could not proceed"
-
-    The orchestrator parses the sentinel, applies the matching label, and
-    posts the closing announcement. Agents must NOT call status.sh for
-    ceremony — set-wip, opening/closing announcements, and final label
-    transitions are all handled here. set-failed is applied by the
-    orchestrator when the agent exits non-zero without a sentinel after
-    all retries are exhausted.
-
-    Returns an AgentRunResult with success/returncode/captured_tail and
-    a rate_limited flag (set when a pause was written). Caller MUST NOT
-    apply :failed when rate_limited is True — the agent never got a fair
-    run.
+    Returns a ResolvedInvocation, or None when the agent file cannot be found.
+    This is the single source of truth for prompt assembly and tool allowlist
+    construction -- both invoke_agent (real spawn) and the resolve-only
+    --print-prompt path call this so the two can never drift apart.
     """
     agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
 
     if agent_text_override is not None:
-        # Caller pre-read the file before a branch checkout; use that snapshot
-        # so the agent definition always reflects the orchestrator's branch,
-        # not whatever happens to be checked out at invocation time.
         agent_text = agent_text_override
     elif not agent_file.exists():
-        log.warning("    Agent file not found: %s — skipping", agent_file)
-        return AgentRunResult(
-            success=False,
-            captured_tail=f"Agent prompt file not found at {agent_file}.",
-        )
+        log.warning("    Agent file not found: %s", agent_file)
+        return None
     else:
         agent_text = agent_file.read_text()
 
     frontmatter = parse_frontmatter(agent_text)
     agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
-    # Frontmatter extra_allowedTools is a deprecated fallback; canonical config lives in
-    # pipeline.json. All registered agents now have an empty frontmatter entry (comment only).
     _frontmatter_extra: list[str] = _coerce_tools(frontmatter.get("extra_allowedTools"))
-    # Merge: defaults → pipeline.json per-agent → frontmatter fallback (deduplicated, order preserved).
     extra_tools = list(dict.fromkeys(
         list(default_extra_tools or []) +
         list(agent_def.extra_allowedTools) +
@@ -2516,17 +2551,10 @@ def invoke_agent(
     except (ValueError, TypeError):
         max_turns = DEFAULT_MAX_TURNS
 
-    # Inline shared context and agent instructions into the prompt so both
-    # are part of the first user message and eligible for prompt caching from
-    # turn 1. Stable content (AGENTS.md, agent file) comes first; the small
-    # work-item-specific wire-up comes last.
     agents_md = AI_AGILE_CONTEXT.read_text() if AI_AGILE_CONTEXT.exists() else ""
     agent_body = _strip_frontmatter(agent_text)
     num_var = "ISSUE_NUMBER" if work_item.kind == "issue" else "PR_NUMBER"
     kind_label = "Issue" if work_item.kind == "issue" else "PR"
-
-    # Build the claude session ID before the prompt so its resolved value can
-    # be embedded directly — agents must not shell out to read it.
     agent_session_id = _compute_agent_session_id(agent_def, work_item, repo)
 
     prompt = (
@@ -2553,6 +2581,66 @@ def invoke_agent(
         f"AI_AGILE_STATUS: blocked \"reason\"\n"
         f"(No leading spaces — the orchestrator's regex matches only at line start.)\n"
         f"The orchestrator reads this sentinel, applies the label, and posts the closing announcement."
+    )
+
+    return ResolvedInvocation(
+        prompt=prompt,
+        allowed_tools=BASE_AGENT_TOOLS + extra_tools,
+        model=agent_model,
+        max_turns=max_turns,
+        session_id=agent_session_id,
+    )
+
+
+def invoke_agent(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    dry_run: bool,
+    repo: str,
+    attempt: int = 0,
+    agent_text_override: Optional[str] = None,
+    default_extra_tools: Optional[list[str]] = None,
+) -> AgentRunResult:
+    """
+    Invoke the agent via claude CLI.
+
+    Agents signal their outcome by emitting a sentinel line to stdout:
+
+      AI_AGILE_STATUS: complete
+      AI_AGILE_STATUS: review "short message for stakeholder"
+      AI_AGILE_STATUS: blocked "reason the agent could not proceed"
+
+    The orchestrator parses the sentinel, applies the matching label, and
+    posts the closing announcement. Agents must NOT call status.sh for
+    ceremony -- set-wip, opening/closing announcements, and final label
+    transitions are all handled here. set-failed is applied by the
+    orchestrator when the agent exits non-zero without a sentinel after
+    all retries are exhausted.
+
+    Returns an AgentRunResult with success/returncode/captured_tail and
+    a rate_limited flag (set when a pause was written). Caller MUST NOT
+    apply :failed when rate_limited is True -- the agent never got a fair
+    run.
+    """
+    resolved = _resolve_agent_invocation(
+        agent_def, work_item, repo, agent_text_override, default_extra_tools
+    )
+    if resolved is None:
+        agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
+        return AgentRunResult(
+            success=False,
+            captured_tail=f"Agent prompt file not found at {agent_file}.",
+        )
+
+    prompt = resolved.prompt
+    agent_model = resolved.model
+    max_turns = resolved.max_turns
+    agent_session_id = resolved.session_id
+    # Build env with headless execution mode -- every orchestrator-spawned
+    # subprocess is axis-B headless regardless of the tick's trigger source.
+    # _build_agent_env already sets AI_AGILE_EXECUTION_MODE="headless".
+    agent_env = _build_agent_env(
+        os.environ, repo, work_item, agent_session_id, agent_def.session_scope
     )
 
     if dry_run:
@@ -2586,18 +2674,11 @@ def invoke_agent(
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
     if agent_model:
         log.debug("    model: %s", agent_model)
-    if extra_tools:
-        log.debug("    extra_allowedTools: %s", extra_tools)
     log.debug("    max_turns: %d | prompt: %d chars", max_turns, len(prompt))
-
-    # Scoped base allowlist (module-level BASE_AGENT_TOOLS). Kept narrow so a
-    # prompt-injected agent cannot reach secrets/settings/branches or mutate
-    # reserved control/gate labels.
-    base_tools = BASE_AGENT_TOOLS
 
     cmd = [
         "claude",
-        "--allowedTools", ",".join(base_tools + extra_tools),
+        "--allowedTools", ",".join(resolved.allowed_tools),
         # Pipeline agents do their work with the allowlisted tools only; they must
         # NOT spawn sub-agents or invoke skills/slash-commands. In a trusted
         # workspace the CLI exposes Task/Agent/Skill even though they are absent
@@ -2612,14 +2693,6 @@ def invoke_agent(
     if agent_model:
         cmd += ["--model", agent_model]
     cmd += ["-p", prompt]
-
-    # Build the agent env from an explicit allowlist (NOT {**os.environ}) so a
-    # prompt-injected agent cannot read orchestrator-only secrets (bot token,
-    # git-auth header) out of its own /proc/self/environ. See _build_agent_env
-    # and AGENT_ENV_PASSTHROUGH.
-    agent_env = _build_agent_env(
-        os.environ, repo, work_item, agent_session_id, agent_def.session_scope
-    )
 
     # Preflight: the agent's Claude CLI needs some usable auth. Normally that is
     # ANTHROPIC_API_KEY (CI secret); when it is absent the CLI can still be
@@ -4300,6 +4373,41 @@ def parse_args() -> argparse.Namespace:
             "regardless of this flag. Also enables debug-level logging."
         ),
     )
+    p.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "Declare this as an unattended/scheduled invocation. "
+            "Added unconditionally by ai_orchestrator.yml; omit for interactive "
+            "runs (/maos-run, developer). Effects: (1) the audit actor field "
+            "records the real trigger identity; (2) the .pipeline-stop check "
+            "only halts headless runs -- an interactive run logs the marker "
+            "but proceeds."
+        ),
+    )
+    p.add_argument(
+        "--agent",
+        default=None,
+        metavar="AGENT",
+        help=(
+            "Agent name override (e.g. '01_product_docs/prd-writer'). "
+            "Required when using --print-prompt."
+        ),
+    )
+    p.add_argument(
+        "--print-prompt",
+        action="store_true",
+        help=(
+            "Resolve-only mode: print the named agent's prompt text, tool "
+            "allowlist, and env as JSON without spawning a subprocess or "
+            "mutating any GitHub state (no label writes, no :wip). "
+            "Used by /run-agent to obtain authoritative invocation parameters. "
+            "The printed env carries only the agent-facing context vars; every "
+            "other key, credentials included, is omitted by name only under "
+            "env_omitted_keys. "
+            "Requires --agent and --issue (or --repo + --issue)."
+        ),
+    )
     return p.parse_args()
 
 
@@ -4405,6 +4513,108 @@ def _call_delete_branch(repo: str, branch: str) -> None:
         log.warning("delete-branch.sh could not run for branch '%s': %s", branch, exc)
 
 
+def _run_print_prompt(args) -> None:
+    """Resolve-only mode: resolve the named agent's prompt/tools/env and print as JSON.
+
+    No labels are changed, no :wip is applied, and no GitHub API write calls
+    are made. Called when --print-prompt is passed; used by /run-agent to obtain
+    authoritative invocation parameters from the orchestrator's own resolution
+    logic instead of hand-parsing the agent file.
+
+    The printed env is built by naming exactly the keys that may be exported
+    (PRINT_PROMPT_ENV_KEYS), not by removing known-bad ones: this output is
+    captured into an interactive session, unlike invoke_agent's env which is
+    only ever handed to subprocess. Everything else, credentials included, is
+    omitted by default; the omitted key names are reported under
+    env_omitted_keys.
+    """
+    if not args.agent:
+        log.error("--print-prompt requires --agent <agent-name>")
+        sys.exit(1)
+    if not args.issue:
+        log.error("--print-prompt requires --issue <number>")
+        sys.exit(1)
+    if not args.repo:
+        log.error("--print-prompt requires --repo <owner/repo>")
+        sys.exit(1)
+
+    token = _discover_github_token()
+    if not token:
+        log.error("No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`.")
+        sys.exit(1)
+
+    gh = GitHubClient(token, args.repo)
+    kind = args.kind or "issue"
+    try:
+        if kind == "pr":
+            data = gh._get(f"/repos/{args.repo}/pulls/{args.issue}")
+        else:
+            data = gh._get(f"/repos/{args.repo}/issues/{args.issue}")
+        work_item = WorkItem(
+            number=data["number"],
+            kind=kind,
+            title=data["title"],
+            labels={lbl["name"] for lbl in data.get("labels", [])},
+            url=data["html_url"],
+        )
+    except Exception as exc:
+        log.error("Could not load work item %s #%d: %s", kind, args.issue, exc)
+        sys.exit(1)
+
+    # Build a minimal AgentDef from the agent file's frontmatter. The agent
+    # is specified by name; extra_allowedTools come from the file's frontmatter
+    # only (no pipeline.json context in resolve-only mode).
+    agent_name = args.agent
+    agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_name}.md"
+    if not agent_file.exists():
+        log.error("Agent file not found: %s", agent_file)
+        sys.exit(1)
+
+    agent_text = agent_file.read_text()
+    frontmatter = parse_frontmatter(agent_text)
+    extra = _coerce_tools(frontmatter.get("extra_allowedTools"))
+
+    agent_def = AgentDef(
+        agent=agent_name,
+        phase="",
+        objects=[],
+        trigger={},
+        dependencies=[],
+        human_gate_after=False,
+        human_gate_label=None,
+        description="",
+        extra_allowedTools=extra,
+    )
+
+    resolved = _resolve_agent_invocation(agent_def, work_item, args.repo)
+    if resolved is None:
+        log.error("Could not resolve invocation for agent %s", agent_name)
+        sys.exit(1)
+
+    # Build env with interactive mode -- this path is used by /run-agent, not
+    # by a real orchestrator subprocess spawn.
+    env = _build_agent_env(os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope)
+    env["AI_AGILE_EXECUTION_MODE"] = "interactive"
+
+    # Export only the named keys -- see PRINT_PROMPT_ENV_KEYS. The names of the
+    # keys left out are still reported so a consumer can tell the difference
+    # between "not needed" and "not shown"; only their values are withheld.
+    printable_env = {k: env[k] for k in PRINT_PROMPT_ENV_KEYS if k in env}
+    omitted = sorted(k for k in env if k not in printable_env)
+
+    output = {
+        "agent": agent_name,
+        "session_id": resolved.session_id,
+        "allowed_tools": resolved.allowed_tools,
+        "model": resolved.model,
+        "max_turns": resolved.max_turns,
+        "env": printable_env,
+        "env_omitted_keys": omitted,
+        "prompt": resolved.prompt,
+    }
+    print(json.dumps(output, indent=2))
+
+
 def _wake(args) -> "Optional[RunContext]":
     """Wake up: honour control flags, evaluate pause/stop, authenticate, load
     the pipeline, then fetch and priority-order the work.
@@ -4460,20 +4670,28 @@ def _wake(args) -> "Optional[RunContext]":
 
     # Emergency stop: an operator has halted the pipeline indefinitely.
     # Unlike the rate-limit pause, the stop marker is never auto-cleared.
+    # Headless/scheduled runs respect the marker; interactive runs log it
+    # and proceed (an operator stopping automation does not also halt themselves).
     stopped, stop_reason = is_pipeline_stopped()
     if stopped:
+        if args.headless:
+            log.warning(
+                "Pipeline is STOPPED: %s. No agents will be invoked. "
+                "(Clear the .pipeline-stop marker or use `--clear-stop` to resume.)",
+                stop_reason or "no reason recorded",
+            )
+            _stop_session = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+            _emit_audit_event(_make_audit_event(
+                _stop_session, "system.emergency_stop", args.repo or "",
+                outcome_status="stopped",
+                outcome_detail=stop_reason or "no reason recorded",
+            ))
+            return None
         log.warning(
-            "Pipeline is STOPPED: %s. No agents will be invoked. "
-            "(Clear the .pipeline-stop marker or use `--clear-stop` to resume.)",
+            "Pipeline is STOPPED (%s) but --headless was not passed; "
+            "interactive run will proceed.",
             stop_reason or "no reason recorded",
         )
-        _stop_session = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-        _emit_audit_event(_make_audit_event(
-            _stop_session, "system.emergency_stop", args.repo or "",
-            outcome_status="stopped",
-            outcome_detail=stop_reason or "no reason recorded",
-        ))
-        return None
 
     if not args.repo:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
@@ -4790,11 +5008,16 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _clear_inflight_wip_on_signal)
     signal.signal(signal.SIGINT, _clear_inflight_wip_on_signal)
 
-    global _VERBOSE
+    global _VERBOSE, _HEADLESS
     _VERBOSE = args.verbose
+    _HEADLESS = args.headless
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    if args.print_prompt:
+        _run_print_prompt(args)
+        return
 
     ctx = _wake(args)
     if ctx is None:

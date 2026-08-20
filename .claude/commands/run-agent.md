@@ -1,7 +1,7 @@
 # Run Agent
 
 Invoke a pipeline agent interactively on an issue. This executes the agent's
-prompt file in the current Claude Code session — you see each step live and can
+prompt file in the current Claude Code session -- you see each step live and can
 intervene at any point.
 
 Useful for: debugging an agent, running an agent before GitHub Actions is wired
@@ -26,11 +26,11 @@ Examples:
    REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
    ```
 
-   Locate the agent file — try in order:
+   Locate the agent file -- try in order:
    - `.claude/agents/{agent-name}.md` (standalone)
    - `ai-coding-standards2/.claude/agents/{agent-name}.md` (submodule)
 
-   Locate status.sh — try in order:
+   Locate status.sh -- try in order:
    - `.github/scripts/status.sh` (standalone)
    - `ai-coding-standards2/.github/scripts/status.sh` (submodule)
 
@@ -41,35 +41,41 @@ Examples:
    ```
    Then stop.
 
-3. Read the agent file. Note the `model:`, `max_turns:`, and `tools:` frontmatter
-   values. `tools:` is the allowlist the real orchestrator passes as
-   `--allowedTools` when it spawns this agent as a subprocess — the agent was
-   written and tested against exactly that set.
+3. Obtain the agent's authoritative invocation parameters from the orchestrator's
+   resolve-only mode. This is the single source of truth -- the same logic the
+   orchestrator uses when it spawns a real subprocess -- so the allowlist, model,
+   and prompt can never drift from what the pipeline actually sends:
 
-   **Tool-scope rule (enforced, not advisory):** write the declared allowlist
+   ```bash
+   RESOLVED=$(python pipeline/pipeline_orchestrator.py \
+     --repo "$REPO" \
+     --agent "$AGENT_NAME" \
+     --issue "$ISSUE_NUMBER" \
+     --print-prompt)
+   ```
+
+   **Tool-scope rule (enforced, not advisory):** write the returned allowlist
    to a scope file before following any of the agent's own instructions:
 
    ```bash
    mkdir -p .claude
-   jq -n --arg agent "$AGENT_NAME" --argjson allowed '["Bash","Read","Grep"]' \
-     '{agent: $agent, allowed: $allowed}' > .claude/.run-agent-scope.json
+   echo "$RESOLVED" | jq \
+     --arg agent "$AGENT_NAME" \
+     '{agent: $agent, allowed: .allowed_tools}' \
+     > .claude/.run-agent-scope.json
    ```
-
-   Replace the `--argjson allowed` value with the exact `tools:` list from the
-   frontmatter you just read (as a JSON array), and `$AGENT_NAME` with the
-   agent name parsed in step 1.
 
    A `PreToolUse` hook (`.claude/hooks/run-agent-scope.sh`, registered in
    `.claude/settings.json`) reads this file for the rest of the run and
-   **denies** any tool call outside the declared list — the same restriction
+   **denies** any tool call outside the declared list -- the same restriction
    the real orchestrator applies via `--allowedTools`. This is a real block,
-   not a warning: if a tool call is denied, do not retry it — find a
+   not a warning: if a tool call is denied, do not retry it -- find a
    declared-tool alternative or stop and tell the user the agent's allowlist
    doesn't cover what this run needs.
 
    `Glob` in particular is absent from most agents' allowlists and silently
    returns empty results through symlinked directories (`standards/`,
-   `.claude/`) rather than an error — see `.claude/CLAUDE.md` Section 6.
+   `.claude/`) rather than an error -- see `.claude/CLAUDE.md` Section 6.
 
 4. Set the following variables for use in the agent's bash snippets:
    - `AGENT_NAME` = the agent name parsed in step 1
@@ -87,7 +93,7 @@ Examples:
 6. When you reach the agent's terminal step (set-complete, set-review, or
    set-blocked), confirm to the user:
    ```
-   ✅ Agent 01_product_docs/prd-writer completed on issue #42.
+   Agent 01_product_docs/prd-writer completed on issue #42.
    Final status: complete
    ```
 
@@ -97,5 +103,5 @@ Examples:
    rm -f .claude/.run-agent-scope.json
    ```
    Do this even if the run halts early (error, `:blocked`, user interruption,
-   a denied tool with no alternative) — remove the scope file before ending
+   a denied tool with no alternative) -- remove the scope file before ending
    your turn either way.

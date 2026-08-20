@@ -1818,6 +1818,7 @@ class TestPhasesFilter:
             verbose=False, clear_pause=False, clear_stop=False, repo="test/repo",
             pipeline="pipeline.json", phases="01_product_docs",
             issue=None, kind=None, dry_run=True,
+            headless=False, print_prompt=False,
         )
 
         wi = _make_work_item_with_labels(1, set())
@@ -3857,6 +3858,8 @@ class TestPriorityScheduling:
         args_mock.clear_pause = False
         args_mock.clear_stop = False
         args_mock.verbose = False
+        args_mock.headless = False
+        args_mock.print_prompt = False
         args_mock.repo = "test/repo"
         args_mock.issue = None
         args_mock.kind = None
@@ -3918,6 +3921,8 @@ class TestPriorityScheduling:
         args_mock.clear_pause = False
         args_mock.clear_stop = False
         args_mock.verbose = False
+        args_mock.headless = False
+        args_mock.print_prompt = False
         args_mock.repo = "test/repo"
         args_mock.issue = None
         args_mock.kind = None

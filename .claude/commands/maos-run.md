@@ -89,6 +89,12 @@ SCRIPT=pipeline/pipeline_orchestrator.py
 python3 "$SCRIPT" --repo "$REPO" --issue $ARGUMENTS
 ```
 
+**`.pipeline-stop` does not block interactive runs.** If the scheduled pipeline
+is stopped (an operator ran `ai_emergency_stop.yml` to halt unattended work),
+`/maos-run` ticks still proceed -- the orchestrator logs the stop but continues
+when invoked without `--headless`. You do not need to clear `.pipeline-stop`
+before driving an issue interactively.
+
 Do **not** wrap this in a short shell `timeout`. Agent-heavy steps (`prd-writer`,
 `coder`, `pr-reviewer`) legitimately take a few minutes, and the orchestrator
 already enforces its own per-agent timeout. A short cap that kills the tick is

@@ -107,12 +107,14 @@ class TestMainStopMarkerBehavior:
         args.dry_run = False
         args.issue = None
         args.pipeline = Path("pipeline/pipeline.json")
+        args.headless = False
+        args.print_prompt = False
         for k, v in kwargs.items():
             setattr(args, k, v)
         return args
 
     def test_main_exits_early_when_stopped(self, tmp_path, monkeypatch):
-        """When stop marker exists, main() must not load the pipeline or invoke agents."""
+        """When stop marker exists and --headless, main() must not load the pipeline."""
         marker_path = tmp_path / ".pipeline-stop"
         marker_path.write_text(json.dumps({
             "stopped_at": "2026-06-01T12:00:00Z",
@@ -127,7 +129,8 @@ class TestMainStopMarkerBehavior:
             load_called.append(True)
             return [], []
 
-        with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
+        with patch.object(pipeline_orchestrator, "parse_args",
+                          return_value=self._make_args(headless=True)), \
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(pipeline_orchestrator, "load_pipeline", side_effect=fake_load), \
              patch.object(pipeline_orchestrator, "_emit_audit_event"), \
@@ -135,10 +138,10 @@ class TestMainStopMarkerBehavior:
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
             pipeline_orchestrator.main()
 
-        assert not load_called, "load_pipeline must not be called when stop marker is set"
+        assert not load_called, "load_pipeline must not be called when headless and stop marker is set"
 
     def test_main_emits_emergency_stop_audit_event(self, tmp_path, monkeypatch, capsys):
-        """When stop marker is detected, a system.emergency_stop audit event is printed."""
+        """When stop marker is detected with --headless, a system.emergency_stop event is printed."""
         marker_path = tmp_path / ".pipeline-stop"
         marker_path.write_text(json.dumps({
             "stopped_at": "2026-06-01T12:00:00Z",
@@ -147,7 +150,8 @@ class TestMainStopMarkerBehavior:
         }))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
 
-        with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
+        with patch.object(pipeline_orchestrator, "parse_args",
+                          return_value=self._make_args(headless=True)), \
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(pipeline_orchestrator, "GitHubClient"), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
@@ -194,7 +198,8 @@ class TestMainStopMarkerBehavior:
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
 
         for _ in range(2):
-            with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
+            with patch.object(pipeline_orchestrator, "parse_args",
+                              return_value=self._make_args(headless=True)), \
                  patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
                  patch.object(pipeline_orchestrator, "_emit_audit_event"), \
                  patch.object(pipeline_orchestrator, "GitHubClient"), \
@@ -260,7 +265,8 @@ class TestMainStopMarkerBehavior:
         gh_mock = MagicMock()
         gh_mock.list_open_issues.return_value = [wi1, wi2]
 
-        with patch.object(pipeline_orchestrator, "parse_args", return_value=self._make_args()), \
+        with patch.object(pipeline_orchestrator, "parse_args",
+                          return_value=self._make_args(headless=True)), \
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
              patch.object(pipeline_orchestrator, "is_pipeline_stopped", side_effect=fake_is_stopped), \
              patch.object(pipeline_orchestrator, "load_pipeline", return_value=([], [])), \
@@ -290,11 +296,12 @@ class TestCheckControls:
         assert _check_controls("test/repo") == "run"
 
     def test_returns_stop_when_stop_marker_exists(self, tmp_path, monkeypatch, capsys):
-        """Returns 'stop' when a stop marker is present, regardless of pause state."""
+        """Returns 'stop' when a stop marker is present and running headless."""
         stop_path = tmp_path / ".pipeline-stop"
         stop_path.write_text(json.dumps({"reason": "test stop", "stopped_at": "2026-01-01T00:00:00Z"}))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
         assert _check_controls("test/repo") == "stop"
 
     def test_returns_pause_when_pause_marker_active(self, tmp_path, monkeypatch):
@@ -308,7 +315,7 @@ class TestCheckControls:
         assert _check_controls("test/repo") == "pause"
 
     def test_stop_takes_priority_over_pause(self, tmp_path, monkeypatch):
-        """Returns 'stop' even when both stop and pause markers are present."""
+        """Returns 'stop' even when both stop and pause markers are present (headless)."""
         import datetime
         stop_path = tmp_path / ".pipeline-stop"
         stop_path.write_text(json.dumps({"reason": "test stop"}))
@@ -317,6 +324,7 @@ class TestCheckControls:
         pause_path.write_text(json.dumps({"until": future, "reason": "rate limit", "paused_at": future}))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
         assert _check_controls("test/repo") == "stop"
 
     def test_returns_run_when_pause_marker_expired(self, tmp_path, monkeypatch):
@@ -330,12 +338,13 @@ class TestCheckControls:
         assert _check_controls("test/repo") == "run"
 
     def test_process_work_item_returns_zero_when_stopped(self, tmp_path, monkeypatch):
-        """process_work_item returns 0 immediately when _check_controls detects stop."""
+        """process_work_item returns 0 immediately when _check_controls detects stop (headless)."""
         from pipeline_orchestrator import process_work_item, AgentDef, WorkItem, ConcurrencyState
         stop_path = tmp_path / ".pipeline-stop"
         stop_path.write_text(json.dumps({"reason": "test stop", "stopped_at": "2026-01-01T00:00:00Z"}))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
 
         promote_calls = []
 
