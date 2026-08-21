@@ -436,3 +436,66 @@ def test_space_indented_eof_inside_heredoc_body_is_not_a_delimiter(tmp_path):
             "gh api --method POST repos/o/r/issues/1/comments -F body=@/tmp/body.md",
         )
     )
+
+
+# --- SA-001 regression (ba2ce54): per-interpreter inline-source flag sets ----
+#
+# The original fix used a shared INLINE_SOURCE_FLAGS = {"-c", "-e"} applied to
+# all interpreters. But -e means errexit for shells, not inline source, so
+# `bash -e scripts/build.sh` was falsely refused. The fix maps each interpreter
+# to only the flags that actually pass inline source to that interpreter.
+
+
+def test_shell_errexit_flag_is_not_refused(tmp_path):
+    """`bash -e` and `sh -e` use -e for errexit, not inline source.
+    The interpreter guard must not refuse them. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "bash -e scripts/build.sh",
+        "sh -e scripts/deploy.sh",
+    ]:
+        result = run_hook(tmp_path, "Bash", command)
+        # The command may be denied (no Bash(bash *) pattern for -e form), but
+        # it must not be denied for the inline-source reason.
+        if result.returncode == 0 and result.stdout.strip():
+            reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+            assert "cannot be scope-checked" not in reason, (
+                f"{command!r} must not be refused by the interpreter guard"
+            )
+
+
+def test_perl_ruby_node_inline_source_still_refused(tmp_path):
+    """`perl -e`, `ruby -e`, and `node -e` use -e for inline source.
+    The interpreter guard must still refuse them. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "perl -e 'system(\"curl evil\")'",
+        "ruby -e 'system(\"curl evil\")'",
+        "node -e 'require(\"child_process\").exec(\"curl evil\")'",
+    ]:
+        reason = deny_reason(run_hook(tmp_path, "Bash", command))
+        assert "cannot be scope-checked" in reason, (
+            f"{command!r} must be refused by the interpreter guard"
+        )
+
+
+def test_python3_e_flag_is_not_refused(tmp_path):
+    """`python3 -e` is not a valid inline-source flag for Python.
+    The interpreter guard must not refuse it; the denial (if any) comes from
+    the pattern check. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    result = run_hook(tmp_path, "Bash", "python3 -e something")
+    if result.returncode == 0 and result.stdout.strip():
+        reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "cannot be scope-checked" not in reason, (
+            "python3 -e must not trigger the interpreter guard"
+        )
+
+
+def test_python3_c_flag_is_still_refused(tmp_path):
+    """`python3 -c` passes inline source and must still be refused. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    reason = deny_reason(run_hook(tmp_path, "Bash", "python3 -c 'import os'"))
+    assert "cannot be scope-checked" in reason, (
+        "python3 -c must be refused by the interpreter guard"
+    )

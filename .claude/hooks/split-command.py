@@ -49,18 +49,23 @@ EXEC_WRAPPERS = {
     "watch", "command", "exec", "source", ".",
 }
 
-# Interpreters that are legitimate when running a file from the working tree
-# (`bash scripts/build.sh`) and pure laundering when handed inline source.
-# Non-shell interpreters are included because they support the same inline
-# source capability via -c (python3, node) or -e (perl, ruby, node). (SA-001)
-INTERPRETERS = {
-    "sh", "bash", "zsh", "dash", "ksh",
-    "python3", "python", "perl", "ruby", "node",
+# Mapping from interpreter name to the flags that actually pass inline source
+# to THAT interpreter. Each interpreter has its own flag vocabulary: shells use
+# -c for inline source (and -e means errexit, not eval), while perl/ruby/node
+# use -e/-E/--eval. A shared union would cause false denials on common idioms
+# like `bash -e scripts/build.sh` (errexit + file, not inline source). (SA-001)
+INTERPRETER_INLINE_FLAGS = {
+    "sh":      {"-c"},
+    "bash":    {"-c"},
+    "zsh":     {"-c"},
+    "dash":    {"-c"},
+    "ksh":     {"-c"},
+    "python":  {"-c"},
+    "python3": {"-c"},
+    "perl":    {"-e", "-E"},
+    "ruby":    {"-e"},
+    "node":    {"-e", "--eval", "-p", "--print"},
 }
-
-# Flags that pass inline source to an interpreter. Refusing these regardless
-# of interpreter prevents scope laundering via any evaluated string. (SA-001)
-INLINE_SOURCE_FLAGS = {"-c", "-e"}
 
 # find's own exec facility -- the same laundering, spelled differently.
 FIND_EXEC_FLAGS = {"-exec", "-execdir", "-ok", "-okdir"}
@@ -151,9 +156,10 @@ def split(command):
                 f"grant for it would grant everything it can launch"
             )
         inline_flag = next(
-            (f for f in tokens[1:] if f in INLINE_SOURCE_FLAGS), None
+            (f for f in tokens[1:] if f in INTERPRETER_INLINE_FLAGS.get(head, set())),
+            None,
         )
-        if head in INTERPRETERS and inline_flag is not None:
+        if head in INTERPRETER_INLINE_FLAGS and inline_flag is not None:
             refuse(
                 f"`{head} {inline_flag}` runs inline source, which no pattern "
                 f"can scope; run the command directly instead"
