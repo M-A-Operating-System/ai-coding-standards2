@@ -479,7 +479,6 @@ class TestDefaultMaxConcurrentIsOne:
         assert "mark_ready_on_complete" in mock_warn.call_args[0][0]
 
 
-
 # ---------------------------------------------------------------------------
 # TestPerAgentConcurrencyCeiling
 # ---------------------------------------------------------------------------
@@ -4266,6 +4265,7 @@ class TestRunAgentBehaviour:
 
     def _git_side_effect(self):
         import subprocess as _sp
+
         def _se(cmd, **kw):
             if isinstance(cmd, list) and cmd and cmd[0] == "git":
                 raise _sp.CalledProcessError(1, cmd)
@@ -4313,6 +4313,7 @@ class TestCommitAfterExactlyOnce:
 
     def _side_effect(self, bash_result):
         import subprocess as _sp
+
         def _se(cmd, **kw):
             if isinstance(cmd, list) and cmd and cmd[0] == "git":
                 raise _sp.CalledProcessError(1, cmd)

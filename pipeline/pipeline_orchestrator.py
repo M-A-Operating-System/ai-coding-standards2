@@ -110,6 +110,7 @@ STATUSES_JSON = Path(__file__).parent / "statuses.json"
 # which is a different directory when installed as a submodule.
 SUBMODULE_ROOT = Path(__file__).resolve().parent.parent
 
+
 def load_statuses() -> tuple[list[dict], list[dict], list[str]]:
     """Load status, standalone-label, and priority-ordering definitions from statuses.json."""
     if not STATUSES_JSON.exists():
@@ -122,6 +123,7 @@ def load_statuses() -> tuple[list[dict], list[dict], list[str]]:
     except (KeyError, json.JSONDecodeError) as e:
         log.error("statuses.json is malformed: %s", e)
         sys.exit(1)
+
 
 STATUSES, STANDALONE_LABELS, PRIORITY_LABEL_ORDERING = load_statuses()
 LABEL_COLOURS = {s["status"]: s["colour"] for s in STATUSES}
@@ -1752,6 +1754,7 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
 
 _CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike", "security"}
 
+
 def get_work_item_classification(work_item: WorkItem) -> Optional[str]:
     """
     Return the issue classification (bug/toil/enhancement/feature/spike), or
@@ -2238,6 +2241,7 @@ def _script_step_env_vars(script_path: Optional[str]) -> tuple[str, ...]:
         return _SCRIPT_AGENT_ENV_VARS + ("AI_AGILE_BOT_TOKEN",)
     return _SCRIPT_AGENT_ENV_VARS
 
+
 def invoke_script(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -2350,7 +2354,6 @@ def invoke_script(
         # Guard against unexpected exceptions leaving a zombie subprocess.
         if proc is not None:
             _terminate_subprocess(proc)
-
 
 
 def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: str) -> str:
@@ -2932,6 +2935,7 @@ def invoke_agent(
         # _timed_out lets the loop raise TimeoutExpired with a clear message
         # even when stdout goes silent (no lines arrive to trigger the check).
         _timed_out = threading.Event()
+
         def _timer_callback() -> None:
             _timed_out.set()
             _terminate_subprocess(proc)
