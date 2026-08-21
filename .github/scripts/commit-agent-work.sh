@@ -130,6 +130,42 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Refuse to commit a NEW file at the repo root (issue #321).
+#
+# The scratch convention tells agents to write working files under
+# $AI_AGILE_SCRATCH, and every agent prompt carries the rule. Instruction is
+# not enforcement: a bare filename still resolves against the repo root,
+# because that is the working directory, so a leak is always one invented
+# filename away. That is how pr_review_328.txt reached a commit on issue-316,
+# and how artefact_comment.txt and closing_comment.txt reached d0471f1.
+#
+# This is the enforcement half, and it does not depend on agent compliance:
+# a newly-added file at depth 0 is unstaged before the commit is written.
+# Modifications to files already tracked at the root are untouched -- CLAUDE.md,
+# README.md and .gitignore are legitimate edit targets. The file is left on
+# disk rather than deleted, so nothing an agent produced is destroyed and the
+# violation stays visible.
+# ---------------------------------------------------------------------------
+ROOT_ADDITIONS=$(git diff --cached --name-only --diff-filter=A -- ':(top)*' \
+    | grep -v '/' || true)
+if [[ -n "$ROOT_ADDITIONS" ]]; then
+    echo "commit-agent-work: ERROR: ${AGENT_NAME} created new file(s) at the repo root." >&2
+    echo "commit-agent-work: working files belong under \$AI_AGILE_SCRATCH (see .claude/AGENTS.md)." >&2
+    echo "commit-agent-work: unstaging them; they are left on disk, not committed:" >&2
+    while IFS= read -r root_file; do
+        [[ -n "$root_file" ]] || continue
+        echo "commit-agent-work:   $root_file" >&2
+        git restore --staged -- "$root_file" 2>/dev/null || git rm --cached -- "$root_file" >/dev/null
+    done <<< "$ROOT_ADDITIONS"
+fi
+
+# Everything the agent legitimately wrote may now be gone from the index.
+if [[ -z "$(git diff --cached --name-only)" ]]; then
+    echo "commit-agent-work: nothing left to commit after the root-file guard -- skipping"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
 # Detect .github/workflows/ files — GITHUB_TOKEN cannot push them.
 # AI_AGILE_BOT_TOKEN (classic PAT with repo+workflow scopes) is used instead.
 # ---------------------------------------------------------------------------

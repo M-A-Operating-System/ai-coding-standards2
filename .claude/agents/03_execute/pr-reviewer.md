@@ -61,18 +61,23 @@ PR_NUMBER=$(gh api \
 [[ -z "$PR_NUMBER" ]] && { echo "No open PR — skipping." >&2
   echo "AI_AGILE_STATUS: complete"; exit 0; }
 
-TODAY=$(date -u +%Y-%m-%d)
 PRIOR=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs "[.[] | select(.body | contains(\"ai-agile/artefact/v1 by 03_execute/pr-reviewer\")) \
-  | select(.created_at | startswith(\"$TODAY\")) | .id] | first // empty")
+  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty')
 ```
 
-If `$PRIOR` is set, head the artefact comment `## PR Review (Re-run)`.
+`$PRIOR` is your previous artefact on this PR, if any. If it is set, head this
+run's artefact `## PR Review (Re-run)` and read the prior one to see what you
+found last time. It is not an edit target -- artefacts are append-only (P-11).
 
 Post the opening announcement:
 
+Your bodies are JSON inside a fenced block. Write the file into
+`$AI_AGILE_SCRATCH` and post it from there -- no shell quoting, and nothing
+lands in the repo root. The orchestrator creates that directory for you, so
+do not create it yourself. Never inline a body into `--body`.
+
 ```bash
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_open.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
@@ -86,7 +91,9 @@ gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
 }
 \`\`\`
 EOF
-)"
+
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/ann_open.md"
 ```
 
 ---
@@ -263,7 +270,7 @@ Cite the P-N or STD ID in every finding.
 | P-1 Git is authoritative | State written outside GitHub (sidecar DB, temp file across runs) | Critical |
 | P-2 One source per concern | Fact duplicated from `statuses.json`, `pipeline.json`, or `standards/*.json` | Medium |
 | P-10 Agents draft, humans decide | Agent applies `*:approved` label or emits `complete` for a gated step | High |
-| P-11 Resumable by default | Agent posts duplicate artefact comments instead of editing in place | Medium |
+| P-11 Resumable by default | Re-run double-applies an effect (second PR, second branch, re-applied label), or rewrites a previous artefact instead of posting a new one | Medium |
 | P-14 Deterministic orchestrator | Agent directly invokes another agent subprocess or API | High |
 | P-15 Product-led | Behaviour introduced with no corresponding `docs/product/` entry **on the PR base**. Under two-phase delivery the entry lands via the already-merged design PR (`issue-{N}-docs`), so it is on `main` (the code PR's base), not in the code PR diff — confirm it on the base before flagging, don't require it in the diff | High |
 | Any STD in `standards/*.json` | Check the standard's `acceptance_criteria` field | Per standard's `severity` |
@@ -375,7 +382,7 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 ## Step 11 — Post artefact
 
 ```bash
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<REVIEW_EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/review_body.md" <<REVIEW_EOF
 <!-- ai-agile/artefact/v1 by 03_execute/pr-reviewer -->
 ## PR Review${PRIOR:+ (Re-run)}
 
@@ -387,16 +394,21 @@ $FINDING_BODY
 ---
 _On APPROVE: PR is marked ready for human review. On REQUEST CHANGES: the orchestrator will automatically re-invoke the coder (up to 3 cycles). After 3 cycles without agreement, human sign-off is required._
 REVIEW_EOF
-)"
 
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
 ```
+
+Always POST; never rewrite a previous artefact. Each round's findings are the
+record of what was wrong at that head, and a human reading the thread needs to
+see them change between rounds (P-11, P-12).
 
 ---
 
 ## Step 12 — Close
 
 ```bash
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_close.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
@@ -412,7 +424,9 @@ gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
 }
 \`\`\`
 EOF
-)"
+
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/ann_close.md"
 [[ "$VERDICT" == "APPROVE" ]] \
   && echo "AI_AGILE_STATUS: complete" \
   || echo "AI_AGILE_STATUS: review \"Verdict: $VERDICT.\""
@@ -424,7 +438,7 @@ EOF
 
 - **The diff and the PR head ref are the only source of truth — never the local working tree.** Do not raise "missing/undefined symbol", "dead code", "not introduced", or "X doesn't exist" from a local-disk read; the local checkout may be a different branch that lacks this PR's changes. Confirm against the unified diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`) and `read_pr_file` (PR head) before any such finding. A false finding of this kind is itself a review defect.
 - **Read-only.** Never write or modify source files, even for trivial fixes.
-- **Output via `gh pr comment` only.** Never write findings to stdout.
+- **Output via the `gh api` comment endpoint only** (see Steps 0, 11 and 12 -- `gh pr comment` is GraphQL and 403s in a restricted session). Never write findings to stdout.
 - **Findings describe fixes; never apply them.**
 - **Never edit PR body, issue body, or apply/remove labels.**
 - **Never change PR state.** The orchestrator marks the PR ready on APPROVE — do not call `gh pr ready`.

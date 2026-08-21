@@ -157,7 +157,7 @@ For each sub-issue, write the body to a temp file (avoids heredoc/variable
 quoting collisions), create the issue, and capture the number:
 
 ```bash
-BODY_FILE=$(mktemp /tmp/sizer-body-XXXXXX.md)
+BODY_FILE="${AI_AGILE_SCRATCH:-/tmp}/sizer-body.md"
 cat > "$BODY_FILE" <<BODY
 ## Problem Statement
 
@@ -192,7 +192,6 @@ SUB_ISSUE_URL=$(gh issue create --repo "$REPO" \
   --title "[#${ISSUE_NUMBER} - {N}/{TOTAL}] {SUB_SCOPE}" \
   --label "sub-issue,parent-issue:${ISSUE_NUMBER}" \
   --body-file "$BODY_FILE")
-rm -f "$BODY_FILE"
 
 # gh issue create outputs the URL: https://github.com/org/repo/issues/N
 SUB_ISSUE_N=$(echo "$SUB_ISSUE_URL" | grep -oE '[0-9]+$')
@@ -259,7 +258,7 @@ done
 
 BLOCKED_BY_LIST=$(printf '#%s ' "${SUB_ISSUE_NUMBERS[@]}")
 
-BODY_FILE=$(mktemp /tmp/sizer-epic-body-XXXXXX.md)
+BODY_FILE="${AI_AGILE_SCRATCH:-/tmp}/sizer-epic-body.md"
 cat > "$BODY_FILE" <<BODY
 <!-- ai-agile/epic-tracker/v1 START -->
 ## Decomposition tracker
@@ -281,7 +280,6 @@ ${ORIG_BODY}
 BODY
 
 gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body-file "$BODY_FILE"
-rm -f "$BODY_FILE"
 ```
 
 ### 4f — Post the decomposition plan
