@@ -51,7 +51,16 @@ EXEC_WRAPPERS = {
 
 # Interpreters that are legitimate when running a file from the working tree
 # (`bash scripts/build.sh`) and pure laundering when handed inline source.
-INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Non-shell interpreters are included because they support the same inline
+# source capability via -c (python3, node) or -e (perl, ruby, node). (SA-001)
+INTERPRETERS = {
+    "sh", "bash", "zsh", "dash", "ksh",
+    "python3", "python", "perl", "ruby", "node",
+}
+
+# Flags that pass inline source to an interpreter. Refusing these regardless
+# of interpreter prevents scope laundering via any evaluated string. (SA-001)
+INLINE_SOURCE_FLAGS = {"-c", "-e"}
 
 # find's own exec facility -- the same laundering, spelled differently.
 FIND_EXEC_FLAGS = {"-exec", "-execdir", "-ok", "-okdir"}
@@ -76,10 +85,18 @@ def strip_heredocs(command):
     while index < len(lines):
         line = lines[index]
         kept.append(line)
-        delimiters = [(m.group(2), m.group(1)) for m in HEREDOC.finditer(line)]
+        # Track whether dash-stripped (`<<-`): only tabs are stripped from the
+        # closing delimiter line, not spaces. (DP-001)
+        delimiters = [
+            (m.group(2), m.group(1), m.group(0).startswith("<<-"))
+            for m in HEREDOC.finditer(line)
+        ]
         index += 1
-        for delimiter, quote in delimiters:
-            while index < len(lines) and lines[index].strip() != delimiter:
+        for delimiter, quote, dash in delimiters:
+            while index < len(lines):
+                candidate = lines[index].lstrip("\t") if dash else lines[index]
+                if candidate == delimiter:
+                    break
                 if not quote:
                     expanding.append(lines[index])
                 index += 1
@@ -133,10 +150,13 @@ def split(command):
                 f"`{head}` runs a command named in its own arguments, so a "
                 f"grant for it would grant everything it can launch"
             )
-        if head in INTERPRETERS and "-c" in tokens[1:]:
+        inline_flag = next(
+            (f for f in tokens[1:] if f in INLINE_SOURCE_FLAGS), None
+        )
+        if head in INTERPRETERS and inline_flag is not None:
             refuse(
-                f"`{head} -c` runs inline shell source, which no pattern can "
-                f"scope; run the command directly instead"
+                f"`{head} {inline_flag}` runs inline source, which no pattern "
+                f"can scope; run the command directly instead"
             )
         for flag in FIND_EXEC_FLAGS:
             if flag in tokens[1:]:
