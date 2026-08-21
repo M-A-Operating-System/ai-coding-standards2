@@ -11,7 +11,7 @@
 # by the next one. Never fail a run because cleanup did not happen.
 #
 # Environment (set by orchestrator):
-#   AI_AGILE_SCRATCH — absolute path to this run's scratch directory
+#   AI_AGILE_SCRATCH -- absolute path to this run's scratch directory
 
 set -euo pipefail
 

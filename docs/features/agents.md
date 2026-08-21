@@ -43,3 +43,16 @@
 **Given** the orchestrator is killed by an uncatchable signal, so no teardown runs
 **When** the next run of that same agent on that same work item begins
 **Then** `$AI_AGILE_SCRATCH` is empty -- setup clears the directory before creating it, so the lifecycle is self-healing and needs no signal handler
+
+## Scenario: An interactively-run agent gets the same scratch directory as an orchestrated one
+
+**Given** an agent is run by hand through `/run-agent` rather than by the orchestrator
+**When** the invocation is resolved
+**Then** `--print-prompt` returns `AI_AGILE_SCRATCH` in its env, and `/run-agent` creates that directory with `scratch-setup.sh` before the agent starts and removes it with `scratch-teardown.sh` at the end
+**And** the agent therefore does not fall back to a shared `/tmp` where two concurrent runs would collide on the same filenames
+
+## Scenario: Only steps that were given a scratch directory are torn down
+
+**Given** a `script` step, which is never given `AI_AGILE_SCRATCH`
+**When** the orchestrator finishes running it
+**Then** no teardown runs for it -- teardown is paired with setup, never orphaned

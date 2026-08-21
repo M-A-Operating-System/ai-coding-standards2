@@ -2443,6 +2443,15 @@ PRINT_PROMPT_ENV_KEYS = (
     "SESSION_SCOPE",
     "ISSUE_NUMBER",
     "PR_NUMBER",
+    # Derived from SESSION_ID, which is already here -- a path, not a secret.
+    # Without it /run-agent has nothing to export and every hand-run agent
+    # falls through ${AI_AGILE_SCRATCH:-/tmp} to a shared directory with fixed
+    # filenames, so the isolation the orchestrator path guarantees is absent
+    # exactly where a human is watching (issue #321). /run-agent runs
+    # scratch-setup.sh on this path before the agent starts; the two changes
+    # only work together -- exporting a directory nothing creates is worse than
+    # not exporting one, because the agent is told not to create it itself.
+    "AI_AGILE_SCRATCH",
 )
 
 
@@ -2503,8 +2512,11 @@ SCRATCH_TEARDOWN_SCRIPT = ".github/scripts/scratch-teardown.sh"
 def _scratch_path(agent_session_id: str) -> str:
     """The per-run scratch directory for a session id.
 
-    Sole definition of the formula. _build_agent_env exports it and the
-    lifecycle hooks are handed the result, so no caller recomputes it.
+    Sole definition of the formula -- every caller derives the path from here
+    rather than rebuilding it. Two callers exist: _build_agent_env, which
+    exports it for the agent, and _run_agent, which needs it for teardown after
+    invoke_agent's env has gone out of scope. Both pass the same session id, so
+    both get the same path.
     """
     return f"/tmp/{agent_session_id}"
 
@@ -3609,7 +3621,12 @@ def _run_agent(
     # Remove the scratch directory after all retries complete, whatever the
     # outcome. Hygiene only: scratch-setup.sh clears before every run, so a
     # tick that dies before reaching here is cleaned up by the next one.
-    if not dry_run:
+    #
+    # Agent steps only. Script steps are never given AI_AGILE_SCRATCH, so
+    # tearing one down would remove a directory this step never received --
+    # harmless today, but it would silently pair a teardown with no setup the
+    # moment a script step is given one.
+    if not dry_run and agent_def.step_type != "script":
         _run_scratch_hook(
             SCRATCH_TEARDOWN_SCRIPT,
             _scratch_path(_compute_agent_session_id(agent_def, work_item, repo)),
@@ -5189,6 +5206,7 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
 # termination signal (e.g. a CI or interactive timeout sending SIGTERM) can
 # clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
 _CURRENT_WIP = None
+
 
 def _clear_inflight_wip_on_signal(signum, _frame) -> None:
     """Best-effort: drop the in-flight :wip label, then exit.

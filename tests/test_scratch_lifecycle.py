@@ -524,3 +524,150 @@ class TestScratchLifecycleIsSelfHealing:
             "setup must clear before it creates, or a tick killed mid-run "
             "hands its debris to the next one"
         )
+
+
+# ---------------------------------------------------------------------------
+# Review findings on PR #360 (DP-002, QA-005, SC-001).
+# ---------------------------------------------------------------------------
+
+
+class TestInteractivePathGetsARealScratchDirectory:
+    """DP-002: the orchestrator path exported AI_AGILE_SCRATCH and created the
+    directory; the interactive path did neither, so every hand-run agent fell
+    through `${AI_AGILE_SCRATCH:-/tmp}` to a shared directory with fixed
+    filenames. AGENTS.md promises the agent a per-run directory either way.
+    """
+
+    def test_resolve_only_prints_the_scratch_path(self):
+        from pipeline_orchestrator import PRINT_PROMPT_ENV_KEYS
+        assert "AI_AGILE_SCRATCH" in PRINT_PROMPT_ENV_KEYS, (
+            "/run-agent reads the agent's env from --print-prompt; a key absent "
+            "from this list cannot reach the agent"
+        )
+
+    def test_the_printed_scratch_path_is_per_session_not_bare_tmp(self):
+        from pipeline_orchestrator import _build_agent_env, PRINT_PROMPT_ENV_KEYS
+        session_id = "ais-v1-03-execute-pr-reviewer-issue-321"
+        env = _build_agent_env(
+            {"PATH": "/usr/bin"}, repo="owner/repo",
+            work_item=_work_item(kind="issue", number=321),
+            agent_session_id=session_id, session_scope="per_issue",
+        )
+        printable = {k: env[k] for k in PRINT_PROMPT_ENV_KEYS if k in env}
+        assert printable["AI_AGILE_SCRATCH"] == f"/tmp/{session_id}"
+
+    def test_the_scratch_path_carries_no_credential(self):
+        """PRINT_PROMPT_ENV_KEYS is an allowlist precisely so a new entry cannot
+        start leaking. The path is derived from SESSION_ID; assert it stays a
+        path and nothing else joined the list alongside it."""
+        from pipeline_orchestrator import PRINT_PROMPT_ENV_KEYS
+        for key in PRINT_PROMPT_ENV_KEYS:
+            assert not any(
+                marker in key for marker in ("TOKEN", "KEY", "SECRET", "PASSWORD")
+            ), f"{key} looks like a credential and must not be printed"
+
+    def test_run_agent_creates_the_directory_before_writing_the_scope_file(self):
+        """Order matters: once the scope file exists the hook denies `bash` to
+        every agent that lacks the grant, which is most of them."""
+        text = (Path(__file__).parent.parent / ".claude" / "commands"
+                / "run-agent.md").read_text()
+        setup_at = text.index("scratch-setup.sh")
+        scope_at = text.index(".run-agent-scope.json")
+        assert setup_at < scope_at, (
+            "scratch-setup.sh must run before the scope file is written"
+        )
+
+    def test_run_agent_removes_the_directory_at_the_end(self):
+        text = (Path(__file__).parent.parent / ".claude" / "commands"
+                / "run-agent.md").read_text()
+        assert "scratch-teardown.sh" in text
+
+
+class TestTeardownIsPairedWithSetup:
+    """QA-005: setup runs inside invoke_agent, so only agent steps get a
+    directory. Tearing down for a script step pairs a teardown with no setup.
+    """
+
+    def test_script_steps_are_not_torn_down(self, monkeypatch):
+        import pipeline_orchestrator as po
+
+        torn_down = []
+        monkeypatch.setattr(po, "_HEADLESS", True)
+        monkeypatch.setattr(po, "_acquire_wip_and_announce", lambda *a, **k: None)
+        monkeypatch.setattr(po, "_emit_audit_event", lambda *a, **k: None)
+        monkeypatch.setattr(po, "invoke_script",
+                            lambda *a, **k: po.AgentRunResult(success=True, captured_tail=""))
+        monkeypatch.setattr(
+            po, "_run_scratch_hook",
+            lambda script, path: torn_down.append((script, path)),
+        )
+
+        agent_def = _agent_def()
+        agent_def.step_type = "script"
+        agent_def.script_path = ".github/scripts/ci-gate.sh"
+
+        po._run_agent(
+            agent_def, _work_item(), dry_run=False, repo="owner/repo",
+            labels=set(), session_id="sid", default_extra_tools=None,
+            concurrency=None, gh=MagicMock(), pipeline_map={},
+        )
+        assert torn_down == [], (
+            f"a script step was given a teardown it never had a setup for: {torn_down}"
+        )
+
+    def test_agent_steps_are_still_torn_down(self, monkeypatch):
+        import pipeline_orchestrator as po
+
+        torn_down = []
+        monkeypatch.setattr(po, "_HEADLESS", True)
+        monkeypatch.setattr(po, "_acquire_wip_and_announce", lambda *a, **k: None)
+        monkeypatch.setattr(po, "_emit_audit_event", lambda *a, **k: None)
+        monkeypatch.setattr(
+            po, "invoke_agent",
+            lambda *a, **k: po.AgentRunResult(success=True,
+                                              captured_tail="AI_AGILE_STATUS: complete"),
+        )
+        monkeypatch.setattr(
+            po, "_run_scratch_hook",
+            lambda script, path: torn_down.append((script, path)),
+        )
+
+        po._run_agent(
+            _agent_def(), _work_item(), dry_run=False, repo="owner/repo",
+            labels=set(), session_id="sid", default_extra_tools=None,
+            concurrency=None, gh=MagicMock(), pipeline_map={},
+        )
+        assert len(torn_down) == 1
+        assert torn_down[0][0] == po.SCRATCH_TEARDOWN_SCRIPT
+
+
+class TestShippedFilesAreAscii:
+    """SC-001: CLAUDE.md -- "Never write emoji or non-ASCII characters inside
+    code, configuration, or workflow files. This includes Python source files,
+    shell scripts, GitHub Actions workflow YAML files, and JSON files."
+
+    Scoped to the trees this PR touches and that are already clean. Several
+    older scripts and pipeline/*.json carry non-ASCII from before this rule was
+    written; widening the scope is a separate cleanup, not this issue's work.
+    """
+
+    REPO_ROOT = Path(__file__).parent.parent
+
+    def _offenders(self, path):
+        text = path.read_text(encoding="utf-8")
+        return sorted({c for c in text if ord(c) > 127})
+
+    @pytest.mark.parametrize("name", [
+        "architecture.json", "data.json", "documentation.json", "process.json",
+        "security.json", "adrs.json", "ux-design.json", "testing.json",
+    ])
+    def test_standards_json_is_ascii(self, name):
+        path = self.REPO_ROOT / "standards" / name
+        assert self._offenders(path) == [], (
+            f"{name} contains non-ASCII; use the \\uXXXX escape in JSON"
+        )
+
+    @pytest.mark.parametrize("name", ["scratch-setup.sh", "scratch-teardown.sh"])
+    def test_scratch_scripts_are_ascii(self, name):
+        path = self.REPO_ROOT / ".github" / "scripts" / name
+        assert self._offenders(path) == [], f"{name} contains non-ASCII"

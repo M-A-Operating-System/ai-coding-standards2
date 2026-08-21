@@ -434,7 +434,7 @@ gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
 
 - **The diff and the PR head ref are the only source of truth — never the local working tree.** Do not raise "missing/undefined symbol", "dead code", "not introduced", or "X doesn't exist" from a local-disk read; the local checkout may be a different branch that lacks this PR's changes. Confirm against the unified diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`) and `read_pr_file` (PR head) before any such finding. A false finding of this kind is itself a review defect.
 - **Read-only.** Never write or modify source files, even for trivial fixes.
-- **Output via the `gh api` comment endpoint only** (see Steps 0, 5 and 6 -- `gh pr comment` is GraphQL and 403s in a restricted session). Never write findings to stdout.
+- **Output via the `gh api` comment endpoint only** (see Steps 0, 11 and 12 -- `gh pr comment` is GraphQL and 403s in a restricted session). Never write findings to stdout.
 - **Findings describe fixes; never apply them.**
 - **Never edit PR body, issue body, or apply/remove labels.**
 - **Never change PR state.** The orchestrator marks the PR ready on APPROVE — do not call `gh pr ready`.

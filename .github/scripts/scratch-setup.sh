@@ -15,7 +15,7 @@
 # needs to clean up.
 #
 # Environment (set by orchestrator):
-#   AI_AGILE_SCRATCH — absolute path to this run's scratch directory
+#   AI_AGILE_SCRATCH -- absolute path to this run's scratch directory
 
 set -euo pipefail
 
