@@ -133,9 +133,18 @@ Environment variables the orchestrator exports for you:
 
 ## Scratch files
 
-When an agent needs a working file mid-run (e.g. staging a multi-line comment
-body before posting it with `gh api`), write it under the scratch directory --
-never in the repo root or any tracked path.
+**Every** scratch or temporary working file you create during a run goes in the
+per-run scratch directory `/tmp/${SESSION_ID}` -- staged comment bodies,
+announcement JSON, snapshots, diffs, intermediate output, anything. There is no
+exception and no file small enough to skip it. Never write a working file into
+the repo root or any tracked path.
+
+This applies at **every step that stages content**, including steps whose
+wording is only "post the announcement" or "post a comment". If a step does not
+name a filename, that is not licence to invent one in the working directory --
+it means resolve the scratch directory and put it there. A bare filename
+resolves against the repo root, where the commit sweep can pick it up; that is
+the whole bug this rule exists to prevent.
 
 | Variable | Value | Guarantee |
 |---|---|---|
@@ -180,6 +189,10 @@ gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
 - Including a cleanup instruction in an agent prompt -- the agent is not responsible for removal.
 - Assuming a repo-root cleanup glob will catch a self-invented filename -- it won't, by construction.
 - Expanding `$AI_AGILE_SCRATCH` without the `:-` fallback. Unset, it resolves to the filesystem root.
+- Treating a step that says only "post the announcement" as not needing a
+  scratch file, then inventing a bare filename like `open_announce.json` for
+  it. Observed in a real `pr-reviewer` run: the variable was set, the
+  directory existed and was empty, and the file still landed in the repo root.
 
 ---
 
