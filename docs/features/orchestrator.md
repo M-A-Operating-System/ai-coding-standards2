@@ -95,3 +95,27 @@
 **Given** this work
 **When** `_build_agent_env` is inspected
 **Then** it is unchanged -- it already allowlists, and is not in scope here
+
+## Scenario: Resolve-only returns the same allowlist as a real spawn
+
+**Given** an agent with `extra_allowedTools` entries in `pipeline.json`
+**When** its invocation is resolved via `--print-prompt`
+**Then** the returned `allowed_tools` equals what `invoke_agent` would pass as `--allowedTools` for the same agent and work item
+
+## Scenario: The defaults are included
+
+**Given** `pipeline.json` sets `defaults.extra_allowedTools` to `["Write", "Edit"]`
+**When** any agent's invocation is resolved via `--print-prompt`
+**Then** `Write` and `Edit` appear in the returned `allowed_tools`
+
+## Scenario: A /run-agent session can remove its own scope file
+
+**Given** `/run-agent` has written `.claude/.run-agent-scope.json` for the coder
+**When** step 7 runs `rm -f .claude/.run-agent-scope.json`
+**Then** the command is permitted by the scope hook and the file is removed
+
+## Scenario: The drift is caught by a test, not by inspection
+
+**Given** the two resolution paths
+**When** the test suite runs
+**Then** a test compares the two resolved allowlists directly and fails if they differ

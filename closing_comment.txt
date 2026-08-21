@@ -1,0 +1,8 @@
+<!-- ai-agile/announcement/v1 by 01_product_docs/prd-docs-updater -->
+Run complete for issue #356.
+
+- Appended 4 Gherkin scenarios to `docs/features/orchestrator.md`.
+- No `docs/product/` changes required (bug fix; target state already documented).
+- The orchestrator will stage and commit `docs/features/orchestrator.md` to the design branch.
+
+Session: ais-v1-01-product-docs-prd-docs-updater-issue-356
