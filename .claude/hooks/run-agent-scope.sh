@@ -48,6 +48,15 @@ if [ "$TOOL" = "Bash" ]; then
   COMMAND="$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.command // empty')"
 fi
 
+# The escape hatch, always permitted: run-agent.md step 7 removes this file to
+# end enforcement, and it must work for every agent, not only the ones whose
+# allowlist happens to grant `rm`. Without it a pr-reviewer run leaves the
+# session permanently scoped with no in-session route back -- the #335 lockout
+# (issue #356). Matched exactly, so it grants nothing beyond removing the file.
+case "$COMMAND" in
+  "rm $SCOPE_FILE"|"rm -f $SCOPE_FILE"|"rm -f -- $SCOPE_FILE") exit 0 ;;
+esac
+
 DETAIL=""
 if [ -n "$COMMAND" ]; then
   PATTERNS="$(jq -r '.allowed[]? | select(startswith("Bash(")) | ltrimstr("Bash(") | rtrimstr(")")' "$SCOPE_FILE")"
