@@ -36,74 +36,6 @@ full statements and rationale live there.
 
 ---
 
-## The status contract
-
-Every agent run must terminate with **exactly one** of three sentinel
-lines printed to stdout:
-
-```
-AI_AGILE_STATUS: complete
-AI_AGILE_STATUS: review "short message for stakeholder"
-AI_AGILE_STATUS: blocked "reason you could not proceed"
-```
-
-The orchestrator reads this sentinel, applies the matching label (and
-clears `:wip`), and posts the closing announcement. You do not call
-`status.sh` for ceremony — the orchestrator owns all label transitions.
-
-You **must not** emit `AI_AGILE_STATUS: failed`. The orchestrator
-applies `:failed` if you exit non-zero without a sentinel (or after all
-configured retries are exhausted). If you want to halt with detail,
-emit `AI_AGILE_STATUS: blocked` instead.
-
-For gated agents (your prompt's frontmatter or `pipeline.json` lists a
-`human_gate_label`):
-
-- Emit `AI_AGILE_STATUS: review "message"` after posting your artefact.
-- Do **not** emit `AI_AGILE_STATUS: complete` directly. The orchestrator
-  promotes `:review` to `:complete` automatically when the human applies
-  the gate label. Bypassing `:review` skips the gate — that is a P-10 violation.
-
----
-
-## How you communicate
-
-Every comment you post starts with a stable marker carrying your
-identity:
-
-```
-<!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
-```
-
-Five marker types:
-
-| Marker | Use for |
-|---|---|
-| `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
-| `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
-| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2) |
-| `claim/v1` | The mutex claim you post during P-4 acquisition |
-| `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
-
-Free-text prose may sit alongside JSON; the JSON is the contract.
-If they disagree, the JSON wins.
-
----
-
-## What you must not do
-
-- **Don't apply `*:approved` gate labels.** That's the human's signal to advance the pipeline. P-10.
-- **Don't emit `AI_AGILE_STATUS: complete` for gated work.** The orchestrator promotes `:review` → `:complete` after gate approval.
-- **Don't emit `AI_AGILE_STATUS: failed`.** The orchestrator applies `:failed` when you crash without a sentinel.
-- **Don't call `status.sh` for ceremony.** The orchestrator owns all label transitions. Use the `AI_AGILE_STATUS:` sentinel only.
-- **Don't invoke other agents.** The orchestrator routes work. P-14.
-- **Don't edit human-authored content** — issue bodies written by the stakeholder, review comments, ADRs after acceptance.
-- **Don't write to anywhere other than GitHub** — no sidecar files, no external DBs, no temp state that survives your run.
-- **Don't use `WebFetch` or `WebSearch`** unless your tool allowlist explicitly includes them (it doesn't, by default).
-- **Don't assume earlier runs left state in your environment.** Read GitHub fresh on every invocation.
-
----
-
 ## How you find your inputs
 
 | Input | Where |
@@ -131,7 +63,27 @@ Environment variables the orchestrator exports for you:
 
 ---
 
-## Scratch files
+## How you communicate
+
+Every comment you post starts with a stable marker carrying your
+identity:
+
+```
+<!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
+```
+
+Five marker types:
+
+| Marker | Use for |
+|---|---|
+| `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
+| `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
+| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2) |
+| `claim/v1` | The mutex claim you post during P-4 acquisition |
+| `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
+
+Free-text prose may sit alongside JSON; the JSON is the contract.
+If they disagree, the JSON wins.
 
 Working files stay out of the repo. Most posting needs no file at all -- pipe a
 heredoc straight into `gh pr comment --body "$(cat <<'EOF' ... EOF)"`, the way
@@ -144,32 +96,16 @@ where the commit sweep can pick it up.
 
 ---
 
-## In-run task tracking
-
-Use the `TodoWrite` tool freely during your run to maintain a working
-list of steps. This is internal to your session — not visible on
-GitHub and does not survive the run. Use it to stay organised on
-multi-step tasks, not as a substitute for GitHub artefacts.
-
-For persistent todos in issue/PR bodies (build plans, acceptance
-criteria, open questions) — only write these if your specific prompt
-instructs you to. Format and protocol: see
-[`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md).
-
----
-
 ## Todo lists
 
-Todos for in-flight work live **in the body of the issue or PR they belong to** — never in a comment, a file, or a sub-issue. The body is the single, visible, edited-in-place source of truth for what work remains.
-
-### Runtime ephemeral vs. persistent todos
-
-| Type | Tool | Survives run? | Visible in GitHub? |
-|---|---|---|---|
-| In-session task tracking | `TodoWrite` (Claude runtime tool) | No | No |
-| Persistent issue/PR tasks | Body markers (see below) | Yes | Yes |
-
-Use `TodoWrite` freely during a run to keep your multi-step plan organised. Use body markers to record build-plan items, acceptance criteria, or open questions that other agents and humans need to see.
+Use the `TodoWrite` tool freely during your run to keep a working list of
+steps. It is internal to your session -- not visible on GitHub, does not
+survive the run -- and is not a substitute for GitHub artefacts. Persistent
+todos in issue/PR bodies (build plans, acceptance criteria, open questions)
+are different: they live **in the body of the issue or PR they belong to** --
+never in a comment, a file, or a sub-issue -- and you only write them if your
+specific prompt instructs you to. The body is the single, visible,
+edited-in-place source of truth for what work remains.
 
 ### Body marker format
 
@@ -222,6 +158,50 @@ A subsection with no entries is omitted entirely. Checked items are never remove
 - Don't edit human-authored prose above the marker block
 - Don't write to a subsection you don't own
 - Don't remove checked items
+
+---
+
+## The status contract
+
+Every agent run must terminate with **exactly one** of three sentinel
+lines printed to stdout:
+
+```
+AI_AGILE_STATUS: complete
+AI_AGILE_STATUS: review "short message for stakeholder"
+AI_AGILE_STATUS: blocked "reason you could not proceed"
+```
+
+The orchestrator reads this sentinel, applies the matching label (and
+clears `:wip`), and posts the closing announcement. You do not call
+`status.sh` for ceremony — the orchestrator owns all label transitions.
+
+You **must not** emit `AI_AGILE_STATUS: failed`. The orchestrator
+applies `:failed` if you exit non-zero without a sentinel (or after all
+configured retries are exhausted). If you want to halt with detail,
+emit `AI_AGILE_STATUS: blocked` instead.
+
+For gated agents (your prompt's frontmatter or `pipeline.json` lists a
+`human_gate_label`):
+
+- Emit `AI_AGILE_STATUS: review "message"` after posting your artefact.
+- Do **not** emit `AI_AGILE_STATUS: complete` directly. The orchestrator
+  promotes `:review` to `:complete` automatically when the human applies
+  the gate label. Bypassing `:review` skips the gate — that is a P-10 violation.
+
+---
+
+## What you must not do
+
+- **Don't apply `*:approved` gate labels.** That's the human's signal to advance the pipeline. P-10.
+- **Don't emit `AI_AGILE_STATUS: complete` for gated work.** The orchestrator promotes `:review` → `:complete` after gate approval.
+- **Don't emit `AI_AGILE_STATUS: failed`.** The orchestrator applies `:failed` when you crash without a sentinel.
+- **Don't call `status.sh` for ceremony.** The orchestrator owns all label transitions. Use the `AI_AGILE_STATUS:` sentinel only.
+- **Don't invoke other agents.** The orchestrator routes work. P-14.
+- **Don't edit human-authored content** — issue bodies written by the stakeholder, review comments, ADRs after acceptance.
+- **Don't write to anywhere other than GitHub** — no sidecar files, no external DBs, no temp state that survives your run.
+- **Don't use `WebFetch` or `WebSearch`** unless your tool allowlist explicitly includes them (it doesn't, by default).
+- **Don't assume earlier runs left state in your environment.** Read GitHub fresh on every invocation.
 
 ---
 
