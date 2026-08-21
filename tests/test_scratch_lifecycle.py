@@ -843,3 +843,72 @@ class TestCommitSweepRefusesNewRootFiles:
                                capture_output=True, text=True, check=True).stdout
         assert before == after, "a leak-only run must not create a commit"
 
+
+class TestPrReviewerEditsItsArtefactInPlace:
+    """QA-002 from the #360 review round at 8c39526.
+
+    AGENTS.md P-11: "On re-run, edit your previous artefact comment in place --
+    don't post duplicates." pr-reviewer's Step 11 always POSTed, and PR #360
+    accumulated six artefact comments before it was caught.
+
+    The agent's own Step 7 standards table lists this exact defect -- "Agent
+    posts duplicate artefact comments instead of editing in place", Medium --
+    as something to raise against other agents, which is what settles the
+    question of which side should change.
+    """
+
+    PROMPT = AGENTS_DIR / "03_execute" / "pr-reviewer.md"
+
+    def test_the_artefact_is_patched_when_a_prior_one_exists(self):
+        text = self.PROMPT.read_text()
+        assert 'gh api --method PATCH "repos/$REPO/issues/comments/$PRIOR"' in text, (
+            "Step 11 must edit the prior artefact in place (P-11)"
+        )
+        assert 'if [ -n "$PRIOR" ]; then' in text, (
+            "the PATCH must be conditional -- the first run has nothing to edit"
+        )
+
+    def test_the_first_run_still_posts(self):
+        text = self.PROMPT.read_text()
+        assert 'gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments"' in text
+
+    def test_prior_is_not_scoped_to_today(self):
+        """P-11 says 'your previous artefact comment', with no date qualifier.
+        Scoping the lookup to today made the duplicate reappear tomorrow."""
+        text = self.PROMPT.read_text()
+        assert "TODAY=" not in text, (
+            "a date-scoped $PRIOR reintroduces the duplicate on the next day"
+        )
+
+    def test_announcements_stay_one_per_run(self):
+        """P-11 names the artefact. AGENTS.md separately requires an
+        announcement on every run, so Steps 0 and 12 must keep POSTing."""
+        text = self.PROMPT.read_text()
+        assert text.count('gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments"') == 3, (
+            "expected 3 POSTs: two announcements plus the first-run artefact"
+        )
+
+    def test_both_verbs_are_within_the_agent_s_own_allowlist(self):
+        """The quoted-URL trap from #326: `--method PATCH "repos/...` needs the
+        quoted counterpart pattern, not the bare one. Resolve the real
+        allowlist and match, rather than assuming."""
+        import fnmatch
+        sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
+        import pipeline_orchestrator as po
+
+        agents, defaults = po.load_pipeline(
+            Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        )
+        ad = po.pipeline_by_name(agents)["03_execute/pr-reviewer"]
+        resolved = po._resolve_agent_invocation(
+            ad, _work_item(), repo="o/r", default_extra_tools=defaults
+        )
+        patterns = [t[5:-1] for t in resolved.allowed_tools if t.startswith("Bash(")]
+
+        for command in [
+            'gh api --method PATCH "repos/o/r/issues/comments/123" -F body=@/tmp/x.md',
+            'gh api --method POST "repos/o/r/issues/360/comments" -F body=@/tmp/x.md',
+        ]:
+            assert any(fnmatch.fnmatchcase(command, p) for p in patterns), (
+                f"pr-reviewer cannot run a command its own prompt prescribes: {command}"
+            )

@@ -61,13 +61,14 @@ PR_NUMBER=$(gh api \
 [[ -z "$PR_NUMBER" ]] && { echo "No open PR — skipping." >&2
   echo "AI_AGILE_STATUS: complete"; exit 0; }
 
-TODAY=$(date -u +%Y-%m-%d)
 PRIOR=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs "[.[] | select(.body | contains(\"ai-agile/artefact/v1 by 03_execute/pr-reviewer\")) \
-  | select(.created_at | startswith(\"$TODAY\")) | .id] | first // empty")
+  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty')
 ```
 
-If `$PRIOR` is set, head the artefact comment `## PR Review (Re-run)`.
+`$PRIOR` is the id of your previous artefact on this PR, if any. It is the
+**edit target** in Step 11, not just a flag: P-11 requires re-runs to edit the
+artefact in place rather than post duplicates. If it is set, head the artefact
+comment `## PR Review (Re-run)`.
 
 Post the opening announcement:
 
@@ -395,9 +396,20 @@ $FINDING_BODY
 _On APPROVE: PR is marked ready for human review. On REQUEST CHANGES: the orchestrator will automatically re-invoke the coder (up to 3 cycles). After 3 cycles without agreement, human sign-off is required._
 REVIEW_EOF
 
-gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
+# P-11: one artefact per PR, edited in place. Posting a fresh comment each
+# round is the duplicate-artefact defect this agent's own Step 7 table tells it
+# to raise against other agents.
+if [ -n "$PRIOR" ]; then
+  gh api --method PATCH "repos/$REPO/issues/comments/$PRIOR" \
+    -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
+else
+  gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+    -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
+fi
 ```
+
+The announcements in Steps 0 and 12 stay one-per-run: AGENTS.md requires an
+announcement on every run, and P-11 names the **artefact** specifically.
 
 ---
 
