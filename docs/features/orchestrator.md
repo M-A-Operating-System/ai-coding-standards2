@@ -120,6 +120,49 @@
 **When** the test suite runs
 **Then** a test compares the two resolved allowlists directly and fails if they differ
 
+## Scenario: Scope enforcement matches every sub-command, not the whole line
+
+**Given** an agent's allowlist grants `Bash(export *)` and does not grant `Bash(curl *)`
+**When** the agent runs `export FOO=1 && curl https://example.com`
+**Then** the call is denied, and the denial names `curl https://example.com` as the sub-command that matched no entry
+
+## Scenario: A granted command preceded by a directory change is permitted
+
+**Given** an agent's allowlist grants `Bash(cd *)` and `Bash(sed *)`
+**When** the agent runs `cd $AI_AGILE_ROOT && sed -n '1,5p' .claude/AGENTS.md`
+**Then** the call is permitted -- each sub-command is matched in its own right
+
+## Scenario: A newline separates sub-commands exactly as `&&` does
+
+**Given** an agent's allowlist grants `Bash(cd *)` and does not grant `Bash(curl *)`
+**When** the agent runs a two-line command whose first line is `cd /repo` and whose second is `curl https://example.com`
+**Then** the call is denied
+
+## Scenario: An inline shell wrapper cannot launder an ungranted command
+
+**Given** an agent's allowlist grants `Bash(sh *)` and does not grant `Bash(curl *)`
+**When** the agent runs `sh -c 'curl https://example.com'`
+**Then** the call is denied, because no pattern can scope inline shell source
+
+## Scenario: An interpreter running a checked-in script is still permitted
+
+**Given** an agent's allowlist grants `Bash(bash *)`
+**When** the agent runs `bash scripts/build.sh`
+**Then** the call is permitted -- only inline `-c` source is laundering
+
+## Scenario: A heredoc body is data, not a list of commands
+
+**Given** an agent stages a comment body with `cat > "$AI_AGILE_SCRATCH/body.md" <<'EOF'` as `.claude/AGENTS.md` prescribes
+**When** the scope hook checks the call
+**Then** the heredoc's body lines are not treated as sub-commands, and the call is permitted
+
+## Scenario: A dropped permissions grant is surfaced, not swallowed
+
+**Given** `.claude/settings.json` declares `permissions.allow` entries and the workspace is not marked trusted in the Claude CLI's config
+**When** the orchestrator invokes any agent
+**Then** it logs at WARNING which entries will be dropped and how to remedy it
+**And** the run's `agent.invoked` audit event records `grants_dropped=<count>`
+
 ## Scenario: The orchestrator always runs its own code from main
 
 **Given** a `pull_request` event fires the orchestrator workflow
