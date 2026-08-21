@@ -4868,7 +4868,12 @@ def _run_print_prompt(args) -> None:
         sys.exit(1)
 
     gh = GitHubClient(token, args.repo)
-    kind = args.kind or "issue"
+    # Probe rather than assume. Defaulting to "issue" made `--print-prompt
+    # --agent 03_execute/coder --issue 360` resolve a PR number as an issue and
+    # export WORK_ITEM_KIND=issue, so the agent read the wrong object with no
+    # error anywhere (issue #356). The --issue path in main() already probes;
+    # resolve-only must agree with it or /run-agent silently diverges.
+    kind = args.kind or _probe_kind(gh, args.issue)
     try:
         if kind == "pr":
             data = gh._get(f"/repos/{args.repo}/pulls/{args.issue}")
@@ -4885,32 +4890,56 @@ def _run_print_prompt(args) -> None:
         log.error("Could not load work item %s #%d: %s", kind, args.issue, exc)
         sys.exit(1)
 
-    # Build a minimal AgentDef from the agent file's frontmatter. The agent
-    # is specified by name; extra_allowedTools come from the file's frontmatter
-    # only (no pipeline.json context in resolve-only mode).
+    # Resolve the AgentDef the same way a real spawn does: from pipeline.json,
+    # which is where essentially all tool grants live. Building a minimal
+    # AgentDef from the agent file's frontmatter instead dropped
+    # defaults.extra_allowedTools and the per-agent extra_allowedTools, so
+    # resolve-only returned 24 tools where the real spawn gets 93 -- and
+    # /run-agent wrote that wrong list to the scope file the hook enforces
+    # (issue #356). --print-prompt already requires --repo and --issue, so
+    # loading the pipeline spec adds no new inputs.
     agent_name = args.agent
     agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_name}.md"
     if not agent_file.exists():
         log.error("Agent file not found: %s", agent_file)
         sys.exit(1)
 
-    agent_text = agent_file.read_text()
-    frontmatter = parse_frontmatter(agent_text)
-    extra = _coerce_tools(frontmatter.get("extra_allowedTools"))
+    agents, default_extra_tools = load_pipeline(args.pipeline)
+    agent_def = pipeline_by_name(agents).get(agent_name)
+    if agent_def is None:
+        # An agent file exists but pipeline.json does not register it: on-demand
+        # agents (00_ondemand/*) are invoked by label, not by a pipeline step.
+        # Fall back to the frontmatter-only AgentDef -- the defaults still apply.
+        log.info(
+            "  %s is not registered in %s; resolving from its frontmatter alone",
+            agent_name, args.pipeline,
+        )
+        agent_def = AgentDef(
+            agent=agent_name,
+            phase="",
+            objects=[],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="",
+            extra_allowedTools=_coerce_tools(
+                parse_frontmatter(agent_file.read_text()).get("extra_allowedTools")
+            ),
+        )
 
-    agent_def = AgentDef(
-        agent=agent_name,
-        phase="",
-        objects=[],
-        trigger={},
-        dependencies=[],
-        human_gate_after=False,
-        human_gate_label=None,
-        description="",
-        extra_allowedTools=extra,
+    if agent_def.objects and work_item.kind not in agent_def.objects:
+        log.warning(
+            "  %s runs on %s, not %s. Resolving #%d as a %s anyway, but the "
+            "agent's prompt expects the other object kind -- pass --kind "
+            "explicitly if this is deliberate.",
+            agent_name, "/".join(agent_def.objects), work_item.kind,
+            work_item.number, work_item.kind,
+        )
+
+    resolved = _resolve_agent_invocation(
+        agent_def, work_item, args.repo, default_extra_tools=default_extra_tools,
     )
-
-    resolved = _resolve_agent_invocation(agent_def, work_item, args.repo)
     if resolved is None:
         log.error("Could not resolve invocation for agent %s", agent_name)
         sys.exit(1)

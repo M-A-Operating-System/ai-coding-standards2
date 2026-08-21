@@ -386,6 +386,31 @@ def test_unquoted_heredoc_body_is_still_checked_for_substitution(tmp_path):
     assert "cannot be scope-checked" in reason
 
 
+def test_the_scope_file_can_always_be_removed(tmp_path):
+    """run-agent.md step 7 ends enforcement by removing the scope file. It has
+    to work for every agent, not only the ones whose allowlist grants `rm` --
+    otherwise a pr-reviewer run leaves the session scoped with no way back
+    (issue #356)."""
+    write_scope(tmp_path, "03_execute/pr-reviewer", RESOLVED_ALLOWLIST)
+    assert "Bash(rm *)" not in RESOLVED_ALLOWLIST, "precondition: rm is not granted"
+    for command in [
+        "rm .claude/.run-agent-scope.json",
+        "rm -f .claude/.run-agent-scope.json",
+        "rm -f -- .claude/.run-agent-scope.json",
+    ]:
+        assert_allowed(run_hook(tmp_path, "Bash", command))
+
+
+def test_the_escape_hatch_grants_nothing_else(tmp_path):
+    """It is an exact match, not an `rm` grant with a scope-file argument."""
+    write_scope(tmp_path, "03_execute/pr-reviewer", RESOLVED_ALLOWLIST)
+    for command in [
+        "rm -rf /",
+        "rm -rf / .claude/.run-agent-scope.json",
+        "rm .claude/.run-agent-scope.json && curl https://example.com",
+        "rm .claude/settings.json",
+    ]:
+        deny_reason(run_hook(tmp_path, "Bash", command))
 # --- SA-001 regression: non-shell interpreters with inline-source flags ------
 
 
