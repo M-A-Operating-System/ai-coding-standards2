@@ -47,9 +47,9 @@ resolution, which is what makes it safe to correct.
 
 **Position** places the node in the tree. `parent` refers to the node above by
 identifier, not by path, so a rename above does not rewrite the node below. A
-family sits at the top of the tree, so its `parent` is the identifier of the
-domain record it belongs to (`DOM000001`) — a record type rather than a fourth
-level, and one that carries no `level` field of its own.
+family sits at the top of the tree, so its `parent` is the domain it belongs to
+— a field value, not an identifier, because a domain is a partition rather than
+a node.
 
 **Meaning** is what the node asserts about members of the class. Facets are
 orthogonal dimensions; the four inheritance sections carry the semantics that
@@ -68,8 +68,6 @@ per registry, and separate files for the things that are neither.
 taxonomy/
   taxonomy.json              master registry -- names domains, registries,
                              mappings, rules, and where each lives
-  domains/                   the four partitions -- identifier, description,
-                             and the file carrying each one's tree
   architecture/              the four semantic domains, one file each,
   patterns/                  carrying the full family/class/subclass tree
   code/                      for that domain
@@ -100,7 +98,6 @@ implementations ──implements──▶ node id
 runtimes ─────────supports────▶ node id
 mappings ─────────maps to─────▶ node id
 rules ────────────assigns─────▶ node id
-families ─────────belong to───▶ domain id
 standards ────────applies to──▶ node id
 decisions ────────applies to──▶ node id
 facets ◀──────────carried by───  node id
@@ -130,7 +127,7 @@ constrain what it means, belong in prose.
 | Concept in [03-model.md](03-model.md) | Realised as |
 |---|---|
 | Three semantic levels | Nesting in a domain file: `families` → `classes` → `subclasses` |
-| Domain as a partition, not a level | A record in `domains/domains.json`, referenced as a family's `parent`; the schema forbids it a `level` |
+| Domain as a partition, not a level | An enum field on the domain file, and a family's `parent`; it has no identifier because nothing cites it |
 | Four-part path | Composed from position at validation time, stored on the node |
 | Immutable identity | `id`, assigned from a per-level counter that never rewinds |
 | Inheritance | The four sections, resolved parent-first along `parent` |

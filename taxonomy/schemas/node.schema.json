@@ -53,7 +53,7 @@
     "parent": {
       "type": "string",
       "minLength": 1,
-      "description": "Identifier of the node above, or the domain name for a family."
+      "description": "Identifier of the node above. A family sits at the top of the tree, so its parent is the domain it belongs to -- a field value, not an identifier, because a domain is a type rather than a node."
     },
     "facets": {
       "type": "object",

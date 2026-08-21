@@ -14,7 +14,13 @@
       "type": "string"
     },
     "domain": {
-      "type": "string"
+      "description": "The partition this file carries. A domain is a field with a controlled value set, not a level and not a record with identity: nothing specialises into a family, a family belongs to a domain.",
+      "enum": [
+        "architecture",
+        "patterns",
+        "code",
+        "concepts"
+      ]
     },
     "description": {
       "type": "string"

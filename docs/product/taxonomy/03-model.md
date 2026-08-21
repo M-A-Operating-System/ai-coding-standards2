@@ -34,14 +34,15 @@ concepts/reliability/idempotency/request-idempotency
 
 The domain is the first part of the path but it is not a fourth level. A
 domain **partitions** the vocabulary; it is not something a family
-specialises. Nothing inherits from a domain, no domain record carries a
-`level` field, and the levels remain the three above. Domains are declared
-once in `domains/domains.json`, each with its own identifier (`DOM000001`),
-so a family's `parent` names that identifier rather than a bare word — which
-is what makes `parent` uniformly an identifier everywhere in the vocabulary
-([TX-5](02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not)).
-A record type and a level are different things, and the schema enforces the
-difference by forbidding `level` on a domain record.
+specialises, and nothing inherits from one.
+
+It is also not a node. Identifiers exist so that things can be cited and
+resolved, and nothing cites a domain: it is a **field** with a controlled value
+set — one of `architecture`, `patterns`, `code`, `concepts` — declared as an
+enum in the schema and enforced there. A family's `parent` is the domain it
+belongs to, which is a value rather than a reference. Giving a domain an
+identifier would have made it look like a rung of the hierarchy, which is
+exactly the confusion the fixed three levels exist to prevent.
 
 Three levels is a deliberate ceiling, not a starting point. Technology,
 provider, runtime, capability, concern, ownership, and provenance all add
@@ -98,9 +99,8 @@ an identifier that encoded
 content would embed the very thing most likely to be corrected, and a node
 moving between domains would need a new key. Coding by level keeps the
 identifier stable through every structural repair the vocabulary needs.
-Domain records use `DOM` on the same shape, where the code marks a record type
-rather than a level — a domain is what a family belongs to, not a rung above
-it.
+There are three codes because there are three levels; the domain has none,
+because it is a field rather than a node.
 
 What the code does buy is a reader who can tell at a glance whether a citation
 names a broad family or a specific subclass, without resolving it. Counters run
@@ -157,9 +157,9 @@ querying a first-class home instead of leaving them as prose.
 
 `taxonomy.json` is the master registry. It does not contain the taxonomy — it
 names the available domains, registries, mappings, and rule collections, and
-where each lives. `domains/domains.json` is one of the files it names: the
-declaration of the four partitions, their identifiers, and the file holding
-each one's tree.
+where each lives. The `domains` block names the four semantic domains and the
+file holding each one's tree — a source map, not a set of records: the domain
+values themselves are constrained by the schema.
 
 Consumers begin resolution there rather than hard-coding paths. A registry
 entry that names a file which does not exist fails validation, so the

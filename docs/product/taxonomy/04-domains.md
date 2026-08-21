@@ -10,11 +10,10 @@ questions about the same system, and linkable because the answers relate.
 | [Code](#code) | What role does this source structure play? |
 | [Concepts](#concepts) | What engineering property is being achieved? |
 
-A domain is a partition of the vocabulary, not a level of it
-([03-model.md](03-model.md#the-three-level-hierarchy)). Each is declared once
-in `domains/domains.json` with an identifier, a description, and the file
-carrying its tree; the three levels beneath every domain are family, class and
-subclass.
+A domain is a partition of the vocabulary, not a level of it and not a node in
+it ([03-model.md](03-model.md#the-three-level-hierarchy)). It is a field with
+four permitted values, fixed by the schema; the three levels beneath every
+domain are family, class and subclass.
 
 ---
 

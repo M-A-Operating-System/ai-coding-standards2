@@ -23,7 +23,7 @@
       "name": "Api",
       "description": "Reusable approaches governing request handling and externally consumed APIs.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "api"
@@ -445,7 +445,7 @@
       "name": "Persistence",
       "description": "Reusable approaches for durable data access, transaction management, and caching.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "persistence"
@@ -857,7 +857,7 @@
       "name": "Messaging",
       "description": "Messaging is a canonical patterns family used to classify messaging concerns.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "messaging"
@@ -1261,7 +1261,7 @@
       "name": "Resilience",
       "description": "Reusable approaches that contain failures and improve continuity.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "resilience"
@@ -1606,7 +1606,7 @@
       "name": "Security",
       "description": "Security is a canonical patterns family used to classify security concerns.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "security"
@@ -1942,7 +1942,7 @@
       "name": "Integration",
       "description": "Integration is a canonical patterns family used to classify integration concerns.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "integration"
@@ -2242,7 +2242,7 @@
       "name": "Observability",
       "description": "Observability is a canonical patterns family used to classify observability concerns.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "observability"
@@ -2508,7 +2508,7 @@
       "name": "Testing",
       "description": "Testing is a canonical patterns family used to classify testing concerns.",
       "level": "family",
-      "parent": "DOM000002",
+      "parent": "patterns",
       "facets": {
         "concern": [
           "testing"

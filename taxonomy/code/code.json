@@ -23,7 +23,7 @@
       "name": "Api",
       "description": "Higher-order source-code roles that implement inbound API behavior and contracts.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "api"
@@ -397,7 +397,7 @@
       "name": "Domain",
       "description": "Domain is a canonical code family used to classify domain concerns.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "domain"
@@ -729,7 +729,7 @@
       "name": "Persistence",
       "description": "Higher-order source-code roles that encapsulate durable data access and transactions.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "persistence"
@@ -1027,7 +1027,7 @@
       "name": "Messaging",
       "description": "Messaging is a canonical code family used to classify messaging concerns.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "messaging"
@@ -1291,7 +1291,7 @@
       "name": "Testing",
       "description": "Testing is a canonical code family used to classify testing concerns.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "testing"
@@ -1725,7 +1725,7 @@
       "name": "Configuration",
       "description": "Configuration is a canonical code family used to classify configuration concerns.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "configuration"
@@ -1953,7 +1953,7 @@
       "name": "Security",
       "description": "Security is a canonical code family used to classify security concerns.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "security"
@@ -2217,7 +2217,7 @@
       "name": "Observability",
       "description": "Observability is a canonical code family used to classify observability concerns.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "observability"
@@ -2481,7 +2481,7 @@
       "name": "Integration",
       "description": "Integration is a canonical code family used to classify integration concerns.",
       "level": "family",
-      "parent": "DOM000003",
+      "parent": "code",
       "facets": {
         "concern": [
           "integration"

@@ -11,7 +11,7 @@
     ],
     "canonical_path_format": "<domain>/<family>/<class>/<subclass>",
     "identifier_format": "<FAM|CLS|SUB><6 digits>",
-    "domain_is_a_record_type_not_a_level": true,
+    "domain_is_a_field_not_a_level": true,
     "technology_products_are_implementations": true,
     "runtime_provider_is_separate": true,
     "primitive_code_semantics_are_external": true
@@ -39,9 +39,6 @@
     },
     "facets": {
       "source": "facets/facets.json"
-    },
-    "domain_registry": {
-      "source": "domains/domains.json"
     }
   },
   "mappings": {

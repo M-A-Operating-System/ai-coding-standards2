@@ -23,7 +23,7 @@
       "name": "Reliability",
       "description": "Engineering properties concerned with predictable operation under failure and retry.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "reliability"
@@ -488,7 +488,7 @@
       "name": "Security",
       "description": "Engineering properties that protect identity, access, confidentiality, and integrity.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "security"
@@ -953,7 +953,7 @@
       "name": "Consistency",
       "description": "Consistency is a canonical concepts family used to classify consistency concerns.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "consistency"
@@ -1210,7 +1210,7 @@
       "name": "Observability",
       "description": "Observability is a canonical concepts family used to classify observability concerns.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "observability"
@@ -1469,7 +1469,7 @@
       "name": "Maintainability",
       "description": "Engineering properties that keep systems modular, understandable, and evolvable.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "maintainability"
@@ -1726,7 +1726,7 @@
       "name": "Performance",
       "description": "Performance is a canonical concepts family used to classify performance concerns.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "performance"
@@ -1985,7 +1985,7 @@
       "name": "Scalability",
       "description": "Scalability is a canonical concepts family used to classify scalability concerns.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "scalability"
@@ -2242,7 +2242,7 @@
       "name": "Data Management",
       "description": "Data Management is a canonical concepts family used to classify data management concerns.",
       "level": "family",
-      "parent": "DOM000004",
+      "parent": "concepts",
       "facets": {
         "concern": [
           "data-management"
