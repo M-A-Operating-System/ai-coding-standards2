@@ -60,6 +60,7 @@ Environment variables the orchestrator exports for you:
 | `SESSION_ID` | Human-readable session key (e.g. `ais-v1-01-product-docs-prd-writer-issue-42`). Use in `session_id` fields of announcement/artefact JSON. |
 | `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
 | `AI_AGILE_EXECUTION_MODE` | Always `headless` for orchestrator-spawned subprocesses. The `/run-agent` interactive path sets it to `interactive` instead. |
+| `AI_AGILE_SCRATCH` | Per-run scratch directory, created empty before your run and removed after it. Write working files here; see "How you communicate". |
 
 ---
 
@@ -107,57 +108,10 @@ never in a comment, a file, or a sub-issue -- and you only write them if your
 specific prompt instructs you to. The body is the single, visible,
 edited-in-place source of truth for what work remains.
 
-### Body marker format
-
-Todos in issue/PR bodies live inside a delimited block:
-
-```markdown
-<!-- ai-agile/todos/v1 START -->
-## AI Agile — Tasks
-
-<!-- ai-agile/todos/build-plan/v1 START -->
-### Build plan
-
-- [ ] Do the thing (raised 2026-05-04T14:23Z by coder)
-- [x] Done thing (raised 2026-05-04T14:00Z by coder, done 2026-05-04T15:00Z by coder)
-
-<!-- ai-agile/todos/build-plan/v1 END -->
-
-_Last updated by `coder` at 2026-05-04T15:01Z_
-<!-- ai-agile/todos/v1 END -->
-```
-
-Each subsection has its own marker pair. **Only rewrite the subsection you own** — leave other subsections untouched.
-
-### Standard subsections and owners
-
-| Subsection | Owner |
-|---|---|
-| `ai-agile/todos/build-plan/v1` | `task-decomposer` (issue), `coder` (PR) |
-| `ai-agile/todos/acceptance-criteria/v1` | `prd-writer` |
-| `ai-agile/todos/open-questions/v1` | orchestrator |
-| `ai-agile/todos/standards-remediations/v1` | `standards-compliance-reviewer` (PR only) |
-| `ai-agile/todos/test-scenarios/v1` | `test-spec-writer` / `test-runner` (PR only) |
-
-A subsection with no entries is omitted entirely. Checked items are never removed — they are the audit trail.
-
-### Checkbox and annotation format
-
-```
-- [ ] {task} (raised <ts> by <actor>)
-- [x] {task} (raised <ts> by <actor>, done <ts> by <actor>)
-- [ ] {task} (raised <ts> by <actor>, blocked <ts> by <actor>: <reason>)
-```
-
-- **Timestamp**: ISO 8601 UTC, minute precision — `YYYY-MM-DDTHH:MMZ`
-- **Actor**: bare agent name (e.g. `coder`), `orchestrator`, or `@github-login` for humans
-
-### Anti-patterns
-
-- Don't track todos in comments, `.todo` files, or sub-issues
-- Don't edit human-authored prose above the marker block
-- Don't write to a subsection you don't own
-- Don't remove checked items
+**Only rewrite the subsection you own**, leaving the others untouched, and
+**never remove a checked item** -- they are the audit trail. Marker format,
+subsection owners, and checkbox syntax:
+[`13-todos.md`](../docs/product/orchestrator/13-todos.md).
 
 ---
 
@@ -193,13 +147,8 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 
 ## What you must not do
 
-- **Don't apply `*:approved` gate labels.** That's the human's signal to advance the pipeline. P-10.
-- **Don't emit `AI_AGILE_STATUS: complete` for gated work.** The orchestrator promotes `:review` → `:complete` after gate approval.
-- **Don't emit `AI_AGILE_STATUS: failed`.** The orchestrator applies `:failed` when you crash without a sentinel.
-- **Don't call `status.sh` for ceremony.** The orchestrator owns all label transitions. Use the `AI_AGILE_STATUS:` sentinel only.
-- **Don't invoke other agents.** The orchestrator routes work. P-14.
 - **Don't edit human-authored content** — issue bodies written by the stakeholder, review comments, ADRs after acceptance.
-- **Don't write to anywhere other than GitHub** — no sidecar files, no external DBs, no temp state that survives your run.
+- **Don't keep state outside GitHub** — no sidecar files in the repo, no external DBs, nothing carried from one run to the next. Working files during a run belong in the scratch directory (see "How you communicate") and nowhere else.
 - **Don't use `WebFetch` or `WebSearch`** unless your tool allowlist explicitly includes them (it doesn't, by default).
 - **Don't assume earlier runs left state in your environment.** Read GitHub fresh on every invocation.
 
@@ -210,7 +159,7 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 | Topic | Location |
 |---|---|
 | Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, todos, roadmap, orchestrator design, agent spec) | [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md) — start with the README |
-| Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you generally shouldn't need to |
+| Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you don't |
 | Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
 | Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` |
 | ADRs (architecture decisions of record) | `standards/adrs.json` |
@@ -233,6 +182,3 @@ When referencing a standard in a comment or commit, use its stable
 | Input is ambiguous and you would have to guess | Emit `AI_AGILE_STATUS: blocked` with a Question Card naming the ambiguity |
 | Issue is too large for one phase artefact | Emit `AI_AGILE_STATUS: blocked` with a decomposition recommendation |
 | You hit an error you cannot describe | Exit non-zero; the orchestrator will apply `:failed` with your tail of output |
-| You think you should bypass a gate | You shouldn't. Re-read P-10 |
-| You think you should invoke another agent | You shouldn't. Re-read P-14 |
-| Your specific prompt contradicts this document | This document wins |

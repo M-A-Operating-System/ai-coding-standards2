@@ -78,16 +78,6 @@ class TestAgentsMdScratchConvention:
         assert "orchestrator" in text.lower()
         assert "AI_AGILE_SCRATCH" in text
 
-    def test_agents_md_lists_anti_patterns(self):
-        text = AGENTS_MD.read_text()
-        assert "Anti-patterns" in text or "anti-pattern" in text.lower()
-
-
-# ---------------------------------------------------------------------------
-# Scenario: Orchestrator creates an empty scratch directory before each run
-# ---------------------------------------------------------------------------
-
-class TestScratchDirectoryCreation:
     def test_orchestrator_creates_empty_scratch_before_agent_run(self, monkeypatch):
         """Debris from a prior run or a crashed retry must not survive into the
         next invocation. This calls invoke_agent for real (the previous version
