@@ -1,11 +1,16 @@
 """Tests for issue #321: AI_AGILE_SCRATCH lifecycle in invoke_agent.
 
-Scenarios traced to docs/features/agents.md:
-- test_agents_md_states_concrete_scratch_convention
-- test_orchestrator_creates_empty_scratch_before_agent_run
-- test_working_tree_unchanged_by_scratch_files
-- test_orchestrator_removes_scratch_on_failure_path
-- test_retry_receives_empty_scratch_directory
+Scenarios traced to docs/features/agents.md, and the classes covering each:
+
+- AGENTS.md states a concrete convention   TestAgentsMdScratchConvention
+- The worked example posts from the file   TestAgentsMdScratchConvention
+- Empty scratch before each agent run      TestScratchScripts,
+                                           TestOrchestratorDelegatesToScripts
+- Working tree unchanged by a run          TestAgentPromptsDoNotOwnScratchCleanup,
+                                           TestAgentPromptsStayWithinTheirAllowlist
+- Scratch removed on the failure path      TestOrchestratorSchedulesTeardownOnEveryPath
+- A retry receives an empty directory      TestOrchestratorSchedulesTeardownOnEveryPath
+- A killed tick leaves no debris           TestScratchLifecycleIsSelfHealing
 """
 import re
 import os
@@ -366,4 +371,156 @@ class TestAgentPromptsStayWithinTheirAllowlist:
         assert offenders == [], (
             "agent prompts invoke filesystem commands their allowlist denies:\n  "
             + "\n  ".join(sorted(set(offenders)))
+        )
+
+
+# ---------------------------------------------------------------------------
+# Scenario: Orchestrator removes the scratch directory on the failure path
+# Scenario: A retry receives an empty scratch directory
+#
+# TestScratchScripts covers the two scripts standing alone. These cover the
+# other half: that the orchestrator actually schedules them, on the path where
+# it matters most. Cleanup that only runs on the happy path leaks precisely the
+# runs most likely to leave debris.
+# ---------------------------------------------------------------------------
+
+
+class TestOrchestratorSchedulesTeardownOnEveryPath:
+
+    def _run_agent_with(self, monkeypatch, session_id, invoke_side_effect):
+        """Drive _run_agent with the agent invocation stubbed out.
+
+        Everything before and after the invocation is the real code path, so
+        the scratch hooks run for real against a real directory.
+        """
+        import pipeline_orchestrator as po
+
+        monkeypatch.setattr(po, "_HEADLESS", True)
+        monkeypatch.setattr(po, "_compute_agent_session_id",
+                            lambda *a, **k: session_id)
+        monkeypatch.setattr(po, "_acquire_wip_and_announce",
+                            lambda *a, **k: None)
+        monkeypatch.setattr(po, "_emit_audit_event", lambda *a, **k: None)
+        monkeypatch.setattr(po, "invoke_agent", invoke_side_effect)
+
+        return po._run_agent(
+            _agent_def(), _work_item(), dry_run=False, repo="owner/repo",
+            labels=set(), session_id=session_id, default_extra_tools=None,
+            concurrency=None, gh=MagicMock(), pipeline_map={},
+        )
+
+    def test_scratch_is_removed_after_an_agent_crashes_without_a_sentinel(
+        self, monkeypatch
+    ):
+        """The failure path, which is where debris actually accumulates."""
+        session_id = "ais-v1-test-teardown-failure"
+        scratch = Path("/tmp") / session_id
+        shutil.rmtree(scratch, ignore_errors=True)
+
+        def crashing_invoke(*args, **kwargs):
+            scratch.mkdir(parents=True, exist_ok=True)
+            (scratch / "half-written.json").write_text("{")
+            from pipeline_orchestrator import AgentRunResult
+            return AgentRunResult(success=False, captured_tail="boom")
+
+        try:
+            self._run_agent_with(monkeypatch, session_id, crashing_invoke)
+            assert not scratch.exists(), (
+                "scratch survived a crash with no sentinel -- the same teardown "
+                "must run as on the success path"
+            )
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_scratch_is_removed_after_a_successful_run(self, monkeypatch):
+        session_id = "ais-v1-test-teardown-success"
+        scratch = Path("/tmp") / session_id
+        shutil.rmtree(scratch, ignore_errors=True)
+
+        def completing_invoke(*args, **kwargs):
+            scratch.mkdir(parents=True, exist_ok=True)
+            (scratch / "body.md") .write_text("posted already")
+            from pipeline_orchestrator import AgentRunResult
+            return AgentRunResult(success=True,
+                                  captured_tail="AI_AGILE_STATUS: complete")
+
+        try:
+            self._run_agent_with(monkeypatch, session_id, completing_invoke)
+            assert not scratch.exists()
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_a_retry_cannot_read_the_previous_attempt_s_files(self, monkeypatch):
+        """SESSION_ID is stable across retries (the retry suffix goes into
+        session_uuid_seed), so attempt 2 gets the same directory attempt 1 used.
+        It must still start empty, or a failed attempt's half-written state
+        becomes attempt 2's input."""
+        session_id = "ais-v1-test-retry-clean"
+        scratch = Path("/tmp") / session_id
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True)
+        (scratch / "attempt-1-leftover.json").write_text("{")
+
+        seen_at_spawn = []
+        real_popen = subprocess.Popen
+
+        def fake_popen(cmd, **kwargs):
+            # The scratch hooks run via subprocess.run, which is built on
+            # Popen -- let them through or they silently no-op.
+            if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "bash":
+                return real_popen(cmd, **kwargs)
+            path = kwargs.get("env", {}).get("AI_AGILE_SCRATCH", "")
+            directory = Path(path) if path else None
+            seen_at_spawn.append(
+                sorted(x.name for x in directory.iterdir())
+                if directory and directory.is_dir() else None
+            )
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.wait.return_value = 0
+            return proc
+
+        monkeypatch.setattr("pipeline_orchestrator._HEADLESS", True)
+        try:
+            with patch("subprocess.Popen", side_effect=fake_popen), \
+                 patch("pipeline_orchestrator._claude_cli_usable", return_value=True), \
+                 patch("pipeline_orchestrator._compute_agent_session_id",
+                       return_value=session_id), \
+                 patch("pipeline_orchestrator._resolve_agent_invocation") as mock_resolve:
+                mock_resolve.return_value = MagicMock(
+                    prompt="p", allowed_tools=["Read"], model=None,
+                    max_turns=10, session_id=session_id,
+                )
+                # attempt=1 is the retry: same work item, same SESSION_ID.
+                invoke_agent(_agent_def(), _work_item(), dry_run=False,
+                             repo="owner/repo", attempt=1)
+
+            assert seen_at_spawn, "Popen was never called"
+            assert seen_at_spawn[0] == [], (
+                f"the retry could read the previous attempt's files: "
+                f"{seen_at_spawn[0]}"
+            )
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+
+class TestScratchLifecycleIsSelfHealing:
+
+    def test_setup_clearing_removes_the_need_for_a_signal_handler(self):
+        """#321's resolved design asked for teardown on the SIGTERM path that
+        clears :wip. That is not implementable: the kill that ends a background
+        tick is uncatchable, so a handler would not run anyway. Setup clearing
+        before it creates covers the same case without one -- pin the property
+        the design actually wanted, not the mechanism it named."""
+        src = (Path(__file__).parent.parent / "pipeline"
+               / "pipeline_orchestrator.py").read_text()
+        assert "_clear_scratch_on_signal" not in src
+        setup = (Path(__file__).parent.parent / ".github" / "scripts"
+                 / "scratch-setup.sh").read_text()
+        rm_at = setup.index("rm -rf")
+        mkdir_at = setup.index("mkdir -p")
+        assert rm_at < mkdir_at, (
+            "setup must clear before it creates, or a tick killed mid-run "
+            "hands its debris to the next one"
         )
