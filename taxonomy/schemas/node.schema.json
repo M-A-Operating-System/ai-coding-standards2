@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "node.schema.json",
+  "title": "Taxonomy Node",
+  "type": "object",
+  "required": [
+    "id",
+    "path",
+    "name",
+    "description",
+    "level",
+    "parent",
+    "facets",
+    "stability",
+    "status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^(FAM|CLS|SUB)[0-9]{6}$"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+(/[a-z0-9-]+){1,3}$"
+    },
+    "former_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "level": {
+      "enum": [
+        "family",
+        "class",
+        "subclass"
+      ]
+    },
+    "parent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the node above. A family sits at the top of the tree, so its parent is the domain it belongs to -- a field value, not an identifier, because a domain is a type rather than a node."
+    },
+    "facets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "stability": {
+      "enum": [
+        "development",
+        "alpha",
+        "beta",
+        "release-candidate",
+        "stable"
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "deprecated"
+      ]
+    },
+    "replaced_by": {
+      "type": "string"
+    },
+    "since": {
+      "type": "string"
+    },
+    "classes": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "node.schema.json"
+      }
+    },
+    "subclasses": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "node.schema.json"
+      }
+    }
+  },
+  "additionalProperties": true
+}

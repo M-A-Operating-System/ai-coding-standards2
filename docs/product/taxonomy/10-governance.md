@@ -8,14 +8,19 @@ need a change process proportionate to what breaks when they move.
 
 ## Identifiers are contracts
 
-Canonical IDs are treated as durable API contracts and versioned on
-semantic-versioning principles:
+Identifiers are durable API contracts. Because identity is separate from name
+and path ([TX-5](02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not)),
+what counts as a breaking change is narrower than it would otherwise be:
 
 | Change | Means |
 |---|---|
 | Patch | Corrections that do not change semantic meaning |
-| Minor | Backward-compatible additions |
-| Major | Breaking identifier changes, semantic restructuring, or removals |
+| Minor | Backward-compatible additions; renaming, moving, splitting or merging a node, since its identifier survives and its former path still resolves |
+| Major | Removing a deprecated identifier, or changing what an existing identifier means |
+
+The middle row is the point. Improving a name or a position used to be a
+breaking change, because the name was the key. It is now routine, which is
+what makes the vocabulary safe to correct as understanding improves.
 
 ## Deprecation
 
@@ -47,7 +52,7 @@ inheritance means nothing.
 Taxonomy changes arrive as pull requests carrying:
 
 - the reason for the change;
-- the proposed canonical identifier;
+- the proposed path, and the identifier assigned to the node;
 - its parent classification;
 - its semantic definition;
 - examples;
@@ -57,8 +62,11 @@ Taxonomy changes arrive as pull requests carrying:
 
 CI validates every change: JSON syntax, schema conformance against an
 explicit file-to-schema map, three-level consistency with each record's
-declared `id`, `parent`, and `level` matching its position, and referential
-integrity for every canonical identifier cited anywhere in the folder. A JSON
+declared `path`, `parent`, and `level` matching its position, and referential
+integrity for every identifier cited anywhere in the folder. Identity is
+checked too: an `id` must be unique, must never be reused, and must not
+disappear between versions -- a node leaves by deprecation, never by
+deletion. A JSON
 file added with no mapped schema fails validation rather than being skipped,
 so coverage cannot erode silently as the folder grows.
 

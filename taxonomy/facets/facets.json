@@ -1,0 +1,202 @@
+{
+  "$schema": "../schemas/facets.schema.json",
+  "schema_version": "0.4.0",
+  "description": "Orthogonal dimensions attached to nodes by identifier. A facet never changes a node identity, never changes its path, and never participates in inheritance. A view is a query over facet values.",
+  "facets": {
+    "concern": {
+      "name": "Concern",
+      "description": "The engineering concern a node belongs to. Derived from the family level, which was already acting as a concern grouping rather than a supertype.",
+      "multi_valued": true,
+      "values": {
+        "ai-ml": {
+          "name": "Ai Ml",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "api": {
+          "name": "Api",
+          "domains": [
+            "code",
+            "patterns"
+          ]
+        },
+        "compute": {
+          "name": "Compute",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "configuration": {
+          "name": "Configuration",
+          "domains": [
+            "code"
+          ]
+        },
+        "consistency": {
+          "name": "Consistency",
+          "domains": [
+            "concepts"
+          ]
+        },
+        "data": {
+          "name": "Data",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "data-management": {
+          "name": "Data Management",
+          "domains": [
+            "concepts"
+          ]
+        },
+        "domain": {
+          "name": "Domain",
+          "domains": [
+            "code"
+          ]
+        },
+        "experience": {
+          "name": "Experience",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "external": {
+          "name": "External",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "identity": {
+          "name": "Identity",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "integration": {
+          "name": "Integration",
+          "domains": [
+            "architecture",
+            "code",
+            "patterns"
+          ]
+        },
+        "maintainability": {
+          "name": "Maintainability",
+          "domains": [
+            "concepts"
+          ]
+        },
+        "messaging": {
+          "name": "Messaging",
+          "domains": [
+            "architecture",
+            "code",
+            "patterns"
+          ]
+        },
+        "networking": {
+          "name": "Networking",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "observability": {
+          "name": "Observability",
+          "domains": [
+            "architecture",
+            "code",
+            "concepts",
+            "patterns"
+          ]
+        },
+        "performance": {
+          "name": "Performance",
+          "domains": [
+            "concepts"
+          ]
+        },
+        "persistence": {
+          "name": "Persistence",
+          "domains": [
+            "code",
+            "patterns"
+          ]
+        },
+        "platform": {
+          "name": "Platform",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "reliability": {
+          "name": "Reliability",
+          "domains": [
+            "concepts"
+          ]
+        },
+        "resilience": {
+          "name": "Resilience",
+          "domains": [
+            "patterns"
+          ]
+        },
+        "scalability": {
+          "name": "Scalability",
+          "domains": [
+            "concepts"
+          ]
+        },
+        "security": {
+          "name": "Security",
+          "domains": [
+            "architecture",
+            "code",
+            "concepts",
+            "patterns"
+          ]
+        },
+        "storage": {
+          "name": "Storage",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "system": {
+          "name": "System",
+          "domains": [
+            "architecture"
+          ]
+        },
+        "testing": {
+          "name": "Testing",
+          "domains": [
+            "code",
+            "patterns"
+          ]
+        }
+      }
+    },
+    "lifecycle": {
+      "name": "Lifecycle stage",
+      "description": "When in the delivery lifecycle a node is relevant. Declared but not yet assigned: every assignment is a judgement for the vocabulary owners, and inventing them would put unreviewed claims in the data.",
+      "multi_valued": true,
+      "values": {
+        "design-time": {
+          "name": "Design time"
+        },
+        "build-time": {
+          "name": "Build time"
+        },
+        "deploy-time": {
+          "name": "Deploy time"
+        },
+        "run-time": {
+          "name": "Run time"
+        }
+      }
+    }
+  }
+}

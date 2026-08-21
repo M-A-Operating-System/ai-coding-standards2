@@ -1,36 +1,36 @@
 {
-  "schema_version": "0.2.0",
-  "description": "Starter semantic relationships across taxonomy domains.",
+  "schema_version": "0.4.0",
+  "definition": "Explicit semantic links across domains.",
   "relationships": [
     {
-      "from": "patterns/persistence/data-access/repository",
+      "from": "SUB000149",
       "type": "typically-implemented-as",
-      "to": "code/persistence/repository/repository-implementation"
+      "to": "SUB000198"
     },
     {
-      "from": "patterns/api/request-processing/idempotent-handler",
+      "from": "SUB000142",
       "type": "supports-concept",
-      "to": "concepts/reliability/idempotency/request-idempotency"
+      "to": "SUB000225"
     },
     {
-      "from": "patterns/messaging/consumption/idempotent-consumer",
+      "from": "SUB000162",
       "type": "supports-concept",
-      "to": "concepts/reliability/idempotency/message-idempotency"
+      "to": "SUB000226"
     },
     {
-      "from": "patterns/resilience/retry/exponential-backoff",
+      "from": "SUB000163",
       "type": "supports-concept",
-      "to": "concepts/reliability/retry/exponential-backoff"
+      "to": "SUB000232"
     },
     {
-      "from": "patterns/observability/correlation/trace-context-propagation",
-      "type": "supports-concept",
-      "to": "concepts/observability/correlation/request-correlation"
-    },
-    {
-      "from": "code/api/handler/request-handler",
+      "from": "SUB000186",
       "type": "typically-realizes",
-      "to": "architecture/compute/service/api-service"
+      "to": "SUB000006"
+    },
+    {
+      "from": "SUB000179",
+      "type": "supports-concept",
+      "to": "SUB000248"
     }
   ]
 }
