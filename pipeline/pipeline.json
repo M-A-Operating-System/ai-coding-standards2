@@ -1,7 +1,11 @@
 {
   "$schema": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
   "defaults": {
-    "extra_allowedTools": ["Write", "Edit"]
+    "extra_allowedTools": ["Write", "Edit"],
+    "agent_lifecycle": {
+      "before": [".github/scripts/scratch-setup.sh"],
+      "after": [".github/scripts/scratch-teardown.sh"]
+    }
   },
   "pipeline": [
 

@@ -297,6 +297,77 @@ for git operations; use `post_steps` for everything else (e.g. calling
 
 ---
 
+## `defaults.agent_lifecycle` — scripts that wrap every agent invocation
+
+Some work has to happen *around* an agent rather than before or after it in the
+pipeline: preparing the environment it runs in, and tidying up afterwards. That
+work is not a pipeline step — it produces no artefact, takes no label, and
+nothing depends on it — but it is still process logic, so it belongs in a script
+the orchestrator invokes, not in the orchestrator (STD-ARCH-035).
+
+Declare it once in `defaults`, and it applies to every agent step:
+
+```json
+"defaults": {
+  "agent_lifecycle": {
+    "before": [".github/scripts/scratch-setup.sh"],
+    "after":  [".github/scripts/scratch-teardown.sh"]
+  }
+}
+```
+
+### How agent-lifecycle scripts work
+
+1. `before` scripts run immediately before **each** invocation, including each
+   retry. A retry must never inherit the previous attempt's state.
+2. `after` scripts run once, after the final retry, on **every** outcome —
+   `:complete`, `:review`, `:blocked`, a non-zero exit, or retries exhausted.
+   Cleanup that only runs on the happy path leaks precisely the runs most likely
+   to leave debris.
+3. Scripts receive `$AI_AGILE_SCRATCH` plus a minimal env allowlist
+   (`PATH`, `HOME`, `LANG`, `LC_ALL`, `LC_CTYPE`). No credential is passed —
+   these scripts talk to the filesystem, not to GitHub (STD-SEC-022).
+4. **They cannot fail a run.** A non-zero exit is logged and swallowed. This is
+   only safe because `before` scripts are required to be idempotent, which makes
+   a missed `after` self-heal on the next run — see below.
+5. They emit no `AI_AGILE_STATUS:` sentinel and take no label.
+6. Agent steps only. A script step is a process step in its own right; it is
+   never wrapped, so an `after` hook would tear down something it was never
+   given.
+
+### `before` scripts must be idempotent, and that is what removes the need for a signal handler
+
+`scratch-setup.sh` removes the directory before creating it, rather than
+assuming it is absent. That single property is what makes the lifecycle
+self-healing: a tick killed mid-run leaves its directory behind, and the next
+run on the same `SESSION_ID` clears it before the agent starts.
+
+The alternative — a `SIGTERM` handler that cleans up on the way out — does not
+work, because the kill that ends a background tick is uncatchable, so the
+handler never runs. Idempotent setup covers the same case without one, and
+without a module-level global tracking an in-flight step's side effects.
+
+### The three kinds of script, compared
+
+| | Script step (`type: "script"`) | `post_steps` | `defaults.agent_lifecycle` |
+|---|---|---|---|
+| Is a pipeline step | yes | no | no |
+| Declared on | the step | the agent | `defaults`, applying to all agents |
+| Runs | in graph order | after `:complete` only | around every invocation, every outcome |
+| Emits a sentinel | yes | no | no |
+| Takes a label | yes | no | no |
+| Non-zero exit | `:failed` | `:failed` | logged and ignored |
+| Gets credentials | yes | yes | no |
+
+### When to use it
+
+Use `agent_lifecycle` for work that every agent needs and no agent should have
+to ask for: preparing or tearing down the environment an agent runs in. Use
+`post_steps` for an action specific to one agent's success. Use a script step
+when the work is a stage of the pipeline in its own right.
+
+---
+
 ## `orchestrator_checks` — standalone orchestrator behaviour
 
 Some pipeline behaviour is a mechanical, periodic check against work items

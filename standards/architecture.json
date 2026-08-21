@@ -519,6 +519,29 @@
       "related": [
         "STD-ARCH-033"
       ]
+    },
+    {
+      "id": "STD-ARCH-035",
+      "title": "Orchestrator coordinates only; process steps live in pipeline.json as scripts or agents",
+      "description": "pipeline/pipeline_orchestrator.py decides which step runs next and records the outcome. It must not contain business-process logic. Every step that enables the process is declared in pipeline/pipeline.json and implemented as a deterministic script under .github/scripts/ or as an agent prompt under .claude/agents/. Filesystem management, git operations, GitHub API workflows, and any other work performed around an agent belong in a script the orchestrator invokes, not in the orchestrator itself.",
+      "rationale": "P-14 makes the orchestrator the deterministic router: its job is sequencing, mutex, and label transitions. Process logic embedded in it is untestable in isolation, invisible to pipeline.json (so the pipeline no longer describes itself), and inflates a module that already carries most of the package. Externalised steps are independently runnable, independently testable, and swappable without touching the router.",
+      "acceptance_criteria": [
+        "A new process step is added by declaring it in pipeline.json and adding a script under .github/scripts/ or an agent under .claude/agents/, with no new branching in pipeline_orchestrator.py beyond invoking the declared step.",
+        "Work performed around an agent invocation (setup, teardown, commit, publish) is implemented in a script that can be run standalone with its documented environment variables, not inline in the orchestrator.",
+        "The orchestrator holds no module-level mutable state describing an in-flight step's side effects; a step's own script is responsible for making its effects idempotent.",
+        "Every environment variable a script needs is passed through a named per-site allowlist (STD-SEC-022), never by inheriting the orchestrator's environment."
+      ],
+      "anti_patterns": [
+        "Adding filesystem create/remove calls to the orchestrator instead of a setup/teardown script it invokes.",
+        "Encoding a step's ordering or preconditions in Python conditionals rather than in pipeline.json's trigger and dependencies fields.",
+        "A module-level global tracking an in-flight step so a signal handler can undo its side effects, where an idempotent script would self-heal on the next run.",
+        "Growing pipeline_orchestrator.py with logic that has no counterpart in pipeline.json, so reading the config no longer tells you what the pipeline does."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }

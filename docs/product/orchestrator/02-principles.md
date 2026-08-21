@@ -543,6 +543,14 @@ status label is the universal retry.
 **Tradeoff.** Agents must be idempotent — re-runs produce the same
 artefact, not duplicates. This is a hard constraint on agent design.
 
+"Not duplicates" means duplicated **effects**: a re-run must not open a second
+PR, create a second branch, or double-apply a label. It does not mean one
+comment edited in place. A re-run's artefact comment is a *record* of that run,
+and P-12 accepts the resulting comment noise explicitly. Agents therefore post
+a new artefact per run, headed `(Re-run)`, and never rewrite a previous one —
+the trail is how a human sees what changed between rounds, and overwriting it
+destroys the only evidence that a finding was ever raised.
+
 ### P-12 — Transparent over clever
 
 **Statement.** When in doubt the system prefers an explicit comment, an

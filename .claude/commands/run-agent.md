@@ -54,6 +54,21 @@ Examples:
      --print-prompt)
    ```
 
+   **Scratch directory:** the agent is told to write working files into
+   `$AI_AGILE_SCRATCH` and told not to create that directory itself, because
+   most agents are not granted `mkdir`. On the orchestrator path `invoke_agent`
+   creates it; here you must, using the same script, before the scope file
+   exists (afterwards the hook denies `bash` to every agent that lacks the
+   grant):
+
+   ```bash
+   AI_AGILE_SCRATCH=$(echo "$RESOLVED" | jq -r '.env.AI_AGILE_SCRATCH')
+   AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash .github/scripts/scratch-setup.sh
+   ```
+
+   Export `AI_AGILE_SCRATCH` for the rest of the run so the agent's snippets
+   resolve it rather than falling back to a shared `/tmp`.
+
    **Tool-scope rule (enforced, not advisory):** write the returned allowlist
    to a scope file before following any of the agent's own instructions:
 
@@ -97,11 +112,17 @@ Examples:
    Final status: complete
    ```
 
-7. Remove the scope file so it doesn't affect unrelated tool use later in this
-   session:
+7. Remove the scope file and the scratch directory so neither affects
+   unrelated work later in this session:
    ```bash
    rm -f .claude/.run-agent-scope.json
+   [ -n "${AI_AGILE_SCRATCH:-}" ] \
+     && AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash .github/scripts/scratch-teardown.sh
    ```
-   Do this even if the run halts early (error, `:blocked`, user interruption,
-   a denied tool with no alternative) -- remove the scope file before ending
-   your turn either way.
+   The guard matters: a run that halts before step 3 never set
+   `AI_AGILE_SCRATCH`, and the teardown script refuses an unset value with a
+   non-zero exit -- safe, but noisy exactly when you are already handling a halt.
+
+   Do both even if the run halts early (error, `:blocked`, user interruption,
+   a denied tool with no alternative) -- remove the scope file **and** the
+   scratch directory before ending your turn either way.

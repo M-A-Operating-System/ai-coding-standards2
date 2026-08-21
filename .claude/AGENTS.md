@@ -29,10 +29,100 @@ full statements and rationale live there.
 | **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. Use it in announcements and Question Cards. |
 | **P-9** Cross-issue parallel, intra-issue serial | You are not racing other agents on the same issue. Assume nothing about sibling agents on other issues. |
 | **P-10** Agents draft, humans decide | Never approve a gate. Never apply a `*:approved` label. Humans do that; the orchestrator promotes you afterward. |
-| **P-11** Resumable by default | Be idempotent. On re-run, edit your previous artefact comment in place — don't post duplicates. |
+| **P-11** Resumable by default | Be idempotent: a re-run must not double-apply an effect — no second PR, no second branch, no re-applied label. Artefacts are append-only: post a new artefact each run, headed `(Re-run)`, and never rewrite a previous one. |
 | **P-12** Transparent over clever | Post a comment when something halts. Use the named markers. Don't infer state silently. |
 | **P-14** Deterministic Python orchestrator | The orchestrator decides who runs next. **You do not invoke other agents.** Do your one job and exit. |
 | **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`02-principles.md#p-15`](../docs/product/orchestrator/02-principles.md#p-15). |
+
+---
+
+## How you find your inputs
+
+| Input | Where |
+|---|---|
+| Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author` |
+| Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
+| Standards | JSON under `standards/*.json` (see [`05-pipeline-config.md`](../docs/product/orchestrator/05-pipeline-config.md)) |
+| Pipeline graph | Don't read it. The orchestrator routes work; focus on your task. |
+| Prior runs of yourself | Read them, don't rewrite them. Find your prior artefact to head this run `(Re-run)` and to see what you said last time; post a new one (P-11). |
+
+Environment variables the orchestrator exports for you:
+
+| Variable | Meaning |
+|---|---|
+| `AI_AGILE_ROOT` | Absolute path to the consuming repo root |
+| `AI_AGILE_CONTEXT` | Absolute path to **this file** |
+| `REPO` | `owner/repo` of the consuming repository |
+| `ISSUE_NUMBER` | Set when the work item is an issue |
+| `PR_NUMBER` | Set when the work item is a PR |
+| `WORK_ITEM_KIND` | `issue` or `pr` |
+| `WORK_ITEM_NUMBER` | Numeric ID, regardless of kind |
+| `SESSION_ID` | Human-readable session key (e.g. `ais-v1-01-product-docs-prd-writer-issue-42`). Use in `session_id` fields of announcement/artefact JSON. |
+| `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
+| `AI_AGILE_EXECUTION_MODE` | Always `headless` for orchestrator-spawned subprocesses. The `/run-agent` interactive path sets it to `interactive` instead. |
+| `AI_AGILE_SCRATCH` | Per-run scratch directory, created empty before your run and removed after it. Write working files here; see "How you communicate". |
+
+---
+
+## How you communicate
+
+Every comment you post starts with a stable marker carrying your
+identity:
+
+```
+<!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
+```
+
+Five marker types:
+
+| Marker | Use for |
+|---|---|
+| `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
+| `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
+| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2) |
+| `claim/v1` | The mutex claim you post during P-4 acquisition |
+| `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
+
+Free-text prose may sit alongside JSON; the JSON is the contract.
+If they disagree, the JSON wins.
+
+Working files stay out of the repo. Staging a comment body in a file is fine and
+often the right call -- a body containing JSON or a fenced block is fragile to
+shell-quote -- so write it into `$AI_AGILE_SCRATCH` and post it from there,
+never from a bare filename:
+
+```bash
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
+...
+EOF
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
+```
+
+The orchestrator creates that directory empty before your run and removes it
+after, so **do not create it yourself** -- most agents are not granted `mkdir`,
+and a command that begins with an assignment matches no allowlist pattern. The
+`:-/tmp` fallback covers a hand-run agent; `/tmp` always exists, so an unset
+variable can never resolve to `/`. A bare filename resolves against the repo
+root, where the commit sweep can pick it up.
+
+---
+
+## Todo lists
+
+Use the `TodoWrite` tool freely during your run to keep a working list of
+steps. It is internal to your session -- not visible on GitHub, does not
+survive the run -- and is not a substitute for GitHub artefacts. Persistent
+todos in issue/PR bodies (build plans, acceptance criteria, open questions)
+are different: they live **in the body of the issue or PR they belong to** --
+never in a comment, a file, or a sub-issue -- and you only write them if your
+specific prompt instructs you to. The body is the single, visible,
+edited-in-place source of truth for what work remains.
+
+**Only rewrite the subsection you own**, leaving the others untouched, and
+**never remove a checked item** -- they are the audit trail. Marker format,
+subsection owners, and checkbox syntax:
+[`13-todos.md`](../docs/product/orchestrator/13-todos.md).
 
 ---
 
@@ -66,149 +156,12 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 
 ---
 
-## How you communicate
-
-Every comment you post starts with a stable marker carrying your
-identity:
-
-```
-<!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
-```
-
-Five marker types:
-
-| Marker | Use for |
-|---|---|
-| `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
-| `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
-| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2) |
-| `claim/v1` | The mutex claim you post during P-4 acquisition |
-| `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
-
-Free-text prose may sit alongside JSON; the JSON is the contract.
-If they disagree, the JSON wins.
-
----
-
 ## What you must not do
 
-- **Don't apply `*:approved` gate labels.** That's the human's signal to advance the pipeline. P-10.
-- **Don't emit `AI_AGILE_STATUS: complete` for gated work.** The orchestrator promotes `:review` → `:complete` after gate approval.
-- **Don't emit `AI_AGILE_STATUS: failed`.** The orchestrator applies `:failed` when you crash without a sentinel.
-- **Don't call `status.sh` for ceremony.** The orchestrator owns all label transitions. Use the `AI_AGILE_STATUS:` sentinel only.
-- **Don't invoke other agents.** The orchestrator routes work. P-14.
 - **Don't edit human-authored content** — issue bodies written by the stakeholder, review comments, ADRs after acceptance.
-- **Don't write to anywhere other than GitHub** — no sidecar files, no external DBs, no temp state that survives your run.
+- **Don't keep state outside GitHub** — no sidecar files in the repo, no external DBs, nothing carried from one run to the next. Working files during a run belong in the scratch directory (see "How you communicate") and nowhere else.
 - **Don't use `WebFetch` or `WebSearch`** unless your tool allowlist explicitly includes them (it doesn't, by default).
 - **Don't assume earlier runs left state in your environment.** Read GitHub fresh on every invocation.
-
----
-
-## How you find your inputs
-
-| Input | Where |
-|---|---|
-| Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author` |
-| Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
-| Standards | JSON under `standards/*.json` (see [`05-pipeline-config.md`](../docs/product/orchestrator/05-pipeline-config.md)) |
-| Pipeline graph | Don't read it. The orchestrator routes work; focus on your task. |
-| Prior runs of yourself | Edit-in-place: re-runs find the prior comment, edit it (P-11). Don't post duplicates. |
-
-Environment variables the orchestrator exports for you:
-
-| Variable | Meaning |
-|---|---|
-| `AI_AGILE_ROOT` | Absolute path to the consuming repo root |
-| `AI_AGILE_CONTEXT` | Absolute path to **this file** |
-| `REPO` | `owner/repo` of the consuming repository |
-| `ISSUE_NUMBER` | Set when the work item is an issue |
-| `PR_NUMBER` | Set when the work item is a PR |
-| `WORK_ITEM_KIND` | `issue` or `pr` |
-| `WORK_ITEM_NUMBER` | Numeric ID, regardless of kind |
-| `SESSION_ID` | Human-readable session key (e.g. `ais-v1-01-product-docs-prd-writer-issue-42`). Use in `session_id` fields of announcement/artefact JSON. |
-| `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
-| `AI_AGILE_EXECUTION_MODE` | Always `headless` for orchestrator-spawned subprocesses. The `/run-agent` interactive path sets it to `interactive` instead. |
-
----
-
-## In-run task tracking
-
-Use the `TodoWrite` tool freely during your run to maintain a working
-list of steps. This is internal to your session — not visible on
-GitHub and does not survive the run. Use it to stay organised on
-multi-step tasks, not as a substitute for GitHub artefacts.
-
-For persistent todos in issue/PR bodies (build plans, acceptance
-criteria, open questions) — only write these if your specific prompt
-instructs you to. Format and protocol: see
-[`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md).
-
----
-
-## Todo lists
-
-Todos for in-flight work live **in the body of the issue or PR they belong to** — never in a comment, a file, or a sub-issue. The body is the single, visible, edited-in-place source of truth for what work remains.
-
-### Runtime ephemeral vs. persistent todos
-
-| Type | Tool | Survives run? | Visible in GitHub? |
-|---|---|---|---|
-| In-session task tracking | `TodoWrite` (Claude runtime tool) | No | No |
-| Persistent issue/PR tasks | Body markers (see below) | Yes | Yes |
-
-Use `TodoWrite` freely during a run to keep your multi-step plan organised. Use body markers to record build-plan items, acceptance criteria, or open questions that other agents and humans need to see.
-
-### Body marker format
-
-Todos in issue/PR bodies live inside a delimited block:
-
-```markdown
-<!-- ai-agile/todos/v1 START -->
-## AI Agile — Tasks
-
-<!-- ai-agile/todos/build-plan/v1 START -->
-### Build plan
-
-- [ ] Do the thing (raised 2026-05-04T14:23Z by coder)
-- [x] Done thing (raised 2026-05-04T14:00Z by coder, done 2026-05-04T15:00Z by coder)
-
-<!-- ai-agile/todos/build-plan/v1 END -->
-
-_Last updated by `coder` at 2026-05-04T15:01Z_
-<!-- ai-agile/todos/v1 END -->
-```
-
-Each subsection has its own marker pair. **Only rewrite the subsection you own** — leave other subsections untouched.
-
-### Standard subsections and owners
-
-| Subsection | Owner |
-|---|---|
-| `ai-agile/todos/build-plan/v1` | `task-decomposer` (issue), `coder` (PR) |
-| `ai-agile/todos/acceptance-criteria/v1` | `prd-writer` |
-| `ai-agile/todos/open-questions/v1` | orchestrator |
-| `ai-agile/todos/standards-remediations/v1` | `standards-compliance-reviewer` (PR only) |
-| `ai-agile/todos/test-scenarios/v1` | `test-spec-writer` / `test-runner` (PR only) |
-
-A subsection with no entries is omitted entirely. Checked items are never removed — they are the audit trail.
-
-### Checkbox and annotation format
-
-```
-- [ ] {task} (raised <ts> by <actor>)
-- [x] {task} (raised <ts> by <actor>, done <ts> by <actor>)
-- [ ] {task} (raised <ts> by <actor>, blocked <ts> by <actor>: <reason>)
-```
-
-- **Timestamp**: ISO 8601 UTC, minute precision — `YYYY-MM-DDTHH:MMZ`
-- **Actor**: bare agent name (e.g. `coder`), `orchestrator`, or `@github-login` for humans
-
-### Anti-patterns
-
-- Don't track todos in comments, `.todo` files, or sub-issues
-- Don't edit human-authored prose above the marker block
-- Don't write to a subsection you don't own
-- Don't remove checked items
 
 ---
 
@@ -217,7 +170,7 @@ A subsection with no entries is omitted entirely. Checked items are never remove
 | Topic | Location |
 |---|---|
 | Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, todos, roadmap, orchestrator design, agent spec) | [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md) — start with the README |
-| Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you generally shouldn't need to |
+| Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you don't |
 | Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
 | Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` |
 | ADRs (architecture decisions of record) | `standards/adrs.json` |
@@ -240,6 +193,3 @@ When referencing a standard in a comment or commit, use its stable
 | Input is ambiguous and you would have to guess | Emit `AI_AGILE_STATUS: blocked` with a Question Card naming the ambiguity |
 | Issue is too large for one phase artefact | Emit `AI_AGILE_STATUS: blocked` with a decomposition recommendation |
 | You hit an error you cannot describe | Exit non-zero; the orchestrator will apply `:failed` with your tail of output |
-| You think you should bypass a gate | You shouldn't. Re-read P-10 |
-| You think you should invoke another agent | You shouldn't. Re-read P-14 |
-| Your specific prompt contradicts this document | This document wins |
