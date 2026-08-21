@@ -24,15 +24,20 @@ set -euo pipefail
 # Refuse anything that is not an absolute path under a temp root. This script
 # runs rm -rf; a relative path, or one pointing into the working tree, would
 # delete real work.
-case "$AI_AGILE_SCRATCH" in
+#
+# Check the RESOLVED path, not the string. A literal prefix test passes
+# "/tmp/../etc/foo" -- ? consumes the dot, * takes the rest -- and rm -rf then
+# runs outside /tmp. readlink -m resolves without requiring the path to exist.
+_RESOLVED=$(readlink -m -- "$AI_AGILE_SCRATCH")
+case "$_RESOLVED" in
     /tmp/?*|/var/tmp/?*) ;;
     *)
-        echo "ERROR: AI_AGILE_SCRATCH must be an absolute path under /tmp or /var/tmp, got: ${AI_AGILE_SCRATCH}" >&2
+        echo "ERROR: AI_AGILE_SCRATCH must resolve to a path under /tmp or /var/tmp; got ${AI_AGILE_SCRATCH} (resolves to ${_RESOLVED})" >&2
         exit 1
         ;;
 esac
 
-rm -rf -- "$AI_AGILE_SCRATCH"
-mkdir -p -- "$AI_AGILE_SCRATCH"
+rm -rf -- "$_RESOLVED"
+mkdir -p -- "$_RESOLVED"
 
 echo "scratch-setup: ${AI_AGILE_SCRATCH} ready"

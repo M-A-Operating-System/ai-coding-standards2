@@ -175,10 +175,20 @@ class TestScratchScripts:
         assert _run_script("scratch-teardown.sh", d).returncode == 0
         assert not d.exists()
 
-    @pytest.mark.parametrize("bad", ["", "relative/path", "/home/user/repo", "/", "/tmp"])
+    @pytest.mark.parametrize("bad", [
+        "", "relative/path", "/home/user/repo", "/", "/tmp",
+        # Traversal: a literal prefix test passes these, because `?` consumes
+        # the dot and `*` takes the rest. Found by pr-reviewer as SA-001 on
+        # PR #360 and confirmed by deleting a real file before the fix; the
+        # guard now resolves with readlink -m before testing.
+        "/tmp/../etc",
+        "/tmp/../home/user/ai-coding-standards2",
+        "/var/tmp/../../etc",
+    ])
     def test_scripts_refuse_a_path_outside_tmp(self, bad):
-        """Both scripts run rm -rf. A relative path, the repo, or a bare /tmp
-        must be refused rather than deleted.
+        """Both scripts run rm -rf. A relative path, the repo, a bare /tmp, or
+        anything that *resolves* outside /tmp must be refused rather than
+        deleted.
         """
         for name in ("scratch-setup.sh", "scratch-teardown.sh"):
             assert _run_script(name, bad).returncode != 0, f"{name} accepted {bad!r}"
