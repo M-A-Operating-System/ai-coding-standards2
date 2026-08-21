@@ -93,7 +93,12 @@ def test_commit_agent_work_script_creates_correct_commit_message(tmp_path):
     git_env = _make_git_env()
     origin, work, _ = _bootstrap_repo(tmp_path)
 
-    (work / "agent_output.txt").write_text("agent wrote this")
+    # Nested, because a NEW file at the repo root is refused by the root-file
+    # guard (#321). The path was an arbitrary fixture choice; real agent output
+    # lands in a package, and the scenario under test is "stages, commits and
+    # pushes agent work", not "the repo root is writable".
+    (work / "src").mkdir()
+    (work / "src" / "agent_output.txt").write_text("agent wrote this")
 
     result = subprocess.run(
         ["bash", str(_SCRIPT_PATH)],
@@ -191,3 +196,43 @@ def test_workflow_files_without_bot_token_exits_nonzero(tmp_path):
     assert "AI_AGILE_BOT_TOKEN" in result.stderr, (
         f"Expected 'AI_AGILE_BOT_TOKEN' in stderr but got:\n{result.stderr!r}"
     )
+
+
+def test_a_new_root_file_is_refused_but_the_rest_of_the_work_lands(tmp_path):
+    """Scenario: An agent leaks a working file into the repo root.
+
+    Given an agent run that produces both real nested output and a stray
+         root-level file,
+    When commit-agent-work.sh runs,
+    Then the nested output is committed,
+    And the root-level file is neither committed nor deleted,
+    And the script still exits zero -- a leak is not the agent's failure to
+         report, and failing here would discard the work that is fine.
+    """
+    git_env = _make_git_env()
+    origin, work, _ = _bootstrap_repo(tmp_path)
+
+    (work / "src").mkdir()
+    (work / "src" / "real_output.py").write_text("def f(): pass\n")
+    (work / "review_body.json").write_text('{"body": "leak"}')
+
+    result = subprocess.run(
+        ["bash", str(_SCRIPT_PATH)],
+        cwd=str(work),
+        env={**git_env, "AGENT_NAME": "03_execute/coder", "ISSUE_NUMBER": "42"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"commit-agent-work.sh exited {result.returncode}:\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+    files = subprocess.run(
+        ["git", "show", "--name-only", "--pretty=format:", "issue-42"],
+        cwd=str(origin), capture_output=True, text=True, check=True, env=git_env,
+    ).stdout.split()
+    assert "src/real_output.py" in files
+    assert "review_body.json" not in files, "a leaked root file reached the commit"
+    assert (work / "review_body.json").exists(), "the leaked file was destroyed"
+    assert "created new file(s) at the repo root" in result.stderr

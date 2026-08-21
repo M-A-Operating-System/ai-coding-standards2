@@ -511,6 +511,9 @@ class TestProcessWorkItemHumanReviewGuard:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+            # Exclude the scratch lifecycle scripts (STD-ARCH-035); this test
+            # is about post_steps.
+            and "scratch-" not in str(c.args[0][-1])
         ]
         assert len(bash_calls) == 1, "post_steps script must run when status stays :complete"
         assert "mark-pr-ready.sh" in bash_calls[0].args[0][-1]
