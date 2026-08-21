@@ -117,10 +117,18 @@ def test_the_session_can_remove_its_own_scope_file(capsys):
 
 
 def test_an_unregistered_agent_still_resolves(capsys):
-    """00_ondemand agents are invoked by label, not by a pipeline step, so they
-    have no pipeline.json entry. They must not crash resolve-only, and they
-    must still receive the defaults."""
-    payload = _resolve_only(capsys, agent="00_ondemand/sizer")
+    """The agent_def is None fallback in _run_print_prompt handles agents that
+    have an agent file but are absent from pipeline.json.  This exercises that
+    branch by patching pipeline_by_name to return an empty mapping, which
+    forces the lookup to miss regardless of what pipeline.json actually
+    contains.  The agent name must round-trip and the pipeline defaults
+    (Write, Edit) must still be applied via the frontmatter-only AgentDef."""
+    gh = _gh()
+    with patch.object(po, "GitHubClient", return_value=gh), \
+         patch.object(po, "_discover_github_token", return_value="t"), \
+         patch.object(po, "pipeline_by_name", return_value={}):
+        po._run_print_prompt(_args(agent="00_ondemand/sizer"))
+    payload = json.loads(capsys.readouterr().out)
     assert payload["agent"] == "00_ondemand/sizer"
     for tool in ["Write", "Edit"]:
         assert tool in payload["allowed_tools"]
@@ -153,6 +161,7 @@ def test_an_explicit_kind_still_wins(capsys):
         po._run_print_prompt(_args(kind="issue"))
     payload = json.loads(capsys.readouterr().out)
     assert payload["env"]["WORK_ITEM_KIND"] == "issue"
+    assert "PR_NUMBER" not in payload["env"]
 
 
 def test_a_kind_the_agent_does_not_handle_is_reported(capsys, caplog):
