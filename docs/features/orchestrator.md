@@ -119,3 +119,23 @@
 **Given** the two resolution paths
 **When** the test suite runs
 **Then** a test compares the two resolved allowlists directly and fails if they differ
+
+## Scenario: The orchestrator always runs its own code from main
+
+**Given** a `pull_request` event fires the orchestrator workflow
+**When** the checkout step runs
+**Then** it checks out `main`, not `refs/pull/N/merge`
+**And** a PR that edits an agent prompt, an orchestration script or the orchestrator itself cannot alter the run that reviews it
+
+## Scenario: Pinning to main does not stop the PR's own content being reviewed
+
+**Given** the orchestrator is running from `main` on a `pull_request` event
+**When** `pr-reviewer` reviews the PR
+**Then** it still sees the proposed changes, because it reads the unified diff and the files at the PR head over the GitHub API rather than from the local working tree
+**And** the PR's own tests still run, because `test.yml` is a separate workflow triggered on the PR head
+
+## Scenario: A commit_after agent still reaches its issue branch
+
+**Given** the workspace is checked out at `main`
+**When** the orchestrator invokes an agent whose step declares `git_ops.commit_after`
+**Then** it fetches and checks out `issue-{N}` explicitly before the invocation, so the pin does not strand the agent on the wrong branch

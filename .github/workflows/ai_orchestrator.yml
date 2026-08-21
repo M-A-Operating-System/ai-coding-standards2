@@ -74,6 +74,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.onboard == 'true'
     runs-on: ubuntu-latest
     steps:
+      # Not pinned to main, unlike the orchestrate job below: onboard is
+      # workflow_dispatch-only and never runs on a pull_request, so there is no
+      # untrusted ref to pin away from.
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
         with:
@@ -191,6 +194,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
         with:
+          # Always run the orchestrator, its agents and its scripts from main,
+          # whatever event fired this tick (#367). Without this, a
+          # `pull_request` trigger checks out refs/pull/N/merge, so a PR that
+          # edits pr-reviewer.md, an orchestration script or
+          # pipeline_orchestrator.py has those edits active while it is being
+          # reviewed -- the proposed version reviewing itself, and a route past
+          # the P-10 gate. The PR's content is still reviewed: pr-reviewer reads
+          # the diff and files at the PR head over the API, never from disk, and
+          # test.yml runs the PR's own tests separately.
+          ref: main
           # Full history (not the default shallow clone) so the orchestrator's
           # `main...HEAD` and merge-base operations work and agents stop
           # chasing phantom "no merge base" errors on issue branches (#197).
