@@ -595,14 +595,6 @@ deterministic gate.
   codebase fix into the standards change.
 - **Do not invoke other agents.** The orchestrator handles routing.
 - **If no sources are found**, tell the human and stop — do not invent rules.
-- Write every scratch or working file -- staged comment bodies, snapshots,
-  intermediate JSON -- under the per-run scratch directory, never in the repo
-  root or any tracked path. Resolve it once, with the fallback, at the top of
-  any step that stages content:
-  `SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"`.
-  The orchestrator creates and removes `AI_AGILE_SCRATCH` itself -- no cleanup
-  command belongs in this prompt. Inventing a bare filename puts it in the repo
-  root, where the commit sweep can pick it up.
 
 ## Allowed categories
 

@@ -57,15 +57,21 @@ class TestAgentsMdScratchConvention:
     def test_agents_md_states_concrete_scratch_convention(self):
         text = AGENTS_MD.read_text()
         assert "AI_AGILE_SCRATCH" in text
-        assert "/tmp/${SESSION_ID}" in text
-        assert "the repo root or any tracked path" in text
+        assert "${AI_AGILE_SCRATCH:-" in text
+        assert "never in the repo root or any tracked path" in text
 
-    def test_agents_md_includes_worked_example(self):
+    def test_agents_md_does_not_teach_file_staging_to_post_a_comment(self):
+        """Issue #321 root cause: the scratch section's own worked example
+        showed `cat > "$SCRATCH_FILE"` then `-f body="$(cat "$SCRATCH_FILE")"`,
+        teaching that posting a comment means staging a file first. Every leak
+        observed was a staged comment body. Agents imitate examples more
+        reliably than they follow rules, so the example must not model it.
+        """
         text = AGENTS_MD.read_text()
-        # AGENTS.md resolves the variable into $SCRATCH first, so the worked
-        # example writes through $SCRATCH -- not $AI_AGILE_SCRATCH directly.
-        assert 'SCRATCH_FILE="$SCRATCH/' in text
-        assert '${AI_AGILE_SCRATCH:-' in text
+        assert 'cat > "$SCRATCH_FILE"' not in text
+        assert '-f body="$(cat "$SCRATCH_FILE")"' not in text
+        # and it must point at the fileless form instead
+        assert "no file at all" in text
 
     def test_agents_md_documents_orchestrator_manages_lifecycle(self):
         text = AGENTS_MD.read_text()
@@ -326,12 +332,11 @@ def _agent_prompts():
     )
 
 
-class TestEveryAgentPromptCarriesTheScratchRule:
-    """Issue #321: AGENTS.md alone did not stop an agent inventing a repo-root
-    filename -- a real pr-reviewer run had AI_AGILE_SCRATCH set, the directory
-    created and empty, the contract in its prompt, and still wrote
-    open_announce.json to the repo root. The rule is therefore repeated in
-    every agent prompt, and this test fails when a new agent omits it.
+class TestAgentPromptsDoNotOwnScratchCleanup:
+    """Issue #321: cleanup is the orchestrator's job. The rule itself lives in
+    AGENTS.md alone -- duplicating it into every agent prompt was tried and
+    reverted, since the failure was the section's worked example teaching
+    file-staging, not the rule being insufficiently repeated.
     """
 
     def test_at_least_one_agent_prompt_is_discovered(self):
@@ -339,25 +344,6 @@ class TestEveryAgentPromptCarriesTheScratchRule:
         # consuming repos, and a globbing miss would make the tests below pass
         # vacuously on an empty set.
         assert len(_agent_prompts()) > 0
-
-    def test_every_agent_prompt_names_the_scratch_variable(self):
-        missing = [
-            str(p.relative_to(AGENTS_DIR))
-            for p in _agent_prompts()
-            if "AI_AGILE_SCRATCH" not in p.read_text()
-        ]
-        assert missing == [], f"agent prompts missing the scratch rule: {missing}"
-
-    def test_every_agent_prompt_uses_the_unset_safe_fallback(self):
-        # An unguarded "$AI_AGILE_SCRATCH/file" resolves to /file when the
-        # variable is unset, which is how a human running a /maos-* command
-        # interactively would execute it.
-        bad = [
-            str(p.relative_to(AGENTS_DIR))
-            for p in _agent_prompts()
-            if "${AI_AGILE_SCRATCH:-" not in p.read_text()
-        ]
-        assert bad == [], f"agent prompts without the :- fallback: {bad}"
 
     def test_no_agent_prompt_reintroduces_a_repo_root_cleanup_glob(self):
         # Cleanup is the orchestrator's job since #321; a per-agent glob is the

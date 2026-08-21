@@ -133,66 +133,14 @@ Environment variables the orchestrator exports for you:
 
 ## Scratch files
 
-**Every** scratch or temporary working file you create during a run goes in the
-per-run scratch directory `/tmp/${SESSION_ID}` -- staged comment bodies,
-announcement JSON, snapshots, diffs, intermediate output, anything. There is no
-exception and no file small enough to skip it. Never write a working file into
-the repo root or any tracked path.
-
-This applies at **every step that stages content**, including steps whose
-wording is only "post the announcement" or "post a comment". If a step does not
-name a filename, that is not licence to invent one in the working directory --
-it means resolve the scratch directory and put it there. A bare filename
-resolves against the repo root, where the commit sweep can pick it up; that is
-the whole bug this rule exists to prevent.
-
-| Variable | Value | Guarantee |
-|---|---|---|
-| `AI_AGILE_SCRATCH` | `/tmp/${SESSION_ID}` | Set by the orchestrator only. Created empty before each invocation; removed after the run exits (any outcome). |
-
-**The orchestrator manages the full lifecycle** -- you do not need a cleanup
-instruction in your prompt. Writing under the scratch directory is the entire
-contract.
-
-**Always resolve it with a fallback.** `AI_AGILE_SCRATCH` is set by the
-orchestrator, so it is *unset* when a human runs one of these agents
-interactively via a `/maos-*` slash command. Expanding it unguarded then
-yields `/your-file` -- a write to the filesystem root. Resolve it once at
-the top of any step that needs a working file:
-
-```bash
-SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"
-mkdir -p "$SCRATCH"
-```
-
-The fallback lands under `/tmp` either way, so it is never in the repo.
-
-**Example:**
-
-```bash
-SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"
-mkdir -p "$SCRATCH"
-
-SCRATCH_FILE="$SCRATCH/comment_body.md"
-cat > "$SCRATCH_FILE" << 'EOF'
-<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
-...
-EOF
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -f body="$(cat "$SCRATCH_FILE")"
-```
-
-**Anti-patterns:**
-
-- Writing a scratch or staging file inside the repo root or any tracked directory.
-- Inventing an ad hoc `.{agent}_{purpose}` dot-file naming scheme instead of using `$AI_AGILE_SCRATCH`.
-- Including a cleanup instruction in an agent prompt -- the agent is not responsible for removal.
-- Assuming a repo-root cleanup glob will catch a self-invented filename -- it won't, by construction.
-- Expanding `$AI_AGILE_SCRATCH` without the `:-` fallback. Unset, it resolves to the filesystem root.
-- Treating a step that says only "post the announcement" as not needing a
-  scratch file, then inventing a bare filename like `open_announce.json` for
-  it. Observed in a real `pr-reviewer` run: the variable was set, the
-  directory existed and was empty, and the file still landed in the repo root.
+Working files stay out of the repo. Most posting needs no file at all -- pipe a
+heredoc straight into `gh pr comment --body "$(cat <<'EOF' ... EOF)"`, the way
+the agent prompts already show. When you genuinely need a file on disk, put it
+in the per-run scratch directory and never in the repo root or any tracked path:
+`SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"`.
+The orchestrator creates and removes `AI_AGILE_SCRATCH` itself, so no cleanup
+command belongs in your prompt. A bare filename resolves against the repo root,
+where the commit sweep can pick it up.
 
 ---
 
