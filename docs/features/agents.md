@@ -56,3 +56,22 @@
 **Given** a `script` step, which is never given `AI_AGILE_SCRATCH`
 **When** the orchestrator finishes running it
 **Then** no teardown runs for it -- teardown is paired with setup, never orphaned
+
+## Scenario: A leaked root file never reaches a commit
+
+**Given** an agent writes a working file at the repo root instead of into `$AI_AGILE_SCRATCH`
+**When** `commit-agent-work.sh` stages the agent's work
+**Then** the new root-level file is unstaged before the commit is written, and an error naming it is logged
+**And** the file is left on disk rather than deleted, so nothing the agent produced is destroyed
+
+## Scenario: The root-file guard does not cost the agent its real work
+
+**Given** an agent modifies a tracked root file such as `README.md` and adds a new nested file
+**When** `commit-agent-work.sh` stages the agent's work
+**Then** both are committed -- only *new* files at depth 0 are refused
+
+## Scenario: A run whose entire output is leaked root files produces no commit
+
+**Given** an agent writes nothing but root-level working files
+**When** `commit-agent-work.sh` runs
+**Then** no commit is created at all, rather than an empty or leak-only one

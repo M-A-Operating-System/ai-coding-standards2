@@ -671,3 +671,118 @@ class TestShippedFilesAreAscii:
     def test_scratch_scripts_are_ascii(self, name):
         path = self.REPO_ROOT / ".github" / "scripts" / name
         assert self._offenders(path) == [], f"{name} contains non-ASCII"
+
+
+class TestCommitSweepRefusesNewRootFiles:
+    """The enforcement half of #321.
+
+    Every agent prompt carries the scratch rule, and the rule is still only an
+    instruction: a bare filename resolves against the repo root because that is
+    the working directory, so a leak is one invented filename away. That is how
+    `pr_review_328.txt` reached a commit on issue-316 and how
+    `artefact_comment.txt` reached `d0471f1`.
+
+    commit-agent-work.sh now unstages new root-level files before the commit is
+    written, which closes the harm without depending on agent compliance.
+    """
+
+    SCRIPT = (Path(__file__).parent.parent / ".github" / "scripts"
+              / "commit-agent-work.sh")
+
+    def _repo(self, tmp_path):
+        """A repo with an `origin` the script can fetch and push, on issue-999."""
+        origin = tmp_path / "origin.git"
+        work = tmp_path / "work"
+        subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+        subprocess.run(["git", "clone", "-q", str(origin), str(work)], check=True)
+
+        def git(*args):
+            subprocess.run(["git", *args], cwd=work, check=True,
+                           capture_output=True, text=True)
+
+        git("config", "user.email", "t@example.invalid")
+        git("config", "user.name", "t")
+        (work / "src").mkdir()
+        (work / "README.md").write_text("readme\n")
+        (work / "src" / "a.py").write_text("code\n")
+        git("checkout", "-q", "-B", "issue-999")
+        git("add", "-A")
+        git("commit", "-qm", "init")
+        git("push", "-q", "origin", "issue-999")
+        return work
+
+    def _run_sweep(self, work):
+        env = {
+            **os.environ,
+            "AGENT_NAME": "03_execute/pr-reviewer",
+            "ISSUE_NUMBER": "999",
+            "BRANCH_SUFFIX": "",
+        }
+        env.pop("GITHUB_TOKEN", None)
+        env.pop("GH_TOKEN", None)
+        return subprocess.run(
+            ["bash", str(self.SCRIPT)], cwd=work, env=env,
+            capture_output=True, text=True, timeout=60,
+        )
+
+    def _committed_files(self, work):
+        out = subprocess.run(
+            ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+            cwd=work, capture_output=True, text=True, check=True,
+        )
+        return sorted(f for f in out.stdout.split("\n") if f.strip())
+
+    def test_a_leaked_root_file_never_reaches_the_commit(self, tmp_path):
+        work = self._repo(tmp_path)
+        # The exact filenames pr-reviewer invented on issue #348.
+        (work / "review_body.json").write_text('{"body": "leak"}')
+        (work / "announce_close.json").write_text('{"body": "leak"}')
+
+        result = self._run_sweep(work)
+        assert result.returncode == 0, result.stderr
+
+        committed = self._committed_files(work)
+        assert "review_body.json" not in committed
+        assert "announce_close.json" not in committed
+        assert "created new file(s) at the repo root" in result.stderr
+
+    def test_the_agent_s_real_work_still_lands(self, tmp_path):
+        """The guard must not cost the agent its actual output."""
+        work = self._repo(tmp_path)
+        (work / "README.md").write_text("readme\nedited by the agent\n")
+        (work / "src" / "b.py").write_text("new module\n")
+        (work / "review_body.json").write_text('{"body": "leak"}')
+
+        result = self._run_sweep(work)
+        assert result.returncode == 0, result.stderr
+
+        committed = self._committed_files(work)
+        assert "README.md" in committed, "a modified tracked root file is legitimate"
+        assert "src/b.py" in committed, "a new nested file is legitimate"
+        assert "review_body.json" not in committed
+
+    def test_the_leaked_file_is_left_on_disk_not_destroyed(self, tmp_path):
+        """Unstage, do not delete -- nothing an agent produced is thrown away,
+        and the violation stays visible to whoever looks."""
+        work = self._repo(tmp_path)
+        (work / "src" / "b.py").write_text("new module\n")
+        (work / "review_body.json").write_text('{"body": "leak"}')
+
+        self._run_sweep(work)
+        assert (work / "review_body.json").exists()
+        assert (work / "review_body.json").read_text() == '{"body": "leak"}'
+
+    def test_a_run_that_leaks_only_root_files_commits_nothing(self, tmp_path):
+        """pr-reviewer writes no source. A run whose entire output is leaks must
+        produce no commit at all, rather than an empty or leak-only one."""
+        work = self._repo(tmp_path)
+        before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work,
+                                capture_output=True, text=True, check=True).stdout
+        (work / "review_body.json").write_text('{"body": "leak"}')
+
+        result = self._run_sweep(work)
+        assert result.returncode == 0, result.stderr
+
+        after = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work,
+                               capture_output=True, text=True, check=True).stdout
+        assert before == after, "a leak-only run must not create a commit"
