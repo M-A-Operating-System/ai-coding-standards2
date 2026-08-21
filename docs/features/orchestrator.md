@@ -114,6 +114,31 @@
 **When** step 7 runs `rm -f .claude/.run-agent-scope.json`
 **Then** the command is permitted by the scope hook and the file is removed
 
+## Scenario: The scope file can be removed by an agent with no `rm` grant
+
+**Given** `/run-agent` has written `.claude/.run-agent-scope.json` for `pr-reviewer`, whose allowlist does not grant `Bash(rm *)`
+**When** step 7 runs `rm -f .claude/.run-agent-scope.json`
+**Then** the command is permitted -- ending enforcement is the hook's own escape hatch, not an agent capability
+**And** `rm -rf / .claude/.run-agent-scope.json` is still denied
+
+## Scenario: A PR number resolves as a PR
+
+**Given** `--print-prompt` is given a number that refers to a pull request and no explicit `--kind`
+**When** the invocation is resolved
+**Then** the probed kind is `pr`, and the printed env carries `WORK_ITEM_KIND=pr` and `PR_NUMBER`
+
+## Scenario: An explicit --kind is an override, not a hint
+
+**Given** `--print-prompt --kind issue` is given a number that refers to a pull request
+**When** the invocation is resolved
+**Then** the printed env carries `WORK_ITEM_KIND=issue` -- probing does not overrule the operator
+
+## Scenario: Resolving an agent against an object kind it does not handle is reported
+
+**Given** `03_execute/coder` lists `object: ["issue"]` in `pipeline.json`
+**When** `--print-prompt` resolves it against a PR
+**Then** the orchestrator logs a WARNING naming the agent and the kind, and resolves it anyway
+
 ## Scenario: The drift is caught by a test, not by inspection
 
 **Given** the two resolution paths
