@@ -1,19 +1,26 @@
 name: Tests
+# The trigger must cover everything the jobs below check, or a gate that reads
+# as complete silently is not. `ruff check .` lints every Python file and the
+# shell-test step exercises .github/scripts, so **/*.py and **/*.sh are listed
+# rather than the handful of paths that happened to matter when this workflow
+# was written. Naming files individually left get_started.py, pipeline/validate.py,
+# scripts/generate_slash_commands.py and .github/scripts/migrate_labels.py
+# untriggered -- including get_started.py, whose own tests live in tests/ and so
+# never ran on a change to it.
 on:
   push:
     branches: [main]
     paths:
-      - 'pipeline/pipeline_orchestrator.py'
-      - 'pipeline/generators/generate_phase_mermaid.py'
+      - '**/*.py'
+      - '**/*.sh'
       - 'tests/**'
+      - 'ruff.toml'
   pull_request:
     paths:
-      - 'pipeline/pipeline_orchestrator.py'
-      - 'pipeline/validate_standards.py'
-      - 'pipeline/validate_taxonomy.py'
+      - '**/*.py'
+      - '**/*.sh'
       - 'standards/**'
       - 'taxonomy/**'
-      - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
       - 'ruff.toml'
 permissions:
