@@ -1,13 +1,14 @@
 {
-  "schema_version": "0.2.0",
-  "description": "Boundary between external static-analysis ontologies and this taxonomy.",
+  "schema_version": "0.4.0",
+  "definition": "Primitive source semantics remain owned by deterministic static-analysis systems.",
   "external_semantic_sources": {
     "codeql": {
       "owns": [
+        "module",
+        "class",
         "function",
         "method",
-        "class",
-        "module",
+        "parameter",
         "call",
         "import",
         "control-flow",
@@ -33,11 +34,11 @@
     }
   },
   "taxonomy_owns": [
-    "architecture meaning",
-    "coding-role meaning",
-    "design-pattern meaning",
-    "engineering-concept meaning",
-    "implementation mappings",
-    "runtime mappings"
+    "architecture-role",
+    "coding-role",
+    "design-pattern",
+    "engineering-concept",
+    "technology-implementation",
+    "runtime-realization"
   ]
 }

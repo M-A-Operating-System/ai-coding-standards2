@@ -15,6 +15,7 @@ Provide a stable JSON-native vocabulary shared across CALM intended architecture
 - `concepts/concepts.json` — technology-neutral engineering concepts
 - `implementations/implementations.json` — concrete technologies mapped to canonical classes
 - `runtimes/runtimes.json` — cloud/on-prem realizations
+- `facets/facets.json` — orthogonal dimensions and their controlled values
 - `mappings/` — CALM, cross-domain, and static-analysis-boundary mappings
 - `rules/` — starter deterministic code-classification rules
 - `schemas/` — initial JSON Schemas
@@ -30,6 +31,8 @@ Examples:
 - `patterns/persistence/data-access/repository`
 - `code/api/handler/request-handler`
 - `concepts/reliability/idempotency/request-idempotency`
+
+The domain is the first part of the path but is not a level, and not a node either: it partitions the vocabulary, nothing specialises into a family, and nothing cites a domain. It is a field with four permitted values, fixed by `schemas/domain-taxonomy.schema.json`, and a family's `parent` is that value.
 
 Concrete technologies are implementations rather than a fourth semantic level. Provider/runtime realization is separate.
 

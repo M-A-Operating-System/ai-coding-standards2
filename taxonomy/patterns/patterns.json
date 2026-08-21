@@ -1,15 +1,14 @@
 {
   "$schema": "../schemas/domain-taxonomy.schema.json",
-  "schema_version": "0.2.0",
+  "schema_version": "0.4.0",
   "domain": "patterns",
-  "description": "Canonical taxonomy for the patterns domain.",
+  "purpose": "Reusable solution approaches for recurring engineering problems.",
   "inheritance": {
     "levels": [
       "family",
       "class",
       "subclass"
     ],
-    "canonical_id_format": "patterns/<family>/<class>/<subclass>",
     "resolution": "parent-first",
     "operations": [
       "add",
@@ -19,25 +18,50 @@
   },
   "families": {
     "api": {
-      "id": "patterns/api",
+      "id": "FAM000015",
+      "path": "patterns/api",
       "name": "Api",
+      "description": "Reusable approaches governing request handling and externally consumed APIs.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for api.",
+      "facets": {
+        "concern": [
+          "api"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -45,27 +69,33 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "request-processing": {
-          "id": "patterns/api/request-processing",
+          "id": "CLS000085",
+          "path": "patterns/api/request-processing",
           "name": "Request Processing",
+          "description": "Request Processing groups patterns elements that provide request processing responsibilities within the Api family.",
           "level": "class",
-          "parent": "patterns/api",
-          "abstract": true,
-          "description": "Canonical patterns class for request processing.",
+          "parent": "FAM000015",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -73,113 +103,155 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "idempotent-handler": {
-              "id": "patterns/api/request-processing/idempotent-handler",
+              "id": "SUB000142",
+              "path": "patterns/api/request-processing/idempotent-handler",
               "name": "Idempotent Handler",
+              "description": "Ensures repeated equivalent requests do not create duplicate externally visible effects.",
               "level": "subclass",
-              "parent": "patterns/api/request-processing",
-              "abstract": false,
-              "description": "Canonical patterns subclass for idempotent handler.",
+              "parent": "CLS000085",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
-                "add": {},
+                "add": {
+                  "idempotency_key_source": {
+                    "type": "string",
+                    "description": "Where the idempotency key is obtained."
+                  },
+                  "retention_window": {
+                    "type": "string",
+                    "description": "How long idempotency records are retained."
+                  }
+                },
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [
+                  "duplicate-request-suppression"
+                ],
                 "drop": []
               },
               "relationships": {
-                "add": {},
-                "override": {},
+                "add": {
+                  "supports_concept": {
+                    "target": "concepts/reliability/idempotency/request-idempotency",
+                    "cardinality": "one"
+                  }
+                },
                 "drop": []
               },
               "constraints": {
-                "add": {},
+                "add": {
+                  "stable_key": "The same logical request must resolve to the same key within the retention window."
+                },
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "validation-handler": {
-              "id": "patterns/api/request-processing/validation-handler",
+              "id": "SUB000143",
+              "path": "patterns/api/request-processing/validation-handler",
               "name": "Validation Handler",
+              "description": "Validation Handler is a pattern specialization of Request Processing within the Api family.",
               "level": "subclass",
-              "parent": "patterns/api/request-processing",
-              "abstract": false,
-              "description": "Canonical patterns subclass for validation handler.",
+              "parent": "CLS000085",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "request-context": {
-              "id": "patterns/api/request-processing/request-context",
+              "id": "SUB000144",
+              "path": "patterns/api/request-processing/request-context",
               "name": "Request Context",
+              "description": "Request Context is a pattern specialization of Request Processing within the Api family.",
               "level": "subclass",
-              "parent": "patterns/api/request-processing",
-              "abstract": false,
-              "description": "Canonical patterns subclass for request context.",
+              "parent": "CLS000085",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "error-handling": {
-          "id": "patterns/api/error-handling",
+          "id": "CLS000086",
+          "path": "patterns/api/error-handling",
           "name": "Error Handling",
+          "description": "Error Handling groups patterns elements that provide error handling responsibilities within the Api family.",
           "level": "class",
-          "parent": "patterns/api",
-          "abstract": true,
-          "description": "Canonical patterns class for error handling.",
+          "parent": "FAM000015",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -187,85 +259,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "problem-details": {
-              "id": "patterns/api/error-handling/problem-details",
+              "id": "SUB000145",
+              "path": "patterns/api/error-handling/problem-details",
               "name": "Problem Details",
+              "description": "Problem Details is a pattern specialization of Error Handling within the Api family.",
               "level": "subclass",
-              "parent": "patterns/api/error-handling",
-              "abstract": false,
-              "description": "Canonical patterns subclass for problem details.",
+              "parent": "CLS000086",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "exception-mapping": {
-              "id": "patterns/api/error-handling/exception-mapping",
+              "id": "SUB000146",
+              "path": "patterns/api/error-handling/exception-mapping",
               "name": "Exception Mapping",
+              "description": "Exception Mapping is a pattern specialization of Error Handling within the Api family.",
               "level": "subclass",
-              "parent": "patterns/api/error-handling",
-              "abstract": false,
-              "description": "Canonical patterns subclass for exception mapping.",
+              "parent": "CLS000086",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "versioning": {
-          "id": "patterns/api/versioning",
+          "id": "CLS000087",
+          "path": "patterns/api/versioning",
           "name": "Versioning",
+          "description": "Versioning groups patterns elements that provide versioning responsibilities within the Api family.",
           "level": "class",
-          "parent": "patterns/api",
-          "abstract": true,
-          "description": "Canonical patterns class for versioning.",
+          "parent": "FAM000015",
+          "facets": {
+            "concern": [
+              "api"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -273,87 +363,127 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "url-versioning": {
-              "id": "patterns/api/versioning/url-versioning",
+              "id": "SUB000147",
+              "path": "patterns/api/versioning/url-versioning",
               "name": "Url Versioning",
+              "description": "Url Versioning is a pattern specialization of Versioning within the Api family.",
               "level": "subclass",
-              "parent": "patterns/api/versioning",
-              "abstract": false,
-              "description": "Canonical patterns subclass for url versioning.",
+              "parent": "CLS000087",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "header-versioning": {
-              "id": "patterns/api/versioning/header-versioning",
+              "id": "SUB000148",
+              "path": "patterns/api/versioning/header-versioning",
               "name": "Header Versioning",
+              "description": "Header Versioning is a pattern specialization of Versioning within the Api family.",
               "level": "subclass",
-              "parent": "patterns/api/versioning",
-              "abstract": false,
-              "description": "Canonical patterns subclass for header versioning.",
+              "parent": "CLS000087",
+              "facets": {
+                "concern": [
+                  "api"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "persistence": {
-      "id": "patterns/persistence",
+      "id": "FAM000016",
+      "path": "patterns/persistence",
       "name": "Persistence",
+      "description": "Reusable approaches for durable data access, transaction management, and caching.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for persistence.",
+      "facets": {
+        "concern": [
+          "persistence"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -361,27 +491,33 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "data-access": {
-          "id": "patterns/persistence/data-access",
+          "id": "CLS000088",
+          "path": "patterns/persistence/data-access",
           "name": "Data Access",
+          "description": "Data Access groups patterns elements that provide data access responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "patterns/persistence",
-          "abstract": true,
-          "description": "Canonical patterns class for data access.",
+          "parent": "FAM000016",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -389,113 +525,145 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "repository": {
-              "id": "patterns/persistence/data-access/repository",
+              "id": "SUB000149",
+              "path": "patterns/persistence/data-access/repository",
               "name": "Repository",
+              "description": "Encapsulates persistence behind a collection-like abstraction aligned to domain or application needs.",
               "level": "subclass",
-              "parent": "patterns/persistence/data-access",
-              "abstract": false,
-              "description": "Canonical patterns subclass for repository.",
+              "parent": "CLS000088",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [
+                  "data-access-abstraction",
+                  "persistence-decoupling"
+                ],
                 "drop": []
               },
               "relationships": {
-                "add": {},
-                "override": {},
+                "add": {
+                  "typically_implemented_as": {
+                    "target": "code/persistence/repository/repository-implementation",
+                    "cardinality": "one-or-more"
+                  }
+                },
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "unit-of-work": {
-              "id": "patterns/persistence/data-access/unit-of-work",
+              "id": "SUB000150",
+              "path": "patterns/persistence/data-access/unit-of-work",
               "name": "Unit Of Work",
+              "description": "Unit Of Work is a pattern specialization of Data Access within the Persistence family.",
               "level": "subclass",
-              "parent": "patterns/persistence/data-access",
-              "abstract": false,
-              "description": "Canonical patterns subclass for unit of work.",
+              "parent": "CLS000088",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "data-mapper": {
-              "id": "patterns/persistence/data-access/data-mapper",
+              "id": "SUB000151",
+              "path": "patterns/persistence/data-access/data-mapper",
               "name": "Data Mapper",
+              "description": "Data Mapper is a pattern specialization of Data Access within the Persistence family.",
               "level": "subclass",
-              "parent": "patterns/persistence/data-access",
-              "abstract": false,
-              "description": "Canonical patterns subclass for data mapper.",
+              "parent": "CLS000088",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "transaction": {
-          "id": "patterns/persistence/transaction",
+          "id": "CLS000089",
+          "path": "patterns/persistence/transaction",
           "name": "Transaction",
+          "description": "Transaction groups patterns elements that provide transaction responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "patterns/persistence",
-          "abstract": true,
-          "description": "Canonical patterns class for transaction.",
+          "parent": "FAM000016",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -503,85 +671,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "local-transaction": {
-              "id": "patterns/persistence/transaction/local-transaction",
+              "id": "SUB000152",
+              "path": "patterns/persistence/transaction/local-transaction",
               "name": "Local Transaction",
+              "description": "Local Transaction is a pattern specialization of Transaction within the Persistence family.",
               "level": "subclass",
-              "parent": "patterns/persistence/transaction",
-              "abstract": false,
-              "description": "Canonical patterns subclass for local transaction.",
+              "parent": "CLS000089",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "transactional-outbox": {
-              "id": "patterns/persistence/transaction/transactional-outbox",
+              "id": "SUB000153",
+              "path": "patterns/persistence/transaction/transactional-outbox",
               "name": "Transactional Outbox",
+              "description": "Persists state and outbound event records atomically, then publishes events asynchronously.",
               "level": "subclass",
-              "parent": "patterns/persistence/transaction",
-              "abstract": false,
-              "description": "Canonical patterns subclass for transactional outbox.",
+              "parent": "CLS000089",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "caching": {
-          "id": "patterns/persistence/caching",
+          "id": "CLS000090",
+          "path": "patterns/persistence/caching",
           "name": "Caching",
+          "description": "Caching groups patterns elements that provide caching responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "patterns/persistence",
-          "abstract": true,
-          "description": "Canonical patterns class for caching.",
+          "parent": "FAM000016",
+          "facets": {
+            "concern": [
+              "persistence"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -589,87 +775,127 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "cache-aside": {
-              "id": "patterns/persistence/caching/cache-aside",
+              "id": "SUB000154",
+              "path": "patterns/persistence/caching/cache-aside",
               "name": "Cache Aside",
+              "description": "Cache Aside is a pattern specialization of Caching within the Persistence family.",
               "level": "subclass",
-              "parent": "patterns/persistence/caching",
-              "abstract": false,
-              "description": "Canonical patterns subclass for cache aside.",
+              "parent": "CLS000090",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "write-through": {
-              "id": "patterns/persistence/caching/write-through",
+              "id": "SUB000155",
+              "path": "patterns/persistence/caching/write-through",
               "name": "Write Through",
+              "description": "Write Through is a pattern specialization of Caching within the Persistence family.",
               "level": "subclass",
-              "parent": "patterns/persistence/caching",
-              "abstract": false,
-              "description": "Canonical patterns subclass for write through.",
+              "parent": "CLS000090",
+              "facets": {
+                "concern": [
+                  "persistence"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "messaging": {
-      "id": "patterns/messaging",
+      "id": "FAM000017",
+      "path": "patterns/messaging",
       "name": "Messaging",
+      "description": "Messaging is a canonical patterns family used to classify messaging concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for messaging.",
+      "facets": {
+        "concern": [
+          "messaging"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -677,27 +903,33 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "delivery": {
-          "id": "patterns/messaging/delivery",
+          "id": "CLS000091",
+          "path": "patterns/messaging/delivery",
           "name": "Delivery",
+          "description": "Delivery groups patterns elements that provide delivery responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "patterns/messaging",
-          "abstract": true,
-          "description": "Canonical patterns class for delivery.",
+          "parent": "FAM000017",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -705,113 +937,137 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "at-least-once": {
-              "id": "patterns/messaging/delivery/at-least-once",
+              "id": "SUB000156",
+              "path": "patterns/messaging/delivery/at-least-once",
               "name": "At Least Once",
+              "description": "At Least Once is a pattern specialization of Delivery within the Messaging family.",
               "level": "subclass",
-              "parent": "patterns/messaging/delivery",
-              "abstract": false,
-              "description": "Canonical patterns subclass for at least once.",
+              "parent": "CLS000091",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "deduplication": {
-              "id": "patterns/messaging/delivery/deduplication",
+              "id": "SUB000157",
+              "path": "patterns/messaging/delivery/deduplication",
               "name": "Deduplication",
+              "description": "Deduplication is a pattern specialization of Delivery within the Messaging family.",
               "level": "subclass",
-              "parent": "patterns/messaging/delivery",
-              "abstract": false,
-              "description": "Canonical patterns subclass for deduplication.",
+              "parent": "CLS000091",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "dead-letter": {
-              "id": "patterns/messaging/delivery/dead-letter",
+              "id": "SUB000158",
+              "path": "patterns/messaging/delivery/dead-letter",
               "name": "Dead Letter",
+              "description": "Dead Letter is a pattern specialization of Delivery within the Messaging family.",
               "level": "subclass",
-              "parent": "patterns/messaging/delivery",
-              "abstract": false,
-              "description": "Canonical patterns subclass for dead letter.",
+              "parent": "CLS000091",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "publishing": {
-          "id": "patterns/messaging/publishing",
+          "id": "CLS000092",
+          "path": "patterns/messaging/publishing",
           "name": "Publishing",
+          "description": "Publishing groups patterns elements that provide publishing responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "patterns/messaging",
-          "abstract": true,
-          "description": "Canonical patterns class for publishing.",
+          "parent": "FAM000017",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -819,85 +1075,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "transactional-outbox": {
-              "id": "patterns/messaging/publishing/transactional-outbox",
+              "id": "SUB000159",
+              "path": "patterns/messaging/publishing/transactional-outbox",
               "name": "Transactional Outbox",
+              "description": "Transactional Outbox is a pattern specialization of Publishing within the Messaging family.",
               "level": "subclass",
-              "parent": "patterns/messaging/publishing",
-              "abstract": false,
-              "description": "Canonical patterns subclass for transactional outbox.",
+              "parent": "CLS000092",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "event-publisher": {
-              "id": "patterns/messaging/publishing/event-publisher",
+              "id": "SUB000160",
+              "path": "patterns/messaging/publishing/event-publisher",
               "name": "Event Publisher",
+              "description": "Event Publisher is a pattern specialization of Publishing within the Messaging family.",
               "level": "subclass",
-              "parent": "patterns/messaging/publishing",
-              "abstract": false,
-              "description": "Canonical patterns subclass for event publisher.",
+              "parent": "CLS000092",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "consumption": {
-          "id": "patterns/messaging/consumption",
+          "id": "CLS000093",
+          "path": "patterns/messaging/consumption",
           "name": "Consumption",
+          "description": "Consumption groups patterns elements that provide consumption responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "patterns/messaging",
-          "abstract": true,
-          "description": "Canonical patterns class for consumption.",
+          "parent": "FAM000017",
+          "facets": {
+            "concern": [
+              "messaging"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -905,87 +1179,127 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "competing-consumer": {
-              "id": "patterns/messaging/consumption/competing-consumer",
+              "id": "SUB000161",
+              "path": "patterns/messaging/consumption/competing-consumer",
               "name": "Competing Consumer",
+              "description": "Competing Consumer is a pattern specialization of Consumption within the Messaging family.",
               "level": "subclass",
-              "parent": "patterns/messaging/consumption",
-              "abstract": false,
-              "description": "Canonical patterns subclass for competing consumer.",
+              "parent": "CLS000093",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "idempotent-consumer": {
-              "id": "patterns/messaging/consumption/idempotent-consumer",
+              "id": "SUB000162",
+              "path": "patterns/messaging/consumption/idempotent-consumer",
               "name": "Idempotent Consumer",
+              "description": "Ensures repeated delivery of the same message does not repeat business side effects.",
               "level": "subclass",
-              "parent": "patterns/messaging/consumption",
-              "abstract": false,
-              "description": "Canonical patterns subclass for idempotent consumer.",
+              "parent": "CLS000093",
+              "facets": {
+                "concern": [
+                  "messaging"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "resilience": {
-      "id": "patterns/resilience",
+      "id": "FAM000018",
+      "path": "patterns/resilience",
       "name": "Resilience",
+      "description": "Reusable approaches that contain failures and improve continuity.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for resilience.",
+      "facets": {
+        "concern": [
+          "resilience"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -993,27 +1307,39 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "retry": {
-          "id": "patterns/resilience/retry",
+          "id": "CLS000094",
+          "path": "patterns/resilience/retry",
           "name": "Retry",
+          "description": "Retry groups patterns elements that provide retry responsibilities within the Resilience family.",
           "level": "class",
-          "parent": "patterns/resilience",
-          "abstract": true,
-          "description": "Canonical patterns class for retry.",
+          "parent": "FAM000018",
+          "facets": {
+            "concern": [
+              "resilience"
+            ]
+          },
           "attributes": {
-            "add": {},
+            "add": {
+              "max_attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum attempts including the initial call."
+              }
+            },
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1021,85 +1347,106 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "exponential-backoff": {
-              "id": "patterns/resilience/retry/exponential-backoff",
+              "id": "SUB000163",
+              "path": "patterns/resilience/retry/exponential-backoff",
               "name": "Exponential Backoff",
+              "description": "Retries transient failures using delays that increase between attempts.",
               "level": "subclass",
-              "parent": "patterns/resilience/retry",
-              "abstract": false,
-              "description": "Canonical patterns subclass for exponential backoff.",
+              "parent": "CLS000094",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
-                "add": {},
+                "add": {
+                  "bounded": "Retry behavior must be bounded.",
+                  "safe_operation": "Repeated invocation must be safe or idempotent."
+                },
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "bounded-retry": {
-              "id": "patterns/resilience/retry/bounded-retry",
+              "id": "SUB000164",
+              "path": "patterns/resilience/retry/bounded-retry",
               "name": "Bounded Retry",
+              "description": "Bounded Retry is a pattern specialization of Retry within the Resilience family.",
               "level": "subclass",
-              "parent": "patterns/resilience/retry",
-              "abstract": false,
-              "description": "Canonical patterns subclass for bounded retry.",
+              "parent": "CLS000094",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "isolation": {
-          "id": "patterns/resilience/isolation",
+          "id": "CLS000095",
+          "path": "patterns/resilience/isolation",
           "name": "Isolation",
+          "description": "Isolation groups patterns elements that provide isolation responsibilities within the Resilience family.",
           "level": "class",
-          "parent": "patterns/resilience",
-          "abstract": true,
-          "description": "Canonical patterns class for isolation.",
+          "parent": "FAM000018",
+          "facets": {
+            "concern": [
+              "resilience"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1107,85 +1454,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "circuit-breaker": {
-              "id": "patterns/resilience/isolation/circuit-breaker",
+              "id": "SUB000165",
+              "path": "patterns/resilience/isolation/circuit-breaker",
               "name": "Circuit Breaker",
+              "description": "Temporarily blocks calls to an unhealthy dependency after failures exceed a threshold.",
               "level": "subclass",
-              "parent": "patterns/resilience/isolation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for circuit breaker.",
+              "parent": "CLS000095",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "bulkhead": {
-              "id": "patterns/resilience/isolation/bulkhead",
+              "id": "SUB000166",
+              "path": "patterns/resilience/isolation/bulkhead",
               "name": "Bulkhead",
+              "description": "Bulkhead is a pattern specialization of Isolation within the Resilience family.",
               "level": "subclass",
-              "parent": "patterns/resilience/isolation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for bulkhead.",
+              "parent": "CLS000095",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "timeout": {
-          "id": "patterns/resilience/timeout",
+          "id": "CLS000096",
+          "path": "patterns/resilience/timeout",
           "name": "Timeout",
+          "description": "Timeout groups patterns elements that provide timeout responsibilities within the Resilience family.",
           "level": "class",
-          "parent": "patterns/resilience",
-          "abstract": true,
-          "description": "Canonical patterns class for timeout.",
+          "parent": "FAM000018",
+          "facets": {
+            "concern": [
+              "resilience"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1193,59 +1558,93 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "bounded-timeout": {
-              "id": "patterns/resilience/timeout/bounded-timeout",
+              "id": "SUB000167",
+              "path": "patterns/resilience/timeout/bounded-timeout",
               "name": "Bounded Timeout",
+              "description": "Bounded Timeout is a pattern specialization of Timeout within the Resilience family.",
               "level": "subclass",
-              "parent": "patterns/resilience/timeout",
-              "abstract": false,
-              "description": "Canonical patterns subclass for bounded timeout.",
+              "parent": "CLS000096",
+              "facets": {
+                "concern": [
+                  "resilience"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "security": {
-      "id": "patterns/security",
+      "id": "FAM000019",
+      "path": "patterns/security",
       "name": "Security",
+      "description": "Security is a canonical patterns family used to classify security concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for security.",
+      "facets": {
+        "concern": [
+          "security"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1253,27 +1652,33 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "authentication": {
-          "id": "patterns/security/authentication",
+          "id": "CLS000097",
+          "path": "patterns/security/authentication",
           "name": "Authentication",
+          "description": "Authentication groups patterns elements that provide authentication responsibilities within the Security family.",
           "level": "class",
-          "parent": "patterns/security",
-          "abstract": true,
-          "description": "Canonical patterns class for authentication.",
+          "parent": "FAM000019",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1281,85 +1686,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "bearer-token": {
-              "id": "patterns/security/authentication/bearer-token",
+              "id": "SUB000168",
+              "path": "patterns/security/authentication/bearer-token",
               "name": "Bearer Token",
+              "description": "Bearer Token is a pattern specialization of Authentication within the Security family.",
               "level": "subclass",
-              "parent": "patterns/security/authentication",
-              "abstract": false,
-              "description": "Canonical patterns subclass for bearer token.",
+              "parent": "CLS000097",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "mutual-tls": {
-              "id": "patterns/security/authentication/mutual-tls",
+              "id": "SUB000169",
+              "path": "patterns/security/authentication/mutual-tls",
               "name": "Mutual Tls",
+              "description": "Mutual Tls is a pattern specialization of Authentication within the Security family.",
               "level": "subclass",
-              "parent": "patterns/security/authentication",
-              "abstract": false,
-              "description": "Canonical patterns subclass for mutual tls.",
+              "parent": "CLS000097",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "authorization": {
-          "id": "patterns/security/authorization",
+          "id": "CLS000098",
+          "path": "patterns/security/authorization",
           "name": "Authorization",
+          "description": "Authorization groups patterns elements that provide authorization responsibilities within the Security family.",
           "level": "class",
-          "parent": "patterns/security",
-          "abstract": true,
-          "description": "Canonical patterns class for authorization.",
+          "parent": "FAM000019",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1367,85 +1790,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "role-based-access-control": {
-              "id": "patterns/security/authorization/role-based-access-control",
+              "id": "SUB000170",
+              "path": "patterns/security/authorization/role-based-access-control",
               "name": "Role Based Access Control",
+              "description": "Role Based Access Control is a pattern specialization of Authorization within the Security family.",
               "level": "subclass",
-              "parent": "patterns/security/authorization",
-              "abstract": false,
-              "description": "Canonical patterns subclass for role based access control.",
+              "parent": "CLS000098",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "policy-based-access-control": {
-              "id": "patterns/security/authorization/policy-based-access-control",
+              "id": "SUB000171",
+              "path": "patterns/security/authorization/policy-based-access-control",
               "name": "Policy Based Access Control",
+              "description": "Policy Based Access Control is a pattern specialization of Authorization within the Security family.",
               "level": "subclass",
-              "parent": "patterns/security/authorization",
-              "abstract": false,
-              "description": "Canonical patterns subclass for policy based access control.",
+              "parent": "CLS000098",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "secrets": {
-          "id": "patterns/security/secrets",
+          "id": "CLS000099",
+          "path": "patterns/security/secrets",
           "name": "Secrets",
+          "description": "Secrets groups patterns elements that provide secrets responsibilities within the Security family.",
           "level": "class",
-          "parent": "patterns/security",
-          "abstract": true,
-          "description": "Canonical patterns class for secrets.",
+          "parent": "FAM000019",
+          "facets": {
+            "concern": [
+              "security"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1453,59 +1894,93 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "external-secret-store": {
-              "id": "patterns/security/secrets/external-secret-store",
+              "id": "SUB000172",
+              "path": "patterns/security/secrets/external-secret-store",
               "name": "External Secret Store",
+              "description": "External Secret Store is a pattern specialization of Secrets within the Security family.",
               "level": "subclass",
-              "parent": "patterns/security/secrets",
-              "abstract": false,
-              "description": "Canonical patterns subclass for external secret store.",
+              "parent": "CLS000099",
+              "facets": {
+                "concern": [
+                  "security"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "integration": {
-      "id": "patterns/integration",
+      "id": "FAM000020",
+      "path": "patterns/integration",
       "name": "Integration",
+      "description": "Integration is a canonical patterns family used to classify integration concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for integration.",
+      "facets": {
+        "concern": [
+          "integration"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1513,27 +1988,33 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "coordination": {
-          "id": "patterns/integration/coordination",
+          "id": "CLS000100",
+          "path": "patterns/integration/coordination",
           "name": "Coordination",
+          "description": "Coordination groups patterns elements that provide coordination responsibilities within the Integration family.",
           "level": "class",
-          "parent": "patterns/integration",
-          "abstract": true,
-          "description": "Canonical patterns class for coordination.",
+          "parent": "FAM000020",
+          "facets": {
+            "concern": [
+              "integration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1541,113 +2022,137 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "saga": {
-              "id": "patterns/integration/coordination/saga",
+              "id": "SUB000173",
+              "path": "patterns/integration/coordination/saga",
               "name": "Saga",
+              "description": "Saga is a pattern specialization of Coordination within the Integration family.",
               "level": "subclass",
-              "parent": "patterns/integration/coordination",
-              "abstract": false,
-              "description": "Canonical patterns subclass for saga.",
+              "parent": "CLS000100",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "orchestration": {
-              "id": "patterns/integration/coordination/orchestration",
+              "id": "SUB000174",
+              "path": "patterns/integration/coordination/orchestration",
               "name": "Orchestration",
+              "description": "Orchestration is a pattern specialization of Coordination within the Integration family.",
               "level": "subclass",
-              "parent": "patterns/integration/coordination",
-              "abstract": false,
-              "description": "Canonical patterns subclass for orchestration.",
+              "parent": "CLS000100",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "choreography": {
-              "id": "patterns/integration/coordination/choreography",
+              "id": "SUB000175",
+              "path": "patterns/integration/coordination/choreography",
               "name": "Choreography",
+              "description": "Choreography is a pattern specialization of Coordination within the Integration family.",
               "level": "subclass",
-              "parent": "patterns/integration/coordination",
-              "abstract": false,
-              "description": "Canonical patterns subclass for choreography.",
+              "parent": "CLS000100",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "translation": {
-          "id": "patterns/integration/translation",
+          "id": "CLS000101",
+          "path": "patterns/integration/translation",
           "name": "Translation",
+          "description": "Translation groups patterns elements that provide translation responsibilities within the Integration family.",
           "level": "class",
-          "parent": "patterns/integration",
-          "abstract": true,
-          "description": "Canonical patterns class for translation.",
+          "parent": "FAM000020",
+          "facets": {
+            "concern": [
+              "integration"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1655,87 +2160,127 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "anti-corruption-layer": {
-              "id": "patterns/integration/translation/anti-corruption-layer",
+              "id": "SUB000176",
+              "path": "patterns/integration/translation/anti-corruption-layer",
               "name": "Anti Corruption Layer",
+              "description": "Anti Corruption Layer is a pattern specialization of Translation within the Integration family.",
               "level": "subclass",
-              "parent": "patterns/integration/translation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for anti corruption layer.",
+              "parent": "CLS000101",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "canonical-data-model": {
-              "id": "patterns/integration/translation/canonical-data-model",
+              "id": "SUB000177",
+              "path": "patterns/integration/translation/canonical-data-model",
               "name": "Canonical Data Model",
+              "description": "Canonical Data Model is a pattern specialization of Translation within the Integration family.",
               "level": "subclass",
-              "parent": "patterns/integration/translation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for canonical data model.",
+              "parent": "CLS000101",
+              "facets": {
+                "concern": [
+                  "integration"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "observability": {
-      "id": "patterns/observability",
+      "id": "FAM000021",
+      "path": "patterns/observability",
       "name": "Observability",
+      "description": "Observability is a canonical patterns family used to classify observability concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for observability.",
+      "facets": {
+        "concern": [
+          "observability"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1743,27 +2288,33 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "correlation": {
-          "id": "patterns/observability/correlation",
+          "id": "CLS000102",
+          "path": "patterns/observability/correlation",
           "name": "Correlation",
+          "description": "Correlation groups patterns elements that provide correlation responsibilities within the Observability family.",
           "level": "class",
-          "parent": "patterns/observability",
-          "abstract": true,
-          "description": "Canonical patterns class for correlation.",
+          "parent": "FAM000021",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1771,85 +2322,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "correlation-id-propagation": {
-              "id": "patterns/observability/correlation/correlation-id-propagation",
+              "id": "SUB000178",
+              "path": "patterns/observability/correlation/correlation-id-propagation",
               "name": "Correlation Id Propagation",
+              "description": "Correlation Id Propagation is a pattern specialization of Correlation within the Observability family.",
               "level": "subclass",
-              "parent": "patterns/observability/correlation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for correlation id propagation.",
+              "parent": "CLS000102",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "trace-context-propagation": {
-              "id": "patterns/observability/correlation/trace-context-propagation",
+              "id": "SUB000179",
+              "path": "patterns/observability/correlation/trace-context-propagation",
               "name": "Trace Context Propagation",
+              "description": "Trace Context Propagation is a pattern specialization of Correlation within the Observability family.",
               "level": "subclass",
-              "parent": "patterns/observability/correlation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for trace context propagation.",
+              "parent": "CLS000102",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "instrumentation": {
-          "id": "patterns/observability/instrumentation",
+          "id": "CLS000103",
+          "path": "patterns/observability/instrumentation",
           "name": "Instrumentation",
+          "description": "Instrumentation groups patterns elements that provide instrumentation responsibilities within the Observability family.",
           "level": "class",
-          "parent": "patterns/observability",
-          "abstract": true,
-          "description": "Canonical patterns class for instrumentation.",
+          "parent": "FAM000021",
+          "facets": {
+            "concern": [
+              "observability"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1857,87 +2426,127 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "structured-logging": {
-              "id": "patterns/observability/instrumentation/structured-logging",
+              "id": "SUB000180",
+              "path": "patterns/observability/instrumentation/structured-logging",
               "name": "Structured Logging",
+              "description": "Structured Logging is a pattern specialization of Instrumentation within the Observability family.",
               "level": "subclass",
-              "parent": "patterns/observability/instrumentation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for structured logging.",
+              "parent": "CLS000103",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "distributed-tracing": {
-              "id": "patterns/observability/instrumentation/distributed-tracing",
+              "id": "SUB000181",
+              "path": "patterns/observability/instrumentation/distributed-tracing",
               "name": "Distributed Tracing",
+              "description": "Distributed Tracing is a pattern specialization of Instrumentation within the Observability family.",
               "level": "subclass",
-              "parent": "patterns/observability/instrumentation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for distributed tracing.",
+              "parent": "CLS000103",
+              "facets": {
+                "concern": [
+                  "observability"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }
       }
     },
     "testing": {
-      "id": "patterns/testing",
+      "id": "FAM000022",
+      "path": "patterns/testing",
       "name": "Testing",
+      "description": "Testing is a canonical patterns family used to classify testing concerns.",
       "level": "family",
       "parent": "patterns",
-      "abstract": true,
-      "description": "Canonical patterns family for testing.",
+      "facets": {
+        "concern": [
+          "testing"
+        ]
+      },
       "attributes": {
-        "add": {},
+        "add": {
+          "maturity": {
+            "type": "string",
+            "enum": [
+              "experimental",
+              "recommended",
+              "preferred",
+              "deprecated"
+            ],
+            "description": "Organizational adoption status."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Boundary within which the pattern applies."
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Important costs or limitations."
+          }
+        },
         "override": {},
         "drop": []
       },
       "capabilities": {
-        "add": {},
-        "override": {},
+        "add": [],
         "drop": []
       },
       "relationships": {
         "add": {},
-        "override": {},
         "drop": []
       },
       "constraints": {
@@ -1945,27 +2554,33 @@
         "override": {},
         "drop": []
       },
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0",
       "classes": {
         "structure": {
-          "id": "patterns/testing/structure",
+          "id": "CLS000104",
+          "path": "patterns/testing/structure",
           "name": "Structure",
+          "description": "Structure groups patterns elements that provide structure responsibilities within the Testing family.",
           "level": "class",
-          "parent": "patterns/testing",
-          "abstract": true,
-          "description": "Canonical patterns class for structure.",
+          "parent": "FAM000022",
+          "facets": {
+            "concern": [
+              "testing"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -1973,85 +2588,103 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "test-pyramid": {
-              "id": "patterns/testing/structure/test-pyramid",
+              "id": "SUB000182",
+              "path": "patterns/testing/structure/test-pyramid",
               "name": "Test Pyramid",
+              "description": "Test Pyramid is a pattern specialization of Structure within the Testing family.",
               "level": "subclass",
-              "parent": "patterns/testing/structure",
-              "abstract": false,
-              "description": "Canonical patterns subclass for test pyramid.",
+              "parent": "CLS000104",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "contract-testing": {
-              "id": "patterns/testing/structure/contract-testing",
+              "id": "SUB000183",
+              "path": "patterns/testing/structure/contract-testing",
               "name": "Contract Testing",
+              "description": "Contract Testing is a pattern specialization of Structure within the Testing family.",
               "level": "subclass",
-              "parent": "patterns/testing/structure",
-              "abstract": false,
-              "description": "Canonical patterns subclass for contract testing.",
+              "parent": "CLS000104",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         },
         "isolation": {
-          "id": "patterns/testing/isolation",
+          "id": "CLS000105",
+          "path": "patterns/testing/isolation",
           "name": "Isolation",
+          "description": "Isolation groups patterns elements that provide isolation responsibilities within the Testing family.",
           "level": "class",
-          "parent": "patterns/testing",
-          "abstract": true,
-          "description": "Canonical patterns class for isolation.",
+          "parent": "FAM000022",
+          "facets": {
+            "concern": [
+              "testing"
+            ]
+          },
           "attributes": {
             "add": {},
             "override": {},
             "drop": []
           },
           "capabilities": {
-            "add": {},
-            "override": {},
+            "add": [],
             "drop": []
           },
           "relationships": {
             "add": {},
-            "override": {},
             "drop": []
           },
           "constraints": {
@@ -2059,62 +2692,77 @@
             "override": {},
             "drop": []
           },
+          "stability": "development",
+          "status": "active",
+          "since": "0.2.0",
           "subclasses": {
             "test-double": {
-              "id": "patterns/testing/isolation/test-double",
+              "id": "SUB000184",
+              "path": "patterns/testing/isolation/test-double",
               "name": "Test Double",
+              "description": "Test Double is a pattern specialization of Isolation within the Testing family.",
               "level": "subclass",
-              "parent": "patterns/testing/isolation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for test double.",
+              "parent": "CLS000105",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             },
             "fixture-factory": {
-              "id": "patterns/testing/isolation/fixture-factory",
+              "id": "SUB000185",
+              "path": "patterns/testing/isolation/fixture-factory",
               "name": "Fixture Factory",
+              "description": "Fixture Factory is a pattern specialization of Isolation within the Testing family.",
               "level": "subclass",
-              "parent": "patterns/testing/isolation",
-              "abstract": false,
-              "description": "Canonical patterns subclass for fixture factory.",
+              "parent": "CLS000105",
+              "facets": {
+                "concern": [
+                  "testing"
+                ]
+              },
               "attributes": {
                 "add": {},
                 "override": {},
                 "drop": []
               },
               "capabilities": {
-                "add": {},
-                "override": {},
+                "add": [],
                 "drop": []
               },
               "relationships": {
                 "add": {},
-                "override": {},
                 "drop": []
               },
               "constraints": {
                 "add": {},
                 "override": {},
                 "drop": []
-              }
+              },
+              "stability": "development",
+              "status": "active",
+              "since": "0.2.0"
             }
           }
         }

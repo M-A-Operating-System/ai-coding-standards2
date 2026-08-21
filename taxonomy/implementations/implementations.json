@@ -1,102 +1,194 @@
 {
   "$schema": "../schemas/implementations.schema.json",
-  "schema_version": "0.2.0",
-  "description": "Concrete technologies mapped to canonical semantic classes.",
+  "schema_version": "0.4.0",
+  "definition": "Concrete technologies and frameworks mapped to canonical semantic classes.",
   "implementations": {
     "postgresql": {
       "name": "PostgreSQL",
-      "kind": "database",
+      "vendor": "PostgreSQL Global Development Group",
+      "category": "database",
       "implements": [
-        "architecture/data/database/relational-database"
+        "SUB000020"
+      ],
+      "capabilities": [
+        "sql",
+        "transactions",
+        "relational-integrity",
+        "extensions"
+      ],
+      "aliases": [
+        "postgres"
       ]
     },
     "mysql": {
       "name": "MySQL",
-      "kind": "database",
+      "vendor": "Oracle",
+      "category": "database",
       "implements": [
-        "architecture/data/database/relational-database"
-      ]
+        "SUB000020"
+      ],
+      "capabilities": [
+        "sql",
+        "transactions",
+        "relational-integrity"
+      ],
+      "aliases": []
     },
     "mongodb": {
       "name": "MongoDB",
-      "kind": "database",
+      "vendor": "MongoDB",
+      "category": "database",
       "implements": [
-        "architecture/data/database/document-database"
-      ]
+        "SUB000021"
+      ],
+      "capabilities": [
+        "document-query",
+        "document-indexing",
+        "replication"
+      ],
+      "aliases": []
     },
     "dynamodb": {
       "name": "Amazon DynamoDB",
-      "kind": "database",
+      "vendor": "AWS",
+      "category": "database",
       "implements": [
-        "architecture/data/database/key-value-database"
-      ]
+        "SUB000022"
+      ],
+      "capabilities": [
+        "key-value-access",
+        "managed-scaling",
+        "streams"
+      ],
+      "aliases": []
     },
     "neo4j": {
       "name": "Neo4j",
-      "kind": "database",
+      "vendor": "Neo4j",
+      "category": "database",
       "implements": [
-        "architecture/data/database/graph-database"
-      ]
+        "SUB000024"
+      ],
+      "capabilities": [
+        "graph-traversal",
+        "property-graph"
+      ],
+      "aliases": []
     },
     "redis": {
       "name": "Redis",
-      "kind": "data",
+      "vendor": "Redis",
+      "category": "data",
       "implements": [
-        "architecture/data/cache/distributed-cache",
-        "architecture/data/database/key-value-database"
-      ]
+        "SUB000029",
+        "SUB000022"
+      ],
+      "capabilities": [
+        "in-memory-access",
+        "ttl",
+        "pub-sub"
+      ],
+      "aliases": []
     },
     "kafka": {
       "name": "Apache Kafka",
-      "kind": "messaging",
+      "vendor": "Apache Software Foundation",
+      "category": "messaging",
       "implements": [
-        "architecture/messaging/stream/event-stream"
-      ]
+        "SUB000045"
+      ],
+      "capabilities": [
+        "ordered-partitions",
+        "replay",
+        "consumer-groups"
+      ],
+      "aliases": []
     },
     "rabbitmq": {
       "name": "RabbitMQ",
-      "kind": "messaging",
+      "vendor": "Broadcom",
+      "category": "messaging",
       "implements": [
-        "architecture/messaging/broker/message-broker"
-      ]
+        "SUB000047"
+      ],
+      "capabilities": [
+        "queues",
+        "routing",
+        "acknowledgements"
+      ],
+      "aliases": []
     },
     "fastapi": {
       "name": "FastAPI",
-      "kind": "framework",
+      "vendor": "FastAPI project",
+      "category": "framework",
       "implements": [
-        "architecture/compute/service/api-service"
+        "SUB000006"
       ],
       "related_code": [
-        "code/api/handler/request-handler"
-      ]
+        "SUB000186",
+        "SUB000190",
+        "SUB000191"
+      ],
+      "capabilities": [
+        "http-api",
+        "openapi-generation",
+        "dependency-injection"
+      ],
+      "aliases": []
     },
     "spring-boot": {
       "name": "Spring Boot",
-      "kind": "framework",
+      "vendor": "Broadcom",
+      "category": "framework",
       "implements": [
-        "architecture/compute/service/api-service"
-      ]
+        "SUB000006",
+        "SUB000007"
+      ],
+      "capabilities": [
+        "http-api",
+        "dependency-injection",
+        "configuration"
+      ],
+      "aliases": []
     },
     "aspnet-core": {
       "name": "ASP.NET Core",
-      "kind": "framework",
+      "vendor": "Microsoft",
+      "category": "framework",
       "implements": [
-        "architecture/compute/service/api-service"
+        "SUB000006"
+      ],
+      "capabilities": [
+        "http-api",
+        "dependency-injection",
+        "middleware"
+      ],
+      "aliases": []
+    },
+    "opentelemetry": {
+      "name": "OpenTelemetry",
+      "vendor": "CNCF",
+      "category": "observability",
+      "implements": [
+        "SUB000247",
+        "SUB000220"
+      ],
+      "capabilities": [
+        "traces",
+        "metrics",
+        "logs",
+        "context-propagation"
+      ],
+      "aliases": [
+        "otel"
       ]
     },
     "kubernetes": {
       "name": "Kubernetes",
-      "kind": "platform",
+      "category": "platform",
       "implements": [
-        "architecture/platform/orchestration/container-orchestrator"
-      ]
-    },
-    "opentelemetry": {
-      "name": "OpenTelemetry",
-      "kind": "observability",
-      "implements": [
-        "concepts/observability/telemetry/tracing",
-        "code/observability/tracing/trace-instrumentation"
+        "SUB000125"
       ]
     }
   }

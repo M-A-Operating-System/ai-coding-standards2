@@ -85,7 +85,7 @@ themselves, so traversal logic exists once and behaves identically for
 everyone.
 
 ```text
-resolve(id)                  the record for an identifier
+resolve(ref)                 the node for an identifier or a path
 ancestors(id)                walk up to class and family
 descendants(id)              everything inheriting from it
 implementations_for(id)      technologies realising it
@@ -93,9 +93,24 @@ runtimes_for(id)             provider realisations
 related_patterns(id)         linked patterns
 related_concepts(id)         linked concepts
 effective_definition(id)     parent-first inheritance resolved
-validate_reference(id)       does this identifier exist
+validate_reference(ref)      does this identifier or path resolve
+facets_of(id)                the dimensions this node carries
+select(facet, value)         every node holding that facet value
+view(facet)                  the vocabulary grouped by that facet
 ```
 
-The resolver is deterministic and side-effect free. The same identifier
-returns the same answer for the same taxonomy version, which is what allows
-callers to cache and to reason about their own behaviour.
+`resolve` and `validate_reference` accept either key. A path that has been
+superseded still resolves, through the node's retained former paths, and
+returns a warning alongside the node so a caller can update its reference at
+leisure rather than failing
+([TX-5](02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not)).
+Everything a consumer *stores* is an identifier.
+
+`select` and `view` are the facet half. A view is computed on demand from
+facet values rather than stored, so adding a way to organise the vocabulary
+costs a query and no restructuring
+([03-model.md](03-model.md#facets)).
+
+The resolver is deterministic and side-effect free. The same reference returns
+the same answer for the same taxonomy version, which is what allows callers to
+cache and to reason about their own behaviour.

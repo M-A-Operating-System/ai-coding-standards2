@@ -45,6 +45,37 @@ The intent is not to model engineering exhaustively. It is to establish
 enough shared vocabulary that every other part of the system can resolve
 only the context it needs.
 
+## Goals
+
+The Taxonomy is built to satisfy seven goals. Each is a property of the
+vocabulary itself, testable against the files rather than against opinion.
+
+1. **One meaning per identifier.** A canonical identifier denotes the same
+   thing to every consumer, whether it was reached from an architecture
+   diagram, a discovery scan, or a parsed source file.
+2. **Identifiers behave as contracts.** A reference written into a standard,
+   a decision, or a recorded classification keeps resolving as the vocabulary
+   improves around it
+   ([TX-5](02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not)).
+3. **Classification without inference.** A structure is classified by rule
+   over observable evidence, and the assignment records the rule and evidence
+   that produced it
+   ([TX-4](02-principles.md#tx-4--deterministic-classification-is-the-default)).
+4. **New technology costs a registry entry, not a model change.** Absorbing a
+   product or a cloud service never restructures the semantic model
+   ([TX-1](02-principles.md#tx-1--semantic-meaning-is-separate-from-implementation)).
+5. **More than one organisation of the same nodes.** Concerns, lifecycle
+   stage and layer are queryable dimensions rather than filing decisions, so
+   a second reading of the vocabulary costs no restructuring.
+6. **Governance resolves by classification.** What a standard or decision
+   applies to is answered by inheritance from an identifier, not by searching
+   documents.
+7. **Context is projected, not shipped whole.** A consumer receives the slice
+   bearing on its work rather than the vocabulary or the repository.
+
+Goal 7 is the operating objective the others serve: replace repeated
+rediscovery with classification once and targeted retrieval thereafter.
+
 ## Principles
 
 The rules the model is built on are documented as a numbered, referenced
@@ -53,9 +84,10 @@ ID (`TX-1`, `TX-2`, …) referenced from the other documents here.
 
 In summary: semantic meaning is separate from the technology that implements
 it; intended and observed architecture share one vocabulary; primitive code
-semantics belong to static-analysis systems; and classification is
-deterministic by default, with AI proposing vocabulary rather than assigning
-identifiers.
+semantics belong to static-analysis systems; classification is deterministic
+by default, with AI proposing vocabulary rather than assigning identifiers;
+and a node's identity is immutable while its name and its position are free
+to improve.
 
 ## What success looks like
 

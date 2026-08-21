@@ -43,10 +43,14 @@ Together with a canonical class, the registries give any classified object
 three independent coordinates:
 
 ```text
-canonical classification   architecture/data/database/relational-database
+canonical classification   SUB000042  architecture/data/database/relational-database
 implementation             postgresql
 runtime                    aws/rds
 ```
+
+The classification coordinate is stored as the identifier; the path is shown
+alongside for readability and is not what gets written down
+([TX-5](02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not)).
 
 Each can change without the others. Migrating from RDS to self-hosted
 PostgreSQL changes the runtime alone. Swapping PostgreSQL for MySQL changes

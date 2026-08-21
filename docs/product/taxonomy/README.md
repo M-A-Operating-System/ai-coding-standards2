@@ -17,10 +17,9 @@ Read these three, in this order, and you will understand the system:
 
 1. **[The 60-second summary](#the-60-second-summary)** below — what the
    vocabulary does, in one paragraph.
-2. **[01-vision.md](01-vision.md)** — the problem it solves and what success
-   looks like (the *why*).
-3. **[03-model.md](03-model.md)** — the three-level hierarchy and how
-   identifiers are composed (the *how*).
+2. **[01-vision.md](01-vision.md)** — the problem it solves, the seven goals,
+   and what success looks like (the *why*).
+3. **[03-model.md](03-model.md)** — levels, identity, and facets (the *how*).
 
 Then read **[02-principles.md](02-principles.md)**; the other documents cite
 it by ID (`TX-1`…`TX-4`) rather than restating it.
@@ -36,10 +35,16 @@ discovery scan says `AWS::RDS::DBInstance`, a repository contains
 same relationships on each pass, expensively and inconsistently. The
 Taxonomy is the single vocabulary they all normalise into: four semantic
 domains (**architecture**, **patterns**, **code**, **concepts**), each three
-levels deep, addressed as `<domain>/<family>/<class>/<subclass>`. Concrete
-technologies and cloud services are *not* further levels — they are separate
-**implementation** and **runtime** registries that point at canonical
-classes. Because CALM intent and discovered state land on the same
+levels deep. Every node has an **immutable identifier** and a **path** that
+says where it currently sits — `SUB000042` and
+`architecture/data/database/relational-database` — so names and positions can
+improve without breaking anything that cited them. The three-letter code records
+the level, not the subject, so a node keeps its identity even when it moves.
+Dimensions that are not a
+kind of thing, such as concern or lifecycle stage, attach as **facets** rather
+than levels, which is what lets the same nodes be organised more than one way.
+Concrete technologies and cloud services are separate **implementation** and
+**runtime** registries pointing at nodes. Because CALM intent and discovered state land on the same
 identifiers, the difference between designed and running architecture
 becomes computable. Because static-analysis facts map into code classes by
 deterministic rule, source structures are classified without AI. And because
@@ -59,7 +64,7 @@ rest as reference you consult when a question comes up.
 |---|---|---|
 | 01 | [Vision](01-vision.md) | The problem, what success looks like, and what this is not |
 | 02 | [Principles](02-principles.md) | The four rules the model is built on (TX-1…TX-4), cited by ID everywhere else |
-| 03 | [Canonical model](03-model.md) | The three-level hierarchy, identifier format, master registry, and inheritance |
+| 03 | [Canonical model](03-model.md) | Levels, immutable identity versus mutable path, facets, master registry, inheritance |
 
 ### The vocabulary — reference
 
@@ -67,6 +72,7 @@ rest as reference you consult when a question comes up.
 |---|---|---|
 | 04 | [Semantic domains](04-domains.md) | Architecture, patterns, code, and concepts — what each classifies |
 | 05 | [Registries](05-registries.md) | Implementations and runtimes: concrete technology, kept out of the semantic model |
+| 11 | [Information model](11-information-model.md) | What a node contains, where each part lives, and what is deliberately excluded |
 
 ### Interoperation
 

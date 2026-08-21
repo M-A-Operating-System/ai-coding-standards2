@@ -1,58 +1,67 @@
 {
   "$schema": "../schemas/runtimes.schema.json",
-  "schema_version": "0.2.0",
-  "description": "Provider/runtime realizations mapped to canonical architecture classes.",
+  "schema_version": "0.4.0",
+  "definition": "Cloud and on-prem runtime realizations mapped to canonical architecture classes.",
   "providers": {
     "aws": {
       "services": {
         "rds": {
+          "name": "Amazon RDS",
           "supports": [
-            "architecture/data/database/relational-database"
+            "SUB000020"
           ]
         },
         "documentdb": {
+          "name": "Amazon DocumentDB",
           "supports": [
-            "architecture/data/database/document-database"
+            "SUB000021"
           ]
         },
         "dynamodb": {
+          "name": "Amazon DynamoDB",
           "supports": [
-            "architecture/data/database/key-value-database"
+            "SUB000022"
           ]
         },
         "lambda": {
+          "name": "AWS Lambda",
           "supports": [
-            "architecture/compute/function/serverless-function"
+            "SUB000015"
           ]
         },
         "eks": {
+          "name": "Amazon EKS",
           "supports": [
-            "architecture/compute/runtime/container-cluster"
+            "SUB000019"
           ]
         },
         "ec2": {
+          "name": "Amazon EC2",
           "supports": [
-            "architecture/compute/runtime/virtual-machine"
+            "SUB000016"
           ]
         },
         "s3": {
+          "name": "Amazon S3",
           "supports": [
-            "architecture/storage/object-store/managed-object-store"
+            "SUB000036"
           ]
         },
         "sqs": {
+          "name": "Amazon SQS",
           "supports": [
-            "architecture/messaging/queue/message-queue"
+            "SUB000043"
           ]
         },
         "sns": {
+          "name": "Amazon SNS",
           "supports": [
-            "architecture/messaging/topic/pub-sub-topic"
+            "SUB000044"
           ]
         },
         "eventbridge": {
           "supports": [
-            "architecture/messaging/event-bus/event-router"
+            "SUB000046"
           ]
         }
       }
@@ -60,29 +69,34 @@
     "azure": {
       "services": {
         "postgresql-flexible-server": {
+          "name": "Azure Database for PostgreSQL Flexible Server",
           "supports": [
-            "architecture/data/database/relational-database"
+            "SUB000020"
           ]
         },
         "cosmos-db": {
+          "name": "Azure Cosmos DB",
           "supports": [
-            "architecture/data/database/document-database",
-            "architecture/data/database/key-value-database"
+            "SUB000021",
+            "SUB000022"
           ]
         },
         "functions": {
+          "name": "Azure Functions",
           "supports": [
-            "architecture/compute/function/serverless-function"
+            "SUB000015"
           ]
         },
         "aks": {
+          "name": "Azure Kubernetes Service",
           "supports": [
-            "architecture/compute/runtime/container-cluster"
+            "SUB000019"
           ]
         },
         "blob-storage": {
+          "name": "Azure Blob Storage",
           "supports": [
-            "architecture/storage/object-store/managed-object-store"
+            "SUB000036"
           ]
         }
       }
@@ -90,33 +104,38 @@
     "gcp": {
       "services": {
         "cloud-sql": {
+          "name": "Cloud SQL",
           "supports": [
-            "architecture/data/database/relational-database"
+            "SUB000020"
           ]
         },
         "firestore": {
+          "name": "Firestore",
           "supports": [
-            "architecture/data/database/document-database"
+            "SUB000021"
           ]
         },
         "cloud-run": {
+          "name": "Cloud Run",
           "supports": [
-            "architecture/compute/service/api-service"
+            "SUB000006"
           ]
         },
         "gke": {
+          "name": "Google Kubernetes Engine",
           "supports": [
-            "architecture/compute/runtime/container-cluster"
+            "SUB000019"
           ]
         },
         "cloud-storage": {
+          "name": "Cloud Storage",
           "supports": [
-            "architecture/storage/object-store/managed-object-store"
+            "SUB000036"
           ]
         },
         "pubsub": {
           "supports": [
-            "architecture/messaging/topic/pub-sub-topic"
+            "SUB000044"
           ]
         }
       }
@@ -124,23 +143,27 @@
     "on-prem": {
       "services": {
         "bare-metal": {
+          "name": "Bare Metal",
           "supports": [
-            "architecture/compute/runtime/bare-metal-host"
+            "SUB000017"
           ]
         },
         "virtual-machine": {
+          "name": "Virtual Machine",
           "supports": [
-            "architecture/compute/runtime/virtual-machine"
+            "SUB000016"
           ]
         },
         "kubernetes": {
+          "name": "Kubernetes",
           "supports": [
-            "architecture/compute/runtime/container-cluster"
+            "SUB000019"
           ]
         },
         "physical-network": {
+          "name": "Physical Network",
           "supports": [
-            "architecture/networking/network/physical-network"
+            "SUB000051"
           ]
         }
       }
