@@ -110,6 +110,7 @@ STATUSES_JSON = Path(__file__).parent / "statuses.json"
 # which is a different directory when installed as a submodule.
 SUBMODULE_ROOT = Path(__file__).resolve().parent.parent
 
+
 def load_statuses() -> tuple[list[dict], list[dict], list[str]]:
     """Load status, standalone-label, and priority-ordering definitions from statuses.json."""
     if not STATUSES_JSON.exists():
@@ -122,6 +123,7 @@ def load_statuses() -> tuple[list[dict], list[dict], list[str]]:
     except (KeyError, json.JSONDecodeError) as e:
         log.error("statuses.json is malformed: %s", e)
         sys.exit(1)
+
 
 STATUSES, STANDALONE_LABELS, PRIORITY_LABEL_ORDERING = load_statuses()
 LABEL_COLOURS = {s["status"]: s["colour"] for s in STATUSES}
@@ -171,6 +173,8 @@ class AgentDef:
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
     post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
+    lifecycle_before: list = field(default_factory=list)  # defaults.agent_lifecycle.before — run immediately before each invocation, including each retry
+    lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
     branch_suffix: str = ""               # appended to issue-{N} for the commit_after checkout (e.g. "-docs" -> issue-{N}-docs); "" means the default code branch (two-phase design->build, issue #247)
@@ -353,6 +357,22 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
         default_extra_tools: list[str] = _coerce_tools(
             raw.get("defaults", {}).get("extra_allowedTools")
         )
+
+        # Scripts the orchestrator runs around every agent invocation. Declared
+        # here rather than named in this module because the pipeline describes
+        # itself (STD-ARCH-035): a new lifecycle step is added by writing a
+        # script and listing it, with no change to the orchestrator.
+        #
+        # Agent steps only. A script step is a process step in its own right --
+        # it is not wrapped, and it is never handed a scratch directory, so an
+        # "after" hook for one would tear down something it never received.
+        _lifecycle = raw.get("defaults", {}).get("agent_lifecycle", {}) or {}
+        _before = list(_lifecycle.get("before", []))
+        _after = list(_lifecycle.get("after", []))
+        for _agent in agents:
+            if _agent.step_type == "agent":
+                _agent.lifecycle_before = list(_before)
+                _agent.lifecycle_after = list(_after)
 
         return agents, default_extra_tools
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -1734,6 +1754,7 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
 
 _CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike", "security"}
 
+
 def get_work_item_classification(work_item: WorkItem) -> Optional[str]:
     """
     Return the issue classification (bug/toil/enhancement/feature/spike), or
@@ -2220,6 +2241,7 @@ def _script_step_env_vars(script_path: Optional[str]) -> tuple[str, ...]:
         return _SCRIPT_AGENT_ENV_VARS + ("AI_AGILE_BOT_TOKEN",)
     return _SCRIPT_AGENT_ENV_VARS
 
+
 def invoke_script(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -2334,7 +2356,6 @@ def invoke_script(
             _terminate_subprocess(proc)
 
 
-
 def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: str) -> str:
     """Return the human-readable session ID the orchestrator will pass to the agent.
 
@@ -2443,6 +2464,15 @@ PRINT_PROMPT_ENV_KEYS = (
     "SESSION_SCOPE",
     "ISSUE_NUMBER",
     "PR_NUMBER",
+    # Derived from SESSION_ID, which is already here -- a path, not a secret.
+    # Without it /run-agent has nothing to export and every hand-run agent
+    # falls through ${AI_AGILE_SCRATCH:-/tmp} to a shared directory with fixed
+    # filenames, so the isolation the orchestrator path guarantees is absent
+    # exactly where a human is watching (issue #321). /run-agent runs
+    # scratch-setup.sh on this path before the agent starts; the two changes
+    # only work together -- exporting a directory nothing creates is worse than
+    # not exporting one, because the agent is told not to create it itself.
+    "AI_AGILE_SCRATCH",
 )
 
 
@@ -2492,6 +2522,62 @@ def _claude_cli_usable(env: Mapping[str, str]) -> bool:
     return _CLAUDE_CLI_PROBE[key]
 
 
+# STD-SEC-022 -- env for the agent-lifecycle scripts declared in
+# defaults.agent_lifecycle. The rule, not an observation about today's two
+# scripts: a lifecycle script prepares the environment an agent runs in, so it
+# touches the filesystem and never GitHub, and no credential is passed. A script
+# that needs one is doing process work and belongs in post_steps, which has its
+# own allowlist. AI_AGILE_SCRATCH is added per call by _run_lifecycle_scripts.
+_LIFECYCLE_SCRIPT_ENV_VARS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
+
+
+def _scratch_path(agent_session_id: str) -> str:
+    """The per-run scratch directory for a session id.
+
+    Sole definition of the formula -- every caller derives the path from here
+    rather than rebuilding it. Two callers exist: _build_agent_env, which
+    exports it for the agent, and _run_agent, which needs it for teardown after
+    invoke_agent's env has gone out of scope. Both pass the same session id, so
+    both get the same path.
+    """
+    return f"/tmp/{agent_session_id}"
+
+
+def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
+    """Run the agent-lifecycle scripts declared in pipeline.json. Never raises.
+
+    The third kind of script in the pipeline, alongside script steps and
+    post_steps, and the only one that is not a process step in its own right:
+    these wrap an agent invocation, emit no `AI_AGILE_STATUS:` sentinel, take no
+    label, and cannot fail a run. See
+    docs/product/orchestrator/11-orchestrator.md, "Agent-lifecycle scripts".
+
+    The work lives in .github/scripts/ and the list lives in pipeline.json, so
+    the orchestrator neither performs the work nor names the scripts (P-14,
+    STD-ARCH-035). Failure is logged and swallowed: the "before" scripts are
+    idempotent, so a missed "after" self-heals on the next run and must never
+    fail an agent.
+    """
+    for script_rel in scripts:
+        script = SUBMODULE_ROOT / script_rel
+        if not script.is_file():
+            log.warning("lifecycle: %s not found; skipping", script_rel)
+            continue
+        env = {k: os.environ[k] for k in _LIFECYCLE_SCRIPT_ENV_VARS if k in os.environ}
+        env["AI_AGILE_SCRATCH"] = scratch_dir
+        try:
+            res = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True, timeout=30,
+            )
+            if res.returncode != 0:
+                log.warning(
+                    "lifecycle: %s exited %d: %s",
+                    script_rel, res.returncode, (res.stderr or "").strip()[:200],
+                )
+        except Exception as exc:  # pragma: no cover -- best-effort
+            log.warning("lifecycle: %s could not run: %s", script_rel, exc)
+
+
 def _build_agent_env(
     base_env: Mapping[str, str],
     repo: str,
@@ -2526,6 +2612,11 @@ def _build_agent_env(
     # Axis B: every orchestrator-spawned subprocess is always headless/opaque,
     # regardless of whether the tick itself was triggered by cron or interactively.
     agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
+    # Per-run scratch directory under /tmp — outside the working tree, so it
+    # can never appear in git status or be swept into a commit. Creation and
+    # removal are done by .github/scripts/scratch-{setup,teardown}.sh, which
+    # the orchestrator runs around each agent invocation.
+    agent_env["AI_AGILE_SCRATCH"] = _scratch_path(agent_session_id)
     # An interactive run authenticates its agents the same way the surrounding
     # session is authenticated, never with a separate API key (issue #346). Only
     # the headless/CI path, which has no session to inherit, uses
@@ -2740,6 +2831,12 @@ def invoke_agent(
         os.environ, repo, work_item, agent_session_id, agent_def.session_scope
     )
 
+    # Run the declared "before" scripts. Inside invoke_agent, so each retry gets
+    # its own setup -- an attempt must never read the previous attempt's files.
+    scratch_dir = agent_env.get("AI_AGILE_SCRATCH", "")
+    if scratch_dir and not dry_run:
+        _run_lifecycle_scripts(agent_def.lifecycle_before, scratch_dir)
+
     if dry_run:
         log.info(
             "    [DRY RUN] %s | model: %s | max_turns: %d | session: %s (uuid: %s) | prompt: %d chars",
@@ -2838,6 +2935,7 @@ def invoke_agent(
         # _timed_out lets the loop raise TimeoutExpired with a clear message
         # even when stdout goes silent (no lines arrive to trigger the check).
         _timed_out = threading.Event()
+
         def _timer_callback() -> None:
             _timed_out.set()
             _terminate_subprocess(proc)
@@ -3547,6 +3645,16 @@ def _run_agent(
         result, sentinel_status, sentinel_message, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
             default_extra_tools, _agent_text_snapshot,
+        )
+
+    # Run the declared "after" scripts once all retries are done, whatever the
+    # outcome. load_pipeline leaves these empty for script steps, which are
+    # never handed a scratch directory, so the pairing with "before" holds
+    # without the orchestrator deciding anything.
+    if not dry_run and agent_def.lifecycle_after:
+        _run_lifecycle_scripts(
+            agent_def.lifecycle_after,
+            _scratch_path(_compute_agent_session_id(agent_def, work_item, repo)),
         )
 
     return result, sentinel_status, sentinel_message, _pre_agent_branch, _invoked_at, _attempt
@@ -5140,6 +5248,8 @@ def _clear_inflight_wip_on_signal(signum, _frame) -> None:
             log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
         except Exception as exc:
             log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
+    # No scratch cleanup here: scratch-setup.sh clears the directory at the
+    # start of every run, so a killed tick self-heals on the next one.
     sys.exit(128 + signum)
 
 

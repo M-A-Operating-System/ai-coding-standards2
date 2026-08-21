@@ -1,0 +1,27 @@
+# Lint configuration for the AI Agile pipeline.
+#
+# Deliberately narrow. The full default rule set reports 123 findings across
+# this repo -- 45 ambiguous variable names, 41 placeholder-less f-strings, 24
+# unused imports -- and fixing those is a repo-wide cleanup with its own risk,
+# not something to smuggle into an unrelated PR. Widening the selection is a
+# decision to take on purpose, one rule family at a time.
+#
+# What is enabled is the family that has actually cost review rounds: blank
+# lines around definitions. Two E302 defects reached review in issue #321,
+# both introduced by deleting a constant and silently closing the gap above a
+# def, and both found only by a human reading the diff. They are mechanical,
+# unambiguous, and every one of them is auto-fixable with `ruff check --fix`.
+#
+# To widen: add a family to `select`, run `ruff check --fix`, review, commit.
+
+preview = true  # E305/E306 are preview rules in ruff 0.16; see the CI pin.
+
+[lint]
+select = [
+    "E301",  # expected blank line, found 0
+    "E302",  # expected 2 blank lines, found fewer
+    "E303",  # too many blank lines
+    "E304",  # blank line after decorator
+    "E305",  # expected 2 blank lines after function or class
+    "E306",  # expected 1 blank line before a nested definition
+]

@@ -11,6 +11,7 @@ import get_started
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_claude_src(tmp_path, name="submodule"):
     """A minimal submodule .claude tree: an agent, a command, and settings.json."""
     fake_src = tmp_path / name
@@ -1405,6 +1406,7 @@ class TestUntrackManagedPaths:
 
         # Monkeypatch subprocess.run to simulate git not found
         import subprocess as sp
+
         def _raise(*args, **kwargs):
             raise FileNotFoundError("git not found")
         monkeypatch.setattr(sp, "run", _raise)
@@ -1434,6 +1436,7 @@ class TestUntrackManagedPaths:
         calls = []
         import subprocess as sp
         real_run = sp.run
+
         def _mock_run(args, **kwargs):
             calls.append(args)
             if args[1] == "ls-files":

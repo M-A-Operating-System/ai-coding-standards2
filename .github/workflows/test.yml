@@ -1,20 +1,28 @@
 name: Tests
+# The trigger must cover everything the jobs below check, or a gate that reads
+# as complete silently is not. `ruff check .` lints every Python file and the
+# shell-test step exercises .github/scripts, so **/*.py and **/*.sh are listed
+# rather than the handful of paths that happened to matter when this workflow
+# was written. Naming files individually left get_started.py, pipeline/validate.py,
+# scripts/generate_slash_commands.py and .github/scripts/migrate_labels.py
+# untriggered -- including get_started.py, whose own tests live in tests/ and so
+# never ran on a change to it.
 on:
   push:
     branches: [main]
     paths:
-      - 'pipeline/pipeline_orchestrator.py'
-      - 'pipeline/generators/generate_phase_mermaid.py'
+      - '**/*.py'
+      - '**/*.sh'
       - 'tests/**'
+      - 'ruff.toml'
   pull_request:
     paths:
-      - 'pipeline/pipeline_orchestrator.py'
-      - 'pipeline/validate_standards.py'
-      - 'pipeline/validate_taxonomy.py'
+      - '**/*.py'
+      - '**/*.sh'
       - 'standards/**'
       - 'taxonomy/**'
-      - 'pipeline/generators/generate_phase_mermaid.py'
       - 'tests/**'
+      - 'ruff.toml'
 permissions:
   contents: read
 jobs:
@@ -31,6 +39,14 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: pip install -r requirements.txt
+      # Blank-line rules only -- see ruff.toml for why the selection is narrow.
+      # The version is pinned because E305/E306 are preview rules: an unpinned
+      # upgrade could change what preview covers and turn CI red on untouched
+      # code.
+      - name: Lint
+        run: |
+          pip install ruff==0.16.4
+          ruff check .
       - name: Run tests
         run: pytest tests/ -v
       - name: Run integration tests
