@@ -116,8 +116,13 @@ Examples:
    unrelated work later in this session:
    ```bash
    rm -f .claude/.run-agent-scope.json
-   AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash .github/scripts/scratch-teardown.sh
+   [ -n "${AI_AGILE_SCRATCH:-}" ] \
+     && AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash .github/scripts/scratch-teardown.sh
    ```
-   Do this even if the run halts early (error, `:blocked`, user interruption,
-   a denied tool with no alternative) -- remove the scope file before ending
-   your turn either way.
+   The guard matters: a run that halts before step 3 never set
+   `AI_AGILE_SCRATCH`, and the teardown script refuses an unset value with a
+   non-zero exit -- safe, but noisy exactly when you are already handling a halt.
+
+   Do both even if the run halts early (error, `:blocked`, user interruption,
+   a denied tool with no alternative) -- remove the scope file **and** the
+   scratch directory before ending your turn either way.

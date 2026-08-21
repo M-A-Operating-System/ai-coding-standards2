@@ -842,3 +842,4 @@ class TestCommitSweepRefusesNewRootFiles:
         after = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work,
                                capture_output=True, text=True, check=True).stdout
         assert before == after, "a leak-only run must not create a commit"
+

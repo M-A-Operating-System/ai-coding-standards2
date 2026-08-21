@@ -2519,9 +2519,14 @@ def _claude_cli_usable(env: Mapping[str, str]) -> bool:
     return _CLAUDE_CLI_PROBE[key]
 
 
-# STD-SEC-022 -- env for the scratch lifecycle hooks. They take one input and
-# run rm -rf/mkdir on it; nothing else is needed, so nothing else is passed.
-_SCRATCH_HOOK_ENV_VARS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
+# STD-SEC-022 -- env for the agent-lifecycle scripts declared in
+# defaults.agent_lifecycle. The rule, not an observation about today's two
+# scripts: a lifecycle script prepares the environment an agent runs in, so it
+# touches the filesystem and never GitHub, and no credential is passed. A script
+# that needs one is doing process work and belongs in post_steps, which has its
+# own allowlist. AI_AGILE_SCRATCH is added per call by _run_lifecycle_scripts.
+_LIFECYCLE_SCRIPT_ENV_VARS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
+
 
 def _scratch_path(agent_session_id: str) -> str:
     """The per-run scratch directory for a session id.
@@ -2555,7 +2560,7 @@ def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
         if not script.is_file():
             log.warning("lifecycle: %s not found; skipping", script_rel)
             continue
-        env = {k: os.environ[k] for k in _SCRATCH_HOOK_ENV_VARS if k in os.environ}
+        env = {k: os.environ[k] for k in _LIFECYCLE_SCRIPT_ENV_VARS if k in os.environ}
         env["AI_AGILE_SCRATCH"] = scratch_dir
         try:
             res = subprocess.run(
