@@ -171,6 +171,8 @@ class AgentDef:
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
     post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
+    lifecycle_before: list = field(default_factory=list)  # defaults.agent_lifecycle.before — run immediately before each invocation, including each retry
+    lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
     branch_suffix: str = ""               # appended to issue-{N} for the commit_after checkout (e.g. "-docs" -> issue-{N}-docs); "" means the default code branch (two-phase design->build, issue #247)
@@ -353,6 +355,22 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
         default_extra_tools: list[str] = _coerce_tools(
             raw.get("defaults", {}).get("extra_allowedTools")
         )
+
+        # Scripts the orchestrator runs around every agent invocation. Declared
+        # here rather than named in this module because the pipeline describes
+        # itself (STD-ARCH-035): a new lifecycle step is added by writing a
+        # script and listing it, with no change to the orchestrator.
+        #
+        # Agent steps only. A script step is a process step in its own right --
+        # it is not wrapped, and it is never handed a scratch directory, so an
+        # "after" hook for one would tear down something it never received.
+        _lifecycle = raw.get("defaults", {}).get("agent_lifecycle", {}) or {}
+        _before = list(_lifecycle.get("before", []))
+        _after = list(_lifecycle.get("after", []))
+        for _agent in agents:
+            if _agent.step_type == "agent":
+                _agent.lifecycle_before = list(_before)
+                _agent.lifecycle_after = list(_after)
 
         return agents, default_extra_tools
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -2505,10 +2523,6 @@ def _claude_cli_usable(env: Mapping[str, str]) -> bool:
 # run rm -rf/mkdir on it; nothing else is needed, so nothing else is passed.
 _SCRATCH_HOOK_ENV_VARS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
 
-SCRATCH_SETUP_SCRIPT = ".github/scripts/scratch-setup.sh"
-SCRATCH_TEARDOWN_SCRIPT = ".github/scripts/scratch-teardown.sh"
-
-
 def _scratch_path(agent_session_id: str) -> str:
     """The per-run scratch directory for a session id.
 
@@ -2521,32 +2535,39 @@ def _scratch_path(agent_session_id: str) -> str:
     return f"/tmp/{agent_session_id}"
 
 
-def _run_scratch_hook(script_rel: str, scratch_dir: str) -> None:
-    """Run a scratch lifecycle script. Never raises.
+def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
+    """Run the agent-lifecycle scripts declared in pipeline.json. Never raises.
 
-    Creation and removal live in .github/scripts/ rather than here: the
-    orchestrator decides which step runs next (P-14), it does not manage the
-    filesystem. Failure is logged and swallowed -- scratch-setup.sh clears the
-    directory at the start of every run, so a missed teardown self-heals and
-    must never fail an agent run.
+    The third kind of script in the pipeline, alongside script steps and
+    post_steps, and the only one that is not a process step in its own right:
+    these wrap an agent invocation, emit no `AI_AGILE_STATUS:` sentinel, take no
+    label, and cannot fail a run. See
+    docs/product/orchestrator/11-orchestrator.md, "Agent-lifecycle scripts".
+
+    The work lives in .github/scripts/ and the list lives in pipeline.json, so
+    the orchestrator neither performs the work nor names the scripts (P-14,
+    STD-ARCH-035). Failure is logged and swallowed: the "before" scripts are
+    idempotent, so a missed "after" self-heals on the next run and must never
+    fail an agent.
     """
-    script = SUBMODULE_ROOT / script_rel
-    if not script.is_file():
-        log.warning("scratch: %s not found; skipping", script_rel)
-        return
-    env = {k: os.environ[k] for k in _SCRATCH_HOOK_ENV_VARS if k in os.environ}
-    env["AI_AGILE_SCRATCH"] = scratch_dir
-    try:
-        res = subprocess.run(
-            ["bash", str(script)], env=env, capture_output=True, text=True, timeout=30,
-        )
-        if res.returncode != 0:
-            log.warning(
-                "scratch: %s exited %d: %s",
-                script_rel, res.returncode, (res.stderr or "").strip()[:200],
+    for script_rel in scripts:
+        script = SUBMODULE_ROOT / script_rel
+        if not script.is_file():
+            log.warning("lifecycle: %s not found; skipping", script_rel)
+            continue
+        env = {k: os.environ[k] for k in _SCRATCH_HOOK_ENV_VARS if k in os.environ}
+        env["AI_AGILE_SCRATCH"] = scratch_dir
+        try:
+            res = subprocess.run(
+                ["bash", str(script)], env=env, capture_output=True, text=True, timeout=30,
             )
-    except Exception as exc:  # pragma: no cover -- best-effort cleanup
-        log.warning("scratch: %s could not run: %s", script_rel, exc)
+            if res.returncode != 0:
+                log.warning(
+                    "lifecycle: %s exited %d: %s",
+                    script_rel, res.returncode, (res.stderr or "").strip()[:200],
+                )
+        except Exception as exc:  # pragma: no cover -- best-effort
+            log.warning("lifecycle: %s could not run: %s", script_rel, exc)
 
 
 def _build_agent_env(
@@ -2802,12 +2823,11 @@ def invoke_agent(
         os.environ, repo, work_item, agent_session_id, agent_def.session_scope
     )
 
-    # Hand the agent an empty scratch directory. The work is done by
-    # scratch-setup.sh; this call is the orchestrator scheduling it as a task
-    # around the agent, the same way commit-agent-work.sh wraps the git side.
+    # Run the declared "before" scripts. Inside invoke_agent, so each retry gets
+    # its own setup -- an attempt must never read the previous attempt's files.
     scratch_dir = agent_env.get("AI_AGILE_SCRATCH", "")
     if scratch_dir and not dry_run:
-        _run_scratch_hook(SCRATCH_SETUP_SCRIPT, scratch_dir)
+        _run_lifecycle_scripts(agent_def.lifecycle_before, scratch_dir)
 
     if dry_run:
         log.info(
@@ -3618,17 +3638,13 @@ def _run_agent(
             default_extra_tools, _agent_text_snapshot,
         )
 
-    # Remove the scratch directory after all retries complete, whatever the
-    # outcome. Hygiene only: scratch-setup.sh clears before every run, so a
-    # tick that dies before reaching here is cleaned up by the next one.
-    #
-    # Agent steps only. Script steps are never given AI_AGILE_SCRATCH, so
-    # tearing one down would remove a directory this step never received --
-    # harmless today, but it would silently pair a teardown with no setup the
-    # moment a script step is given one.
-    if not dry_run and agent_def.step_type != "script":
-        _run_scratch_hook(
-            SCRATCH_TEARDOWN_SCRIPT,
+    # Run the declared "after" scripts once all retries are done, whatever the
+    # outcome. load_pipeline leaves these empty for script steps, which are
+    # never handed a scratch directory, so the pairing with "before" holds
+    # without the orchestrator deciding anything.
+    if not dry_run and agent_def.lifecycle_after:
+        _run_lifecycle_scripts(
+            agent_def.lifecycle_after,
             _scratch_path(_compute_agent_session_id(agent_def, work_item, repo)),
         )
 

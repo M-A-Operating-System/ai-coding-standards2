@@ -12,6 +12,7 @@ Scenarios traced to docs/features/agents.md, and the classes covering each:
 - A retry receives an empty directory      TestOrchestratorSchedulesTeardownOnEveryPath
 - A killed tick leaves no debris           TestScratchLifecycleIsSelfHealing
 """
+import json
 import re
 import os
 import pytest
@@ -44,7 +45,16 @@ def _work_item(kind="issue", number=321):
     )
 
 
+def _declared_lifecycle():
+    """The `defaults.agent_lifecycle` block as pipeline.json actually declares it."""
+    from pipeline_orchestrator import load_pipeline
+    agents, _ = load_pipeline(Path(__file__).parent.parent / "pipeline" / "pipeline.json")
+    agent = next(a for a in agents if a.step_type == "agent")
+    return agent.lifecycle_before, agent.lifecycle_after
+
+
 def _agent_def():
+    before, after = _declared_lifecycle()
     return AgentDef(
         agent="03_execute/coder",
         phase="03_execute",
@@ -54,6 +64,8 @@ def _agent_def():
         human_gate_after=False,
         human_gate_label=None,
         description="test coder agent",
+        lifecycle_before=before,
+        lifecycle_after=after,
     )
 
 
@@ -209,6 +221,42 @@ class TestOrchestratorDelegatesToScripts:
         assert "_CURRENT_SCRATCH" not in src, "module global for in-flight scratch is back"
         assert "os.makedirs(scratch" not in src
         assert "shutil.rmtree(scratch" not in src
+
+    def test_the_orchestrator_does_not_name_the_lifecycle_scripts(self):
+        """STD-ARCH-035: the pipeline describes itself. Hardcoding the paths as
+        Python constants made pipeline.json an incomplete description of the
+        pipeline -- reading the config no longer told you what ran."""
+        src = (Path(__file__).parent.parent / "pipeline" / "pipeline_orchestrator.py").read_text()
+        code = "\n".join(
+            line for line in src.split("\n") if not line.lstrip().startswith("#")
+        )
+        for name in ["scratch-setup.sh", "scratch-teardown.sh"]:
+            assert name not in code, (
+                f"{name} is named in orchestrator code; declare it in "
+                f"pipeline.json defaults.agent_lifecycle instead"
+            )
+
+    def test_the_lifecycle_scripts_are_declared_in_pipeline_json(self):
+        raw = json.loads(
+            (Path(__file__).parent.parent / "pipeline" / "pipeline.json").read_text()
+        )
+        lifecycle = raw["defaults"]["agent_lifecycle"]
+        assert lifecycle["before"] == [".github/scripts/scratch-setup.sh"]
+        assert lifecycle["after"] == [".github/scripts/scratch-teardown.sh"]
+
+    def test_every_declared_lifecycle_script_exists_and_runs(self):
+        """A declared path that does not exist is skipped with a warning, so a
+        typo would be silent. Assert the declaration resolves."""
+        root = Path(__file__).parent.parent
+        raw = json.loads((root / "pipeline" / "pipeline.json").read_text())
+        lifecycle = raw["defaults"]["agent_lifecycle"]
+        for script in lifecycle["before"] + lifecycle["after"]:
+            path = root / script
+            assert path.is_file(), f"declared lifecycle script missing: {script}"
+            result = subprocess.run(
+                ["bash", "-n", str(path)], capture_output=True, text=True
+            )
+            assert result.returncode == 0, f"{script} does not parse: {result.stderr}"
 
     def test_agent_receives_an_empty_scratch_directory_at_spawn(self, monkeypatch):
         """End-to-end through the real scripts: by the time Popen fires, the
@@ -598,13 +646,21 @@ class TestTeardownIsPairedWithSetup:
         monkeypatch.setattr(po, "invoke_script",
                             lambda *a, **k: po.AgentRunResult(success=True, captured_tail=""))
         monkeypatch.setattr(
-            po, "_run_scratch_hook",
-            lambda script, path: torn_down.append((script, path)),
+            po, "_run_lifecycle_scripts",
+            lambda scripts, path: torn_down.extend((s, path) for s in scripts),
         )
 
-        agent_def = _agent_def()
-        agent_def.step_type = "script"
-        agent_def.script_path = ".github/scripts/ci-gate.sh"
+        # A real script step out of pipeline.json, not an agent step with its
+        # type flipped: the pairing is enforced by load_pipeline leaving the
+        # lifecycle lists empty for script steps, so the step has to come from
+        # the same loader the orchestrator uses or the test proves nothing.
+        agents, _ = po.load_pipeline(
+            Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        )
+        agent_def = next(a for a in agents if a.step_type == "script")
+        assert agent_def.lifecycle_before == [], (
+            "load_pipeline must not give a script step lifecycle scripts"
+        )
 
         po._run_agent(
             agent_def, _work_item(), dry_run=False, repo="owner/repo",
@@ -628,8 +684,8 @@ class TestTeardownIsPairedWithSetup:
                                               captured_tail="AI_AGILE_STATUS: complete"),
         )
         monkeypatch.setattr(
-            po, "_run_scratch_hook",
-            lambda script, path: torn_down.append((script, path)),
+            po, "_run_lifecycle_scripts",
+            lambda scripts, path: torn_down.extend((s, path) for s in scripts),
         )
 
         po._run_agent(
@@ -638,7 +694,7 @@ class TestTeardownIsPairedWithSetup:
             concurrency=None, gh=MagicMock(), pipeline_map={},
         )
         assert len(torn_down) == 1
-        assert torn_down[0][0] == po.SCRATCH_TEARDOWN_SCRIPT
+        assert torn_down[0][0].endswith("scratch-teardown.sh")
 
 
 class TestShippedFilesAreAscii:

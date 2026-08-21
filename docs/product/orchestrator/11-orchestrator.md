@@ -29,6 +29,7 @@ The orchestrator owns exactly these responsibilities:
 | Agent invocation | Spawn the agent subprocess; set `:failed` if it crashes without a terminal status |
 | Gate promotion | When a human applies a gate label, remove `:review` and apply `:complete` |
 | post_steps execution | Execute scripts listed in the agent's `post_steps` array after it signals `:complete`; scripts perform post-run actions such as marking a PR ready for review — agents never call `gh pr ready` themselves |
+| Agent-lifecycle scripts | Execute the scripts declared in `defaults.agent_lifecycle` around every agent invocation — preparing and tearing down the environment the agent runs in. The orchestrator schedules them; it does not do the work and does not name the scripts |
 | Git commit + push | Stage, commit, and push agent file changes to `issue-{N}` after any `commit_after: true` agent signals `complete` |
 | Audit log emission | Emit one JSONL event per transition to stdout |
 
@@ -37,6 +38,7 @@ It owns none of these:
 - Agent behaviour (prompts, tools, model — those live in `.claude/agents/{agent}.md`)
 - Standards checking (the `standards-compliance-reviewer` agent does this)
 - Pipeline graph definition (`pipeline.json` is the source of truth; the orchestrator reads it)
+- **Any process step itself.** The orchestrator decides *which* step runs next and records the outcome; every step that enables the process — filesystem management, git operations, GitHub API workflows — is a deterministic script under `.github/scripts/` or an agent under `.claude/agents/`, declared in `pipeline.json`. See STD-ARCH-035. Process logic embedded in the router is untestable in isolation and invisible to `pipeline.json`, so reading the config no longer tells you what the pipeline does.
 
 ---
 
@@ -295,8 +297,10 @@ comment, emit `agent.failed` to the audit log.
 
 ## Step invocation
 
-The orchestrator supports two invocation modes, selected by the `"type"` field
-in `pipeline.json` (default: `"agent"`).
+The orchestrator supports two invocation modes for pipeline steps, selected by
+the `"type"` field in `pipeline.json` (default: `"agent"`). A third kind of
+script — an agent-lifecycle script — is not a step at all; see
+[§ Agent-lifecycle scripts](#agent-lifecycle-scripts) below.
 
 ### Agent steps (`type: "agent"`)
 
@@ -392,6 +396,35 @@ AI_AGILE_STATUS: blocked "reason"
 
 If the script exits non-zero without a sentinel, the orchestrator applies
 `:failed` identically to a crashed agent.
+
+### Agent-lifecycle scripts
+
+Not a step. These wrap an agent invocation to prepare and tear down the
+environment it runs in — today, the per-run scratch directory
+(`$AI_AGILE_SCRATCH`) that keeps agent working files out of the repo root.
+
+They are declared once in `defaults.agent_lifecycle` and apply to every agent
+step. The orchestrator holds no path to any of them: it reads the list from
+`pipeline.json` and runs it, so a new lifecycle script is added by writing the
+script and listing it, with no change to this module.
+
+| Property | Behaviour |
+|---|---|
+| `before` | Runs immediately before **each** invocation, including each retry |
+| `after` | Runs once after the final retry, on **every** outcome |
+| Environment | `$AI_AGILE_SCRATCH` plus `PATH`, `HOME`, `LANG`, `LC_ALL`, `LC_CTYPE`. No credentials (STD-SEC-022) |
+| Sentinel | None. These emit no `AI_AGILE_STATUS:` and take no label |
+| Failure | Logged and swallowed. A lifecycle script can never fail an agent run |
+| Applies to | Agent steps only. Script steps are never wrapped |
+
+The swallowed failure is only safe because **`before` scripts are required to be
+idempotent** — `scratch-setup.sh` removes the directory before creating it. That
+makes the lifecycle self-healing: a tick killed mid-run leaves its directory
+behind and the next run clears it. A `SIGTERM` handler would not work here, since
+the kill that ends a background tick is uncatchable.
+
+Full field reference:
+[`05-pipeline-config.md`](05-pipeline-config.md#defaultsagent_lifecycle--scripts-that-wrap-every-agent-invocation).
 
 ---
 
