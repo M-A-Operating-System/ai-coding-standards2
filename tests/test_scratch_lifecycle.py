@@ -844,71 +844,65 @@ class TestCommitSweepRefusesNewRootFiles:
         assert before == after, "a leak-only run must not create a commit"
 
 
-class TestPrReviewerEditsItsArtefactInPlace:
-    """QA-002 from the #360 review round at 8c39526.
+class TestPrReviewerArtefactsAreAppendOnly:
+    """The #360 QA-002 round, resolved the other way round.
 
-    AGENTS.md P-11: "On re-run, edit your previous artefact comment in place --
-    don't post duplicates." pr-reviewer's Step 11 always POSTed, and PR #360
-    accumulated six artefact comments before it was caught.
+    The finding was that Step 11 always POSTed while AGENTS.md said to edit the
+    artefact in place. Both could not stand -- but the authority is
+    02-principles.md, and its P-11 tradeoff says only that "re-runs produce the
+    same artefact, not duplicates", meaning duplicated *effects*: no second PR,
+    no second branch, no re-applied label. AGENTS.md had turned that into "one
+    comment, edited in place", a rule the principle never stated, and P-12
+    directly below it accepts comment noise in as many words.
 
-    The agent's own Step 7 standards table lists this exact defect -- "Agent
-    posts duplicate artefact comments instead of editing in place", Medium --
-    as something to raise against other agents, which is what settles the
-    question of which side should change.
+    So the distillation was wrong, not the agent. Artefacts are append-only:
+    each round's findings are the record of what was wrong at that head, and
+    rewriting them destroys the only evidence a finding was ever raised.
     """
 
     PROMPT = AGENTS_DIR / "03_execute" / "pr-reviewer.md"
+    CONTEXT = AGENTS_MD
+    PRINCIPLES = (Path(__file__).parent.parent / "docs" / "product"
+                  / "orchestrator" / "02-principles.md")
 
-    def test_the_artefact_is_patched_when_a_prior_one_exists(self):
-        text = self.PROMPT.read_text()
-        assert 'gh api --method PATCH "repos/$REPO/issues/comments/$PRIOR"' in text, (
-            "Step 11 must edit the prior artefact in place (P-11)"
-        )
-        assert 'if [ -n "$PRIOR" ]; then' in text, (
-            "the PATCH must be conditional -- the first run has nothing to edit"
-        )
-
-    def test_the_first_run_still_posts(self):
+    def test_the_artefact_is_always_posted(self):
         text = self.PROMPT.read_text()
         assert 'gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments"' in text
+        assert "issues/comments/$PRIOR" not in text, (
+            "the artefact must never be rewritten -- the trail is the record"
+        )
+
+    def test_prior_heads_the_rerun_but_is_not_an_edit_target(self):
+        text = self.PROMPT.read_text()
+        assert "## PR Review${PRIOR:+ (Re-run)}" in text
+        assert "not an edit target" in text
 
     def test_prior_is_not_scoped_to_today(self):
-        """P-11 says 'your previous artefact comment', with no date qualifier.
-        Scoping the lookup to today made the duplicate reappear tomorrow."""
+        """A date-scoped lookup mislabels the second day's re-run as a first run."""
+        assert "TODAY=" not in self.PROMPT.read_text()
+
+    def test_agents_md_does_not_require_editing_artefacts_in_place(self):
+        """The clause that created the contradiction. If it comes back, so does
+        the contradiction, because the prompt cannot satisfy both."""
+        text = self.CONTEXT.read_text()
+        assert "edit your previous artefact comment in place" not in text
+        assert "Edit-in-place: re-runs find the prior comment" not in text
+        assert "append-only" in text, "P-11 must state the rule it now holds"
+
+    def test_the_standards_table_does_not_flag_what_the_protocol_requires(self):
+        """pr-reviewer's own Step 7 table used to list 'posts duplicate artefact
+        comments instead of editing in place' as a Medium finding -- so the
+        agent was told to raise, against other agents, the behaviour it is now
+        required to exhibit."""
         text = self.PROMPT.read_text()
-        assert "TODAY=" not in text, (
-            "a date-scoped $PRIOR reintroduces the duplicate on the next day"
-        )
+        assert "instead of editing in place" not in text
 
-    def test_announcements_stay_one_per_run(self):
-        """P-11 names the artefact. AGENTS.md separately requires an
-        announcement on every run, so Steps 0 and 12 must keep POSTing."""
-        text = self.PROMPT.read_text()
-        assert text.count('gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments"') == 3, (
-            "expected 3 POSTs: two announcements plus the first-run artefact"
+    def test_the_principle_and_its_distillation_agree(self):
+        """P-2: one source per concern. AGENTS.md is the distilled version of
+        02-principles.md and must not invent a consequence the principle does
+        not carry -- which is exactly how this defect arose."""
+        principles = self.PRINCIPLES.read_text()
+        assert "does not mean one" in principles and "edited in place" in principles, (
+            "02-principles.md must say what 'not duplicates' means, or the "
+            "distillation is free to re-invent the stricter reading"
         )
-
-    def test_both_verbs_are_within_the_agent_s_own_allowlist(self):
-        """The quoted-URL trap from #326: `--method PATCH "repos/...` needs the
-        quoted counterpart pattern, not the bare one. Resolve the real
-        allowlist and match, rather than assuming."""
-        import fnmatch
-        sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
-        import pipeline_orchestrator as po
-
-        agents, defaults = po.load_pipeline(
-            Path(__file__).parent.parent / "pipeline" / "pipeline.json"
-        )
-        ad = po.pipeline_by_name(agents)["03_execute/pr-reviewer"]
-        resolved = po._resolve_agent_invocation(
-            ad, _work_item(), repo="o/r", default_extra_tools=defaults
-        )
-        patterns = [t[5:-1] for t in resolved.allowed_tools if t.startswith("Bash(")]
-
-        for command in [
-            'gh api --method PATCH "repos/o/r/issues/comments/123" -F body=@/tmp/x.md',
-            'gh api --method POST "repos/o/r/issues/360/comments" -F body=@/tmp/x.md',
-        ]:
-            assert any(fnmatch.fnmatchcase(command, p) for p in patterns), (
-                f"pr-reviewer cannot run a command its own prompt prescribes: {command}"
-            )

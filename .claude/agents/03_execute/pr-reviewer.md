@@ -65,10 +65,9 @@ PRIOR=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
   | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty')
 ```
 
-`$PRIOR` is the id of your previous artefact on this PR, if any. It is the
-**edit target** in Step 11, not just a flag: P-11 requires re-runs to edit the
-artefact in place rather than post duplicates. If it is set, head the artefact
-comment `## PR Review (Re-run)`.
+`$PRIOR` is your previous artefact on this PR, if any. If it is set, head this
+run's artefact `## PR Review (Re-run)` and read the prior one to see what you
+found last time. It is not an edit target -- artefacts are append-only (P-11).
 
 Post the opening announcement:
 
@@ -271,7 +270,7 @@ Cite the P-N or STD ID in every finding.
 | P-1 Git is authoritative | State written outside GitHub (sidecar DB, temp file across runs) | Critical |
 | P-2 One source per concern | Fact duplicated from `statuses.json`, `pipeline.json`, or `standards/*.json` | Medium |
 | P-10 Agents draft, humans decide | Agent applies `*:approved` label or emits `complete` for a gated step | High |
-| P-11 Resumable by default | Agent posts duplicate artefact comments instead of editing in place | Medium |
+| P-11 Resumable by default | Re-run double-applies an effect (second PR, second branch, re-applied label), or rewrites a previous artefact instead of posting a new one | Medium |
 | P-14 Deterministic orchestrator | Agent directly invokes another agent subprocess or API | High |
 | P-15 Product-led | Behaviour introduced with no corresponding `docs/product/` entry **on the PR base**. Under two-phase delivery the entry lands via the already-merged design PR (`issue-{N}-docs`), so it is on `main` (the code PR's base), not in the code PR diff — confirm it on the base before flagging, don't require it in the diff | High |
 | Any STD in `standards/*.json` | Check the standard's `acceptance_criteria` field | Per standard's `severity` |
@@ -396,20 +395,13 @@ $FINDING_BODY
 _On APPROVE: PR is marked ready for human review. On REQUEST CHANGES: the orchestrator will automatically re-invoke the coder (up to 3 cycles). After 3 cycles without agreement, human sign-off is required._
 REVIEW_EOF
 
-# P-11: one artefact per PR, edited in place. Posting a fresh comment each
-# round is the duplicate-artefact defect this agent's own Step 7 table tells it
-# to raise against other agents.
-if [ -n "$PRIOR" ]; then
-  gh api --method PATCH "repos/$REPO/issues/comments/$PRIOR" \
-    -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
-else
-  gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
-    -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
-fi
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
 ```
 
-The announcements in Steps 0 and 12 stay one-per-run: AGENTS.md requires an
-announcement on every run, and P-11 names the **artefact** specifically.
+Always POST; never rewrite a previous artefact. Each round's findings are the
+record of what was wrong at that head, and a human reading the thread needs to
+see them change between rounds (P-11, P-12).
 
 ---
 

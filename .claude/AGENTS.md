@@ -29,7 +29,7 @@ full statements and rationale live there.
 | **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. Use it in announcements and Question Cards. |
 | **P-9** Cross-issue parallel, intra-issue serial | You are not racing other agents on the same issue. Assume nothing about sibling agents on other issues. |
 | **P-10** Agents draft, humans decide | Never approve a gate. Never apply a `*:approved` label. Humans do that; the orchestrator promotes you afterward. |
-| **P-11** Resumable by default | Be idempotent. On re-run, edit your previous artefact comment in place — don't post duplicates. |
+| **P-11** Resumable by default | Be idempotent: a re-run must not double-apply an effect — no second PR, no second branch, no re-applied label. Artefacts are append-only: post a new artefact each run, headed `(Re-run)`, and never rewrite a previous one. |
 | **P-12** Transparent over clever | Post a comment when something halts. Use the named markers. Don't infer state silently. |
 | **P-14** Deterministic Python orchestrator | The orchestrator decides who runs next. **You do not invoke other agents.** Do your one job and exit. |
 | **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`02-principles.md#p-15`](../docs/product/orchestrator/02-principles.md#p-15). |
@@ -44,7 +44,7 @@ full statements and rationale live there.
 | Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
 | Standards | JSON under `standards/*.json` (see [`05-pipeline-config.md`](../docs/product/orchestrator/05-pipeline-config.md)) |
 | Pipeline graph | Don't read it. The orchestrator routes work; focus on your task. |
-| Prior runs of yourself | Edit-in-place: re-runs find the prior comment, edit it (P-11). Don't post duplicates. |
+| Prior runs of yourself | Read them, don't rewrite them. Find your prior artefact to head this run `(Re-run)` and to see what you said last time; post a new one (P-11). |
 
 Environment variables the orchestrator exports for you:
 
