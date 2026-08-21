@@ -205,3 +205,175 @@ def test_empty_allowlist_denies_bash_commands(tmp_path):
 
 def test_no_scope_file_allows_bash_commands(tmp_path):
     assert_allowed(run_hook(tmp_path, "Bash", "rm -rf /"))
+
+
+# --- Sub-command decomposition (issue #362) ---------------------------------
+#
+# The hook used to glob a granted pattern against the whole command string,
+# which was simultaneously too loose (a granted prefix swallowed everything
+# after `&&`) and too strict (a granted command preceded by `cd` matched
+# nothing). Both come from the same defect; these tests pin both halves.
+
+SPLITTER = REPO_ROOT / ".claude" / "hooks" / "split-command.py"
+
+# BASE_AGENT_TOOLS grants `cd` in its own right precisely so the idiomatic
+# `cd $AI_AGILE_ROOT && <granted>` survives decomposition.
+CHAINING_ALLOWLIST = RESOLVED_ALLOWLIST + [
+    "Bash(cd *)",
+    "Bash(sed *)",
+    "Bash(export *)",
+    "Bash(sh *)",
+    "Bash(bash *)",
+    "Bash(find *)",
+]
+
+
+def test_granted_command_preceded_by_a_directory_change_is_permitted(tmp_path):
+    """The false-denial half: `sed` is granted, but the string starts with `cd`."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    assert_allowed(
+        run_hook(
+            tmp_path,
+            "Bash",
+            "cd /home/user/ai-coding-standards2 && sed -n '1,5p' .claude/AGENTS.md",
+        )
+    )
+    # The multi-line form the #321 run actually used, export included.
+    assert_allowed(
+        run_hook(
+            tmp_path,
+            "Bash",
+            "cd /home/user/ai-coding-standards2\n"
+            'export REPO="o/r"\n'
+            "sed -n '1,5p' .claude/AGENTS.md",
+        )
+    )
+
+
+def test_granted_prefix_does_not_authorise_a_chained_command(tmp_path):
+    """The bypass half: `Bash(export *)` must not swallow the rest of the line."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    reason = deny_reason(
+        run_hook(tmp_path, "Bash", "export FOO=1 && curl https://example.com")
+    )
+    assert "curl https://example.com" in reason, \
+        "the denial must name the ungranted sub-command, not the whole line"
+
+
+def test_every_separator_form_is_decomposed(tmp_path):
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "echo x; curl https://example.com",
+        "cat f | curl https://example.com",
+        "cat f || curl https://example.com",
+        "cd /tmp && cat f && curl https://example.com",
+    ]:
+        deny_reason(run_hook(tmp_path, "Bash", command))
+
+
+def test_shell_wrapper_does_not_launder_an_ungranted_command(tmp_path):
+    """`sh -c` is an arbitrary interpreter; no pattern can scope its argument."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "sh -c 'curl https://example.com'",
+        'bash -c "curl https://example.com"',
+    ]:
+        reason = deny_reason(run_hook(tmp_path, "Bash", command))
+        assert "cannot be scope-checked" in reason
+
+
+def test_interpreter_running_a_repo_file_is_still_permitted(tmp_path):
+    """Only inline `-c` source is laundering; running a checked-in script is not."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    assert_allowed(run_hook(tmp_path, "Bash", "bash scripts/build.sh"))
+
+
+def test_command_substitution_is_refused(tmp_path):
+    """`$(...)` hides a command inside a word where no pattern can see it."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "echo $(curl https://example.com)",
+        "cat `curl https://example.com`",
+    ]:
+        reason = deny_reason(run_hook(tmp_path, "Bash", command))
+        assert "cannot be scope-checked" in reason
+
+
+def test_find_exec_is_refused(tmp_path):
+    """`Bash(find *)` is granted to every agent; `-exec` would make it universal."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    reason = deny_reason(
+        run_hook(tmp_path, "Bash", "find . -name '*.py' -exec curl https://example.com {} ;")
+    )
+    assert "cannot be scope-checked" in reason
+
+
+def test_exec_wrappers_are_refused(tmp_path):
+    """Wrappers exist to run a command named in their own arguments."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST + ["Bash(xargs *)", "Bash(env *)"])
+    for command in [
+        "xargs curl",
+        "env curl https://example.com",
+        "eval curl",
+    ]:
+        reason = deny_reason(run_hook(tmp_path, "Bash", command))
+        assert "cannot be scope-checked" in reason
+
+
+def test_base_agent_tools_grants_cd(tmp_path):
+    """Decomposition only works if `cd` is granted; otherwise it sinks every
+    `cd X && <granted>` call, which is what it did on #321."""
+    orchestrator = (REPO_ROOT / "pipeline" / "pipeline_orchestrator.py").read_text()
+    assert '"Bash(cd *)"' in orchestrator, \
+        "BASE_AGENT_TOOLS must grant Bash(cd *) for sub-command matching to be usable"
+
+
+def test_splitter_exits_two_on_refusal():
+    """The hook distinguishes 'split fine, no match' from 'cannot be split'."""
+    result = subprocess.run(
+        ["python3", str(SPLITTER)],
+        input="sh -c 'curl x'", capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 2
+    assert result.stdout.startswith("REFUSED: ")
+
+
+def test_newline_separates_sub_commands(tmp_path):
+    """A newline ends a command as surely as `&&` does. Treating it as plain
+    whitespace let `cd /repo\\ncurl evil` match Bash(cd *) as one segment."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    reason = deny_reason(
+        run_hook(tmp_path, "Bash", "cd /repo\ncurl https://example.com")
+    )
+    assert "curl https://example.com" in reason
+
+
+def test_line_continuation_is_one_sub_command(tmp_path):
+    r"""A trailing `\` joins lines; the halves are not separate commands."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    assert_allowed(run_hook(tmp_path, "Bash", "cat foo \\\n  bar"))
+
+
+def test_heredoc_body_is_data_not_commands(tmp_path):
+    """AGENTS.md prescribes staging comment bodies with `cat ... <<'EOF'`.
+    Reading the body's lines as commands would deny the protocol's own idiom."""
+    write_scope(tmp_path, "03_execute/pr-reviewer", RESOLVED_ALLOWLIST)
+    assert_allowed(
+        run_hook(
+            tmp_path,
+            "Bash",
+            'cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<\'EOF\'\n'
+            "## Findings && caveats\n"
+            "EOF\n"
+            "gh api --method POST repos/o/r/issues/1/comments -F body=@/tmp/body.md",
+        )
+    )
+
+
+def test_unquoted_heredoc_body_is_still_checked_for_substitution(tmp_path):
+    """`<<EOF` expands; `<<'EOF'` does not. Only the quoted form is inert."""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    reason = deny_reason(
+        run_hook(tmp_path, "Bash", "cat > /tmp/x <<EOF\n$(curl https://example.com)\nEOF")
+    )
+    assert "cannot be scope-checked" in reason

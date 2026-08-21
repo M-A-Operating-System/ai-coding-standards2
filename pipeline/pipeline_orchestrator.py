@@ -2446,6 +2446,70 @@ PRINT_PROMPT_ENV_KEYS = (
 )
 
 
+# Warned-once flag for the untrusted-workspace check below.
+_WORKSPACE_TRUST_WARNED = False
+
+
+def _warn_if_grants_dropped() -> int:
+    """Log the `permissions.allow` entries the CLI will discard, and count them.
+
+    The Claude CLI ignores every `permissions.allow` entry in
+    `.claude/settings.json` unless the workspace carries
+    `projects[<root>].hasTrustDialogAccepted: true` in the CLI's own config.
+    It says so on stderr and then runs with narrower permissions than the repo
+    configured, which is invisible to the orchestrator and to the agent -- the
+    agent just sees an Edit denial on a path the repo explicitly granted
+    (issue #362).
+
+    Headless runs are largely insulated because the orchestrator grants
+    `Edit`/`Write` outright through `--allowedTools`, which is not subject to
+    the trust gate. The `/run-agent` path is not: it has no `--allowedTools`
+    of its own and leans on the session's resolved permissions. Either way the
+    drop is a fact about the run, so name it once instead of letting it scroll
+    past in a subprocess's stderr.
+
+    Returns the number of entries that will be dropped (0 when none are, or
+    when neither file can be read).
+    """
+    global _WORKSPACE_TRUST_WARNED
+
+    settings_file = SUBMODULE_ROOT / ".claude/settings.json"
+    try:
+        allow = json.loads(settings_file.read_text()).get("permissions", {}).get("allow", [])
+    except (OSError, ValueError):
+        return 0
+    if not allow:
+        return 0
+
+    # HOME is passed straight through to the agent subprocess
+    # (AGENT_ENV_PASSTHROUGH), so this process's config is the agent's config.
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.environ.get("HOME")
+    if not config_dir:
+        return 0
+    try:
+        projects = json.loads((Path(config_dir) / ".claude.json").read_text()).get("projects", {})
+    except (OSError, ValueError):
+        return 0
+
+    root = os.environ.get("AI_AGILE_ROOT") or str(SUBMODULE_ROOT)
+    if projects.get(str(Path(root).resolve()), projects.get(root, {})).get("hasTrustDialogAccepted"):
+        return 0
+
+    if not _WORKSPACE_TRUST_WARNED:
+        _WORKSPACE_TRUST_WARNED = True
+        log.warning(
+            "  %d permissions.allow entr%s in .claude/settings.json will be "
+            "DROPPED: %s. The workspace %s is not trusted in %s/.claude.json, "
+            "so the CLI ignores them. Agents will be denied these grants with "
+            "no error of their own. Remedy: accept the trust dialog once "
+            "interactively in that directory, or set "
+            "projects[%r].hasTrustDialogAccepted to true.",
+            len(allow), "y" if len(allow) == 1 else "ies",
+            ", ".join(allow), root, config_dir, root,
+        )
+    return len(allow)
+
+
 # How long the auth probe below waits for the CLI to answer a trivial prompt.
 CLAUDE_PROBE_TIMEOUT_SECONDS = 90
 
@@ -2590,6 +2654,12 @@ BASE_AGENT_TOOLS = [
     "Bash(cat *)",                 # read prompt-side files
     "Bash(grep *)",
     "Bash(find *)",
+    # Scope checking splits a command into its sub-commands and requires every
+    # one of them to be granted (#362), so the idiomatic `cd $AI_AGILE_ROOT &&
+    # <granted command>` needs `cd` granted in its own right. Without it the
+    # leading `cd` sinks the whole call, which is how a granted `sed` was
+    # refused on #321. `cd` reads and writes nothing.
+    "Bash(cd *)",
     "Read",
     "Glob",
     "Grep",
@@ -2798,6 +2868,8 @@ def invoke_agent(
     # Only fail when NEITHER is available -- an unauthenticated launch otherwise
     # produces an auth-error the stream-json parser may misread as a rate-limit
     # pause, leaving the work item stuck in :wip.
+    _warn_if_grants_dropped()
+
     if not _claude_cli_usable(agent_env):
         log.error(
             "  invoke_agent: the Claude CLI cannot authenticate with the agent's "
@@ -3500,7 +3572,10 @@ def _run_agent(
             session_id, "agent.invoked", repo,
             work_item=work_item, agent=agent_def.agent,
             outcome_status="started",
-            outcome_detail=f"mode={agent_def.step_type}",
+            outcome_detail=(
+                f"mode={agent_def.step_type} "
+                f"grants_dropped={_warn_if_grants_dropped()}"
+            ),
         ))
     _invoked_at = time.monotonic()
 
