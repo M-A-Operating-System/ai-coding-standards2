@@ -23,6 +23,7 @@ The orchestrator owns exactly these responsibilities:
 | Responsibility | Detail |
 |---|---|
 | Event intake | Translate raw GitHub webhooks into the semantic event vocabulary |
+| Execution ref | Run its own code -- this module, `pipeline.json`, the agent prompts and `.github/scripts/` -- from `main`, whatever event fired the tick. On a `pull_request` trigger the default checkout is `refs/pull/N/merge`, which would let a PR editing an agent prompt or this module alter the run that reviews it. Pinned in `ai_orchestrator.yml`; the PR's content is still reviewed, over the API rather than from disk |
 | State read | Read pipeline state — labels, session comments, PR metadata — from GitHub |
 | Eligibility evaluation | Walk the dependency graph in `pipeline.json` and decide which agent is next |
 | Mutex management | Acquire and release the `:wip` label lock per (object, agent) |
