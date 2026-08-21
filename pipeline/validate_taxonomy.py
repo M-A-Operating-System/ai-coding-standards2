@@ -16,8 +16,8 @@ Checks:
   1. JSON is parseable
   2. Every JSON file under the taxonomy is mapped to a schema and conforms to
      it. An unmapped file is an error, never a silent skip.
-  3. Identity is sound: every node id is unique across the taxonomy, matches
-     the format for its domain, and is never reused
+  3. Identity is sound: every node id is unique across the taxonomy, carries
+     the three-letter code for its level, and is never reused
   4. Paths are positional: each node declares the path its position implies,
      its own level, and the identifier of the node above it
   5. taxonomy.json domain, registry, mapping and rule sources point at files
@@ -154,8 +154,13 @@ def check_schema(
     ]
 
 
-ID_PATTERN = re.compile(r"^(ARCH|PAT|CODE|CON)-[0-9]{4}$")
-DOMAIN_PREFIX = {"architecture": "ARCH", "patterns": "PAT", "code": "CODE", "concepts": "CON"}
+ID_PATTERN = re.compile(r"^(FAM|CLS|SUB)-[0-9]{6}$")
+
+# The three-letter code records the level, not the domain or the subject. A node
+# can therefore move between domains and keep its identity, which is the whole
+# point of separating identity from location. Counters run per level across the
+# whole taxonomy.
+LEVEL_PREFIX = {"family": "FAM", "class": "CLS", "subclass": "SUB"}
 
 
 def collect_nodes(loaded: dict[str, dict]) -> tuple[dict[str, dict], dict[str, str], list[str]]:
@@ -165,10 +170,10 @@ def collect_nodes(loaded: dict[str, dict]) -> tuple[dict[str, dict], dict[str, s
     Returns (by_id, path_to_id, errors).
 
     Identity and location are checked separately because they mean different
-    things. The id is the primary key: unique across the taxonomy, correctly
-    prefixed for its domain, never reused. The path is where the node currently
-    sits: it must match the position it occupies, or the composed lookup a
-    consumer performs would miss it.
+    things. The id is the primary key: unique across the taxonomy, carrying the
+    three-letter code for its level, never reused. The path is where the node
+    currently sits: it must match the position it occupies, or the composed
+    lookup a consumer performs would miss it.
     """
     by_id: dict[str, dict] = {}
     path_to_id: dict[str, str] = {}
@@ -186,7 +191,7 @@ def collect_nodes(loaded: dict[str, dict]) -> tuple[dict[str, dict], dict[str, s
 
         def visit(node: dict, path: str, parent_ref: str, level: str) -> None:
             node_id = node.get("id")
-            errors.extend(_check_identity(rel, node, node_id, domain, by_id))
+            errors.extend(_check_identity(rel, node, node_id, level, by_id))
             errors.extend(_check_position(rel, node, node_id, path, parent_ref, level))
             if isinstance(node_id, str):
                 by_id[node_id] = {**node, "_file": rel}
@@ -218,18 +223,18 @@ def collect_nodes(loaded: dict[str, dict]) -> tuple[dict[str, dict], dict[str, s
 
 
 def _check_identity(
-    filename: str, node: dict, node_id, domain: str, seen: dict[str, dict]
+    filename: str, node: dict, node_id, level: str, seen: dict[str, dict]
 ) -> list[str]:
     """The id is a primary key. Unique, correctly formed, never reused."""
     errors: list[str] = []
     if not isinstance(node_id, str) or not ID_PATTERN.match(node_id):
         errors.append(f"{filename}: {node.get('path', '?')}: id {node_id!r} is not a valid identifier")
         return errors
-    expected_prefix = DOMAIN_PREFIX[domain]
+    expected_prefix = LEVEL_PREFIX[level]
     if not node_id.startswith(f"{expected_prefix}-"):
         errors.append(
-            f"{filename}: {node_id}: identifier prefix does not match domain "
-            f"{domain!r} (expected {expected_prefix}-NNNN)"
+            f"{filename}: {node_id}: identifier prefix does not match level "
+            f"{level!r} (expected {expected_prefix}-NNNNNN)"
         )
     if node_id in seen:
         errors.append(

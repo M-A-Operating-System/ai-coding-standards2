@@ -1,6 +1,6 @@
 {
   "id": "booking-db-prod",
-  "classification": "ARCH-0033",
+  "classification": "SUB-000020",
   "implementation": "postgresql",
   "runtime": "aws/rds",
   "attributes": {

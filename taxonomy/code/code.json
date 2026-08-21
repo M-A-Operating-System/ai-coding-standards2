@@ -18,7 +18,7 @@
   },
   "families": {
     "api": {
-      "id": "CODE-0001",
+      "id": "FAM-000023",
       "path": "code/api",
       "name": "Api",
       "description": "Higher-order source-code roles that implement inbound API behavior and contracts.",
@@ -70,12 +70,12 @@
       "since": "0.2.0",
       "classes": {
         "handler": {
-          "id": "CODE-0002",
+          "id": "CLS-000106",
           "path": "code/api/handler",
           "name": "Handler",
           "description": "Handler groups code elements that provide handler responsibilities within the Api family.",
           "level": "class",
-          "parent": "CODE-0001",
+          "parent": "FAM-000023",
           "facets": {
             "concern": [
               "api"
@@ -104,12 +104,12 @@
           "since": "0.2.0",
           "subclasses": {
             "request-handler": {
-              "id": "CODE-0003",
+              "id": "SUB-000186",
               "path": "code/api/handler/request-handler",
               "name": "Request Handler",
               "description": "Function or method responsible for receiving an API request and coordinating application behavior.",
               "level": "subclass",
-              "parent": "CODE-0002",
+              "parent": "CLS-000106",
               "facets": {
                 "concern": [
                   "api"
@@ -146,12 +146,12 @@
               "since": "0.2.0"
             },
             "command-handler": {
-              "id": "CODE-0004",
+              "id": "SUB-000187",
               "path": "code/api/handler/command-handler",
               "name": "Command Handler",
               "description": "Command Handler is a code specialization of Handler within the Api family.",
               "level": "subclass",
-              "parent": "CODE-0002",
+              "parent": "CLS-000106",
               "facets": {
                 "concern": [
                   "api"
@@ -182,12 +182,12 @@
           }
         },
         "middleware": {
-          "id": "CODE-0005",
+          "id": "CLS-000107",
           "path": "code/api/middleware",
           "name": "Middleware",
           "description": "Middleware groups code elements that provide middleware responsibilities within the Api family.",
           "level": "class",
-          "parent": "CODE-0001",
+          "parent": "FAM-000023",
           "facets": {
             "concern": [
               "api"
@@ -216,12 +216,12 @@
           "since": "0.2.0",
           "subclasses": {
             "request-middleware": {
-              "id": "CODE-0006",
+              "id": "SUB-000188",
               "path": "code/api/middleware/request-middleware",
               "name": "Request Middleware",
               "description": "Request Middleware is a code specialization of Middleware within the Api family.",
               "level": "subclass",
-              "parent": "CODE-0005",
+              "parent": "CLS-000107",
               "facets": {
                 "concern": [
                   "api"
@@ -250,12 +250,12 @@
               "since": "0.2.0"
             },
             "error-middleware": {
-              "id": "CODE-0007",
+              "id": "SUB-000189",
               "path": "code/api/middleware/error-middleware",
               "name": "Error Middleware",
               "description": "Error Middleware is a code specialization of Middleware within the Api family.",
               "level": "subclass",
-              "parent": "CODE-0005",
+              "parent": "CLS-000107",
               "facets": {
                 "concern": [
                   "api"
@@ -286,12 +286,12 @@
           }
         },
         "contract": {
-          "id": "CODE-0008",
+          "id": "CLS-000108",
           "path": "code/api/contract",
           "name": "Contract",
           "description": "Contract groups code elements that provide contract responsibilities within the Api family.",
           "level": "class",
-          "parent": "CODE-0001",
+          "parent": "FAM-000023",
           "facets": {
             "concern": [
               "api"
@@ -320,12 +320,12 @@
           "since": "0.2.0",
           "subclasses": {
             "request-schema": {
-              "id": "CODE-0009",
+              "id": "SUB-000190",
               "path": "code/api/contract/request-schema",
               "name": "Request Schema",
               "description": "Request Schema is a code specialization of Contract within the Api family.",
               "level": "subclass",
-              "parent": "CODE-0008",
+              "parent": "CLS-000108",
               "facets": {
                 "concern": [
                   "api"
@@ -354,12 +354,12 @@
               "since": "0.2.0"
             },
             "response-schema": {
-              "id": "CODE-0010",
+              "id": "SUB-000191",
               "path": "code/api/contract/response-schema",
               "name": "Response Schema",
               "description": "Response Schema is a code specialization of Contract within the Api family.",
               "level": "subclass",
-              "parent": "CODE-0008",
+              "parent": "CLS-000108",
               "facets": {
                 "concern": [
                   "api"
@@ -392,7 +392,7 @@
       }
     },
     "domain": {
-      "id": "CODE-0011",
+      "id": "FAM-000024",
       "path": "code/domain",
       "name": "Domain",
       "description": "Domain is a canonical code family used to classify domain concerns.",
@@ -444,12 +444,12 @@
       "since": "0.2.0",
       "classes": {
         "model": {
-          "id": "CODE-0012",
+          "id": "CLS-000109",
           "path": "code/domain/model",
           "name": "Model",
           "description": "Model groups code elements that provide model responsibilities within the Domain family.",
           "level": "class",
-          "parent": "CODE-0011",
+          "parent": "FAM-000024",
           "facets": {
             "concern": [
               "domain"
@@ -478,12 +478,12 @@
           "since": "0.2.0",
           "subclasses": {
             "entity": {
-              "id": "CODE-0013",
+              "id": "SUB-000192",
               "path": "code/domain/model/entity",
               "name": "Entity",
               "description": "Entity is a code specialization of Model within the Domain family.",
               "level": "subclass",
-              "parent": "CODE-0012",
+              "parent": "CLS-000109",
               "facets": {
                 "concern": [
                   "domain"
@@ -512,12 +512,12 @@
               "since": "0.2.0"
             },
             "value-object": {
-              "id": "CODE-0014",
+              "id": "SUB-000193",
               "path": "code/domain/model/value-object",
               "name": "Value Object",
               "description": "Value Object is a code specialization of Model within the Domain family.",
               "level": "subclass",
-              "parent": "CODE-0012",
+              "parent": "CLS-000109",
               "facets": {
                 "concern": [
                   "domain"
@@ -546,12 +546,12 @@
               "since": "0.2.0"
             },
             "aggregate-root": {
-              "id": "CODE-0015",
+              "id": "SUB-000194",
               "path": "code/domain/model/aggregate-root",
               "name": "Aggregate Root",
               "description": "Aggregate Root is a code specialization of Model within the Domain family.",
               "level": "subclass",
-              "parent": "CODE-0012",
+              "parent": "CLS-000109",
               "facets": {
                 "concern": [
                   "domain"
@@ -582,12 +582,12 @@
           }
         },
         "service": {
-          "id": "CODE-0016",
+          "id": "CLS-000110",
           "path": "code/domain/service",
           "name": "Service",
           "description": "Service groups code elements that provide service responsibilities within the Domain family.",
           "level": "class",
-          "parent": "CODE-0011",
+          "parent": "FAM-000024",
           "facets": {
             "concern": [
               "domain"
@@ -616,12 +616,12 @@
           "since": "0.2.0",
           "subclasses": {
             "domain-service": {
-              "id": "CODE-0017",
+              "id": "SUB-000195",
               "path": "code/domain/service/domain-service",
               "name": "Domain Service",
               "description": "Domain Service is a code specialization of Service within the Domain family.",
               "level": "subclass",
-              "parent": "CODE-0016",
+              "parent": "CLS-000110",
               "facets": {
                 "concern": [
                   "domain"
@@ -652,12 +652,12 @@
           }
         },
         "event": {
-          "id": "CODE-0018",
+          "id": "CLS-000111",
           "path": "code/domain/event",
           "name": "Event",
           "description": "Event groups code elements that provide event responsibilities within the Domain family.",
           "level": "class",
-          "parent": "CODE-0011",
+          "parent": "FAM-000024",
           "facets": {
             "concern": [
               "domain"
@@ -686,12 +686,12 @@
           "since": "0.2.0",
           "subclasses": {
             "domain-event": {
-              "id": "CODE-0019",
+              "id": "SUB-000196",
               "path": "code/domain/event/domain-event",
               "name": "Domain Event",
               "description": "Domain Event is a code specialization of Event within the Domain family.",
               "level": "subclass",
-              "parent": "CODE-0018",
+              "parent": "CLS-000111",
               "facets": {
                 "concern": [
                   "domain"
@@ -724,7 +724,7 @@
       }
     },
     "persistence": {
-      "id": "CODE-0020",
+      "id": "FAM-000025",
       "path": "code/persistence",
       "name": "Persistence",
       "description": "Higher-order source-code roles that encapsulate durable data access and transactions.",
@@ -776,12 +776,12 @@
       "since": "0.2.0",
       "classes": {
         "repository": {
-          "id": "CODE-0021",
+          "id": "CLS-000112",
           "path": "code/persistence/repository",
           "name": "Repository",
           "description": "Repository groups code elements that provide repository responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "CODE-0020",
+          "parent": "FAM-000025",
           "facets": {
             "concern": [
               "persistence"
@@ -810,12 +810,12 @@
           "since": "0.2.0",
           "subclasses": {
             "repository-interface": {
-              "id": "CODE-0022",
+              "id": "SUB-000197",
               "path": "code/persistence/repository/repository-interface",
               "name": "Repository Interface",
               "description": "Repository Interface is a code specialization of Repository within the Persistence family.",
               "level": "subclass",
-              "parent": "CODE-0021",
+              "parent": "CLS-000112",
               "facets": {
                 "concern": [
                   "persistence"
@@ -844,12 +844,12 @@
               "since": "0.2.0"
             },
             "repository-implementation": {
-              "id": "CODE-0023",
+              "id": "SUB-000198",
               "path": "code/persistence/repository/repository-implementation",
               "name": "Repository Implementation",
               "description": "Concrete source-code implementation of a repository abstraction performing persistence operations.",
               "level": "subclass",
-              "parent": "CODE-0021",
+              "parent": "CLS-000112",
               "facets": {
                 "concern": [
                   "persistence"
@@ -880,12 +880,12 @@
           }
         },
         "mapper": {
-          "id": "CODE-0024",
+          "id": "CLS-000113",
           "path": "code/persistence/mapper",
           "name": "Mapper",
           "description": "Mapper groups code elements that provide mapper responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "CODE-0020",
+          "parent": "FAM-000025",
           "facets": {
             "concern": [
               "persistence"
@@ -914,12 +914,12 @@
           "since": "0.2.0",
           "subclasses": {
             "data-mapper": {
-              "id": "CODE-0025",
+              "id": "SUB-000199",
               "path": "code/persistence/mapper/data-mapper",
               "name": "Data Mapper",
               "description": "Data Mapper is a code specialization of Mapper within the Persistence family.",
               "level": "subclass",
-              "parent": "CODE-0024",
+              "parent": "CLS-000113",
               "facets": {
                 "concern": [
                   "persistence"
@@ -950,12 +950,12 @@
           }
         },
         "transaction": {
-          "id": "CODE-0026",
+          "id": "CLS-000114",
           "path": "code/persistence/transaction",
           "name": "Transaction",
           "description": "Transaction groups code elements that provide transaction responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "CODE-0020",
+          "parent": "FAM-000025",
           "facets": {
             "concern": [
               "persistence"
@@ -984,12 +984,12 @@
           "since": "0.2.0",
           "subclasses": {
             "unit-of-work": {
-              "id": "CODE-0027",
+              "id": "SUB-000200",
               "path": "code/persistence/transaction/unit-of-work",
               "name": "Unit Of Work",
               "description": "Unit Of Work is a code specialization of Transaction within the Persistence family.",
               "level": "subclass",
-              "parent": "CODE-0026",
+              "parent": "CLS-000114",
               "facets": {
                 "concern": [
                   "persistence"
@@ -1022,7 +1022,7 @@
       }
     },
     "messaging": {
-      "id": "CODE-0028",
+      "id": "FAM-000026",
       "path": "code/messaging",
       "name": "Messaging",
       "description": "Messaging is a canonical code family used to classify messaging concerns.",
@@ -1074,12 +1074,12 @@
       "since": "0.2.0",
       "classes": {
         "consumer": {
-          "id": "CODE-0029",
+          "id": "CLS-000115",
           "path": "code/messaging/consumer",
           "name": "Consumer",
           "description": "Consumer groups code elements that provide consumer responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "CODE-0028",
+          "parent": "FAM-000026",
           "facets": {
             "concern": [
               "messaging"
@@ -1108,12 +1108,12 @@
           "since": "0.2.0",
           "subclasses": {
             "message-consumer": {
-              "id": "CODE-0030",
+              "id": "SUB-000201",
               "path": "code/messaging/consumer/message-consumer",
               "name": "Message Consumer",
               "description": "Function, method, or object that receives asynchronous messages and invokes processing behavior.",
               "level": "subclass",
-              "parent": "CODE-0029",
+              "parent": "CLS-000115",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1144,12 +1144,12 @@
           }
         },
         "producer": {
-          "id": "CODE-0031",
+          "id": "CLS-000116",
           "path": "code/messaging/producer",
           "name": "Producer",
           "description": "Producer groups code elements that provide producer responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "CODE-0028",
+          "parent": "FAM-000026",
           "facets": {
             "concern": [
               "messaging"
@@ -1178,12 +1178,12 @@
           "since": "0.2.0",
           "subclasses": {
             "message-producer": {
-              "id": "CODE-0032",
+              "id": "SUB-000202",
               "path": "code/messaging/producer/message-producer",
               "name": "Message Producer",
               "description": "Message Producer is a code specialization of Producer within the Messaging family.",
               "level": "subclass",
-              "parent": "CODE-0031",
+              "parent": "CLS-000116",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1214,12 +1214,12 @@
           }
         },
         "contract": {
-          "id": "CODE-0033",
+          "id": "CLS-000117",
           "path": "code/messaging/contract",
           "name": "Contract",
           "description": "Contract groups code elements that provide contract responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "CODE-0028",
+          "parent": "FAM-000026",
           "facets": {
             "concern": [
               "messaging"
@@ -1248,12 +1248,12 @@
           "since": "0.2.0",
           "subclasses": {
             "message-schema": {
-              "id": "CODE-0034",
+              "id": "SUB-000203",
               "path": "code/messaging/contract/message-schema",
               "name": "Message Schema",
               "description": "Message Schema is a code specialization of Contract within the Messaging family.",
               "level": "subclass",
-              "parent": "CODE-0033",
+              "parent": "CLS-000117",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1286,7 +1286,7 @@
       }
     },
     "testing": {
-      "id": "CODE-0035",
+      "id": "FAM-000027",
       "path": "code/testing",
       "name": "Testing",
       "description": "Testing is a canonical code family used to classify testing concerns.",
@@ -1338,12 +1338,12 @@
       "since": "0.2.0",
       "classes": {
         "double": {
-          "id": "CODE-0036",
+          "id": "CLS-000118",
           "path": "code/testing/double",
           "name": "Double",
           "description": "Double groups code elements that provide double responsibilities within the Testing family.",
           "level": "class",
-          "parent": "CODE-0035",
+          "parent": "FAM-000027",
           "facets": {
             "concern": [
               "testing"
@@ -1372,12 +1372,12 @@
           "since": "0.2.0",
           "subclasses": {
             "mock": {
-              "id": "CODE-0037",
+              "id": "SUB-000204",
               "path": "code/testing/double/mock",
               "name": "Mock",
               "description": "Mock is a code specialization of Double within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0036",
+              "parent": "CLS-000118",
               "facets": {
                 "concern": [
                   "testing"
@@ -1406,12 +1406,12 @@
               "since": "0.2.0"
             },
             "stub": {
-              "id": "CODE-0038",
+              "id": "SUB-000205",
               "path": "code/testing/double/stub",
               "name": "Stub",
               "description": "Stub is a code specialization of Double within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0036",
+              "parent": "CLS-000118",
               "facets": {
                 "concern": [
                   "testing"
@@ -1440,12 +1440,12 @@
               "since": "0.2.0"
             },
             "fake": {
-              "id": "CODE-0039",
+              "id": "SUB-000206",
               "path": "code/testing/double/fake",
               "name": "Fake",
               "description": "Fake is a code specialization of Double within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0036",
+              "parent": "CLS-000118",
               "facets": {
                 "concern": [
                   "testing"
@@ -1476,12 +1476,12 @@
           }
         },
         "fixture": {
-          "id": "CODE-0040",
+          "id": "CLS-000119",
           "path": "code/testing/fixture",
           "name": "Fixture",
           "description": "Fixture groups code elements that provide fixture responsibilities within the Testing family.",
           "level": "class",
-          "parent": "CODE-0035",
+          "parent": "FAM-000027",
           "facets": {
             "concern": [
               "testing"
@@ -1510,12 +1510,12 @@
           "since": "0.2.0",
           "subclasses": {
             "test-fixture": {
-              "id": "CODE-0041",
+              "id": "SUB-000207",
               "path": "code/testing/fixture/test-fixture",
               "name": "Test Fixture",
               "description": "Test Fixture is a code specialization of Fixture within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0040",
+              "parent": "CLS-000119",
               "facets": {
                 "concern": [
                   "testing"
@@ -1546,12 +1546,12 @@
           }
         },
         "test": {
-          "id": "CODE-0042",
+          "id": "CLS-000120",
           "path": "code/testing/test",
           "name": "Test",
           "description": "Test groups code elements that provide test responsibilities within the Testing family.",
           "level": "class",
-          "parent": "CODE-0035",
+          "parent": "FAM-000027",
           "facets": {
             "concern": [
               "testing"
@@ -1580,12 +1580,12 @@
           "since": "0.2.0",
           "subclasses": {
             "unit-test": {
-              "id": "CODE-0043",
+              "id": "SUB-000208",
               "path": "code/testing/test/unit-test",
               "name": "Unit Test",
               "description": "Unit Test is a code specialization of Test within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0042",
+              "parent": "CLS-000120",
               "facets": {
                 "concern": [
                   "testing"
@@ -1614,12 +1614,12 @@
               "since": "0.2.0"
             },
             "integration-test": {
-              "id": "CODE-0044",
+              "id": "SUB-000209",
               "path": "code/testing/test/integration-test",
               "name": "Integration Test",
               "description": "Integration Test is a code specialization of Test within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0042",
+              "parent": "CLS-000120",
               "facets": {
                 "concern": [
                   "testing"
@@ -1648,12 +1648,12 @@
               "since": "0.2.0"
             },
             "contract-test": {
-              "id": "CODE-0045",
+              "id": "SUB-000210",
               "path": "code/testing/test/contract-test",
               "name": "Contract Test",
               "description": "Contract Test is a code specialization of Test within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0042",
+              "parent": "CLS-000120",
               "facets": {
                 "concern": [
                   "testing"
@@ -1682,12 +1682,12 @@
               "since": "0.2.0"
             },
             "end-to-end-test": {
-              "id": "CODE-0046",
+              "id": "SUB-000211",
               "path": "code/testing/test/end-to-end-test",
               "name": "End To End Test",
               "description": "End To End Test is a code specialization of Test within the Testing family.",
               "level": "subclass",
-              "parent": "CODE-0042",
+              "parent": "CLS-000120",
               "facets": {
                 "concern": [
                   "testing"
@@ -1720,7 +1720,7 @@
       }
     },
     "configuration": {
-      "id": "CODE-0047",
+      "id": "FAM-000028",
       "path": "code/configuration",
       "name": "Configuration",
       "description": "Configuration is a canonical code family used to classify configuration concerns.",
@@ -1772,12 +1772,12 @@
       "since": "0.2.0",
       "classes": {
         "settings": {
-          "id": "CODE-0048",
+          "id": "CLS-000121",
           "path": "code/configuration/settings",
           "name": "Settings",
           "description": "Settings groups code elements that provide settings responsibilities within the Configuration family.",
           "level": "class",
-          "parent": "CODE-0047",
+          "parent": "FAM-000028",
           "facets": {
             "concern": [
               "configuration"
@@ -1806,12 +1806,12 @@
           "since": "0.2.0",
           "subclasses": {
             "application-settings": {
-              "id": "CODE-0049",
+              "id": "SUB-000212",
               "path": "code/configuration/settings/application-settings",
               "name": "Application Settings",
               "description": "Application Settings is a code specialization of Settings within the Configuration family.",
               "level": "subclass",
-              "parent": "CODE-0048",
+              "parent": "CLS-000121",
               "facets": {
                 "concern": [
                   "configuration"
@@ -1840,12 +1840,12 @@
               "since": "0.2.0"
             },
             "environment-settings": {
-              "id": "CODE-0050",
+              "id": "SUB-000213",
               "path": "code/configuration/settings/environment-settings",
               "name": "Environment Settings",
               "description": "Environment Settings is a code specialization of Settings within the Configuration family.",
               "level": "subclass",
-              "parent": "CODE-0048",
+              "parent": "CLS-000121",
               "facets": {
                 "concern": [
                   "configuration"
@@ -1876,12 +1876,12 @@
           }
         },
         "feature": {
-          "id": "CODE-0051",
+          "id": "CLS-000122",
           "path": "code/configuration/feature",
           "name": "Feature",
           "description": "Feature groups code elements that provide feature responsibilities within the Configuration family.",
           "level": "class",
-          "parent": "CODE-0047",
+          "parent": "FAM-000028",
           "facets": {
             "concern": [
               "configuration"
@@ -1910,12 +1910,12 @@
           "since": "0.2.0",
           "subclasses": {
             "feature-flag": {
-              "id": "CODE-0052",
+              "id": "SUB-000214",
               "path": "code/configuration/feature/feature-flag",
               "name": "Feature Flag",
               "description": "Feature Flag is a code specialization of Feature within the Configuration family.",
               "level": "subclass",
-              "parent": "CODE-0051",
+              "parent": "CLS-000122",
               "facets": {
                 "concern": [
                   "configuration"
@@ -1948,7 +1948,7 @@
       }
     },
     "security": {
-      "id": "CODE-0053",
+      "id": "FAM-000029",
       "path": "code/security",
       "name": "Security",
       "description": "Security is a canonical code family used to classify security concerns.",
@@ -2000,12 +2000,12 @@
       "since": "0.2.0",
       "classes": {
         "authentication": {
-          "id": "CODE-0054",
+          "id": "CLS-000123",
           "path": "code/security/authentication",
           "name": "Authentication",
           "description": "Authentication groups code elements that provide authentication responsibilities within the Security family.",
           "level": "class",
-          "parent": "CODE-0053",
+          "parent": "FAM-000029",
           "facets": {
             "concern": [
               "security"
@@ -2034,12 +2034,12 @@
           "since": "0.2.0",
           "subclasses": {
             "authentication-handler": {
-              "id": "CODE-0055",
+              "id": "SUB-000215",
               "path": "code/security/authentication/authentication-handler",
               "name": "Authentication Handler",
               "description": "Authentication Handler is a code specialization of Authentication within the Security family.",
               "level": "subclass",
-              "parent": "CODE-0054",
+              "parent": "CLS-000123",
               "facets": {
                 "concern": [
                   "security"
@@ -2070,12 +2070,12 @@
           }
         },
         "authorization": {
-          "id": "CODE-0056",
+          "id": "CLS-000124",
           "path": "code/security/authorization",
           "name": "Authorization",
           "description": "Authorization groups code elements that provide authorization responsibilities within the Security family.",
           "level": "class",
-          "parent": "CODE-0053",
+          "parent": "FAM-000029",
           "facets": {
             "concern": [
               "security"
@@ -2104,12 +2104,12 @@
           "since": "0.2.0",
           "subclasses": {
             "authorization-handler": {
-              "id": "CODE-0057",
+              "id": "SUB-000216",
               "path": "code/security/authorization/authorization-handler",
               "name": "Authorization Handler",
               "description": "Authorization Handler is a code specialization of Authorization within the Security family.",
               "level": "subclass",
-              "parent": "CODE-0056",
+              "parent": "CLS-000124",
               "facets": {
                 "concern": [
                   "security"
@@ -2140,12 +2140,12 @@
           }
         },
         "validation": {
-          "id": "CODE-0058",
+          "id": "CLS-000125",
           "path": "code/security/validation",
           "name": "Validation",
           "description": "Validation groups code elements that provide validation responsibilities within the Security family.",
           "level": "class",
-          "parent": "CODE-0053",
+          "parent": "FAM-000029",
           "facets": {
             "concern": [
               "security"
@@ -2174,12 +2174,12 @@
           "since": "0.2.0",
           "subclasses": {
             "input-validator": {
-              "id": "CODE-0059",
+              "id": "SUB-000217",
               "path": "code/security/validation/input-validator",
               "name": "Input Validator",
               "description": "Input Validator is a code specialization of Validation within the Security family.",
               "level": "subclass",
-              "parent": "CODE-0058",
+              "parent": "CLS-000125",
               "facets": {
                 "concern": [
                   "security"
@@ -2212,7 +2212,7 @@
       }
     },
     "observability": {
-      "id": "CODE-0060",
+      "id": "FAM-000030",
       "path": "code/observability",
       "name": "Observability",
       "description": "Observability is a canonical code family used to classify observability concerns.",
@@ -2264,12 +2264,12 @@
       "since": "0.2.0",
       "classes": {
         "logging": {
-          "id": "CODE-0061",
+          "id": "CLS-000126",
           "path": "code/observability/logging",
           "name": "Logging",
           "description": "Logging groups code elements that provide logging responsibilities within the Observability family.",
           "level": "class",
-          "parent": "CODE-0060",
+          "parent": "FAM-000030",
           "facets": {
             "concern": [
               "observability"
@@ -2298,12 +2298,12 @@
           "since": "0.2.0",
           "subclasses": {
             "structured-logger": {
-              "id": "CODE-0062",
+              "id": "SUB-000218",
               "path": "code/observability/logging/structured-logger",
               "name": "Structured Logger",
               "description": "Structured Logger is a code specialization of Logging within the Observability family.",
               "level": "subclass",
-              "parent": "CODE-0061",
+              "parent": "CLS-000126",
               "facets": {
                 "concern": [
                   "observability"
@@ -2334,12 +2334,12 @@
           }
         },
         "metrics": {
-          "id": "CODE-0063",
+          "id": "CLS-000127",
           "path": "code/observability/metrics",
           "name": "Metrics",
           "description": "Metrics groups code elements that provide metrics responsibilities within the Observability family.",
           "level": "class",
-          "parent": "CODE-0060",
+          "parent": "FAM-000030",
           "facets": {
             "concern": [
               "observability"
@@ -2368,12 +2368,12 @@
           "since": "0.2.0",
           "subclasses": {
             "metrics-instrumentation": {
-              "id": "CODE-0064",
+              "id": "SUB-000219",
               "path": "code/observability/metrics/metrics-instrumentation",
               "name": "Metrics Instrumentation",
               "description": "Metrics Instrumentation is a code specialization of Metrics within the Observability family.",
               "level": "subclass",
-              "parent": "CODE-0063",
+              "parent": "CLS-000127",
               "facets": {
                 "concern": [
                   "observability"
@@ -2404,12 +2404,12 @@
           }
         },
         "tracing": {
-          "id": "CODE-0065",
+          "id": "CLS-000128",
           "path": "code/observability/tracing",
           "name": "Tracing",
           "description": "Tracing groups code elements that provide tracing responsibilities within the Observability family.",
           "level": "class",
-          "parent": "CODE-0060",
+          "parent": "FAM-000030",
           "facets": {
             "concern": [
               "observability"
@@ -2438,12 +2438,12 @@
           "since": "0.2.0",
           "subclasses": {
             "trace-instrumentation": {
-              "id": "CODE-0066",
+              "id": "SUB-000220",
               "path": "code/observability/tracing/trace-instrumentation",
               "name": "Trace Instrumentation",
               "description": "Trace Instrumentation is a code specialization of Tracing within the Observability family.",
               "level": "subclass",
-              "parent": "CODE-0065",
+              "parent": "CLS-000128",
               "facets": {
                 "concern": [
                   "observability"
@@ -2476,7 +2476,7 @@
       }
     },
     "integration": {
-      "id": "CODE-0067",
+      "id": "FAM-000031",
       "path": "code/integration",
       "name": "Integration",
       "description": "Integration is a canonical code family used to classify integration concerns.",
@@ -2528,12 +2528,12 @@
       "since": "0.2.0",
       "classes": {
         "client": {
-          "id": "CODE-0068",
+          "id": "CLS-000129",
           "path": "code/integration/client",
           "name": "Client",
           "description": "Client groups code elements that provide client responsibilities within the Integration family.",
           "level": "class",
-          "parent": "CODE-0067",
+          "parent": "FAM-000031",
           "facets": {
             "concern": [
               "integration"
@@ -2562,12 +2562,12 @@
           "since": "0.2.0",
           "subclasses": {
             "api-client": {
-              "id": "CODE-0069",
+              "id": "SUB-000221",
               "path": "code/integration/client/api-client",
               "name": "Api Client",
               "description": "Api Client is a code specialization of Client within the Integration family.",
               "level": "subclass",
-              "parent": "CODE-0068",
+              "parent": "CLS-000129",
               "facets": {
                 "concern": [
                   "integration"
@@ -2596,12 +2596,12 @@
               "since": "0.2.0"
             },
             "database-client": {
-              "id": "CODE-0070",
+              "id": "SUB-000222",
               "path": "code/integration/client/database-client",
               "name": "Database Client",
               "description": "Database Client is a code specialization of Client within the Integration family.",
               "level": "subclass",
-              "parent": "CODE-0068",
+              "parent": "CLS-000129",
               "facets": {
                 "concern": [
                   "integration"
@@ -2630,12 +2630,12 @@
               "since": "0.2.0"
             },
             "message-client": {
-              "id": "CODE-0071",
+              "id": "SUB-000223",
               "path": "code/integration/client/message-client",
               "name": "Message Client",
               "description": "Message Client is a code specialization of Client within the Integration family.",
               "level": "subclass",
-              "parent": "CODE-0068",
+              "parent": "CLS-000129",
               "facets": {
                 "concern": [
                   "integration"
@@ -2666,12 +2666,12 @@
           }
         },
         "adapter": {
-          "id": "CODE-0072",
+          "id": "CLS-000130",
           "path": "code/integration/adapter",
           "name": "Adapter",
           "description": "Adapter groups code elements that provide adapter responsibilities within the Integration family.",
           "level": "class",
-          "parent": "CODE-0067",
+          "parent": "FAM-000031",
           "facets": {
             "concern": [
               "integration"
@@ -2700,12 +2700,12 @@
           "since": "0.2.0",
           "subclasses": {
             "integration-adapter": {
-              "id": "CODE-0073",
+              "id": "SUB-000224",
               "path": "code/integration/adapter/integration-adapter",
               "name": "Integration Adapter",
               "description": "Integration Adapter is a code specialization of Adapter within the Integration family.",
               "level": "subclass",
-              "parent": "CODE-0072",
+              "parent": "CLS-000130",
               "facets": {
                 "concern": [
                   "integration"

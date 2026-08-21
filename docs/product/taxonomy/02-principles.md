@@ -98,8 +98,12 @@ renamed, split, merged, or moved to a better parent, and the nodes keep their
 identity through it — so the structural repairs the taxonomy needs cost
 nothing to the consumers already citing it.
 
-**Consequence.** Identifiers are opaque and sequential within a domain
-(`ARCH-0042`), assigned once and retired only by deprecation. Paths remain
+**Consequence.** Identifiers are opaque and sequential within a level
+(`SUB-000042`), assigned once and retired only by deprecation. The
+three-letter code records the level -- `FAM`, `CLS`, `SUB` -- and nothing
+about the subject, so a node can move between domains and keep its identity.
+Coding by content would put the very thing most likely to be corrected back
+inside the key. Paths remain
 unique at any point in time and remain positionally validated, so
 `<domain>/<family>/<class>/<subclass>` keeps every property that made it
 worth fixing at four parts. A node's former paths are retained so a stale

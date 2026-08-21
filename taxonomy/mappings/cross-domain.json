@@ -3,34 +3,34 @@
   "definition": "Explicit semantic links across domains.",
   "relationships": [
     {
-      "from": "PAT-0014",
+      "from": "SUB-000149",
       "type": "typically-implemented-as",
-      "to": "CODE-0023"
+      "to": "SUB-000198"
     },
     {
-      "from": "PAT-0003",
+      "from": "SUB-000142",
       "type": "supports-concept",
-      "to": "CON-0003"
+      "to": "SUB-000225"
     },
     {
-      "from": "PAT-0033",
+      "from": "SUB-000162",
       "type": "supports-concept",
-      "to": "CON-0004"
+      "to": "SUB-000226"
     },
     {
-      "from": "PAT-0036",
+      "from": "SUB-000163",
       "type": "supports-concept",
-      "to": "CON-0013"
+      "to": "SUB-000232"
     },
     {
-      "from": "CODE-0003",
+      "from": "SUB-000186",
       "type": "typically-realizes",
-      "to": "ARCH-0013"
+      "to": "SUB-000006"
     },
     {
-      "from": "PAT-0063",
+      "from": "SUB-000179",
       "type": "supports-concept",
-      "to": "CON-0040"
+      "to": "SUB-000248"
     }
   ]
 }

@@ -18,7 +18,7 @@
   },
   "families": {
     "system": {
-      "id": "ARCH-0001",
+      "id": "FAM-000001",
       "path": "architecture/system",
       "name": "System",
       "description": "System is a canonical architecture family used to classify system concerns.",
@@ -75,12 +75,12 @@
       "since": "0.2.0",
       "classes": {
         "system": {
-          "id": "ARCH-0002",
+          "id": "CLS-000001",
           "path": "architecture/system/system",
           "name": "System",
           "description": "System groups architecture elements that provide system responsibilities within the System family.",
           "level": "class",
-          "parent": "ARCH-0001",
+          "parent": "FAM-000001",
           "facets": {
             "concern": [
               "system"
@@ -109,12 +109,12 @@
           "since": "0.2.0",
           "subclasses": {
             "business-system": {
-              "id": "ARCH-0003",
+              "id": "SUB-000001",
               "path": "architecture/system/system/business-system",
               "name": "Business System",
               "description": "Business System is an architecture specialization of System within the System family.",
               "level": "subclass",
-              "parent": "ARCH-0002",
+              "parent": "CLS-000001",
               "facets": {
                 "concern": [
                   "system"
@@ -143,12 +143,12 @@
               "since": "0.2.0"
             },
             "software-system": {
-              "id": "ARCH-0004",
+              "id": "SUB-000002",
               "path": "architecture/system/system/software-system",
               "name": "Software System",
               "description": "Software System is an architecture specialization of System within the System family.",
               "level": "subclass",
-              "parent": "ARCH-0002",
+              "parent": "CLS-000001",
               "facets": {
                 "concern": [
                   "system"
@@ -179,12 +179,12 @@
           }
         },
         "platform": {
-          "id": "ARCH-0005",
+          "id": "CLS-000002",
           "path": "architecture/system/platform",
           "name": "Platform",
           "description": "Platform groups architecture elements that provide platform responsibilities within the System family.",
           "level": "class",
-          "parent": "ARCH-0001",
+          "parent": "FAM-000001",
           "facets": {
             "concern": [
               "system"
@@ -213,12 +213,12 @@
           "since": "0.2.0",
           "subclasses": {
             "shared-platform": {
-              "id": "ARCH-0006",
+              "id": "SUB-000003",
               "path": "architecture/system/platform/shared-platform",
               "name": "Shared Platform",
               "description": "Shared Platform is an architecture specialization of Platform within the System family.",
               "level": "subclass",
-              "parent": "ARCH-0005",
+              "parent": "CLS-000002",
               "facets": {
                 "concern": [
                   "system"
@@ -249,12 +249,12 @@
           }
         },
         "domain": {
-          "id": "ARCH-0007",
+          "id": "CLS-000003",
           "path": "architecture/system/domain",
           "name": "Domain",
           "description": "Domain groups architecture elements that provide domain responsibilities within the System family.",
           "level": "class",
-          "parent": "ARCH-0001",
+          "parent": "FAM-000001",
           "facets": {
             "concern": [
               "system"
@@ -283,12 +283,12 @@
           "since": "0.2.0",
           "subclasses": {
             "business-domain": {
-              "id": "ARCH-0008",
+              "id": "SUB-000004",
               "path": "architecture/system/domain/business-domain",
               "name": "Business Domain",
               "description": "Business Domain is an architecture specialization of Domain within the System family.",
               "level": "subclass",
-              "parent": "ARCH-0007",
+              "parent": "CLS-000003",
               "facets": {
                 "concern": [
                   "system"
@@ -319,12 +319,12 @@
           }
         },
         "subsystem": {
-          "id": "ARCH-0009",
+          "id": "CLS-000004",
           "path": "architecture/system/subsystem",
           "name": "Subsystem",
           "description": "Subsystem groups architecture elements that provide subsystem responsibilities within the System family.",
           "level": "class",
-          "parent": "ARCH-0001",
+          "parent": "FAM-000001",
           "facets": {
             "concern": [
               "system"
@@ -353,12 +353,12 @@
           "since": "0.2.0",
           "subclasses": {
             "software-subsystem": {
-              "id": "ARCH-0010",
+              "id": "SUB-000005",
               "path": "architecture/system/subsystem/software-subsystem",
               "name": "Software Subsystem",
               "description": "Software Subsystem is an architecture specialization of Subsystem within the System family.",
               "level": "subclass",
-              "parent": "ARCH-0009",
+              "parent": "CLS-000004",
               "facets": {
                 "concern": [
                   "system"
@@ -391,7 +391,7 @@
       }
     },
     "compute": {
-      "id": "ARCH-0011",
+      "id": "FAM-000002",
       "path": "architecture/compute",
       "name": "Compute",
       "description": "Executable software and compute environments that perform processing.",
@@ -448,12 +448,12 @@
       "since": "0.2.0",
       "classes": {
         "service": {
-          "id": "ARCH-0012",
+          "id": "CLS-000005",
           "path": "architecture/compute/service",
           "name": "Service",
           "description": "Service groups architecture elements that provide service responsibilities within the Compute family.",
           "level": "class",
-          "parent": "ARCH-0011",
+          "parent": "FAM-000002",
           "facets": {
             "concern": [
               "compute"
@@ -488,12 +488,12 @@
           "since": "0.2.0",
           "subclasses": {
             "api-service": {
-              "id": "ARCH-0013",
+              "id": "SUB-000006",
               "path": "architecture/compute/service/api-service",
               "name": "Api Service",
               "description": "Long-running service whose primary responsibility is exposing a machine-consumable API.",
               "level": "subclass",
-              "parent": "ARCH-0012",
+              "parent": "CLS-000005",
               "facets": {
                 "concern": [
                   "compute"
@@ -534,12 +534,12 @@
               "since": "0.2.0"
             },
             "domain-service": {
-              "id": "ARCH-0014",
+              "id": "SUB-000007",
               "path": "architecture/compute/service/domain-service",
               "name": "Domain Service",
               "description": "Domain Service is an architecture specialization of Service within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0012",
+              "parent": "CLS-000005",
               "facets": {
                 "concern": [
                   "compute"
@@ -568,12 +568,12 @@
               "since": "0.2.0"
             },
             "background-service": {
-              "id": "ARCH-0015",
+              "id": "SUB-000008",
               "path": "architecture/compute/service/background-service",
               "name": "Background Service",
               "description": "Background Service is an architecture specialization of Service within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0012",
+              "parent": "CLS-000005",
               "facets": {
                 "concern": [
                   "compute"
@@ -604,12 +604,12 @@
           }
         },
         "application": {
-          "id": "ARCH-0016",
+          "id": "CLS-000006",
           "path": "architecture/compute/application",
           "name": "Application",
           "description": "Application groups architecture elements that provide application responsibilities within the Compute family.",
           "level": "class",
-          "parent": "ARCH-0011",
+          "parent": "FAM-000002",
           "facets": {
             "concern": [
               "compute"
@@ -638,12 +638,12 @@
           "since": "0.2.0",
           "subclasses": {
             "web-application": {
-              "id": "ARCH-0017",
+              "id": "SUB-000009",
               "path": "architecture/compute/application/web-application",
               "name": "Web Application",
               "description": "Web Application is an architecture specialization of Application within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0016",
+              "parent": "CLS-000006",
               "facets": {
                 "concern": [
                   "compute"
@@ -672,12 +672,12 @@
               "since": "0.2.0"
             },
             "mobile-application": {
-              "id": "ARCH-0018",
+              "id": "SUB-000010",
               "path": "architecture/compute/application/mobile-application",
               "name": "Mobile Application",
               "description": "Mobile Application is an architecture specialization of Application within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0016",
+              "parent": "CLS-000006",
               "facets": {
                 "concern": [
                   "compute"
@@ -706,12 +706,12 @@
               "since": "0.2.0"
             },
             "desktop-application": {
-              "id": "ARCH-0019",
+              "id": "SUB-000011",
               "path": "architecture/compute/application/desktop-application",
               "name": "Desktop Application",
               "description": "Desktop Application is an architecture specialization of Application within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0016",
+              "parent": "CLS-000006",
               "facets": {
                 "concern": [
                   "compute"
@@ -742,12 +742,12 @@
           }
         },
         "worker": {
-          "id": "ARCH-0020",
+          "id": "CLS-000007",
           "path": "architecture/compute/worker",
           "name": "Worker",
           "description": "Worker groups architecture elements that provide worker responsibilities within the Compute family.",
           "level": "class",
-          "parent": "ARCH-0011",
+          "parent": "FAM-000002",
           "facets": {
             "concern": [
               "compute"
@@ -776,12 +776,12 @@
           "since": "0.2.0",
           "subclasses": {
             "batch-worker": {
-              "id": "ARCH-0021",
+              "id": "SUB-000012",
               "path": "architecture/compute/worker/batch-worker",
               "name": "Batch Worker",
               "description": "Batch Worker is an architecture specialization of Worker within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0020",
+              "parent": "CLS-000007",
               "facets": {
                 "concern": [
                   "compute"
@@ -810,12 +810,12 @@
               "since": "0.2.0"
             },
             "event-consumer": {
-              "id": "ARCH-0022",
+              "id": "SUB-000013",
               "path": "architecture/compute/worker/event-consumer",
               "name": "Event Consumer",
               "description": "Worker whose primary entry point consumes asynchronous events or messages.",
               "level": "subclass",
-              "parent": "ARCH-0020",
+              "parent": "CLS-000007",
               "facets": {
                 "concern": [
                   "compute"
@@ -844,12 +844,12 @@
               "since": "0.2.0"
             },
             "scheduled-job": {
-              "id": "ARCH-0023",
+              "id": "SUB-000014",
               "path": "architecture/compute/worker/scheduled-job",
               "name": "Scheduled Job",
               "description": "Scheduled Job is an architecture specialization of Worker within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0020",
+              "parent": "CLS-000007",
               "facets": {
                 "concern": [
                   "compute"
@@ -880,12 +880,12 @@
           }
         },
         "function": {
-          "id": "ARCH-0024",
+          "id": "CLS-000008",
           "path": "architecture/compute/function",
           "name": "Function",
           "description": "Function groups architecture elements that provide function responsibilities within the Compute family.",
           "level": "class",
-          "parent": "ARCH-0011",
+          "parent": "FAM-000002",
           "facets": {
             "concern": [
               "compute"
@@ -914,12 +914,12 @@
           "since": "0.2.0",
           "subclasses": {
             "serverless-function": {
-              "id": "ARCH-0025",
+              "id": "SUB-000015",
               "path": "architecture/compute/function/serverless-function",
               "name": "Serverless Function",
               "description": "Serverless Function is an architecture specialization of Function within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0024",
+              "parent": "CLS-000008",
               "facets": {
                 "concern": [
                   "compute"
@@ -950,12 +950,12 @@
           }
         },
         "runtime": {
-          "id": "ARCH-0026",
+          "id": "CLS-000009",
           "path": "architecture/compute/runtime",
           "name": "Runtime",
           "description": "Runtime groups architecture elements that provide runtime responsibilities within the Compute family.",
           "level": "class",
-          "parent": "ARCH-0011",
+          "parent": "FAM-000002",
           "facets": {
             "concern": [
               "compute"
@@ -984,12 +984,12 @@
           "since": "0.2.0",
           "subclasses": {
             "virtual-machine": {
-              "id": "ARCH-0027",
+              "id": "SUB-000016",
               "path": "architecture/compute/runtime/virtual-machine",
               "name": "Virtual Machine",
               "description": "Virtual Machine is an architecture specialization of Runtime within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0026",
+              "parent": "CLS-000009",
               "facets": {
                 "concern": [
                   "compute"
@@ -1018,12 +1018,12 @@
               "since": "0.2.0"
             },
             "bare-metal-host": {
-              "id": "ARCH-0028",
+              "id": "SUB-000017",
               "path": "architecture/compute/runtime/bare-metal-host",
               "name": "Bare Metal Host",
               "description": "Bare Metal Host is an architecture specialization of Runtime within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0026",
+              "parent": "CLS-000009",
               "facets": {
                 "concern": [
                   "compute"
@@ -1052,12 +1052,12 @@
               "since": "0.2.0"
             },
             "container-workload": {
-              "id": "ARCH-0029",
+              "id": "SUB-000018",
               "path": "architecture/compute/runtime/container-workload",
               "name": "Container Workload",
               "description": "Container Workload is an architecture specialization of Runtime within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0026",
+              "parent": "CLS-000009",
               "facets": {
                 "concern": [
                   "compute"
@@ -1086,12 +1086,12 @@
               "since": "0.2.0"
             },
             "container-cluster": {
-              "id": "ARCH-0030",
+              "id": "SUB-000019",
               "path": "architecture/compute/runtime/container-cluster",
               "name": "Container Cluster",
               "description": "Container Cluster is an architecture specialization of Runtime within the Compute family.",
               "level": "subclass",
-              "parent": "ARCH-0026",
+              "parent": "CLS-000009",
               "facets": {
                 "concern": [
                   "compute"
@@ -1124,7 +1124,7 @@
       }
     },
     "data": {
-      "id": "ARCH-0031",
+      "id": "FAM-000003",
       "path": "architecture/data",
       "name": "Data",
       "description": "Components whose primary responsibility is storing, organizing, querying, or analyzing data.",
@@ -1181,12 +1181,12 @@
       "since": "0.2.0",
       "classes": {
         "database": {
-          "id": "ARCH-0032",
+          "id": "CLS-000010",
           "path": "architecture/data/database",
           "name": "Database",
           "description": "Persistent structured or semi-structured stores that expose query and mutation semantics.",
           "level": "class",
-          "parent": "ARCH-0031",
+          "parent": "FAM-000003",
           "facets": {
             "concern": [
               "data"
@@ -1239,12 +1239,12 @@
           "since": "0.2.0",
           "subclasses": {
             "relational-database": {
-              "id": "ARCH-0033",
+              "id": "SUB-000020",
               "path": "architecture/data/database/relational-database",
               "name": "Relational Database",
               "description": "Database organized around relational tables, keys, constraints, and transactional query semantics.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1294,12 +1294,12 @@
               "since": "0.2.0"
             },
             "document-database": {
-              "id": "ARCH-0034",
+              "id": "SUB-000021",
               "path": "architecture/data/database/document-database",
               "name": "Document Database",
               "description": "Database whose primary persistence and query unit is a document or document-like aggregate.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1333,12 +1333,12 @@
               "since": "0.2.0"
             },
             "key-value-database": {
-              "id": "ARCH-0035",
+              "id": "SUB-000022",
               "path": "architecture/data/database/key-value-database",
               "name": "Key Value Database",
               "description": "Database whose primary access model retrieves values by key.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1367,12 +1367,12 @@
               "since": "0.2.0"
             },
             "wide-column-database": {
-              "id": "ARCH-0036",
+              "id": "SUB-000023",
               "path": "architecture/data/database/wide-column-database",
               "name": "Wide Column Database",
               "description": "Wide Column Database is an architecture specialization of Database within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1401,12 +1401,12 @@
               "since": "0.2.0"
             },
             "graph-database": {
-              "id": "ARCH-0037",
+              "id": "SUB-000024",
               "path": "architecture/data/database/graph-database",
               "name": "Graph Database",
               "description": "Graph Database is an architecture specialization of Database within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1435,12 +1435,12 @@
               "since": "0.2.0"
             },
             "time-series-database": {
-              "id": "ARCH-0038",
+              "id": "SUB-000025",
               "path": "architecture/data/database/time-series-database",
               "name": "Time Series Database",
               "description": "Time Series Database is an architecture specialization of Database within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1469,12 +1469,12 @@
               "since": "0.2.0"
             },
             "vector-database": {
-              "id": "ARCH-0039",
+              "id": "SUB-000026",
               "path": "architecture/data/database/vector-database",
               "name": "Vector Database",
               "description": "Vector Database is an architecture specialization of Database within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1503,12 +1503,12 @@
               "since": "0.2.0"
             },
             "search-database": {
-              "id": "ARCH-0040",
+              "id": "SUB-000027",
               "path": "architecture/data/database/search-database",
               "name": "Search Database",
               "description": "Search Database is an architecture specialization of Database within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1537,12 +1537,12 @@
               "since": "0.2.0"
             },
             "embedded-database": {
-              "id": "ARCH-0041",
+              "id": "SUB-000028",
               "path": "architecture/data/database/embedded-database",
               "name": "Embedded Database",
               "description": "Embedded Database is an architecture specialization of Database within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0032",
+              "parent": "CLS-000010",
               "facets": {
                 "concern": [
                   "data"
@@ -1573,12 +1573,12 @@
           }
         },
         "cache": {
-          "id": "ARCH-0042",
+          "id": "CLS-000011",
           "path": "architecture/data/cache",
           "name": "Cache",
           "description": "Cache groups architecture elements that provide cache responsibilities within the Data family.",
           "level": "class",
-          "parent": "ARCH-0031",
+          "parent": "FAM-000003",
           "facets": {
             "concern": [
               "data"
@@ -1607,12 +1607,12 @@
           "since": "0.2.0",
           "subclasses": {
             "distributed-cache": {
-              "id": "ARCH-0043",
+              "id": "SUB-000029",
               "path": "architecture/data/cache/distributed-cache",
               "name": "Distributed Cache",
               "description": "Distributed Cache is an architecture specialization of Cache within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0042",
+              "parent": "CLS-000011",
               "facets": {
                 "concern": [
                   "data"
@@ -1641,12 +1641,12 @@
               "since": "0.2.0"
             },
             "local-cache": {
-              "id": "ARCH-0044",
+              "id": "SUB-000030",
               "path": "architecture/data/cache/local-cache",
               "name": "Local Cache",
               "description": "Local Cache is an architecture specialization of Cache within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0042",
+              "parent": "CLS-000011",
               "facets": {
                 "concern": [
                   "data"
@@ -1677,12 +1677,12 @@
           }
         },
         "warehouse": {
-          "id": "ARCH-0045",
+          "id": "CLS-000012",
           "path": "architecture/data/warehouse",
           "name": "Warehouse",
           "description": "Warehouse groups architecture elements that provide warehouse responsibilities within the Data family.",
           "level": "class",
-          "parent": "ARCH-0031",
+          "parent": "FAM-000003",
           "facets": {
             "concern": [
               "data"
@@ -1711,12 +1711,12 @@
           "since": "0.2.0",
           "subclasses": {
             "analytical-warehouse": {
-              "id": "ARCH-0046",
+              "id": "SUB-000031",
               "path": "architecture/data/warehouse/analytical-warehouse",
               "name": "Analytical Warehouse",
               "description": "Analytical Warehouse is an architecture specialization of Warehouse within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0045",
+              "parent": "CLS-000012",
               "facets": {
                 "concern": [
                   "data"
@@ -1747,12 +1747,12 @@
           }
         },
         "lake": {
-          "id": "ARCH-0047",
+          "id": "CLS-000013",
           "path": "architecture/data/lake",
           "name": "Lake",
           "description": "Lake groups architecture elements that provide lake responsibilities within the Data family.",
           "level": "class",
-          "parent": "ARCH-0031",
+          "parent": "FAM-000003",
           "facets": {
             "concern": [
               "data"
@@ -1781,12 +1781,12 @@
           "since": "0.2.0",
           "subclasses": {
             "data-lake": {
-              "id": "ARCH-0048",
+              "id": "SUB-000032",
               "path": "architecture/data/lake/data-lake",
               "name": "Data Lake",
               "description": "Data Lake is an architecture specialization of Lake within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0047",
+              "parent": "CLS-000013",
               "facets": {
                 "concern": [
                   "data"
@@ -1817,12 +1817,12 @@
           }
         },
         "lakehouse": {
-          "id": "ARCH-0049",
+          "id": "CLS-000014",
           "path": "architecture/data/lakehouse",
           "name": "Lakehouse",
           "description": "Lakehouse groups architecture elements that provide lakehouse responsibilities within the Data family.",
           "level": "class",
-          "parent": "ARCH-0031",
+          "parent": "FAM-000003",
           "facets": {
             "concern": [
               "data"
@@ -1851,12 +1851,12 @@
           "since": "0.2.0",
           "subclasses": {
             "data-lakehouse": {
-              "id": "ARCH-0050",
+              "id": "SUB-000033",
               "path": "architecture/data/lakehouse/data-lakehouse",
               "name": "Data Lakehouse",
               "description": "Data Lakehouse is an architecture specialization of Lakehouse within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0049",
+              "parent": "CLS-000014",
               "facets": {
                 "concern": [
                   "data"
@@ -1887,12 +1887,12 @@
           }
         },
         "catalog": {
-          "id": "ARCH-0051",
+          "id": "CLS-000015",
           "path": "architecture/data/catalog",
           "name": "Catalog",
           "description": "Catalog groups architecture elements that provide catalog responsibilities within the Data family.",
           "level": "class",
-          "parent": "ARCH-0031",
+          "parent": "FAM-000003",
           "facets": {
             "concern": [
               "data"
@@ -1921,12 +1921,12 @@
           "since": "0.2.0",
           "subclasses": {
             "metadata-catalog": {
-              "id": "ARCH-0052",
+              "id": "SUB-000034",
               "path": "architecture/data/catalog/metadata-catalog",
               "name": "Metadata Catalog",
               "description": "Metadata Catalog is an architecture specialization of Catalog within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0051",
+              "parent": "CLS-000015",
               "facets": {
                 "concern": [
                   "data"
@@ -1957,12 +1957,12 @@
           }
         },
         "registry": {
-          "id": "ARCH-0053",
+          "id": "CLS-000016",
           "path": "architecture/data/registry",
           "name": "Registry",
           "description": "Registry groups architecture elements that provide registry responsibilities within the Data family.",
           "level": "class",
-          "parent": "ARCH-0031",
+          "parent": "FAM-000003",
           "facets": {
             "concern": [
               "data"
@@ -1991,12 +1991,12 @@
           "since": "0.2.0",
           "subclasses": {
             "schema-registry": {
-              "id": "ARCH-0054",
+              "id": "SUB-000035",
               "path": "architecture/data/registry/schema-registry",
               "name": "Schema Registry",
               "description": "Schema Registry is an architecture specialization of Registry within the Data family.",
               "level": "subclass",
-              "parent": "ARCH-0053",
+              "parent": "CLS-000016",
               "facets": {
                 "concern": [
                   "data"
@@ -2029,7 +2029,7 @@
       }
     },
     "storage": {
-      "id": "ARCH-0055",
+      "id": "FAM-000004",
       "path": "architecture/storage",
       "name": "Storage",
       "description": "Storage is a canonical architecture family used to classify storage concerns.",
@@ -2086,12 +2086,12 @@
       "since": "0.2.0",
       "classes": {
         "object-store": {
-          "id": "ARCH-0056",
+          "id": "CLS-000017",
           "path": "architecture/storage/object-store",
           "name": "Object Store",
           "description": "Object Store groups architecture elements that provide object store responsibilities within the Storage family.",
           "level": "class",
-          "parent": "ARCH-0055",
+          "parent": "FAM-000004",
           "facets": {
             "concern": [
               "storage"
@@ -2120,12 +2120,12 @@
           "since": "0.2.0",
           "subclasses": {
             "managed-object-store": {
-              "id": "ARCH-0057",
+              "id": "SUB-000036",
               "path": "architecture/storage/object-store/managed-object-store",
               "name": "Managed Object Store",
               "description": "Managed Object Store is an architecture specialization of Object Store within the Storage family.",
               "level": "subclass",
-              "parent": "ARCH-0056",
+              "parent": "CLS-000017",
               "facets": {
                 "concern": [
                   "storage"
@@ -2156,12 +2156,12 @@
           }
         },
         "file-store": {
-          "id": "ARCH-0058",
+          "id": "CLS-000018",
           "path": "architecture/storage/file-store",
           "name": "File Store",
           "description": "File Store groups architecture elements that provide file store responsibilities within the Storage family.",
           "level": "class",
-          "parent": "ARCH-0055",
+          "parent": "FAM-000004",
           "facets": {
             "concern": [
               "storage"
@@ -2190,12 +2190,12 @@
           "since": "0.2.0",
           "subclasses": {
             "network-file-store": {
-              "id": "ARCH-0059",
+              "id": "SUB-000037",
               "path": "architecture/storage/file-store/network-file-store",
               "name": "Network File Store",
               "description": "Network File Store is an architecture specialization of File Store within the Storage family.",
               "level": "subclass",
-              "parent": "ARCH-0058",
+              "parent": "CLS-000018",
               "facets": {
                 "concern": [
                   "storage"
@@ -2226,12 +2226,12 @@
           }
         },
         "block-store": {
-          "id": "ARCH-0060",
+          "id": "CLS-000019",
           "path": "architecture/storage/block-store",
           "name": "Block Store",
           "description": "Block Store groups architecture elements that provide block store responsibilities within the Storage family.",
           "level": "class",
-          "parent": "ARCH-0055",
+          "parent": "FAM-000004",
           "facets": {
             "concern": [
               "storage"
@@ -2260,12 +2260,12 @@
           "since": "0.2.0",
           "subclasses": {
             "managed-block-store": {
-              "id": "ARCH-0061",
+              "id": "SUB-000038",
               "path": "architecture/storage/block-store/managed-block-store",
               "name": "Managed Block Store",
               "description": "Managed Block Store is an architecture specialization of Block Store within the Storage family.",
               "level": "subclass",
-              "parent": "ARCH-0060",
+              "parent": "CLS-000019",
               "facets": {
                 "concern": [
                   "storage"
@@ -2296,12 +2296,12 @@
           }
         },
         "artifact-store": {
-          "id": "ARCH-0062",
+          "id": "CLS-000020",
           "path": "architecture/storage/artifact-store",
           "name": "Artifact Store",
           "description": "Artifact Store groups architecture elements that provide artifact store responsibilities within the Storage family.",
           "level": "class",
-          "parent": "ARCH-0055",
+          "parent": "FAM-000004",
           "facets": {
             "concern": [
               "storage"
@@ -2330,12 +2330,12 @@
           "since": "0.2.0",
           "subclasses": {
             "package-registry": {
-              "id": "ARCH-0063",
+              "id": "SUB-000039",
               "path": "architecture/storage/artifact-store/package-registry",
               "name": "Package Registry",
               "description": "Package Registry is an architecture specialization of Artifact Store within the Storage family.",
               "level": "subclass",
-              "parent": "ARCH-0062",
+              "parent": "CLS-000020",
               "facets": {
                 "concern": [
                   "storage"
@@ -2364,12 +2364,12 @@
               "since": "0.2.0"
             },
             "container-registry": {
-              "id": "ARCH-0064",
+              "id": "SUB-000040",
               "path": "architecture/storage/artifact-store/container-registry",
               "name": "Container Registry",
               "description": "Container Registry is an architecture specialization of Artifact Store within the Storage family.",
               "level": "subclass",
-              "parent": "ARCH-0062",
+              "parent": "CLS-000020",
               "facets": {
                 "concern": [
                   "storage"
@@ -2398,12 +2398,12 @@
               "since": "0.2.0"
             },
             "source-repository": {
-              "id": "ARCH-0065",
+              "id": "SUB-000041",
               "path": "architecture/storage/artifact-store/source-repository",
               "name": "Source Repository",
               "description": "Source Repository is an architecture specialization of Artifact Store within the Storage family.",
               "level": "subclass",
-              "parent": "ARCH-0062",
+              "parent": "CLS-000020",
               "facets": {
                 "concern": [
                   "storage"
@@ -2434,12 +2434,12 @@
           }
         },
         "backup-store": {
-          "id": "ARCH-0066",
+          "id": "CLS-000021",
           "path": "architecture/storage/backup-store",
           "name": "Backup Store",
           "description": "Backup Store groups architecture elements that provide backup store responsibilities within the Storage family.",
           "level": "class",
-          "parent": "ARCH-0055",
+          "parent": "FAM-000004",
           "facets": {
             "concern": [
               "storage"
@@ -2468,12 +2468,12 @@
           "since": "0.2.0",
           "subclasses": {
             "backup-repository": {
-              "id": "ARCH-0067",
+              "id": "SUB-000042",
               "path": "architecture/storage/backup-store/backup-repository",
               "name": "Backup Repository",
               "description": "Backup Repository is an architecture specialization of Backup Store within the Storage family.",
               "level": "subclass",
-              "parent": "ARCH-0066",
+              "parent": "CLS-000021",
               "facets": {
                 "concern": [
                   "storage"
@@ -2506,7 +2506,7 @@
       }
     },
     "messaging": {
-      "id": "ARCH-0068",
+      "id": "FAM-000005",
       "path": "architecture/messaging",
       "name": "Messaging",
       "description": "Asynchronous communication infrastructure for messages, events, streams, and notifications.",
@@ -2563,12 +2563,12 @@
       "since": "0.2.0",
       "classes": {
         "queue": {
-          "id": "ARCH-0069",
+          "id": "CLS-000022",
           "path": "architecture/messaging/queue",
           "name": "Queue",
           "description": "Queue groups architecture elements that provide queue responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "ARCH-0068",
+          "parent": "FAM-000005",
           "facets": {
             "concern": [
               "messaging"
@@ -2597,12 +2597,12 @@
           "since": "0.2.0",
           "subclasses": {
             "message-queue": {
-              "id": "ARCH-0070",
+              "id": "SUB-000043",
               "path": "architecture/messaging/queue/message-queue",
               "name": "Message Queue",
               "description": "Asynchronous point-to-point message buffer with explicit consumption semantics.",
               "level": "subclass",
-              "parent": "ARCH-0069",
+              "parent": "CLS-000022",
               "facets": {
                 "concern": [
                   "messaging"
@@ -2637,12 +2637,12 @@
           }
         },
         "topic": {
-          "id": "ARCH-0071",
+          "id": "CLS-000023",
           "path": "architecture/messaging/topic",
           "name": "Topic",
           "description": "Topic groups architecture elements that provide topic responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "ARCH-0068",
+          "parent": "FAM-000005",
           "facets": {
             "concern": [
               "messaging"
@@ -2671,12 +2671,12 @@
           "since": "0.2.0",
           "subclasses": {
             "pub-sub-topic": {
-              "id": "ARCH-0072",
+              "id": "SUB-000044",
               "path": "architecture/messaging/topic/pub-sub-topic",
               "name": "Pub Sub Topic",
               "description": "Pub Sub Topic is an architecture specialization of Topic within the Messaging family.",
               "level": "subclass",
-              "parent": "ARCH-0071",
+              "parent": "CLS-000023",
               "facets": {
                 "concern": [
                   "messaging"
@@ -2707,12 +2707,12 @@
           }
         },
         "stream": {
-          "id": "ARCH-0073",
+          "id": "CLS-000024",
           "path": "architecture/messaging/stream",
           "name": "Stream",
           "description": "Stream groups architecture elements that provide stream responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "ARCH-0068",
+          "parent": "FAM-000005",
           "facets": {
             "concern": [
               "messaging"
@@ -2741,12 +2741,12 @@
           "since": "0.2.0",
           "subclasses": {
             "event-stream": {
-              "id": "ARCH-0074",
+              "id": "SUB-000045",
               "path": "architecture/messaging/stream/event-stream",
               "name": "Event Stream",
               "description": "Ordered append-oriented stream designed for replay or continuous consumption.",
               "level": "subclass",
-              "parent": "ARCH-0073",
+              "parent": "CLS-000024",
               "facets": {
                 "concern": [
                   "messaging"
@@ -2777,12 +2777,12 @@
           }
         },
         "event-bus": {
-          "id": "ARCH-0075",
+          "id": "CLS-000025",
           "path": "architecture/messaging/event-bus",
           "name": "Event Bus",
           "description": "Event Bus groups architecture elements that provide event bus responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "ARCH-0068",
+          "parent": "FAM-000005",
           "facets": {
             "concern": [
               "messaging"
@@ -2811,12 +2811,12 @@
           "since": "0.2.0",
           "subclasses": {
             "event-router": {
-              "id": "ARCH-0076",
+              "id": "SUB-000046",
               "path": "architecture/messaging/event-bus/event-router",
               "name": "Event Router",
               "description": "Event Router is an architecture specialization of Event Bus within the Messaging family.",
               "level": "subclass",
-              "parent": "ARCH-0075",
+              "parent": "CLS-000025",
               "facets": {
                 "concern": [
                   "messaging"
@@ -2847,12 +2847,12 @@
           }
         },
         "broker": {
-          "id": "ARCH-0077",
+          "id": "CLS-000026",
           "path": "architecture/messaging/broker",
           "name": "Broker",
           "description": "Broker groups architecture elements that provide broker responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "ARCH-0068",
+          "parent": "FAM-000005",
           "facets": {
             "concern": [
               "messaging"
@@ -2881,12 +2881,12 @@
           "since": "0.2.0",
           "subclasses": {
             "message-broker": {
-              "id": "ARCH-0078",
+              "id": "SUB-000047",
               "path": "architecture/messaging/broker/message-broker",
               "name": "Message Broker",
               "description": "Message Broker is an architecture specialization of Broker within the Messaging family.",
               "level": "subclass",
-              "parent": "ARCH-0077",
+              "parent": "CLS-000026",
               "facets": {
                 "concern": [
                   "messaging"
@@ -2917,12 +2917,12 @@
           }
         },
         "scheduler": {
-          "id": "ARCH-0079",
+          "id": "CLS-000027",
           "path": "architecture/messaging/scheduler",
           "name": "Scheduler",
           "description": "Scheduler groups architecture elements that provide scheduler responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "ARCH-0068",
+          "parent": "FAM-000005",
           "facets": {
             "concern": [
               "messaging"
@@ -2951,12 +2951,12 @@
           "since": "0.2.0",
           "subclasses": {
             "event-scheduler": {
-              "id": "ARCH-0080",
+              "id": "SUB-000048",
               "path": "architecture/messaging/scheduler/event-scheduler",
               "name": "Event Scheduler",
               "description": "Event Scheduler is an architecture specialization of Scheduler within the Messaging family.",
               "level": "subclass",
-              "parent": "ARCH-0079",
+              "parent": "CLS-000027",
               "facets": {
                 "concern": [
                   "messaging"
@@ -2987,12 +2987,12 @@
           }
         },
         "notification": {
-          "id": "ARCH-0081",
+          "id": "CLS-000028",
           "path": "architecture/messaging/notification",
           "name": "Notification",
           "description": "Notification groups architecture elements that provide notification responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "ARCH-0068",
+          "parent": "FAM-000005",
           "facets": {
             "concern": [
               "messaging"
@@ -3021,12 +3021,12 @@
           "since": "0.2.0",
           "subclasses": {
             "notification-service": {
-              "id": "ARCH-0082",
+              "id": "SUB-000049",
               "path": "architecture/messaging/notification/notification-service",
               "name": "Notification Service",
               "description": "Notification Service is an architecture specialization of Notification within the Messaging family.",
               "level": "subclass",
-              "parent": "ARCH-0081",
+              "parent": "CLS-000028",
               "facets": {
                 "concern": [
                   "messaging"
@@ -3059,7 +3059,7 @@
       }
     },
     "networking": {
-      "id": "ARCH-0083",
+      "id": "FAM-000006",
       "path": "architecture/networking",
       "name": "Networking",
       "description": "Connectivity, routing, naming, segmentation, and traffic-management infrastructure.",
@@ -3116,12 +3116,12 @@
       "since": "0.2.0",
       "classes": {
         "network": {
-          "id": "ARCH-0084",
+          "id": "CLS-000029",
           "path": "architecture/networking/network",
           "name": "Network",
           "description": "Network groups architecture elements that provide network responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3150,12 +3150,12 @@
           "since": "0.2.0",
           "subclasses": {
             "virtual-network": {
-              "id": "ARCH-0085",
+              "id": "SUB-000050",
               "path": "architecture/networking/network/virtual-network",
               "name": "Virtual Network",
               "description": "Virtual Network is an architecture specialization of Network within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0084",
+              "parent": "CLS-000029",
               "facets": {
                 "concern": [
                   "networking"
@@ -3184,12 +3184,12 @@
               "since": "0.2.0"
             },
             "physical-network": {
-              "id": "ARCH-0086",
+              "id": "SUB-000051",
               "path": "architecture/networking/network/physical-network",
               "name": "Physical Network",
               "description": "Physical Network is an architecture specialization of Network within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0084",
+              "parent": "CLS-000029",
               "facets": {
                 "concern": [
                   "networking"
@@ -3220,12 +3220,12 @@
           }
         },
         "subnet": {
-          "id": "ARCH-0087",
+          "id": "CLS-000030",
           "path": "architecture/networking/subnet",
           "name": "Subnet",
           "description": "Subnet groups architecture elements that provide subnet responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3254,12 +3254,12 @@
           "since": "0.2.0",
           "subclasses": {
             "network-segment": {
-              "id": "ARCH-0088",
+              "id": "SUB-000052",
               "path": "architecture/networking/subnet/network-segment",
               "name": "Network Segment",
               "description": "Network Segment is an architecture specialization of Subnet within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0087",
+              "parent": "CLS-000030",
               "facets": {
                 "concern": [
                   "networking"
@@ -3290,12 +3290,12 @@
           }
         },
         "gateway": {
-          "id": "ARCH-0089",
+          "id": "CLS-000031",
           "path": "architecture/networking/gateway",
           "name": "Gateway",
           "description": "Gateway groups architecture elements that provide gateway responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3324,12 +3324,12 @@
           "since": "0.2.0",
           "subclasses": {
             "api-gateway": {
-              "id": "ARCH-0090",
+              "id": "SUB-000053",
               "path": "architecture/networking/gateway/api-gateway",
               "name": "Api Gateway",
               "description": "Api Gateway is an architecture specialization of Gateway within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0089",
+              "parent": "CLS-000031",
               "facets": {
                 "concern": [
                   "networking"
@@ -3358,12 +3358,12 @@
               "since": "0.2.0"
             },
             "internet-gateway": {
-              "id": "ARCH-0091",
+              "id": "SUB-000054",
               "path": "architecture/networking/gateway/internet-gateway",
               "name": "Internet Gateway",
               "description": "Internet Gateway is an architecture specialization of Gateway within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0089",
+              "parent": "CLS-000031",
               "facets": {
                 "concern": [
                   "networking"
@@ -3392,12 +3392,12 @@
               "since": "0.2.0"
             },
             "nat-gateway": {
-              "id": "ARCH-0092",
+              "id": "SUB-000055",
               "path": "architecture/networking/gateway/nat-gateway",
               "name": "Nat Gateway",
               "description": "Nat Gateway is an architecture specialization of Gateway within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0089",
+              "parent": "CLS-000031",
               "facets": {
                 "concern": [
                   "networking"
@@ -3426,12 +3426,12 @@
               "since": "0.2.0"
             },
             "transit-gateway": {
-              "id": "ARCH-0093",
+              "id": "SUB-000056",
               "path": "architecture/networking/gateway/transit-gateway",
               "name": "Transit Gateway",
               "description": "Transit Gateway is an architecture specialization of Gateway within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0089",
+              "parent": "CLS-000031",
               "facets": {
                 "concern": [
                   "networking"
@@ -3462,12 +3462,12 @@
           }
         },
         "load-balancer": {
-          "id": "ARCH-0094",
+          "id": "CLS-000032",
           "path": "architecture/networking/load-balancer",
           "name": "Load Balancer",
           "description": "Load Balancer groups architecture elements that provide load balancer responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3496,12 +3496,12 @@
           "since": "0.2.0",
           "subclasses": {
             "application-load-balancer": {
-              "id": "ARCH-0095",
+              "id": "SUB-000057",
               "path": "architecture/networking/load-balancer/application-load-balancer",
               "name": "Application Load Balancer",
               "description": "Application Load Balancer is an architecture specialization of Load Balancer within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0094",
+              "parent": "CLS-000032",
               "facets": {
                 "concern": [
                   "networking"
@@ -3530,12 +3530,12 @@
               "since": "0.2.0"
             },
             "network-load-balancer": {
-              "id": "ARCH-0096",
+              "id": "SUB-000058",
               "path": "architecture/networking/load-balancer/network-load-balancer",
               "name": "Network Load Balancer",
               "description": "Network Load Balancer is an architecture specialization of Load Balancer within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0094",
+              "parent": "CLS-000032",
               "facets": {
                 "concern": [
                   "networking"
@@ -3566,12 +3566,12 @@
           }
         },
         "proxy": {
-          "id": "ARCH-0097",
+          "id": "CLS-000033",
           "path": "architecture/networking/proxy",
           "name": "Proxy",
           "description": "Proxy groups architecture elements that provide proxy responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3600,12 +3600,12 @@
           "since": "0.2.0",
           "subclasses": {
             "reverse-proxy": {
-              "id": "ARCH-0098",
+              "id": "SUB-000059",
               "path": "architecture/networking/proxy/reverse-proxy",
               "name": "Reverse Proxy",
               "description": "Reverse Proxy is an architecture specialization of Proxy within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0097",
+              "parent": "CLS-000033",
               "facets": {
                 "concern": [
                   "networking"
@@ -3634,12 +3634,12 @@
               "since": "0.2.0"
             },
             "forward-proxy": {
-              "id": "ARCH-0099",
+              "id": "SUB-000060",
               "path": "architecture/networking/proxy/forward-proxy",
               "name": "Forward Proxy",
               "description": "Forward Proxy is an architecture specialization of Proxy within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0097",
+              "parent": "CLS-000033",
               "facets": {
                 "concern": [
                   "networking"
@@ -3670,12 +3670,12 @@
           }
         },
         "service-mesh": {
-          "id": "ARCH-0100",
+          "id": "CLS-000034",
           "path": "architecture/networking/service-mesh",
           "name": "Service Mesh",
           "description": "Service Mesh groups architecture elements that provide service mesh responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3704,12 +3704,12 @@
           "since": "0.2.0",
           "subclasses": {
             "service-mesh": {
-              "id": "ARCH-0101",
+              "id": "SUB-000061",
               "path": "architecture/networking/service-mesh/service-mesh",
               "name": "Service Mesh",
               "description": "Service Mesh is an architecture specialization of Service Mesh within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0100",
+              "parent": "CLS-000034",
               "facets": {
                 "concern": [
                   "networking"
@@ -3740,12 +3740,12 @@
           }
         },
         "dns": {
-          "id": "ARCH-0102",
+          "id": "CLS-000035",
           "path": "architecture/networking/dns",
           "name": "Dns",
           "description": "Dns groups architecture elements that provide dns responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3774,12 +3774,12 @@
           "since": "0.2.0",
           "subclasses": {
             "authoritative-dns": {
-              "id": "ARCH-0103",
+              "id": "SUB-000062",
               "path": "architecture/networking/dns/authoritative-dns",
               "name": "Authoritative Dns",
               "description": "Authoritative Dns is an architecture specialization of Dns within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0102",
+              "parent": "CLS-000035",
               "facets": {
                 "concern": [
                   "networking"
@@ -3808,12 +3808,12 @@
               "since": "0.2.0"
             },
             "service-discovery": {
-              "id": "ARCH-0104",
+              "id": "SUB-000063",
               "path": "architecture/networking/dns/service-discovery",
               "name": "Service Discovery",
               "description": "Service Discovery is an architecture specialization of Dns within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0102",
+              "parent": "CLS-000035",
               "facets": {
                 "concern": [
                   "networking"
@@ -3844,12 +3844,12 @@
           }
         },
         "connectivity": {
-          "id": "ARCH-0105",
+          "id": "CLS-000036",
           "path": "architecture/networking/connectivity",
           "name": "Connectivity",
           "description": "Connectivity groups architecture elements that provide connectivity responsibilities within the Networking family.",
           "level": "class",
-          "parent": "ARCH-0083",
+          "parent": "FAM-000006",
           "facets": {
             "concern": [
               "networking"
@@ -3878,12 +3878,12 @@
           "since": "0.2.0",
           "subclasses": {
             "private-link": {
-              "id": "ARCH-0106",
+              "id": "SUB-000064",
               "path": "architecture/networking/connectivity/private-link",
               "name": "Private Link",
               "description": "Private Link is an architecture specialization of Connectivity within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0105",
+              "parent": "CLS-000036",
               "facets": {
                 "concern": [
                   "networking"
@@ -3912,12 +3912,12 @@
               "since": "0.2.0"
             },
             "vpn": {
-              "id": "ARCH-0107",
+              "id": "SUB-000065",
               "path": "architecture/networking/connectivity/vpn",
               "name": "Vpn",
               "description": "Vpn is an architecture specialization of Connectivity within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0105",
+              "parent": "CLS-000036",
               "facets": {
                 "concern": [
                   "networking"
@@ -3946,12 +3946,12 @@
               "since": "0.2.0"
             },
             "dedicated-link": {
-              "id": "ARCH-0108",
+              "id": "SUB-000066",
               "path": "architecture/networking/connectivity/dedicated-link",
               "name": "Dedicated Link",
               "description": "Dedicated Link is an architecture specialization of Connectivity within the Networking family.",
               "level": "subclass",
-              "parent": "ARCH-0105",
+              "parent": "CLS-000036",
               "facets": {
                 "concern": [
                   "networking"
@@ -3984,7 +3984,7 @@
       }
     },
     "identity": {
-      "id": "ARCH-0109",
+      "id": "FAM-000007",
       "path": "architecture/identity",
       "name": "Identity",
       "description": "Identity is a canonical architecture family used to classify identity concerns.",
@@ -4041,12 +4041,12 @@
       "since": "0.2.0",
       "classes": {
         "identity-provider": {
-          "id": "ARCH-0110",
+          "id": "CLS-000037",
           "path": "architecture/identity/identity-provider",
           "name": "Identity Provider",
           "description": "Identity Provider groups architecture elements that provide identity provider responsibilities within the Identity family.",
           "level": "class",
-          "parent": "ARCH-0109",
+          "parent": "FAM-000007",
           "facets": {
             "concern": [
               "identity"
@@ -4075,12 +4075,12 @@
           "since": "0.2.0",
           "subclasses": {
             "workforce-idp": {
-              "id": "ARCH-0111",
+              "id": "SUB-000067",
               "path": "architecture/identity/identity-provider/workforce-idp",
               "name": "Workforce Idp",
               "description": "Workforce Idp is an architecture specialization of Identity Provider within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0110",
+              "parent": "CLS-000037",
               "facets": {
                 "concern": [
                   "identity"
@@ -4109,12 +4109,12 @@
               "since": "0.2.0"
             },
             "customer-idp": {
-              "id": "ARCH-0112",
+              "id": "SUB-000068",
               "path": "architecture/identity/identity-provider/customer-idp",
               "name": "Customer Idp",
               "description": "Customer Idp is an architecture specialization of Identity Provider within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0110",
+              "parent": "CLS-000037",
               "facets": {
                 "concern": [
                   "identity"
@@ -4145,12 +4145,12 @@
           }
         },
         "directory": {
-          "id": "ARCH-0113",
+          "id": "CLS-000038",
           "path": "architecture/identity/directory",
           "name": "Directory",
           "description": "Directory groups architecture elements that provide directory responsibilities within the Identity family.",
           "level": "class",
-          "parent": "ARCH-0109",
+          "parent": "FAM-000007",
           "facets": {
             "concern": [
               "identity"
@@ -4179,12 +4179,12 @@
           "since": "0.2.0",
           "subclasses": {
             "directory-service": {
-              "id": "ARCH-0114",
+              "id": "SUB-000069",
               "path": "architecture/identity/directory/directory-service",
               "name": "Directory Service",
               "description": "Directory Service is an architecture specialization of Directory within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0113",
+              "parent": "CLS-000038",
               "facets": {
                 "concern": [
                   "identity"
@@ -4215,12 +4215,12 @@
           }
         },
         "service-identity": {
-          "id": "ARCH-0115",
+          "id": "CLS-000039",
           "path": "architecture/identity/service-identity",
           "name": "Service Identity",
           "description": "Service Identity groups architecture elements that provide service identity responsibilities within the Identity family.",
           "level": "class",
-          "parent": "ARCH-0109",
+          "parent": "FAM-000007",
           "facets": {
             "concern": [
               "identity"
@@ -4249,12 +4249,12 @@
           "since": "0.2.0",
           "subclasses": {
             "workload-identity": {
-              "id": "ARCH-0116",
+              "id": "SUB-000070",
               "path": "architecture/identity/service-identity/workload-identity",
               "name": "Workload Identity",
               "description": "Workload Identity is an architecture specialization of Service Identity within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0115",
+              "parent": "CLS-000039",
               "facets": {
                 "concern": [
                   "identity"
@@ -4285,12 +4285,12 @@
           }
         },
         "access-control": {
-          "id": "ARCH-0117",
+          "id": "CLS-000040",
           "path": "architecture/identity/access-control",
           "name": "Access Control",
           "description": "Access Control groups architecture elements that provide access control responsibilities within the Identity family.",
           "level": "class",
-          "parent": "ARCH-0109",
+          "parent": "FAM-000007",
           "facets": {
             "concern": [
               "identity"
@@ -4319,12 +4319,12 @@
           "since": "0.2.0",
           "subclasses": {
             "rbac": {
-              "id": "ARCH-0118",
+              "id": "SUB-000071",
               "path": "architecture/identity/access-control/rbac",
               "name": "Rbac",
               "description": "Rbac is an architecture specialization of Access Control within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0117",
+              "parent": "CLS-000040",
               "facets": {
                 "concern": [
                   "identity"
@@ -4353,12 +4353,12 @@
               "since": "0.2.0"
             },
             "policy-engine": {
-              "id": "ARCH-0119",
+              "id": "SUB-000072",
               "path": "architecture/identity/access-control/policy-engine",
               "name": "Policy Engine",
               "description": "Policy Engine is an architecture specialization of Access Control within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0117",
+              "parent": "CLS-000040",
               "facets": {
                 "concern": [
                   "identity"
@@ -4389,12 +4389,12 @@
           }
         },
         "credential": {
-          "id": "ARCH-0120",
+          "id": "CLS-000041",
           "path": "architecture/identity/credential",
           "name": "Credential",
           "description": "Credential groups architecture elements that provide credential responsibilities within the Identity family.",
           "level": "class",
-          "parent": "ARCH-0109",
+          "parent": "FAM-000007",
           "facets": {
             "concern": [
               "identity"
@@ -4423,12 +4423,12 @@
           "since": "0.2.0",
           "subclasses": {
             "api-credential": {
-              "id": "ARCH-0121",
+              "id": "SUB-000073",
               "path": "architecture/identity/credential/api-credential",
               "name": "Api Credential",
               "description": "Api Credential is an architecture specialization of Credential within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0120",
+              "parent": "CLS-000041",
               "facets": {
                 "concern": [
                   "identity"
@@ -4457,12 +4457,12 @@
               "since": "0.2.0"
             },
             "service-credential": {
-              "id": "ARCH-0122",
+              "id": "SUB-000074",
               "path": "architecture/identity/credential/service-credential",
               "name": "Service Credential",
               "description": "Service Credential is an architecture specialization of Credential within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0120",
+              "parent": "CLS-000041",
               "facets": {
                 "concern": [
                   "identity"
@@ -4493,12 +4493,12 @@
           }
         },
         "federation": {
-          "id": "ARCH-0123",
+          "id": "CLS-000042",
           "path": "architecture/identity/federation",
           "name": "Federation",
           "description": "Federation groups architecture elements that provide federation responsibilities within the Identity family.",
           "level": "class",
-          "parent": "ARCH-0109",
+          "parent": "FAM-000007",
           "facets": {
             "concern": [
               "identity"
@@ -4527,12 +4527,12 @@
           "since": "0.2.0",
           "subclasses": {
             "identity-federation": {
-              "id": "ARCH-0124",
+              "id": "SUB-000075",
               "path": "architecture/identity/federation/identity-federation",
               "name": "Identity Federation",
               "description": "Identity Federation is an architecture specialization of Federation within the Identity family.",
               "level": "subclass",
-              "parent": "ARCH-0123",
+              "parent": "CLS-000042",
               "facets": {
                 "concern": [
                   "identity"
@@ -4565,7 +4565,7 @@
       }
     },
     "security": {
-      "id": "ARCH-0125",
+      "id": "FAM-000008",
       "path": "architecture/security",
       "name": "Security",
       "description": "Security enforcement and protection capabilities.",
@@ -4622,12 +4622,12 @@
       "since": "0.2.0",
       "classes": {
         "secret-store": {
-          "id": "ARCH-0126",
+          "id": "CLS-000043",
           "path": "architecture/security/secret-store",
           "name": "Secret Store",
           "description": "Secret Store groups architecture elements that provide secret store responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -4656,12 +4656,12 @@
           "since": "0.2.0",
           "subclasses": {
             "secrets-manager": {
-              "id": "ARCH-0127",
+              "id": "SUB-000076",
               "path": "architecture/security/secret-store/secrets-manager",
               "name": "Secrets Manager",
               "description": "Secrets Manager is an architecture specialization of Secret Store within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0126",
+              "parent": "CLS-000043",
               "facets": {
                 "concern": [
                   "security"
@@ -4692,12 +4692,12 @@
           }
         },
         "key-management": {
-          "id": "ARCH-0128",
+          "id": "CLS-000044",
           "path": "architecture/security/key-management",
           "name": "Key Management",
           "description": "Key Management groups architecture elements that provide key management responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -4726,12 +4726,12 @@
           "since": "0.2.0",
           "subclasses": {
             "kms": {
-              "id": "ARCH-0129",
+              "id": "SUB-000077",
               "path": "architecture/security/key-management/kms",
               "name": "Kms",
               "description": "Kms is an architecture specialization of Key Management within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0128",
+              "parent": "CLS-000044",
               "facets": {
                 "concern": [
                   "security"
@@ -4762,12 +4762,12 @@
           }
         },
         "certificate-management": {
-          "id": "ARCH-0130",
+          "id": "CLS-000045",
           "path": "architecture/security/certificate-management",
           "name": "Certificate Management",
           "description": "Certificate Management groups architecture elements that provide certificate management responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -4796,12 +4796,12 @@
           "since": "0.2.0",
           "subclasses": {
             "certificate-authority": {
-              "id": "ARCH-0131",
+              "id": "SUB-000078",
               "path": "architecture/security/certificate-management/certificate-authority",
               "name": "Certificate Authority",
               "description": "Certificate Authority is an architecture specialization of Certificate Management within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0130",
+              "parent": "CLS-000045",
               "facets": {
                 "concern": [
                   "security"
@@ -4830,12 +4830,12 @@
               "since": "0.2.0"
             },
             "certificate-store": {
-              "id": "ARCH-0132",
+              "id": "SUB-000079",
               "path": "architecture/security/certificate-management/certificate-store",
               "name": "Certificate Store",
               "description": "Certificate Store is an architecture specialization of Certificate Management within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0130",
+              "parent": "CLS-000045",
               "facets": {
                 "concern": [
                   "security"
@@ -4866,12 +4866,12 @@
           }
         },
         "firewall": {
-          "id": "ARCH-0133",
+          "id": "CLS-000046",
           "path": "architecture/security/firewall",
           "name": "Firewall",
           "description": "Firewall groups architecture elements that provide firewall responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -4900,12 +4900,12 @@
           "since": "0.2.0",
           "subclasses": {
             "network-firewall": {
-              "id": "ARCH-0134",
+              "id": "SUB-000080",
               "path": "architecture/security/firewall/network-firewall",
               "name": "Network Firewall",
               "description": "Network Firewall is an architecture specialization of Firewall within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0133",
+              "parent": "CLS-000046",
               "facets": {
                 "concern": [
                   "security"
@@ -4934,12 +4934,12 @@
               "since": "0.2.0"
             },
             "web-application-firewall": {
-              "id": "ARCH-0135",
+              "id": "SUB-000081",
               "path": "architecture/security/firewall/web-application-firewall",
               "name": "Web Application Firewall",
               "description": "Web Application Firewall is an architecture specialization of Firewall within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0133",
+              "parent": "CLS-000046",
               "facets": {
                 "concern": [
                   "security"
@@ -4970,12 +4970,12 @@
           }
         },
         "security-monitoring": {
-          "id": "ARCH-0136",
+          "id": "CLS-000047",
           "path": "architecture/security/security-monitoring",
           "name": "Security Monitoring",
           "description": "Security Monitoring groups architecture elements that provide security monitoring responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -5004,12 +5004,12 @@
           "since": "0.2.0",
           "subclasses": {
             "siem": {
-              "id": "ARCH-0137",
+              "id": "SUB-000082",
               "path": "architecture/security/security-monitoring/siem",
               "name": "Siem",
               "description": "Siem is an architecture specialization of Security Monitoring within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0136",
+              "parent": "CLS-000047",
               "facets": {
                 "concern": [
                   "security"
@@ -5040,12 +5040,12 @@
           }
         },
         "vulnerability-management": {
-          "id": "ARCH-0138",
+          "id": "CLS-000048",
           "path": "architecture/security/vulnerability-management",
           "name": "Vulnerability Management",
           "description": "Vulnerability Management groups architecture elements that provide vulnerability management responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -5074,12 +5074,12 @@
           "since": "0.2.0",
           "subclasses": {
             "vulnerability-scanner": {
-              "id": "ARCH-0139",
+              "id": "SUB-000083",
               "path": "architecture/security/vulnerability-management/vulnerability-scanner",
               "name": "Vulnerability Scanner",
               "description": "Vulnerability Scanner is an architecture specialization of Vulnerability Management within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0138",
+              "parent": "CLS-000048",
               "facets": {
                 "concern": [
                   "security"
@@ -5110,12 +5110,12 @@
           }
         },
         "policy": {
-          "id": "ARCH-0140",
+          "id": "CLS-000049",
           "path": "architecture/security/policy",
           "name": "Policy",
           "description": "Policy groups architecture elements that provide policy responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -5144,12 +5144,12 @@
           "since": "0.2.0",
           "subclasses": {
             "policy-engine": {
-              "id": "ARCH-0141",
+              "id": "SUB-000084",
               "path": "architecture/security/policy/policy-engine",
               "name": "Policy Engine",
               "description": "Policy Engine is an architecture specialization of Policy within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0140",
+              "parent": "CLS-000049",
               "facets": {
                 "concern": [
                   "security"
@@ -5180,12 +5180,12 @@
           }
         },
         "token-service": {
-          "id": "ARCH-0142",
+          "id": "CLS-000050",
           "path": "architecture/security/token-service",
           "name": "Token Service",
           "description": "Token Service groups architecture elements that provide token service responsibilities within the Security family.",
           "level": "class",
-          "parent": "ARCH-0125",
+          "parent": "FAM-000008",
           "facets": {
             "concern": [
               "security"
@@ -5214,12 +5214,12 @@
           "since": "0.2.0",
           "subclasses": {
             "token-issuer": {
-              "id": "ARCH-0143",
+              "id": "SUB-000085",
               "path": "architecture/security/token-service/token-issuer",
               "name": "Token Issuer",
               "description": "Token Issuer is an architecture specialization of Token Service within the Security family.",
               "level": "subclass",
-              "parent": "ARCH-0142",
+              "parent": "CLS-000050",
               "facets": {
                 "concern": [
                   "security"
@@ -5252,7 +5252,7 @@
       }
     },
     "integration": {
-      "id": "ARCH-0144",
+      "id": "FAM-000009",
       "path": "architecture/integration",
       "name": "Integration",
       "description": "Interfaces and coordination mechanisms that connect systems.",
@@ -5309,12 +5309,12 @@
       "since": "0.2.0",
       "classes": {
         "api": {
-          "id": "ARCH-0145",
+          "id": "CLS-000051",
           "path": "architecture/integration/api",
           "name": "Api",
           "description": "Api groups architecture elements that provide api responsibilities within the Integration family.",
           "level": "class",
-          "parent": "ARCH-0144",
+          "parent": "FAM-000009",
           "facets": {
             "concern": [
               "integration"
@@ -5343,12 +5343,12 @@
           "since": "0.2.0",
           "subclasses": {
             "rest-api": {
-              "id": "ARCH-0146",
+              "id": "SUB-000086",
               "path": "architecture/integration/api/rest-api",
               "name": "Rest Api",
               "description": "Rest Api is an architecture specialization of Api within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0145",
+              "parent": "CLS-000051",
               "facets": {
                 "concern": [
                   "integration"
@@ -5377,12 +5377,12 @@
               "since": "0.2.0"
             },
             "graphql-api": {
-              "id": "ARCH-0147",
+              "id": "SUB-000087",
               "path": "architecture/integration/api/graphql-api",
               "name": "Graphql Api",
               "description": "Graphql Api is an architecture specialization of Api within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0145",
+              "parent": "CLS-000051",
               "facets": {
                 "concern": [
                   "integration"
@@ -5411,12 +5411,12 @@
               "since": "0.2.0"
             },
             "rpc-api": {
-              "id": "ARCH-0148",
+              "id": "SUB-000088",
               "path": "architecture/integration/api/rpc-api",
               "name": "Rpc Api",
               "description": "Rpc Api is an architecture specialization of Api within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0145",
+              "parent": "CLS-000051",
               "facets": {
                 "concern": [
                   "integration"
@@ -5445,12 +5445,12 @@
               "since": "0.2.0"
             },
             "soap-api": {
-              "id": "ARCH-0149",
+              "id": "SUB-000089",
               "path": "architecture/integration/api/soap-api",
               "name": "Soap Api",
               "description": "Soap Api is an architecture specialization of Api within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0145",
+              "parent": "CLS-000051",
               "facets": {
                 "concern": [
                   "integration"
@@ -5481,12 +5481,12 @@
           }
         },
         "connector": {
-          "id": "ARCH-0150",
+          "id": "CLS-000052",
           "path": "architecture/integration/connector",
           "name": "Connector",
           "description": "Connector groups architecture elements that provide connector responsibilities within the Integration family.",
           "level": "class",
-          "parent": "ARCH-0144",
+          "parent": "FAM-000009",
           "facets": {
             "concern": [
               "integration"
@@ -5515,12 +5515,12 @@
           "since": "0.2.0",
           "subclasses": {
             "application-connector": {
-              "id": "ARCH-0151",
+              "id": "SUB-000090",
               "path": "architecture/integration/connector/application-connector",
               "name": "Application Connector",
               "description": "Application Connector is an architecture specialization of Connector within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0150",
+              "parent": "CLS-000052",
               "facets": {
                 "concern": [
                   "integration"
@@ -5551,12 +5551,12 @@
           }
         },
         "adapter": {
-          "id": "ARCH-0152",
+          "id": "CLS-000053",
           "path": "architecture/integration/adapter",
           "name": "Adapter",
           "description": "Adapter groups architecture elements that provide adapter responsibilities within the Integration family.",
           "level": "class",
-          "parent": "ARCH-0144",
+          "parent": "FAM-000009",
           "facets": {
             "concern": [
               "integration"
@@ -5585,12 +5585,12 @@
           "since": "0.2.0",
           "subclasses": {
             "protocol-adapter": {
-              "id": "ARCH-0153",
+              "id": "SUB-000091",
               "path": "architecture/integration/adapter/protocol-adapter",
               "name": "Protocol Adapter",
               "description": "Protocol Adapter is an architecture specialization of Adapter within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0152",
+              "parent": "CLS-000053",
               "facets": {
                 "concern": [
                   "integration"
@@ -5621,12 +5621,12 @@
           }
         },
         "orchestrator": {
-          "id": "ARCH-0154",
+          "id": "CLS-000054",
           "path": "architecture/integration/orchestrator",
           "name": "Orchestrator",
           "description": "Orchestrator groups architecture elements that provide orchestrator responsibilities within the Integration family.",
           "level": "class",
-          "parent": "ARCH-0144",
+          "parent": "FAM-000009",
           "facets": {
             "concern": [
               "integration"
@@ -5655,12 +5655,12 @@
           "since": "0.2.0",
           "subclasses": {
             "workflow-engine": {
-              "id": "ARCH-0155",
+              "id": "SUB-000092",
               "path": "architecture/integration/orchestrator/workflow-engine",
               "name": "Workflow Engine",
               "description": "Workflow Engine is an architecture specialization of Orchestrator within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0154",
+              "parent": "CLS-000054",
               "facets": {
                 "concern": [
                   "integration"
@@ -5691,12 +5691,12 @@
           }
         },
         "data-pipeline": {
-          "id": "ARCH-0156",
+          "id": "CLS-000055",
           "path": "architecture/integration/data-pipeline",
           "name": "Data Pipeline",
           "description": "Data Pipeline groups architecture elements that provide data pipeline responsibilities within the Integration family.",
           "level": "class",
-          "parent": "ARCH-0144",
+          "parent": "FAM-000009",
           "facets": {
             "concern": [
               "integration"
@@ -5725,12 +5725,12 @@
           "since": "0.2.0",
           "subclasses": {
             "etl-pipeline": {
-              "id": "ARCH-0157",
+              "id": "SUB-000093",
               "path": "architecture/integration/data-pipeline/etl-pipeline",
               "name": "Etl Pipeline",
               "description": "Etl Pipeline is an architecture specialization of Data Pipeline within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0156",
+              "parent": "CLS-000055",
               "facets": {
                 "concern": [
                   "integration"
@@ -5759,12 +5759,12 @@
               "since": "0.2.0"
             },
             "streaming-pipeline": {
-              "id": "ARCH-0158",
+              "id": "SUB-000094",
               "path": "architecture/integration/data-pipeline/streaming-pipeline",
               "name": "Streaming Pipeline",
               "description": "Streaming Pipeline is an architecture specialization of Data Pipeline within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0156",
+              "parent": "CLS-000055",
               "facets": {
                 "concern": [
                   "integration"
@@ -5795,12 +5795,12 @@
           }
         },
         "webhook": {
-          "id": "ARCH-0159",
+          "id": "CLS-000056",
           "path": "architecture/integration/webhook",
           "name": "Webhook",
           "description": "Webhook groups architecture elements that provide webhook responsibilities within the Integration family.",
           "level": "class",
-          "parent": "ARCH-0144",
+          "parent": "FAM-000009",
           "facets": {
             "concern": [
               "integration"
@@ -5829,12 +5829,12 @@
           "since": "0.2.0",
           "subclasses": {
             "webhook-endpoint": {
-              "id": "ARCH-0160",
+              "id": "SUB-000095",
               "path": "architecture/integration/webhook/webhook-endpoint",
               "name": "Webhook Endpoint",
               "description": "Webhook Endpoint is an architecture specialization of Webhook within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0159",
+              "parent": "CLS-000056",
               "facets": {
                 "concern": [
                   "integration"
@@ -5865,12 +5865,12 @@
           }
         },
         "file-transfer": {
-          "id": "ARCH-0161",
+          "id": "CLS-000057",
           "path": "architecture/integration/file-transfer",
           "name": "File Transfer",
           "description": "File Transfer groups architecture elements that provide file transfer responsibilities within the Integration family.",
           "level": "class",
-          "parent": "ARCH-0144",
+          "parent": "FAM-000009",
           "facets": {
             "concern": [
               "integration"
@@ -5899,12 +5899,12 @@
           "since": "0.2.0",
           "subclasses": {
             "managed-file-transfer": {
-              "id": "ARCH-0162",
+              "id": "SUB-000096",
               "path": "architecture/integration/file-transfer/managed-file-transfer",
               "name": "Managed File Transfer",
               "description": "Managed File Transfer is an architecture specialization of File Transfer within the Integration family.",
               "level": "subclass",
-              "parent": "ARCH-0161",
+              "parent": "CLS-000057",
               "facets": {
                 "concern": [
                   "integration"
@@ -5937,7 +5937,7 @@
       }
     },
     "observability": {
-      "id": "ARCH-0163",
+      "id": "FAM-000010",
       "path": "architecture/observability",
       "name": "Observability",
       "description": "Telemetry collection, storage, analysis, visualization, and alerting components.",
@@ -5994,12 +5994,12 @@
       "since": "0.2.0",
       "classes": {
         "logging": {
-          "id": "ARCH-0164",
+          "id": "CLS-000058",
           "path": "architecture/observability/logging",
           "name": "Logging",
           "description": "Logging groups architecture elements that provide logging responsibilities within the Observability family.",
           "level": "class",
-          "parent": "ARCH-0163",
+          "parent": "FAM-000010",
           "facets": {
             "concern": [
               "observability"
@@ -6028,12 +6028,12 @@
           "since": "0.2.0",
           "subclasses": {
             "log-collector": {
-              "id": "ARCH-0165",
+              "id": "SUB-000097",
               "path": "architecture/observability/logging/log-collector",
               "name": "Log Collector",
               "description": "Log Collector is an architecture specialization of Logging within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0164",
+              "parent": "CLS-000058",
               "facets": {
                 "concern": [
                   "observability"
@@ -6062,12 +6062,12 @@
               "since": "0.2.0"
             },
             "log-store": {
-              "id": "ARCH-0166",
+              "id": "SUB-000098",
               "path": "architecture/observability/logging/log-store",
               "name": "Log Store",
               "description": "Log Store is an architecture specialization of Logging within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0164",
+              "parent": "CLS-000058",
               "facets": {
                 "concern": [
                   "observability"
@@ -6098,12 +6098,12 @@
           }
         },
         "metrics": {
-          "id": "ARCH-0167",
+          "id": "CLS-000059",
           "path": "architecture/observability/metrics",
           "name": "Metrics",
           "description": "Metrics groups architecture elements that provide metrics responsibilities within the Observability family.",
           "level": "class",
-          "parent": "ARCH-0163",
+          "parent": "FAM-000010",
           "facets": {
             "concern": [
               "observability"
@@ -6132,12 +6132,12 @@
           "since": "0.2.0",
           "subclasses": {
             "metrics-collector": {
-              "id": "ARCH-0168",
+              "id": "SUB-000099",
               "path": "architecture/observability/metrics/metrics-collector",
               "name": "Metrics Collector",
               "description": "Metrics Collector is an architecture specialization of Metrics within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0167",
+              "parent": "CLS-000059",
               "facets": {
                 "concern": [
                   "observability"
@@ -6166,12 +6166,12 @@
               "since": "0.2.0"
             },
             "metrics-store": {
-              "id": "ARCH-0169",
+              "id": "SUB-000100",
               "path": "architecture/observability/metrics/metrics-store",
               "name": "Metrics Store",
               "description": "Metrics Store is an architecture specialization of Metrics within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0167",
+              "parent": "CLS-000059",
               "facets": {
                 "concern": [
                   "observability"
@@ -6202,12 +6202,12 @@
           }
         },
         "tracing": {
-          "id": "ARCH-0170",
+          "id": "CLS-000060",
           "path": "architecture/observability/tracing",
           "name": "Tracing",
           "description": "Tracing groups architecture elements that provide tracing responsibilities within the Observability family.",
           "level": "class",
-          "parent": "ARCH-0163",
+          "parent": "FAM-000010",
           "facets": {
             "concern": [
               "observability"
@@ -6236,12 +6236,12 @@
           "since": "0.2.0",
           "subclasses": {
             "trace-collector": {
-              "id": "ARCH-0171",
+              "id": "SUB-000101",
               "path": "architecture/observability/tracing/trace-collector",
               "name": "Trace Collector",
               "description": "Trace Collector is an architecture specialization of Tracing within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0170",
+              "parent": "CLS-000060",
               "facets": {
                 "concern": [
                   "observability"
@@ -6270,12 +6270,12 @@
               "since": "0.2.0"
             },
             "trace-store": {
-              "id": "ARCH-0172",
+              "id": "SUB-000102",
               "path": "architecture/observability/tracing/trace-store",
               "name": "Trace Store",
               "description": "Trace Store is an architecture specialization of Tracing within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0170",
+              "parent": "CLS-000060",
               "facets": {
                 "concern": [
                   "observability"
@@ -6306,12 +6306,12 @@
           }
         },
         "alerting": {
-          "id": "ARCH-0173",
+          "id": "CLS-000061",
           "path": "architecture/observability/alerting",
           "name": "Alerting",
           "description": "Alerting groups architecture elements that provide alerting responsibilities within the Observability family.",
           "level": "class",
-          "parent": "ARCH-0163",
+          "parent": "FAM-000010",
           "facets": {
             "concern": [
               "observability"
@@ -6340,12 +6340,12 @@
           "since": "0.2.0",
           "subclasses": {
             "alert-manager": {
-              "id": "ARCH-0174",
+              "id": "SUB-000103",
               "path": "architecture/observability/alerting/alert-manager",
               "name": "Alert Manager",
               "description": "Alert Manager is an architecture specialization of Alerting within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0173",
+              "parent": "CLS-000061",
               "facets": {
                 "concern": [
                   "observability"
@@ -6376,12 +6376,12 @@
           }
         },
         "monitoring": {
-          "id": "ARCH-0175",
+          "id": "CLS-000062",
           "path": "architecture/observability/monitoring",
           "name": "Monitoring",
           "description": "Monitoring groups architecture elements that provide monitoring responsibilities within the Observability family.",
           "level": "class",
-          "parent": "ARCH-0163",
+          "parent": "FAM-000010",
           "facets": {
             "concern": [
               "observability"
@@ -6410,12 +6410,12 @@
           "since": "0.2.0",
           "subclasses": {
             "infrastructure-monitoring": {
-              "id": "ARCH-0176",
+              "id": "SUB-000104",
               "path": "architecture/observability/monitoring/infrastructure-monitoring",
               "name": "Infrastructure Monitoring",
               "description": "Infrastructure Monitoring is an architecture specialization of Monitoring within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0175",
+              "parent": "CLS-000062",
               "facets": {
                 "concern": [
                   "observability"
@@ -6444,12 +6444,12 @@
               "since": "0.2.0"
             },
             "application-monitoring": {
-              "id": "ARCH-0177",
+              "id": "SUB-000105",
               "path": "architecture/observability/monitoring/application-monitoring",
               "name": "Application Monitoring",
               "description": "Application Monitoring is an architecture specialization of Monitoring within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0175",
+              "parent": "CLS-000062",
               "facets": {
                 "concern": [
                   "observability"
@@ -6480,12 +6480,12 @@
           }
         },
         "dashboard": {
-          "id": "ARCH-0178",
+          "id": "CLS-000063",
           "path": "architecture/observability/dashboard",
           "name": "Dashboard",
           "description": "Dashboard groups architecture elements that provide dashboard responsibilities within the Observability family.",
           "level": "class",
-          "parent": "ARCH-0163",
+          "parent": "FAM-000010",
           "facets": {
             "concern": [
               "observability"
@@ -6514,12 +6514,12 @@
           "since": "0.2.0",
           "subclasses": {
             "visualization-dashboard": {
-              "id": "ARCH-0179",
+              "id": "SUB-000106",
               "path": "architecture/observability/dashboard/visualization-dashboard",
               "name": "Visualization Dashboard",
               "description": "Visualization Dashboard is an architecture specialization of Dashboard within the Observability family.",
               "level": "subclass",
-              "parent": "ARCH-0178",
+              "parent": "CLS-000063",
               "facets": {
                 "concern": [
                   "observability"
@@ -6552,7 +6552,7 @@
       }
     },
     "ai-ml": {
-      "id": "ARCH-0180",
+      "id": "FAM-000011",
       "path": "architecture/ai-ml",
       "name": "Ai Ml",
       "description": "Ai Ml is a canonical architecture family used to classify ai ml concerns.",
@@ -6609,12 +6609,12 @@
       "since": "0.2.0",
       "classes": {
         "model": {
-          "id": "ARCH-0181",
+          "id": "CLS-000064",
           "path": "architecture/ai-ml/model",
           "name": "Model",
           "description": "Model groups architecture elements that provide model responsibilities within the Ai Ml family.",
           "level": "class",
-          "parent": "ARCH-0180",
+          "parent": "FAM-000011",
           "facets": {
             "concern": [
               "ai-ml"
@@ -6643,12 +6643,12 @@
           "since": "0.2.0",
           "subclasses": {
             "language-model": {
-              "id": "ARCH-0182",
+              "id": "SUB-000107",
               "path": "architecture/ai-ml/model/language-model",
               "name": "Language Model",
               "description": "Language Model is an architecture specialization of Model within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0181",
+              "parent": "CLS-000064",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -6677,12 +6677,12 @@
               "since": "0.2.0"
             },
             "embedding-model": {
-              "id": "ARCH-0183",
+              "id": "SUB-000108",
               "path": "architecture/ai-ml/model/embedding-model",
               "name": "Embedding Model",
               "description": "Embedding Model is an architecture specialization of Model within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0181",
+              "parent": "CLS-000064",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -6711,12 +6711,12 @@
               "since": "0.2.0"
             },
             "prediction-model": {
-              "id": "ARCH-0184",
+              "id": "SUB-000109",
               "path": "architecture/ai-ml/model/prediction-model",
               "name": "Prediction Model",
               "description": "Prediction Model is an architecture specialization of Model within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0181",
+              "parent": "CLS-000064",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -6747,12 +6747,12 @@
           }
         },
         "inference": {
-          "id": "ARCH-0185",
+          "id": "CLS-000065",
           "path": "architecture/ai-ml/inference",
           "name": "Inference",
           "description": "Inference groups architecture elements that provide inference responsibilities within the Ai Ml family.",
           "level": "class",
-          "parent": "ARCH-0180",
+          "parent": "FAM-000011",
           "facets": {
             "concern": [
               "ai-ml"
@@ -6781,12 +6781,12 @@
           "since": "0.2.0",
           "subclasses": {
             "model-endpoint": {
-              "id": "ARCH-0186",
+              "id": "SUB-000110",
               "path": "architecture/ai-ml/inference/model-endpoint",
               "name": "Model Endpoint",
               "description": "Model Endpoint is an architecture specialization of Inference within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0185",
+              "parent": "CLS-000065",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -6817,12 +6817,12 @@
           }
         },
         "agent": {
-          "id": "ARCH-0187",
+          "id": "CLS-000066",
           "path": "architecture/ai-ml/agent",
           "name": "Agent",
           "description": "Agent groups architecture elements that provide agent responsibilities within the Ai Ml family.",
           "level": "class",
-          "parent": "ARCH-0180",
+          "parent": "FAM-000011",
           "facets": {
             "concern": [
               "ai-ml"
@@ -6851,12 +6851,12 @@
           "since": "0.2.0",
           "subclasses": {
             "autonomous-agent": {
-              "id": "ARCH-0188",
+              "id": "SUB-000111",
               "path": "architecture/ai-ml/agent/autonomous-agent",
               "name": "Autonomous Agent",
               "description": "Autonomous Agent is an architecture specialization of Agent within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0187",
+              "parent": "CLS-000066",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -6885,12 +6885,12 @@
               "since": "0.2.0"
             },
             "tool-using-agent": {
-              "id": "ARCH-0189",
+              "id": "SUB-000112",
               "path": "architecture/ai-ml/agent/tool-using-agent",
               "name": "Tool Using Agent",
               "description": "Tool Using Agent is an architecture specialization of Agent within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0187",
+              "parent": "CLS-000066",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -6921,12 +6921,12 @@
           }
         },
         "retrieval": {
-          "id": "ARCH-0190",
+          "id": "CLS-000067",
           "path": "architecture/ai-ml/retrieval",
           "name": "Retrieval",
           "description": "Retrieval groups architecture elements that provide retrieval responsibilities within the Ai Ml family.",
           "level": "class",
-          "parent": "ARCH-0180",
+          "parent": "FAM-000011",
           "facets": {
             "concern": [
               "ai-ml"
@@ -6955,12 +6955,12 @@
           "since": "0.2.0",
           "subclasses": {
             "vector-retrieval": {
-              "id": "ARCH-0191",
+              "id": "SUB-000113",
               "path": "architecture/ai-ml/retrieval/vector-retrieval",
               "name": "Vector Retrieval",
               "description": "Vector Retrieval is an architecture specialization of Retrieval within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0190",
+              "parent": "CLS-000067",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -6989,12 +6989,12 @@
               "since": "0.2.0"
             },
             "document-retrieval": {
-              "id": "ARCH-0192",
+              "id": "SUB-000114",
               "path": "architecture/ai-ml/retrieval/document-retrieval",
               "name": "Document Retrieval",
               "description": "Document Retrieval is an architecture specialization of Retrieval within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0190",
+              "parent": "CLS-000067",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -7025,12 +7025,12 @@
           }
         },
         "model-store": {
-          "id": "ARCH-0193",
+          "id": "CLS-000068",
           "path": "architecture/ai-ml/model-store",
           "name": "Model Store",
           "description": "Model Store groups architecture elements that provide model store responsibilities within the Ai Ml family.",
           "level": "class",
-          "parent": "ARCH-0180",
+          "parent": "FAM-000011",
           "facets": {
             "concern": [
               "ai-ml"
@@ -7059,12 +7059,12 @@
           "since": "0.2.0",
           "subclasses": {
             "model-registry": {
-              "id": "ARCH-0194",
+              "id": "SUB-000115",
               "path": "architecture/ai-ml/model-store/model-registry",
               "name": "Model Registry",
               "description": "Model Registry is an architecture specialization of Model Store within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0193",
+              "parent": "CLS-000068",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -7095,12 +7095,12 @@
           }
         },
         "prompt-store": {
-          "id": "ARCH-0195",
+          "id": "CLS-000069",
           "path": "architecture/ai-ml/prompt-store",
           "name": "Prompt Store",
           "description": "Prompt Store groups architecture elements that provide prompt store responsibilities within the Ai Ml family.",
           "level": "class",
-          "parent": "ARCH-0180",
+          "parent": "FAM-000011",
           "facets": {
             "concern": [
               "ai-ml"
@@ -7129,12 +7129,12 @@
           "since": "0.2.0",
           "subclasses": {
             "prompt-registry": {
-              "id": "ARCH-0196",
+              "id": "SUB-000116",
               "path": "architecture/ai-ml/prompt-store/prompt-registry",
               "name": "Prompt Registry",
               "description": "Prompt Registry is an architecture specialization of Prompt Store within the Ai Ml family.",
               "level": "subclass",
-              "parent": "ARCH-0195",
+              "parent": "CLS-000069",
               "facets": {
                 "concern": [
                   "ai-ml"
@@ -7167,7 +7167,7 @@
       }
     },
     "experience": {
-      "id": "ARCH-0197",
+      "id": "FAM-000012",
       "path": "architecture/experience",
       "name": "Experience",
       "description": "Experience is a canonical architecture family used to classify experience concerns.",
@@ -7224,12 +7224,12 @@
       "since": "0.2.0",
       "classes": {
         "client": {
-          "id": "ARCH-0198",
+          "id": "CLS-000070",
           "path": "architecture/experience/client",
           "name": "Client",
           "description": "Client groups architecture elements that provide client responsibilities within the Experience family.",
           "level": "class",
-          "parent": "ARCH-0197",
+          "parent": "FAM-000012",
           "facets": {
             "concern": [
               "experience"
@@ -7258,12 +7258,12 @@
           "since": "0.2.0",
           "subclasses": {
             "web-client": {
-              "id": "ARCH-0199",
+              "id": "SUB-000117",
               "path": "architecture/experience/client/web-client",
               "name": "Web Client",
               "description": "Web Client is an architecture specialization of Client within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0198",
+              "parent": "CLS-000070",
               "facets": {
                 "concern": [
                   "experience"
@@ -7292,12 +7292,12 @@
               "since": "0.2.0"
             },
             "mobile-client": {
-              "id": "ARCH-0200",
+              "id": "SUB-000118",
               "path": "architecture/experience/client/mobile-client",
               "name": "Mobile Client",
               "description": "Mobile Client is an architecture specialization of Client within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0198",
+              "parent": "CLS-000070",
               "facets": {
                 "concern": [
                   "experience"
@@ -7326,12 +7326,12 @@
               "since": "0.2.0"
             },
             "desktop-client": {
-              "id": "ARCH-0201",
+              "id": "SUB-000119",
               "path": "architecture/experience/client/desktop-client",
               "name": "Desktop Client",
               "description": "Desktop Client is an architecture specialization of Client within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0198",
+              "parent": "CLS-000070",
               "facets": {
                 "concern": [
                   "experience"
@@ -7360,12 +7360,12 @@
               "since": "0.2.0"
             },
             "cli-client": {
-              "id": "ARCH-0202",
+              "id": "SUB-000120",
               "path": "architecture/experience/client/cli-client",
               "name": "Cli Client",
               "description": "Cli Client is an architecture specialization of Client within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0198",
+              "parent": "CLS-000070",
               "facets": {
                 "concern": [
                   "experience"
@@ -7396,12 +7396,12 @@
           }
         },
         "channel": {
-          "id": "ARCH-0203",
+          "id": "CLS-000071",
           "path": "architecture/experience/channel",
           "name": "Channel",
           "description": "Channel groups architecture elements that provide channel responsibilities within the Experience family.",
           "level": "class",
-          "parent": "ARCH-0197",
+          "parent": "FAM-000012",
           "facets": {
             "concern": [
               "experience"
@@ -7430,12 +7430,12 @@
           "since": "0.2.0",
           "subclasses": {
             "email-channel": {
-              "id": "ARCH-0204",
+              "id": "SUB-000121",
               "path": "architecture/experience/channel/email-channel",
               "name": "Email Channel",
               "description": "Email Channel is an architecture specialization of Channel within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0203",
+              "parent": "CLS-000071",
               "facets": {
                 "concern": [
                   "experience"
@@ -7464,12 +7464,12 @@
               "since": "0.2.0"
             },
             "sms-channel": {
-              "id": "ARCH-0205",
+              "id": "SUB-000122",
               "path": "architecture/experience/channel/sms-channel",
               "name": "Sms Channel",
               "description": "Sms Channel is an architecture specialization of Channel within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0203",
+              "parent": "CLS-000071",
               "facets": {
                 "concern": [
                   "experience"
@@ -7498,12 +7498,12 @@
               "since": "0.2.0"
             },
             "voice-channel": {
-              "id": "ARCH-0206",
+              "id": "SUB-000123",
               "path": "architecture/experience/channel/voice-channel",
               "name": "Voice Channel",
               "description": "Voice Channel is an architecture specialization of Channel within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0203",
+              "parent": "CLS-000071",
               "facets": {
                 "concern": [
                   "experience"
@@ -7532,12 +7532,12 @@
               "since": "0.2.0"
             },
             "chat-channel": {
-              "id": "ARCH-0207",
+              "id": "SUB-000124",
               "path": "architecture/experience/channel/chat-channel",
               "name": "Chat Channel",
               "description": "Chat Channel is an architecture specialization of Channel within the Experience family.",
               "level": "subclass",
-              "parent": "ARCH-0203",
+              "parent": "CLS-000071",
               "facets": {
                 "concern": [
                   "experience"
@@ -7570,7 +7570,7 @@
       }
     },
     "platform": {
-      "id": "ARCH-0208",
+      "id": "FAM-000013",
       "path": "architecture/platform",
       "name": "Platform",
       "description": "Platform is a canonical architecture family used to classify platform concerns.",
@@ -7627,12 +7627,12 @@
       "since": "0.2.0",
       "classes": {
         "orchestration": {
-          "id": "ARCH-0209",
+          "id": "CLS-000072",
           "path": "architecture/platform/orchestration",
           "name": "Orchestration",
           "description": "Orchestration groups architecture elements that provide orchestration responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -7661,12 +7661,12 @@
           "since": "0.2.0",
           "subclasses": {
             "container-orchestrator": {
-              "id": "ARCH-0210",
+              "id": "SUB-000125",
               "path": "architecture/platform/orchestration/container-orchestrator",
               "name": "Container Orchestrator",
               "description": "Container Orchestrator is an architecture specialization of Orchestration within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0209",
+              "parent": "CLS-000072",
               "facets": {
                 "concern": [
                   "platform"
@@ -7695,12 +7695,12 @@
               "since": "0.2.0"
             },
             "workload-scheduler": {
-              "id": "ARCH-0211",
+              "id": "SUB-000126",
               "path": "architecture/platform/orchestration/workload-scheduler",
               "name": "Workload Scheduler",
               "description": "Workload Scheduler is an architecture specialization of Orchestration within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0209",
+              "parent": "CLS-000072",
               "facets": {
                 "concern": [
                   "platform"
@@ -7731,12 +7731,12 @@
           }
         },
         "ci-cd": {
-          "id": "ARCH-0212",
+          "id": "CLS-000073",
           "path": "architecture/platform/ci-cd",
           "name": "Ci Cd",
           "description": "Ci Cd groups architecture elements that provide ci cd responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -7765,12 +7765,12 @@
           "since": "0.2.0",
           "subclasses": {
             "build-system": {
-              "id": "ARCH-0213",
+              "id": "SUB-000127",
               "path": "architecture/platform/ci-cd/build-system",
               "name": "Build System",
               "description": "Build System is an architecture specialization of Ci Cd within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0212",
+              "parent": "CLS-000073",
               "facets": {
                 "concern": [
                   "platform"
@@ -7799,12 +7799,12 @@
               "since": "0.2.0"
             },
             "deployment-system": {
-              "id": "ARCH-0214",
+              "id": "SUB-000128",
               "path": "architecture/platform/ci-cd/deployment-system",
               "name": "Deployment System",
               "description": "Deployment System is an architecture specialization of Ci Cd within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0212",
+              "parent": "CLS-000073",
               "facets": {
                 "concern": [
                   "platform"
@@ -7835,12 +7835,12 @@
           }
         },
         "configuration": {
-          "id": "ARCH-0215",
+          "id": "CLS-000074",
           "path": "architecture/platform/configuration",
           "name": "Configuration",
           "description": "Configuration groups architecture elements that provide configuration responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -7869,12 +7869,12 @@
           "since": "0.2.0",
           "subclasses": {
             "config-store": {
-              "id": "ARCH-0216",
+              "id": "SUB-000129",
               "path": "architecture/platform/configuration/config-store",
               "name": "Config Store",
               "description": "Config Store is an architecture specialization of Configuration within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0215",
+              "parent": "CLS-000074",
               "facets": {
                 "concern": [
                   "platform"
@@ -7905,12 +7905,12 @@
           }
         },
         "infrastructure-code": {
-          "id": "ARCH-0217",
+          "id": "CLS-000075",
           "path": "architecture/platform/infrastructure-code",
           "name": "Infrastructure Code",
           "description": "Infrastructure Code groups architecture elements that provide infrastructure code responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -7939,12 +7939,12 @@
           "since": "0.2.0",
           "subclasses": {
             "provisioning-engine": {
-              "id": "ARCH-0218",
+              "id": "SUB-000130",
               "path": "architecture/platform/infrastructure-code/provisioning-engine",
               "name": "Provisioning Engine",
               "description": "Provisioning Engine is an architecture specialization of Infrastructure Code within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0217",
+              "parent": "CLS-000075",
               "facets": {
                 "concern": [
                   "platform"
@@ -7975,12 +7975,12 @@
           }
         },
         "developer-platform": {
-          "id": "ARCH-0219",
+          "id": "CLS-000076",
           "path": "architecture/platform/developer-platform",
           "name": "Developer Platform",
           "description": "Developer Platform groups architecture elements that provide developer platform responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -8009,12 +8009,12 @@
           "since": "0.2.0",
           "subclasses": {
             "internal-developer-platform": {
-              "id": "ARCH-0220",
+              "id": "SUB-000131",
               "path": "architecture/platform/developer-platform/internal-developer-platform",
               "name": "Internal Developer Platform",
               "description": "Internal Developer Platform is an architecture specialization of Developer Platform within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0219",
+              "parent": "CLS-000076",
               "facets": {
                 "concern": [
                   "platform"
@@ -8045,12 +8045,12 @@
           }
         },
         "service-catalog": {
-          "id": "ARCH-0221",
+          "id": "CLS-000077",
           "path": "architecture/platform/service-catalog",
           "name": "Service Catalog",
           "description": "Service Catalog groups architecture elements that provide service catalog responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -8079,12 +8079,12 @@
           "since": "0.2.0",
           "subclasses": {
             "software-catalog": {
-              "id": "ARCH-0222",
+              "id": "SUB-000132",
               "path": "architecture/platform/service-catalog/software-catalog",
               "name": "Software Catalog",
               "description": "Software Catalog is an architecture specialization of Service Catalog within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0221",
+              "parent": "CLS-000077",
               "facets": {
                 "concern": [
                   "platform"
@@ -8115,12 +8115,12 @@
           }
         },
         "feature-management": {
-          "id": "ARCH-0223",
+          "id": "CLS-000078",
           "path": "architecture/platform/feature-management",
           "name": "Feature Management",
           "description": "Feature Management groups architecture elements that provide feature management responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -8149,12 +8149,12 @@
           "since": "0.2.0",
           "subclasses": {
             "feature-flag-service": {
-              "id": "ARCH-0224",
+              "id": "SUB-000133",
               "path": "architecture/platform/feature-management/feature-flag-service",
               "name": "Feature Flag Service",
               "description": "Feature Flag Service is an architecture specialization of Feature Management within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0223",
+              "parent": "CLS-000078",
               "facets": {
                 "concern": [
                   "platform"
@@ -8185,12 +8185,12 @@
           }
         },
         "package-management": {
-          "id": "ARCH-0225",
+          "id": "CLS-000079",
           "path": "architecture/platform/package-management",
           "name": "Package Management",
           "description": "Package Management groups architecture elements that provide package management responsibilities within the Platform family.",
           "level": "class",
-          "parent": "ARCH-0208",
+          "parent": "FAM-000013",
           "facets": {
             "concern": [
               "platform"
@@ -8219,12 +8219,12 @@
           "since": "0.2.0",
           "subclasses": {
             "package-registry": {
-              "id": "ARCH-0226",
+              "id": "SUB-000134",
               "path": "architecture/platform/package-management/package-registry",
               "name": "Package Registry",
               "description": "Package Registry is an architecture specialization of Package Management within the Platform family.",
               "level": "subclass",
-              "parent": "ARCH-0225",
+              "parent": "CLS-000079",
               "facets": {
                 "concern": [
                   "platform"
@@ -8257,7 +8257,7 @@
       }
     },
     "external": {
-      "id": "ARCH-0227",
+      "id": "FAM-000014",
       "path": "architecture/external",
       "name": "External",
       "description": "External is a canonical architecture family used to classify external concerns.",
@@ -8314,12 +8314,12 @@
       "since": "0.2.0",
       "classes": {
         "actor": {
-          "id": "ARCH-0228",
+          "id": "CLS-000080",
           "path": "architecture/external/actor",
           "name": "Actor",
           "description": "Actor groups architecture elements that provide actor responsibilities within the External family.",
           "level": "class",
-          "parent": "ARCH-0227",
+          "parent": "FAM-000014",
           "facets": {
             "concern": [
               "external"
@@ -8348,12 +8348,12 @@
           "since": "0.2.0",
           "subclasses": {
             "human-user": {
-              "id": "ARCH-0229",
+              "id": "SUB-000135",
               "path": "architecture/external/actor/human-user",
               "name": "Human User",
               "description": "Human User is an architecture specialization of Actor within the External family.",
               "level": "subclass",
-              "parent": "ARCH-0228",
+              "parent": "CLS-000080",
               "facets": {
                 "concern": [
                   "external"
@@ -8382,12 +8382,12 @@
               "since": "0.2.0"
             },
             "operator": {
-              "id": "ARCH-0230",
+              "id": "SUB-000136",
               "path": "architecture/external/actor/operator",
               "name": "Operator",
               "description": "Operator is an architecture specialization of Actor within the External family.",
               "level": "subclass",
-              "parent": "ARCH-0228",
+              "parent": "CLS-000080",
               "facets": {
                 "concern": [
                   "external"
@@ -8418,12 +8418,12 @@
           }
         },
         "system": {
-          "id": "ARCH-0231",
+          "id": "CLS-000081",
           "path": "architecture/external/system",
           "name": "System",
           "description": "System groups architecture elements that provide system responsibilities within the External family.",
           "level": "class",
-          "parent": "ARCH-0227",
+          "parent": "FAM-000014",
           "facets": {
             "concern": [
               "external"
@@ -8452,12 +8452,12 @@
           "since": "0.2.0",
           "subclasses": {
             "third-party-system": {
-              "id": "ARCH-0232",
+              "id": "SUB-000137",
               "path": "architecture/external/system/third-party-system",
               "name": "Third Party System",
               "description": "Third Party System is an architecture specialization of System within the External family.",
               "level": "subclass",
-              "parent": "ARCH-0231",
+              "parent": "CLS-000081",
               "facets": {
                 "concern": [
                   "external"
@@ -8488,12 +8488,12 @@
           }
         },
         "service": {
-          "id": "ARCH-0233",
+          "id": "CLS-000082",
           "path": "architecture/external/service",
           "name": "Service",
           "description": "Service groups architecture elements that provide service responsibilities within the External family.",
           "level": "class",
-          "parent": "ARCH-0227",
+          "parent": "FAM-000014",
           "facets": {
             "concern": [
               "external"
@@ -8522,12 +8522,12 @@
           "since": "0.2.0",
           "subclasses": {
             "external-service": {
-              "id": "ARCH-0234",
+              "id": "SUB-000138",
               "path": "architecture/external/service/external-service",
               "name": "External Service",
               "description": "External Service is an architecture specialization of Service within the External family.",
               "level": "subclass",
-              "parent": "ARCH-0233",
+              "parent": "CLS-000082",
               "facets": {
                 "concern": [
                   "external"
@@ -8558,12 +8558,12 @@
           }
         },
         "provider": {
-          "id": "ARCH-0235",
+          "id": "CLS-000083",
           "path": "architecture/external/provider",
           "name": "Provider",
           "description": "Provider groups architecture elements that provide provider responsibilities within the External family.",
           "level": "class",
-          "parent": "ARCH-0227",
+          "parent": "FAM-000014",
           "facets": {
             "concern": [
               "external"
@@ -8592,12 +8592,12 @@
           "since": "0.2.0",
           "subclasses": {
             "cloud-provider": {
-              "id": "ARCH-0236",
+              "id": "SUB-000139",
               "path": "architecture/external/provider/cloud-provider",
               "name": "Cloud Provider",
               "description": "Cloud Provider is an architecture specialization of Provider within the External family.",
               "level": "subclass",
-              "parent": "ARCH-0235",
+              "parent": "CLS-000083",
               "facets": {
                 "concern": [
                   "external"
@@ -8626,12 +8626,12 @@
               "since": "0.2.0"
             },
             "external-identity-provider": {
-              "id": "ARCH-0237",
+              "id": "SUB-000140",
               "path": "architecture/external/provider/external-identity-provider",
               "name": "External Identity Provider",
               "description": "External Identity Provider is an architecture specialization of Provider within the External family.",
               "level": "subclass",
-              "parent": "ARCH-0235",
+              "parent": "CLS-000083",
               "facets": {
                 "concern": [
                   "external"
@@ -8662,12 +8662,12 @@
           }
         },
         "organization": {
-          "id": "ARCH-0238",
+          "id": "CLS-000084",
           "path": "architecture/external/organization",
           "name": "Organization",
           "description": "Organization groups architecture elements that provide organization responsibilities within the External family.",
           "level": "class",
-          "parent": "ARCH-0227",
+          "parent": "FAM-000014",
           "facets": {
             "concern": [
               "external"
@@ -8696,12 +8696,12 @@
           "since": "0.2.0",
           "subclasses": {
             "partner-organization": {
-              "id": "ARCH-0239",
+              "id": "SUB-000141",
               "path": "architecture/external/organization/partner-organization",
               "name": "Partner Organization",
               "description": "Partner Organization is an architecture specialization of Organization within the External family.",
               "level": "subclass",
-              "parent": "ARCH-0238",
+              "parent": "CLS-000084",
               "facets": {
                 "concern": [
                   "external"

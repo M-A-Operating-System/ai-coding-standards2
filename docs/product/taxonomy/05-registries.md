@@ -43,7 +43,7 @@ Together with a canonical class, the registries give any classified object
 three independent coordinates:
 
 ```text
-canonical classification   ARCH-0042    architecture/data/database/relational-database
+canonical classification   SUB-000042   architecture/data/database/relational-database
 implementation             postgresql
 runtime                    aws/rds
 ```

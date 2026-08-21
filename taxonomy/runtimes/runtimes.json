@@ -8,60 +8,60 @@
         "rds": {
           "name": "Amazon RDS",
           "supports": [
-            "ARCH-0033"
+            "SUB-000020"
           ]
         },
         "documentdb": {
           "name": "Amazon DocumentDB",
           "supports": [
-            "ARCH-0034"
+            "SUB-000021"
           ]
         },
         "dynamodb": {
           "name": "Amazon DynamoDB",
           "supports": [
-            "ARCH-0035"
+            "SUB-000022"
           ]
         },
         "lambda": {
           "name": "AWS Lambda",
           "supports": [
-            "ARCH-0025"
+            "SUB-000015"
           ]
         },
         "eks": {
           "name": "Amazon EKS",
           "supports": [
-            "ARCH-0030"
+            "SUB-000019"
           ]
         },
         "ec2": {
           "name": "Amazon EC2",
           "supports": [
-            "ARCH-0027"
+            "SUB-000016"
           ]
         },
         "s3": {
           "name": "Amazon S3",
           "supports": [
-            "ARCH-0057"
+            "SUB-000036"
           ]
         },
         "sqs": {
           "name": "Amazon SQS",
           "supports": [
-            "ARCH-0070"
+            "SUB-000043"
           ]
         },
         "sns": {
           "name": "Amazon SNS",
           "supports": [
-            "ARCH-0072"
+            "SUB-000044"
           ]
         },
         "eventbridge": {
           "supports": [
-            "ARCH-0076"
+            "SUB-000046"
           ]
         }
       }
@@ -71,32 +71,32 @@
         "postgresql-flexible-server": {
           "name": "Azure Database for PostgreSQL Flexible Server",
           "supports": [
-            "ARCH-0033"
+            "SUB-000020"
           ]
         },
         "cosmos-db": {
           "name": "Azure Cosmos DB",
           "supports": [
-            "ARCH-0034",
-            "ARCH-0035"
+            "SUB-000021",
+            "SUB-000022"
           ]
         },
         "functions": {
           "name": "Azure Functions",
           "supports": [
-            "ARCH-0025"
+            "SUB-000015"
           ]
         },
         "aks": {
           "name": "Azure Kubernetes Service",
           "supports": [
-            "ARCH-0030"
+            "SUB-000019"
           ]
         },
         "blob-storage": {
           "name": "Azure Blob Storage",
           "supports": [
-            "ARCH-0057"
+            "SUB-000036"
           ]
         }
       }
@@ -106,36 +106,36 @@
         "cloud-sql": {
           "name": "Cloud SQL",
           "supports": [
-            "ARCH-0033"
+            "SUB-000020"
           ]
         },
         "firestore": {
           "name": "Firestore",
           "supports": [
-            "ARCH-0034"
+            "SUB-000021"
           ]
         },
         "cloud-run": {
           "name": "Cloud Run",
           "supports": [
-            "ARCH-0013"
+            "SUB-000006"
           ]
         },
         "gke": {
           "name": "Google Kubernetes Engine",
           "supports": [
-            "ARCH-0030"
+            "SUB-000019"
           ]
         },
         "cloud-storage": {
           "name": "Cloud Storage",
           "supports": [
-            "ARCH-0057"
+            "SUB-000036"
           ]
         },
         "pubsub": {
           "supports": [
-            "ARCH-0072"
+            "SUB-000044"
           ]
         }
       }
@@ -145,25 +145,25 @@
         "bare-metal": {
           "name": "Bare Metal",
           "supports": [
-            "ARCH-0028"
+            "SUB-000017"
           ]
         },
         "virtual-machine": {
           "name": "Virtual Machine",
           "supports": [
-            "ARCH-0027"
+            "SUB-000016"
           ]
         },
         "kubernetes": {
           "name": "Kubernetes",
           "supports": [
-            "ARCH-0030"
+            "SUB-000019"
           ]
         },
         "physical-network": {
           "name": "Physical Network",
           "supports": [
-            "ARCH-0086"
+            "SUB-000051"
           ]
         }
       }

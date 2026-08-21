@@ -17,7 +17,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^(ARCH|PAT|CODE|CON)-[0-9]{4}$"
+      "pattern": "^(FAM|CLS|SUB)-[0-9]{6}$"
     },
     "path": {
       "type": "string",
@@ -52,7 +52,8 @@
     },
     "parent": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "Identifier of the node above, or the domain name for a family."
     },
     "facets": {
       "type": "object",

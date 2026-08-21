@@ -18,7 +18,7 @@
   },
   "families": {
     "api": {
-      "id": "PAT-0001",
+      "id": "FAM-000015",
       "path": "patterns/api",
       "name": "Api",
       "description": "Reusable approaches governing request handling and externally consumed APIs.",
@@ -74,12 +74,12 @@
       "since": "0.2.0",
       "classes": {
         "request-processing": {
-          "id": "PAT-0002",
+          "id": "CLS-000085",
           "path": "patterns/api/request-processing",
           "name": "Request Processing",
           "description": "Request Processing groups patterns elements that provide request processing responsibilities within the Api family.",
           "level": "class",
-          "parent": "PAT-0001",
+          "parent": "FAM-000015",
           "facets": {
             "concern": [
               "api"
@@ -108,12 +108,12 @@
           "since": "0.2.0",
           "subclasses": {
             "idempotent-handler": {
-              "id": "PAT-0003",
+              "id": "SUB-000142",
               "path": "patterns/api/request-processing/idempotent-handler",
               "name": "Idempotent Handler",
               "description": "Ensures repeated equivalent requests do not create duplicate externally visible effects.",
               "level": "subclass",
-              "parent": "PAT-0002",
+              "parent": "CLS-000085",
               "facets": {
                 "concern": [
                   "api"
@@ -160,12 +160,12 @@
               "since": "0.2.0"
             },
             "validation-handler": {
-              "id": "PAT-0004",
+              "id": "SUB-000143",
               "path": "patterns/api/request-processing/validation-handler",
               "name": "Validation Handler",
               "description": "Validation Handler is a pattern specialization of Request Processing within the Api family.",
               "level": "subclass",
-              "parent": "PAT-0002",
+              "parent": "CLS-000085",
               "facets": {
                 "concern": [
                   "api"
@@ -194,12 +194,12 @@
               "since": "0.2.0"
             },
             "request-context": {
-              "id": "PAT-0005",
+              "id": "SUB-000144",
               "path": "patterns/api/request-processing/request-context",
               "name": "Request Context",
               "description": "Request Context is a pattern specialization of Request Processing within the Api family.",
               "level": "subclass",
-              "parent": "PAT-0002",
+              "parent": "CLS-000085",
               "facets": {
                 "concern": [
                   "api"
@@ -230,12 +230,12 @@
           }
         },
         "error-handling": {
-          "id": "PAT-0006",
+          "id": "CLS-000086",
           "path": "patterns/api/error-handling",
           "name": "Error Handling",
           "description": "Error Handling groups patterns elements that provide error handling responsibilities within the Api family.",
           "level": "class",
-          "parent": "PAT-0001",
+          "parent": "FAM-000015",
           "facets": {
             "concern": [
               "api"
@@ -264,12 +264,12 @@
           "since": "0.2.0",
           "subclasses": {
             "problem-details": {
-              "id": "PAT-0007",
+              "id": "SUB-000145",
               "path": "patterns/api/error-handling/problem-details",
               "name": "Problem Details",
               "description": "Problem Details is a pattern specialization of Error Handling within the Api family.",
               "level": "subclass",
-              "parent": "PAT-0006",
+              "parent": "CLS-000086",
               "facets": {
                 "concern": [
                   "api"
@@ -298,12 +298,12 @@
               "since": "0.2.0"
             },
             "exception-mapping": {
-              "id": "PAT-0008",
+              "id": "SUB-000146",
               "path": "patterns/api/error-handling/exception-mapping",
               "name": "Exception Mapping",
               "description": "Exception Mapping is a pattern specialization of Error Handling within the Api family.",
               "level": "subclass",
-              "parent": "PAT-0006",
+              "parent": "CLS-000086",
               "facets": {
                 "concern": [
                   "api"
@@ -334,12 +334,12 @@
           }
         },
         "versioning": {
-          "id": "PAT-0009",
+          "id": "CLS-000087",
           "path": "patterns/api/versioning",
           "name": "Versioning",
           "description": "Versioning groups patterns elements that provide versioning responsibilities within the Api family.",
           "level": "class",
-          "parent": "PAT-0001",
+          "parent": "FAM-000015",
           "facets": {
             "concern": [
               "api"
@@ -368,12 +368,12 @@
           "since": "0.2.0",
           "subclasses": {
             "url-versioning": {
-              "id": "PAT-0010",
+              "id": "SUB-000147",
               "path": "patterns/api/versioning/url-versioning",
               "name": "Url Versioning",
               "description": "Url Versioning is a pattern specialization of Versioning within the Api family.",
               "level": "subclass",
-              "parent": "PAT-0009",
+              "parent": "CLS-000087",
               "facets": {
                 "concern": [
                   "api"
@@ -402,12 +402,12 @@
               "since": "0.2.0"
             },
             "header-versioning": {
-              "id": "PAT-0011",
+              "id": "SUB-000148",
               "path": "patterns/api/versioning/header-versioning",
               "name": "Header Versioning",
               "description": "Header Versioning is a pattern specialization of Versioning within the Api family.",
               "level": "subclass",
-              "parent": "PAT-0009",
+              "parent": "CLS-000087",
               "facets": {
                 "concern": [
                   "api"
@@ -440,7 +440,7 @@
       }
     },
     "persistence": {
-      "id": "PAT-0012",
+      "id": "FAM-000016",
       "path": "patterns/persistence",
       "name": "Persistence",
       "description": "Reusable approaches for durable data access, transaction management, and caching.",
@@ -496,12 +496,12 @@
       "since": "0.2.0",
       "classes": {
         "data-access": {
-          "id": "PAT-0013",
+          "id": "CLS-000088",
           "path": "patterns/persistence/data-access",
           "name": "Data Access",
           "description": "Data Access groups patterns elements that provide data access responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "PAT-0012",
+          "parent": "FAM-000016",
           "facets": {
             "concern": [
               "persistence"
@@ -530,12 +530,12 @@
           "since": "0.2.0",
           "subclasses": {
             "repository": {
-              "id": "PAT-0014",
+              "id": "SUB-000149",
               "path": "patterns/persistence/data-access/repository",
               "name": "Repository",
               "description": "Encapsulates persistence behind a collection-like abstraction aligned to domain or application needs.",
               "level": "subclass",
-              "parent": "PAT-0013",
+              "parent": "CLS-000088",
               "facets": {
                 "concern": [
                   "persistence"
@@ -572,12 +572,12 @@
               "since": "0.2.0"
             },
             "unit-of-work": {
-              "id": "PAT-0015",
+              "id": "SUB-000150",
               "path": "patterns/persistence/data-access/unit-of-work",
               "name": "Unit Of Work",
               "description": "Unit Of Work is a pattern specialization of Data Access within the Persistence family.",
               "level": "subclass",
-              "parent": "PAT-0013",
+              "parent": "CLS-000088",
               "facets": {
                 "concern": [
                   "persistence"
@@ -606,12 +606,12 @@
               "since": "0.2.0"
             },
             "data-mapper": {
-              "id": "PAT-0016",
+              "id": "SUB-000151",
               "path": "patterns/persistence/data-access/data-mapper",
               "name": "Data Mapper",
               "description": "Data Mapper is a pattern specialization of Data Access within the Persistence family.",
               "level": "subclass",
-              "parent": "PAT-0013",
+              "parent": "CLS-000088",
               "facets": {
                 "concern": [
                   "persistence"
@@ -642,12 +642,12 @@
           }
         },
         "transaction": {
-          "id": "PAT-0017",
+          "id": "CLS-000089",
           "path": "patterns/persistence/transaction",
           "name": "Transaction",
           "description": "Transaction groups patterns elements that provide transaction responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "PAT-0012",
+          "parent": "FAM-000016",
           "facets": {
             "concern": [
               "persistence"
@@ -676,12 +676,12 @@
           "since": "0.2.0",
           "subclasses": {
             "local-transaction": {
-              "id": "PAT-0018",
+              "id": "SUB-000152",
               "path": "patterns/persistence/transaction/local-transaction",
               "name": "Local Transaction",
               "description": "Local Transaction is a pattern specialization of Transaction within the Persistence family.",
               "level": "subclass",
-              "parent": "PAT-0017",
+              "parent": "CLS-000089",
               "facets": {
                 "concern": [
                   "persistence"
@@ -710,12 +710,12 @@
               "since": "0.2.0"
             },
             "transactional-outbox": {
-              "id": "PAT-0019",
+              "id": "SUB-000153",
               "path": "patterns/persistence/transaction/transactional-outbox",
               "name": "Transactional Outbox",
               "description": "Persists state and outbound event records atomically, then publishes events asynchronously.",
               "level": "subclass",
-              "parent": "PAT-0017",
+              "parent": "CLS-000089",
               "facets": {
                 "concern": [
                   "persistence"
@@ -746,12 +746,12 @@
           }
         },
         "caching": {
-          "id": "PAT-0020",
+          "id": "CLS-000090",
           "path": "patterns/persistence/caching",
           "name": "Caching",
           "description": "Caching groups patterns elements that provide caching responsibilities within the Persistence family.",
           "level": "class",
-          "parent": "PAT-0012",
+          "parent": "FAM-000016",
           "facets": {
             "concern": [
               "persistence"
@@ -780,12 +780,12 @@
           "since": "0.2.0",
           "subclasses": {
             "cache-aside": {
-              "id": "PAT-0021",
+              "id": "SUB-000154",
               "path": "patterns/persistence/caching/cache-aside",
               "name": "Cache Aside",
               "description": "Cache Aside is a pattern specialization of Caching within the Persistence family.",
               "level": "subclass",
-              "parent": "PAT-0020",
+              "parent": "CLS-000090",
               "facets": {
                 "concern": [
                   "persistence"
@@ -814,12 +814,12 @@
               "since": "0.2.0"
             },
             "write-through": {
-              "id": "PAT-0022",
+              "id": "SUB-000155",
               "path": "patterns/persistence/caching/write-through",
               "name": "Write Through",
               "description": "Write Through is a pattern specialization of Caching within the Persistence family.",
               "level": "subclass",
-              "parent": "PAT-0020",
+              "parent": "CLS-000090",
               "facets": {
                 "concern": [
                   "persistence"
@@ -852,7 +852,7 @@
       }
     },
     "messaging": {
-      "id": "PAT-0023",
+      "id": "FAM-000017",
       "path": "patterns/messaging",
       "name": "Messaging",
       "description": "Messaging is a canonical patterns family used to classify messaging concerns.",
@@ -908,12 +908,12 @@
       "since": "0.2.0",
       "classes": {
         "delivery": {
-          "id": "PAT-0024",
+          "id": "CLS-000091",
           "path": "patterns/messaging/delivery",
           "name": "Delivery",
           "description": "Delivery groups patterns elements that provide delivery responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "PAT-0023",
+          "parent": "FAM-000017",
           "facets": {
             "concern": [
               "messaging"
@@ -942,12 +942,12 @@
           "since": "0.2.0",
           "subclasses": {
             "at-least-once": {
-              "id": "PAT-0025",
+              "id": "SUB-000156",
               "path": "patterns/messaging/delivery/at-least-once",
               "name": "At Least Once",
               "description": "At Least Once is a pattern specialization of Delivery within the Messaging family.",
               "level": "subclass",
-              "parent": "PAT-0024",
+              "parent": "CLS-000091",
               "facets": {
                 "concern": [
                   "messaging"
@@ -976,12 +976,12 @@
               "since": "0.2.0"
             },
             "deduplication": {
-              "id": "PAT-0026",
+              "id": "SUB-000157",
               "path": "patterns/messaging/delivery/deduplication",
               "name": "Deduplication",
               "description": "Deduplication is a pattern specialization of Delivery within the Messaging family.",
               "level": "subclass",
-              "parent": "PAT-0024",
+              "parent": "CLS-000091",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1010,12 +1010,12 @@
               "since": "0.2.0"
             },
             "dead-letter": {
-              "id": "PAT-0027",
+              "id": "SUB-000158",
               "path": "patterns/messaging/delivery/dead-letter",
               "name": "Dead Letter",
               "description": "Dead Letter is a pattern specialization of Delivery within the Messaging family.",
               "level": "subclass",
-              "parent": "PAT-0024",
+              "parent": "CLS-000091",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1046,12 +1046,12 @@
           }
         },
         "publishing": {
-          "id": "PAT-0028",
+          "id": "CLS-000092",
           "path": "patterns/messaging/publishing",
           "name": "Publishing",
           "description": "Publishing groups patterns elements that provide publishing responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "PAT-0023",
+          "parent": "FAM-000017",
           "facets": {
             "concern": [
               "messaging"
@@ -1080,12 +1080,12 @@
           "since": "0.2.0",
           "subclasses": {
             "transactional-outbox": {
-              "id": "PAT-0029",
+              "id": "SUB-000159",
               "path": "patterns/messaging/publishing/transactional-outbox",
               "name": "Transactional Outbox",
               "description": "Transactional Outbox is a pattern specialization of Publishing within the Messaging family.",
               "level": "subclass",
-              "parent": "PAT-0028",
+              "parent": "CLS-000092",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1114,12 +1114,12 @@
               "since": "0.2.0"
             },
             "event-publisher": {
-              "id": "PAT-0030",
+              "id": "SUB-000160",
               "path": "patterns/messaging/publishing/event-publisher",
               "name": "Event Publisher",
               "description": "Event Publisher is a pattern specialization of Publishing within the Messaging family.",
               "level": "subclass",
-              "parent": "PAT-0028",
+              "parent": "CLS-000092",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1150,12 +1150,12 @@
           }
         },
         "consumption": {
-          "id": "PAT-0031",
+          "id": "CLS-000093",
           "path": "patterns/messaging/consumption",
           "name": "Consumption",
           "description": "Consumption groups patterns elements that provide consumption responsibilities within the Messaging family.",
           "level": "class",
-          "parent": "PAT-0023",
+          "parent": "FAM-000017",
           "facets": {
             "concern": [
               "messaging"
@@ -1184,12 +1184,12 @@
           "since": "0.2.0",
           "subclasses": {
             "competing-consumer": {
-              "id": "PAT-0032",
+              "id": "SUB-000161",
               "path": "patterns/messaging/consumption/competing-consumer",
               "name": "Competing Consumer",
               "description": "Competing Consumer is a pattern specialization of Consumption within the Messaging family.",
               "level": "subclass",
-              "parent": "PAT-0031",
+              "parent": "CLS-000093",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1218,12 +1218,12 @@
               "since": "0.2.0"
             },
             "idempotent-consumer": {
-              "id": "PAT-0033",
+              "id": "SUB-000162",
               "path": "patterns/messaging/consumption/idempotent-consumer",
               "name": "Idempotent Consumer",
               "description": "Ensures repeated delivery of the same message does not repeat business side effects.",
               "level": "subclass",
-              "parent": "PAT-0031",
+              "parent": "CLS-000093",
               "facets": {
                 "concern": [
                   "messaging"
@@ -1256,7 +1256,7 @@
       }
     },
     "resilience": {
-      "id": "PAT-0034",
+      "id": "FAM-000018",
       "path": "patterns/resilience",
       "name": "Resilience",
       "description": "Reusable approaches that contain failures and improve continuity.",
@@ -1312,12 +1312,12 @@
       "since": "0.2.0",
       "classes": {
         "retry": {
-          "id": "PAT-0035",
+          "id": "CLS-000094",
           "path": "patterns/resilience/retry",
           "name": "Retry",
           "description": "Retry groups patterns elements that provide retry responsibilities within the Resilience family.",
           "level": "class",
-          "parent": "PAT-0034",
+          "parent": "FAM-000018",
           "facets": {
             "concern": [
               "resilience"
@@ -1352,12 +1352,12 @@
           "since": "0.2.0",
           "subclasses": {
             "exponential-backoff": {
-              "id": "PAT-0036",
+              "id": "SUB-000163",
               "path": "patterns/resilience/retry/exponential-backoff",
               "name": "Exponential Backoff",
               "description": "Retries transient failures using delays that increase between attempts.",
               "level": "subclass",
-              "parent": "PAT-0035",
+              "parent": "CLS-000094",
               "facets": {
                 "concern": [
                   "resilience"
@@ -1389,12 +1389,12 @@
               "since": "0.2.0"
             },
             "bounded-retry": {
-              "id": "PAT-0037",
+              "id": "SUB-000164",
               "path": "patterns/resilience/retry/bounded-retry",
               "name": "Bounded Retry",
               "description": "Bounded Retry is a pattern specialization of Retry within the Resilience family.",
               "level": "subclass",
-              "parent": "PAT-0035",
+              "parent": "CLS-000094",
               "facets": {
                 "concern": [
                   "resilience"
@@ -1425,12 +1425,12 @@
           }
         },
         "isolation": {
-          "id": "PAT-0038",
+          "id": "CLS-000095",
           "path": "patterns/resilience/isolation",
           "name": "Isolation",
           "description": "Isolation groups patterns elements that provide isolation responsibilities within the Resilience family.",
           "level": "class",
-          "parent": "PAT-0034",
+          "parent": "FAM-000018",
           "facets": {
             "concern": [
               "resilience"
@@ -1459,12 +1459,12 @@
           "since": "0.2.0",
           "subclasses": {
             "circuit-breaker": {
-              "id": "PAT-0039",
+              "id": "SUB-000165",
               "path": "patterns/resilience/isolation/circuit-breaker",
               "name": "Circuit Breaker",
               "description": "Temporarily blocks calls to an unhealthy dependency after failures exceed a threshold.",
               "level": "subclass",
-              "parent": "PAT-0038",
+              "parent": "CLS-000095",
               "facets": {
                 "concern": [
                   "resilience"
@@ -1493,12 +1493,12 @@
               "since": "0.2.0"
             },
             "bulkhead": {
-              "id": "PAT-0040",
+              "id": "SUB-000166",
               "path": "patterns/resilience/isolation/bulkhead",
               "name": "Bulkhead",
               "description": "Bulkhead is a pattern specialization of Isolation within the Resilience family.",
               "level": "subclass",
-              "parent": "PAT-0038",
+              "parent": "CLS-000095",
               "facets": {
                 "concern": [
                   "resilience"
@@ -1529,12 +1529,12 @@
           }
         },
         "timeout": {
-          "id": "PAT-0041",
+          "id": "CLS-000096",
           "path": "patterns/resilience/timeout",
           "name": "Timeout",
           "description": "Timeout groups patterns elements that provide timeout responsibilities within the Resilience family.",
           "level": "class",
-          "parent": "PAT-0034",
+          "parent": "FAM-000018",
           "facets": {
             "concern": [
               "resilience"
@@ -1563,12 +1563,12 @@
           "since": "0.2.0",
           "subclasses": {
             "bounded-timeout": {
-              "id": "PAT-0042",
+              "id": "SUB-000167",
               "path": "patterns/resilience/timeout/bounded-timeout",
               "name": "Bounded Timeout",
               "description": "Bounded Timeout is a pattern specialization of Timeout within the Resilience family.",
               "level": "subclass",
-              "parent": "PAT-0041",
+              "parent": "CLS-000096",
               "facets": {
                 "concern": [
                   "resilience"
@@ -1601,7 +1601,7 @@
       }
     },
     "security": {
-      "id": "PAT-0043",
+      "id": "FAM-000019",
       "path": "patterns/security",
       "name": "Security",
       "description": "Security is a canonical patterns family used to classify security concerns.",
@@ -1657,12 +1657,12 @@
       "since": "0.2.0",
       "classes": {
         "authentication": {
-          "id": "PAT-0044",
+          "id": "CLS-000097",
           "path": "patterns/security/authentication",
           "name": "Authentication",
           "description": "Authentication groups patterns elements that provide authentication responsibilities within the Security family.",
           "level": "class",
-          "parent": "PAT-0043",
+          "parent": "FAM-000019",
           "facets": {
             "concern": [
               "security"
@@ -1691,12 +1691,12 @@
           "since": "0.2.0",
           "subclasses": {
             "bearer-token": {
-              "id": "PAT-0045",
+              "id": "SUB-000168",
               "path": "patterns/security/authentication/bearer-token",
               "name": "Bearer Token",
               "description": "Bearer Token is a pattern specialization of Authentication within the Security family.",
               "level": "subclass",
-              "parent": "PAT-0044",
+              "parent": "CLS-000097",
               "facets": {
                 "concern": [
                   "security"
@@ -1725,12 +1725,12 @@
               "since": "0.2.0"
             },
             "mutual-tls": {
-              "id": "PAT-0046",
+              "id": "SUB-000169",
               "path": "patterns/security/authentication/mutual-tls",
               "name": "Mutual Tls",
               "description": "Mutual Tls is a pattern specialization of Authentication within the Security family.",
               "level": "subclass",
-              "parent": "PAT-0044",
+              "parent": "CLS-000097",
               "facets": {
                 "concern": [
                   "security"
@@ -1761,12 +1761,12 @@
           }
         },
         "authorization": {
-          "id": "PAT-0047",
+          "id": "CLS-000098",
           "path": "patterns/security/authorization",
           "name": "Authorization",
           "description": "Authorization groups patterns elements that provide authorization responsibilities within the Security family.",
           "level": "class",
-          "parent": "PAT-0043",
+          "parent": "FAM-000019",
           "facets": {
             "concern": [
               "security"
@@ -1795,12 +1795,12 @@
           "since": "0.2.0",
           "subclasses": {
             "role-based-access-control": {
-              "id": "PAT-0048",
+              "id": "SUB-000170",
               "path": "patterns/security/authorization/role-based-access-control",
               "name": "Role Based Access Control",
               "description": "Role Based Access Control is a pattern specialization of Authorization within the Security family.",
               "level": "subclass",
-              "parent": "PAT-0047",
+              "parent": "CLS-000098",
               "facets": {
                 "concern": [
                   "security"
@@ -1829,12 +1829,12 @@
               "since": "0.2.0"
             },
             "policy-based-access-control": {
-              "id": "PAT-0049",
+              "id": "SUB-000171",
               "path": "patterns/security/authorization/policy-based-access-control",
               "name": "Policy Based Access Control",
               "description": "Policy Based Access Control is a pattern specialization of Authorization within the Security family.",
               "level": "subclass",
-              "parent": "PAT-0047",
+              "parent": "CLS-000098",
               "facets": {
                 "concern": [
                   "security"
@@ -1865,12 +1865,12 @@
           }
         },
         "secrets": {
-          "id": "PAT-0050",
+          "id": "CLS-000099",
           "path": "patterns/security/secrets",
           "name": "Secrets",
           "description": "Secrets groups patterns elements that provide secrets responsibilities within the Security family.",
           "level": "class",
-          "parent": "PAT-0043",
+          "parent": "FAM-000019",
           "facets": {
             "concern": [
               "security"
@@ -1899,12 +1899,12 @@
           "since": "0.2.0",
           "subclasses": {
             "external-secret-store": {
-              "id": "PAT-0051",
+              "id": "SUB-000172",
               "path": "patterns/security/secrets/external-secret-store",
               "name": "External Secret Store",
               "description": "External Secret Store is a pattern specialization of Secrets within the Security family.",
               "level": "subclass",
-              "parent": "PAT-0050",
+              "parent": "CLS-000099",
               "facets": {
                 "concern": [
                   "security"
@@ -1937,7 +1937,7 @@
       }
     },
     "integration": {
-      "id": "PAT-0052",
+      "id": "FAM-000020",
       "path": "patterns/integration",
       "name": "Integration",
       "description": "Integration is a canonical patterns family used to classify integration concerns.",
@@ -1993,12 +1993,12 @@
       "since": "0.2.0",
       "classes": {
         "coordination": {
-          "id": "PAT-0053",
+          "id": "CLS-000100",
           "path": "patterns/integration/coordination",
           "name": "Coordination",
           "description": "Coordination groups patterns elements that provide coordination responsibilities within the Integration family.",
           "level": "class",
-          "parent": "PAT-0052",
+          "parent": "FAM-000020",
           "facets": {
             "concern": [
               "integration"
@@ -2027,12 +2027,12 @@
           "since": "0.2.0",
           "subclasses": {
             "saga": {
-              "id": "PAT-0054",
+              "id": "SUB-000173",
               "path": "patterns/integration/coordination/saga",
               "name": "Saga",
               "description": "Saga is a pattern specialization of Coordination within the Integration family.",
               "level": "subclass",
-              "parent": "PAT-0053",
+              "parent": "CLS-000100",
               "facets": {
                 "concern": [
                   "integration"
@@ -2061,12 +2061,12 @@
               "since": "0.2.0"
             },
             "orchestration": {
-              "id": "PAT-0055",
+              "id": "SUB-000174",
               "path": "patterns/integration/coordination/orchestration",
               "name": "Orchestration",
               "description": "Orchestration is a pattern specialization of Coordination within the Integration family.",
               "level": "subclass",
-              "parent": "PAT-0053",
+              "parent": "CLS-000100",
               "facets": {
                 "concern": [
                   "integration"
@@ -2095,12 +2095,12 @@
               "since": "0.2.0"
             },
             "choreography": {
-              "id": "PAT-0056",
+              "id": "SUB-000175",
               "path": "patterns/integration/coordination/choreography",
               "name": "Choreography",
               "description": "Choreography is a pattern specialization of Coordination within the Integration family.",
               "level": "subclass",
-              "parent": "PAT-0053",
+              "parent": "CLS-000100",
               "facets": {
                 "concern": [
                   "integration"
@@ -2131,12 +2131,12 @@
           }
         },
         "translation": {
-          "id": "PAT-0057",
+          "id": "CLS-000101",
           "path": "patterns/integration/translation",
           "name": "Translation",
           "description": "Translation groups patterns elements that provide translation responsibilities within the Integration family.",
           "level": "class",
-          "parent": "PAT-0052",
+          "parent": "FAM-000020",
           "facets": {
             "concern": [
               "integration"
@@ -2165,12 +2165,12 @@
           "since": "0.2.0",
           "subclasses": {
             "anti-corruption-layer": {
-              "id": "PAT-0058",
+              "id": "SUB-000176",
               "path": "patterns/integration/translation/anti-corruption-layer",
               "name": "Anti Corruption Layer",
               "description": "Anti Corruption Layer is a pattern specialization of Translation within the Integration family.",
               "level": "subclass",
-              "parent": "PAT-0057",
+              "parent": "CLS-000101",
               "facets": {
                 "concern": [
                   "integration"
@@ -2199,12 +2199,12 @@
               "since": "0.2.0"
             },
             "canonical-data-model": {
-              "id": "PAT-0059",
+              "id": "SUB-000177",
               "path": "patterns/integration/translation/canonical-data-model",
               "name": "Canonical Data Model",
               "description": "Canonical Data Model is a pattern specialization of Translation within the Integration family.",
               "level": "subclass",
-              "parent": "PAT-0057",
+              "parent": "CLS-000101",
               "facets": {
                 "concern": [
                   "integration"
@@ -2237,7 +2237,7 @@
       }
     },
     "observability": {
-      "id": "PAT-0060",
+      "id": "FAM-000021",
       "path": "patterns/observability",
       "name": "Observability",
       "description": "Observability is a canonical patterns family used to classify observability concerns.",
@@ -2293,12 +2293,12 @@
       "since": "0.2.0",
       "classes": {
         "correlation": {
-          "id": "PAT-0061",
+          "id": "CLS-000102",
           "path": "patterns/observability/correlation",
           "name": "Correlation",
           "description": "Correlation groups patterns elements that provide correlation responsibilities within the Observability family.",
           "level": "class",
-          "parent": "PAT-0060",
+          "parent": "FAM-000021",
           "facets": {
             "concern": [
               "observability"
@@ -2327,12 +2327,12 @@
           "since": "0.2.0",
           "subclasses": {
             "correlation-id-propagation": {
-              "id": "PAT-0062",
+              "id": "SUB-000178",
               "path": "patterns/observability/correlation/correlation-id-propagation",
               "name": "Correlation Id Propagation",
               "description": "Correlation Id Propagation is a pattern specialization of Correlation within the Observability family.",
               "level": "subclass",
-              "parent": "PAT-0061",
+              "parent": "CLS-000102",
               "facets": {
                 "concern": [
                   "observability"
@@ -2361,12 +2361,12 @@
               "since": "0.2.0"
             },
             "trace-context-propagation": {
-              "id": "PAT-0063",
+              "id": "SUB-000179",
               "path": "patterns/observability/correlation/trace-context-propagation",
               "name": "Trace Context Propagation",
               "description": "Trace Context Propagation is a pattern specialization of Correlation within the Observability family.",
               "level": "subclass",
-              "parent": "PAT-0061",
+              "parent": "CLS-000102",
               "facets": {
                 "concern": [
                   "observability"
@@ -2397,12 +2397,12 @@
           }
         },
         "instrumentation": {
-          "id": "PAT-0064",
+          "id": "CLS-000103",
           "path": "patterns/observability/instrumentation",
           "name": "Instrumentation",
           "description": "Instrumentation groups patterns elements that provide instrumentation responsibilities within the Observability family.",
           "level": "class",
-          "parent": "PAT-0060",
+          "parent": "FAM-000021",
           "facets": {
             "concern": [
               "observability"
@@ -2431,12 +2431,12 @@
           "since": "0.2.0",
           "subclasses": {
             "structured-logging": {
-              "id": "PAT-0065",
+              "id": "SUB-000180",
               "path": "patterns/observability/instrumentation/structured-logging",
               "name": "Structured Logging",
               "description": "Structured Logging is a pattern specialization of Instrumentation within the Observability family.",
               "level": "subclass",
-              "parent": "PAT-0064",
+              "parent": "CLS-000103",
               "facets": {
                 "concern": [
                   "observability"
@@ -2465,12 +2465,12 @@
               "since": "0.2.0"
             },
             "distributed-tracing": {
-              "id": "PAT-0066",
+              "id": "SUB-000181",
               "path": "patterns/observability/instrumentation/distributed-tracing",
               "name": "Distributed Tracing",
               "description": "Distributed Tracing is a pattern specialization of Instrumentation within the Observability family.",
               "level": "subclass",
-              "parent": "PAT-0064",
+              "parent": "CLS-000103",
               "facets": {
                 "concern": [
                   "observability"
@@ -2503,7 +2503,7 @@
       }
     },
     "testing": {
-      "id": "PAT-0067",
+      "id": "FAM-000022",
       "path": "patterns/testing",
       "name": "Testing",
       "description": "Testing is a canonical patterns family used to classify testing concerns.",
@@ -2559,12 +2559,12 @@
       "since": "0.2.0",
       "classes": {
         "structure": {
-          "id": "PAT-0068",
+          "id": "CLS-000104",
           "path": "patterns/testing/structure",
           "name": "Structure",
           "description": "Structure groups patterns elements that provide structure responsibilities within the Testing family.",
           "level": "class",
-          "parent": "PAT-0067",
+          "parent": "FAM-000022",
           "facets": {
             "concern": [
               "testing"
@@ -2593,12 +2593,12 @@
           "since": "0.2.0",
           "subclasses": {
             "test-pyramid": {
-              "id": "PAT-0069",
+              "id": "SUB-000182",
               "path": "patterns/testing/structure/test-pyramid",
               "name": "Test Pyramid",
               "description": "Test Pyramid is a pattern specialization of Structure within the Testing family.",
               "level": "subclass",
-              "parent": "PAT-0068",
+              "parent": "CLS-000104",
               "facets": {
                 "concern": [
                   "testing"
@@ -2627,12 +2627,12 @@
               "since": "0.2.0"
             },
             "contract-testing": {
-              "id": "PAT-0070",
+              "id": "SUB-000183",
               "path": "patterns/testing/structure/contract-testing",
               "name": "Contract Testing",
               "description": "Contract Testing is a pattern specialization of Structure within the Testing family.",
               "level": "subclass",
-              "parent": "PAT-0068",
+              "parent": "CLS-000104",
               "facets": {
                 "concern": [
                   "testing"
@@ -2663,12 +2663,12 @@
           }
         },
         "isolation": {
-          "id": "PAT-0071",
+          "id": "CLS-000105",
           "path": "patterns/testing/isolation",
           "name": "Isolation",
           "description": "Isolation groups patterns elements that provide isolation responsibilities within the Testing family.",
           "level": "class",
-          "parent": "PAT-0067",
+          "parent": "FAM-000022",
           "facets": {
             "concern": [
               "testing"
@@ -2697,12 +2697,12 @@
           "since": "0.2.0",
           "subclasses": {
             "test-double": {
-              "id": "PAT-0072",
+              "id": "SUB-000184",
               "path": "patterns/testing/isolation/test-double",
               "name": "Test Double",
               "description": "Test Double is a pattern specialization of Isolation within the Testing family.",
               "level": "subclass",
-              "parent": "PAT-0071",
+              "parent": "CLS-000105",
               "facets": {
                 "concern": [
                   "testing"
@@ -2731,12 +2731,12 @@
               "since": "0.2.0"
             },
             "fixture-factory": {
-              "id": "PAT-0073",
+              "id": "SUB-000185",
               "path": "patterns/testing/isolation/fixture-factory",
               "name": "Fixture Factory",
               "description": "Fixture Factory is a pattern specialization of Isolation within the Testing family.",
               "level": "subclass",
-              "parent": "PAT-0071",
+              "parent": "CLS-000105",
               "facets": {
                 "concern": [
                   "testing"

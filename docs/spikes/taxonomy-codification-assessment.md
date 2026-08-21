@@ -489,13 +489,15 @@ recorded classification that cited them.
 ```text
 now       id      architecture/data/database/relational-database
 
-proposed  id      ARCH-0042                                        immutable, never reused
+proposed  id      SUB-000042                                       immutable, never reused
           path    architecture/data/database/relational-database   current location
           name    Relational Database                              freely improvable
 ```
 
-Identifiers are opaque and sequential within a domain, prefixed `ARCH`, `PAT`, `CODE`, `CON`, so a
-citation is legible in a standard the way `CWE-79` is. Stored references — in standards, decisions,
+Identifiers are opaque and sequential within a level, prefixed `FAM`, `CLS` or `SUB`, so a citation
+is legible in a standard the way `CWE-79` is and a reader can tell a family reference from a subclass
+reference without resolving it. The code records the level rather than the subject, so a node keeps
+its identity when it moves between domains. Stored references — in standards, decisions,
 rules, mappings, and classifications against real systems — use the identifier. The resolver accepts
 either, and former paths are retained so a stale path resolves with a warning rather than failing.
 

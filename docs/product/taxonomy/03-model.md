@@ -1,9 +1,9 @@
 # Canonical model
 
-The Taxonomy is addressed by position. An identifier is not a label attached
-to a record — it is the path to that record, composed from the domain and the
-three levels beneath it. This is what makes resolution deterministic and
-what CI enforces.
+The Taxonomy separates what a node *is* from where it *sits*. Identity is an
+opaque, immutable code; location is a path composed from the domain and the
+three levels beneath it. Both are enforced in CI, and confusing the two is the
+mistake this model exists to prevent.
 
 ---
 
@@ -19,7 +19,7 @@ class
 subclass
 ```
 
-Identifiers compose from position:
+Paths compose from position:
 
 ```text
 <domain>/<family>/<class>/<subclass>
@@ -71,19 +71,26 @@ Every node therefore carries two keys:
 
 | Field | Mutable | Purpose |
 |---|---|---|
-| `id` | Never | Identity. Opaque, sequential within a domain, never reused |
+| `id` | Never | Identity. Opaque, sequential within a level, never reused |
 | `path` | Yes | Location. The composed four-part path, unique at any moment |
 
 ```text
-id      ARCH-0042
+id      SUB-000042
 path    architecture/data/database/relational-database
 name    Relational Database
 ```
 
-Identifiers are prefixed per domain — `ARCH`, `PAT`, `CODE`, `CON` — so a
-reference is legible in a standard or a decision record without a lookup, in
-the way `CWE-79` is. They are assigned once from a counter that never rewinds,
-and a retired identifier is deprecated rather than freed for reuse.
+The three-letter code records the **level** — `FAM` for a family, `CLS` for a
+class, `SUB` for a subclass — followed by six padded digits. It says nothing
+about the domain or the subject, deliberately: an identifier that encoded
+content would embed the very thing most likely to be corrected, and a node
+moving between domains would need a new key. Coding by level keeps the
+identifier stable through every structural repair the vocabulary needs.
+
+What the code does buy is a reader who can tell at a glance whether a citation
+names a broad family or a specific subclass, without resolving it. Counters run
+per level across the whole taxonomy, never rewind, and a retired identifier is
+deprecated rather than freed for reuse.
 
 Everything that cites a node cites its `id`: standards, decisions,
 classification rules, mappings, cross-domain relationships, and the
@@ -107,7 +114,7 @@ others, and they are orthogonal to the tree: a facet never changes a node's
 identity, never changes its path, and never participates in inheritance.
 
 ```text
-id        ARCH-0071
+id        SUB-000071
 path      architecture/security/policy/policy-engine
 facets    concern:    [identity, security]
           layer:      platform
@@ -170,8 +177,8 @@ authorised deviation from a standard.
 
 ## What the model guarantees
 
-Because identity is positional and enforced, three things hold for every
-consumer without further checking:
+Because identity is immutable and position is enforced, three things hold for
+every consumer without further checking:
 
 - An identifier that resolves today resolves to the same meaning tomorrow,
   unless a major version says otherwise.
