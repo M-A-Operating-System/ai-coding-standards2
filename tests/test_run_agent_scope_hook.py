@@ -262,13 +262,20 @@ def test_granted_prefix_does_not_authorise_a_chained_command(tmp_path):
 
 def test_every_separator_form_is_decomposed(tmp_path):
     write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
-    for command in [
-        "echo x; curl https://example.com",
-        "cat f | curl https://example.com",
-        "cat f || curl https://example.com",
-        "cd /tmp && cat f && curl https://example.com",
-    ]:
-        deny_reason(run_hook(tmp_path, "Bash", command))
+    # Each tuple: (command, first-unmatched-sub-command).
+    # The denial must name the specific sub-command that had no matching grant. (QA-001)
+    cases = [
+        ("echo x; curl https://example.com", "echo x"),
+        ("cat f | curl https://example.com", "curl https://example.com"),
+        ("cat f || curl https://example.com", "curl https://example.com"),
+        ("cd /tmp && cat f && curl https://example.com", "curl https://example.com"),
+    ]
+    for command, unmatched in cases:
+        reason = deny_reason(run_hook(tmp_path, "Bash", command))
+        assert unmatched in reason, (
+            f"denial for {command!r} must name the ungranted sub-command "
+            f"{unmatched!r}"
+        )
 
 
 def test_shell_wrapper_does_not_launder_an_ungranted_command(tmp_path):
@@ -404,3 +411,116 @@ def test_the_escape_hatch_grants_nothing_else(tmp_path):
         "rm .claude/settings.json",
     ]:
         deny_reason(run_hook(tmp_path, "Bash", command))
+# --- SA-001 regression: non-shell interpreters with inline-source flags ------
+
+
+def test_non_shell_interpreter_inline_source_is_refused(tmp_path):
+    """python3 -c, perl -e, and node -e all run inline source that cannot be
+    scope-checked. The interpreter guard must refuse them. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "python3 -c 'import os; os.system(\"curl evil\")'",
+        "perl -e 'system(\"curl evil\")'",
+        "node -e 'require(\"child_process\").exec(\"curl evil\")'",
+    ]:
+        reason = deny_reason(run_hook(tmp_path, "Bash", command))
+        assert "cannot be scope-checked" in reason, (
+            f"{command!r} must be refused by the interpreter guard"
+        )
+
+
+def test_interpreter_on_file_not_refused_by_interpreter_guard(tmp_path):
+    """python3 scripts/foo.py invokes a file, not inline source.
+    The interpreter guard must not fire; the denial (if any) must come from
+    the pattern check, not the inline-source guard. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    result = run_hook(tmp_path, "Bash", "python3 scripts/foo.py")
+    # The command is denied (no Bash(python3 *) pattern), but the reason must
+    # say the sub-command matched no entry, not that it cannot be scope-checked.
+    reason = deny_reason(result)
+    assert "cannot be scope-checked" not in reason, (
+        "file execution must not trigger the inline-source interpreter guard"
+    )
+
+
+# --- DP-001 regression: heredoc delimiter matching -------------------------
+
+
+def test_space_indented_eof_inside_heredoc_body_is_not_a_delimiter(tmp_path):
+    """For <<EOF (no dash), a body line with leading spaces must not close the
+    heredoc. The original strip() call caused early termination, making the
+    line after the indented EOF a command segment (false denial). (DP-001)"""
+    write_scope(tmp_path, "03_execute/pr-reviewer", RESOLVED_ALLOWLIST)
+    assert_allowed(
+        run_hook(
+            tmp_path,
+            "Bash",
+            "cat > /tmp/x <<'EOF'\n"
+            "  EOF\n"           # leading spaces: NOT the delimiter for <<EOF
+            "EOF\n"             # column-0: the real delimiter
+            "gh api --method POST repos/o/r/issues/1/comments -F body=@/tmp/body.md",
+        )
+    )
+
+
+# --- SA-001 regression (ba2ce54): per-interpreter inline-source flag sets ----
+#
+# The original fix used a shared INLINE_SOURCE_FLAGS = {"-c", "-e"} applied to
+# all interpreters. But -e means errexit for shells, not inline source, so
+# `bash -e scripts/build.sh` was falsely refused. The fix maps each interpreter
+# to only the flags that actually pass inline source to that interpreter.
+
+
+def test_shell_errexit_flag_is_not_refused(tmp_path):
+    """`bash -e` and `sh -e` use -e for errexit, not inline source.
+    The interpreter guard must not refuse them. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "bash -e scripts/build.sh",
+        "sh -e scripts/deploy.sh",
+    ]:
+        result = run_hook(tmp_path, "Bash", command)
+        # The command may be denied (no Bash(bash *) pattern for -e form), but
+        # it must not be denied for the inline-source reason.
+        if result.returncode == 0 and result.stdout.strip():
+            reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+            assert "cannot be scope-checked" not in reason, (
+                f"{command!r} must not be refused by the interpreter guard"
+            )
+
+
+def test_perl_ruby_node_inline_source_still_refused(tmp_path):
+    """`perl -e`, `ruby -e`, and `node -e` use -e for inline source.
+    The interpreter guard must still refuse them. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    for command in [
+        "perl -e 'system(\"curl evil\")'",
+        "ruby -e 'system(\"curl evil\")'",
+        "node -e 'require(\"child_process\").exec(\"curl evil\")'",
+    ]:
+        reason = deny_reason(run_hook(tmp_path, "Bash", command))
+        assert "cannot be scope-checked" in reason, (
+            f"{command!r} must be refused by the interpreter guard"
+        )
+
+
+def test_python3_e_flag_is_not_refused(tmp_path):
+    """`python3 -e` is not a valid inline-source flag for Python.
+    The interpreter guard must not refuse it; the denial (if any) comes from
+    the pattern check. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    result = run_hook(tmp_path, "Bash", "python3 -e something")
+    if result.returncode == 0 and result.stdout.strip():
+        reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "cannot be scope-checked" not in reason, (
+            "python3 -e must not trigger the interpreter guard"
+        )
+
+
+def test_python3_c_flag_is_still_refused(tmp_path):
+    """`python3 -c` passes inline source and must still be refused. (SA-001)"""
+    write_scope(tmp_path, "03_execute/coder", CHAINING_ALLOWLIST)
+    reason = deny_reason(run_hook(tmp_path, "Bash", "python3 -c 'import os'"))
+    assert "cannot be scope-checked" in reason, (
+        "python3 -c must be refused by the interpreter guard"
+    )

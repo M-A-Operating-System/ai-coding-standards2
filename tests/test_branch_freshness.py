@@ -170,3 +170,27 @@ class TestOrchestrateFullHistory:
             "orchestrate job must checkout with fetch-depth: 0 so main...HEAD "
             "and merge-base operations work (no phantom 'no merge base')"
         )
+
+    def test_orchestrate_checkout_is_pinned_to_main(self):
+        """The orchestrator must run its own code from main, whatever event
+        fired the tick (#367).
+
+        Without the pin, a `pull_request` trigger checks out refs/pull/N/merge,
+        so a PR editing pr-reviewer.md, an orchestration script or
+        pipeline_orchestrator.py has those edits active in the run that reviews
+        it -- the proposed version reviewing itself, and a route past the P-10
+        gate.
+
+        Asserted here because the pin is a single YAML value: delete it and
+        every other check still passes, and the failure surfaces only as a PR
+        reviewing itself, which is precisely the kind of defect nobody notices.
+        """
+        data = yaml.safe_load(ORCH_YML.read_text())
+        steps = data["jobs"]["orchestrate"]["steps"]
+        checkout = next(
+            s for s in steps if "actions/checkout" in str(s.get("uses", ""))
+        )
+        assert checkout.get("with", {}).get("ref") == "main", (
+            "orchestrate job must checkout ref: main so a PR cannot alter the "
+            "orchestrator, agents or scripts that review it (#367)"
+        )
