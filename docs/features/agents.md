@@ -4,7 +4,14 @@
 
 **Given** `.claude/AGENTS.md` after this change
 **When** an agent needs a working file mid-run
-**Then** the document states the exact location (`$AI_AGILE_SCRATCH`), the exact directory pattern (`/tmp/${SESSION_ID}`), and a worked example -- not just "don't leave state behind"
+**Then** the document states the exact variable (`$AI_AGILE_SCRATCH`), how to resolve it when it is unset (`${AI_AGILE_SCRATCH:-...}`, for a human running a `/maos-*` command), and a worked example -- not just "don't leave state behind"
+
+## Scenario: The worked example stages the body and posts it with --body-file
+
+**Given** an agent posts a comment whose body contains JSON or a fenced block
+**When** it follows the example in `.claude/AGENTS.md`
+**Then** the example writes the body into `$SCRATCH` and posts it with `gh pr comment --body-file`
+**And** the example never inlines a body via `--body "$(cat <<EOF ...)"`, which needs backticks and `$` shielded from the shell twice over and is the form agents were observed routing around
 
 ## Scenario: Orchestrator creates an empty scratch directory before each agent run
 

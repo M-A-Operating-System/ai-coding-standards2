@@ -86,11 +86,19 @@ Five marker types:
 Free-text prose may sit alongside JSON; the JSON is the contract.
 If they disagree, the JSON wins.
 
-Working files stay out of the repo. Most posting needs no file at all -- pipe a
-heredoc straight into `gh pr comment --body "$(cat <<'EOF' ... EOF)"`, the way
-the agent prompts already show. When you genuinely need a file on disk, put it
-in the per-run scratch directory and never in the repo root or any tracked path:
-`SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"`.
+Working files stay out of the repo. Staging a comment body in a file is fine and
+often the right call -- a body containing JSON or a fenced block is fragile to
+shell-quote -- so build it in the per-run scratch directory and post it with
+`--body-file`, never from a bare filename:
+
+```bash
+SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"
+cat > "$SCRATCH/body.md" <<'EOF'
+...
+EOF
+gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$SCRATCH/body.md"
+```
+
 The orchestrator creates and removes `AI_AGILE_SCRATCH` itself, so no cleanup
 command belongs in your prompt. A bare filename resolves against the repo root,
 where the commit sweep can pick it up.

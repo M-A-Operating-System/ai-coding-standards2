@@ -58,20 +58,38 @@ class TestAgentsMdScratchConvention:
         text = AGENTS_MD.read_text()
         assert "AI_AGILE_SCRATCH" in text
         assert "${AI_AGILE_SCRATCH:-" in text
-        assert "never in the repo root or any tracked path" in text
+        assert "never from a bare filename" in text
 
-    def test_agents_md_does_not_teach_file_staging_to_post_a_comment(self):
-        """Issue #321 root cause: the scratch section's own worked example
-        showed `cat > "$SCRATCH_FILE"` then `-f body="$(cat "$SCRATCH_FILE")"`,
-        teaching that posting a comment means staging a file first. Every leak
-        observed was a staged comment body. Agents imitate examples more
-        reliably than they follow rules, so the example must not model it.
+    def test_agents_md_teaches_body_file_from_scratch(self):
+        """Issue #321, corrected. The first fix told agents to avoid files and
+        pipe a heredoc into `--body "$(cat <<EOF ...)"`. pr-reviewer ignored it
+        across two consecutive ticks, leaking three files each time, because
+        its bodies are JSON inside a fenced block and that form needs backticks
+        and `$` shielded from the shell twice over -- so it built a file for
+        `gh api --input` instead, in the repo root.
+
+        The rule therefore places the file rather than denying it: stage in
+        $SCRATCH, post with --body-file, which has no quoting problem at all.
         """
         text = AGENTS_MD.read_text()
-        assert 'cat > "$SCRATCH_FILE"' not in text
-        assert '-f body="$(cat "$SCRATCH_FILE")"' not in text
-        # and it must point at the fileless form instead
-        assert "no file at all" in text
+        assert "--body-file" in text
+        assert '"$SCRATCH/body.md"' in text
+        # The fragile form is what the agent routed around; do not teach it.
+        assert '--body "$(cat <<' not in text
+
+    def test_pr_reviewer_posts_every_body_from_scratch(self):
+        """pr-reviewer is the agent that actually leaked -- three files per run,
+        two runs running: ann_rerun/review_v2/ann_close_v2, and before that
+        open_announce/review_body/announce_close. Its three posting steps must
+        stage into $SCRATCH and post with --body-file, so a regression there
+        fails here rather than in a live tick.
+        """
+        text = (AGENTS_DIR / "03_execute" / "pr-reviewer.md").read_text()
+        # Count the command form, not prose mentions of the flag.
+        assert text.count('--body-file "$SCRATCH/') == 3, \
+            "expected all 3 posting steps to post --body-file from $SCRATCH"
+        assert '--body "$(cat <<' not in text, "the fragile quoted-heredoc form is back"
+        assert text.count("${AI_AGILE_SCRATCH:-") == 3
 
     def test_agents_md_documents_orchestrator_manages_lifecycle(self):
         text = AGENTS_MD.read_text()
