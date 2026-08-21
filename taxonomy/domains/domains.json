@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/domains.schema.json",
+  "schema_version": "0.4.0",
+  "description": "Domains partition the vocabulary. A domain is a record type, not a level: nothing specialises into a family, a family belongs to a domain. Domain records carry no level field, and the three semantic levels remain family, class and subclass.",
+  "domains": {
+    "architecture": {
+      "id": "DOM000001",
+      "slug": "architecture",
+      "name": "Architecture",
+      "description": "Provider-neutral classification shared by intended CALM architecture and observed CMDB state.",
+      "source": "architecture/architecture.json",
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0"
+    },
+    "patterns": {
+      "id": "DOM000002",
+      "slug": "patterns",
+      "name": "Patterns",
+      "description": "Reusable solution approaches for recurring engineering problems.",
+      "source": "patterns/patterns.json",
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0"
+    },
+    "code": {
+      "id": "DOM000003",
+      "slug": "code",
+      "name": "Code",
+      "description": "Higher-order source-code roles derived deterministically from static-analysis facts.",
+      "source": "code/code.json",
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0"
+    },
+    "concepts": {
+      "id": "DOM000004",
+      "slug": "concepts",
+      "name": "Concepts",
+      "description": "Technology-neutral engineering properties and principles.",
+      "source": "concepts/concepts.json",
+      "stability": "development",
+      "status": "active",
+      "since": "0.2.0"
+    }
+  }
+}

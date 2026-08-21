@@ -23,7 +23,7 @@
       "name": "System",
       "description": "System is a canonical architecture family used to classify system concerns.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "system"
@@ -396,7 +396,7 @@
       "name": "Compute",
       "description": "Executable software and compute environments that perform processing.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "compute"
@@ -1129,7 +1129,7 @@
       "name": "Data",
       "description": "Components whose primary responsibility is storing, organizing, querying, or analyzing data.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "data"
@@ -2034,7 +2034,7 @@
       "name": "Storage",
       "description": "Storage is a canonical architecture family used to classify storage concerns.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "storage"
@@ -2511,7 +2511,7 @@
       "name": "Messaging",
       "description": "Asynchronous communication infrastructure for messages, events, streams, and notifications.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "messaging"
@@ -3064,7 +3064,7 @@
       "name": "Networking",
       "description": "Connectivity, routing, naming, segmentation, and traffic-management infrastructure.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "networking"
@@ -3989,7 +3989,7 @@
       "name": "Identity",
       "description": "Identity is a canonical architecture family used to classify identity concerns.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "identity"
@@ -4570,7 +4570,7 @@
       "name": "Security",
       "description": "Security enforcement and protection capabilities.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "security"
@@ -5257,7 +5257,7 @@
       "name": "Integration",
       "description": "Interfaces and coordination mechanisms that connect systems.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "integration"
@@ -5942,7 +5942,7 @@
       "name": "Observability",
       "description": "Telemetry collection, storage, analysis, visualization, and alerting components.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "observability"
@@ -6557,7 +6557,7 @@
       "name": "Ai Ml",
       "description": "Ai Ml is a canonical architecture family used to classify ai ml concerns.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "ai-ml"
@@ -7172,7 +7172,7 @@
       "name": "Experience",
       "description": "Experience is a canonical architecture family used to classify experience concerns.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "experience"
@@ -7575,7 +7575,7 @@
       "name": "Platform",
       "description": "Platform is a canonical architecture family used to classify platform concerns.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "platform"
@@ -8262,7 +8262,7 @@
       "name": "External",
       "description": "External is a canonical architecture family used to classify external concerns.",
       "level": "family",
-      "parent": "architecture",
+      "parent": "DOM000001",
       "facets": {
         "concern": [
           "external"

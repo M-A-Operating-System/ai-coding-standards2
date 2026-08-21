@@ -32,6 +32,17 @@ code/api/handler/request-handler
 concepts/reliability/idempotency/request-idempotency
 ```
 
+The domain is the first part of the path but it is not a fourth level. A
+domain **partitions** the vocabulary; it is not something a family
+specialises. Nothing inherits from a domain, no domain record carries a
+`level` field, and the levels remain the three above. Domains are declared
+once in `domains/domains.json`, each with its own identifier (`DOM000001`),
+so a family's `parent` names that identifier rather than a bare word — which
+is what makes `parent` uniformly an identifier everywhere in the vocabulary
+([TX-5](02-principles.md#tx-5--identity-is-immutable-names-and-paths-are-not)).
+A record type and a level are different things, and the schema enforces the
+difference by forbidding `level` on a domain record.
+
 Three levels is a deliberate ceiling, not a starting point. Technology,
 provider, runtime, capability, concern, ownership, and provenance all add
 specificity, and none of them becomes a further level
@@ -87,6 +98,9 @@ an identifier that encoded
 content would embed the very thing most likely to be corrected, and a node
 moving between domains would need a new key. Coding by level keeps the
 identifier stable through every structural repair the vocabulary needs.
+Domain records use `DOM` on the same shape, where the code marks a record type
+rather than a level — a domain is what a family belongs to, not a rung above
+it.
 
 What the code does buy is a reader who can tell at a glance whether a citation
 names a broad family or a specific subclass, without resolving it. Counters run
@@ -143,7 +157,9 @@ querying a first-class home instead of leaving them as prose.
 
 `taxonomy.json` is the master registry. It does not contain the taxonomy — it
 names the available domains, registries, mappings, and rule collections, and
-where each lives.
+where each lives. `domains/domains.json` is one of the files it names: the
+declaration of the four partitions, their identifiers, and the file holding
+each one's tree.
 
 Consumers begin resolution there rather than hard-coding paths. A registry
 entry that names a file which does not exist fails validation, so the

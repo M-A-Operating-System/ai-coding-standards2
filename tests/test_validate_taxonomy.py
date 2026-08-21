@@ -12,8 +12,10 @@ from validate_taxonomy import (
     DOMAINS,
     EXEMPT_FROM_SCHEMA,
     FILE_SCHEMAS,
+    DOMAIN_ID_PATTERN,
     ID_PATTERN,
     build_schema_registry,
+    check_domains,
     check_facets,
     check_lifecycle,
     check_schema_coverage,
@@ -51,6 +53,15 @@ def _first_subclass(domain_doc: dict) -> dict:
     family = next(iter(domain_doc["families"].values()))
     klass = next(iter(family["classes"].values()))
     return next(iter(klass["subclasses"].values()))
+
+
+def _load_domain_files() -> dict:
+    """The four semantic domain files, plus the registry family parents resolve against."""
+    loaded = {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
+              for d in DOMAINS}
+    loaded["domains/domains.json"] = json.loads(
+        (REAL_TAXONOMY_DIR / "domains" / "domains.json").read_text())
+    return loaded
 
 
 def _errors_matching(errors: list[str], needle: str) -> list[str]:
@@ -92,25 +103,16 @@ def test_missing_taxonomy_dir_is_an_error(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_every_node_has_a_well_formed_identifier():
-    by_id, _, errors = collect_nodes(
-        {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
-         for d in DOMAINS}
-    )
+    by_id, _, errors = collect_nodes(_load_domain_files())
     assert errors == []
     assert by_id
     assert all(ID_PATTERN.match(node_id) for node_id in by_id)
 
 
 def test_identifiers_are_unique_across_the_taxonomy():
-    by_id, _, _ = collect_nodes(
-        {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
-         for d in DOMAINS}
-    )
+    by_id, _, _ = collect_nodes(_load_domain_files())
     # collect_nodes would have reported a reuse error; assert the count instead
-    _, _, errors = collect_nodes(
-        {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
-         for d in DOMAINS}
-    )
+    _, _, errors = collect_nodes(_load_domain_files())
     assert not _errors_matching(errors, "never reused")
     assert len(by_id) == 453
 
@@ -193,12 +195,86 @@ def test_wrong_declared_domain_fails(taxonomy):
 
 
 # ---------------------------------------------------------------------------
+# Domains are a record type, not a level
+# ---------------------------------------------------------------------------
+
+def test_every_family_parent_is_a_domain_identifier():
+    """A family belongs to a domain, so parent is an identifier everywhere."""
+    by_id, _, errors = collect_nodes(_load_domain_files())
+    assert errors == []
+    parents = {node["parent"] for node in by_id.values() if node["level"] == "family"}
+    assert parents
+    assert all(DOMAIN_ID_PATTERN.match(parent) for parent in parents)
+
+
+def test_no_domain_record_declares_a_level():
+    """Three levels means three: a domain is a type and carries no level."""
+    registry = _load_domain_files()["domains/domains.json"]["domains"]
+    assert registry
+    assert all("level" not in spec for spec in registry.values())
+
+
+def test_domain_record_declaring_a_level_fails(taxonomy):
+    doc = _read(taxonomy, "domains/domains.json")
+    doc["domains"]["code"]["level"] = "domain"
+    _write(taxonomy, "domains/domains.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "a domain is a type, not a level")
+
+
+def test_missing_domain_record_fails(taxonomy):
+    doc = _read(taxonomy, "domains/domains.json")
+    del doc["domains"]["concepts"]
+    _write(taxonomy, "domains/domains.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "no record for domain 'concepts'")
+
+
+def test_malformed_domain_identifier_fails(taxonomy):
+    doc = _read(taxonomy, "domains/domains.json")
+    doc["domains"]["patterns"]["id"] = "FAM000001"
+    _write(taxonomy, "domains/domains.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "is not a valid domain identifier")
+
+
+def test_reused_domain_identifier_fails(taxonomy):
+    doc = _read(taxonomy, "domains/domains.json")
+    doc["domains"]["patterns"]["id"] = doc["domains"]["architecture"]["id"]
+    _write(taxonomy, "domains/domains.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "domain identifiers are not unique")
+
+
+def test_domain_record_must_point_at_its_own_file(taxonomy):
+    doc = _read(taxonomy, "domains/domains.json")
+    doc["domains"]["code"]["source"] = "concepts/concepts.json"
+    _write(taxonomy, "domains/domains.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "expected 'code/code.json'")
+
+
+def test_domain_record_for_an_unknown_domain_fails(taxonomy):
+    doc = _read(taxonomy, "domains/domains.json")
+    doc["domains"]["infrastructure"] = dict(doc["domains"]["code"],
+                                            id="DOM000009",
+                                            slug="infrastructure",
+                                            source="infrastructure/infrastructure.json")
+    _write(taxonomy, "domains/domains.json", doc)
+    errors, _, _ = validate(taxonomy)
+    assert _errors_matching(errors, "'infrastructure' is not a known semantic domain")
+
+
+def test_absent_domain_registry_fails():
+    assert check_domains({}) == ["domains/domains.json: no domain registry found"]
+
+
+# ---------------------------------------------------------------------------
 # Facets
 # ---------------------------------------------------------------------------
 
 def test_every_node_carries_a_declared_concern():
-    loaded = {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
-              for d in DOMAINS}
+    loaded = _load_domain_files()
     loaded["facets/facets.json"] = json.loads(
         (REAL_TAXONOMY_DIR / "facets" / "facets.json").read_text())
     by_id, _, _ = collect_nodes(loaded)
@@ -277,8 +353,7 @@ def test_replaced_by_without_deprecation_fails(taxonomy):
 
 
 def test_lifecycle_clean_on_real_taxonomy():
-    loaded = {f"{d}/{d}.json": json.loads((REAL_TAXONOMY_DIR / d / f"{d}.json").read_text())
-              for d in DOMAINS}
+    loaded = _load_domain_files()
     by_id, _, _ = collect_nodes(loaded)
     assert check_lifecycle(by_id) == []
 
@@ -381,6 +456,18 @@ def test_dangling_source_in_taxonomy_json_fails(taxonomy):
 def test_facet_registry_is_declared_in_the_master_registry():
     root = json.loads((REAL_TAXONOMY_DIR / "taxonomy.json").read_text())
     assert root["registries"]["facets"]["source"] == "facets/facets.json"
+
+
+def test_domain_registry_is_declared_in_the_master_registry():
+    """Declared as a registry, distinct from the block naming the domain files."""
+    root = json.loads((REAL_TAXONOMY_DIR / "taxonomy.json").read_text())
+    assert root["registries"]["domain_registry"]["source"] == "domains/domains.json"
+    assert set(root["domains"]) == set(DOMAINS)
+
+
+def test_master_registry_declares_exactly_three_semantic_levels():
+    root = json.loads((REAL_TAXONOMY_DIR / "taxonomy.json").read_text())
+    assert root["classification_model"]["semantic_levels"] == ["family", "class", "subclass"]
 
 
 def test_invalid_json_is_reported_not_raised(taxonomy):

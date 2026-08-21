@@ -18,6 +18,8 @@ Checks:
      it. An unmapped file is an error, never a silent skip.
   3. Identity is sound: every node id is unique across the taxonomy, carries
      the three-letter code for its level, and is never reused
+  3a. Every semantic domain has one domain record, and no domain record
+     declares a level -- a domain is a type, not a rung of the hierarchy
   4. Paths are positional: each node declares the path its position implies,
      its own level, and the identifier of the node above it
   5. taxonomy.json domain, registry, mapping and rule sources point at files
@@ -74,6 +76,7 @@ FILE_SCHEMAS: dict[str, str] = {
     "mappings/semantic-analysis-boundary.json": "semantic-analysis-boundary.schema.json",
     "rules/code-classification-rules.json": "classification-rules-file.schema.json",
     "facets/facets.json": "facets.schema.json",
+    "domains/domains.json": "domains.schema.json",
 }
 
 # Files deliberately exempt from schema conformance, with the reason. Examples
@@ -162,6 +165,12 @@ ID_PATTERN = re.compile(r"^(FAM|CLS|SUB)[0-9]{6}$")
 # whole taxonomy.
 LEVEL_PREFIX = {"family": "FAM", "class": "CLS", "subclass": "SUB"}
 
+# Domains are a record TYPE, not a level: nothing specialises into a family, a
+# family belongs to a domain. Domain records carry no level field, which the
+# schema enforces, and DOM is deliberately absent from LEVEL_PREFIX so the three
+# semantic levels stay three.
+DOMAIN_ID_PATTERN = re.compile(r"^DOM[0-9]{6}$")
+
 
 def collect_nodes(loaded: dict[str, dict]) -> tuple[dict[str, dict], dict[str, str], list[str]]:
     """
@@ -178,6 +187,12 @@ def collect_nodes(loaded: dict[str, dict]) -> tuple[dict[str, dict], dict[str, s
     by_id: dict[str, dict] = {}
     path_to_id: dict[str, str] = {}
     errors: list[str] = []
+
+    # A family's parent is the identifier of its domain record, so parent is an
+    # identifier everywhere rather than sometimes a name.
+    registry = (loaded.get("domains/domains.json") or {}).get("domains") or {}
+    domain_ids = {spec.get("slug", slug): spec.get("id")
+                  for slug, spec in registry.items()}
 
     for domain in DOMAINS:
         rel = f"{domain}/{domain}.json"
@@ -206,9 +221,10 @@ def collect_nodes(loaded: dict[str, dict]) -> tuple[dict[str, dict], dict[str, s
                 for former in node.get("former_paths") or []:
                     path_to_id.setdefault(former, node_id)
 
+        domain_id = domain_ids.get(domain, domain)
         for family_key, family in (data.get("families") or {}).items():
             fpath = f"{domain}/{family_key}"
-            visit(family, fpath, domain, "family")
+            visit(family, fpath, domain_id, "family")
             fid = family.get("id")
 
             for class_key, klass in (family.get("classes") or {}).items():
@@ -256,6 +272,48 @@ def _check_position(
         errors.append(f"{filename}: {ref}: parent is {node.get('parent')!r}, expected {parent_ref!r}")
     if node.get("level") != level:
         errors.append(f"{filename}: {ref}: level is {node.get('level')!r}, expected {level!r}")
+    return errors
+
+
+def check_domains(loaded: dict[str, dict]) -> list[str]:
+    """
+    Every semantic domain has exactly one domain record, correctly identified,
+    pointing at the file it describes -- and no domain record declares a level,
+    because a domain is a type rather than a rung of the hierarchy.
+    """
+    errors: list[str] = []
+    registry = (loaded.get("domains/domains.json") or {}).get("domains")
+    if registry is None:
+        return ["domains/domains.json: no domain registry found"]
+
+    by_slug = {spec.get("slug", slug): spec for slug, spec in registry.items()}
+    for domain in DOMAINS:
+        spec = by_slug.get(domain)
+        if spec is None:
+            errors.append(f"domains/domains.json: no record for domain {domain!r}")
+            continue
+        if not DOMAIN_ID_PATTERN.match(spec.get("id") or ""):
+            errors.append(
+                f"domains/domains.json: {domain}: id {spec.get('id')!r} is not a valid "
+                f"domain identifier"
+            )
+        if "level" in spec:
+            errors.append(
+                f"domains/domains.json: {domain}: a domain is a type, not a level, "
+                f"and must not declare one"
+            )
+        expected_source = f"{domain}/{domain}.json"
+        if spec.get("source") != expected_source:
+            errors.append(
+                f"domains/domains.json: {domain}: source is {spec.get('source')!r}, "
+                f"expected {expected_source!r}"
+            )
+    for slug in sorted(set(by_slug) - set(DOMAINS)):
+        errors.append(f"domains/domains.json: {slug!r} is not a known semantic domain")
+
+    ids = [spec.get("id") for spec in registry.values()]
+    if len(set(ids)) != len(ids):
+        errors.append("domains/domains.json: domain identifiers are not unique")
     return errors
 
 
@@ -503,6 +561,7 @@ def validate(taxonomy_dir: Path) -> tuple[list[str], int, int]:
     all_errors += check_sources(taxonomy_dir, loaded)
     all_errors += check_canonical_references(loaded, by_id, path_to_id)
     all_errors += check_registry_references(loaded)
+    all_errors += check_domains(loaded)
     all_errors += check_facets(by_id, loaded)
     all_errors += check_lifecycle(by_id)
 

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "domains.schema.json",
+  "title": "Domain Registry",
+  "description": "Domains are a record type, not a level. A domain record carries no level field; the three semantic levels are family, class and subclass.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "domains"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "domains": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "description",
+          "source",
+          "stability",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^DOM[0-9]{6}$"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string"
+          },
+          "stability": {
+            "enum": [
+              "development",
+              "alpha",
+              "beta",
+              "release-candidate",
+              "stable"
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "deprecated"
+            ]
+          },
+          "replaced_by": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string"
+          },
+          "level": false
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -9,12 +9,14 @@ Provide a stable JSON-native vocabulary shared across CALM intended architecture
 ## Structure
 
 - `taxonomy.json` — master registry
+- `domains/domains.json` — the four partitions and their identifiers
 - `architecture/architecture.json` — canonical architecture classes
 - `patterns/patterns.json` — reusable design and implementation patterns
 - `code/code.json` — governance-oriented coding roles and structures
 - `concepts/concepts.json` — technology-neutral engineering concepts
 - `implementations/implementations.json` — concrete technologies mapped to canonical classes
 - `runtimes/runtimes.json` — cloud/on-prem realizations
+- `facets/facets.json` — orthogonal dimensions and their controlled values
 - `mappings/` — CALM, cross-domain, and static-analysis-boundary mappings
 - `rules/` — starter deterministic code-classification rules
 - `schemas/` — initial JSON Schemas
@@ -30,6 +32,8 @@ Examples:
 - `patterns/persistence/data-access/repository`
 - `code/api/handler/request-handler`
 - `concepts/reliability/idempotency/request-idempotency`
+
+The domain is the first part of the path but is not a level: it partitions the vocabulary, nothing specialises into a family, and domain records carry no `level` field. A family's `parent` is the identifier of its domain record, so `parent` is an identifier everywhere.
 
 Concrete technologies are implementations rather than a fourth semantic level. Provider/runtime realization is separate.
 
