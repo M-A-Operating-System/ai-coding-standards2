@@ -9,7 +9,9 @@ Scenarios traced to docs/features/agents.md:
 """
 import re
 import os
+import pytest
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,6 +25,7 @@ from pipeline_orchestrator import (
 )
 
 
+AGENTS_DIR = Path(__file__).parent.parent / ".claude" / "agents"
 AGENTS_MD = Path(__file__).parent.parent / ".claude" / "AGENTS.md"
 
 
@@ -53,6 +56,18 @@ def _agent_def():
 # Scenario: AGENTS.md states a concrete scratch-file convention
 # ---------------------------------------------------------------------------
 
+# atlas.md is not an AI Agile pipeline agent -- not registered in pipeline.json
+# and never orchestrator-invoked, so the scratch contract does not apply to it.
+_NON_PIPELINE_AGENTS = {"atlas.md"}
+
+
+def _agent_prompts():
+    return sorted(
+        p for p in AGENTS_DIR.rglob("*.md")
+        if p.name not in _NON_PIPELINE_AGENTS
+    )
+
+
 class TestAgentsMdScratchConvention:
     def test_agents_md_states_concrete_scratch_convention(self):
         text = AGENTS_MD.read_text()
@@ -60,95 +75,44 @@ class TestAgentsMdScratchConvention:
         assert "${AI_AGILE_SCRATCH:-" in text
         assert "never from a bare filename" in text
 
-    def test_agents_md_teaches_body_file_from_scratch(self):
-        """Issue #321, corrected. The first fix told agents to avoid files and
-        pipe a heredoc into `--body "$(cat <<EOF ...)"`. pr-reviewer ignored it
-        across two consecutive ticks, leaking three files each time, because
-        its bodies are JSON inside a fenced block and that form needs backticks
-        and `$` shielded from the shell twice over -- so it built a file for
-        `gh api --input` instead, in the repo root.
+    def test_agents_md_teaches_writing_into_scratch(self):
+        """Issue #321, third correction. Two earlier rules failed in practice:
+        "avoid files" (pr-reviewer routed around it, leaking 3 files a run) and
+        then a `SCRATCH=...; mkdir -p` preamble, which pr-reviewer cannot run at
+        all -- it starts with an assignment (matching no allowlist pattern) and
+        mkdir is not among its 31 granted tools. Worse, when that line is denied
+        the next one expands to `cat > "/body.md"` -- a write to the filesystem
+        root.
 
-        The rule therefore places the file rather than denying it: stage in
-        $SCRATCH, post with --body-file, which has no quoting problem at all.
+        The rule now creates nothing: the orchestrator provides the directory,
+        and ${AI_AGILE_SCRATCH:-/tmp} falls back to a path that always exists.
         """
         text = AGENTS_MD.read_text()
-        assert "--body-file" in text
-        assert '"$SCRATCH/body.md"' in text
-        # The fragile form is what the agent routed around; do not teach it.
-        assert '--body "$(cat <<' not in text
+        assert '${AI_AGILE_SCRATCH:-/tmp}/' in text
+        assert "do not create it yourself" in text
+        # No preamble the agent has to execute before it can write. The word
+        # may appear in prose explaining why not to; a command must not.
+        assert "mkdir -p" not in text
+        assert 'SCRATCH="${AI_AGILE_SCRATCH' not in text
 
     def test_pr_reviewer_posts_every_body_from_scratch(self):
-        """pr-reviewer is the agent that actually leaked -- three files per run,
-        two runs running: ann_rerun/review_v2/ann_close_v2, and before that
-        open_announce/review_body/announce_close. Its three posting steps must
-        stage into $SCRATCH and post with --body-file, so a regression there
-        fails here rather than in a live tick.
+        """pr-reviewer is the agent that leaked -- three files per run, twice
+        running. Its three posting steps must write into the scratch directory
+        and post from there, using tools it is actually granted.
         """
         text = (AGENTS_DIR / "03_execute" / "pr-reviewer.md").read_text()
-        # Count the command form, not prose mentions of the flag.
-        assert text.count('--body-file "$SCRATCH/') == 3, \
-            "expected all 3 posting steps to post --body-file from $SCRATCH"
-        assert '--body "$(cat <<' not in text, "the fragile quoted-heredoc form is back"
-        assert text.count("${AI_AGILE_SCRATCH:-") == 3
+        assert text.count('cat > "${AI_AGILE_SCRATCH:-/tmp}/') == 3
+        # REST, not `gh pr comment`: the latter is GraphQL and 403s in a
+        # restricted session. Bash(gh api --method * repos/*/issues*) is granted
+        # to every agent, so this form works on both paths.
+        assert text.count('gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments"') == 3
+        assert "mkdir -p" not in text
+        assert 'SCRATCH="${AI_AGILE_SCRATCH' not in text
 
     def test_agents_md_documents_orchestrator_manages_lifecycle(self):
         text = AGENTS_MD.read_text()
         assert "orchestrator" in text.lower()
         assert "AI_AGILE_SCRATCH" in text
-
-    def test_orchestrator_creates_empty_scratch_before_agent_run(self, monkeypatch):
-        """Debris from a prior run or a crashed retry must not survive into the
-        next invocation. This calls invoke_agent for real (the previous version
-        called _build_agent_env only, which never touches the filesystem, so its
-        fake_popen never ran and the check was vacuous).
-        """
-        session_id = "ais-v1-coder-issue-321-empty-test"
-        scratch = Path("/tmp") / session_id
-        shutil.rmtree(scratch, ignore_errors=True)
-        scratch.mkdir(parents=True)
-        (scratch / "leftover.txt").write_text("debris from prior run")
-
-        monkeypatch.setattr("pipeline_orchestrator._HEADLESS", True)
-
-        observed = []
-
-        def fake_popen(cmd, **kwargs):
-            path = kwargs.get("env", {}).get("AI_AGILE_SCRATCH", "")
-            d = Path(path) if path else None
-            observed.append({
-                "exists": bool(d and d.is_dir()),
-                "contents": sorted(x.name for x in d.iterdir()) if d and d.is_dir() else None,
-            })
-            mock_proc = MagicMock()
-            mock_proc.stdout = iter([])
-            mock_proc.returncode = 0
-            mock_proc.wait.return_value = 0
-            return mock_proc
-
-        try:
-            with patch("subprocess.Popen", side_effect=fake_popen), \
-                 patch("pipeline_orchestrator._claude_cli_usable", return_value=True), \
-                 patch("pipeline_orchestrator._compute_agent_session_id", return_value=session_id), \
-                 patch("pipeline_orchestrator._resolve_agent_invocation") as mock_resolve, \
-                 patch("shutil.rmtree", wraps=shutil.rmtree), \
-                 patch("os.makedirs", wraps=os.makedirs):
-                mock_resolve.return_value = MagicMock(
-                    prompt="test prompt",
-                    allowed_tools=["Read"],
-                    model=None,
-                    max_turns=10,
-                    session_id=session_id,
-                )
-                invoke_agent(_agent_def(), _work_item(), dry_run=False,
-                             repo="owner/repo", attempt=0)
-
-            assert observed, "Popen was never called -- invoke_agent did not run"
-            assert observed[0]["exists"] is True
-            assert observed[0]["contents"] == [], (
-                f"scratch not empty at spawn: {observed[0]['contents']}"
-            )
-        finally:
-            shutil.rmtree(scratch, ignore_errors=True)
 
     def test_scratch_dir_path_is_under_tmp(self):
         env = _build_agent_env(
@@ -160,184 +124,129 @@ class TestAgentsMdScratchConvention:
         )
         assert env["AI_AGILE_SCRATCH"].startswith("/tmp/")
 
-    def test_invoke_agent_creates_scratch_dir_before_subprocess(self, monkeypatch):
-        """The directory must exist on disk by the time Popen fires -- the agent
-        cannot write into it otherwise. os.makedirs is wrapped rather than
-        replaced so the check observes the real filesystem.
+
+# ---------------------------------------------------------------------------
+# STD-ARCH-035: the lifecycle is implemented in scripts, not in the orchestrator
+# ---------------------------------------------------------------------------
+
+SCRIPTS = Path(__file__).parent.parent / ".github" / "scripts"
+
+
+def _run_script(name, scratch):
+    return subprocess.run(
+        ["bash", str(SCRIPTS / name)],
+        env={"PATH": os.environ["PATH"], "AI_AGILE_SCRATCH": str(scratch)},
+        capture_output=True, text=True, timeout=30,
+    )
+
+
+class TestScratchScripts:
+    """The work lives in .github/scripts/, so it is testable standalone."""
+
+    def test_setup_creates_the_directory_empty(self):
+        d = Path("/tmp/ais-test-setup-empty")
+        shutil.rmtree(d, ignore_errors=True)
+        try:
+            assert _run_script("scratch-setup.sh", d).returncode == 0
+            assert d.is_dir() and list(d.iterdir()) == []
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_setup_clears_debris_from_a_prior_run(self):
+        """This is what makes the lifecycle self-healing: a tick killed before
+        teardown leaves files behind, and the next run clears them. It is why
+        no signal handler needs to clean up.
         """
-        session_id = "ais-v1-coder-issue-321-create-test"
-        scratch_path = Path("/tmp") / session_id
-        shutil.rmtree(scratch_path, ignore_errors=True)
+        d = Path("/tmp/ais-test-setup-debris")
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(parents=True)
+        (d / "leftover.txt").write_text("debris")
+        try:
+            assert _run_script("scratch-setup.sh", d).returncode == 0
+            assert list(d.iterdir()) == []
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_teardown_removes_the_directory(self):
+        d = Path("/tmp/ais-test-teardown")
+        shutil.rmtree(d, ignore_errors=True)
+        d.mkdir(parents=True)
+        (d / "f.txt").write_text("x")
+        assert _run_script("scratch-teardown.sh", d).returncode == 0
+        assert not d.exists()
+
+    @pytest.mark.parametrize("bad", ["", "relative/path", "/home/user/repo", "/", "/tmp"])
+    def test_scripts_refuse_a_path_outside_tmp(self, bad):
+        """Both scripts run rm -rf. A relative path, the repo, or a bare /tmp
+        must be refused rather than deleted.
+        """
+        for name in ("scratch-setup.sh", "scratch-teardown.sh"):
+            assert _run_script(name, bad).returncode != 0, f"{name} accepted {bad!r}"
+
+
+class TestOrchestratorDelegatesToScripts:
+    """STD-ARCH-035: the orchestrator schedules the scripts; it does not do the
+    filesystem work itself.
+    """
+
+    def test_orchestrator_holds_no_scratch_filesystem_calls(self):
+        src = (Path(__file__).parent.parent / "pipeline" / "pipeline_orchestrator.py").read_text()
+        assert "_CURRENT_SCRATCH" not in src, "module global for in-flight scratch is back"
+        assert "os.makedirs(scratch" not in src
+        assert "shutil.rmtree(scratch" not in src
+
+    def test_agent_receives_an_empty_scratch_directory_at_spawn(self, monkeypatch):
+        """End-to-end through the real scripts: by the time Popen fires, the
+        directory exists and is empty even if a prior run left debris.
+        """
+        session_id = "ais-v1-test-delegates"
+        scratch = Path("/tmp") / session_id
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True)
+        (scratch / "leftover.txt").write_text("debris from prior run")
 
         monkeypatch.setattr("pipeline_orchestrator._HEADLESS", True)
+        observed = []
 
-        created_before_popen = []
+        real_popen = subprocess.Popen
 
         def fake_popen(cmd, **kwargs):
-            env = kwargs.get("env", {})
-            s_path = env.get("AI_AGILE_SCRATCH", "")
-            created_before_popen.append(Path(s_path).is_dir() if s_path else False)
-            mock_proc = MagicMock()
-            mock_proc.stdout = iter([])
-            mock_proc.returncode = 0
-            mock_proc.wait.return_value = 0
-            return mock_proc
+            # The orchestrator runs the scratch scripts via subprocess.run,
+            # which is itself built on Popen -- let those through untouched or
+            # the hooks silently no-op and this test asserts nothing.
+            if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "bash":
+                return real_popen(cmd, **kwargs)
+            path = kwargs.get("env", {}).get("AI_AGILE_SCRATCH", "")
+            d = Path(path) if path else None
+            observed.append({
+                "exists": bool(d and d.is_dir()),
+                "contents": sorted(x.name for x in d.iterdir()) if d and d.is_dir() else None,
+            })
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.wait.return_value = 0
+            return proc
 
         try:
             with patch("subprocess.Popen", side_effect=fake_popen), \
                  patch("pipeline_orchestrator._claude_cli_usable", return_value=True), \
                  patch("pipeline_orchestrator._compute_agent_session_id", return_value=session_id), \
-                 patch("pipeline_orchestrator._resolve_agent_invocation") as mock_resolve, \
-                 patch("shutil.rmtree", wraps=shutil.rmtree), \
-                 patch("os.makedirs", wraps=os.makedirs) as mock_makedirs:
+                 patch("pipeline_orchestrator._resolve_agent_invocation") as mock_resolve:
                 mock_resolve.return_value = MagicMock(
-                    prompt="test prompt",
-                    allowed_tools=["Read"],
-                    model=None,
-                    max_turns=10,
-                    session_id=session_id,
+                    prompt="p", allowed_tools=["Read"], model=None,
+                    max_turns=10, session_id=session_id,
                 )
-
                 invoke_agent(_agent_def(), _work_item(), dry_run=False,
                              repo="owner/repo", attempt=0)
 
-            assert mock_makedirs.called
-            assert str(scratch_path) in str(mock_makedirs.call_args)
-            # The load-bearing assertion: the directory was on disk when the
-            # agent subprocess was spawned, not merely created at some point.
-            assert created_before_popen == [True]
+            assert observed, "Popen was never called"
+            assert observed[0]["exists"] is True
+            assert observed[0]["contents"] == [], (
+                f"scratch not empty at spawn: {observed[0]['contents']}"
+            )
         finally:
-            shutil.rmtree(scratch_path, ignore_errors=True)
-
-
-# ---------------------------------------------------------------------------
-# Scenario: Working tree unchanged by agent run using scratch files
-# ---------------------------------------------------------------------------
-
-class TestWorkingTreeUnchanged:
-    def test_scratch_path_is_under_tmp_not_repo(self):
-        env = _build_agent_env(
-            {"PATH": "/usr/bin"},
-            repo="owner/repo",
-            work_item=_work_item(),
-            agent_session_id="ais-v1-coder-issue-321",
-            session_scope="per_issue",
-        )
-        scratch = env["AI_AGILE_SCRATCH"]
-        assert scratch.startswith("/tmp/"), f"scratch path {scratch!r} must be under /tmp"
-        assert "ai-coding-standards" not in scratch
-        assert not scratch.startswith("/home")
-        assert not scratch.startswith("/root")
-
-
-# ---------------------------------------------------------------------------
-# Scenario: Orchestrator removes scratch on failure path
-# ---------------------------------------------------------------------------
-
-class TestScratchRemovedOnFailure:
-    def test_invoke_agent_calls_rmtree_on_scratch_dir(self, monkeypatch):
-        session_id = "ais-v1-coder-issue-321-rmtree-test"
-        monkeypatch.setattr("pipeline_orchestrator._HEADLESS", True)
-
-        rmtree_calls = []
-
-        def fake_rmtree(path, ignore_errors=False):
-            rmtree_calls.append(path)
-
-        def fake_popen(cmd, **kwargs):
-            mock_proc = MagicMock()
-            mock_proc.stdout = iter([])
-            mock_proc.returncode = 1
-            mock_proc.wait.return_value = 1
-            return mock_proc
-
-        agent = _agent_def()
-        work = _work_item()
-
-        with patch("subprocess.Popen", side_effect=fake_popen), \
-             patch("pipeline_orchestrator._claude_cli_usable", return_value=True), \
-             patch("pipeline_orchestrator._compute_agent_session_id", return_value=session_id), \
-             patch("pipeline_orchestrator._resolve_agent_invocation") as mock_resolve, \
-             patch("shutil.rmtree", side_effect=fake_rmtree), \
-             patch("os.makedirs"):
-            mock_resolve.return_value = MagicMock(
-                prompt="test prompt",
-                allowed_tools=["Read"],
-                model=None,
-                max_turns=10,
-                session_id=session_id,
-            )
-            invoke_agent(agent, work, dry_run=False, repo="owner/repo", attempt=0)
-
-        scratch_path = f"/tmp/{session_id}"
-        assert any(scratch_path in str(c) for c in rmtree_calls), (
-            f"Expected rmtree on {scratch_path!r}; got: {rmtree_calls}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Scenario: Retry receives an empty scratch directory
-# ---------------------------------------------------------------------------
-
-class TestRetryReceivesEmptyScratch:
-    def test_each_invoke_agent_call_clears_scratch_before_creating(self, monkeypatch):
-        session_id = "ais-v1-coder-issue-321-retry-test"
-        monkeypatch.setattr("pipeline_orchestrator._HEADLESS", True)
-
-        rmtree_calls = []
-        makedirs_calls = []
-
-        def fake_rmtree(path, ignore_errors=False):
-            rmtree_calls.append(path)
-
-        def fake_makedirs(path, exist_ok=False):
-            makedirs_calls.append(path)
-
-        def fake_popen(cmd, **kwargs):
-            mock_proc = MagicMock()
-            mock_proc.stdout = iter([])
-            mock_proc.returncode = 0
-            mock_proc.wait.return_value = 0
-            return mock_proc
-
-        agent = _agent_def()
-        work = _work_item()
-
-        with patch("subprocess.Popen", side_effect=fake_popen), \
-             patch("pipeline_orchestrator._claude_cli_usable", return_value=True), \
-             patch("pipeline_orchestrator._compute_agent_session_id", return_value=session_id), \
-             patch("pipeline_orchestrator._resolve_agent_invocation") as mock_resolve, \
-             patch("shutil.rmtree", side_effect=fake_rmtree), \
-             patch("os.makedirs", side_effect=fake_makedirs):
-            mock_resolve.return_value = MagicMock(
-                prompt="test prompt",
-                allowed_tools=["Read"],
-                model=None,
-                max_turns=10,
-                session_id=session_id,
-            )
-            invoke_agent(agent, work, dry_run=False, repo="owner/repo", attempt=0)
-            invoke_agent(agent, work, dry_run=False, repo="owner/repo", attempt=1)
-
-        scratch_path = f"/tmp/{session_id}"
-        assert rmtree_calls.count(scratch_path) >= 2, (
-            f"Expected rmtree called at least twice on {scratch_path!r}; got {rmtree_calls}"
-        )
-
-
-AGENTS_DIR = Path(__file__).parent.parent / ".claude" / "agents"
-
-# atlas.md is not an AI Agile pipeline agent -- it is not registered in
-# pipeline.json and is never invoked by the orchestrator, so the scratch
-# contract does not apply to it.
-_NON_PIPELINE_AGENTS = {"atlas.md"}
-
-
-def _agent_prompts():
-    return sorted(
-        p for p in AGENTS_DIR.rglob("*.md")
-        if p.name not in _NON_PIPELINE_AGENTS
-    )
+            shutil.rmtree(scratch, ignore_errors=True)
 
 
 class TestAgentPromptsDoNotOwnScratchCleanup:

@@ -2925,6 +2925,9 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+            # The orchestrator also runs the scratch lifecycle scripts via bash
+            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][-1])
         ]
         assert len(bash_calls) == 1
         assert "mark-pr-ready.sh" in bash_calls[0].args[0][-1]
@@ -2955,6 +2958,9 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+            # The orchestrator also runs the scratch lifecycle scripts via bash
+            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][-1])
         ]
         assert len(bash_calls) == 0
 
@@ -3081,6 +3087,9 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+            # The orchestrator also runs the scratch lifecycle scripts via bash
+            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][-1])
         ]
         assert len(bash_calls) == 2, f"Expected 2 bash calls, got {len(bash_calls)}"
 
@@ -3098,6 +3107,13 @@ class TestPostSteps:
         def _side_effect(cmd, **kwargs):
             if isinstance(cmd, list) and cmd and cmd[0] == "git":
                 raise _sp.CalledProcessError(1, cmd)
+            # Don't count the scratch lifecycle scripts (STD-ARCH-035); this
+            # test asserts post_steps stops after the first failure.
+            if isinstance(cmd, list) and cmd and "scratch-" in str(cmd[-1]):
+                ok = MagicMock()
+                ok.returncode = 0
+                ok.stdout = ok.stderr = ""
+                return ok
             call_count["n"] += 1
             result = MagicMock()
             result.returncode = 1
@@ -3170,6 +3186,9 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+            # The orchestrator also runs the scratch lifecycle scripts via bash
+            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][-1])
         ]
         assert len(bash_calls) == 0, "Traversal path must not reach subprocess.run"
 
@@ -3197,6 +3216,9 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
+            # The orchestrator also runs the scratch lifecycle scripts via bash
+            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][-1])
         ]
         assert len(bash_calls) == 1
         env_passed = bash_calls[0].kwargs["env"]

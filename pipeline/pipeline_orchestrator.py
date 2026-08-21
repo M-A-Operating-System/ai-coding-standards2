@@ -2492,6 +2492,51 @@ def _claude_cli_usable(env: Mapping[str, str]) -> bool:
     return _CLAUDE_CLI_PROBE[key]
 
 
+# STD-SEC-022 -- env for the scratch lifecycle hooks. They take one input and
+# run rm -rf/mkdir on it; nothing else is needed, so nothing else is passed.
+_SCRATCH_HOOK_ENV_VARS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
+
+SCRATCH_SETUP_SCRIPT = ".github/scripts/scratch-setup.sh"
+SCRATCH_TEARDOWN_SCRIPT = ".github/scripts/scratch-teardown.sh"
+
+
+def _scratch_path(agent_session_id: str) -> str:
+    """The per-run scratch directory for a session id.
+
+    Sole definition of the formula. _build_agent_env exports it and the
+    lifecycle hooks are handed the result, so no caller recomputes it.
+    """
+    return f"/tmp/{agent_session_id}"
+
+
+def _run_scratch_hook(script_rel: str, scratch_dir: str) -> None:
+    """Run a scratch lifecycle script. Never raises.
+
+    Creation and removal live in .github/scripts/ rather than here: the
+    orchestrator decides which step runs next (P-14), it does not manage the
+    filesystem. Failure is logged and swallowed -- scratch-setup.sh clears the
+    directory at the start of every run, so a missed teardown self-heals and
+    must never fail an agent run.
+    """
+    script = SUBMODULE_ROOT / script_rel
+    if not script.is_file():
+        log.warning("scratch: %s not found; skipping", script_rel)
+        return
+    env = {k: os.environ[k] for k in _SCRATCH_HOOK_ENV_VARS if k in os.environ}
+    env["AI_AGILE_SCRATCH"] = scratch_dir
+    try:
+        res = subprocess.run(
+            ["bash", str(script)], env=env, capture_output=True, text=True, timeout=30,
+        )
+        if res.returncode != 0:
+            log.warning(
+                "scratch: %s exited %d: %s",
+                script_rel, res.returncode, (res.stderr or "").strip()[:200],
+            )
+    except Exception as exc:  # pragma: no cover -- best-effort cleanup
+        log.warning("scratch: %s could not run: %s", script_rel, exc)
+
+
 def _build_agent_env(
     base_env: Mapping[str, str],
     repo: str,
@@ -2527,9 +2572,10 @@ def _build_agent_env(
     # regardless of whether the tick itself was triggered by cron or interactively.
     agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
     # Per-run scratch directory under /tmp — outside the working tree, so it
-    # can never appear in git status or be swept into a commit. The orchestrator
-    # creates it empty before each invoke_agent call and removes it afterward.
-    agent_env["AI_AGILE_SCRATCH"] = f"/tmp/{agent_session_id}"
+    # can never appear in git status or be swept into a commit. Creation and
+    # removal are done by .github/scripts/scratch-{setup,teardown}.sh, which
+    # the orchestrator runs around each agent invocation.
+    agent_env["AI_AGILE_SCRATCH"] = _scratch_path(agent_session_id)
     # An interactive run authenticates its agents the same way the surrounding
     # session is authenticated, never with a separate API key (issue #346). Only
     # the headless/CI path, which has no session to inherit, uses
@@ -2744,15 +2790,12 @@ def invoke_agent(
         os.environ, repo, work_item, agent_session_id, agent_def.session_scope
     )
 
-    # Create the per-run scratch directory empty so the agent always starts with
-    # a clean slate. Remove first to discard any debris from a prior retry or
-    # a previously-crashed run on the same SESSION_ID path.
+    # Hand the agent an empty scratch directory. The work is done by
+    # scratch-setup.sh; this call is the orchestrator scheduling it as a task
+    # around the agent, the same way commit-agent-work.sh wraps the git side.
     scratch_dir = agent_env.get("AI_AGILE_SCRATCH", "")
     if scratch_dir and not dry_run:
-        shutil.rmtree(scratch_dir, ignore_errors=True)
-        os.makedirs(scratch_dir, exist_ok=True)
-        global _CURRENT_SCRATCH
-        _CURRENT_SCRATCH = scratch_dir
+        _run_scratch_hook(SCRATCH_SETUP_SCRIPT, scratch_dir)
 
     if dry_run:
         log.info(
@@ -3563,14 +3606,14 @@ def _run_agent(
             default_extra_tools, _agent_text_snapshot,
         )
 
-    # Remove the per-run scratch directory unconditionally after all retries
-    # complete — whether the outcome is complete, review, blocked, or failed.
-    # Read the path back from _CURRENT_SCRATCH rather than recomputing it: the
-    # formula lives in _build_agent_env alone, so the two can never diverge.
-    global _CURRENT_SCRATCH
-    if _CURRENT_SCRATCH:
-        shutil.rmtree(_CURRENT_SCRATCH, ignore_errors=True)
-        _CURRENT_SCRATCH = None
+    # Remove the scratch directory after all retries complete, whatever the
+    # outcome. Hygiene only: scratch-setup.sh clears before every run, so a
+    # tick that dies before reaching here is cleaned up by the next one.
+    if not dry_run:
+        _run_scratch_hook(
+            SCRATCH_TEARDOWN_SCRIPT,
+            _scratch_path(_compute_agent_session_id(agent_def, work_item, repo)),
+        )
 
     return result, sentinel_status, sentinel_message, _pre_agent_branch, _invoked_at, _attempt
 
@@ -5146,14 +5189,9 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
 # termination signal (e.g. a CI or interactive timeout sending SIGTERM) can
 # clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
 _CURRENT_WIP = None
-# Scratch directory for the currently-running agent. Set in invoke_agent before
-# spawning the subprocess; cleared and removed in _run_agent after all retries.
-# Also cleaned up by _clear_inflight_wip_on_signal on SIGTERM/SIGINT.
-_CURRENT_SCRATCH: Optional[str] = None
-
 
 def _clear_inflight_wip_on_signal(signum, _frame) -> None:
-    """Best-effort: drop the in-flight :wip label and scratch dir, then exit.
+    """Best-effort: drop the in-flight :wip label, then exit.
 
     A killed tick (SIGTERM/SIGINT) otherwise leaves the work item stuck at :wip
     -- the mutex blocks the next tick from re-triggering the agent. Clearing that
@@ -5167,9 +5205,8 @@ def _clear_inflight_wip_on_signal(signum, _frame) -> None:
             log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
         except Exception as exc:
             log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
-    scratch = _CURRENT_SCRATCH
-    if scratch:
-        shutil.rmtree(scratch, ignore_errors=True)
+    # No scratch cleanup here: scratch-setup.sh clears the directory at the
+    # start of every run, so a killed tick self-heals on the next one.
     sys.exit(128 + signum)
 
 

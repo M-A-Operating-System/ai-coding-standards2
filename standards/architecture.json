@@ -9,7 +9,7 @@
       "id": "STD-ARCH-001",
       "title": "Reuse before writing new code",
       "description": "Before implementing new logic, search the codebase for existing functions, classes, or modules that already solve the same problem or a close approximation of it. Extend existing code rather than duplicating it.",
-      "rationale": "Duplicate logic diverges over time, creates inconsistent behaviour, and multiplies the maintenance surface. The codebase already contains tested, deployed solutions \u2014 use them.",
+      "rationale": "Duplicate logic diverges over time, creates inconsistent behaviour, and multiplies the maintenance surface. The codebase already contains tested, deployed solutions — use them.",
       "acceptance_criteria": [
         "No function or method in the diff duplicates logic that is already present in another module at the time of writing.",
         "If an existing utility solves 80%+ of the need, the diff extends or calls that utility rather than reimplementing the behaviour from scratch.",
@@ -52,7 +52,7 @@
       "id": "STD-ARCH-003",
       "title": "No speculative generality",
       "description": "Do not add parameters, configuration options, plugin hooks, strategy objects, or extension points for anticipated future requirements that have no current specification in the product docs or active issues. Solve the problem as stated, not a generalised version of it.",
-      "rationale": "Speculative features are never free \u2014 they add complexity, surface area for bugs, and cognitive load for future readers, even if they are never actually used. YAGNI (You Aren't Gonna Need It) applies to every layer of the stack.",
+      "rationale": "Speculative features are never free — they add complexity, surface area for bugs, and cognitive load for future readers, even if they are never actually used. YAGNI (You Aren't Gonna Need It) applies to every layer of the stack.",
       "acceptance_criteria": [
         "Every parameter, config key, and extension point introduced in the diff is exercised by at least one real call site in the same diff or existing codebase.",
         "Optional parameters whose only caller always passes the default value are removed or never introduced.",
@@ -98,7 +98,7 @@
       "description": "Functions should do one thing. Modules should own one concern. When a function grows beyond approximately 40 lines or handles more than one distinct responsibility, split it. When a module imports from more than two unrelated domains, consider splitting it.",
       "rationale": "Small, focused units are easier to test, easier to reuse, and easier to reason about. Long functions with multiple responsibilities are the primary source of hidden coupling.",
       "acceptance_criteria": [
-        "No new function in the diff exceeds 50 lines (excluding docstring and blank lines) unless the lines are a single flat sequence with no branching \u2014 e.g. a long match/switch statement.",
+        "No new function in the diff exceeds 50 lines (excluding docstring and blank lines) unless the lines are a single flat sequence with no branching — e.g. a long match/switch statement.",
         "Functions introduced in the diff have a single clearly-stated purpose that can be described in one sentence without using 'and'.",
         "No module introduced in the diff imports from more than three unrelated domains at the same abstraction level."
       ],
@@ -115,12 +115,12 @@
     },
     {
       "id": "STD-ARCH-006",
-      "title": "Fix now, not later \u2014 no deferred small defects",
+      "title": "Fix now, not later — no deferred small defects",
       "description": "If a defect, inconsistency, dead code path, stale comment, incorrect type annotation, or other small correctness issue is visible while working on a diff, fix it in the same PR rather than deferring it. Do not introduce or perpetuate TODO/FIXME markers for issues that can be resolved immediately.",
       "rationale": "Small deferred items compound. A codebase full of acknowledged-but-unresolved defects degrades reviewer confidence, slows onboarding, and creates a ratchet where each PR adds more debt than it removes. The cheapest time to fix a defect is when you are already reading the affected code.",
       "acceptance_criteria": [
         "No TODO or FIXME comment is introduced in the diff unless it references an open issue number (e.g. '# TODO(#123)') and the linked issue is created before the PR is merged.",
-        "Existing TODO/FIXME comments in files touched by the diff are either resolved inline or converted to tracked issues \u2014 they are not left as-is.",
+        "Existing TODO/FIXME comments in files touched by the diff are either resolved inline or converted to tracked issues — they are not left as-is.",
         "Dead code (unreachable branches, unused imports, unused variables) visible in files touched by the diff is removed rather than left in place.",
         "Stale inline comments that describe behaviour that no longer exists are removed or corrected.",
         "Type annotations that are visibly wrong or missing on functions touched by the diff are corrected.",
@@ -144,7 +144,7 @@
       "id": "STD-ARCH-007",
       "title": "Do not open issues for work that can be done in the current PR",
       "description": "Agents must not file new GitHub issues as a substitute for doing work that is within their current scope. If a defect, missing test, incomplete implementation, or related improvement is small enough to be resolved inside the current PR, resolve it there. Creating a new issue is only justified when the work requires a separate product decision, a different owner, a human gate, or a scope that is genuinely outside the current issue's acceptance criteria.",
-      "rationale": "Issue creation is not free. Every new issue added to the backlog consumes triage time, clutters the pipeline, and is statistically unlikely to be resolved \u2014 most small 'follow-up' issues are never actioned. Agents that defer solvable work into new issues are shifting cost onto humans and future pipeline runs.",
+      "rationale": "Issue creation is not free. Every new issue added to the backlog consumes triage time, clutters the pipeline, and is statistically unlikely to be resolved — most small 'follow-up' issues are never actioned. Agents that defer solvable work into new issues are shifting cost onto humans and future pipeline runs.",
       "acceptance_criteria": [
         "No new GitHub issue is created by an agent for a defect or gap that is visible in the current diff and resolvable within the current issue's acceptance criteria.",
         "No new GitHub issue is created for work that would be completed in fewer than 30 lines of code and has no dependency on a human gate or external decision.",
@@ -518,6 +518,29 @@
       ],
       "related": [
         "STD-ARCH-033"
+      ]
+    },
+    {
+      "id": "STD-ARCH-035",
+      "title": "Orchestrator coordinates only; process steps live in pipeline.json as scripts or agents",
+      "description": "pipeline/pipeline_orchestrator.py decides which step runs next and records the outcome. It must not contain business-process logic. Every step that enables the process is declared in pipeline/pipeline.json and implemented as a deterministic script under .github/scripts/ or as an agent prompt under .claude/agents/. Filesystem management, git operations, GitHub API workflows, and any other work performed around an agent belong in a script the orchestrator invokes, not in the orchestrator itself.",
+      "rationale": "P-14 makes the orchestrator the deterministic router: its job is sequencing, mutex, and label transitions. Process logic embedded in it is untestable in isolation, invisible to pipeline.json (so the pipeline no longer describes itself), and inflates a module that already carries most of the package. Externalised steps are independently runnable, independently testable, and swappable without touching the router.",
+      "acceptance_criteria": [
+        "A new process step is added by declaring it in pipeline.json and adding a script under .github/scripts/ or an agent under .claude/agents/, with no new branching in pipeline_orchestrator.py beyond invoking the declared step.",
+        "Work performed around an agent invocation (setup, teardown, commit, publish) is implemented in a script that can be run standalone with its documented environment variables, not inline in the orchestrator.",
+        "The orchestrator holds no module-level mutable state describing an in-flight step's side effects; a step's own script is responsible for making its effects idempotent.",
+        "Every environment variable a script needs is passed through a named per-site allowlist (STD-SEC-022), never by inheriting the orchestrator's environment."
+      ],
+      "anti_patterns": [
+        "Adding filesystem create/remove calls to the orchestrator instead of a setup/teardown script it invokes.",
+        "Encoding a step's ordering or preconditions in Python conditionals rather than in pipeline.json's trigger and dependencies fields.",
+        "A module-level global tracking an in-flight step so a signal handler can undo its side effects, where an idempotent script would self-heal on the next run.",
+        "Growing pipeline_orchestrator.py with logic that has no counterpart in pipeline.json, so reading the config no longer tells you what the pipeline does."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
       ]
     }
   ]

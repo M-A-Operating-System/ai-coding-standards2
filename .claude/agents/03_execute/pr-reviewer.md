@@ -71,14 +71,13 @@ If `$PRIOR` is set, head the artefact comment `## PR Review (Re-run)`.
 
 Post the opening announcement:
 
-Your bodies are JSON inside a fenced block. Build the file in `$SCRATCH` and
-post it with `--body-file`, which needs no shell quoting at all -- and keeps
-the payload out of the repo root. Never inline a body into `--body`.
+Your bodies are JSON inside a fenced block. Write the file into
+`$AI_AGILE_SCRATCH` and post it from there -- no shell quoting, and nothing
+lands in the repo root. The orchestrator creates that directory for you, so
+do not create it yourself. Never inline a body into `--body`.
 
 ```bash
-SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"
-
-cat > "$SCRATCH/ann_open.md" <<EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_open.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
@@ -93,7 +92,8 @@ cat > "$SCRATCH/ann_open.md" <<EOF
 \`\`\`
 EOF
 
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$SCRATCH/ann_open.md"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/ann_open.md"
 ```
 
 ---
@@ -382,9 +382,7 @@ Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP
 ## Step 11 — Post artefact
 
 ```bash
-SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"
-
-cat > "$SCRATCH/review_body.md" <<REVIEW_EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/review_body.md" <<REVIEW_EOF
 <!-- ai-agile/artefact/v1 by 03_execute/pr-reviewer -->
 ## PR Review${PRIOR:+ (Re-run)}
 
@@ -397,7 +395,8 @@ $FINDING_BODY
 _On APPROVE: PR is marked ready for human review. On REQUEST CHANGES: the orchestrator will automatically re-invoke the coder (up to 3 cycles). After 3 cycles without agreement, human sign-off is required._
 REVIEW_EOF
 
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$SCRATCH/review_body.md"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/review_body.md"
 ```
 
 ---
@@ -405,9 +404,7 @@ gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$SCRATCH/review_body.md"
 ## Step 12 — Close
 
 ```bash
-SCRATCH="${AI_AGILE_SCRATCH:-${TMPDIR:-/tmp}/ai-agile-$$}"; mkdir -p "$SCRATCH"
-
-cat > "$SCRATCH/ann_close.md" <<EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_close.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
@@ -424,7 +421,8 @@ cat > "$SCRATCH/ann_close.md" <<EOF
 \`\`\`
 EOF
 
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$SCRATCH/ann_close.md"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/ann_close.md"
 [[ "$VERDICT" == "APPROVE" ]] \
   && echo "AI_AGILE_STATUS: complete" \
   || echo "AI_AGILE_STATUS: review \"Verdict: $VERDICT.\""
