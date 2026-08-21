@@ -12,7 +12,7 @@ Every node in every semantic domain carries the same shape. The fields divide
 into four groups by what they are for and how they change.
 
 ```text
-identity      id           SUB-000042               immutable, never reused
+identity      id           SUB000042               immutable, never reused
               path         architecture/data/database/relational-database
               former_paths [...]                    retained for resolution
 
@@ -22,7 +22,7 @@ naming        name         Relational Database      freely improvable
                            keys, constraints and transactional semantics.
 
 position      level        subclass
-              parent       CLS-000018               the class above
+              parent       CLS000018               the class above
 
 meaning       facets       concern: data
                            lifecycle: run-time

@@ -36,7 +36,7 @@ same relationships on each pass, expensively and inconsistently. The
 Taxonomy is the single vocabulary they all normalise into: four semantic
 domains (**architecture**, **patterns**, **code**, **concepts**), each three
 levels deep. Every node has an **immutable identifier** and a **path** that
-says where it currently sits — `SUB-000042` and
+says where it currently sits — `SUB000042` and
 `architecture/data/database/relational-database` — so names and positions can
 improve without breaking anything that cited them. The three-letter code records
 the level, not the subject, so a node keeps its identity even when it moves.

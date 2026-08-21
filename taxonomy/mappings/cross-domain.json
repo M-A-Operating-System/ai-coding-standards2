@@ -3,34 +3,34 @@
   "definition": "Explicit semantic links across domains.",
   "relationships": [
     {
-      "from": "SUB-000149",
+      "from": "SUB000149",
       "type": "typically-implemented-as",
-      "to": "SUB-000198"
+      "to": "SUB000198"
     },
     {
-      "from": "SUB-000142",
+      "from": "SUB000142",
       "type": "supports-concept",
-      "to": "SUB-000225"
+      "to": "SUB000225"
     },
     {
-      "from": "SUB-000162",
+      "from": "SUB000162",
       "type": "supports-concept",
-      "to": "SUB-000226"
+      "to": "SUB000226"
     },
     {
-      "from": "SUB-000163",
+      "from": "SUB000163",
       "type": "supports-concept",
-      "to": "SUB-000232"
+      "to": "SUB000232"
     },
     {
-      "from": "SUB-000186",
+      "from": "SUB000186",
       "type": "typically-realizes",
-      "to": "SUB-000006"
+      "to": "SUB000006"
     },
     {
-      "from": "SUB-000179",
+      "from": "SUB000179",
       "type": "supports-concept",
-      "to": "SUB-000248"
+      "to": "SUB000248"
     }
   ]
 }

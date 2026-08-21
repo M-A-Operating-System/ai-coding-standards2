@@ -17,7 +17,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^(FAM|CLS|SUB)-[0-9]{6}$"
+      "pattern": "^(FAM|CLS|SUB)[0-9]{6}$"
     },
     "path": {
       "type": "string",

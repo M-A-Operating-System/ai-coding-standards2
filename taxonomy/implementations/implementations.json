@@ -8,7 +8,7 @@
       "vendor": "PostgreSQL Global Development Group",
       "category": "database",
       "implements": [
-        "SUB-000020"
+        "SUB000020"
       ],
       "capabilities": [
         "sql",
@@ -25,7 +25,7 @@
       "vendor": "Oracle",
       "category": "database",
       "implements": [
-        "SUB-000020"
+        "SUB000020"
       ],
       "capabilities": [
         "sql",
@@ -39,7 +39,7 @@
       "vendor": "MongoDB",
       "category": "database",
       "implements": [
-        "SUB-000021"
+        "SUB000021"
       ],
       "capabilities": [
         "document-query",
@@ -53,7 +53,7 @@
       "vendor": "AWS",
       "category": "database",
       "implements": [
-        "SUB-000022"
+        "SUB000022"
       ],
       "capabilities": [
         "key-value-access",
@@ -67,7 +67,7 @@
       "vendor": "Neo4j",
       "category": "database",
       "implements": [
-        "SUB-000024"
+        "SUB000024"
       ],
       "capabilities": [
         "graph-traversal",
@@ -80,8 +80,8 @@
       "vendor": "Redis",
       "category": "data",
       "implements": [
-        "SUB-000029",
-        "SUB-000022"
+        "SUB000029",
+        "SUB000022"
       ],
       "capabilities": [
         "in-memory-access",
@@ -95,7 +95,7 @@
       "vendor": "Apache Software Foundation",
       "category": "messaging",
       "implements": [
-        "SUB-000045"
+        "SUB000045"
       ],
       "capabilities": [
         "ordered-partitions",
@@ -109,7 +109,7 @@
       "vendor": "Broadcom",
       "category": "messaging",
       "implements": [
-        "SUB-000047"
+        "SUB000047"
       ],
       "capabilities": [
         "queues",
@@ -123,12 +123,12 @@
       "vendor": "FastAPI project",
       "category": "framework",
       "implements": [
-        "SUB-000006"
+        "SUB000006"
       ],
       "related_code": [
-        "SUB-000186",
-        "SUB-000190",
-        "SUB-000191"
+        "SUB000186",
+        "SUB000190",
+        "SUB000191"
       ],
       "capabilities": [
         "http-api",
@@ -142,8 +142,8 @@
       "vendor": "Broadcom",
       "category": "framework",
       "implements": [
-        "SUB-000006",
-        "SUB-000007"
+        "SUB000006",
+        "SUB000007"
       ],
       "capabilities": [
         "http-api",
@@ -157,7 +157,7 @@
       "vendor": "Microsoft",
       "category": "framework",
       "implements": [
-        "SUB-000006"
+        "SUB000006"
       ],
       "capabilities": [
         "http-api",
@@ -171,8 +171,8 @@
       "vendor": "CNCF",
       "category": "observability",
       "implements": [
-        "SUB-000247",
-        "SUB-000220"
+        "SUB000247",
+        "SUB000220"
       ],
       "capabilities": [
         "traces",
@@ -188,7 +188,7 @@
       "name": "Kubernetes",
       "category": "platform",
       "implements": [
-        "SUB-000125"
+        "SUB000125"
       ]
     }
   }

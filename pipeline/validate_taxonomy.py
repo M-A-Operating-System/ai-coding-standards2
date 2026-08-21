@@ -154,7 +154,7 @@ def check_schema(
     ]
 
 
-ID_PATTERN = re.compile(r"^(FAM|CLS|SUB)-[0-9]{6}$")
+ID_PATTERN = re.compile(r"^(FAM|CLS|SUB)[0-9]{6}$")
 
 # The three-letter code records the level, not the domain or the subject. A node
 # can therefore move between domains and keep its identity, which is the whole
@@ -231,10 +231,10 @@ def _check_identity(
         errors.append(f"{filename}: {node.get('path', '?')}: id {node_id!r} is not a valid identifier")
         return errors
     expected_prefix = LEVEL_PREFIX[level]
-    if not node_id.startswith(f"{expected_prefix}-"):
+    if not node_id.startswith(expected_prefix):
         errors.append(
             f"{filename}: {node_id}: identifier prefix does not match level "
-            f"{level!r} (expected {expected_prefix}-NNNNNN)"
+            f"{level!r} (expected {expected_prefix}NNNNNN)"
         )
     if node_id in seen:
         errors.append(

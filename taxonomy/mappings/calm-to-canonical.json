@@ -4,26 +4,26 @@
   "definition": "Maps broad CALM intended-architecture node types to candidate canonical classes; metadata selects the final leaf.",
   "mappings": {
     "system": [
-      "SUB-000002",
-      "SUB-000001"
+      "SUB000002",
+      "SUB000001"
     ],
     "service": [
-      "SUB-000006",
-      "SUB-000007",
-      "SUB-000008"
+      "SUB000006",
+      "SUB000007",
+      "SUB000008"
     ],
     "database": [
-      "SUB-000020",
-      "SUB-000021",
-      "SUB-000022",
-      "SUB-000024"
+      "SUB000020",
+      "SUB000021",
+      "SUB000022",
+      "SUB000024"
     ],
     "network": [
-      "SUB-000050",
-      "SUB-000051"
+      "SUB000050",
+      "SUB000051"
     ],
     "webclient": [
-      "SUB-000117"
+      "SUB000117"
     ]
   }
 }

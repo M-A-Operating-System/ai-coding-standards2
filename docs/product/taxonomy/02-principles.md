@@ -99,7 +99,7 @@ identity through it — so the structural repairs the taxonomy needs cost
 nothing to the consumers already citing it.
 
 **Consequence.** Identifiers are opaque and sequential within a level
-(`SUB-000042`), assigned once and retired only by deprecation. The
+(`SUB000042`), assigned once and retired only by deprecation. The
 three-letter code records the level -- `FAM`, `CLS`, `SUB` -- and nothing
 about the subject, so a node can move between domains and keep its identity.
 Coding by content would put the very thing most likely to be corrected back

@@ -15,7 +15,7 @@
   },
   "classifications": [
     {
-      "taxonomy_id": "SUB-000186",
+      "taxonomy_id": "SUB000186",
       "rule_id": "PY_FASTAPI_ROUTE_HANDLER",
       "classification_mode": "deterministic"
     }

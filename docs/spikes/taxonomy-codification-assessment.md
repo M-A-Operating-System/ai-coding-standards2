@@ -489,9 +489,9 @@ recorded classification that cited them.
 ```text
 now       id      architecture/data/database/relational-database
 
-proposed  id      SUB-000042                                       immutable, never reused
-          path    architecture/data/database/relational-database   current location
-          name    Relational Database                              freely improvable
+proposed  id      SUB000042                                      immutable, never reused
+          path    architecture/data/database/relational-database  current location
+          name    Relational Database                             freely improvable
 ```
 
 Identifiers are opaque and sequential within a level, prefixed `FAM`, `CLS` or `SUB`, so a citation

@@ -135,7 +135,7 @@ def test_malformed_identifier_fails(taxonomy):
 
 def test_identifier_prefix_must_match_level(taxonomy):
     """The three-letter code records the level, so a family code on a subclass fails."""
-    _mutate_first_subclass(taxonomy, "patterns", lambda n: n.update({"id": "FAM-999999"}))
+    _mutate_first_subclass(taxonomy, "patterns", lambda n: n.update({"id": "FAM999999"}))
     errors, _, _ = validate(taxonomy)
     assert _errors_matching(errors, "prefix does not match level")
 
@@ -143,7 +143,7 @@ def test_identifier_prefix_must_match_level(taxonomy):
 def test_identifier_is_independent_of_domain(taxonomy):
     """A subclass code is valid in any domain - identity does not encode content."""
     doc = _read(taxonomy, "code/code.json")
-    _first_subclass(doc)["id"] = "SUB-900001"
+    _first_subclass(doc)["id"] = "SUB900001"
     _write(taxonomy, "code/code.json", doc)
     errors, _, _ = validate(taxonomy)
     assert not _errors_matching(errors, "prefix does not match")
@@ -160,9 +160,9 @@ def test_path_must_match_position(taxonomy):
 
 
 def test_parent_must_be_the_identifier_above(taxonomy):
-    _mutate_first_subclass(taxonomy, "code", lambda n: n.update({"parent": "CLS-999999"}))
+    _mutate_first_subclass(taxonomy, "code", lambda n: n.update({"parent": "CLS999999"}))
     errors, _, _ = validate(taxonomy)
-    assert _errors_matching(errors, "parent is 'CLS-999999'")
+    assert _errors_matching(errors, "parent is 'CLS999999'")
 
 
 def test_level_must_match_position(taxonomy):
@@ -251,7 +251,7 @@ def test_deprecated_node_must_name_a_replacement(taxonomy):
 
 def test_replaced_by_must_resolve(taxonomy):
     _mutate_first_subclass(taxonomy, "patterns",
-                           lambda n: n.update({"status": "deprecated", "replaced_by": "SUB-999999"}))
+                           lambda n: n.update({"status": "deprecated", "replaced_by": "SUB999999"}))
     errors, _, _ = validate(taxonomy)
     assert _errors_matching(errors, "does not resolve")
 
@@ -271,7 +271,7 @@ def test_replacement_may_not_itself_be_deprecated(taxonomy):
 
 
 def test_replaced_by_without_deprecation_fails(taxonomy):
-    _mutate_first_subclass(taxonomy, "patterns", lambda n: n.update({"replaced_by": "SUB-000001"}))
+    _mutate_first_subclass(taxonomy, "patterns", lambda n: n.update({"replaced_by": "SUB000001"}))
     errors, _, _ = validate(taxonomy)
     assert _errors_matching(errors, "names replaced_by but status is")
 
@@ -296,12 +296,12 @@ def test_reference_by_path_is_rejected_with_the_identifier(taxonomy):
     errors, _, _ = validate(taxonomy)
     matched = _errors_matching(errors, "is a path, not an identifier")
     assert matched
-    assert "SUB-" in matched[0]
+    assert "SUB" in matched[0]
 
 
 def test_reference_to_unknown_identifier_fails(taxonomy):
     data = _read(taxonomy, "rules/code-classification-rules.json")
-    data["rules"][0]["assign"]["code"] = ["SUB-999999"]
+    data["rules"][0]["assign"]["code"] = ["SUB999999"]
     _write(taxonomy, "rules/code-classification-rules.json", data)
     errors, _, _ = validate(taxonomy)
     assert _errors_matching(errors, "not declared in any domain file")

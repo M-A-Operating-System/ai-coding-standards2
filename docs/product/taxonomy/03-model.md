@@ -75,14 +75,15 @@ Every node therefore carries two keys:
 | `path` | Yes | Location. The composed four-part path, unique at any moment |
 
 ```text
-id      SUB-000042
+id      SUB000042
 path    architecture/data/database/relational-database
 name    Relational Database
 ```
 
 The three-letter code records the **level** — `FAM` for a family, `CLS` for a
-class, `SUB` for a subclass — followed by six padded digits. It says nothing
-about the domain or the subject, deliberately: an identifier that encoded
+class, `SUB` for a subclass — followed immediately by six padded digits, with
+no separator. It says nothing about the domain or the subject, deliberately:
+an identifier that encoded
 content would embed the very thing most likely to be corrected, and a node
 moving between domains would need a new key. Coding by level keeps the
 identifier stable through every structural repair the vocabulary needs.
@@ -114,7 +115,7 @@ others, and they are orthogonal to the tree: a facet never changes a node's
 identity, never changes its path, and never participates in inheritance.
 
 ```text
-id        SUB-000071
+id        SUB000071
 path      architecture/security/policy/policy-engine
 facets    concern:    [identity, security]
           layer:      platform
