@@ -271,3 +271,89 @@ class TestAgentPromptsDoNotOwnScratchCleanup:
             if re.search(r"rm -f \.[a-z_]*\*", p.read_text())
         ]
         assert offenders == [], f"agent prompts with a repo-root cleanup glob: {offenders}"
+
+
+class TestAgentPromptsStayWithinTheirAllowlist:
+    """Issue #321, review round 2. AGENTS.md and pr-reviewer.md were changed to
+    open every posting step with `SCRATCH=...; mkdir -p "$SCRATCH"`. It looked
+    correct and shipped CI-green, but pr-reviewer is not granted mkdir -- only
+    coder is -- so the line could never run, and with SCRATCH unset the next
+    line expanded to `cat > "/body.md"`: a write to the filesystem root.
+
+    Reading the diff did not catch it; running the agent did. This is the
+    generalisable guard.
+
+    Deliberately narrow. It checks only filesystem-mutating utilities, because
+    those are unambiguous: if an agent is not granted `mkdir` it cannot create
+    a directory, whatever the matcher's view of assignments or pipelines. It
+    does NOT try to model command-line matching in general -- the enforcement
+    hook is stricter than Claude Code's own matcher (see #362), so a test built
+    on hook semantics would fail on prompts that run correctly in production.
+    """
+
+    MUTATORS = ("mkdir", "rm", "cp", "mv", "touch", "chmod", "ln")
+
+    @staticmethod
+    def _bash_command_words(md_text):
+        """Leading words of command positions inside ```bash fences.
+
+        Heredoc bodies are skipped -- their contents are data, not commands.
+        """
+        words, in_bash, heredoc = [], False, None
+        for line in md_text.splitlines():
+            st = line.strip()
+            if st.startswith("```"):
+                in_bash = st.startswith("```bash")
+                heredoc = None
+                continue
+            if not in_bash:
+                continue
+            if heredoc:
+                if st.strip("'\"") == heredoc:
+                    heredoc = None
+                continue
+            m = re.search(r"<<-?\s*'?([A-Za-z_][A-Za-z0-9_]*)'?", line)
+            if m:
+                heredoc = m.group(1)
+            if not st or st.startswith("#"):
+                continue
+            # A utility is in command position at the start of the line or
+            # directly after a separator.
+            for seg in re.split(r"(?:&&|\|\||;|\|)", st):
+                seg = seg.strip()
+                if seg:
+                    words.append(seg.split()[0])
+        return words
+
+    def test_no_agent_prompt_uses_a_filesystem_command_it_lacks(self):
+        sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
+        import pipeline_orchestrator as po
+
+        agents, defaults = po.load_pipeline(
+            str(Path(__file__).parent.parent / "pipeline" / "pipeline.json")
+        )[:2]
+        wi = po.WorkItem(number=1, kind="issue", title="t", labels=set(), url="u")
+
+        offenders = []
+        for ad in agents:
+            f = AGENTS_DIR / f"{ad.agent}.md"
+            if not f.is_file():
+                continue
+            resolved = po._resolve_agent_invocation(
+                ad, wi, repo="o/r", default_extra_tools=defaults
+            )
+            if resolved is None:
+                continue
+            granted = {
+                t[5:-1].split()[0]
+                for t in resolved.allowed_tools
+                if t.startswith("Bash(") and t[5:-1].split()
+            }
+            for word in self._bash_command_words(f.read_text()):
+                if word in self.MUTATORS and word not in granted:
+                    offenders.append(f"{ad.agent}: `{word}` used but not granted")
+
+        assert offenders == [], (
+            "agent prompts invoke filesystem commands their allowlist denies:\n  "
+            + "\n  ".join(sorted(set(offenders)))
+        )
