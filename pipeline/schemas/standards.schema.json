@@ -131,7 +131,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "title", "authorises_exception_to", "rationale"],
+            "required": ["id", "title", "rationale"],
             "additionalProperties": false,
             "properties": {
               "id": {
@@ -142,12 +142,39 @@
               "title": { "type": "string" },
               "authorises_exception_to": {
                 "type": "array",
-                "minItems": 1,
+                "minItems": 0,
                 "items": {
                   "type": "string",
                   "pattern": "^STD-[A-Z]+-\\d{3}$"
                 },
-                "description": "The STD IDs this ADR waives. Only standards with adr_overridable: true can be listed here."
+                "description": "The STD IDs this ADR waives. Only standards with adr_overridable: true can be listed here. Omit entirely for a decision-only ADR that overrides no standard."
+              },
+              "context": {
+                "type": "string",
+                "description": "The situation and forces that prompted this decision."
+              },
+              "decision": {
+                "type": "string",
+                "description": "The decision that was made and the reasoning behind it."
+              },
+              "consequences": {
+                "type": "string",
+                "description": "The resulting context after applying the decision, including trade-offs."
+              },
+              "status": {
+                "type": "string",
+                "enum": ["proposed", "accepted", "deprecated", "superseded"],
+                "description": "Lifecycle status of the decision."
+              },
+              "supersedes": {
+                "type": "string",
+                "pattern": "^ADR-\\d{3}$",
+                "description": "The ADR ID that this decision replaces."
+              },
+              "superseded_by": {
+                "type": "string",
+                "pattern": "^ADR-\\d{3}$",
+                "description": "The ADR ID that replaces this decision."
               },
               "rationale": { "type": "string" },
               "approved_by": { "type": "string" },

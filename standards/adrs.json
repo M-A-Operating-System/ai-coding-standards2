@@ -2,6 +2,6 @@
   "$schema": "../pipeline/schemas/standards.schema.json",
   "version": "1.0",
   "scope": "org",
-  "description": "Approved Architecture Decision Records. Each ADR authorises a specific design choice that would otherwise violate a standard marked adr_overridable: true. Cite the ADR ID inline where the authorised pattern appears and in any pr-reviewer finding to downgrade the severity to Informational.",
+  "description": "Approved Architecture Decision Records. An ADR is either an exception record (lists standards in authorises_exception_to) or a plain decision record (omits authorises_exception_to). Exception ADRs authorise a design choice that would otherwise violate a standard marked adr_overridable: true; cite the ADR ID inline where the authorised pattern appears and in any pr-reviewer finding to downgrade the severity to Informational. Decision-only ADRs record context, rationale, and consequences for a significant architectural choice that contradicts no standard; they are available as context but do not downgrade any finding.",
   "adrs": []
 }

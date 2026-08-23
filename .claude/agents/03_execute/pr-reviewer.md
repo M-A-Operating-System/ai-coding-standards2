@@ -25,8 +25,12 @@ Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope. All risk
 judgements are calibrated to that context: sentinel injection and token
 leakage are Critical here; web-app vulnerabilities are not applicable.
-ADRs in `${AI_AGILE_ROOT}/adrs/adrs.json` are authoritative exceptions — cite
-the ADR ID and downgrade any covered finding to Informational.
+ADRs in `${AI_AGILE_ROOT}/adrs/adrs.json` are either exception records or plain
+decision records. An ADR that lists the relevant standard ID in
+`authorises_exception_to` is an exception: cite the ADR ID and downgrade the
+finding to Informational. An ADR with no `authorises_exception_to` (or one that
+does not list the standard in question) is context only — it does not downgrade
+any finding.
 
 **Execution context — do NOT trust the local working tree.** You may be invoked
 two ways: by the orchestrator (which checks out the PR branch first) **or
@@ -275,7 +279,10 @@ Cite the P-N or STD ID in every finding.
 | P-15 Product-led | Behaviour introduced with no corresponding `docs/product/` entry **on the PR base**. Under two-phase delivery the entry lands via the already-merged design PR (`issue-{N}-docs`), so it is on `main` (the code PR's base), not in the code PR diff — confirm it on the base before flagging, don't require it in the diff | High |
 | Any STD in `standards/*.json` | Check the standard's `acceptance_criteria` field | Per standard's `severity` |
 
-ADR coverage: append `[ADR: {id}]` and downgrade to Informational.
+ADR coverage: if the ADR lists the standard ID in `authorises_exception_to`,
+append `[ADR: {id}]` and downgrade to Informational. If the ADR has no
+`authorises_exception_to` or does not list this standard, the ADR is context
+only — do not downgrade.
 Record each finding as `SC-NNN`.
 
 ---
