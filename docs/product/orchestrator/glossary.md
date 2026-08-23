@@ -82,7 +82,9 @@ reviewer enforce, in two tiers: organisation-wide and project-specific.
 See [`14-standards.md`](14-standards.md).
 
 **ADR** — Architecture Decision Record: a logged, dated decision with its
-context and tradeoff. Standards can be overridden by a scoped ADR.
+context, rationale, and consequences. An ADR may waive a specific standard
+for a project (exception ADR) or document an architectural decision that
+overrides no standard (decision-only ADR). Both forms live in `adrs/adrs.json`.
 See [`14-standards.md`](14-standards.md).
 
 **Principle (P-x)** — One of the 16 numbered rules the system is built on,

@@ -20,7 +20,8 @@ submodule) owns them, and a consuming repo inherits them via the whole-folder
 A consuming repo does **not** add its own standards files. `standards/` is a
 symlink into the submodule, so there is nowhere project-local to put one, and
 the sync would not preserve it. The single per-project mechanism is a **project
-ADR** (see below), which records an exception to a centrally-defined standard.
+ADR** (see below), which either records an exception to a centrally-defined
+standard or documents an architectural decision that overrides no standard.
 
 > The schema's `scope` field still permits `"project"`, and older installs may
 > carry project standards files. Retiring the project-standards tier from the
@@ -106,16 +107,22 @@ consuming repo's local `adrs/` folder.
 | **org** | `ai-coding-standards2/standards/adrs.json` | Org `adr_overridable: true` standards |
 | **project** | `{project-root}/adrs/adrs.json` (local folder, outside the symlinked `standards/`) | Org `adr_overridable: true` standards (there are no project standards to waive under the whole-folder model) |
 
-Every ADR entry requires:
+Every ADR entry has these fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | `ADR-NNN` — zero-padded, sequential within the file's scope. |
-| `title` | string | Short description of the decision. |
-| `authorises_exception_to` | string[] | The STD IDs this ADR waives (e.g. `["STD-ARCH-002"]`). |
-| `rationale` | string | Why this exception is justified. |
-| `approved_by` | string | Optional. Name or GitHub handle of the approver. |
-| `approved_at` | string | Optional. ISO 8601 date of approval. |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | yes | `ADR-NNN` — zero-padded, sequential within the file's scope. |
+| `title` | string | yes | Short description of the decision. |
+| `rationale` | string | yes | Why this decision was taken or exception is justified. |
+| `authorises_exception_to` | string[] | no | The STD IDs this ADR waives (e.g. `["STD-ARCH-002"]`). Omit for a decision-only ADR that overrides no standard. |
+| `context` | string | no | The situation that prompted the decision and the alternatives considered. |
+| `decision` | string | no | What was decided, stated plainly. |
+| `consequences` | string | no | What the decision costs or constrains going forward. |
+| `status` | string | no | e.g. `"accepted"`, `"deprecated"`, `"superseded"`. |
+| `supersedes` | string[] | no | IDs of earlier ADRs this one replaces. |
+| `superseded_by` | string | no | ID of the ADR that replaced this one. |
+| `approved_by` | string | no | Name or GitHub handle of the approver. |
+| `approved_at` | string | no | ISO 8601 date of approval. |
 
 ---
 
@@ -123,7 +130,9 @@ Every ADR entry requires:
 
 The pr-reviewer raises a finding for every standard violated in a diff. The
 finding's outcome depends solely on `adr_overridable` and whether a covering
-ADR exists:
+ADR exists. A "covering ADR" is one that names the violated standard in its
+`authorises_exception_to` list; a decision-only ADR (no `authorises_exception_to`)
+is available as context but does not downgrade any finding.
 
 | `adr_overridable` | Covering ADR exists? | Outcome |
 |-------------------|----------------------|---------|
