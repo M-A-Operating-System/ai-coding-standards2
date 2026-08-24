@@ -187,6 +187,60 @@ class TestCheckSchema:
         assert "consequences" in data_dict
         assert check_schema(data, schema, "adrs.json") == []
 
+    def test_supersedes_valid_array_no_errors(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-002",
+                "title": "Consolidate logging approach",
+                "rationale": "Replaces two earlier decisions with one consistent rule.",
+                "supersedes": ["ADR-001"],
+            }],
+        }
+        assert check_schema(data, schema, "adrs.json") == []
+
+    def test_supersedes_invalid_pattern_reports_error(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-002",
+                "title": "t",
+                "rationale": "r",
+                "supersedes": ["ADR-1"],
+            }],
+        }
+        errors = check_schema(data, schema, "adrs.json")
+        assert errors
+
+    def test_superseded_by_valid_no_errors(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-001",
+                "title": "Old logging approach",
+                "rationale": "Superseded by a newer decision.",
+                "superseded_by": "ADR-002",
+            }],
+        }
+        assert check_schema(data, schema, "adrs.json") == []
+
+    def test_superseded_by_invalid_pattern_reports_error(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-001",
+                "title": "t",
+                "rationale": "r",
+                "superseded_by": "ADR-2",
+            }],
+        }
+        errors = check_schema(data, schema, "adrs.json")
+        assert errors
+
 
 # ---------------------------------------------------------------------------
 # check_id_prefix

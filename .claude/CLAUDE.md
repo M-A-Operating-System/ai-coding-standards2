@@ -90,7 +90,7 @@ This project runs on the AI Agile pipeline:
 - **Agents** (`.claude/agents/`) — automated pipeline steps (classify, plan, build, review). They follow the protocol in `.claude/AGENTS.md` — you don't need to read that unless you're changing an agent.
 - **Commands** (`.claude/commands/`) — slash commands to run, retry, or unblock a pipeline agent by hand.
 - **Standards** (`standards/*.json`) — enforceable coding rules, checked on every diff. Check the relevant category before writing code in an unfamiliar area.
-- **ADRs** (`adrs/adrs.json`) — approved, cited exceptions to a standard. Check here before assuming a standard was violated by mistake.
+- **ADRs** (`adrs/adrs.json`) — either exception records (list a standard they waive in `authorises_exception_to`) or plain decision records (no standard override). Check here before assuming a standard was violated by mistake; only ADRs that list the standard in `authorises_exception_to` downgrade a finding.
 
 When checking for content under `standards/` or `.claude/`, use `Grep` or a
 symlink-following `find` invocation — see Section 6 below. `Glob` silently

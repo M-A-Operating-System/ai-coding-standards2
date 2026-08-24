@@ -167,9 +167,12 @@
                 "description": "Lifecycle status of the decision."
               },
               "supersedes": {
-                "type": "string",
-                "pattern": "^ADR-\\d{3}$",
-                "description": "The ADR ID that this decision replaces."
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^ADR-\\d{3}$"
+                },
+                "description": "IDs of earlier ADRs this one replaces."
               },
               "superseded_by": {
                 "type": "string",
