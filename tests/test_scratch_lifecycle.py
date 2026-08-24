@@ -675,7 +675,7 @@ class TestInteractivePathGetsARealScratchDirectory:
         text = (Path(__file__).parent.parent / ".claude" / "commands"
                 / "run-agent.md").read_text()
         setup_at = text.index("scratch-setup.sh")
-        scope_at = text.index(".run-agent-scope.json")
+        scope_at = text.index(".run-agent-scope.")
         assert setup_at < scope_at, (
             "scratch-setup.sh must run before the scope file is written"
         )
