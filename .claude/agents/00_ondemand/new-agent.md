@@ -161,7 +161,7 @@ Add `"type": "script"` and `"script": "path"` only for non-Claude script steps.
 ## Step 5 — Post artefact comment
 
 ```bash
-cat > "$AI_AGILE_SCRATCH/body.md" <<EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
 <!-- ai-agile/artefact/v1 by 00_ondemand/new-agent -->
 ## Agent scaffolded
 
@@ -176,7 +176,7 @@ cat > "$AI_AGILE_SCRATCH/body.md" <<EOF
 3. Apply \`new-agent:approved\` to merge the scaffolded files.
 EOF
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"$AI_AGILE_SCRATCH/body.md"
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 ---

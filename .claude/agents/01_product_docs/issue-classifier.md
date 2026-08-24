@@ -91,7 +91,7 @@ If either is missing, proceed to Step 5 (rejection path).
 Post the classification result as an issue comment, then signal completion.
 
 ```bash
-cat > "$AI_AGILE_SCRATCH/body.md" <<EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
 <!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue classification
 
@@ -102,7 +102,7 @@ cat > "$AI_AGILE_SCRATCH/body.md" <<EOF
 This issue passes initial validation. \`prd-writer\` will run next.
 EOF
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"$AI_AGILE_SCRATCH/body.md"
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 Add the `classification: {classification}` label so downstream agents
@@ -126,7 +126,7 @@ Post a corrective comment naming exactly which fields are missing and
 what would be acceptable, then signal blocked.
 
 ```bash
-cat > "$AI_AGILE_SCRATCH/body_2.md" <<EOF
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<EOF
 <!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue cannot be classified — missing required fields
 
@@ -142,7 +142,7 @@ To unblock the pipeline:
 The pipeline will re-run \`issue-classifier\` automatically.
 EOF
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"$AI_AGILE_SCRATCH/body_2.md"
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```
 
 Then emit the sentinel:

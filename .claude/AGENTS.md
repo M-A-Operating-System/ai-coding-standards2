@@ -94,7 +94,7 @@ fits -- there is no third option:
 
 - **`Write`** for a body you compose yourself. Every agent has it, and it needs
   no shell quoting, so it is the right choice for JSON or a fenced block.
-- **`cat > "$AI_AGILE_SCRATCH/name.md" <<EOF`** when the body must interpolate
+- **`cat > "${AI_AGILE_SCRATCH:-/tmp}/name.md" <<EOF`** when the body must interpolate
   shell variables you hold at runtime (`$SESSION_ID`, `$VERDICT`). Quote the
   delimiter (`<<'EOF'`) to suppress expansion. Start the command with `cat` --
   a leading variable assignment matches no allowlist pattern and is denied.
@@ -106,7 +106,7 @@ either route above, then post it by path:
 
 ```bash
 gh api --method POST "repos/$REPO/issues/$WORK_ITEM_NUMBER/comments" \
-  -F body=@"$AI_AGILE_SCRATCH/body.md"
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 A PR is an issue as far as this endpoint is concerned, so `issues/{n}/comments`

@@ -109,7 +109,10 @@ class TestAgentsMdScratchConvention:
         # recipe to paraphrase. `Write` for composed bodies, `cat` heredoc
         # where the body must interpolate runtime shell variables.
         assert "**`Write`**" in text, "the rule must name the tool, not only an idiom"
-        assert 'cat > "$AI_AGILE_SCRATCH/' in text
+        assert 'cat > "${AI_AGILE_SCRATCH:-/tmp}/' in text, (
+            'the :-/tmp fallback is load-bearing: with the variable unset, '
+            '"$AI_AGILE_SCRATCH/body.md" expands to "/body.md"'
+        )
         assert "Never write to a relative path" in text
         assert "Do not create or delete the directory" in text
         # No preamble the agent has to execute before it can write, and no
@@ -143,6 +146,21 @@ class TestAgentsMdScratchConvention:
             if '--body "$(cat' in body:
                 offenders.append(f"{path.name}: --body \"$(cat ...\"")
         assert offenders == [], f"agents still using a broken posting form: {offenders}"
+
+    def test_no_agent_writes_scratch_without_the_fallback(self):
+        """`"$AI_AGILE_SCRATCH/x"` expands to `"/x"` when the variable is
+        unset -- a write to the filesystem root. Every staging site must use
+        `${AI_AGILE_SCRATCH:-/tmp}`, which degrades to a path that exists.
+        """
+        offenders = [
+            path.name for path in AGENTS_DIR.rglob("*.md")
+            if '"$AI_AGILE_SCRATCH/' in path.read_text()
+        ]
+        if '"$AI_AGILE_SCRATCH/' in AGENTS_MD.read_text():
+            offenders.append(AGENTS_MD.name)
+        assert offenders == [], (
+            f"unguarded $AI_AGILE_SCRATCH expansion in: {offenders}"
+        )
 
     def test_pr_reviewer_posts_every_body_from_scratch(self):
         """pr-reviewer is the agent that leaked -- three files per run, twice

@@ -75,11 +75,6 @@ found last time. It is not an edit target -- artefacts are append-only (P-11).
 
 Post the opening announcement:
 
-Your bodies are JSON inside a fenced block. Write the file into
-`$AI_AGILE_SCRATCH` and post it from there -- no shell quoting, and nothing
-lands in the repo root. The orchestrator creates that directory for you, so
-do not create it yourself. Never inline a body into `--body`.
-
 ```bash
 cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_open.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->

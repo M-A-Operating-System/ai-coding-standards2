@@ -57,14 +57,14 @@ spec, gap report, etc.), post it as a fenced comment with the
 `ai-agile/artefact/v1` marker:
 
 ```bash
-cat > "$AI_AGILE_SCRATCH/body.md" <<'EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
 <!-- ai-agile/artefact/v1 -->
 ## {Artefact title}
 
 {Artefact body — markdown}
 EOF
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"$AI_AGILE_SCRATCH/body.md"
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 If the agent produces a structured question for a human, use the

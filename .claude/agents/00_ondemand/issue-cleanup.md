@@ -118,7 +118,7 @@ text) through `gh` here-doc arguments -- never `echo` them to stdout (see
 Behaviour rules):
 
 ```bash
-cat > "$AI_AGILE_SCRATCH/body.md" <<'REPORT_EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'REPORT_EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/issue-cleanup -->
 ## Backlog cleanup recommendation
 
@@ -156,7 +156,7 @@ duplicate of 128" or "approve all candidates above"). Then remove the
 issues explicitly named in a human reply.
 REPORT_EOF
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"$AI_AGILE_SCRATCH/body.md"
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 Do not emit the sentinel here. Proceed to Step 6 (mode = propose).
@@ -209,7 +209,7 @@ gh issue close "$N" --repo "$REPO" --reason "not planned"
 Post a summary of exactly what was closed (and anything skipped, with why):
 
 ```bash
-cat > "$AI_AGILE_SCRATCH/body_2.md" <<'SUMMARY_EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<'SUMMARY_EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/issue-cleanup -->
 ## Backlog cleanup executed
 
@@ -218,7 +218,7 @@ Closed as duplicate: #130 (of #128).
 Skipped: #140 (an open PR was opened for it since the report).
 SUMMARY_EOF
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"$AI_AGILE_SCRATCH/body_2.md"
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```
 
 Proceed to Step 6 with mode = complete.
