@@ -59,6 +59,9 @@ fi
 # (issue #356). Matched exactly, so it grants nothing beyond removing the file.
 case "$COMMAND" in
   "rm $SCOPE_FILE"|"rm -f $SCOPE_FILE"|"rm -f -- $SCOPE_FILE") exit 0 ;;
+  'rm ".claude/.run-agent-scope.${PPID}.json"'|\
+  'rm -f ".claude/.run-agent-scope.${PPID}.json"'|\
+  'rm -f -- ".claude/.run-agent-scope.${PPID}.json"') exit 0 ;;
 esac
 
 DETAIL=""

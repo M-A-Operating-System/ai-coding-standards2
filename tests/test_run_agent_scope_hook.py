@@ -398,15 +398,26 @@ def test_the_scope_file_can_always_be_removed(tmp_path):
     """run-agent.md step 7 ends enforcement by removing the scope file. It has
     to work for every agent, not only the ones whose allowlist grants `rm` --
     otherwise a pr-reviewer run leaves the session scoped with no way back
-    (issue #356). The path is now PPID-keyed (issue #374)."""
+    (issue #356). The path is now PPID-keyed (issue #374).
+
+    Two command formats must both pass:
+    - Unquoted integer-PID form (hook's $SCOPE_FILE expansion)
+    - Quoted literal-variable form (exact text from run-agent.md step 7)
+    """
     write_scope(tmp_path, "03_execute/pr-reviewer", RESOLVED_ALLOWLIST)
     assert "Bash(rm *)" not in RESOLVED_ALLOWLIST, "precondition: rm is not granted"
     ppid = os.getpid()
     scope_path = f".claude/.run-agent-scope.{ppid}.json"
     for command in [
+        # Unquoted integer-PID form: hook evaluates "$SCOPE_FILE" at match time
         f"rm {scope_path}",
         f"rm -f {scope_path}",
         f"rm -f -- {scope_path}",
+        # Quoted literal-variable form: exact text the AI copies from run-agent.md step 7
+        # (Claude Code passes the pre-execution command string; ${PPID} is not yet expanded)
+        'rm ".claude/.run-agent-scope.${PPID}.json"',
+        'rm -f ".claude/.run-agent-scope.${PPID}.json"',
+        'rm -f -- ".claude/.run-agent-scope.${PPID}.json"',
     ]:
         assert_allowed(run_hook(tmp_path, "Bash", command))
 
@@ -548,17 +559,18 @@ def test_python3_c_flag_is_still_refused(tmp_path):
 def test_concurrent_invocations_write_distinct_scope_files():
     """Scenario: Concurrent invocations write distinct scope files.
 
-    Two different PPIDs produce two different scope file paths. The scheme
-    is verified by confirming the filename template embeds the PID.
+    Verified against the hook script itself: the SCOPE_FILE definition must
+    embed ${PPID} so that two sessions running in the same tree get different
+    paths that cannot clobber each other.
     """
-    ppid_a = 11111
-    ppid_b = 22222
-    path_a = f".claude/.run-agent-scope.{ppid_a}.json"
-    path_b = f".claude/.run-agent-scope.{ppid_b}.json"
+    hook_text = HOOK_SCRIPT.read_text()
+    assert 'SCOPE_FILE=".claude/.run-agent-scope.${PPID}.json"' in hook_text, \
+        "hook must key scope file by PPID for concurrent isolation"
+    # Two PID values produce different file paths built from the same template.
+    pid_a, pid_b = 11111, 22222
+    path_a = f".claude/.run-agent-scope.{pid_a}.json"
+    path_b = f".claude/.run-agent-scope.{pid_b}.json"
     assert path_a != path_b, "distinct PPIDs must produce distinct scope file paths"
-    assert ".run-agent-scope." in path_a
-    assert str(ppid_a) in path_a
-    assert str(ppid_b) in path_b
 
 
 def test_one_run_finishing_does_not_disable_enforcement_for_the_other(tmp_path):
