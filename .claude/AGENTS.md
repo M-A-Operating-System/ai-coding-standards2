@@ -92,8 +92,11 @@ Working files stay out of the repo. Your scratch directory is
 **Create working files at that absolute path**, using whichever of these two
 fits -- there is no third option:
 
-- **`Write`** for a body you compose yourself. Every agent has it, and it needs
-  no shell quoting, so it is the right choice for JSON or a fenced block.
+- **`Write`** for a body you compose yourself. It needs no shell quoting, so it
+  is the right choice for JSON or any body containing backticks -- a heredoc
+  body with backticks is scanned for command substitution and refused.
+  `Write` reaches every agent through `defaults.extra_allowedTools` in
+  `pipeline.json`, not through each agent's own `tools:` frontmatter.
 - **`cat > "${AI_AGILE_SCRATCH:-/tmp}/name.md" <<EOF`** when the body must interpolate
   shell variables you hold at runtime (`$SESSION_ID`, `$VERDICT`). Quote the
   delimiter (`<<'EOF'`) to suppress expansion. Start the command with `cat` --

@@ -35,6 +35,7 @@ def git_repo(tmp_path, monkeypatch):
         cwd=tmp_path, check=True,
     )
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AI_AGILE_ROOT", str(tmp_path))
     return tmp_path
 
 
@@ -71,10 +72,26 @@ def test_ignores_files_in_subdirectories(git_repo):
         "only depth-0 files are the agent's residue; subdirectories are real work"
 
 
-def test_returns_empty_set_outside_a_git_repo(tmp_path, monkeypatch):
-    """The sweep is hygiene, not correctness -- it must never raise."""
-    monkeypatch.chdir(tmp_path)
-    assert po._untracked_root_files() == set()
+def test_returns_none_when_git_cannot_be_consulted(tmp_path, monkeypatch):
+    """None, not an empty set -- the distinction is load-bearing.
+
+    The result is used as the "before" baseline. An empty baseline means
+    "every untracked root file is new", so returning set() on a failed probe
+    would turn a transient git error into a delete-everything sweep.
+    """
+    monkeypatch.setattr(po, "_repo_root", lambda: tmp_path)
+    assert po._untracked_root_files() is None
+
+
+def test_sweep_skips_when_the_baseline_is_unknown(git_repo, caplog):
+    """A failed probe must lose a cleanup, never delete a file blindly."""
+    (git_repo / "not_the_agents.md").write_text("pre-existing")
+
+    with caplog.at_level("WARNING"):
+        po._sweep_agent_root_files(_agent(), None)
+
+    assert (git_repo / "not_the_agents.md").exists()
+    assert "skipping the sweep" in caplog.text
 
 
 # --- _sweep_agent_root_files ----------------------------------------------
@@ -161,3 +178,23 @@ def test_survives_a_file_that_cannot_be_removed(git_repo, caplog, monkeypatch):
         po._sweep_agent_root_files(_agent(), before)
 
     assert "could not remove" in caplog.text
+
+
+def test_root_is_resolved_from_git_not_the_cwd(git_repo, monkeypatch):
+    """Started from a subdirectory, the sweep must still act on the repo root.
+
+    AI_AGILE_ROOT is conventionally ".", so reading it directly would leave
+    this cwd-relative and the sweep would operate in the wrong directory.
+    """
+    nested = git_repo / "pipeline"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+    monkeypatch.setenv("AI_AGILE_ROOT", ".")
+
+    assert po._repo_root() == git_repo.resolve()
+
+    before = po._untracked_root_files()
+    (git_repo / "leaked.md").write_text("x")
+    po._sweep_agent_root_files(_agent(), before)
+
+    assert not (git_repo / "leaked.md").exists()

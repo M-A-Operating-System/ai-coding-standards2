@@ -300,7 +300,8 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
 ## Codebase review complete
 
 Three-persona review (Defensive Programmer · Security Analyst · Quality
-Assurance) completed. All findings are in issue #${REVIEW_ISSUE}.
+Assurance) completed. The findings issue is the one created or updated in
+Step 5d -- link it by number from the URL that the issue-create step printed.
 
 **Summary:** {N_CRITICAL} Critical · {N_HIGH} High · {N_MEDIUM} Medium · {N_LOW} Low · {N_INFO} Informational
 EOF

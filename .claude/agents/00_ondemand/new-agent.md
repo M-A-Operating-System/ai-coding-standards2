@@ -160,8 +160,12 @@ Add `"type": "script"` and `"script": "path"` only for non-Claude script steps.
 
 ## Step 5 — Post artefact comment
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/artefact/v1 by 00_ondemand/new-agent -->
 ## Agent scaffolded
 
@@ -174,7 +178,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
 1. Fill in the step bodies in the agent file — the skeleton is in place.
 2. Review the \`pipeline.json\` entry (dependencies, max_retries, session scope).
 3. Apply \`new-agent:approved\` to merge the scaffolded files.
-EOF
+````
+
+Then post it:
+
+```bash
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```

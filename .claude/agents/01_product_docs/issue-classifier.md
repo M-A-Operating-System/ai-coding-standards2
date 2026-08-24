@@ -90,8 +90,12 @@ If either is missing, proceed to Step 5 (rejection path).
 
 Post the classification result as an issue comment, then signal completion.
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue classification
 
@@ -100,7 +104,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
 **Rationale:** {one or two sentences naming the signals in the body that led to this classification}
 
 This issue passes initial validation. \`prd-writer\` will run next.
-EOF
+````
+
+Then post it:
+
+```bash
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
@@ -125,8 +133,12 @@ AI_AGILE_STATUS: complete
 Post a corrective comment naming exactly which fields are missing and
 what would be acceptable, then signal blocked.
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_2.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
 ## Issue cannot be classified — missing required fields
 
@@ -140,7 +152,11 @@ To unblock the pipeline:
 2. Remove the \`issue-classifier:blocked\` label.
 
 The pipeline will re-run \`issue-classifier\` automatically.
-EOF
+````
+
+Then post it:
+
+```bash
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```

@@ -168,7 +168,12 @@ class TestAgentsMdScratchConvention:
         and post from there, using tools it is actually granted.
         """
         text = (AGENTS_DIR / "03_execute" / "pr-reviewer.md").read_text()
-        assert text.count('cat > "${AI_AGILE_SCRATCH:-/tmp}/') == 3
+        # Bodies containing markdown fences are staged with the Write tool:
+        # a backtick in an unquoted heredoc body is read as command
+        # substitution and the whole block is refused (issue #376). Only the
+        # backtick-free body still uses a heredoc.
+        assert text.count('cat > "${AI_AGILE_SCRATCH:-/tmp}/') >= 1
+        assert text.count("Use the Write tool to create") == 2
         # REST, not `gh pr comment`: the latter is GraphQL and 403s in a
         # restricted session. Bash(gh api --method * repos/*/issues*) is granted
         # to every agent, so this form works on both paths.

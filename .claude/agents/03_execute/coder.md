@@ -298,8 +298,12 @@ and error-handling style.
 
 ## Step 5 — Post opening announcement
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -313,7 +317,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
   "inputs_read": ["issue body", "tech-spec docs", "sub-issues"]
 }
 \`\`\`
-EOF
+````
+
+Then post it:
+
+```bash
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
@@ -420,8 +428,12 @@ All tests must pass. Fix any failures before signalling complete.
 
 ## Step 8 — Closing announcement and sentinel
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_2.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -435,7 +447,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<EOF
   "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Orchestrator will commit and push to the existing issue-${ISSUE_NUMBER} branch."
 }
 \`\`\`
-EOF
+````
+
+Then post it:
+
+```bash
 gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```
@@ -591,8 +607,12 @@ that the reviewer is referencing).
 
 ## Step 12 — Post opening announcement
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body_3.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_3.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -604,7 +624,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body_3.md" <<EOF
   "intent": "Address review feedback on PR #${PR_NUMBER}."
 }
 \`\`\`
-EOF
+````
+
+Then post it:
+
+```bash
 gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_3.md"
 ```
@@ -661,8 +685,12 @@ gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
 
 ## Step 15 — Closing announcement and sentinel
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body_5.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_5.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -675,7 +703,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body_5.md" <<EOF
   "summary": "Addressed review feedback on PR #${PR_NUMBER}. Orchestrator will commit and push to the existing branch (${PR_BRANCH})."
 }
 \`\`\`
-EOF
+````
+
+Then post it:
+
+```bash
 gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_5.md"
 ```
