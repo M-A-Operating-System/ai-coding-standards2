@@ -105,7 +105,11 @@ class TestAgentsMdScratchConvention:
         orchestrator sweeps the root regardless (ADR-001).
         """
         text = AGENTS_MD.read_text()
-        assert "`Write` tool" in text, "the rule must name the tool, not a shell idiom"
+        # Two staging routes, both naming a tool the agent holds -- not a
+        # recipe to paraphrase. `Write` for composed bodies, `cat` heredoc
+        # where the body must interpolate runtime shell variables.
+        assert "**`Write`**" in text, "the rule must name the tool, not only an idiom"
+        assert 'cat > "$AI_AGILE_SCRATCH/' in text
         assert "Never write to a relative path" in text
         assert "Do not create or delete the directory" in text
         # No preamble the agent has to execute before it can write, and no
@@ -113,6 +117,32 @@ class TestAgentsMdScratchConvention:
         # explaining why not to; a command must not.
         assert "mkdir -p" not in text
         assert 'SCRATCH="${AI_AGILE_SCRATCH' not in text
+
+    def test_agents_md_names_the_one_posting_form(self):
+        """Agents used three different posting mechanisms; two do not work.
+        `gh pr comment` is GraphQL (403 in a restricted session) and
+        `--body "$(cat <<EOF ...)"` is refused outright, because `$(` is
+        command substitution. AGENTS.md states the working form once so no
+        agent has to restate it.
+        """
+        text = AGENTS_MD.read_text()
+        assert "gh api --method POST" in text
+        assert "-F body=@" in text
+        assert "gh pr comment" in text, "the broken forms must be named as broken"
+        assert "GraphQL" in text
+
+    def test_no_agent_posts_with_a_broken_form(self):
+        """The two forms that cannot work must not appear as instructions in
+        any agent prompt. pr-reviewer names `gh pr comment` only to forbid it.
+        """
+        offenders = []
+        for path in AGENTS_DIR.rglob("*.md"):
+            body = path.read_text()
+            if 'gh pr comment' in body and 'is GraphQL' not in body:
+                offenders.append(f"{path.name}: gh pr comment")
+            if '--body "$(cat' in body:
+                offenders.append(f"{path.name}: --body \"$(cat ...\"")
+        assert offenders == [], f"agents still using a broken posting form: {offenders}"
 
     def test_pr_reviewer_posts_every_body_from_scratch(self):
         """pr-reviewer is the agent that leaked -- three files per run, twice

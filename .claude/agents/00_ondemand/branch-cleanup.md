@@ -96,7 +96,7 @@ and say why in the report.
 ## Step 3 -- Post the recommendation report (propose mode)
 
 ```bash
-gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'REPORT_EOF'
+cat > "$AI_AGILE_SCRATCH/body.md" <<'REPORT_EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/branch-cleanup -->
 ## Branch cleanup recommendation
 
@@ -127,7 +127,8 @@ re-apply `branch-cleanup:requested` to trigger deletion.
 `branch-cleanup:requested` without a reply, deletes nothing -- Step 4 only
 acts on branches explicitly named in a human reply.
 REPORT_EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body.md"
 ```
 
 Then:
@@ -175,14 +176,15 @@ done
 Post a summary of exactly what was deleted (and anything skipped, with why):
 
 ```bash
-gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'SUMMARY_EOF'
+cat > "$AI_AGILE_SCRATCH/body_2.md" <<'SUMMARY_EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/branch-cleanup -->
 ## Branch cleanup executed
 
 Deleted {N} approved branch(es): `branch-a`, `branch-b`.
 Skipped: `branch-c` (a PR opened for it since the report was posted).
 SUMMARY_EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body_2.md"
 ```
 
 Then:

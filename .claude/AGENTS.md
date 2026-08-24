@@ -89,15 +89,36 @@ If they disagree, the JSON wins.
 Working files stay out of the repo. Your scratch directory is
 `$AI_AGILE_SCRATCH`, given as an absolute path in your Runtime context below.
 
-**Create working files with the `Write` tool, at that absolute path.** Every
-agent has `Write`, and it needs no shell quoting -- which is why it is the
-route to use for a body containing JSON or a fenced block. Then post the file
-by path:
+**Create working files at that absolute path**, using whichever of these two
+fits -- there is no third option:
+
+- **`Write`** for a body you compose yourself. Every agent has it, and it needs
+  no shell quoting, so it is the right choice for JSON or a fenced block.
+- **`cat > "$AI_AGILE_SCRATCH/name.md" <<EOF`** when the body must interpolate
+  shell variables you hold at runtime (`$SESSION_ID`, `$VERDICT`). Quote the
+  delimiter (`<<'EOF'`) to suppress expansion. Start the command with `cat` --
+  a leading variable assignment matches no allowlist pattern and is denied.
+
+### Posting a comment -- the only supported form
+
+This is the same for every agent, on both issues and PRs. Stage the body by
+either route above, then post it by path:
 
 ```bash
-gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+gh api --method POST "repos/$REPO/issues/$WORK_ITEM_NUMBER/comments" \
   -F body=@"$AI_AGILE_SCRATCH/body.md"
 ```
+
+A PR is an issue as far as this endpoint is concerned, so `issues/{n}/comments`
+posts to both -- use `$PR_NUMBER` in place of `$WORK_ITEM_NUMBER` when your
+step targets a PR.
+
+Two forms you will see in older prompts. Neither works; do not copy them:
+
+| Form | Why it fails |
+|---|---|
+| `gh pr comment` / `gh pr review` / `gh pr ready` | GraphQL. Returns 403 in a restricted session |
+| `--body "$(cat <<EOF ... EOF)"` | `$(` is command substitution, which scope enforcement refuses outright |
 
 Two rules, and nothing else to remember:
 

@@ -448,7 +448,7 @@ if [ -z "$SNAPSHOT_ID" ]; then
   ORIG_TITLE=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.title')
   ORIG_BODY=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.body')
 
-  gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
+  cat > "$AI_AGILE_SCRATCH/body.md" <<EOF
 <!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->
 ## Original issue (snapshot before PRD rewrite)
 
@@ -458,7 +458,8 @@ if [ -z "$SNAPSHOT_ID" ]; then
 
 ${ORIG_BODY}
 EOF
-  )"
+  gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+    -F body=@"$AI_AGILE_SCRATCH/body.md"
 fi
 # If SNAPSHOT_ID is non-empty this block is a no-op — snapshot is immutable.
 ```
@@ -522,7 +523,7 @@ prompts the stakeholder to apply `prd-writer:approved`.
 Do **not** draft a PRD. Post a decomposition recommendation:
 
 ```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
+cat > "$AI_AGILE_SCRATCH/body_2.md" <<EOF
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
 ## Decomposition recommended — issue is too large for one PRD
 
@@ -545,7 +546,8 @@ band in 5a (typically 2–5 for enhancements, 3–7 for features).
 to a single child's scope) and remove the \`prd-writer:blocked\`
 label to re-run.
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body_2.md"
 ```
 
 Then emit:

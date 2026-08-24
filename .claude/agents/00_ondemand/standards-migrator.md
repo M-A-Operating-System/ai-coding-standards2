@@ -489,7 +489,7 @@ If `$ISSUE_NUMBER` and `$REPO` are set, post a structured comment (otherwise pri
 it):
 
 ```bash
-gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+cat > "$AI_AGILE_SCRATCH/body.md" <<'EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/standards-migrator -->
 ## Standards Migration Report
 
@@ -524,7 +524,8 @@ gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
 _To waive a specific violation of any standard, add a project ADR to
 `adrs/adrs.json` citing the STD ID in `authorises_exception_to`._
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body.md"
 ```
 
 If not running inside the pipeline, print the same summary to the conversation.

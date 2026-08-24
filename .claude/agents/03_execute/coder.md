@@ -299,7 +299,7 @@ and error-handling style.
 ## Step 5 — Post opening announcement
 
 ```bash
-gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
+cat > "$AI_AGILE_SCRATCH/body.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -314,7 +314,8 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
 }
 \`\`\`
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body.md"
 ```
 
 ---
@@ -420,7 +421,7 @@ All tests must pass. Fix any failures before signalling complete.
 ## Step 8 — Closing announcement and sentinel
 
 ```bash
-gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
+cat > "$AI_AGILE_SCRATCH/body_2.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -435,7 +436,8 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
 }
 \`\`\`
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body_2.md"
 ```
 
 After you emit the sentinel, the orchestrator (not you) will:
@@ -590,7 +592,7 @@ that the reviewer is referencing).
 ## Step 12 — Post opening announcement
 
 ```bash
-gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
+cat > "$AI_AGILE_SCRATCH/body_3.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -603,7 +605,8 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
 }
 \`\`\`
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body_3.md"
 ```
 
 ---
@@ -636,7 +639,7 @@ The orchestrator will commit all changes when you signal completion.
 After completing all fixes, post a single summary comment:
 
 ```bash
-gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<'REPLY'
+cat > "$AI_AGILE_SCRATCH/body_4.md" <<'REPLY'
 <!-- ai-agile/artefact/v1 by 03_execute/coder -->
 ## Feedback addressed
 
@@ -650,7 +653,8 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<'REPLY'
 **Suggested items (not implemented):**
 - {feedback item 4}: Logged as follow-up — {reason not addressed now}
 REPLY
-)"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body_4.md"
 ```
 
 ---
@@ -658,7 +662,7 @@ REPLY
 ## Step 15 — Closing announcement and sentinel
 
 ```bash
-gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
+cat > "$AI_AGILE_SCRATCH/body_5.md" <<EOF
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -672,7 +676,8 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
 }
 \`\`\`
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"$AI_AGILE_SCRATCH/body_5.md"
 ```
 
 After you emit the sentinel, the orchestrator (not you) will:
