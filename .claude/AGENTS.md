@@ -86,25 +86,26 @@ Five marker types:
 Free-text prose may sit alongside JSON; the JSON is the contract.
 If they disagree, the JSON wins.
 
-Working files stay out of the repo. Staging a comment body in a file is fine and
-often the right call -- a body containing JSON or a fenced block is fragile to
-shell-quote -- so write it into `$AI_AGILE_SCRATCH` and post it from there,
-never from a bare filename:
+Working files stay out of the repo. Your scratch directory is
+`$AI_AGILE_SCRATCH`, given as an absolute path in your Runtime context below.
+
+**Create working files with the `Write` tool, at that absolute path.** Every
+agent has `Write`, and it needs no shell quoting -- which is why it is the
+route to use for a body containing JSON or a fenced block. Then post the file
+by path:
 
 ```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
-...
-EOF
 gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
+  -F body=@"$AI_AGILE_SCRATCH/body.md"
 ```
 
-The orchestrator creates that directory empty before your run and removes it
-after, so **do not create it yourself** -- most agents are not granted `mkdir`,
-and a command that begins with an assignment matches no allowlist pattern. The
-`:-/tmp` fallback covers a hand-run agent; `/tmp` always exists, so an unset
-variable can never resolve to `/`. A bare filename resolves against the repo
-root, where the commit sweep can pick it up.
+Two rules, and nothing else to remember:
+
+- **Never write to a relative path.** A bare filename resolves against the
+  repository root, not your scratch directory.
+- **Do not create or delete the directory.** The orchestrator creates it empty
+  before your run and removes it after, so it is always there and never holds a
+  previous attempt's files.
 
 ---
 

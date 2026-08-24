@@ -86,29 +86,31 @@ def _agent_prompts():
 
 
 class TestAgentsMdScratchConvention:
-    def test_agents_md_states_concrete_scratch_convention(self):
+    def test_agents_md_names_scratch_as_an_absolute_path(self):
         text = AGENTS_MD.read_text()
         assert "AI_AGILE_SCRATCH" in text
-        assert "${AI_AGILE_SCRATCH:-" in text
-        assert "never from a bare filename" in text
+        assert "absolute path" in text
 
-    def test_agents_md_teaches_writing_into_scratch(self):
-        """Issue #321, third correction. Two earlier rules failed in practice:
-        "avoid files" (pr-reviewer routed around it, leaking 3 files a run) and
-        then a `SCRATCH=...; mkdir -p` preamble, which pr-reviewer cannot run at
-        all -- it starts with an assignment (matching no allowlist pattern) and
-        mkdir is not among its 31 granted tools. Worse, when that line is denied
-        the next one expands to `cat > "/body.md"` -- a write to the filesystem
-        root.
+    def test_agents_md_teaches_the_write_tool_not_a_shell_recipe(self):
+        """Issue #376, fourth correction. Three earlier rules failed in
+        practice: "avoid files" (pr-reviewer routed around it), a
+        `SCRATCH=...; mkdir -p` preamble (an assignment matches no allowlist
+        pattern), and a `cat >` heredoc -- which is itself allowed by the hook,
+        but which agents paraphrase into the assignment form that is not.
 
-        The rule now creates nothing: the orchestrator provides the directory,
-        and ${AI_AGILE_SCRATCH:-/tmp} falls back to a path that always exists.
+        pr-reviewer proved the deeper point: its prompt prescribes the correct
+        heredoc and it still wrote three files to the repo root. A procedure an
+        agent must reproduce will eventually be reproduced wrong, so the rule
+        now names a place and a tool the agent already holds, and the
+        orchestrator sweeps the root regardless (ADR-001).
         """
         text = AGENTS_MD.read_text()
-        assert '${AI_AGILE_SCRATCH:-/tmp}/' in text
-        assert "do not create it yourself" in text
-        # No preamble the agent has to execute before it can write. The word
-        # may appear in prose explaining why not to; a command must not.
+        assert "`Write` tool" in text, "the rule must name the tool, not a shell idiom"
+        assert "Never write to a relative path" in text
+        assert "Do not create or delete the directory" in text
+        # No preamble the agent has to execute before it can write, and no
+        # assignment form for it to copy. The word may appear in prose
+        # explaining why not to; a command must not.
         assert "mkdir -p" not in text
         assert 'SCRATCH="${AI_AGILE_SCRATCH' not in text
 
