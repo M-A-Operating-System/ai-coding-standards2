@@ -74,12 +74,13 @@ Post a brief warning that mergeability could not be determined, then exit
 `complete` — the pr-reviewer will flag persistent conflicts as Critical:
 
 ```bash
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
 <!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
 > **merge-conflict:** GitHub mergeability check returned UNKNOWN after retry.
 > Advancing to pr-reviewer — any conflicts will be flagged there.
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 echo "AI_AGILE_STATUS: complete"
 exit 0
 ```
@@ -111,11 +112,12 @@ if git rebase "origin/${BASE_BRANCH}"; then
     git checkout - 2>/dev/null || true
     git branch -D _rebase_attempt 2>/dev/null || true
 
-    gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<EOF
+    cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<EOF
 <!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
 > **merge-conflict:** PR branch rebased onto \`${BASE_BRANCH}\` automatically — no conflicts remain. Advancing to pr-reviewer.
 EOF
-)"
+    gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+      -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
     echo "AI_AGILE_STATUS: complete"
     exit 0
 fi
@@ -214,7 +216,7 @@ Post a single structured assessment comment on the PR. Include a table summary
 and a detailed section per conflict:
 
 ```bash
-gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body_3.md" <<'EOF'
 <!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
 ## Merge Conflict Assessment
 
@@ -261,7 +263,8 @@ explain the recommended resolution approach.
 
 *Posted by the orchestrator — 03_execute/merge-conflict*
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_3.md"
 ```
 
 Replace all `_PLACEHOLDER` tokens with the actual values before posting.

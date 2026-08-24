@@ -3708,6 +3708,10 @@ def _run_agent(
             )
             _pre_agent_branch = ""  # don't attempt restoration if checkout failed
 
+    # Snapshot repo-root untracked files so anything the agent adds there
+    # can be swept afterwards (issue #376).
+    _root_before = set() if dry_run else _untracked_root_files()
+
     sentinel_status: Optional[str] = None
     sentinel_message: str = ""
     _attempt = 0
@@ -3722,6 +3726,9 @@ def _run_agent(
             default_extra_tools, _agent_text_snapshot,
         )
 
+    if not dry_run:
+        _sweep_agent_root_files(agent_def, _root_before)
+
     # Run the declared "after" scripts once all retries are done, whatever the
     # outcome. load_pipeline leaves these empty for script steps, which are
     # never handed a scratch directory, so the pairing with "before" holds
@@ -3733,6 +3740,85 @@ def _run_agent(
         )
 
     return result, sentinel_status, sentinel_message, _pre_agent_branch, _invoked_at, _attempt
+
+
+def _repo_root() -> Path:
+    """The repository root the sweep operates on.
+
+    Asks git rather than trusting a path. AI_AGILE_ROOT is often "." (it is a
+    consuming-repo-relative convention), so reading it directly would leave the
+    sweep CWD-relative: a tick started from a subdirectory would list and
+    delete files there instead of at the repo root. `git rev-parse
+    --show-toplevel` is absolute and correct from anywhere inside the tree.
+    """
+    start = os.environ.get("AI_AGILE_ROOT") or str(SUBMODULE_ROOT)
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True, cwd=start,
+        ).stdout.strip()
+        if top:
+            return Path(top)
+    except Exception:
+        pass
+    return Path(start).resolve()
+
+
+def _untracked_root_files() -> Optional[set]:
+    """Untracked files at the repository root (depth 0 only).
+
+    The scratch contract says agents write working files under
+    $AI_AGILE_SCRATCH and never into the repo. When an agent writes to a
+    relative path instead, the file lands here.
+
+    Returns None -- NOT an empty set -- when git cannot be consulted. The
+    caller uses this result as the "before" baseline, and an empty baseline
+    would mean "every untracked root file is new", turning a failed probe into
+    a delete-everything sweep. None makes that case unambiguous, so the sweep
+    can skip instead.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            capture_output=True, text=True, check=True, cwd=str(_repo_root()),
+        ).stdout
+    except Exception:
+        return None
+    return {line for line in out.splitlines() if line and "/" not in line}
+
+
+def _sweep_agent_root_files(agent_def: AgentDef, before: set) -> None:
+    """Remove root files the agent created, and say so.
+
+    Runs for EVERY agent. commit-agent-work.sh carries the same guard, but it
+    only runs for git_ops.commit_after agents -- prd-writer, pr-reviewer and
+    issue-classifier all have none, and all three were observed leaving files
+    at the repo root (issue #376). Only files absent before the invocation are
+    removed, so a pre-existing file is never touched.
+    """
+    after = _untracked_root_files()
+    if before is None or after is None:
+        # A probe failed. Skipping loses a cleanup; guessing risks deleting
+        # files the agent never wrote. Skip, and say so.
+        log.warning(
+            "  scratch: could not check the repo root for %s; skipping the sweep",
+            agent_def.agent,
+        )
+        return
+    leaked = sorted(after - before)
+    if not leaked:
+        return
+    log.warning(
+        "  scratch: %s wrote %d file(s) to the repo root instead of "
+        "$AI_AGILE_SCRATCH; removing: %s",
+        agent_def.agent, len(leaked), ", ".join(leaked),
+    )
+    root = _repo_root()
+    for name in leaked:
+        try:
+            (root / name).unlink()
+        except OSError as exc:
+            log.warning("  scratch: could not remove %s: %s", name, exc)
 
 
 # ---------------------------------------------------------------------------

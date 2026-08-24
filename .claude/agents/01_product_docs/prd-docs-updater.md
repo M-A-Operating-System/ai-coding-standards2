@@ -172,8 +172,12 @@ reformat, reorder, or clean up text unrelated to this issue.
 
 After writing all files, comment on the issue:
 
-```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater -->
 ## Product docs update
 
@@ -190,8 +194,13 @@ ahead of the build phase.
 
 {one line per scenario from Step 2: created file / appended / replaced, or
 "no Gherkin scenarios in this PRD" if Step 2 had nothing to copy}
-EOF
-)"
+````
+
+Then post it:
+
+```bash
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 This path changed `docs/product/` prose — a judgment call — so it gates on
@@ -205,8 +214,12 @@ AI_AGILE_STATUS: review "docs/product/ updated — please review before code wor
 
 ## Step 5 — No docs/product/ update needed
 
-```bash
-gh issue comment $ISSUE_NUMBER --repo $REPO --body "$(cat <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_2.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater -->
 ## Product docs check — no updates required
 
@@ -217,8 +230,13 @@ explaining which files were checked and why no changes are needed.}
 
 {one line per scenario from Step 2: created file / appended / replaced, or
 "no Gherkin scenarios in this PRD" if Step 2 had nothing to copy}
-EOF
-)"
+````
+
+Then post it:
+
+```bash
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```
 
 This path made no `docs/product/` prose changes — Step 2's feature-file copy

@@ -80,7 +80,7 @@ def strip_heredocs(command):
     """Remove heredoc bodies, which are data rather than commands.
 
     Returns (command_without_bodies, bodies_the_shell_still_expands). Agents
-    are told to stage comment bodies with `cat > "$AI_AGILE_SCRATCH/body.md"
+    are told to stage comment bodies with `cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md"
     <<'EOF'` (.claude/AGENTS.md), so treating the body's lines as commands
     would deny the one file-staging idiom the protocol prescribes.
     """

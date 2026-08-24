@@ -298,8 +298,12 @@ and error-handling style.
 
 ## Step 5 — Post opening announcement
 
-```bash
-gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -313,8 +317,13 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "inputs_read": ["issue body", "tech-spec docs", "sub-issues"]
 }
 \`\`\`
-EOF
-)"
+````
+
+Then post it:
+
+```bash
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 ---
@@ -419,8 +428,12 @@ All tests must pass. Fix any failures before signalling complete.
 
 ## Step 8 — Closing announcement and sentinel
 
-```bash
-gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_2.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -434,8 +447,13 @@ gh issue comment $ISSUE_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Orchestrator will commit and push to the existing issue-${ISSUE_NUMBER} branch."
 }
 \`\`\`
-EOF
-)"
+````
+
+Then post it:
+
+```bash
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```
 
 After you emit the sentinel, the orchestrator (not you) will:
@@ -589,8 +607,12 @@ that the reviewer is referencing).
 
 ## Step 12 — Post opening announcement
 
-```bash
-gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_3.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -602,8 +624,13 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "intent": "Address review feedback on PR #${PR_NUMBER}."
 }
 \`\`\`
-EOF
-)"
+````
+
+Then post it:
+
+```bash
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_3.md"
 ```
 
 ---
@@ -636,7 +663,7 @@ The orchestrator will commit all changes when you signal completion.
 After completing all fixes, post a single summary comment:
 
 ```bash
-gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<'REPLY'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body_4.md" <<'REPLY'
 <!-- ai-agile/artefact/v1 by 03_execute/coder -->
 ## Feedback addressed
 
@@ -650,15 +677,20 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<'REPLY'
 **Suggested items (not implemented):**
 - {feedback item 4}: Logged as follow-up — {reason not addressed now}
 REPLY
-)"
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_4.md"
 ```
 
 ---
 
 ## Step 15 — Closing announcement and sentinel
 
-```bash
-gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/body_5.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/coder -->
 \`\`\`json
 {
@@ -671,8 +703,13 @@ gh pr comment $PR_NUMBER --repo "$REPO" --body "$(cat <<EOF
   "summary": "Addressed review feedback on PR #${PR_NUMBER}. Orchestrator will commit and push to the existing branch (${PR_BRANCH})."
 }
 \`\`\`
-EOF
-)"
+````
+
+Then post it:
+
+```bash
+gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_5.md"
 ```
 
 After you emit the sentinel, the orchestrator (not you) will:

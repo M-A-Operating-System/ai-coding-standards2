@@ -207,3 +207,24 @@
 **Given** the workspace is checked out at `main`
 **When** the orchestrator invokes an agent whose step declares `git_ops.commit_after`
 **Then** it fetches and checks out `issue-{N}` explicitly before the invocation, so the pin does not strand the agent on the wrong branch
+
+## Scenario: An agent's working files go to the scratch directory, not the repo
+
+**Given** an agent is given `$AI_AGILE_SCRATCH` as an absolute path in its runtime context
+**When** it stages a comment body before posting it
+**Then** it creates the file with the `Write` tool at that absolute path
+**And** it needs no `cat`, `mkdir` or `rm` grant to do so
+
+## Scenario: A file written to the repo root is removed after the agent runs
+
+**Given** an agent writes a working file to a relative path, so it lands at the repository root
+**When** the agent's invocation finishes, whatever its outcome
+**Then** the orchestrator removes the file and logs which agent wrote it
+**And** this happens for every agent, not only those with `git_ops.commit_after`
+
+## Scenario: A file that was already at the root is left alone
+
+**Given** an untracked file exists at the repository root before an agent is invoked
+**When** the agent finishes without touching it
+**Then** the orchestrator leaves it in place, because it compares against a snapshot taken before the run
+

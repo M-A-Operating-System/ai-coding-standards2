@@ -98,13 +98,14 @@ If it meets two or more, go to **Step 4 — Decomposition path**.
 Post a brief sizing note and emit complete.
 
 ```bash
-gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
 ## Sizing: fits one development cycle
 
 This issue is appropriately sized for a single development cycle.
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
 Then emit the sentinel:
@@ -285,7 +286,7 @@ gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body-file "$BODY_FILE"
 ### 4f — Post the decomposition plan
 
 ```bash
-gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<'EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
 ## Sizing: decomposed into {TOTAL} sub-issues
 
@@ -315,7 +316,8 @@ automatically when all sub-issues are closed. Each sub-issue runs its
 own full pipeline — this parent will not proceed through `prd-writer`
 or `coder`.
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```
 
 Then emit the review sentinel so the pipeline halts until the human
@@ -338,7 +340,7 @@ in the parent body accurately describe the parent's state. No further
 changes are needed to the parent body.
 
 ```bash
-gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "$(cat <<'EOF'
+cat > "${AI_AGILE_SCRATCH:-/tmp}/body_3.md" <<'EOF'
 <!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
 ## Sizing: decomposition confirmed
 
@@ -349,7 +351,8 @@ This parent epic (#${ISSUE_NUMBER}) remains open and blocked by its
 sub-issues. It will be closed automatically once all sub-issues are
 closed.
 EOF
-)"
+gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_3.md"
 ```
 
 Then emit:

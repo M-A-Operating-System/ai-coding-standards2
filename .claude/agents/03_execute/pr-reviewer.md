@@ -75,13 +75,12 @@ found last time. It is not an edit target -- artefacts are append-only (P-11).
 
 Post the opening announcement:
 
-Your bodies are JSON inside a fenced block. Write the file into
-`$AI_AGILE_SCRATCH` and post it from there -- no shell quoting, and nothing
-lands in the repo root. The orchestrator creates that directory for you, so
-do not create it yourself. Never inline a body into `--body`.
+Use the Write tool to create `$AI_AGILE_SCRATCH/ann_open.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_open.md" <<EOF
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
@@ -94,7 +93,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_open.md" <<EOF
   "branch": "issue-$ISSUE_NUMBER"
 }
 \`\`\`
-EOF
+````
+
+Then post it:
+
+```bash
 
 gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/ann_open.md"
@@ -414,8 +417,12 @@ see them change between rounds (P-11, P-12).
 
 ## Step 12 — Close
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_close.md" <<EOF
+Use the Write tool to create `$AI_AGILE_SCRATCH/ann_close.md` with this
+body, substituting the runtime values yourself. A heredoc cannot carry it:
+the body contains backticks, and an unquoted heredoc body is scanned for
+command substitution, so the write would be refused.
+
+````markdown
 <!-- ai-agile/announcement/v1 by 03_execute/pr-reviewer -->
 \`\`\`json
 {
@@ -430,7 +437,11 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/ann_close.md" <<EOF
   "summary": "$N_CRITICAL Critical · $N_HIGH High · $N_MEDIUM Medium"
 }
 \`\`\`
-EOF
+````
+
+Then post it:
+
+```bash
 
 gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/ann_close.md"

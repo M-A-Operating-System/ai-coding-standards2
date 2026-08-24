@@ -31,6 +31,7 @@ The orchestrator owns exactly these responsibilities:
 | Gate promotion | When a human applies a gate label, remove `:review` and apply `:complete` |
 | post_steps execution | Execute scripts listed in the agent's `post_steps` array after it signals `:complete`; scripts perform post-run actions such as marking a PR ready for review — agents never call `gh pr ready` themselves |
 | Agent-lifecycle scripts | Execute the scripts declared in `defaults.agent_lifecycle` around every agent invocation — preparing and tearing down the environment the agent runs in. The orchestrator schedules them; it does not do the work and does not name the scripts |
+| Repo-root sweep | After **every** agent invocation, remove files the agent added at the repository root. Working files belong under `$AI_AGILE_SCRATCH`; anything at the root is residue |
 | Git commit + push | Stage, commit, and push agent file changes to `issue-{N}` after any `commit_after: true` agent signals `complete` |
 | Audit log emission | Emit one JSONL event per transition to stdout |
 
@@ -353,11 +354,22 @@ orchestrator creates an empty directory at `$AI_AGILE_SCRATCH`
 (`/tmp/${SESSION_ID}`) and exports `AI_AGILE_SCRATCH` as an environment
 variable. After the subprocess exits — on any outcome: `complete`,
 `review`, `blocked`, or non-zero exit — the orchestrator removes
-`$AI_AGILE_SCRATCH` unconditionally with `rm -rf`. Agents write
-scratch/working files under `$AI_AGILE_SCRATCH`; they never write temp
-files into the repo root or any tracked path (P-1). The directory is
-always empty at the start of a run, so a retry cannot read a prior
-attempt's files.
+`$AI_AGILE_SCRATCH` unconditionally with `rm -rf`. The directory is always
+empty at the start of a run, so a retry cannot read a prior attempt's files.
+
+**Scratch is a location, not a procedure** (ADR-001). The agent is given
+`$AI_AGILE_SCRATCH` as an absolute path in its runtime context and creates
+working files there with the `Write` tool, which every agent holds and which
+needs no shell quoting. No idiom has to be reproduced, so there is nothing for
+an agent to paraphrase incorrectly. Agents never write temp files into the repo
+root or any tracked path (P-1).
+
+Compliance is not left to the agent. After every agent invocation the
+orchestrator compares the repository root's untracked files against a snapshot
+taken before the run and removes anything new, naming the agent and the files
+at `WARNING`. This runs for **all** agents, not only `commit_after` ones — the
+root guard inside `commit-agent-work.sh` covers the commit path, and this covers
+the rest.
 
 **Timeout.** Default 1800 seconds (30 minutes). On timeout, the orchestrator
 applies `:failed` and posts a recovery comment.

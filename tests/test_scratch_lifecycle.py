@@ -86,31 +86,81 @@ def _agent_prompts():
 
 
 class TestAgentsMdScratchConvention:
-    def test_agents_md_states_concrete_scratch_convention(self):
+    def test_agents_md_names_scratch_as_an_absolute_path(self):
         text = AGENTS_MD.read_text()
         assert "AI_AGILE_SCRATCH" in text
-        assert "${AI_AGILE_SCRATCH:-" in text
-        assert "never from a bare filename" in text
+        assert "absolute path" in text
 
-    def test_agents_md_teaches_writing_into_scratch(self):
-        """Issue #321, third correction. Two earlier rules failed in practice:
-        "avoid files" (pr-reviewer routed around it, leaking 3 files a run) and
-        then a `SCRATCH=...; mkdir -p` preamble, which pr-reviewer cannot run at
-        all -- it starts with an assignment (matching no allowlist pattern) and
-        mkdir is not among its 31 granted tools. Worse, when that line is denied
-        the next one expands to `cat > "/body.md"` -- a write to the filesystem
-        root.
+    def test_agents_md_teaches_the_write_tool_not_a_shell_recipe(self):
+        """Issue #376, fourth correction. Three earlier rules failed in
+        practice: "avoid files" (pr-reviewer routed around it), a
+        `SCRATCH=...; mkdir -p` preamble (an assignment matches no allowlist
+        pattern), and a `cat >` heredoc -- which is itself allowed by the hook,
+        but which agents paraphrase into the assignment form that is not.
 
-        The rule now creates nothing: the orchestrator provides the directory,
-        and ${AI_AGILE_SCRATCH:-/tmp} falls back to a path that always exists.
+        pr-reviewer proved the deeper point: its prompt prescribes the correct
+        heredoc and it still wrote three files to the repo root. A procedure an
+        agent must reproduce will eventually be reproduced wrong, so the rule
+        now names a place and a tool the agent already holds, and the
+        orchestrator sweeps the root regardless (ADR-001).
         """
         text = AGENTS_MD.read_text()
-        assert '${AI_AGILE_SCRATCH:-/tmp}/' in text
-        assert "do not create it yourself" in text
-        # No preamble the agent has to execute before it can write. The word
-        # may appear in prose explaining why not to; a command must not.
+        # Two staging routes, both naming a tool the agent holds -- not a
+        # recipe to paraphrase. `Write` for composed bodies, `cat` heredoc
+        # where the body must interpolate runtime shell variables.
+        assert "**`Write`**" in text, "the rule must name the tool, not only an idiom"
+        assert 'cat > "${AI_AGILE_SCRATCH:-/tmp}/' in text, (
+            'the :-/tmp fallback is load-bearing: with the variable unset, '
+            '"$AI_AGILE_SCRATCH/body.md" expands to "/body.md"'
+        )
+        assert "Never write to a relative path" in text
+        assert "Do not create or delete the directory" in text
+        # No preamble the agent has to execute before it can write, and no
+        # assignment form for it to copy. The word may appear in prose
+        # explaining why not to; a command must not.
         assert "mkdir -p" not in text
         assert 'SCRATCH="${AI_AGILE_SCRATCH' not in text
+
+    def test_agents_md_names_the_one_posting_form(self):
+        """Agents used three different posting mechanisms; two do not work.
+        `gh pr comment` is GraphQL (403 in a restricted session) and
+        `--body "$(cat <<EOF ...)"` is refused outright, because `$(` is
+        command substitution. AGENTS.md states the working form once so no
+        agent has to restate it.
+        """
+        text = AGENTS_MD.read_text()
+        assert "gh api --method POST" in text
+        assert "-F body=@" in text
+        assert "gh pr comment" in text, "the broken forms must be named as broken"
+        assert "GraphQL" in text
+
+    def test_no_agent_posts_with_a_broken_form(self):
+        """The two forms that cannot work must not appear as instructions in
+        any agent prompt. pr-reviewer names `gh pr comment` only to forbid it.
+        """
+        offenders = []
+        for path in AGENTS_DIR.rglob("*.md"):
+            body = path.read_text()
+            if 'gh pr comment' in body and 'is GraphQL' not in body:
+                offenders.append(f"{path.name}: gh pr comment")
+            if '--body "$(cat' in body:
+                offenders.append(f"{path.name}: --body \"$(cat ...\"")
+        assert offenders == [], f"agents still using a broken posting form: {offenders}"
+
+    def test_no_agent_writes_scratch_without_the_fallback(self):
+        """`"$AI_AGILE_SCRATCH/x"` expands to `"/x"` when the variable is
+        unset -- a write to the filesystem root. Every staging site must use
+        `${AI_AGILE_SCRATCH:-/tmp}`, which degrades to a path that exists.
+        """
+        offenders = [
+            path.name for path in AGENTS_DIR.rglob("*.md")
+            if '"$AI_AGILE_SCRATCH/' in path.read_text()
+        ]
+        if '"$AI_AGILE_SCRATCH/' in AGENTS_MD.read_text():
+            offenders.append(AGENTS_MD.name)
+        assert offenders == [], (
+            f"unguarded $AI_AGILE_SCRATCH expansion in: {offenders}"
+        )
 
     def test_pr_reviewer_posts_every_body_from_scratch(self):
         """pr-reviewer is the agent that leaked -- three files per run, twice
@@ -118,7 +168,12 @@ class TestAgentsMdScratchConvention:
         and post from there, using tools it is actually granted.
         """
         text = (AGENTS_DIR / "03_execute" / "pr-reviewer.md").read_text()
-        assert text.count('cat > "${AI_AGILE_SCRATCH:-/tmp}/') == 3
+        # Bodies containing markdown fences are staged with the Write tool:
+        # a backtick in an unquoted heredoc body is read as command
+        # substitution and the whole block is refused (issue #376). Only the
+        # backtick-free body still uses a heredoc.
+        assert text.count('cat > "${AI_AGILE_SCRATCH:-/tmp}/') >= 1
+        assert text.count("Use the Write tool to create") == 2
         # REST, not `gh pr comment`: the latter is GraphQL and 403s in a
         # restricted session. Bash(gh api --method * repos/*/issues*) is granted
         # to every agent, so this form works on both paths.

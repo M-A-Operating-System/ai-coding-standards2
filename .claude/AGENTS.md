@@ -86,25 +86,50 @@ Five marker types:
 Free-text prose may sit alongside JSON; the JSON is the contract.
 If they disagree, the JSON wins.
 
-Working files stay out of the repo. Staging a comment body in a file is fine and
-often the right call -- a body containing JSON or a fenced block is fragile to
-shell-quote -- so write it into `$AI_AGILE_SCRATCH` and post it from there,
-never from a bare filename:
+Working files stay out of the repo. Your scratch directory is
+`$AI_AGILE_SCRATCH`, given as an absolute path in your Runtime context below.
+
+**Create working files at that absolute path**, using whichever of these two
+fits -- there is no third option:
+
+- **`Write`** for a body you compose yourself. It needs no shell quoting, so it
+  is the right choice for JSON or any body containing backticks -- a heredoc
+  body with backticks is scanned for command substitution and refused.
+  `Write` reaches every agent through `defaults.extra_allowedTools` in
+  `pipeline.json`, not through each agent's own `tools:` frontmatter.
+- **`cat > "${AI_AGILE_SCRATCH:-/tmp}/name.md" <<EOF`** when the body must interpolate
+  shell variables you hold at runtime (`$SESSION_ID`, `$VERDICT`). Quote the
+  delimiter (`<<'EOF'`) to suppress expansion. Start the command with `cat` --
+  a leading variable assignment matches no allowlist pattern and is denied.
+
+### Posting a comment -- the only supported form
+
+This is the same for every agent, on both issues and PRs. Stage the body by
+either route above, then post it by path:
 
 ```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
-...
-EOF
-gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+gh api --method POST "repos/$REPO/issues/$WORK_ITEM_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
-The orchestrator creates that directory empty before your run and removes it
-after, so **do not create it yourself** -- most agents are not granted `mkdir`,
-and a command that begins with an assignment matches no allowlist pattern. The
-`:-/tmp` fallback covers a hand-run agent; `/tmp` always exists, so an unset
-variable can never resolve to `/`. A bare filename resolves against the repo
-root, where the commit sweep can pick it up.
+A PR is an issue as far as this endpoint is concerned, so `issues/{n}/comments`
+posts to both -- use `$PR_NUMBER` in place of `$WORK_ITEM_NUMBER` when your
+step targets a PR.
+
+Two forms you will see in older prompts. Neither works; do not copy them:
+
+| Form | Why it fails |
+|---|---|
+| `gh pr comment` / `gh pr review` / `gh pr ready` | GraphQL. Returns 403 in a restricted session |
+| `--body "$(cat <<EOF ... EOF)"` | `$(` is command substitution, which scope enforcement refuses outright |
+
+Two rules, and nothing else to remember:
+
+- **Never write to a relative path.** A bare filename resolves against the
+  repository root, not your scratch directory.
+- **Do not create or delete the directory.** The orchestrator creates it empty
+  before your run and removes it after, so it is always there and never holds a
+  previous attempt's files.
 
 ---
 
