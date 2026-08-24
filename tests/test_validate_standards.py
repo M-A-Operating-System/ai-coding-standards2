@@ -119,6 +119,128 @@ class TestCheckSchema:
         }
         assert check_schema(data, schema, "adrs.json") == []
 
+    # Scenario: An ADR can record a decision that overrides no standard
+    def test_an_adr_can_record_a_decision_that_overrides_no_standard(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-001",
+                "title": "Use event sourcing for audit log",
+                "rationale": "Provides tamper-evident history without extra tables.",
+                "context": "Audit requirements demand a full immutable record of changes.",
+                "decision": "Use append-only event log; no in-place updates to audit rows.",
+                "consequences": "Storage grows unbounded; requires periodic archival.",
+                "status": "accepted",
+            }],
+        }
+        assert check_schema(data, schema, "adrs.json") == []
+
+    # Scenario: Override behaviour is unchanged
+    def test_override_behaviour_is_unchanged(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "org",
+            "adrs": [{
+                "id": "ADR-002",
+                "title": "Allow synchronous HTTP in background worker",
+                "authorises_exception_to": ["STD-ARCH-001"],
+                "rationale": "Worker runs in an isolated thread; async adds no benefit.",
+            }],
+        }
+        assert check_schema(data, schema, "adrs.json") == []
+
+    # Scenario: A consuming repo can record its own decisions
+    def test_a_consuming_repo_can_record_its_own_decisions(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-001",
+                "title": "Postgres over MySQL for new services",
+                "rationale": "Team expertise and JSONB support make Postgres the right fit.",
+                "context": "Two database options were evaluated for the new service.",
+                "decision": "All new services use Postgres.",
+                "consequences": "Existing MySQL services remain on MySQL; no migration.",
+            }],
+        }
+        assert check_schema(data, schema, "adrs.json") == []
+
+    # Scenario: The decision is legible, not just asserted
+    def test_the_decision_is_legible_not_just_asserted(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-001",
+                "title": "Store secrets in Vault, not environment variables",
+                "rationale": "Vault provides rotation and audit that env vars cannot.",
+                "context": "Secrets were previously managed via .env files with no rotation.",
+                "decision": "All credentials fetched from Vault at startup; no .env files.",
+                "consequences": "Vault becomes a required dependency; adds startup latency.",
+                "status": "accepted",
+            }],
+        }
+        data_dict = data["adrs"][0]
+        assert "context" in data_dict
+        assert "decision" in data_dict
+        assert "consequences" in data_dict
+        assert check_schema(data, schema, "adrs.json") == []
+
+    def test_supersedes_valid_array_no_errors(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-002",
+                "title": "Consolidate logging approach",
+                "rationale": "Replaces two earlier decisions with one consistent rule.",
+                "supersedes": ["ADR-001"],
+            }],
+        }
+        assert check_schema(data, schema, "adrs.json") == []
+
+    def test_supersedes_invalid_pattern_reports_error(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-002",
+                "title": "t",
+                "rationale": "r",
+                "supersedes": ["ADR-1"],
+            }],
+        }
+        errors = check_schema(data, schema, "adrs.json")
+        assert errors
+
+    def test_superseded_by_valid_no_errors(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-001",
+                "title": "Old logging approach",
+                "rationale": "Superseded by a newer decision.",
+                "superseded_by": "ADR-002",
+            }],
+        }
+        assert check_schema(data, schema, "adrs.json") == []
+
+    def test_superseded_by_invalid_pattern_reports_error(self, schema):
+        data = {
+            "version": "1.0",
+            "scope": "project",
+            "adrs": [{
+                "id": "ADR-001",
+                "title": "t",
+                "rationale": "r",
+                "superseded_by": "ADR-2",
+            }],
+        }
+        errors = check_schema(data, schema, "adrs.json")
+        assert errors
+
 
 # ---------------------------------------------------------------------------
 # check_id_prefix
@@ -344,6 +466,16 @@ class TestCheckAdrs:
         errors = check_adrs(adr_loaded, id_map)
         assert errors
         assert "adr_overridable: false" in errors[0]
+
+    # Scenario: A decision-only ADR does not waive anything (check_adrs accepts it silently)
+    def test_decision_only_adr_passes_check_adrs(self):
+        adr_loaded = [("adrs.json", {
+            "version": "1.0", "scope": "project",
+            "adrs": [{"id": "ADR-001", "title": "Use event sourcing",
+                       "rationale": "Provides immutable audit trail."}],
+        })]
+        errors = check_adrs(adr_loaded, {})
+        assert errors == []
 
 
 # ---------------------------------------------------------------------------
