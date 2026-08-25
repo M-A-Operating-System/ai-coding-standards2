@@ -16,6 +16,7 @@ Current as of 25 August 2026, commit `37e3566` on `main`.
 | Promise | Status | Defects |
 |---|---|---|
 | AS-1 One file tells you what the pipeline does | VIOLATED (allowed commands) | #326, #356, #362 |
+| AS-2 The orchestrator only coordinates | VIOLATED | #308, #387 |
 | MI-1 An issue means the same thing to everyone | PARTIAL, UNTESTED | #380 |
 | MI-2 Same situation, same next step | VIOLATED | #356 |
 | MI-3 An agent can only do what you allowed | VIOLATED | #335, #356, #374, #383, #388 |
@@ -25,7 +26,7 @@ Current as of 25 August 2026, commit `37e3566` on `main`.
 | MI-7 Only a person approves | VIOLATED | #377 |
 | MI-8 Any difference is written down | PARTIAL | -- |
 
-**Seven of nine are broken or unverified, and none has a test.**
+**Eight of ten are broken or unverified, and none has a test.**
 
 That last point is the one to act on first. Until each promise has a test,
 `PRODUCT.md` describes an intention rather than a property, and defects keep
@@ -64,6 +65,39 @@ between sources during resolution.
 The target model in `PRODUCT.md` -- `global_allowed_commands` plus per-step
 `allowed_commands`, both in `pipeline.json` -- is proposed in **#357**, which is
 open and predates the design document.
+
+---
+
+## AS-2 -- The orchestrator only coordinates
+
+**Status:** `VIOLATED`.
+
+`pipeline_orchestrator.py` is 5,475 lines and performs value-add work directly
+rather than delegating it to a step, a pre-action or a post-action:
+
+| Work done in the orchestrator | Should be |
+|---|---|
+| `BASE_AGENT_TOOLS` -- 28 permission entries | Data in `pipeline.json` (AS-1) |
+| Repo-root sweep -- deletes files an agent left behind | A post-action script |
+| Scratch directory setup and teardown | Pre- and post-action scripts |
+| Metrics ledger append | A post-action script |
+| Deciding when to invoke `commit-agent-work.sh` | A declared post-action, run because the step declares it |
+
+Only the last is arguable -- invoking a script is coordination -- but the
+*condition* under which it runs is currently a rule inside the orchestrator
+rather than a declaration in `pipeline.json`, which is how #308 and #387 became
+possible: the rule was wrong, and no reader of the process definition could see
+it.
+
+The self-approval guard is genuinely coordination and belongs where it is.
+
+**Consequence.** Evolving the process currently requires editing the one
+component every step depends on. Several defects in the review window are
+changes to the orchestrator that broke work unrelated to their purpose, which is
+the specific risk AS-2 exists to remove.
+
+**Test to add.** Adding, removing or reordering a step, or changing what a step
+may do, requires no change to `pipeline_orchestrator.py`.
 
 ---
 
@@ -192,17 +226,30 @@ restricted sessions.
 
 ## MI-7 -- Only a person approves
 
-**Status:** `VIOLATED`, two ways.
+**Status:** `VIOLATED`, two ways -- and the first is a design conflict, not a
+coding defect.
 
-The self-approval guard correctly rejects agent-applied gate labels. But the
-interactive driver has no other way to record a decision, so it cannot cross a
-gate at all (**#377**).
+**The guard cannot tell transcription from origination.** It rejects any gate
+label applied by a non-human actor. In headless mode that is correct. In
+interactive mode the chat-AI writing the label on the person's instruction is
+the *supported path*, so the guard rejects the very mechanism the product
+depends on, and the interactive driver cannot cross a gate at all (**#377**).
 
-The guard also **fails open**. When GitHub's timeline has not yet surfaced the
+Both cases look identical where the guard inspects them -- a bot actor on a
+`labeled` event -- so no refinement of actor-checking resolves it. Something
+other than the actor has to carry the fact that a person decided. That is
+unsolved, and it is the substantive question behind #377: not "why is the driver
+rejected" but "how does an approval prove a person made it".
+
+Until it is answered, one of two rules is broken whichever way the guard is set:
+either agents can approve, or interactive mode cannot.
+
+**The guard also fails open.** When GitHub's timeline has not yet surfaced the
 `labeled` event it logs `no 'labeled' event found ... allowing (fail-open)` and
 admits the approval. Timeline reads are eventually consistent, so an
-agent-applied approval passes under lag. Both behaviours were observed on
-25 August, on the same day.
+agent-originated approval passes under lag. This one *is* a straightforward
+defect -- an inconclusive check must refuse -- and is independent of the conflict
+above. Both behaviours were observed on 25 August, on the same day.
 
 ---
 

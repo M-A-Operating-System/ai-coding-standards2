@@ -29,6 +29,13 @@ itself, and the deterministic work that happens after. Only the activity is an
 AI agent. Everything around it is code. Commands every step needs are declared
 once, globally, rather than repeated on each step.
 
+**The orchestrator coordinates and nothing else.** It reads the state, picks the
+next step, runs it, and records what happened. Every piece of work that produces
+or changes anything is a step, a pre-action or a post-action -- all of them
+scripts or agents. No value-add work lives in the orchestrator. Changing the
+process means changing `pipeline.json` and the scripts it names; it should not
+mean changing the orchestrator.
+
 **One file defines the process.** `pipeline.json` says which steps exist, what
 starts each one, what must finish first, and what each is permitted to do.
 Nothing behaves in a way that file does not describe, and nothing else defines
@@ -53,6 +60,13 @@ because a silent workaround is an unrecorded change to the process.
 **Only a person approves.** Named gates require a human decision, recorded the
 same way every time. The system cannot approve itself, and an approval check
 that cannot reach a conclusion refuses rather than admits.
+
+**People speak to the pipeline through GitHub, or through the chat.** In
+headless mode the issue is the only channel: you add labels and write comments,
+and that is the whole of the interface. In interactive mode you can also talk to
+the chat-AI in your own words, and it writes the labels and comments for you.
+The record is identical either way -- the difference is whether you write it
+yourself or dictate it.
 
 **Nothing gets stuck.** Every state the work can reach has a way forward that
 someone can actually perform. A halt is a pause, never a loss.
@@ -110,9 +124,10 @@ the pipeline grows.
 
 This is where the design contains its own uncertainty. Permission is decided
 before the activity runs and cannot be widened by it. The setup and the
-consequences are performed by the orchestrator, not requested by the agent. What
-the agent actually influences is the work product and one status value -- and
-nothing else in the system depends on the agent having behaved reasonably.
+consequences run as pre- and post-actions on either side of the agent, on the
+orchestrator's schedule rather than at the agent's request. What the agent
+actually influences is the work product and one status value -- and nothing else
+in the system depends on the agent having behaved reasonably.
 
 ---
 
@@ -201,7 +216,7 @@ indistinguishable from one that succeeded.
 
 ## The promises
 
-Nine promises. Each states what it means for you, why it matters, and how it is
+Ten promises. Each states what it means for you, why it matters, and how it is
 tested. Whether the implementation currently keeps each one is recorded in
 [`gap_analysis.md`](gap_analysis.md).
 
@@ -232,6 +247,38 @@ line in an agent's frontmatter, a grant in a settings file.
 **Test.** The resolved command set for every step is derivable from
 `pipeline.json` alone. Any permission that cannot be traced to it is a test
 failure. The same for triggers and dependencies.
+
+---
+
+### AS-2 -- The orchestrator only coordinates
+
+> **Changing how the process works means changing configuration and scripts,
+> not the orchestrator. Nothing that produces or changes an artefact lives
+> inside it.**
+
+The orchestrator's job is to read the state, select the one step whose
+conditions are met, run it, and record the outcome. That is coordination. Every
+other kind of work -- writing a file, committing, cleaning up, posting a
+record, computing a number -- is value-add work, and belongs in a step, a
+pre-action or a post-action, all of which are scripts or agents.
+
+This is what keeps the process malleable. When value-add work accumulates inside
+the coordinator, evolving the process starts requiring changes to the one
+component every step depends on -- so each change carries the risk of breaking
+work unrelated to it, and the pipeline becomes expensive to change in exactly
+the way a pipeline should be cheap to change.
+
+It also keeps AS-1 honest. Work embedded in the orchestrator is work that
+`pipeline.json` does not describe, so a reader of the process definition would
+not know it happens.
+
+**Precisely.** The orchestrator performs only: reading state, selecting the next
+step, claiming and releasing the mutex, invoking the step, and recording the
+outcome as a label and an audit entry. Everything else is a script or an agent
+named in `pipeline.json`.
+
+**Test.** Adding a step, removing a step, reordering steps, or changing what a
+step may do requires no change to `pipeline_orchestrator.py`.
 
 ---
 
@@ -359,12 +406,27 @@ enforced differently in one mode is a gate not enforced, and a guard that admits
 an approval when its check is inconclusive is a guard that fails at exactly the
 moment it is needed.
 
-**Precisely.** A gate requires a human decision recorded through the same
-mechanism in both modes. Neither may self-approve, and neither may record
-approval in a way the other cannot read. An inconclusive check refuses the gate.
+**Precisely.** Three things are separate and must stay separate:
 
-**Test.** A gate label applied by a non-human actor is rejected in both modes;
-one applied by a human is honoured in both; an unresolvable actor check refuses.
+| | Requirement |
+|---|---|
+| **The decision** | Always a person's, in both modes. Nothing else may originate it |
+| **The record** | Always the same gate label, in both modes, readable by either |
+| **The hand that writes it** | The person in headless mode; the chat-AI, on the person's instruction, in interactive mode |
+
+The third line is why "no bot may apply a gate label" is the wrong rule. In
+interactive mode the chat-AI writing the label **is** the supported path -- it
+is transcribing a decision, not making one. The rule that must hold is narrower
+and harder: **an agent may never originate an approval, and the system must be
+able to tell transcription from origination.**
+
+Both look identical at the point of writing -- a non-human actor applying a
+label -- so the distinction has to be carried by something other than the actor.
+An inconclusive check refuses.
+
+**Test.** A gate label originated by an agent is rejected in both modes. A gate
+label carrying a human decision is honoured in both, whether the person or the
+chat-AI wrote it. An unresolvable check refuses rather than admits.
 
 ---
 
@@ -399,8 +461,33 @@ approvals as they arrive. This is how work gets unblocked, debugged, and pushed
 when someone is at the keyboard.
 
 You must be able to start an issue in one mode, walk away, and have the other
-finish it, with no difference in the result. That is what the nine promises
+finish it, with no difference in the result. That is what the ten promises
 above are for.
+
+### How people interact with it
+
+**In headless mode, GitHub is the only channel.** You add labels and write
+comments on the issue. There is nobody to talk to and nothing else to use. Every
+instruction you can give the pipeline is expressible as a label or a comment,
+because that is the entire interface.
+
+**In interactive mode you can also talk to the chat-AI**, in your own words --
+feedback, corrections, instructions, questions. The chat-AI then writes the
+labels and comments that carry your intent to the pipeline. You are not bypassing
+GitHub; you are dictating to something that writes GitHub for you.
+
+Two consequences follow, and both matter.
+
+The **record is identical**. Whatever you say in the chat ends up on the issue as
+a label or a comment, so an issue driven interactively is indistinguishable, as
+a record, from one driven headlessly. Nothing that influenced the work exists
+only in a chat transcript.
+
+The **chat-AI is a scribe, not a decision-maker**. When it applies a gate label
+it is transcribing a decision you made, and it may never originate one. That
+distinction is the whole of MI-7, and it is the reason a blanket "no bot may
+apply a gate label" rule is wrong: it would forbid the supported interactive
+path along with the thing it means to prevent.
 
 ---
 
@@ -414,6 +501,8 @@ The complete list. Anything not here is a defect.
 | Where you watch it | Issue and pull-request activity | The same, plus live agent output | What you see is not what happened; the trail is identical |
 | Which credentials are used | Repository secrets | The session's own login | The environments genuinely differ; the *authority* those credentials carry must not |
 | How long an approval waits | Until someone next looks | Immediately | A person being present is the difference |
+| How you address the pipeline | Labels and comments on the issue | The same, or in your own words to the chat-AI, which writes them for you | Only the channel differs; what lands on the issue is identical |
+| Who writes the label | The person | The person, or the chat-AI transcribing them | The decision is the person's either way (MI-7) |
 
 Everything else is governed by the promises above and must be identical.
 
@@ -435,7 +524,7 @@ Two things are often mistaken for legitimate differences and are not:
 | Core requirements | this document | draft |
 | The state machine and activity shape | this document | draft |
 | How it uses agents, and the agent contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
-| The promises (AS-1, MI-1 to MI-8) | this document | draft |
+| The promises (AS-1, AS-2, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | `01-vision.md` | not yet superseded |
