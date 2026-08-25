@@ -67,7 +67,10 @@ because a silent workaround is an unrecorded change to the process.
 
 **Only a person approves.** Named gates require a human decision, recorded the
 same way every time. The system cannot approve itself, and an approval check
-that cannot reach a conclusion refuses rather than admits.
+that cannot reach a conclusion refuses rather than admits. Rather than trying to
+detect an agent approving itself, the design makes it unreachable: in headless
+mode only a person can cross a gate, and in interactive mode only the
+orchestrator records one -- and an agent can reach neither.
 
 **People speak to the pipeline through GitHub, or through the chat.** In
 headless mode the issue is the only channel: you add labels and write comments,
@@ -485,27 +488,51 @@ enforced differently in one mode is a gate not enforced, and a guard that admits
 an approval when its check is inconclusive is a guard that fails at exactly the
 moment it is needed.
 
-**Precisely.** Three things are separate and must stay separate:
+**Precisely.** Two things are separate and must stay separate:
 
 | | Requirement |
 |---|---|
 | **The decision** | Always a person's, in both modes. Nothing else may originate it |
 | **The record** | Always the same gate label, in both modes, readable by either |
-| **The hand that writes it** | The person in headless mode; the chat-AI, on the person's instruction, in interactive mode |
 
-The third line is why "no bot may apply a gate label" is the wrong rule. In
-interactive mode the chat-AI writing the label **is** the supported path -- it
-is transcribing a decision, not making one. The rule that must hold is narrower
-and harder: **an agent may never originate an approval, and the system must be
-able to tell transcription from origination.**
+The obvious rule -- "no bot may apply a gate label" -- does not work. In
+interactive mode the chat-AI writing the label on the person's instruction is
+the supported path: it is transcribing a decision, not making one. But
+transcription and origination look identical at the point of writing, both being
+a non-human actor applying a label, so no amount of actor-checking separates
+them.
 
-Both look identical at the point of writing -- a non-human actor applying a
-label -- so the distinction has to be carried by something other than the actor.
-An inconclusive check refuses.
+**So the design does not try to detect origination. It makes origination
+unreachable.**
 
-**Test.** A gate label originated by an agent is rejected in both modes. A gate
-label carrying a human decision is honoured in both, whether the person or the
-chat-AI wrote it. An unresolvable check refuses rather than admits.
+The orchestrator is the only component that is neither an agent nor a
+credential-holder, and it knows first-hand how it was invoked. That fact cannot
+be forged: an agent's entire output surface is one status value from a fixed
+set, so there is no message an agent can send that means "approve this", and
+nothing downstream sets the mode.
+
+That gives a rule with no ambiguity to resolve:
+
+| Mode | How a gate can be crossed |
+|---|---|
+| **Headless** | Only by a label a **person** applied, asynchronously, from their own account. The pipeline itself can never cross a gate, because no human is present during the tick to have decided anything |
+| **Interactive** | The **orchestrator** records the approval, having been told by the driver that the person confirmed. The driver never writes the gate label itself |
+
+The requirement is identical in both -- a person decided. What differs is the
+evidence available to show it, which is a legitimate difference under MI-8 and
+is listed as one.
+
+**This depends on one assumption, which must be asserted rather than trusted:**
+that a non-headless invocation genuinely has a person present. That is true by
+construction today, because the interactive path exists only inside a chat
+session. If anything ever invokes the orchestrator non-headlessly without a
+human, this guarantee disappears silently -- so the orchestrator must refuse to
+record an approval when it cannot establish that a person is there.
+
+**Test.** In headless mode, a gate label applied by any non-human actor is
+rejected. In interactive mode, an approval recorded by the orchestrator on a
+relayed human confirmation is honoured. No agent can cause either, in either
+mode. An inconclusive check refuses rather than admits.
 
 ---
 
@@ -581,7 +608,7 @@ The complete list. Anything not here is a defect.
 | Which credentials are used | Repository secrets | The session's own login | The environments genuinely differ; the *authority* those credentials carry must not |
 | How long an approval waits | Until someone next looks | Immediately | A person being present is the difference |
 | How you address the pipeline | Labels and comments on the issue | The same, or in your own words to the chat-AI, which writes them for you | Only the channel differs; what lands on the issue is identical |
-| Who writes the label | The person | The person, or the chat-AI transcribing them | The decision is the person's either way (MI-7) |
+| Who writes a gate label | Only the person, from their own account | The orchestrator, on a confirmation the driver relays | The decision is the person's either way; only the evidence available to show it differs (MI-7) |
 
 Everything else is governed by the promises above and must be identical.
 

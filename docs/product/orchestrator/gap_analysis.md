@@ -268,13 +268,31 @@ the *supported path*, so the guard rejects the very mechanism the product
 depends on, and the interactive driver cannot cross a gate at all (**#377**).
 
 Both cases look identical where the guard inspects them -- a bot actor on a
-`labeled` event -- so no refinement of actor-checking resolves it. Something
-other than the actor has to carry the fact that a person decided. That is
-unsolved, and it is the substantive question behind #377: not "why is the driver
-rejected" but "how does an approval prove a person made it".
+`labeled` event -- so no refinement of actor-checking resolves it. Whichever way
+the guard is set today, one of two rules is broken: either agents can approve,
+or interactive mode cannot.
 
-Until it is answered, one of two rules is broken whichever way the guard is set:
-either agents can approve, or interactive mode cannot.
+**The design now answers this** (MI-7): stop trying to detect origination and
+make it unreachable instead. In headless mode only a person can cross a gate,
+because no human is present during the tick. In interactive mode the
+orchestrator records the approval on a confirmation the driver relays, and never
+the driver itself. An agent can reach neither path -- its whole output surface is
+one status value from a fixed set.
+
+Nothing of this is implemented. What it needs:
+
+| Change | Where |
+|---|---|
+| The driver stops applying gate labels | `maos-run.md` step 4c, which currently instructs it to |
+| The orchestrator gains a way to be told "the person confirmed" | New; no such channel exists |
+| The orchestrator refuses to record an approval when it cannot establish a person is present | New; the assumption is currently implicit |
+| The guard's rule becomes mode-dependent | Currently one rule for both modes |
+
+The assumption to assert rather than trust: a non-headless invocation genuinely
+has a person present. True by construction today -- the interactive path exists
+only inside a chat session -- but nothing enforces it, and if anything ever
+invokes the orchestrator non-headlessly without a human the guarantee
+disappears silently.
 
 **The guard also fails open.** When GitHub's timeline has not yet surfaced the
 `labeled` event it logs `no 'labeled' event found ... allowing (fail-open)` and
