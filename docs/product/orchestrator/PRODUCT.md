@@ -1,6 +1,6 @@
 # The Orchestrator Product
 
-The single description of what the orchestrator is and what it guarantees.
+The single description of what the orchestrator is and what it promises.
 
 This document is being authored from first principles as the target design
 (issue #393). It supersedes the numbered documents `01-vision.md` through
@@ -8,42 +8,64 @@ This document is being authored from first principles as the target design
 exists here, the numbered document remains authoritative for that topic. The
 [status table](#status-of-this-document) records which is which.
 
-Every guarantee in this document states how it is tested and whether the
-implementation conforms today. A guarantee with no test is not a guarantee, and
-is marked as such.
+Every promise below states how it is tested and whether the system keeps it
+today. A promise with no test is not a promise, and is marked as such.
 
 ---
 
 ## Contents
 
 - [What the orchestrator is](#what-the-orchestrator-is)
-- [Authoritative sources](#authoritative-sources) -- AS-1
-- [The two operating modes](#the-two-operating-modes)
-- [Mode invariants](#mode-invariants) -- MI-1 to MI-8
-- [Legitimate differences](#legitimate-differences)
-- [Conformance summary](#conformance-summary)
+- [The promises](#the-promises)
+- [Working two ways](#working-two-ways)
+- [What is allowed to differ](#what-is-allowed-to-differ)
+- [Which promises we keep today](#which-promises-we-keep-today)
 - [Status of this document](#status-of-this-document)
 
 ---
 
 ## What the orchestrator is
 
-A deterministic process that advances GitHub issues through a defined sequence
-of steps. Each step invokes an AI agent or a script, records what happened on
-the issue, and moves the issue to its next state. Humans decide at named gates;
-the orchestrator never decides on their behalf.
+You describe a piece of work as a GitHub issue. The orchestrator walks it
+through the steps that turn an issue into shipped code -- writing the
+requirements, drafting the design, building it, reviewing it -- using an AI
+agent for each step. You approve at named points along the way.
 
-State lives in GitHub labels. There is no database, no queue, and no state file:
-the labels on an issue *are* its position in the pipeline, and any orchestrator
-process reading them reaches the same conclusion about what runs next.
+Everything it does is recorded on the issue itself. The labels on an issue tell
+you exactly where it has got to. There is no separate dashboard, no database,
+and no hidden state: if you can read the issue, you know the position.
+
+It runs two ways. **Overnight**, unattended, moving work forward while nobody is
+watching. Or **live**, in a session at your keyboard, where you drive it one step
+at a time and answer approvals immediately. Both are the same product.
 
 ---
 
-## Authoritative sources
+## The promises
 
-### AS-1 -- `pipeline.json` defines the process
+Nine promises. Each is written first as what it means for you, then as the
+precise property an engineer can test.
 
-**Statement.** `pipeline.json` is the authoritative definition of four things,
+They exist because most of what has gone wrong with this system has been a
+promise nobody had written down. Of the 27 defects filed between 15 and 25
+August 2026, **11 were the two ways of running behaving differently** -- more
+than any other cause. Nothing said they had to match, so nothing noticed when
+they stopped.
+
+---
+
+### AS-1 -- One file tells you what the pipeline does
+
+> **You can read one file and know what will happen: which steps run, in what
+> order, what has to finish first, and what each step is allowed to touch.
+> Nothing behaves in a way that file does not describe.**
+
+**Without it,** the real behaviour lives partly in a config file and partly
+somewhere else, so the honest answer to "what will this do?" becomes "read the
+code and find out". Worse, when two places disagree about what a step may touch,
+a permission you thought you had removed is still in force somewhere.
+
+**Precisely.** `pipeline.json` is the authoritative definition of four concerns
 and nothing else defines any of them:
 
 | Concern | What it covers |
@@ -53,320 +75,290 @@ and nothing else defines any of them:
 | **Dependencies** | What must have completed before a step is eligible |
 | **Entitled activities** | What each step is permitted to do -- tools, commands, environment |
 
-**Why.** This is P-2 ("one machine-readable source per concern") applied to the
-pipeline itself. A second definition of any of these does not supplement the
-first, it competes with it: the two drift, and the drift is invisible until a
-specific step behaves in a way neither source predicts.
+This is P-2 ("one machine-readable source per concern") applied to the pipeline
+itself.
 
-Entitlement is the concern where this matters most, because an entitlement
-defined in two places is a security property that holds in one reading and not
-the other. It is also the concern where a second source is easiest to add
-without noticing -- a constant in the orchestrator, a line in an agent's
-frontmatter, a grant in a settings file -- each individually reasonable.
+**Test.** The resolved entitlement set for every step is derivable from
+`pipeline.json` alone. Any entitlement that cannot be traced to it is a test
+failure. The same for triggers and dependencies.
 
-**Test.** Assert that the resolved entitlement set for every step is derivable
-from `pipeline.json` alone. Any entitlement that cannot be traced to it is a
-test failure. The same for triggers and dependencies.
-
-**Conformance:** `VIOLATED` for entitlements; `CONFORMS` for process, sequence
-and dependencies.
-
-Entitlements currently come from four sources:
+**Today:** `VIOLATED` for entitlements; `KEPT` for process, sequence and
+dependencies. Entitlements come from four places:
 
 | Source | Size | Kind |
 |---|---|---|
 | `BASE_AGENT_TOOLS`, `pipeline_orchestrator.py:2712` | 28 entries | Python constant |
 | Agent frontmatter `tools:` | 14 agent files | Prompt metadata |
-| `pipeline.json` `defaults.extra_allowedTools` + per-step | 2 + 8 steps | Configuration |
+| `pipeline.json` defaults + per-step | 2 + 8 steps | Configuration |
 | `.claude/settings.json` `permissions.allow` | 1 entry | Session config |
 
-The largest block is a hardcoded constant, not configuration. Three defects
-trace directly to this split: **#326** was a defect *in* `BASE_AGENT_TOOLS`
-(patterns failed to match quoted URLs, blocking agents outright in headless
-mode); **#362** is a defect in the `settings.json` path (the grant is silently
-dropped when the workspace is untrusted); **#356** was drift between sources
-during resolution (24 tools returned where 93 are passed).
-
-**Relationship to MI-3.** These are two halves of one property and both are
-required. AS-1 says entitlement is **defined** in one place. MI-3 says it is
-**enforced** by one mechanism. Satisfying AS-1 alone still permits two enforcers
-reading the same definition and disagreeing; satisfying MI-3 alone still permits
-one enforcer reading four definitions.
-
-**Existing work.** #357 already proposes exactly this ("pipeline.json should be
-the authoritative source for allowed env vars and commands, globally and per
-step"). It is open and predates this document.
+The largest block is hardcoded, not configured. Three defects trace to the
+split: **#326** was a defect in `BASE_AGENT_TOOLS` itself, **#362** is a defect
+in the `settings.json` path, **#356** was drift between sources during
+resolution. #357 already proposes this fix and predates this document.
 
 ---
 
-## The two operating modes
+### MI-1 -- An issue means the same thing to everyone
 
-The orchestrator runs in two modes, and both exist for good reasons.
+> **The labels on an issue tell you where the work has got to, and they mean
+> the same thing whether a person or the scheduler put them there.**
 
-**Scheduled (headless).** GitHub Actions triggers the orchestrator on issue and
-pull-request events, or on a timer. Nobody is watching. Work progresses while
-the team sleeps, and gates wait for whoever next looks at the issue. This is the
-primary mode.
+**Without it,** you cannot trust what you are looking at. The same label on two
+issues means two different things depending on history you cannot see.
 
-**In-session (interactive).** A person runs `/maos-run {N}` inside a Claude Code
-session and drives one issue forward step by step, watching each agent work and
-answering gates immediately. This is how work gets unblocked, debugged, and
-pushed when someone is at the keyboard.
+**Precisely.** No label is specific to one way of running, and no step
+interprets a label differently depending on which actor applied it.
 
-Both modes are the same product. A person must be able to start an issue in one
-mode, walk away, and have the other finish it, with no observable difference in
-the result.
+**Test.** Every label in `statuses.json` has exactly one documented meaning, and
+no step's behaviour branches on who applied it.
 
----
-
-## Mode invariants
-
-These are the properties that must hold **identically** in both modes. They are
-not aspirational: an unlisted difference between modes is a defect, and each
-invariant below states how to test it.
-
-They exist because mode divergence is the single largest source of defects in
-this system. Of the 27 defects filed between 15 and 25 August 2026, **11 are
-mode divergence** -- more than any other cause. The duplicated tool-scope
-enforcement layer alone produced five of them, including the only one
-classified `[SECURITY]`.
-
-There was no invariant list when in-session mode was built, so nothing existed
-to check it against.
+**Today:** `PARTIAL, UNTESTED`. Labels are shared and none is mode-specific, but
+nothing enforces it, and #380 shows a case where meaning depends on step
+configuration rather than on the label: `:review` means "waiting for a named
+approval" for most steps and "stuck with no way out" for a step that names no
+approval.
 
 ---
 
-### MI-1 -- One state, one meaning
+### MI-2 -- The same situation always produces the same next step
 
-**Statement.** The labels on an issue mean exactly the same thing regardless of
-which mode wrote them. No label is mode-specific, and no label is interpreted
-differently depending on who applied it.
+> **Two people looking at the same issue get the same answer about what happens
+> next. So does the scheduler.**
 
-**Why.** State is the only thing shared between modes. If a label's meaning
-depends on its origin, the two modes are not operating on the same machine and
-an issue cannot be handed between them.
+**Without it,** the pipeline is unpredictable in the way that matters most: you
+cannot tell someone what will happen when they approve something.
 
-**Test.** For every label in `statuses.json`, assert exactly one documented
-meaning, and assert no step's behaviour branches on which mode applied it.
-
-**Conformance:** `PARTIAL, UNTESTED`. Labels are shared and no mode-specific
-label exists. But no test enforces this, and #380 shows a case where a label's
-practical meaning depends on step configuration rather than on the label:
-`:review` means "awaiting a named gate" for most steps and "halted with no exit"
-for a step that declares no `human_gate_label`.
-
----
-
-### MI-2 -- One routing decision
-
-**Statement.** Given identical state, both modes select the same next step.
-Routing is computed in exactly one place. A driver may read the pipeline
-definition to explain what will happen, but never to decide it.
-
-**Why.** Two implementations of routing drift, and the drift is invisible until
-they disagree on a specific issue.
+**Precisely.** Given identical state, both ways of running select the same next
+step. Routing is computed in exactly one place. A driver may read the pipeline
+definition to explain what will happen, never to decide it.
 
 **Test.** Run the resolver and the real dispatch path over the same issue state
-and assert identical selection, for every step in `pipeline.json`.
+and assert identical selection, for every step.
 
-**Conformance:** `VIOLATED`. `/maos-run` correctly delegates routing to the
-orchestrator, but `/run-agent` resolves invocation parameters through a separate
-`--print-prompt` path. #356 is exactly this drift realised: resolve-only mode
-returned 24 tools where the real spawn passes 93. It was fixed, but the
-duplicated path remains and nothing tests the two against each other.
+**Today:** `VIOLATED`. `/maos-run` correctly leaves routing to the orchestrator,
+but `/run-agent` resolves invocation parameters through a separate path. #356 is
+that drift realised -- it returned 24 tools where the real run passes 93. It was
+fixed; the duplicated path remains and nothing tests the two against each other.
 
 ---
 
-### MI-3 -- One authority mechanism
+### MI-3 -- An agent can only ever do what you allowed
 
-**Statement.** Whatever constrains what an agent may do is the **same
-mechanism** in both modes, not an equivalent one. No mode re-implements another
+> **The limits on what an agent can touch are the same limits however the work
+> was started. There is no looser path.**
+
+**Without it,** a restriction you rely on holds when the scheduler runs the work
+and quietly does not when you run it yourself. You would have no way to tell
+from the outside.
+
+**Precisely.** Whatever constrains an agent's actions is the **same mechanism**
+in both ways of running, not an equivalent one. No mode re-implements another
 mode's enforcement.
 
-**Why.** This is the most expensive invariant in the list. A re-implementation
-must be kept in step with the original forever, and it will not be. Every
-divergence is a security property that holds in one mode and not the other,
-silently.
+**Test.** Exactly one component decides whether an action is permitted, and both
+ways of running route through it. A second implementation is a test failure, not
+a design choice.
 
-**Test.** Assert that exactly one component decides whether a tool call is
-permitted, and that both modes route through it. A second implementation is a
-test failure, not a design choice.
+**Today:** `VIOLATED`, and this is the expensive one. Running overnight uses the
+platform's own enforcement when it starts an agent. Running live cannot, because
+`/run-agent` executes agent instructions inside the caller's own session -- so it
+re-implements enforcement in shell script: an allowlist written to a file, a
+hook on every action, and a command parser. `run-agent.md` says as much in its
+own words.
 
-**Conformance:** `VIOLATED`. Headless mode uses Claude Code's native
-`--allowedTools` when it spawns an agent subprocess. In-session mode cannot,
-because `/run-agent` executes agent instructions inside the caller's session, so
-it re-implements enforcement in bash: a resolved allowlist written to a scope
-file, a `PreToolUse` hook, and a shell-command splitter. `run-agent.md` says so
-in its own words -- the hook applies *"the same restriction the real
-orchestrator applies via `--allowedTools`"*.
+That re-implementation has produced five defects: **#335** (blocked everything),
+**#356** (dropped permissions), **#374** (two live runs overwrote each other's
+limits -- `[SECURITY]`), **#383** (refuses 31% of all agent instructions),
+**#388** (the limits may never load at all).
 
-That emulation has produced five defects: #335 (denied every call), #356
-(dropped grants), #374 (concurrent runs clobbered each other -- `[SECURITY]`),
-#383 (refuses 31% of all agent shell blocks), #388 (the key may never match, so
-enforcement may be inert entirely).
+**The cheapest way to keep this promise is deletion, not repair.** If the live
+path started agents the same way the overnight path does, the platform's own
+enforcement would apply and the whole re-implementation could be removed. What
+would be lost is watching the agent work in your session. That trade-off has not
+been evaluated; it is the central question for #393.
 
-**The cheapest route to conformance is deletion, not repair**: if `/run-agent`
-spawns a subprocess as the orchestrator already does, native enforcement applies
-and the hook, splitter, scope file and resolve-only grant plumbing can be
-removed. What is lost is in-session visibility of the agent's work. That
-trade-off has not yet been evaluated; it is a question for #393.
+**Note.** AS-1 and MI-3 are two halves of one property. AS-1 says permissions are
+*written down* in one place. MI-3 says they are *enforced* by one mechanism.
+Either alone still leaves room for disagreement.
 
 ---
 
-### MI-4 -- Every halt has an exit in both modes
+### MI-4 -- Nothing gets stuck with no way out
 
-**Statement.** Any state a run can enter must have a documented exit that is
-performable in both modes. A state reachable in one mode and escapable only in
-the other is a defect.
+> **Every state the work can reach has a way forward that you can actually
+> perform -- at your desk or overnight.**
 
-**Why.** A halt with no exit is not a pause, it is a loss. Recovering from one
-requires editing state out of band, which is exactly the un-auditable
-intervention the label model exists to prevent.
+**Without it,** work silently parks somewhere with no exit, and recovering it
+means someone editing state by hand outside the system, which nobody sees and
+nothing records.
 
-**Test.** For every terminal and halt status, assert a documented exit action,
-and assert that action is performable by both an unattended runner and an
-in-session driver.
+**Precisely.** Any state a run can enter has a documented exit performable in
+both ways of running. A state reachable one way and escapable only the other is
+a defect.
 
-**Conformance:** `VIOLATED`, three ways.
+**Test.** Every halt status has a documented exit action, and that action is
+performable both unattended and in-session.
 
-- **#380** -- a step emitting `:review` without declaring a `human_gate_label`
-  strands the issue: no label exists that clears it. Recovery required deleting
-  a label out of band, twice, on 25 August.
-- **#377** -- `/maos-run` is documented to apply the `{agent}:approved` gate
-  label itself, but the self-approval guard rejects any gate label applied by a
-  bot. The documented procedure cannot work in-session.
-- **#314** -- `.pipeline-stop` has no defined interactive behaviour and no
-  staleness alerting.
+**Today:** `VIOLATED`, three ways. **#380** -- a step can stop and wait for an
+approval it never named, so no approval exists to give; recovery meant deleting
+a label by hand, twice, on 25 August. **#377** -- the live driver is documented
+to record its own approval, but the self-approval guard rejects it, so the
+documented procedure cannot work. **#314** -- the emergency stop has no defined
+behaviour for live runs.
 
 ---
 
-### MI-5 -- One set of effects, in one order
+### MI-5 -- The result does not depend on who was watching
 
-**Statement.** The side effects of a step -- labels applied, comments posted,
-commits made, artefacts written -- are identical in both modes and occur in the
-same order. A mode may differ in **who triggers** a step. It may never differ in
-**what the step does**.
+> **A step does the same thing whether you watched it or not. The trail on the
+> issue records the work, not who was present.**
 
-**Why.** If effects vary by mode, the artefact trail is not a record of what
-happened; it is a record of who happened to be watching.
+**Without it,** the artefact trail stops being evidence. You cannot compare two
+issues, because they were produced under different conditions.
 
-**Test.** Run the same step in both modes against equivalent state and diff the
-resulting issue timeline -- labels, comments and commits -- ignoring
-timestamps and actor.
+**Precisely.** The side effects of a step -- labels, comments, commits,
+artefacts -- are identical in both ways of running and occur in the same order.
+A mode may differ in **who triggers** a step, never in **what the step does**.
 
-**Conformance:** `UNTESTED`. No known violation, and no test. This invariant is
-listed because its absence would be invisible until it mattered: nothing today
-would detect a step that behaves differently under a runner than under a driver.
+**Test.** Run the same step both ways against equivalent state and diff the
+resulting issue timeline, ignoring timestamps and actor.
 
----
-
-### MI-6 -- Observability does not vary by mode
-
-**Statement.** Every control reports whether it engaged and what it decided, in
-both modes, in the same form. No control is silent in one mode and loud in the
-other, and no control is silent in both.
-
-**Why.** This is the invariant whose absence caused the most damage. When a
-control fails by reporting success, every downstream signal -- green CI, a clean
-review, a `:complete` label -- becomes evidence of nothing.
-
-**Test.** For every control, assert it emits a decision line on both the engaged
-and the skipped path, and assert the two modes produce the same line.
-
-**Conformance:** `VIOLATED`, and this is the widest failure in the list. Nine of
-the 27 defects in the review window report success while doing nothing: #308,
-#315, #343, #346, #358, #362, #378, #387, #388. Several are additionally
-mode-specific: #346 false-negatives only in an interactive session, #326 blocked
-agents only in headless mode, #334 failed only in restricted sessions.
+**Today:** `UNTESTED`. No known violation and no test. Listed because its
+absence would be invisible until it mattered.
 
 ---
 
-### MI-7 -- Human authority does not vary by mode
+### MI-6 -- You can always tell what actually happened
 
-**Statement.** A gate requires a human decision in both modes, recorded through
-the same mechanism. Neither mode may self-approve, and neither may record
-approval in a way the other cannot read.
+> **Every check says whether it ran and what it decided. Nothing reports
+> success while doing nothing.**
 
-**Why.** P-10 -- agents draft, humans decide -- is a load-bearing commitment. A
-mode in which it is enforced differently is a mode in which it is not enforced.
+**Without it,** a green tick means nothing. This is the promise whose absence
+has cost the most: when a control fails by claiming success, every signal
+downstream of it -- passing tests, a clean review, a completed step -- is
+evidence of nothing at all.
 
-**Test.** Assert that a gate label applied by a non-human actor is rejected in
-both modes, and that a gate label applied by a human is honoured in both.
+**Precisely.** Every control reports whether it engaged and what it decided, in
+both ways of running, in the same form. No control is silent one way and loud
+the other, and none is silent in both.
 
-**Conformance:** `VIOLATED`. The self-approval guard correctly rejects bot-applied
-gate labels -- but in-session mode has no other way to record a decision, so a
-driver cannot cross a gate at all (#377). The guard is also **fail-open**: when
-the timeline API has not yet surfaced the `labeled` event, it logs
-`no 'labeled' event found ... allowing (fail-open)` and admits the gate. Timeline
-reads are eventually consistent, so a bot-applied gate passes under lag. Both
-were observed on 25 August.
+**Test.** Every control emits a decision line on both the engaged and the
+skipped path, and the two ways of running produce the same line.
 
----
-
-### MI-8 -- Differences are enumerated and justified
-
-**Statement.** Anything that legitimately differs between modes is listed in
-[Legitimate differences](#legitimate-differences) with a reason. A difference
-that is not listed is a defect, not a feature.
-
-**Why.** Without this, divergence accumulates as a series of individually
-reasonable accommodations, each invisible, until the modes are different
-products. That is what happened.
-
-**Test.** Assert that every mode-conditional branch in the orchestrator, the
-scripts and the agent prompts maps to a listed difference.
-
-**Conformance:** `PARTIAL`. `17-operating-modes.md` documents differences, but as
-a comparison table plus a list of *current limitations* -- things that happen to
-be true today, not differences argued to be permanent. Nothing distinguishes an
-intended difference from an unrepaired defect, and no test maps code branches to
-either.
+**Today:** `VIOLATED`, and this is the widest failure. Nine of the 27 defects
+report success while doing nothing: #308, #315, #343, #346, #358, #362, #378,
+#387, #388. Several are additionally one-sided -- #346 misreports only live,
+#326 blocked agents only overnight, #334 failed only in restricted sessions.
 
 ---
 
-## Legitimate differences
+### MI-7 -- Only a person approves
 
-The complete list of what may differ between modes. Anything not here is a
-defect.
+> **An approval needs a human decision, recorded the same way every time. The
+> system cannot approve itself, and cannot be tricked into it by timing.**
 
-| Difference | Scheduled | In-session | Why this is legitimate |
+**Without it,** the approval gates are decoration. The whole basis of the
+product is that people decide and agents draft.
+
+**Precisely.** A gate requires a human decision recorded through the same
+mechanism in both ways of running. Neither may self-approve, and neither may
+record approval in a way the other cannot read.
+
+**Test.** A gate label applied by a non-human actor is rejected both ways; one
+applied by a human is honoured both ways.
+
+**Today:** `VIOLATED`, twice over. The guard correctly rejects agent-applied
+approvals -- but the live driver has no other way to record a decision, so it
+cannot cross a gate at all (#377). And the guard **fails open**: when GitHub's
+timeline has not yet caught up, it logs `no 'labeled' event found ... allowing
+(fail-open)` and lets the approval through. Timeline reads are eventually
+consistent, so an agent-applied approval passes under lag. Both were observed on
+25 August.
+
+---
+
+### MI-8 -- Any difference is written down
+
+> **There is a short list of things that differ between running overnight and
+> running live. Anything not on that list is a bug.**
+
+**Without it,** the two ways drift apart one reasonable accommodation at a time,
+each invisible, until they are different products. That is what happened here.
+
+**Precisely.** Anything that legitimately differs is listed in
+[What is allowed to differ](#what-is-allowed-to-differ) with a reason. An
+unlisted difference is a defect, not a feature.
+
+**Test.** Every mode-conditional branch in the orchestrator, the scripts and the
+agent prompts maps to a listed difference.
+
+**Today:** `PARTIAL`. `17-operating-modes.md` lists differences, but as things
+that happen to be true today rather than differences argued to be permanent.
+Nothing distinguishes an intended difference from an unrepaired defect.
+
+---
+
+## Working two ways
+
+**Overnight.** GitHub Actions starts the orchestrator when an issue or pull
+request changes, or on a timer. Nobody is watching. Work moves forward while the
+team sleeps, and approvals wait for whoever next looks. This is the primary way
+it runs.
+
+**Live.** You run `/maos-run {N}` in a session and drive one issue forward step
+by step, watching each agent work and answering approvals as they arrive. This is
+how work gets unblocked, debugged, and pushed when someone is at the keyboard.
+
+You must be able to start an issue one way, walk away, and have the other finish
+it, with no difference in the result. That is what the nine promises above are
+for.
+
+---
+
+## What is allowed to differ
+
+The complete list. Anything not here is a defect.
+
+| Difference | Overnight | Live | Why this is legitimate |
 |---|---|---|---|
-| Who triggers a step | GitHub Actions event or cron | A person running `/maos-run` | The whole point of having two modes |
-| Where output is displayed | GitHub issue and PR activity | The same, plus live agent output in the session | Display is not state; the artefact trail is identical either way |
-| Credential source | Repository secrets | The session's own login | The environments genuinely differ; the *authority* those credentials carry must not |
-| Latency to a gate decision | Until a human next looks | Immediate | A human being present is the difference between the modes |
+| Who starts a step | A GitHub event or a timer | A person running `/maos-run` | This is the whole point of having two ways |
+| Where you watch it | Issue and pull-request activity | The same, plus live agent output | What you see is not what happened; the trail is identical |
+| Which credentials are used | Repository secrets | The session's own login | The environments genuinely differ; the *authority* those credentials carry must not |
+| How long an approval waits | Until someone next looks | Immediately | A person being present is the difference |
 
-Everything else -- state, routing, authority, exits, effects, observability --
-is governed by MI-1 to MI-7 and must be identical.
+Everything else is governed by the promises above and must be identical.
 
-Two things are frequently mistaken for legitimate differences and are not:
+Two things are often mistaken for legitimate differences and are not:
 
-- **Enforcement mechanism** (MI-3). That in-session mode *cannot* use
-  `--allowedTools` today is a consequence of how `/run-agent` executes, which is
-  a choice, not a constraint.
-- **Which errors are recoverable.** A GraphQL refusal and a repository-access
-  refusal are different failures with different remedies, but which one you get
-  must not depend on the mode.
+- **How permissions are enforced** (MI-3). That the live path cannot use the
+  platform's own enforcement today is a consequence of how it starts agents,
+  which is a choice, not a constraint.
+- **Which errors can be recovered from.** A refused query and a refused
+  repository are different failures needing different responses, but which one
+  you get must never depend on how the work was started.
 
 ---
 
-## Conformance summary
+## Which promises we keep today
 
-| Invariant | Status | Defects |
+| Promise | Today | Defects |
 |---|---|---|
-| AS-1 `pipeline.json` defines the process | VIOLATED (entitlements) | #326, #356, #362 |
-| MI-1 One state, one meaning | PARTIAL, UNTESTED | #380 |
-| MI-2 One routing decision | VIOLATED | #356 |
-| MI-3 One authority mechanism | VIOLATED | #335, #356, #374, #383, #388 |
-| MI-4 Every halt has an exit | VIOLATED | #377, #380, #314 |
-| MI-5 One set of effects | UNTESTED | none known |
-| MI-6 Observability | VIOLATED | #308, #315, #326, #334, #343, #346, #358, #362, #378, #387, #388 |
-| MI-7 Human authority | VIOLATED | #377 |
-| MI-8 Differences enumerated | PARTIAL | -- |
+| AS-1 One file tells you what the pipeline does | VIOLATED (permissions) | #326, #356, #362 |
+| MI-1 An issue means the same thing to everyone | PARTIAL, UNTESTED | #380 |
+| MI-2 Same situation, same next step | VIOLATED | #356 |
+| MI-3 An agent can only do what you allowed | VIOLATED | #335, #356, #374, #383, #388 |
+| MI-4 Nothing gets stuck with no way out | VIOLATED | #377, #380, #314 |
+| MI-5 The result does not depend on who watched | UNTESTED | none known |
+| MI-6 You can always tell what happened | VIOLATED | #308, #315, #326, #334, #343, #346, #358, #362, #378, #387, #388 |
+| MI-7 Only a person approves | VIOLATED | #377 |
+| MI-8 Any difference is written down | PARTIAL | -- |
 
-Seven of nine invariants are violated or unverified. **No invariant currently
-has a test.** That is the first thing to change: until each has one, conformance
-is an assertion in a document rather than a property of the system.
+**Seven of nine are broken or unverified, and none has a test.**
+
+That is the first thing to change. Until each promise has a test, this document
+says what the product ought to do rather than describing what it does -- and the
+defects keep arriving by surprise instead of being derived from the gap.
 
 ---
 
@@ -375,11 +367,11 @@ is an assertion in a document rather than a property of the system.
 | Topic | Authoritative source | State |
 |---|---|---|
 | What the orchestrator is | this document | draft |
-| Authoritative sources (AS-1) | this document | draft |
-| Operating modes and invariants | this document | draft -- supersedes `17-operating-modes.md` |
-| Pipeline configuration | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its schema | not yet superseded |
+| The promises (AS-1, MI-1 to MI-8) | this document | draft |
+| Working two ways | this document | draft -- supersedes `17-operating-modes.md` |
 | Vision and problem | `01-vision.md` | not yet superseded |
-| Principles P-1 to P-16 | `02-principles.md` | not yet superseded; three known contradictions with the implementation |
+| Principles P-1 to P-16 | `02-principles.md` | not yet superseded; three known contradictions |
+| Pipeline configuration | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its schema | not yet superseded |
 | Lifecycle, status model, gates | `04`, `06`, `07` | not yet superseded |
 | Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |
 | Agent specification | `12-agent-spec.md` | not yet superseded |
