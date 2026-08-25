@@ -470,6 +470,37 @@
         "pr-reviewer"
       ],
       "source": "Migrated from parent-project PR review feedback -- a new Azure/Bicep resource shipped without deploy-workflow provider registration, parameter files, params resolver, verification step, or matching teardown-workflow updates; generalized away from Bicep/ARM specifics for the shared framework"
+    },
+    {
+      "id": "STD-PROC-032",
+      "related": [
+        "STD-PROC-008",
+        "STD-PROC-012",
+        "STD-TEST-007",
+        "STD-TEST-010"
+      ],
+      "title": "Regenerate behaviour test bindings from the Gherkin spec each cycle; drift fails the cycle",
+      "description": "docs/features/{feature}.md is the authoritative testable spec (STD-PROC-008). This standard makes that authority mechanical rather than conventional. At the start of every test cycle, the binding layer that maps Gherkin scenarios to their realising behaviour tests is regenerated from the scenarios themselves -- never hand-maintained -- and the cycle then verifies the mapping in both directions. A scenario with no realising test, or a behaviour test realising no scenario, is drift: the cycle fails and reports the specific scenario or test, rather than passing and leaving the divergence to be found later. Regeneration replaces only generated binding artefacts; hand-written test bodies and assertions are never overwritten. Applies to behaviour and end-to-end tests; pure unit tests, which have no generating scenario, are out of scope and are not reported as drift.",
+      "rationale": "A spec is only authoritative if divergence from it is detected automatically. When the scenario-to-test mapping is maintained by hand, tests and requirements drift silently -- scenarios are added without tests, and tests outlive the behaviour they were written for -- and the spec degrades into documentation while the test code becomes the de-facto source of truth, which STD-PROC-008 forbids. Regenerating the mapping every cycle makes the drift impossible to accumulate unnoticed.",
+      "acceptance_criteria": [
+        "The scenario-to-test binding layer is generated from docs/features/{feature}.md by the test cycle itself, and is not hand-edited.",
+        "The test cycle fails when a scenario in docs/features/{feature}.md has no realising behaviour test.",
+        "The test cycle fails when a behaviour test realises no scenario in docs/features/{feature}.md.",
+        "A failure names the specific scenario or test that drifted, so the gap is actionable without re-deriving it.",
+        "Regeneration overwrites only generated binding artefacts; hand-written test bodies and assertions in the diff are preserved.",
+        "Pure unit tests are excluded from the drift check and their absence from the spec is not reported as a failure."
+      ],
+      "anti_patterns": [
+        "Maintaining the scenario-to-test mapping by hand, so that adding a scenario without a test, or deleting behaviour without deleting its test, goes undetected.",
+        "Running the drift check as an advisory warning that does not fail the cycle.",
+        "Regenerating over hand-written test bodies, so that authored assertions are destroyed on the next cycle.",
+        "Reporting pure unit tests as drift because they have no generating Gherkin scenario."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }
