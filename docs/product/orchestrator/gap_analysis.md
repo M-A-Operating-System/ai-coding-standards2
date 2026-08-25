@@ -24,7 +24,7 @@ Current as of 25 August 2026, commit `37e3566` on `main`.
 | MI-3 An agent can only do what you allowed | VIOLATED | #335, #356, #374, #383, #388 |
 | MI-4 Nothing gets stuck with no way out | VIOLATED | #377, #380, #314 |
 | MI-5 The result does not depend on who watched | UNTESTED | none known |
-| MI-6 You can always tell what happened | VIOLATED | #308, #315, #326, #334, #343, #346, #358, #362, #378, #387, #388 |
+| MI-6 You can believe what the system tells you | VIOLATED | #308, #315, #326, #334, #343, #346, #358, #362, #378, #387, #388 |
 | MI-7 Only a person approves | VIOLATED | #377 |
 | MI-8 Any difference is written down | PARTIAL | -- |
 
@@ -303,7 +303,7 @@ finding.
 
 ---
 
-## MI-6 -- You can always tell what actually happened
+## MI-6 -- You can believe what the system tells you
 
 **Status:** `VIOLATED`. This is the widest gap.
 
@@ -325,6 +325,41 @@ nothing:
 Three are additionally mode-specific: **#346** misreports only in interactive
 mode, **#326** blocked agents only in headless mode, **#334** failed only in
 restricted sessions.
+
+### What the target requires, and what it removes
+
+The design asks for three things that do not exist: every step returns a summary
+of what it did, every step declares its expected effect, and the orchestrator
+records the observed change and flags disagreement.
+
+Only `pr-reviewer` declares an expected effect today (`commit_after: false`).
+Eleven of the sixteen steps declare nothing.
+
+The second half of the change is a removal. Steps do not post -- the orchestrator
+posts what they return. **27 of the 108 bash blocks in agent prompts (25%) exist
+only to post a comment**, spread across every agent:
+
+| Agent | Posting blocks |
+|---|---|
+| `coder` | 5 |
+| `sizer`, `pr-reviewer` | 3 each |
+| `branch-cleanup`, `issue-cleanup`, `issue-classifier`, `prd-docs-updater`, `prd-writer`, `merge-conflict` | 2 each |
+| `codebase-reviewer`, `new-agent`, `standards-migrator`, the template | 1 each |
+
+All 27 disappear, and much of what they dragged with them goes too. The scratch
+convention exists largely because agents needed somewhere to compose comment
+bodies (#321, #376). The worst of the command-substitution and heredoc refusals
+are in posting blocks (#383). `pr-reviewer` leaked files at the repository root
+precisely because it could never execute its own documented posting command.
+
+So this is not only new machinery. It deletes a quarter of the agent surface and
+the defect cluster attached to it.
+
+**Two things the design does not yet settle.** How a step's summary and output
+are returned -- the status sentinel is a single line today, and a sloppy return
+format would recreate the parsing problems this removes. And whether removing
+posting from agents is enough on its own to close #383: it removes the worst
+cluster, but the other 75% of blocks still read values with `$(`.
 
 ---
 

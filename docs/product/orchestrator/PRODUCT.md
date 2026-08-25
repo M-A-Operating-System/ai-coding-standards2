@@ -54,6 +54,12 @@ starts each one, what must finish first, and what each is permitted to do.
 Nothing behaves in a way that file does not describe, and nothing else defines
 any of those four things.
 
+**Steps produce output; the orchestrator posts it.** Every step, agent or
+script, returns what it produced and a summary of what it did. The orchestrator
+writes those to the issue as structured comments. A step never posts anything
+itself, so there is exactly one thing writing to GitHub and exactly one format
+to read.
+
 **Agents produce; they never decide.** An agent is a black box that receives a
 work item and returns a result. It cannot choose what runs next, cannot set its
 own state, cannot approve anything, and cannot act outside the commands it was
@@ -87,9 +93,11 @@ yourself or dictate it.
 **Nothing gets stuck.** Every state the work can reach has a way forward that
 someone can actually perform. A halt is a pause, never a loss.
 
-**Every control says what it did.** Each check reports whether it engaged and
-what it decided. Nothing reports success while doing nothing, because a control
-that fails quietly makes every signal after it meaningless.
+**Every step says what it did, and the orchestrator checks.** Each step reports
+what it did including when it did nothing, and the orchestrator separately
+records what actually changed. Where the account and the evidence disagree, you
+are told -- because a step that reports success while doing nothing makes every
+signal after it meaningless.
 
 **It runs two ways, and they behave identically.** Headless as a continuous
 background process on GitHub Actions, or interactive inside a chat session in
@@ -267,11 +275,19 @@ they belong, and report honestly when it did nothing -- which is exactly where
 | Returned | Requirement |
 |---|---|
 | **Exactly one terminal status** | From the fixed set in `statuses.json`. Never absent, never two, never invented |
-| **Its artefacts, on the work item** | Posted to the issue or PR, append-only. A re-run adds; it never rewrites |
+| **A summary of what it did** | Its own account, in plain words, including when it did nothing |
+| **Its output** | Whatever the step produces -- a review, a classification, a plan. Returned, not posted |
 | **Its files, in the repository or scratch** | Real work in the tree, working files in scratch. Nothing anywhere else |
+
+The orchestrator writes the summary and the output to the issue as structured
+comments. The step does not.
 
 ### What the agent must never do
 
+- **Write to the issue or PR.** No comments, no edits, no labels. A step returns
+  what it produced and the orchestrator records it. Exactly one thing writes to
+  GitHub, so there is one format, one failure path, and one place where
+  append-only is enforced.
 - **Decide what runs next.** Routing belongs to the orchestrator.
 - **Apply its own lifecycle labels.** `:wip`, `:complete`, `:review`, `:failed`
   are the orchestrator's record of the agent, not the agent's own claim.
@@ -497,21 +513,43 @@ resulting issue timeline, ignoring timestamps and actor.
 
 ---
 
-### MI-6 -- You can always tell what actually happened
+### MI-6 -- You can believe what the system tells you
 
-> **Every check says whether it ran and what it decided. Nothing reports
-> success while doing nothing.**
+> **Every step says what it did, including when it did nothing -- and the
+> orchestrator separately records what actually changed. Where the two
+> disagree, you are told.**
 
-A control that fails by claiming success poisons everything downstream of it:
-passing tests, a clean review and a completed step all become evidence of
-nothing. Silence and success must never look the same.
+The reports are all you have. Nobody watches a headless run: you read the issue
+afterwards and believe it. So a step that reports success while doing nothing
+does more than fail, it makes everything after it meaningless -- a check that
+says it tested a commit proves nothing if the step before it silently pushed no
+commit.
 
-**Precisely.** Every control reports whether it engaged and what it decided, in
-both modes, in the same form. No control is silent in one and loud in the other,
-and none is silent in both.
+Asking a step to announce its own silence is not enough on its own. A step that
+does nothing usually does not know it did nothing. So the system records two
+things about every step and compares them:
 
-**Test.** Every control emits a decision line on both the engaged and the
-skipped path, and both modes produce the same line.
+| | What it is | Who produces it |
+|---|---|---|
+| **The account** | What the step says it did, in its own words | The step |
+| **The evidence** | What actually changed -- commits, files, labels, comments | The orchestrator, by observation |
+
+Each step also declares in `pipeline.json` what effect it is *expected* to have.
+`coder` produces commits; `pr-reviewer` produces none. That makes the comparison
+meaningful in both directions: a step that should change something and did not
+is as wrong as a step that changed something it had no business touching.
+
+**Precisely.** Every step returns a summary of what it did, and doing nothing is
+a result reported as one. The orchestrator observes the actual change
+independently, compares it against the step's declared expected effect, and
+records both. A disagreement between account, evidence and expectation is
+surfaced, not buried. Silence is read as success, so silence about a non-event
+is a false report.
+
+**Test.** Every step returns a summary on the path where it acted and the path
+where it did not. Every step declares its expected effect. The orchestrator
+records the observed change for every step and flags any case where account,
+evidence and expectation do not agree. Both modes produce the same records.
 
 ---
 
