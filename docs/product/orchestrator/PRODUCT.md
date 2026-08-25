@@ -197,15 +197,30 @@ nothing records.
 both ways of running. A state reachable one way and escapable only the other is
 a defect.
 
-**Test.** Every halt status has a documented exit action, and that action is
-performable both unattended and in-session.
+**Test.** Every status in `statuses.json` where `blocks_pipeline` is true names
+a `cleared_by`, that exit is reachable from the step's own configuration, and it
+is performable both unattended and in-session.
 
-**Today:** `VIOLATED`, three ways. **#380** -- a step can stop and wait for an
-approval it never named, so no approval exists to give; recovery meant deleting
-a label by hand, twice, on 25 August. **#377** -- the live driver is documented
-to record its own approval, but the self-approval guard rejects it, so the
-documented procedure cannot work. **#314** -- the emergency stop has no defined
-behaviour for live runs.
+**Today:** `VIOLATED`, three ways -- but not in the way it first appears.
+
+`statuses.json` already names two exits for `:review`: *"orchestrator (on
+gate-label application) or human (removes label)"*. The second is a genuine
+documented exit, so removing the label is not the out-of-band hack it looks
+like.
+
+The defect is narrower and worse. **#380** -- when a step emits `:review`
+without naming a gate, the *first* exit does not exist for it: there is no label
+to apply. Only the human-removes-label exit remains, and neither the
+orchestrator nor `/maos-run` mentions it. The tooling documents the exit that is
+unavailable and stays silent about the one that works, so the issue reads as
+permanently stuck. That happened twice on 25 August. **#377** -- the live driver
+is documented to record its own approval, but the self-approval guard rejects
+it, so the documented procedure cannot work. **#314** -- the emergency stop has
+no defined behaviour for live runs.
+
+The lesson generalises: the machine-readable source held more truth than the
+prose describing it. That is the argument for generating these views rather than
+authoring them.
 
 ---
 

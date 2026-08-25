@@ -28,13 +28,16 @@ jobs:
       - name: Regenerate diagrams
         run: python3 pipeline/generators/generate_phase_mermaid.py
 
+      - name: Regenerate generated docs
+        run: python3 pipeline/generators/generate_docs.py
+
       - name: Commit updated diagrams if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/product/orchestrator/generated/phases/
+          git add docs/product/orchestrator/generated/
           if git diff --cached --quiet; then
-            echo "Diagrams are already up-to-date — nothing to commit."
+            echo "Diagrams are already up-to-date -- nothing to commit."
           else
             git commit -m "chore: regenerate pipeline diagrams"
             git push

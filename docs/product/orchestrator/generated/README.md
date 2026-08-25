@@ -13,15 +13,14 @@ human-readable views are generated from machine-readable sources.
 
 ## Sources and generators
 
-| Generated file | Source | Generator | Status |
-|---|---|---|---|
-| `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` | Implemented |
-| `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` | Planned |
-| `phases.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` | Planned |
-| `gates.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` | Planned |
-| `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` | Planned |
-| `pipeline-issue.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` | Planned |
-| `pipeline-pr.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_pipeline_mermaid.py` | Planned |
+| Generated file | Source | Generator |
+|---|---|---|
+| `agents.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
+| `pipeline-steps.md` | `pipeline/pipeline.json` | `pipeline/generators/generate_docs.py` |
+| `statuses.md` | `pipeline/statuses.json` | `pipeline/generators/generate_docs.py` |
+| `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
+| `pipeline_phases.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
+| `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
 
 ---
 
@@ -30,17 +29,32 @@ human-readable views are generated from machine-readable sources.
 From the repo root:
 
 ```bash
-python pipeline/generators/generate_phase_mermaid.py
+python3 pipeline/generators/generate_docs.py
+python3 pipeline/generators/generate_phase_mermaid.py
 ```
 
-Generators are idempotent — running them twice produces byte-identical
-output. CI runs the generator and fails the PR if any committed file
-differs from the regenerated version.
+Generators are idempotent -- running them twice produces byte-identical
+output. To verify without writing:
+
+```bash
+python3 pipeline/generators/generate_docs.py --check
+```
+
+CI regenerates these files on every push to `main` that touches the sources
+and commits the result (`.github/workflows/generate-pipeline-diagrams.yml`).
+It does not fail a PR whose committed output is stale -- it repairs it after
+merge. Run `--check` locally if you want the stricter behaviour before
+pushing.
 
 ---
 
 ## Canonical source
 
-The machine-readable source is `pipeline/pipeline.json`.
-See [`05-pipeline-config.md`](../05-pipeline-config.md) for the
-schema, change process, and generator invocation details.
+The machine-readable sources are `pipeline/pipeline.json` (process,
+sequence, dependencies, entitled activities) and `pipeline/statuses.json`
+(the label model).
+
+`pipeline.json` is authoritative for the pipeline definition -- see **AS-1**
+in [`../PRODUCT.md`](../PRODUCT.md). Nothing in this directory adds a fact
+that is not in one of those two files; if a fact is missing here, it is
+missing at source.

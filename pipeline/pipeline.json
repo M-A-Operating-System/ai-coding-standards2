@@ -146,7 +146,7 @@
       "git_ops": { "commit_after": true },
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
-      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator then invokes commit-agent-work.sh to stage, commit, and push all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues — spikes produce research findings, not code. Skipped for epic/blocked issues."
+      "description": "Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator then invokes commit-agent-work.sh to stage, commit, and push all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues -- spikes produce research findings, not code. Skipped for epic/blocked issues."
     },
 
     {
@@ -164,7 +164,7 @@
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
       "script_timeout_seconds": 900,
-      "description": "Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks pass (emits complete), any check fails (emits review — the orchestrator re-invokes the coder up to 3 cycles), or the 14-minute timeout expires (emits blocked for human intervention). Posts a summary comment listing check outcomes before signalling status. Skipped for epic/blocked issues."
+      "description": "Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks pass (emits complete), any check fails (emits review -- the orchestrator re-invokes the coder up to 3 cycles), or the 14-minute timeout expires (emits blocked for human intervention). Posts a summary comment listing check outcomes before signalling status. Skipped for epic/blocked issues."
     },
 
     {
@@ -198,7 +198,7 @@
       ],
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
-      "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the orchestrator auto-applies merge-conflict:approved so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review — the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues."
+      "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the orchestrator auto-applies merge-conflict:approved so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review -- the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues."
     },
 
     {
@@ -231,7 +231,7 @@
       },
       "post_steps": [".github/scripts/mark-pr-ready.sh"],
       "review_gate": true,
-      "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues APPROVE only when all findings are Low or Informational severity. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR — this is a hard block regardless of automated findings. On APPROVE with no unresolved human reviews, emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
+      "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then posts a structured review covering correctness, design alignment, standards compliance, and security. Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues APPROVE only when all findings are Low or Informational severity. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR -- this is a hard block regardless of automated findings. On APPROVE with no unresolved human reviews, emits complete and the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
     },
 
     {
@@ -269,7 +269,7 @@
         "Bash(gh issue create *)",
         "Bash(gh api *)"
       ],
-      "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete — auto-approved). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
+      "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete -- auto-approved). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
     },
 
     {
