@@ -17,6 +17,7 @@ is marked as such.
 ## Contents
 
 - [What the orchestrator is](#what-the-orchestrator-is)
+- [Authoritative sources](#authoritative-sources) -- AS-1
 - [The two operating modes](#the-two-operating-modes)
 - [Mode invariants](#mode-invariants) -- MI-1 to MI-8
 - [Legitimate differences](#legitimate-differences)
@@ -35,6 +36,66 @@ the orchestrator never decides on their behalf.
 State lives in GitHub labels. There is no database, no queue, and no state file:
 the labels on an issue *are* its position in the pipeline, and any orchestrator
 process reading them reaches the same conclusion about what runs next.
+
+---
+
+## Authoritative sources
+
+### AS-1 -- `pipeline.json` defines the process
+
+**Statement.** `pipeline.json` is the authoritative definition of four things,
+and nothing else defines any of them:
+
+| Concern | What it covers |
+|---|---|
+| **Process** | Which steps exist, what each one is, and which phase it belongs to |
+| **Sequence** | What triggers a step and what it emits |
+| **Dependencies** | What must have completed before a step is eligible |
+| **Entitled activities** | What each step is permitted to do -- tools, commands, environment |
+
+**Why.** This is P-2 ("one machine-readable source per concern") applied to the
+pipeline itself. A second definition of any of these does not supplement the
+first, it competes with it: the two drift, and the drift is invisible until a
+specific step behaves in a way neither source predicts.
+
+Entitlement is the concern where this matters most, because an entitlement
+defined in two places is a security property that holds in one reading and not
+the other. It is also the concern where a second source is easiest to add
+without noticing -- a constant in the orchestrator, a line in an agent's
+frontmatter, a grant in a settings file -- each individually reasonable.
+
+**Test.** Assert that the resolved entitlement set for every step is derivable
+from `pipeline.json` alone. Any entitlement that cannot be traced to it is a
+test failure. The same for triggers and dependencies.
+
+**Conformance:** `VIOLATED` for entitlements; `CONFORMS` for process, sequence
+and dependencies.
+
+Entitlements currently come from four sources:
+
+| Source | Size | Kind |
+|---|---|---|
+| `BASE_AGENT_TOOLS`, `pipeline_orchestrator.py:2712` | 28 entries | Python constant |
+| Agent frontmatter `tools:` | 14 agent files | Prompt metadata |
+| `pipeline.json` `defaults.extra_allowedTools` + per-step | 2 + 8 steps | Configuration |
+| `.claude/settings.json` `permissions.allow` | 1 entry | Session config |
+
+The largest block is a hardcoded constant, not configuration. Three defects
+trace directly to this split: **#326** was a defect *in* `BASE_AGENT_TOOLS`
+(patterns failed to match quoted URLs, blocking agents outright in headless
+mode); **#362** is a defect in the `settings.json` path (the grant is silently
+dropped when the workspace is untrusted); **#356** was drift between sources
+during resolution (24 tools returned where 93 are passed).
+
+**Relationship to MI-3.** These are two halves of one property and both are
+required. AS-1 says entitlement is **defined** in one place. MI-3 says it is
+**enforced** by one mechanism. Satisfying AS-1 alone still permits two enforcers
+reading the same definition and disagreeing; satisfying MI-3 alone still permits
+one enforcer reading four definitions.
+
+**Existing work.** #357 already proposes exactly this ("pipeline.json should be
+the authoritative source for allowed env vars and commands, globally and per
+step"). It is open and predates this document.
 
 ---
 
@@ -293,6 +354,7 @@ Two things are frequently mistaken for legitimate differences and are not:
 
 | Invariant | Status | Defects |
 |---|---|---|
+| AS-1 `pipeline.json` defines the process | VIOLATED (entitlements) | #326, #356, #362 |
 | MI-1 One state, one meaning | PARTIAL, UNTESTED | #380 |
 | MI-2 One routing decision | VIOLATED | #356 |
 | MI-3 One authority mechanism | VIOLATED | #335, #356, #374, #383, #388 |
@@ -302,9 +364,9 @@ Two things are frequently mistaken for legitimate differences and are not:
 | MI-7 Human authority | VIOLATED | #377 |
 | MI-8 Differences enumerated | PARTIAL | -- |
 
-Six of eight invariants are violated or unverified. **No invariant currently has
-a test.** That is the first thing to change: until each has one, conformance is
-an assertion in a document rather than a property of the system.
+Seven of nine invariants are violated or unverified. **No invariant currently
+has a test.** That is the first thing to change: until each has one, conformance
+is an assertion in a document rather than a property of the system.
 
 ---
 
@@ -313,7 +375,9 @@ an assertion in a document rather than a property of the system.
 | Topic | Authoritative source | State |
 |---|---|---|
 | What the orchestrator is | this document | draft |
+| Authoritative sources (AS-1) | this document | draft |
 | Operating modes and invariants | this document | draft -- supersedes `17-operating-modes.md` |
+| Pipeline configuration | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its schema | not yet superseded |
 | Vision and problem | `01-vision.md` | not yet superseded |
 | Principles P-1 to P-16 | `02-principles.md` | not yet superseded; three known contradictions with the implementation |
 | Lifecycle, status model, gates | `04`, `06`, `07` | not yet superseded |
