@@ -44,6 +44,11 @@ scripts or agents. No value-add work lives in the orchestrator. Changing the
 process means changing `pipeline.json` and the scripts it names; it should not
 mean changing the orchestrator.
 
+**A command names something; it does not do something.** Every `/maos-*`
+command is a thin wrapper that says what to run and passes along what you typed.
+Procedure written into a command is logic living where nothing can test it and
+the headless path cannot reuse it.
+
 **One file defines the process.** `pipeline.json` says which steps exist, what
 starts each one, what must finish first, and what each is permitted to do.
 Nothing behaves in a way that file does not describe, and nothing else defines
@@ -298,7 +303,7 @@ indistinguishable from one that succeeded.
 
 ## The promises
 
-Ten promises. Each states what it means for you, why it matters, and how it is
+Eleven promises. Each states what it means for you, why it matters, and how it is
 tested. Whether the implementation currently keeps each one is recorded in
 [`gap_analysis.md`](gap_analysis.md).
 
@@ -361,6 +366,38 @@ named in `pipeline.json`.
 
 **Test.** Adding a step, removing a step, reordering steps, or changing what a
 step may do requires no change to `pipeline_orchestrator.py`.
+
+---
+
+### AS-3 -- A command names something; it does not do something
+
+> **Every `/maos-*` command is a thin wrapper. It says what to run and passes
+> along what you typed. Nothing else.**
+
+A slash command is an entry point, not a program. It names a step, a script or
+an agent, and hands over the arguments. If a command describes a procedure --
+first do this, then check that, then apply the other -- then the procedure is
+logic, and logic in a command file is logic that `pipeline.json` does not
+describe and no script contains.
+
+This is AS-2 one level further out. Value-add work does not belong in the
+coordinator, and it does not belong in the thing that starts the coordinator
+either. Procedure written into a command cannot be tested, cannot be reused by
+the headless path, and drifts from the process definition silently -- because
+nothing reads a command file except a person typing the command.
+
+It also keeps the command surface honest about what it is. `/maos-{agent}`
+should mean exactly one thing: run that agent. A namespace where some entries
+are one-line aliases and others are multi-page procedures teaches nobody
+anything.
+
+**Precisely.** Every command either is generated from `pipeline.json`, or names
+a single script or agent and passes its arguments through. No command contains
+conditional logic, a loop, or a sequence of steps.
+
+**Test.** Every command file resolves to a generated wrapper or a single named
+target. A command containing a numbered procedure, a conditional, or a retry
+loop is a test failure.
 
 ---
 
@@ -567,7 +604,7 @@ approvals as they arrive. This is how work gets unblocked, debugged, and pushed
 when someone is at the keyboard.
 
 You must be able to start an issue in one mode, walk away, and have the other
-finish it, with no difference in the result. That is what the ten promises
+finish it, with no difference in the result. That is what the eleven promises
 above are for.
 
 ### How people interact with it
@@ -631,7 +668,7 @@ Two things are often mistaken for legitimate differences and are not:
 | The state machine and activity shape | this document | draft |
 | How a step is told where it is | this document | draft |
 | How it uses agents, and the agent contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
-| The promises (AS-1, AS-2, MI-1 to MI-8) | this document | draft |
+| The promises (AS-1 to AS-3, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | `01-vision.md` | not yet superseded |

@@ -17,6 +17,7 @@ Current as of 25 August 2026, commit `37e3566` on `main`.
 |---|---|---|
 | AS-1 One file tells you what the pipeline does | VIOLATED (allowed commands) | #326, #356, #362 |
 | AS-2 The orchestrator only coordinates | VIOLATED | #308, #387 |
+| AS-3 A command names something, it does not do something | VIOLATED (4 of 16) | #377 |
 | How a step is told where it is | PARTIAL | #314 |
 | MI-1 An issue means the same thing to everyone | PARTIAL, UNTESTED | #380 |
 | MI-2 Same situation, same next step | VIOLATED | #356 |
@@ -27,7 +28,7 @@ Current as of 25 August 2026, commit `37e3566` on `main`.
 | MI-7 Only a person approves | VIOLATED | #377 |
 | MI-8 Any difference is written down | PARTIAL | -- |
 
-**Eight of ten are broken or unverified, and none has a test.**
+**Nine of eleven are broken or unverified, and none has a test.**
 
 That last point is the one to act on first. Until each promise has a test,
 `PRODUCT.md` describes an intention rather than a property, and defects keep
@@ -99,6 +100,53 @@ the specific risk AS-2 exists to remove.
 
 **Test to add.** Adding, removing or reordering a step, or changing what a step
 may do, requires no change to `pipeline_orchestrator.py`.
+
+---
+
+## AS-3 -- A command names something; it does not do something
+
+**Status:** `VIOLATED` for four of sixteen `maos-*` commands.
+
+The twelve generated wrappers conform exactly. Each is 14 lines and does one
+thing:
+
+```
+Follow the `run-agent` command with pre-filled arguments:
+`run-agent 03_execute/coder $ARGUMENTS`
+```
+
+They are produced from `pipeline.json` by
+`scripts/generate_slash_commands.py`, so they cannot drift from the pipeline
+definition.
+
+The four hand-authored ones are programs:
+
+| Command | Lines | What it holds |
+|---|---|---|
+| `maos-run` | 182 | The whole interactive drive loop: tick, inspect labels, detect gates, halt conditions, a mark-ready fallback |
+| `maos-new-branch-pr` | 75 | A branch-and-PR procedure |
+| `maos-rebaseline` | 73 | A rebaseline procedure |
+| `maos-merge` | 36 | A merge procedure |
+
+`maos-run` is the largest command file in the repository. `run-agent` itself,
+though not in the `maos-*` namespace, is 128 lines for the same reason.
+
+**Why this costs something.** None of that procedure is reachable by the
+headless path, testable, or visible to a reader of `pipeline.json`. `maos-run`
+step 4c is a worked example: it instructs the driver to apply the gate label
+itself, which the self-approval guard rejects (#377). A wrong instruction sat in
+a command file for as long as it did precisely because nothing reads a command
+file except a person typing the command.
+
+**Where the logic goes.** Each of the four names a script instead. `maos-run`
+is the interesting case: under the MI-3 target its drive loop reduces to
+"invoke the orchestrator until it halts or reaches a gate", because the
+orchestrator already owns tick selection, gate detection and halting. Most of
+the 182 lines exist to re-describe things the orchestrator does.
+
+**Test to add.** Every command file resolves to a generated wrapper or a single
+named target. A numbered procedure, a conditional or a retry loop in a command
+file is a test failure.
 
 ---
 
