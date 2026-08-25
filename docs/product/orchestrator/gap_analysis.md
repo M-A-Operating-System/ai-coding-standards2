@@ -17,6 +17,7 @@ Current as of 25 August 2026, commit `37e3566` on `main`.
 |---|---|---|
 | AS-1 One file tells you what the pipeline does | VIOLATED (allowed commands) | #326, #356, #362 |
 | AS-2 The orchestrator only coordinates | VIOLATED | #308, #387 |
+| How a step is told where it is | PARTIAL | #314 |
 | MI-1 An issue means the same thing to everyone | PARTIAL, UNTESTED | #380 |
 | MI-2 Same situation, same next step | VIOLATED | #356 |
 | MI-3 An agent can only do what you allowed | VIOLATED | #335, #356, #374, #383, #388 |
@@ -98,6 +99,37 @@ the specific risk AS-2 exists to remove.
 
 **Test to add.** Adding, removing or reordering a step, or changing what a step
 may do, requires no change to `pipeline_orchestrator.py`.
+
+---
+
+## How a step is told where it is
+
+**Status:** `PARTIAL`.
+
+The channel exists and is used. The orchestrator sets `AI_AGILE_ROOT`,
+`AI_AGILE_CONTEXT`, `AI_AGILE_EXECUTION_MODE`, `REPO`, `WORK_ITEM_KIND`,
+`WORK_ITEM_NUMBER`, `ISSUE_NUMBER` or `PR_NUMBER`, `SESSION_ID`,
+`SESSION_SCOPE` and `AI_AGILE_SCRATCH` on every step it invokes.
+
+**The orchestrator's own mode is not shared.** `AI_AGILE_EXECUTION_MODE` is
+always `headless`, which is correct -- it describes the spawned activity, which
+never has a human attached whichever way the tick began, and the code says so
+explicitly at `pipeline_orchestrator.py:2676`.
+
+But the *other* mode question -- was this tick started by a person or by GitHub
+Actions -- lives only in the `_HEADLESS` module global and is never passed to a
+step. Any script whose behaviour legitimately depends on it cannot find out.
+That is the shape of **#314**: `.pipeline-stop` needs to behave differently for
+an interactive run, and the only component that knows which kind of run it is
+does not say.
+
+The risk is the predictable one: a step that needs the answer will infer it from
+`AI_AGILE_EXECUTION_MODE`, which answers a different question, or probe its
+environment to guess -- both of which the design forbids.
+
+**Test to add.** Every variable a step reads is one the orchestrator sets. A
+step that reads an environment variable not in the provided set, or that probes
+for context rather than being told, is a test failure.
 
 ---
 

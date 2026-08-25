@@ -25,9 +25,17 @@ computed by code, never by a model.
 
 **Every activity has the same four parts.** Each step declares the commands it
 is allowed to run, the deterministic work that happens before it, the activity
-itself, and the deterministic work that happens after. Only the activity is an
-AI agent. Everything around it is code. Commands every step needs are declared
+itself, and the deterministic work that happens after. The activity is either an
+AI agent or a script; the work before and after is always scripts. So a step
+whose activity is a script is deterministic end to end, and only a step with an
+agent has any uncertainty in it at all. Commands every step needs are declared
 once, globally, rather than repeated on each step.
+
+**A step is told everything it needs to know.** Each step runs as a separate
+process and learns its situation entirely from environment variables the
+orchestrator sets: where the repository is, what it is working on, where to put
+working files, and whether a human is attached to it. A step never works its own
+context out, and never probes to find out.
 
 **The orchestrator coordinates and nothing else.** It reads the state, picks the
 next step, runs it, and records what happened. Every piece of work that produces
@@ -86,6 +94,7 @@ that differs is a bug.
 ## Contents
 
 - [The state machine](#the-state-machine)
+- [How the orchestrator tells a step where it is](#how-the-orchestrator-tells-a-step-where-it-is)
 - [How it uses agents](#how-it-uses-agents)
 - [The agent contract](#the-agent-contract)
 - [The promises](#the-promises)
@@ -111,10 +120,13 @@ recover, and no position that exists only in memory.
 |---|---|---|
 | `allowed_commands` | Everything this activity may do. Anything else is refused | Data |
 | `pre_actions` | Work performed before the activity -- checking out the branch, preparing the scratch directory | Code |
-| `activity` | The step itself: an AI agent, or a script | **The agent is not deterministic** |
+| `activity` | The step itself: an AI agent, or a script | Deterministic when a script; **not deterministic when an agent** |
 | `post_actions` | Work performed after -- committing, pushing, labelling, posting the artefact | Code |
 
-Three of the four are code or data. Exactly one is a model.
+Three of the four parts are always code or data. The fourth is code too, unless
+the step uses an agent -- so uncertainty enters the system at exactly one place,
+and only for the steps that need judgement. A step whose activity is a script is
+deterministic from end to end.
 
 Commands every step needs are declared once as `global_allowed_commands` rather
 than repeated on each step. A step's effective permission is exactly the global
@@ -128,6 +140,67 @@ consequences run as pre- and post-actions on either side of the agent, on the
 orchestrator's schedule rather than at the agent's request. What the agent
 actually influences is the work product and one status value -- and nothing else
 in the system depends on the agent having behaved reasonably.
+
+---
+
+## How the orchestrator tells a step where it is
+
+A step -- agent or script, pre-action or post-action -- is a separate process
+that knows nothing when it starts. Everything it needs to know about its
+situation arrives as environment variables, set by the orchestrator when it
+invokes the step.
+
+This is the only channel. A step never works out its own context: it does not
+search for the repository root, guess the issue number, decide where to put
+working files, or probe whether a human is present. If a step needs to know
+something, the orchestrator tells it. If the orchestrator does not tell it, the
+step does not need it.
+
+That rule is what makes a step testable in isolation and portable between the
+two modes -- and it is why the same script behaves identically under a GitHub
+Actions runner and under a chat session.
+
+### What every step is told
+
+| Variable | What it says |
+|---|---|
+| `AI_AGILE_ROOT` | Where the repository is |
+| `AI_AGILE_CONTEXT` | Where the shared agent protocol is |
+| `AI_AGILE_EXECUTION_MODE` | Whether *this step* has a human attached |
+| `REPO` | Which GitHub repository to act on |
+| `WORK_ITEM_KIND`, `WORK_ITEM_NUMBER` | What it is working on |
+| `ISSUE_NUMBER` or `PR_NUMBER` | The same, in the form the step expects |
+| `SESSION_ID`, `SESSION_SCOPE` | Which run this is, and how far it persists |
+| `AI_AGILE_SCRATCH` | Where working files go |
+
+Credentials are supplied the same way and are deliberately not part of this
+list: a step receives what it needs to authenticate and nothing about how that
+was arranged.
+
+### Two different questions about mode
+
+"Headless or interactive" means two different things depending on what is being
+asked about, and conflating them causes real defects.
+
+| | Question | Who knows |
+|---|---|---|
+| **How the tick was started** | Did a person run this, or did GitHub Actions? | The orchestrator |
+| **How this step runs** | Does *this activity* have a human attached to it? | The step, via `AI_AGILE_EXECUTION_MODE` |
+
+They are not the same, and the second is not derived from the first. When a
+person drives a run interactively, the orchestrator is interactive -- but the
+agents it spawns are still subprocesses with nobody watching them. An agent must
+never behave as though it can ask a question, whichever way the tick began.
+
+So `AI_AGILE_EXECUTION_MODE` answers the second question and is `headless` for
+every spawned activity, always. The first question is the orchestrator's own,
+and any step whose behaviour genuinely depends on it -- how to treat an
+emergency stop, whether a human can be prompted right now -- must be told
+separately and explicitly.
+
+A step that infers one from the other is wrong, and a step that probes its
+environment to find out is wrong twice: it is deciding something the
+orchestrator is responsible for telling it (AS-2).
 
 ---
 
@@ -162,8 +235,14 @@ contract below states.
 
 ## The agent contract
 
-Every agent, at every step, in both modes. An agent that does not meet this is
-not a different kind of agent -- it is a defect.
+Binds every step whose activity is an agent, in both modes. An agent that does
+not meet this is not a different kind of agent -- it is a defect.
+
+A step whose activity is a script is bound by the same contract, and meets most
+of it by construction: a script cannot replay a previous answer or improvise
+past a refusal. What it must still do is return one status, keep its files where
+they belong, and report honestly when it did nothing -- which is exactly where
+`commit-agent-work.sh` and `merge-docs-pr.sh` have failed.
 
 ### What the orchestrator provides
 
@@ -523,6 +602,7 @@ Two things are often mistaken for legitimate differences and are not:
 |---|---|---|
 | Core requirements | this document | draft |
 | The state machine and activity shape | this document | draft |
+| How a step is told where it is | this document | draft |
 | How it uses agents, and the agent contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
 | The promises (AS-1, AS-2, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
