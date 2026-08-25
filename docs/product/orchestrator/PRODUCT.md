@@ -124,23 +124,23 @@ recover, and no position that exists only in memory.
 
 ### Every activity has the same four parts
 
-| Part | What it is | Determinism |
-|---|---|---|
-| `allowed_commands` | Everything this activity may do. Anything else is refused | Data |
-| `pre_actions` | Work performed before the activity -- checking out the branch, preparing the scratch directory | Code |
-| `activity` | The step itself: an AI agent, or a script | Deterministic when a script; **not deterministic when an agent** |
-| `post_actions` | Work performed after -- committing, pushing, labelling, posting the artefact | Code |
+| Part | Declared in `pipeline.json` as | What it is | Determinism |
+|---|---|---|---|
+| Allowed commands | `extra_allowedTools` | Everything this activity may do. Anything else is refused | Data |
+| Pre-actions | `defaults.agent_lifecycle.before` | Work performed before the activity -- checking out the branch, preparing the scratch directory | Code |
+| The activity | `type` with `agent` or `script` | The step itself: an AI agent, or a script | Deterministic when a script; **not deterministic when an agent** |
+| Post-actions | `post_steps`, `git_ops`, `defaults.agent_lifecycle.after` | Work performed after -- committing, pushing, labelling, posting the artefact | Code |
 
 Three of the four parts are always code or data. The fourth is code too, unless
 the step uses an agent -- so uncertainty enters the system at exactly one place,
 and only for the steps that need judgement. A step whose activity is a script is
 deterministic from end to end.
 
-Commands every step needs are declared once as `global_allowed_commands` rather
-than repeated on each step. A step's effective permission is exactly the global
-set plus its own `allowed_commands`, and nothing else. Two levels, both in
-`pipeline.json`, both readable in one place -- which is what keeps AS-1 true as
-the pipeline grows.
+Commands every step needs are declared once in `defaults.extra_allowedTools`
+rather than repeated on each step. A step's effective permission is exactly the
+global set plus its own `extra_allowedTools`, and nothing else. Two levels, both
+in `pipeline.json`, both readable in one place -- which is what keeps AS-1 true
+as the pipeline grows.
 
 This is where the design contains its own uncertainty. Permission is decided
 before the activity runs and cannot be widened by it. The setup and the
@@ -323,7 +323,7 @@ else defines any of them:
 | **Process** | Which steps exist, what each one is, and which phase it belongs to |
 | **Sequence** | What triggers a step and what it emits |
 | **Dependencies** | What must have completed before a step is eligible |
-| **Entitled activities** | `global_allowed_commands`, plus each step's `allowed_commands`, `pre_actions` and `post_actions` |
+| **Entitled activities** | `defaults.extra_allowedTools`, plus each step's `extra_allowedTools`, lifecycle actions and post-steps |
 
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
 itself. It matters most for allowed commands: a permission defined in two places
@@ -447,8 +447,8 @@ forever, and it will not be. Every divergence is a security property that holds
 in one mode and silently not in the other, with no way to tell from outside.
 This is the most expensive promise in the list to break.
 
-**Precisely.** Whatever enforces `allowed_commands` is the **same mechanism** in
-both modes, not an equivalent one. Neither mode re-implements the other's
+**Precisely.** Whatever enforces a step's allowed commands is the **same
+mechanism** in both modes, not an equivalent one. Neither mode re-implements the other's
 enforcement.
 
 **Test.** Exactly one component decides whether an action is permitted, and both
@@ -488,8 +488,8 @@ is performable in both modes.
 If effects vary by mode, the artefact trail stops being evidence: two issues
 cannot be compared, because they were produced under different conditions.
 
-**Precisely.** A step's `pre_actions`, `activity` and `post_actions` produce the
-same effects in both modes, in the same order. A mode may differ in **who
+**Precisely.** A step's pre-actions, activity and post-actions produce the same
+effects in both modes, in the same order. A mode may differ in **who
 triggers** a step, never in **what the step does**.
 
 **Test.** Run the same step in both modes against equivalent state and diff the
@@ -606,6 +606,46 @@ when someone is at the keyboard.
 You must be able to start an issue in one mode, walk away, and have the other
 finish it, with no difference in the result. That is what the eleven promises
 above are for.
+
+### Two ways to run a single agent
+
+Interactive mode offers two different things, and they must not share a name.
+
+| Command | What it does | Mode |
+|---|---|---|
+| `/maos-{agent} {N}` | Runs the **exact step**. The orchestrator resolves it and spawns it as a subprocess, exactly as the headless path does | `headless` |
+| `/maos-{agent}-i {N}` | Resolves the step and works through its instructions **with you**, in the session | `interactive` |
+
+The orchestrator already separates these. Resolving an invocation and spawning
+it are distinct operations: the resolve-only path reports
+`AI_AGILE_EXECUTION_MODE=interactive`, and the spawn path reports `headless`.
+Both commands are thin wrappers over one of those two (AS-3), and both are
+generated from `pipeline.json` so they cannot drift from it.
+
+**Why the distinction is load-bearing, not cosmetic.**
+
+`/maos-{agent}` is the pipeline. Same prompt, same allowed commands, same clean
+context, same enforcement. What you see is what the headless runner would do,
+which is the only thing that makes it useful for reproducing a problem.
+
+`/maos-{agent}-i` is **not the pipeline**, and does not pretend to be. You and
+the chat-AI work through the agent's instructions together, in your session,
+with your permissions and your context. Nothing is enforced against an agent's
+allowlist, because no agent is running -- a person is, with an assistant.
+
+That last point resolves what would otherwise be a contradiction with MI-3.
+Enforcement must be one mechanism, and it is: the platform's own, on the spawn
+path. The in-the-loop command needs no second enforcement mechanism because it
+is not an agent invocation to enforce. The control there is the person, who is
+present, whose session it is, and who is accountable for what they run.
+
+**The risk this creates, stated plainly.** Someone reaches for the `-i` command
+believing they are testing what the pipeline does. They are not: different
+context, different permissions, a human able to intervene. The naming carries
+that distinction and must stay obvious, because nothing else prevents the
+mistake.
+
+---
 
 ### How people interact with it
 

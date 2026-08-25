@@ -64,9 +64,10 @@ outright in headless mode); **#362** is a defect in the `settings.json` path (th
 grant is silently dropped when the workspace is untrusted); **#356** was drift
 between sources during resolution.
 
-The target model in `PRODUCT.md` -- `global_allowed_commands` plus per-step
-`allowed_commands`, both in `pipeline.json` -- is proposed in **#357**, which is
-open and predates the design document.
+The target -- `defaults.extra_allowedTools` plus per-step `extra_allowedTools`,
+both in `pipeline.json` and nowhere else -- is proposed in **#357**, which is
+open and predates the design document. The field names stay as they are; what
+changes is that no other source contributes.
 
 ---
 
@@ -228,13 +229,36 @@ That re-implementation has produced five defects:
 | #383 | Refuses 31% of all agent shell blocks, including re-run guards |
 | #388 | The limits may never load at all, disabling enforcement entirely |
 
-**The cheapest route to conformance is deletion, not repair.** If the interactive
-path started agents the same way the headless path does, the platform's own
-enforcement would apply and the hook, parser, scope file and resolve-only
-plumbing could be removed rather than maintained.
+**The design now resolves this by separating the two commands** rather than
+choosing between them. `/maos-{agent}` runs the exact step as a subprocess with
+native enforcement; `/maos-{agent}-i` resolves the instructions and works
+through them with the person, and is explicitly not an agent invocation.
 
-What that costs is watching the agent work in the session. That trade-off has
-not been evaluated and is the central question for **#393**.
+That removes the emulation without removing the capability. The hook, the
+command parser, the scope file and the resolve-only grant plumbing all exist to
+make the in-session path behave like an unattended agent run. Once that path is
+named as what it is -- a person and their assistant, in the person's own session
+-- there is nothing for a second enforcement mechanism to enforce, and MI-3 is
+satisfied by the platform's own enforcement on the spawn path alone.
+
+Two findings made this cheaper than it first appeared:
+
+- **The split already exists.** #316 deliberately separated resolve from spawn
+  and added `--print-prompt`. The resolve-only path already reports
+  `AI_AGILE_EXECUTION_MODE=interactive` and the spawn path `headless`. Only one
+  command was ever built on top, doing both jobs.
+- **Live output is not lost.** The spawn path already streams agent output with
+  `--verbose` (`_should_emit_stream_line`, `pipeline_orchestrator.py:1950`), so
+  the visibility cost of running the exact step as a subprocess is far smaller
+  than assumed.
+
+What is genuinely lost on the exact-step path is intervening mid-run, which the
+agent contract says should not be possible anyway. That capability moves to the
+`-i` command, where it is honest.
+
+**Not implemented.** Both commands need generating from `pipeline.json`, the
+existing 12 wrappers change meaning (they currently resolve to the in-session
+path), and the hook, parser and scope file can then be deleted.
 
 ---
 
@@ -270,7 +294,7 @@ them.
 **Status:** `UNTESTED`. No known violation and no test.
 
 Recorded because its absence would be invisible until it mattered: nothing today
-would detect a step whose `pre_actions`, `activity` or `post_actions` behaved
+would detect a step whose pre-actions, activity or post-actions behaved
 differently under a runner than under a driver.
 
 The stated test -- run the same step in both modes and diff the timeline -- is
