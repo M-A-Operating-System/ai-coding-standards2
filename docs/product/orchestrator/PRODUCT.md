@@ -2,56 +2,208 @@
 
 The single description of what the orchestrator is and what it promises.
 
-This document is being authored from first principles as the target design
-(issue #393). It supersedes the numbered documents `01-vision.md` through
-`17-operating-modes.md` section by section as it is written; until a section
-exists here, the numbered document remains authoritative for that topic. The
-[status table](#status-of-this-document) records which is which.
+This document describes the target design (issue #393). It states what the
+product does, not what the implementation currently manages -- the gap between
+the two is tracked separately in [`gap_analysis.md`](gap_analysis.md).
 
-Every promise below states how it is tested and whether the system keeps it
-today. A promise with no test is not a promise, and is marked as such.
+---
+
+## Core requirements
+
+Read these together. Everything after this section is detail.
+
+**Work is a GitHub issue, and the issue is the record.** You describe a piece of
+work as an issue. The orchestrator walks it through the steps that turn an issue
+into shipped code, and everything it does is written back to that issue. There
+is no dashboard, no database, no hidden state. If you can read the issue, you
+know exactly where the work has got to.
+
+**The orchestrator is a state machine.** The labels on the issue are the state.
+Steps are the transitions between states. The machine is deterministic: given
+the same labels it always chooses the same next step, and that choice is
+computed by code, never by a model.
+
+**Every activity has the same four parts.** Each step declares the commands it
+is allowed to run, the deterministic work that happens before it, the activity
+itself, and the deterministic work that happens after. Only the activity is an
+AI agent. Everything around it is code. Commands every step needs are declared
+once, globally, rather than repeated on each step.
+
+**One file defines the process.** `pipeline.json` says which steps exist, what
+starts each one, what must finish first, and what each is permitted to do.
+Nothing behaves in a way that file does not describe, and nothing else defines
+any of those four things.
+
+**Agents produce; they never decide.** An agent is a black box that receives a
+work item and returns a result. It cannot choose what runs next, cannot set its
+own state, cannot approve anything, and cannot act outside the commands it was
+allowed. Its only influence on the machine is a single status value from a fixed
+set.
+
+**Agents are not deterministic, and the design assumes it.** The same prompt can
+produce different work on different runs. That is contained by keeping every
+consequential decision in code, so a poor run costs one step, is visible on the
+issue, and cannot corrupt anything.
+
+**An agent that cannot comply says so.** Being blocked, running out of budget,
+or finishing only part of the work are distinct outcomes and each is reported as
+itself. An agent never substitutes a different approach and reports success,
+because a silent workaround is an unrecorded change to the process.
+
+**Only a person approves.** Named gates require a human decision, recorded the
+same way every time. The system cannot approve itself, and an approval check
+that cannot reach a conclusion refuses rather than admits.
+
+**Nothing gets stuck.** Every state the work can reach has a way forward that
+someone can actually perform. A halt is a pause, never a loss.
+
+**Every control says what it did.** Each check reports whether it engaged and
+what it decided. Nothing reports success while doing nothing, because a control
+that fails quietly makes every signal after it meaningless.
+
+**It runs two ways, and they behave identically.** Headless as a continuous
+background process on GitHub Actions, or interactive inside a chat session in
+Claude Code. You can start work in one, walk away, and let the other finish it.
+The short list of things that legitimately differ is written down; anything else
+that differs is a bug.
 
 ---
 
 ## Contents
 
-- [What the orchestrator is](#what-the-orchestrator-is)
+- [The state machine](#the-state-machine)
+- [How it uses agents](#how-it-uses-agents)
+- [The agent contract](#the-agent-contract)
 - [The promises](#the-promises)
 - [Headless and interactive](#headless-and-interactive)
 - [What is allowed to differ](#what-is-allowed-to-differ)
-- [Which promises we keep today](#which-promises-we-keep-today)
 - [Status of this document](#status-of-this-document)
 
 ---
 
-## What the orchestrator is
+## The state machine
 
-You describe a piece of work as a GitHub issue. The orchestrator walks it
-through the steps that turn an issue into shipped code -- writing the
-requirements, drafting the design, building it, reviewing it -- using an AI
-agent for each step. You approve at named points along the way.
+The labels on a work item are the state. A step is a transition. The orchestrator
+reads the labels, selects the one step whose conditions are met, runs it, and
+writes the outcome back as a label.
 
-Everything it does is recorded on the issue itself. The labels on an issue tell
-you exactly where it has got to. There is no separate dashboard, no database,
-and no hidden state: if you can read the issue, you know the position.
+Because state lives on the work item, any orchestrator process reading it
+reaches the same conclusion. There is nothing to synchronise, nothing to
+recover, and no position that exists only in memory.
 
-It runs two ways. **Headless**, as a continuous background process on GitHub
-Actions. Or **interactive**, inside a chat session in Claude Code, where you
-drive it one step at a time and answer approvals as they arrive. Both are the
-same product.
+### Every activity has the same four parts
+
+| Part | What it is | Determinism |
+|---|---|---|
+| `allowed_commands` | Everything this activity may do. Anything else is refused | Data |
+| `pre_actions` | Work performed before the activity -- checking out the branch, preparing the scratch directory | Code |
+| `activity` | The step itself: an AI agent, or a script | **The agent is not deterministic** |
+| `post_actions` | Work performed after -- committing, pushing, labelling, posting the artefact | Code |
+
+Three of the four are code or data. Exactly one is a model.
+
+Commands every step needs are declared once as `global_allowed_commands` rather
+than repeated on each step. A step's effective permission is exactly the global
+set plus its own `allowed_commands`, and nothing else. Two levels, both in
+`pipeline.json`, both readable in one place -- which is what keeps AS-1 true as
+the pipeline grows.
+
+This is where the design contains its own uncertainty. Permission is decided
+before the activity runs and cannot be widened by it. The setup and the
+consequences are performed by the orchestrator, not requested by the agent. What
+the agent actually influences is the work product and one status value -- and
+nothing else in the system depends on the agent having behaved reasonably.
+
+---
+
+## How it uses agents
+
+The orchestrator is deterministic. The agents it invokes are not: they are
+language models, and the same prompt over the same input can produce different
+work on different runs.
+
+The whole design follows from keeping those two things apart.
+
+**The orchestrator decides. The agent produces.** Routing, state, sequencing and
+permission are computed by code from `pipeline.json` and the labels. Nothing an
+agent says influences what runs next, beyond the single terminal status it
+returns from a fixed set.
+
+**Each agent is a black box.** The orchestrator does not know how an agent
+reaches its result and does not inspect its reasoning. It supplies a defined
+input, waits, and reads a defined output. This is what makes agents replaceable:
+a step can be re-prompted, re-modelled, or reimplemented as a script without
+anything else changing.
+
+**The non-determinism is contained at the edges.** Because an agent's only
+influence on control flow is one status value, a bad run costs one step and is
+visible on the issue. It cannot corrupt the state machine, skip a gate, or
+change what happens next.
+
+That containment is only real if the boundary is precise, which is what the
+contract below states.
+
+---
+
+## The agent contract
+
+Every agent, at every step, in both modes. An agent that does not meet this is
+not a different kind of agent -- it is a defect.
+
+### What the orchestrator provides
+
+| Provided | Guarantee |
+|---|---|
+| **One work item** | Exactly one issue or PR. The agent never chooses its own subject |
+| **Its allowed commands** | Everything the agent may do, complete and enforced. An action outside the set is refused, not merely discouraged |
+| **A scratch directory** | An existing, writable path for working files, prepared before the agent starts and removed after |
+| **A turn budget** | A bounded number of turns, known to be enough for the step's declared work |
+| **Its instructions** | A prompt whose every instruction is executable under the commands allowed |
+
+### What the agent must return
+
+| Returned | Requirement |
+|---|---|
+| **Exactly one terminal status** | From the fixed set in `statuses.json`. Never absent, never two, never invented |
+| **Its artefacts, on the work item** | Posted to the issue or PR, append-only. A re-run adds; it never rewrites |
+| **Its files, in the repository or scratch** | Real work in the tree, working files in scratch. Nothing anywhere else |
+
+### What the agent must never do
+
+- **Decide what runs next.** Routing belongs to the orchestrator.
+- **Apply its own lifecycle labels.** `:wip`, `:complete`, `:review`, `:failed`
+  are the orchestrator's record of the agent, not the agent's own claim.
+- **Approve a gate.** Agents draft, humans decide (P-10). No exceptions, in
+  either mode.
+- **Act outside its allowed commands**, or route around a refusal.
+- **Depend on state from a previous run** that is not on the work item or in
+  git. There is no memory between invocations beyond what is recorded.
+
+### What the agent must do when it cannot comply
+
+These obligations are what make a non-deterministic worker safe to depend on.
+They matter more than the happy path, because an agent that fails quietly is
+indistinguishable from one that succeeded.
+
+- **Blocked means say so.** An agent that cannot perform an instruction reports
+  it and stops. It does not substitute a different approach and report success.
+- **A re-run does the work again.** Re-invoking an agent performs the work
+  afresh. Returning a previous run's result is a failure, however plausible the
+  answer.
+- **Out of budget is its own outcome.** Exhausting the turn budget is reported
+  as exhausting the turn budget, never as the work failing. The two demand
+  different responses.
+- **Partial work is declared.** An agent that completed some of its task says
+  which part. Silence is read as completion, so silence about a gap is a false
+  report.
 
 ---
 
 ## The promises
 
-Nine promises. Each is written first as what it means for you, then as the
-precise property an engineer can test.
-
-They exist because most of what has gone wrong with this system has been a
-promise nobody had written down. Of the 27 defects filed between 15 and 25
-August 2026, **11 were headless and interactive behaving differently** -- more
-than any other cause. Nothing said they had to match, so nothing noticed when
-they stopped.
+Nine promises. Each states what it means for you, why it matters, and how it is
+tested. Whether the implementation currently keeps each one is recorded in
+[`gap_analysis.md`](gap_analysis.md).
 
 ---
 
@@ -61,42 +213,25 @@ they stopped.
 > order, what has to finish first, and what each step is allowed to touch.
 > Nothing behaves in a way that file does not describe.**
 
-**Without it,** the real behaviour lives partly in a config file and partly
-somewhere else, so the honest answer to "what will this do?" becomes "read the
-code and find out". Worse, when two places disagree about what a step may touch,
-a permission you thought you had removed is still in force somewhere.
-
-**Precisely.** `pipeline.json` is the authoritative definition of four concerns
-and nothing else defines any of them:
+`pipeline.json` is the authoritative definition of four concerns, and nothing
+else defines any of them:
 
 | Concern | What it covers |
 |---|---|
 | **Process** | Which steps exist, what each one is, and which phase it belongs to |
 | **Sequence** | What triggers a step and what it emits |
 | **Dependencies** | What must have completed before a step is eligible |
-| **Entitled activities** | What each step is permitted to do -- tools, commands, environment |
+| **Entitled activities** | `global_allowed_commands`, plus each step's `allowed_commands`, `pre_actions` and `post_actions` |
 
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
-itself.
+itself. It matters most for allowed commands: a permission defined in two places
+is a security property that holds in one reading and not the other, and a second
+definition is easy to add without noticing -- a constant in the orchestrator, a
+line in an agent's frontmatter, a grant in a settings file.
 
-**Test.** The resolved entitlement set for every step is derivable from
-`pipeline.json` alone. Any entitlement that cannot be traced to it is a test
+**Test.** The resolved command set for every step is derivable from
+`pipeline.json` alone. Any permission that cannot be traced to it is a test
 failure. The same for triggers and dependencies.
-
-**Today:** `VIOLATED` for entitlements; `KEPT` for process, sequence and
-dependencies. Entitlements come from four places:
-
-| Source | Size | Kind |
-|---|---|---|
-| `BASE_AGENT_TOOLS`, `pipeline_orchestrator.py:2712` | 28 entries | Python constant |
-| Agent frontmatter `tools:` | 14 agent files | Prompt metadata |
-| `pipeline.json` defaults + per-step | 2 + 8 steps | Configuration |
-| `.claude/settings.json` `permissions.allow` | 1 entry | Session config |
-
-The largest block is hardcoded, not configured. Three defects trace to the
-split: **#326** was a defect in `BASE_AGENT_TOOLS` itself, **#362** is a defect
-in the `settings.json` path, **#356** was drift between sources during
-resolution. #357 already proposes this fix and predates this document.
 
 ---
 
@@ -105,20 +240,15 @@ resolution. #357 already proposes this fix and predates this document.
 > **The labels on an issue tell you where the work has got to, and they mean
 > the same thing whether a person or the headless runner put them there.**
 
-**Without it,** you cannot trust what you are looking at. The same label on two
-issues means two different things depending on history you cannot see.
+Labels are the only state, so their meaning must not depend on their origin. If
+it does, the same label on two issues means two different things according to
+history nobody can see, and an issue cannot be handed between modes.
 
-**Precisely.** No label is specific to one way of running, and no step
-interprets a label differently depending on which actor applied it.
+**Precisely.** No label is specific to one mode, and no step interprets a label
+differently depending on which actor applied it.
 
 **Test.** Every label in `statuses.json` has exactly one documented meaning, and
 no step's behaviour branches on who applied it.
-
-**Today:** `PARTIAL, UNTESTED`. Labels are shared and none is mode-specific, but
-nothing enforces it, and #380 shows a case where meaning depends on step
-configuration rather than on the label: `:review` means "waiting for a named
-approval" for most steps and "stuck with no way out" for a step that names no
-approval.
 
 ---
 
@@ -127,20 +257,17 @@ approval.
 > **Two people looking at the same issue get the same answer about what happens
 > next. So does the headless runner.**
 
-**Without it,** the pipeline is unpredictable in the way that matters most: you
-cannot tell someone what will happen when they approve something.
+This is what makes the pipeline explainable. Without one routing decision you
+cannot tell someone what will happen when they approve something, and two
+implementations of routing drift invisibly until they disagree on a specific
+issue.
 
-**Precisely.** Given identical state, both modes select the same next
-step. Routing is computed in exactly one place. A driver may read the pipeline
+**Precisely.** Given identical state, both modes select the same next step.
+Routing is computed in exactly one place. A driver may read the pipeline
 definition to explain what will happen, never to decide it.
 
 **Test.** Run the resolver and the real dispatch path over the same issue state
 and assert identical selection, for every step.
-
-**Today:** `VIOLATED`. `/maos-run` correctly leaves routing to the orchestrator,
-but `/run-agent` resolves invocation parameters through a separate path. #356 is
-that drift realised -- it returned 24 tools where the real run passes 93. It was
-fixed; the duplicated path remains and nothing tests the two against each other.
 
 ---
 
@@ -149,41 +276,21 @@ fixed; the duplicated path remains and nothing tests the two against each other.
 > **The limits on what an agent can touch are the same limits however the work
 > was started. There is no looser path.**
 
-**Without it,** a restriction you rely on holds when the headless runner does the
-work and quietly does not when you run it yourself. You would have no way to tell
-from the outside.
+A re-implementation of enforcement must be kept in step with the original
+forever, and it will not be. Every divergence is a security property that holds
+in one mode and silently not in the other, with no way to tell from outside.
+This is the most expensive promise in the list to break.
 
-**Precisely.** Whatever constrains an agent's actions is the **same mechanism**
-in both modes, not an equivalent one. Neither mode re-implements the other's
+**Precisely.** Whatever enforces `allowed_commands` is the **same mechanism** in
+both modes, not an equivalent one. Neither mode re-implements the other's
 enforcement.
 
 **Test.** Exactly one component decides whether an action is permitted, and both
-modes route through it. A second implementation is a test failure, not
-a design choice.
+modes route through it. A second implementation is a test failure, not a design
+choice.
 
-**Today:** `VIOLATED`, and this is the expensive one. Headless mode uses the
-platform's own enforcement when it starts an agent. Interactive mode cannot,
-because `/run-agent` executes agent instructions inside the caller's own session
--- so it
-re-implements enforcement in shell script: an allowlist written to a file, a
-hook on every action, and a command parser. `run-agent.md` says as much in its
-own words.
-
-That re-implementation has produced five defects: **#335** (blocked everything),
-**#356** (dropped permissions), **#374** (two interactive runs overwrote each
-other's
-limits -- `[SECURITY]`), **#383** (refuses 31% of all agent instructions),
-**#388** (the limits may never load at all).
-
-**The cheapest way to keep this promise is deletion, not repair.** If the
-interactive path started agents the same way the headless path does, the
-platform's own
-enforcement would apply and the whole re-implementation could be removed. What
-would be lost is watching the agent work in your session. That trade-off has not
-been evaluated; it is the central question for #393.
-
-**Note.** AS-1 and MI-3 are two halves of one property. AS-1 says permissions are
-*written down* in one place. MI-3 says they are *enforced* by one mechanism.
+**Note.** AS-1 and MI-3 are two halves of one property. AS-1 says permissions
+are *written down* in one place. MI-3 says they are *enforced* by one mechanism.
 Either alone still leaves room for disagreement.
 
 ---
@@ -193,38 +300,17 @@ Either alone still leaves room for disagreement.
 > **Every state the work can reach has a way forward that you can actually
 > perform -- in a chat session or on the runner.**
 
-**Without it,** work silently parks somewhere with no exit, and recovering it
-means someone editing state by hand outside the system, which nobody sees and
-nothing records.
+A halt with no exit is not a pause, it is a loss. Recovering from one means
+editing state by hand outside the system, which nobody sees and nothing records
+-- the exact un-auditable intervention the label model exists to prevent.
 
 **Precisely.** Any state a run can enter has a documented exit performable in
-both modes. A state reachable in one mode and escapable only in the other is
-a defect.
+both modes. A state reachable in one mode and escapable only in the other is a
+defect.
 
 **Test.** Every status in `statuses.json` where `blocks_pipeline` is true names
 a `cleared_by`, that exit is reachable from the step's own configuration, and it
 is performable in both modes.
-
-**Today:** `VIOLATED`, three ways -- but not in the way it first appears.
-
-`statuses.json` already names two exits for `:review`: *"orchestrator (on
-gate-label application) or human (removes label)"*. The second is a genuine
-documented exit, so removing the label is not the out-of-band hack it looks
-like.
-
-The defect is narrower and worse. **#380** -- when a step emits `:review`
-without naming a gate, the *first* exit does not exist for it: there is no label
-to apply. Only the human-removes-label exit remains, and neither the
-orchestrator nor `/maos-run` mentions it. The tooling documents the exit that is
-unavailable and stays silent about the one that works, so the issue reads as
-permanently stuck. That happened twice on 25 August. **#377** -- the interactive driver
-is documented to record its own approval, but the self-approval guard rejects
-it, so the documented procedure cannot work. **#314** -- the emergency stop has
-no defined behaviour for interactive runs.
-
-The lesson generalises: the machine-readable source held more truth than the
-prose describing it. That is the argument for generating these views rather than
-authoring them.
 
 ---
 
@@ -233,18 +319,15 @@ authoring them.
 > **A step does the same thing whether you watched it or not. The trail on the
 > issue records the work, not who was present.**
 
-**Without it,** the artefact trail stops being evidence. You cannot compare two
-issues, because they were produced under different conditions.
+If effects vary by mode, the artefact trail stops being evidence: two issues
+cannot be compared, because they were produced under different conditions.
 
-**Precisely.** The side effects of a step -- labels, comments, commits,
-artefacts -- are identical in both modes and occur in the same order.
-A mode may differ in **who triggers** a step, never in **what the step does**.
+**Precisely.** A step's `pre_actions`, `activity` and `post_actions` produce the
+same effects in both modes, in the same order. A mode may differ in **who
+triggers** a step, never in **what the step does**.
 
 **Test.** Run the same step in both modes against equivalent state and diff the
 resulting issue timeline, ignoring timestamps and actor.
-
-**Today:** `UNTESTED`. No known violation and no test. Listed because its
-absence would be invisible until it mattered.
 
 ---
 
@@ -253,23 +336,16 @@ absence would be invisible until it mattered.
 > **Every check says whether it ran and what it decided. Nothing reports
 > success while doing nothing.**
 
-**Without it,** a green tick means nothing. This is the promise whose absence
-has cost the most: when a control fails by claiming success, every signal
-downstream of it -- passing tests, a clean review, a completed step -- is
-evidence of nothing at all.
+A control that fails by claiming success poisons everything downstream of it:
+passing tests, a clean review and a completed step all become evidence of
+nothing. Silence and success must never look the same.
 
 **Precisely.** Every control reports whether it engaged and what it decided, in
-both modes, in the same form. No control is silent in one and loud in
-the other, and none is silent in both.
+both modes, in the same form. No control is silent in one and loud in the other,
+and none is silent in both.
 
 **Test.** Every control emits a decision line on both the engaged and the
 skipped path, and both modes produce the same line.
-
-**Today:** `VIOLATED`, and this is the widest failure. Nine of the 27 defects
-report success while doing nothing: #308, #315, #343, #346, #358, #362, #378,
-#387, #388. Several are additionally one-sided -- #346 misreports only in
-interactive mode, #326 blocked agents only in headless mode, #334 failed only in
-restricted sessions.
 
 ---
 
@@ -278,23 +354,17 @@ restricted sessions.
 > **An approval needs a human decision, recorded the same way every time. The
 > system cannot approve itself, and cannot be tricked into it by timing.**
 
-**Without it,** the approval gates are decoration. The whole basis of the
-product is that people decide and agents draft.
+Agents draft and humans decide (P-10) is the basis of the product. A gate
+enforced differently in one mode is a gate not enforced, and a guard that admits
+an approval when its check is inconclusive is a guard that fails at exactly the
+moment it is needed.
 
 **Precisely.** A gate requires a human decision recorded through the same
-mechanism in both modes. Neither may self-approve, and neither may
-record approval in a way the other cannot read.
+mechanism in both modes. Neither may self-approve, and neither may record
+approval in a way the other cannot read. An inconclusive check refuses the gate.
 
 **Test.** A gate label applied by a non-human actor is rejected in both modes;
-one applied by a human is honoured in both.
-
-**Today:** `VIOLATED`, twice over. The guard correctly rejects agent-applied
-approvals -- but the interactive driver has no other way to record a decision, so it
-cannot cross a gate at all (#377). And the guard **fails open**: when GitHub's
-timeline has not yet caught up, it logs `no 'labeled' event found ... allowing
-(fail-open)` and lets the approval through. Timeline reads are eventually
-consistent, so an agent-applied approval passes under lag. Both were observed on
-25 August.
+one applied by a human is honoured in both; an unresolvable actor check refuses.
 
 ---
 
@@ -303,8 +373,9 @@ consistent, so an agent-applied approval passes under lag. Both were observed on
 > **There is a short list of things that differ between headless and interactive
 > mode. Anything not on that list is a bug.**
 
-**Without it,** the two modes drift apart one reasonable accommodation at a time,
-each invisible, until they are different products. That is what happened here.
+Without an enumerated list the two modes drift apart one reasonable
+accommodation at a time, each invisible on its own, until they are different
+products.
 
 **Precisely.** Anything that legitimately differs is listed in
 [What is allowed to differ](#what-is-allowed-to-differ) with a reason. An
@@ -312,10 +383,6 @@ unlisted difference is a defect, not a feature.
 
 **Test.** Every mode-conditional branch in the orchestrator, the scripts and the
 agent prompts maps to a listed difference.
-
-**Today:** `PARTIAL`. `17-operating-modes.md` lists differences, but as things
-that happen to be true today rather than differences argued to be permanent.
-Nothing distinguishes an intended difference from an unrepaired defect.
 
 ---
 
@@ -332,8 +399,8 @@ approvals as they arrive. This is how work gets unblocked, debugged, and pushed
 when someone is at the keyboard.
 
 You must be able to start an issue in one mode, walk away, and have the other
-finish it, with no difference in the result. That is what the nine promises above are
-for.
+finish it, with no difference in the result. That is what the nine promises
+above are for.
 
 ---
 
@@ -352,34 +419,12 @@ Everything else is governed by the promises above and must be identical.
 
 Two things are often mistaken for legitimate differences and are not:
 
-- **How permissions are enforced** (MI-3). That the interactive path cannot use the
-  platform's own enforcement today is a consequence of how it starts agents,
-  which is a choice, not a constraint.
+- **How permissions are enforced** (MI-3). Whether a mode can use the platform's
+  own enforcement is a consequence of how it starts agents, which is a choice,
+  not a constraint.
 - **Which errors can be recovered from.** A refused query and a refused
   repository are different failures needing different responses, but which one
   you get must never depend on how the work was started.
-
----
-
-## Which promises we keep today
-
-| Promise | Today | Defects |
-|---|---|---|
-| AS-1 One file tells you what the pipeline does | VIOLATED (permissions) | #326, #356, #362 |
-| MI-1 An issue means the same thing to everyone | PARTIAL, UNTESTED | #380 |
-| MI-2 Same situation, same next step | VIOLATED | #356 |
-| MI-3 An agent can only do what you allowed | VIOLATED | #335, #356, #374, #383, #388 |
-| MI-4 Nothing gets stuck with no way out | VIOLATED | #377, #380, #314 |
-| MI-5 The result does not depend on who watched | UNTESTED | none known |
-| MI-6 You can always tell what happened | VIOLATED | #308, #315, #326, #334, #343, #346, #358, #362, #378, #387, #388 |
-| MI-7 Only a person approves | VIOLATED | #377 |
-| MI-8 Any difference is written down | PARTIAL | -- |
-
-**Seven of nine are broken or unverified, and none has a test.**
-
-That is the first thing to change. Until each promise has a test, this document
-says what the product ought to do rather than describing what it does -- and the
-defects keep arriving by surprise instead of being derived from the gap.
 
 ---
 
@@ -387,27 +432,16 @@ defects keep arriving by surprise instead of being derived from the gap.
 
 | Topic | Authoritative source | State |
 |---|---|---|
-| What the orchestrator is | this document | draft |
+| Core requirements | this document | draft |
+| The state machine and activity shape | this document | draft |
+| How it uses agents, and the agent contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
 | The promises (AS-1, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
+| Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | `01-vision.md` | not yet superseded |
-| Principles P-1 to P-16 | `02-principles.md` | not yet superseded; three known contradictions |
+| Principles P-1 to P-16 | `02-principles.md` | not yet superseded |
 | Pipeline configuration | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its schema | not yet superseded |
 | Lifecycle, status model, gates | `04`, `06`, `07` | not yet superseded |
 | Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |
-| Agent specification | `12-agent-spec.md` | not yet superseded |
+| Agent specification | `12-agent-spec.md` | partially superseded |
 | Standards model | `14-standards.md` | not yet superseded |
-
-**Known contradictions carried forward**, to be resolved as sections are
-written:
-
-- P-16 names `coder` a Mode 1 (agent-driven commit) agent; `pipeline.json`
-  configures it `commit_after: true`, which is Mode 2; and `coder.md` instructs
-  it never to run `git commit` or `git push`. Three sources, three positions.
-- P-16 states agent allowlists must name specific git subcommands, "never the
-  bare `Bash(git *)` glob". `coder`'s only git grant is `Bash(git *)`, which
-  admits `git reset --hard`, `git push --force` and `git branch -D` -- the three
-  commands P-16 separately forbids for all actors in both modes.
-- P-9 mandates unconstrained cross-issue parallelism and names
-  `impact-assessor` and `dependency-resolver` as the agents that make it safe.
-  Neither exists, and the orchestrator has no `blocked-by` handling (#135).
