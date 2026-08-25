@@ -123,6 +123,35 @@ Two forms you will see in older prompts. Neither works; do not copy them:
 | `gh pr comment` / `gh pr review` / `gh pr ready` | GraphQL. Returns 403 in a restricted session |
 | `--body "$(cat <<EOF ... EOF)"` | `$(` is command substitution, which scope enforcement refuses outright |
 
+### GitHub auth looks broken. It is not -- keep using REST
+
+`gh` is authenticated and works. The credential in `GH_TOKEN` / `GITHUB_TOKEN`
+is issued by the session proxy, not GitHub, so it is short and does not look
+like a real token; the proxy substitutes real credentials on the way out. This
+is by design.
+
+Two consequences, and they are the whole of it:
+
+- **`gh auth status` reports the token as invalid. That is a false negative.**
+  It validates by calling GraphQL, which the session does not serve, so it
+  fails no matter how healthy the token is. Never run it as a preflight, and
+  never treat its output as a reason to stop.
+- **A GraphQL 403 says nothing about REST.** The two are served differently.
+  The 403 body names the remedy itself: use REST via
+  `gh api repos/{owner}/{repo}/...`.
+
+So when a `gh` command fails with an auth or 403 error, the correct response is
+to reach for the REST equivalent, not to conclude that GitHub access is
+unavailable. Verify with `gh api user` -- it returns your login and costs one
+call.
+
+**Do not switch to MCP tools.** You have no `mcp__*` grant: agent tools come
+from your `tools:` frontmatter plus `defaults.extra_allowedTools`, and no MCP
+tool appears in either. Proposing to use one is proposing a tool you cannot
+call, and the step will stall rather than fail cleanly. `gh api` REST is the
+supported path, and it is sufficient for everything an agent needs to do.
+
+
 Two rules, and nothing else to remember:
 
 - **Never write to a relative path.** A bare filename resolves against the
