@@ -17,7 +17,7 @@ today. A promise with no test is not a promise, and is marked as such.
 
 - [What the orchestrator is](#what-the-orchestrator-is)
 - [The promises](#the-promises)
-- [Working two ways](#working-two-ways)
+- [Headless and interactive](#headless-and-interactive)
 - [What is allowed to differ](#what-is-allowed-to-differ)
 - [Which promises we keep today](#which-promises-we-keep-today)
 - [Status of this document](#status-of-this-document)
@@ -35,9 +35,10 @@ Everything it does is recorded on the issue itself. The labels on an issue tell
 you exactly where it has got to. There is no separate dashboard, no database,
 and no hidden state: if you can read the issue, you know the position.
 
-It runs two ways. **Overnight**, unattended, moving work forward while nobody is
-watching. Or **live**, in a session at your keyboard, where you drive it one step
-at a time and answer approvals immediately. Both are the same product.
+It runs two ways. **Headless**, as a continuous background process on GitHub
+Actions. Or **interactive**, inside a chat session in Claude Code, where you
+drive it one step at a time and answer approvals as they arrive. Both are the
+same product.
 
 ---
 
@@ -48,7 +49,7 @@ precise property an engineer can test.
 
 They exist because most of what has gone wrong with this system has been a
 promise nobody had written down. Of the 27 defects filed between 15 and 25
-August 2026, **11 were the two ways of running behaving differently** -- more
+August 2026, **11 were headless and interactive behaving differently** -- more
 than any other cause. Nothing said they had to match, so nothing noticed when
 they stopped.
 
@@ -102,7 +103,7 @@ resolution. #357 already proposes this fix and predates this document.
 ### MI-1 -- An issue means the same thing to everyone
 
 > **The labels on an issue tell you where the work has got to, and they mean
-> the same thing whether a person or the scheduler put them there.**
+> the same thing whether a person or the headless runner put them there.**
 
 **Without it,** you cannot trust what you are looking at. The same label on two
 issues means two different things depending on history you cannot see.
@@ -124,12 +125,12 @@ approval.
 ### MI-2 -- The same situation always produces the same next step
 
 > **Two people looking at the same issue get the same answer about what happens
-> next. So does the scheduler.**
+> next. So does the headless runner.**
 
 **Without it,** the pipeline is unpredictable in the way that matters most: you
 cannot tell someone what will happen when they approve something.
 
-**Precisely.** Given identical state, both ways of running select the same next
+**Precisely.** Given identical state, both modes select the same next
 step. Routing is computed in exactly one place. A driver may read the pipeline
 definition to explain what will happen, never to decide it.
 
@@ -148,32 +149,35 @@ fixed; the duplicated path remains and nothing tests the two against each other.
 > **The limits on what an agent can touch are the same limits however the work
 > was started. There is no looser path.**
 
-**Without it,** a restriction you rely on holds when the scheduler runs the work
-and quietly does not when you run it yourself. You would have no way to tell
+**Without it,** a restriction you rely on holds when the headless runner does the
+work and quietly does not when you run it yourself. You would have no way to tell
 from the outside.
 
 **Precisely.** Whatever constrains an agent's actions is the **same mechanism**
-in both ways of running, not an equivalent one. No mode re-implements another
-mode's enforcement.
+in both modes, not an equivalent one. Neither mode re-implements the other's
+enforcement.
 
 **Test.** Exactly one component decides whether an action is permitted, and both
-ways of running route through it. A second implementation is a test failure, not
+modes route through it. A second implementation is a test failure, not
 a design choice.
 
-**Today:** `VIOLATED`, and this is the expensive one. Running overnight uses the
-platform's own enforcement when it starts an agent. Running live cannot, because
-`/run-agent` executes agent instructions inside the caller's own session -- so it
+**Today:** `VIOLATED`, and this is the expensive one. Headless mode uses the
+platform's own enforcement when it starts an agent. Interactive mode cannot,
+because `/run-agent` executes agent instructions inside the caller's own session
+-- so it
 re-implements enforcement in shell script: an allowlist written to a file, a
 hook on every action, and a command parser. `run-agent.md` says as much in its
 own words.
 
 That re-implementation has produced five defects: **#335** (blocked everything),
-**#356** (dropped permissions), **#374** (two live runs overwrote each other's
+**#356** (dropped permissions), **#374** (two interactive runs overwrote each
+other's
 limits -- `[SECURITY]`), **#383** (refuses 31% of all agent instructions),
 **#388** (the limits may never load at all).
 
-**The cheapest way to keep this promise is deletion, not repair.** If the live
-path started agents the same way the overnight path does, the platform's own
+**The cheapest way to keep this promise is deletion, not repair.** If the
+interactive path started agents the same way the headless path does, the
+platform's own
 enforcement would apply and the whole re-implementation could be removed. What
 would be lost is watching the agent work in your session. That trade-off has not
 been evaluated; it is the central question for #393.
@@ -187,19 +191,19 @@ Either alone still leaves room for disagreement.
 ### MI-4 -- Nothing gets stuck with no way out
 
 > **Every state the work can reach has a way forward that you can actually
-> perform -- at your desk or overnight.**
+> perform -- in a chat session or on the runner.**
 
 **Without it,** work silently parks somewhere with no exit, and recovering it
 means someone editing state by hand outside the system, which nobody sees and
 nothing records.
 
 **Precisely.** Any state a run can enter has a documented exit performable in
-both ways of running. A state reachable one way and escapable only the other is
+both modes. A state reachable in one mode and escapable only in the other is
 a defect.
 
 **Test.** Every status in `statuses.json` where `blocks_pipeline` is true names
 a `cleared_by`, that exit is reachable from the step's own configuration, and it
-is performable both unattended and in-session.
+is performable in both modes.
 
 **Today:** `VIOLATED`, three ways -- but not in the way it first appears.
 
@@ -213,10 +217,10 @@ without naming a gate, the *first* exit does not exist for it: there is no label
 to apply. Only the human-removes-label exit remains, and neither the
 orchestrator nor `/maos-run` mentions it. The tooling documents the exit that is
 unavailable and stays silent about the one that works, so the issue reads as
-permanently stuck. That happened twice on 25 August. **#377** -- the live driver
+permanently stuck. That happened twice on 25 August. **#377** -- the interactive driver
 is documented to record its own approval, but the self-approval guard rejects
 it, so the documented procedure cannot work. **#314** -- the emergency stop has
-no defined behaviour for live runs.
+no defined behaviour for interactive runs.
 
 The lesson generalises: the machine-readable source held more truth than the
 prose describing it. That is the argument for generating these views rather than
@@ -233,10 +237,10 @@ authoring them.
 issues, because they were produced under different conditions.
 
 **Precisely.** The side effects of a step -- labels, comments, commits,
-artefacts -- are identical in both ways of running and occur in the same order.
+artefacts -- are identical in both modes and occur in the same order.
 A mode may differ in **who triggers** a step, never in **what the step does**.
 
-**Test.** Run the same step both ways against equivalent state and diff the
+**Test.** Run the same step in both modes against equivalent state and diff the
 resulting issue timeline, ignoring timestamps and actor.
 
 **Today:** `UNTESTED`. No known violation and no test. Listed because its
@@ -255,16 +259,17 @@ downstream of it -- passing tests, a clean review, a completed step -- is
 evidence of nothing at all.
 
 **Precisely.** Every control reports whether it engaged and what it decided, in
-both ways of running, in the same form. No control is silent one way and loud
+both modes, in the same form. No control is silent in one and loud in
 the other, and none is silent in both.
 
 **Test.** Every control emits a decision line on both the engaged and the
-skipped path, and the two ways of running produce the same line.
+skipped path, and both modes produce the same line.
 
 **Today:** `VIOLATED`, and this is the widest failure. Nine of the 27 defects
 report success while doing nothing: #308, #315, #343, #346, #358, #362, #378,
-#387, #388. Several are additionally one-sided -- #346 misreports only live,
-#326 blocked agents only overnight, #334 failed only in restricted sessions.
+#387, #388. Several are additionally one-sided -- #346 misreports only in
+interactive mode, #326 blocked agents only in headless mode, #334 failed only in
+restricted sessions.
 
 ---
 
@@ -277,14 +282,14 @@ report success while doing nothing: #308, #315, #343, #346, #358, #362, #378,
 product is that people decide and agents draft.
 
 **Precisely.** A gate requires a human decision recorded through the same
-mechanism in both ways of running. Neither may self-approve, and neither may
+mechanism in both modes. Neither may self-approve, and neither may
 record approval in a way the other cannot read.
 
-**Test.** A gate label applied by a non-human actor is rejected both ways; one
-applied by a human is honoured both ways.
+**Test.** A gate label applied by a non-human actor is rejected in both modes;
+one applied by a human is honoured in both.
 
 **Today:** `VIOLATED`, twice over. The guard correctly rejects agent-applied
-approvals -- but the live driver has no other way to record a decision, so it
+approvals -- but the interactive driver has no other way to record a decision, so it
 cannot cross a gate at all (#377). And the guard **fails open**: when GitHub's
 timeline has not yet caught up, it logs `no 'labeled' event found ... allowing
 (fail-open)` and lets the approval through. Timeline reads are eventually
@@ -295,10 +300,10 @@ consistent, so an agent-applied approval passes under lag. Both were observed on
 
 ### MI-8 -- Any difference is written down
 
-> **There is a short list of things that differ between running overnight and
-> running live. Anything not on that list is a bug.**
+> **There is a short list of things that differ between headless and interactive
+> mode. Anything not on that list is a bug.**
 
-**Without it,** the two ways drift apart one reasonable accommodation at a time,
+**Without it,** the two modes drift apart one reasonable accommodation at a time,
 each invisible, until they are different products. That is what happened here.
 
 **Precisely.** Anything that legitimately differs is listed in
@@ -314,19 +319,20 @@ Nothing distinguishes an intended difference from an unrepaired defect.
 
 ---
 
-## Working two ways
+## Headless and interactive
 
-**Overnight.** GitHub Actions starts the orchestrator when an issue or pull
-request changes, or on a timer. Nobody is watching. Work moves forward while the
-team sleeps, and approvals wait for whoever next looks. This is the primary way
-it runs.
+**Headless.** A continuous background process on GitHub Actions. It starts when
+an issue or pull request changes, or on a timer, and nobody is watching. Work
+keeps moving without anyone present, and approvals wait for whoever next looks
+at the issue. This is the primary mode.
 
-**Live.** You run `/maos-run {N}` in a session and drive one issue forward step
-by step, watching each agent work and answering approvals as they arrive. This is
-how work gets unblocked, debugged, and pushed when someone is at the keyboard.
+**Interactive.** A chat session in Claude Code. You run `/maos-run {N}` and drive
+one issue forward a step at a time, watching each agent work and answering
+approvals as they arrive. This is how work gets unblocked, debugged, and pushed
+when someone is at the keyboard.
 
-You must be able to start an issue one way, walk away, and have the other finish
-it, with no difference in the result. That is what the nine promises above are
+You must be able to start an issue in one mode, walk away, and have the other
+finish it, with no difference in the result. That is what the nine promises above are
 for.
 
 ---
@@ -335,9 +341,9 @@ for.
 
 The complete list. Anything not here is a defect.
 
-| Difference | Overnight | Live | Why this is legitimate |
+| Difference | Headless | Interactive | Why this is legitimate |
 |---|---|---|---|
-| Who starts a step | A GitHub event or a timer | A person running `/maos-run` | This is the whole point of having two ways |
+| Who starts a step | A GitHub event or a timer | A person running `/maos-run` | This is the whole point of having two modes |
 | Where you watch it | Issue and pull-request activity | The same, plus live agent output | What you see is not what happened; the trail is identical |
 | Which credentials are used | Repository secrets | The session's own login | The environments genuinely differ; the *authority* those credentials carry must not |
 | How long an approval waits | Until someone next looks | Immediately | A person being present is the difference |
@@ -346,7 +352,7 @@ Everything else is governed by the promises above and must be identical.
 
 Two things are often mistaken for legitimate differences and are not:
 
-- **How permissions are enforced** (MI-3). That the live path cannot use the
+- **How permissions are enforced** (MI-3). That the interactive path cannot use the
   platform's own enforcement today is a consequence of how it starts agents,
   which is a choice, not a constraint.
 - **Which errors can be recovered from.** A refused query and a refused
@@ -383,7 +389,7 @@ defects keep arriving by surprise instead of being derived from the gap.
 |---|---|---|
 | What the orchestrator is | this document | draft |
 | The promises (AS-1, MI-1 to MI-8) | this document | draft |
-| Working two ways | this document | draft -- supersedes `17-operating-modes.md` |
+| Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
 | Vision and problem | `01-vision.md` | not yet superseded |
 | Principles P-1 to P-16 | `02-principles.md` | not yet superseded; three known contradictions |
 | Pipeline configuration | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its schema | not yet superseded |
