@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # PreToolUse hook: real enforcement of /run-agent's tool-scope rule (issue #311).
 #
-# /run-agent writes .claude/.run-agent-scope.json at the start of a run,
-# declaring the allowlist the orchestrator would pass as --allowedTools when it
-# spawns the target agent as a subprocess, and removes it when the run ends.
+# /run-agent writes .claude/.run-agent-scope.${PPID}.json at the start of a
+# run, declaring the allowlist the orchestrator would pass as --allowedTools
+# when it spawns the target agent as a subprocess, and removes it when the run
+# ends. The path is keyed by the parent PID (the claude process), so concurrent
+# /run-agent sessions in the same working tree each have a distinct file and
+# cannot clobber or prematurely clean up each other's enforcement (issue #374).
 # While that file exists, this hook denies any tool call outside that allowlist.
 #
 # Entries come in two forms, and both must be honoured (issue #335):
@@ -20,11 +23,12 @@
 # started with `cd`. split-command.py owns the decomposition and refuses
 # anything it cannot decompose honestly; a refusal is a denial.
 #
-# No scope file present -> nothing to enforce -> allow silently (exit 0, no
-# output). This is the normal state outside of a /run-agent invocation.
+# No scope file present for this session -> nothing to enforce -> allow
+# silently (exit 0, no output). This is the normal state outside of a
+# /run-agent invocation, and also when another session's scope file exists.
 set -euo pipefail
 
-SCOPE_FILE=".claude/.run-agent-scope.json"
+SCOPE_FILE=".claude/.run-agent-scope.${PPID}.json"
 SPLITTER="$(dirname -- "${BASH_SOURCE[0]}")/split-command.py"
 
 [ -f "$SCOPE_FILE" ] || exit 0
@@ -55,6 +59,9 @@ fi
 # (issue #356). Matched exactly, so it grants nothing beyond removing the file.
 case "$COMMAND" in
   "rm $SCOPE_FILE"|"rm -f $SCOPE_FILE"|"rm -f -- $SCOPE_FILE") exit 0 ;;
+  'rm ".claude/.run-agent-scope.${PPID}.json"'|\
+  'rm -f ".claude/.run-agent-scope.${PPID}.json"'|\
+  'rm -f -- ".claude/.run-agent-scope.${PPID}.json"') exit 0 ;;
 esac
 
 DETAIL=""

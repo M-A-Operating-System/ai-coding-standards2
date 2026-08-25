@@ -77,7 +77,7 @@ Examples:
    echo "$RESOLVED" | jq \
      --arg agent "$AGENT_NAME" \
      '{agent: $agent, allowed: .allowed_tools}' \
-     > .claude/.run-agent-scope.json
+     > ".claude/.run-agent-scope.${PPID}.json"
    ```
 
    A `PreToolUse` hook (`.claude/hooks/run-agent-scope.sh`, registered in
@@ -115,7 +115,7 @@ Examples:
 7. Remove the scope file and the scratch directory so neither affects
    unrelated work later in this session:
    ```bash
-   rm -f .claude/.run-agent-scope.json
+   rm -f ".claude/.run-agent-scope.${PPID}.json"
    [ -n "${AI_AGILE_SCRATCH:-}" ] \
      && AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash .github/scripts/scratch-teardown.sh
    ```

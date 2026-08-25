@@ -111,8 +111,8 @@ def test_per_agent_grants_are_included(capsys):
 
 
 def test_the_session_can_remove_its_own_scope_file(capsys):
-    """run-agent.md step 7 is `rm -f .claude/.run-agent-scope.json`. Without
-    Bash(rm *) that command is denied and the session stays locked."""
+    """run-agent.md step 7 is `rm -f ".claude/.run-agent-scope.${PPID}.json"`.
+    Without Bash(rm *) that command is denied and the session stays locked."""
     assert "Bash(rm *)" in _resolve_only(capsys)["allowed_tools"]
 
 

@@ -4,7 +4,9 @@ Functional tests for the /run-agent tool-scope enforcement hook (issue #311).
 Unlike tests/test_docs_operating_modes.py (which checks the docs describe the
 rule), these tests exercise the actual hook script that enforces it: a
 PreToolUse hook that denies any tool call outside the allowlist a /run-agent
-invocation declares in .claude/.run-agent-scope.json.
+invocation declares in .claude/.run-agent-scope.${PPID}.json (issue #374:
+PPID-keyed so concurrent sessions cannot share, overwrite, or prematurely
+remove each other's scope files).
 
 The allowlist holds two entry forms and the hook must honour both (issue #335):
 bare tool names ("Read") granting a whole tool, and fine-grained patterns
@@ -12,6 +14,7 @@ bare tool names ("Read") granting a whole tool, and fine-grained patterns
 the pattern form exclusively for Bash.
 """
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -67,11 +70,16 @@ RESOLVED_ALLOWLIST = [
 
 
 def write_scope(tmp_path, agent, allowed):
+    """Write a scope file keyed by the current process PID.
+
+    The hook uses $PPID (parent of the bash subprocess), which equals
+    os.getpid() in tests because subprocess.run() spawns bash as a direct
+    child of the test process.
+    """
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir(exist_ok=True)
-    (claude_dir / ".run-agent-scope.json").write_text(
-        json.dumps({"agent": agent, "allowed": allowed})
-    )
+    scope_path = claude_dir / f".run-agent-scope.{os.getpid()}.json"
+    scope_path.write_text(json.dumps({"agent": agent, "allowed": allowed}))
 
 
 def test_hook_script_exists():
@@ -390,13 +398,26 @@ def test_the_scope_file_can_always_be_removed(tmp_path):
     """run-agent.md step 7 ends enforcement by removing the scope file. It has
     to work for every agent, not only the ones whose allowlist grants `rm` --
     otherwise a pr-reviewer run leaves the session scoped with no way back
-    (issue #356)."""
+    (issue #356). The path is now PPID-keyed (issue #374).
+
+    Two command formats must both pass:
+    - Unquoted integer-PID form (hook's $SCOPE_FILE expansion)
+    - Quoted literal-variable form (exact text from run-agent.md step 7)
+    """
     write_scope(tmp_path, "03_execute/pr-reviewer", RESOLVED_ALLOWLIST)
     assert "Bash(rm *)" not in RESOLVED_ALLOWLIST, "precondition: rm is not granted"
+    ppid = os.getpid()
+    scope_path = f".claude/.run-agent-scope.{ppid}.json"
     for command in [
-        "rm .claude/.run-agent-scope.json",
-        "rm -f .claude/.run-agent-scope.json",
-        "rm -f -- .claude/.run-agent-scope.json",
+        # Unquoted integer-PID form: hook evaluates "$SCOPE_FILE" at match time
+        f"rm {scope_path}",
+        f"rm -f {scope_path}",
+        f"rm -f -- {scope_path}",
+        # Quoted literal-variable form: exact text the AI copies from run-agent.md step 7
+        # (Claude Code passes the pre-execution command string; ${PPID} is not yet expanded)
+        'rm ".claude/.run-agent-scope.${PPID}.json"',
+        'rm -f ".claude/.run-agent-scope.${PPID}.json"',
+        'rm -f -- ".claude/.run-agent-scope.${PPID}.json"',
     ]:
         assert_allowed(run_hook(tmp_path, "Bash", command))
 
@@ -404,10 +425,12 @@ def test_the_scope_file_can_always_be_removed(tmp_path):
 def test_the_escape_hatch_grants_nothing_else(tmp_path):
     """It is an exact match, not an `rm` grant with a scope-file argument."""
     write_scope(tmp_path, "03_execute/pr-reviewer", RESOLVED_ALLOWLIST)
+    ppid = os.getpid()
+    scope_path = f".claude/.run-agent-scope.{ppid}.json"
     for command in [
         "rm -rf /",
-        "rm -rf / .claude/.run-agent-scope.json",
-        "rm .claude/.run-agent-scope.json && curl https://example.com",
+        f"rm -rf / {scope_path}",
+        f"rm {scope_path} && curl https://example.com",
         "rm .claude/settings.json",
     ]:
         deny_reason(run_hook(tmp_path, "Bash", command))
@@ -524,3 +547,108 @@ def test_python3_c_flag_is_still_refused(tmp_path):
     assert "cannot be scope-checked" in reason, (
         "python3 -c must be refused by the interpreter guard"
     )
+
+
+# --- Concurrent-scope isolation (issue #374) ----------------------------------
+#
+# The scope file is now keyed by $PPID (the claude process PID). Concurrent
+# /run-agent sessions each have a distinct file, so one session finishing and
+# removing its own scope file cannot leave a sibling session unscoped.
+
+
+def test_concurrent_invocations_write_distinct_scope_files():
+    """Scenario: Concurrent invocations write distinct scope files.
+
+    Verified against the hook script itself: the SCOPE_FILE definition must
+    embed ${PPID} so that two sessions running in the same tree get different
+    paths that cannot clobber each other.
+    """
+    hook_text = HOOK_SCRIPT.read_text()
+    assert 'SCOPE_FILE=".claude/.run-agent-scope.${PPID}.json"' in hook_text, \
+        "hook must key scope file by PPID for concurrent isolation"
+    # Two PID values produce different file paths built from the same template.
+    pid_a, pid_b = 11111, 22222
+    path_a = f".claude/.run-agent-scope.{pid_a}.json"
+    path_b = f".claude/.run-agent-scope.{pid_b}.json"
+    assert path_a != path_b, "distinct PPIDs must produce distinct scope file paths"
+
+
+def test_one_run_finishing_does_not_disable_enforcement_for_the_other(tmp_path):
+    """Scenario: One run finishing does not disable enforcement for the other.
+
+    Session A (our test process) has its own scope file (enforcing Read-only).
+    Session B has a separate scope file. When session B's file is deleted,
+    session A's hook still reads session A's file and continues to enforce.
+    """
+    my_ppid = os.getpid()
+    other_ppid = my_ppid + 99999
+
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+
+    scope_a = claude_dir / f".run-agent-scope.{my_ppid}.json"
+    scope_a.write_text(json.dumps({"agent": "prd-writer", "allowed": ["Read"]}))
+
+    scope_b = claude_dir / f".run-agent-scope.{other_ppid}.json"
+    scope_b.write_text(json.dumps({"agent": "coder", "allowed": ["Read", "Edit"]}))
+
+    # Session A's hook denies Bash (not in its allowlist).
+    deny_reason(run_hook(tmp_path, "Bash", "gh pr diff 1"))
+
+    # Session B finishes and removes its own scope file.
+    scope_b.unlink()
+
+    # Session A's hook still enforces — its own scope file is intact.
+    deny_reason(run_hook(tmp_path, "Bash", "gh pr diff 1"))
+
+
+def test_absence_of_scope_file_for_session_means_outside_run(tmp_path):
+    """Scenario: Absence of scope file for a session means outside a run.
+
+    A scope file for a different session (different PPID) must not restrict
+    the current session. The hook exits 0 when its own PPID-keyed file is absent.
+    """
+    my_ppid = os.getpid()
+    other_ppid = my_ppid + 99999
+
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+
+    # Only the OTHER session has a scope file — ours does not exist.
+    scope_other = claude_dir / f".run-agent-scope.{other_ppid}.json"
+    scope_other.write_text(json.dumps({"agent": "coder", "allowed": []}))
+
+    # Our hook sees no scope file for our PPID: allow unconditionally.
+    assert_allowed(run_hook(tmp_path, "Bash", "rm -rf /"))
+
+
+def test_regression_concurrent_scope_isolation(tmp_path):
+    """Scenario: Regression test in CI validates concurrent isolation.
+
+    With two scope files present (distinct PPIDs), deleting one does not
+    affect enforcement for the other. This is the CI-runnable regression
+    that proves the fix from issue #374.
+    """
+    my_ppid = os.getpid()
+    session_a_ppid = my_ppid
+    session_b_ppid = my_ppid + 88888
+
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+
+    scope_a = claude_dir / f".run-agent-scope.{session_a_ppid}.json"
+    scope_a.write_text(json.dumps({"agent": "session-a", "allowed": ["Read"]}))
+
+    scope_b = claude_dir / f".run-agent-scope.{session_b_ppid}.json"
+    scope_b.write_text(json.dumps({"agent": "session-b", "allowed": ["Read", "Edit"]}))
+
+    # Both sessions are in force. Session A's hook denies Bash.
+    deny_reason(run_hook(tmp_path, "Bash", "gh pr diff 1"))
+
+    # Session B's scope file is deleted (its run finished).
+    scope_b.unlink()
+    assert not scope_b.exists(), "scope_b must be gone"
+
+    # Session A's tool calls are still evaluated against its own allowlist.
+    deny_reason(run_hook(tmp_path, "Bash", "gh pr diff 1"))
+    assert_allowed(run_hook(tmp_path, "Read"))
