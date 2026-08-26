@@ -744,10 +744,23 @@ in a settings file. Two declared files with a stated precedence is not that. The
 effective definition for any repository is still readable, still complete, and
 still the only thing that decides what happens.
 
-The repository's file lives with its other project-owned artefacts, outside the
-framework it overrides -- seeded once by onboarding and never overwritten, so
-what a repository decided about its own process survives every framework
-version.
+**Where it lives.** `pipeline/pipeline.json` in the repository itself, mirroring
+the path of the file it overrides so the relationship needs no explaining. It is
+the same shape as the shipped definition and holds only the parts the repository
+declares -- flows it adds, flows it replaces, and any default it wants to differ
+on.
+
+It is project-owned, and gets the treatment that implies: seeded once by
+onboarding, never overwritten by a sync, and committed normally rather than
+gitignored. What a repository decided about its own process has to survive every
+framework version, which is precisely what the framework's own files must not
+do. The shipped definition is read verbatim and can be replaced wholesale on
+upgrade; the local one is never touched.
+
+That is the same split as `standards/` and `adrs/`: one side inherited and
+identical everywhere, the other side the repository's own and safe from the
+sync. The difference is only that here the local side *overrides* rather than
+sits beside -- which is why precedence has to be stated rather than assumed.
 
 **The cost, stated.** A flow a repository overrides stops tracking the default.
 The framework may improve its version and the repository will not see it, in the
