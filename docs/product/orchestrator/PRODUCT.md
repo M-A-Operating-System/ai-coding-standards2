@@ -223,13 +223,50 @@ label model exists to avoid, and in the workflow-file case it would put part of
 the process definition outside `pipeline.json`. The cadence is declared with the
 flow; whether it is due is derived from what already happened.
 
-Two consequences follow. A scheduled flow needs a claim of its own, because the
-`:wip` mutex is a label on a work item and there is no work item to label -- two
-runners must not start the same sweep. And a scheduled flow produces work items
-rather than consuming one, so what it emits re-enters the pipeline as ordinary
-work and is reviewed like anything else. A loop that changed things directly
-would be a second way for work to reach the codebase, subject to none of the
-gates the first one has.
+A scheduled flow also needs a claim of its own, because the `:wip` mutex is a
+label on a work item and there is no work item to label -- two runners must not
+start the same sweep.
+
+### A scheduled flow reviews; it does not change
+
+**A scheduled flow only ever looks.** It reads the codebase, the backlog, the
+record, and it reports. It does not edit a file, commit, or alter a work item
+beyond raising one. Where it concludes something must change, it raises an issue
+saying so, and that issue enters the pipeline as ordinary work.
+
+This is not a style preference. A loop that changed things directly would be a
+second route for work to reach the codebase, subject to none of the gates the
+first route has -- no specification, no review, no approval -- and the fact that
+it ran unattended on a schedule is exactly what makes that unacceptable. Raising
+an issue costs nothing and puts the change in front of the same people, with the
+same evidence, under the same rules.
+
+It also makes the constraint checkable rather than aspirational. A reviewing
+flow declares an `expected_effect` of no change to the repository, so a
+scheduled flow that produces a commit disagrees with its own declaration and
+MI-6 surfaces it. The rule is enforced by the same comparison that catches a
+step reporting work it did not do.
+
+### It reports what is new, not what it already said
+
+A sweep that runs weekly finds most of the same things it found last week. If
+each run raises a full report, the second one is noise and the fourth one is
+ignored -- and a genuine new finding arrives buried in forty repeats.
+
+**So a run reports against what it already reported.** If an issue from an
+earlier run of the same flow is still open, the new run raises only what has
+appeared since: findings not already in that issue. If the earlier issue has been
+closed -- fixed, or judged not worth fixing -- the slate is clean and the next
+run reports in full.
+
+This needs one thing to be true: an issue must say which flow produced it, so a
+flow can find its own previous output. That provenance is what makes "already
+reported" answerable at all.
+
+And it is the same move as the cadence above. What has already been said is read
+from the issue that says it, not from a list of findings kept somewhere in
+parallel. Neither question -- is this due, has this been reported -- gets a new
+store; both are answered by reading what the system already wrote down.
 
 ### Names are declared, never computed
 
