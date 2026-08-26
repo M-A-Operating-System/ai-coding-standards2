@@ -133,19 +133,24 @@ time.** Once runs are serialised, every run begins with settled labels and the
 model is unchanged -- labels are still the whole of it -- but "read the labels
 and act" is only deterministic if no other run is mid-write.
 
-Two further limits sit alongside it, and they answer different questions:
+Serialising runs decides more than it looks. One run at a time, and a run that
+waits for each step it starts, means the pipeline is **sequential**: no two
+steps are ever in flight together, so nothing needs limiting to keep them apart.
 
-| Limit | Question it answers |
-|---|---|
-| How many work items may have the same step in flight at once | Can two issues be having code written for them at the same time? |
-| How much work one tick will start before it stops | A hundred issues become eligible at once -- does the pipeline try all of them? |
+One limit is still needed, and it is not about concurrency. When a burst of work
+becomes eligible at once -- a hundred issues, a backlog import -- something has
+to bound how much a single pass takes on, or one tick tries to do all of it. That
+is a cap on how much work a tick *starts*, and it belongs with the other budgets
+rather than fixed in code: one number chosen once for every situation is a
+number nobody can tune for the case in front of them.
 
-The second is not about concurrency, despite being easy to name as though it
-were. It bounds how much a single pass takes on, so a burst of eligible work
-does not consume everything available in one go. Both are limits on
-consumption, so both are declared with the other budgets rather than fixed in
-code -- one number chosen once for every step and every situation is a number
-nobody can tune for the case in front of them.
+A limit on how many work items may have the same step in flight at once is a
+different thing, and today it would have nothing to limit. It becomes meaningful
+only if the pipeline stops being sequential, which means giving up the run
+serialisation above -- and that exists for a reason, so it is a decision to take
+deliberately rather than a knob to leave lying around. **Until then the field
+should not exist.** A declared limit that cannot bind teaches a reader that
+something is bounded when nothing is.
 
 ### Every step has the same four parts
 
@@ -643,7 +648,7 @@ else defines any of them:
 | **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
-| **Budgets** | `max_turns`, `max_wall_seconds`, `max_concurrent`, per-tick launch cap | What a step may consume: how much it may attempt, how long it may hold the pipeline, how many may be in flight at once, and how much work one tick starts |
+| **Budgets** | `max_turns`, `max_wall_seconds`, and a per-tick cap on work started | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
 
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
 itself. It matters most for allowed commands: a permission defined in two places

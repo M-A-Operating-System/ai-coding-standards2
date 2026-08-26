@@ -535,14 +535,22 @@ across ALL agent types in a single tick", and `invoke_agent` blocks on
 batch-size cap wearing a concurrency name.
 
 `max_concurrent` is a genuine concurrency limit -- how many work items may carry
-`{agent}:wip` at once -- but it defaults to 1 and **no step in `pipeline.json`
-sets it**. Combined with global run serialisation and blocking invocation, the
-pipeline is strictly sequential today: one run at a time, one agent at a time
-within it, one work item at a time per step.
+`{agent}:wip` at once -- but it defaults to 1, no step sets it, and it has
+nothing to limit. Global run serialisation and blocking invocation make the
+pipeline strictly sequential: one run at a time, one agent at a time within it.
+The field can only ever bind on `:wip` labels left by a run that died, which is
+the stranded-lock case above, and treating that as a concurrency limit would
+mask the real defect.
 
-That is worth stating plainly because P-9 asserts the opposite -- unconstrained
-cross-issue parallelism -- and the ceilings can only ever bite on `:wip` labels
-left behind by a run that died, which is the stranded-lock case above.
+**The target removes the field rather than relocating it.** A concurrency limit
+becomes meaningful only if the pipeline stops being sequential, which means
+giving up run serialisation -- a deliberate decision, not a knob to keep on
+hand. Until then a declared limit that cannot bind teaches a reader that
+something is bounded when nothing is.
+
+This is also where P-9 is wrong rather than unimplemented: it asserts
+unconstrained cross-issue parallelism, and the serialisation it would need to
+give up is what keeps label reads deterministic.
 
 ---
 
