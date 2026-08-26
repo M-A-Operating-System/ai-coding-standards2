@@ -576,7 +576,7 @@ each one is recorded in [`gap_analysis.md`](gap_analysis.md).
 > each is supposed to change. Nothing behaves in a way that file does not
 > describe.**
 
-`pipeline.json` is the authoritative definition of six concerns, and nothing
+`pipeline.json` is the authoritative definition of seven concerns, and nothing
 else defines any of them:
 
 | Concern | Declared as | What it covers |
@@ -587,6 +587,7 @@ else defines any of them:
 | **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
+| **Budgets** | `max_turns`, `max_wall_seconds` | How much a step may attempt and how long it may hold the pipeline, per step |
 
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
 itself. It matters most for allowed commands: a permission defined in two places
@@ -595,9 +596,13 @@ definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
 
 **Precisely.** Process, sequence, dependencies, entitled activities, expected
-effect and flows are defined in `pipeline.json` and nowhere else. No constant in
-the orchestrator, no agent frontmatter field, and no settings file adds to,
-narrows or overrides any of the six. In particular no name is computed in code:
+effect, flows and budgets are defined in `pipeline.json` and nowhere else. No
+constant in the orchestrator, no agent frontmatter field, and no settings file
+adds to, narrows or overrides any of the seven. A limit is a definition like any
+other: a budget that lives as a constant is a step's declared allowance that no
+reader of the process definition can see, and a budget with no per-step value is
+one number asserted to fit every step in the pipeline. In particular no name is
+computed in code:
 a branch or pull-request name that is a string built inside the orchestrator is
 a definition living outside the file that is supposed to hold it.
 
