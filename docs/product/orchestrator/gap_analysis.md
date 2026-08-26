@@ -432,6 +432,9 @@ code.
 |---|---|
 | Branch and pull-request names declared in `pipeline.json` | `f"issue-{work_item.number}"` is built in seven places in `pipeline_orchestrator.py` (lines 829, 898, 2121, 2147, 3697, 4161, 4329). Only the suffix is data (`branch_suffix`), so a flow not named `issue-N` cannot be added without editing code |
 | More than one kind of work item | All sixteen steps declare `object: ["issue"]`. `WORK_ITEM_KIND` distinguishes an issue from a PR, but nothing declares a PR-driven step |
+| A flow declared as a flow | No such concept. A step has `object`, `exclude_labels` and `exclude_classifications` and no include-style field at all, so flow membership is the *absence* of a prohibition. "Epics run their own flow" is expressed as `exclude_labels: ["epic"]` repeated on the nine steps that are not theirs -- so adding a flow costs one edit per existing step, and forgetting one routes work into the wrong flow with no error |
+| Selection by classification | Only `spike` is ever excluded, on 8 of 16 steps. `bug`, `enhancement`, `feature` and `toil` are indistinguishable to the pipeline and run identically, so the taxonomy in `04-lifecycle.md` drives nothing but spike-skipping. "This flow, for issues of this classification" cannot be said |
+| A validated declaration for mechanical work | `orchestrator_checks` is present in `pipeline.json` but absent from `pipeline.schema.json`; it passes validation only because the schema sets `additionalProperties: true` at the top level. The one place scheduled and mechanical work is declared is unvalidated |
 | A flow started by a schedule | The schema allows `trigger.schedule` as a cron expression, but the orchestrator does not act on it: `pipeline_orchestrator.py:1742` reads `# Event and schedule triggers are handled externally (GitHub Actions)`, and eligibility is decided from `agent_def.trigger["label"]` alone (line 1745). The cadence therefore lives in the workflow's cron, outside `pipeline.json`, and no step can have a cadence of its own -- every step is evaluated on every tick |
 | A cadence the orchestrator can reason about | No step or flow records when it last ran in a form the orchestrator reads. The weekly sweep exists as an `orchestrator_checks` entry declaring `"runs": "orchestrator-native (no registered agent, no LLM invocation)"`, so "is it due" is a decision inside the coordinator |
 | A claim for a flow with no work item | `:wip` is a label on a work item (P-4). A scheduled flow has no work item, so there is nothing to label and no mutex; two runners would start the same sweep |
@@ -441,9 +444,16 @@ code.
 | A read-only step declared as one | Not expressible as a declaration. `branch-cleanup` and `issue-cleanup` are read-only on their first invocation and act on the second, but that is enforced by prose in the prompt, not by their allowed commands -- so nothing outside the prompt knows, and nothing checks |
 | Provenance on a work item the orchestrator creates | Designed but not implemented. `04-lifecycle.md` specifies `Gap-source:` and `Debt-source:` trailers; neither appears in any code or prompt. They are also two names for one concept -- which step produced this -- where one would serve every flow rather than a new name per loop |
 
-The last two rows are the same defect as AS-2: work that `pipeline.json` cannot
+Several of these are the same defect as AS-2: work that `pipeline.json` cannot
 express ends up inside the coordinator, where no reader of the process
 definition can see it and no step can be added without a code change.
+
+The selection rows are a different shape and worth separating. Nothing is
+missing from the orchestrator there -- what is missing is the ability to say
+which work a step is *for*. Negative filtering makes every step apply to
+everything until told otherwise, which is the wrong default for a system where
+most steps belong to exactly one flow, and it makes each new flow a change to
+every existing step rather than one declaration.
 
 The two-phase design-to-build flow (`04-lifecycle.md`) is the existing evidence
 that a flow can need more than one branch and more than one pull request per
