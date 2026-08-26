@@ -542,17 +542,28 @@ The field can only ever bind on `:wip` labels left by a run that died, which is
 the stranded-lock case above, and treating that as a concurrency limit would
 mask the real defect.
 
-**The target removes the field rather than relocating it.** A concurrency limit
-becomes meaningful only if the pipeline stops being sequential, which means
-giving up run serialisation -- a deliberate decision, not a knob to keep on
-hand. Until then a declared limit that cannot bind teaches a reader that
-something is bounded when nothing is.
+**The target replaces it with component exclusion.** Whether two items may
+advance together is decided by their `component:` labels, and an item with no
+such label runs alone -- so a count of permitted concurrent instances is not the
+control, and the field goes rather than moving to `pipeline.json`.
 
-P-9 is neither wrong nor merely unimplemented: it is blocked on an input that
-does not exist. Cross-issue parallelism is safe only between runs that will not
-change the same code, and nothing determines what an issue will touch before the
-work starts. Labels keep two runs off one item and do nothing about two items
-converging on one module.
+Three things are missing for that to work. No `component:` label exists on any
+issue and no repository declares the set of components it recognises, so every
+item is untagged and every item therefore runs alone -- which is the correct
+behaviour and identical to today, but by accident rather than by decision. And
+runs share one working tree (#373), so even correctly-labelled non-overlapping
+items would disturb each other on disk; deciding two runs may proceed is not the
+same as isolating them.
+
+P-9 is neither wrong nor merely unimplemented: it was blocked on an input that
+did not exist. Cross-issue parallelism is safe only between runs that will not
+change the same code, and P-9 waited on agents that would work that out by
+inspection.
+
+The target does not wait for them. A `component:` label on the issue is a claim
+someone made rather than a conclusion something inferred, so it is available now
+-- and an unlabelled issue runs alone, which makes the absence of the claim safe
+rather than permissive.
 
 Two requirements are separate here and worth not conflating. Keeping two runs
 off the same item is what the serialisation solves. Keeping two runs off the

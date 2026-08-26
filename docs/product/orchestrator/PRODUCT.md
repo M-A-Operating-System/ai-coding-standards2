@@ -157,23 +157,40 @@ run reads a tree the other is about to change, and the collision surfaces as a
 merge conflict at best and as two half-correct changes at worst.
 
 So the unit that has to be exclusive is not the issue, it is **the part of the
-system the work touches**. Two runs may proceed together when what they will
-change does not overlap, and must not when it does.
+system the work touches**.
 
-That is why this is not built. It needs something that can say what an issue
-will touch, before the work starts, well enough to be trusted -- and nothing
-determines that today. The limit is a missing input, not a missing appetite:
-until an issue can be placed against the parts of the system it affects, there
-is no safe basis on which to let two runs proceed, and running them anyway would
-trade a slow pipeline for corrupted work.
+#### The issue says which parts it touches
 
-Two things follow for the design. A limit on how many items may have a step in
-flight is meaningless while the pipeline is sequential, so **the field should not
-exist until the exclusion it depends on does** -- a declared limit that cannot
-bind teaches a reader that something is bounded when nothing is. And whatever
-partitioning eventually allows two runs to proceed, keeping two runs off one
-item stays a separate requirement: the race that forced serialisation is about
-one item read twice, and no partitioning by component addresses it.
+An issue carries a `component:` label for each part of the system it affects.
+Two items may run at the same time when their components do not intersect.
+
+**An issue with no component label runs alone.** Not knowing what something
+touches is not the same as knowing it touches nothing, so the absence of the
+label means maximum exclusion: that item waits for everything and everything
+waits for it. The pipeline is then exactly as sequential as it is today, and
+becomes parallel only where someone has said enough for that to be safe.
+
+This is what makes the feature available now rather than pending. Working out
+what an issue affects by inspection is hard, and has to be trusted before it can
+be relied on; a label is a claim someone made, visible on the issue, and wrong
+in ways a person can see and correct.
+
+**The claim is only as good as its completeness.** An issue tagged with two of
+the three components it actually touches is more dangerous than one tagged with
+none, because it will be allowed to run beside something it collides with.
+Under-tagging is the failure direction and it fails silently -- so the
+components a repository recognises are declared, and a label naming something
+outside that set is an error rather than a new component invented on the spot.
+
+**Deciding is not the same as isolating.** Component labels answer whether two
+runs *may* proceed together. They do nothing about two runs sharing one working
+tree, where the second run's checkout disturbs the first whatever either one
+touches. Parallelism needs both: the labels to decide, and separate working
+trees so the decision means something.
+
+And keeping two runs off one item stays a separate requirement throughout. The
+race that forced serialisation is about one item being read twice, and no
+partitioning by component addresses it.
 
 ### Every step has the same four parts
 
@@ -1194,6 +1211,7 @@ The complete list. Anything not here is a defect.
 | How you address the pipeline | Labels and comments on the issue | The same, or in your own words to the chat-AI, which writes them for you | Only the channel differs; what lands on the issue is identical |
 | Who writes a gate label | Only the person, from their own account | The orchestrator, on a confirmation the driver relays | The decision is the person's either way; only the evidence available to show it differs (MI-7) |
 | Whether the emergency stop applies | Halts the run before any step | Logged, and the run proceeds | The stop exists to halt unattended automation. A person driving one issue by hand is not unattended, and stopping them too would remove the means of investigating whatever caused the stop |
+| How many items advance at once | Several, where their components do not overlap | One | A session is one conversation and a person drives one issue through it; there is no second conversation to drive a second issue. What differs is throughput, never what happens to any one item -- an issue driven either way leaves the same trail |
 
 Everything else is governed by the promises above and must be identical.
 
