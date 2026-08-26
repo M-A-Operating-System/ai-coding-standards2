@@ -198,7 +198,7 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 | Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you don't |
 | Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
 | Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` |
-| ADRs (architecture decisions of record) | `standards/adrs.json` |
+| ADRs (architecture decisions of record) | `adrs/adrs.json` (repo-local; `standards/` holds the universal standards and never ADRs) |
 | Question Card schema | [`docs/product/orchestrator/09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2 |
 | Todos in issue/PR bodies (read protocol, write protocol, marker conventions) | [`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md) |
 

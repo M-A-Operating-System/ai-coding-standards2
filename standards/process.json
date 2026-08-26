@@ -223,16 +223,17 @@
         "STD-PROC-009"
       ],
       "title": "Record significant decisions as ADRs; waive standards only via an ADR citing the STD ID",
-      "description": "Significant or cross-cutting decisions \u2014 architecture, security posture, data-model, or process choices future work must respect \u2014 are recorded as Architecture Decision Records in docs/adr/ (NNNN-title.md with status, context, decision, consequences). A waiver of an adr_overridable standard is itself a decision: it is recorded in standards/adrs.json with authorises_exception_to citing the STD ID. Soft-wording a standard to dodge it, or reversing a recorded decision without a superseding ADR, is not permitted.",
+      "description": "Significant or cross-cutting decisions \u2014 architecture, security posture, data-model, or process choices future work must respect \u2014 are recorded as Architecture Decision Records in the repository's own adrs/adrs.json. ADRs are repo-local. standards/ holds the universal standards every repository inherits and reads verbatim, so no repository records its own decisions there; a consuming repo receives standards/ as a symlink and cannot write to it at all. A waiver of an adr_overridable standard is itself a decision: it is recorded in the same adrs/adrs.json with authorises_exception_to citing the STD ID. Soft-wording a standard to dodge it, or reversing a recorded decision without a superseding ADR, is not permitted.",
       "rationale": "ADRs keep the rationale behind durable decisions discoverable and prevent silent re-litigation; routing standard waivers through ADRs makes every exception explicit and auditable.",
       "acceptance_criteria": [
-        "A significant/cross-cutting decision in the diff is recorded as an ADR in docs/adr/ (status, context, decision, consequences).",
-        "A waiver of an adr_overridable standard in the diff is recorded in standards/adrs.json citing the STD ID in authorises_exception_to, not by softening the standard text.",
+        "A significant/cross-cutting decision in the diff is recorded as an ADR in the repository's own adrs/adrs.json (status, context, decision, consequences).",
+        "A waiver of an adr_overridable standard in the diff is recorded in adrs/adrs.json citing the STD ID in authorises_exception_to, not by softening the standard text.",
         "The diff does not reverse a decision an ADR already records without a superseding ADR (STD-DOC-001)."
       ],
       "anti_patterns": [
         "Making a cross-cutting architectural choice with no ADR capturing the rationale.",
-        "Bypassing an adr_overridable standard by rewording it instead of filing an ADR waiver."
+        "Bypassing an adr_overridable standard by rewording it instead of filing an ADR waiver.",
+        "Recording a repository's own ADR under standards/, which is shared with every consuming repository and is read-only to all of them."
       ],
       "adr_overridable": true,
       "applies_to": [

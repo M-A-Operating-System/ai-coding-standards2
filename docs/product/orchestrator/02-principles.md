@@ -60,10 +60,8 @@ hand-edited.
 |---|---|---|
 | Pipeline graph | `pipeline/pipeline.json` | `pipeline.schema.json` |
 | Status definitions | `pipeline/statuses.json` | `statuses.schema.json` |
-| Org-wide standards | `ai-coding-standards2/standards/*.json` | `standards.schema.json` |
-| Project standards | `{project-root}/standards/*.json` | `standards.schema.json` |
-| Org ADRs | `ai-coding-standards2/standards/adrs.json` | `standards.schema.json` |
-| Project ADRs | `{project-root}/adrs/adrs.json` | `standards.schema.json` |
+| Standards (universal) | `ai-coding-standards2/standards/*.json` | `standards.schema.json` |
+| ADRs (repo-local) | `{repo-root}/adrs/adrs.json` | `standards.schema.json` |
 
 **Consequences.**
 

@@ -1,7 +1,0 @@
-{
-  "$schema": "../pipeline/schemas/standards.schema.json",
-  "version": "1.0",
-  "scope": "org",
-  "description": "Reserved. ADRs are repo-local: a repository records its decisions in its own adrs/adrs.json, outside the symlinked standards/ folder, so a client repo can write them. This org-scoped file holds none and is retained only until its readers are repointed.",
-  "adrs": []
-}

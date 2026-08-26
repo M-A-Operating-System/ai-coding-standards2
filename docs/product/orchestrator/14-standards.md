@@ -99,13 +99,20 @@ Every standards file (`StandardsFile`) carries:
 
 ## ADR scope
 
-ADRs exist at two scopes: org ADRs live in the submodule, project ADRs in the
-consuming repo's local `adrs/` folder.
+ADRs have one scope: the repository they live in. Every repository -- this one
+included -- records its decisions in its own `adrs/adrs.json`.
 
-| Scope | Location | Can waive |
-|-------|----------|-----------|
-| **org** | `ai-coding-standards2/standards/adrs.json` | Org `adr_overridable: true` standards |
-| **project** | `{project-root}/adrs/adrs.json` (local folder, outside the symlinked `standards/`) | Org `adr_overridable: true` standards (there are no project standards to waive under the whole-folder model) |
+| | Location | Can waive |
+|---|---|---|
+| **Standards** | `ai-coding-standards2/standards/*.json` | n/a -- universal, identical everywhere, read verbatim |
+| **ADRs** | `{repo-root}/adrs/adrs.json` | `adr_overridable: true` standards, for that repository only |
+
+The two are separated by where they can be written. A consuming repo receives
+`standards/` as a whole-folder symlink into the submodule and cannot write to
+it, so an ADR could not live there even in principle. `adrs/` sits outside that
+symlink, is seeded once by onboarding and never overwritten, and is committed
+normally -- which is what makes a local exception possible without editing a
+universal rule.
 
 Every ADR entry has these fields:
 
