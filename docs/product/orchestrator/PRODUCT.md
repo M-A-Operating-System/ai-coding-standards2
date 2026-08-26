@@ -227,63 +227,46 @@ A scheduled flow also needs a claim of its own, because the `:wip` mutex is a
 label on a work item and there is no work item to label -- two runners must not
 start the same sweep.
 
-### A scheduled flow reviews; it does not change
+### What a scheduled step may do is declared, like any other step
 
-**A scheduled flow only ever looks.** It reads the codebase, the backlog, the
-record, and it reports. It does not edit a file, commit, or alter a work item
-beyond raising one. Where it concludes something must change, it raises an issue
-saying so, and that issue enters the pipeline as ordinary work.
+A scheduled step is a step. What it may do is its allowed commands and its
+expected effect, declared in `pipeline.json` -- not a property the orchestrator
+infers from the fact that a schedule started it.
 
-This is not a style preference. A loop that changed things directly would be a
-second route for work to reach the codebase, subject to none of the gates the
-first route has -- no specification, no review, no approval -- and the fact that
-it ran unattended on a schedule is exactly what makes that unacceptable. Raising
-an issue costs nothing and puts the change in front of the same people, with the
-same evidence, under the same rules.
+The common case is a step that only looks: it reads the codebase, the backlog or
+the record, and where it concludes something should change it raises an issue
+saying so. That is expressed by giving it no commands that write, plus the one
+that raises an issue, and an expected effect of no change to the repository.
+Nothing about it is special-cased; it is a permission set like any other.
 
-It also makes the constraint checkable rather than aspirational. A reviewing
-flow declares an `expected_effect` of no change to the repository, so a
-scheduled flow that produces a commit disagrees with its own declaration and
-MI-6 surfaces it. The rule is enforced by the same comparison that catches a
-step reporting work it did not do.
+Some scheduled steps will act, and should. A sweep that tidies something
+mechanical does not need to route through an issue to do it. Whether a
+particular one acts or only reports is a decision made when the flow is
+declared, and it is visible to anyone reading `pipeline.json` -- which is the
+whole point of it living there rather than in the orchestrator.
 
-### It reports what is new, not what it already said
+**The declaration is what makes it checkable.** A step declaring no change that
+produces a commit disagrees with itself, and MI-6 surfaces the disagreement.
+That holds for every step, not just scheduled ones: the guarantee comes from
+comparing the declaration against what happened, never from a rule about a
+category of work.
 
-A sweep that runs weekly finds most of the same things it found last week. If
-each run raises a full report, the second one is noise and the fourth one is
-ignored -- and a genuine new finding arrives buried in forty repeats.
+### The orchestrator stamps what it creates
 
-**So a run reports against what it already reported.** If an issue from an
-earlier run of the same flow is still open, the new run raises only what has
-appeared since: findings not already in that issue. If the earlier issue has been
-closed -- fixed, or judged not worth fixing -- the slate is clean and the next
-run reports in full.
+A step returns what it produced and the orchestrator writes it (the step
+contract). When what a step produced is a new work item, the orchestrator
+records which step and which flow produced it.
 
-This needs one thing to be true: an issue must say which flow produced it, so a
-flow can find its own previous output. That provenance is what makes "already
-reported" answerable at all.
+That provenance is what lets a flow find its own earlier output. A step that
+runs repeatedly can then read what it already reported and raise only what has
+appeared since, rather than repeating the same findings every run until nobody
+reads them. Whether a given step does that is the step's business; the
+orchestrator's part is only that the trail exists to be read.
 
-And it is the same move as the cadence above. What has already been said is read
-from the issue that says it, not from a list of findings kept somewhere in
-parallel. Neither question -- is this due, has this been reported -- gets a new
-store; both are answered by reading what the system already wrote down.
-
-### Names are declared, never computed
-
-A flow says what its branches and pull requests are called. The orchestrator
-reads those names; it does not build them.
-
-This sounds like a detail and is not. A branch name assembled from a pattern
-inside the orchestrator is a piece of the process definition living outside
-`pipeline.json` -- so a flow that needs a different convention cannot be added
-without editing code, and a reader of the process definition cannot tell what
-the branches will be called. Every flow that needs more than one branch or more
-than one pull request per item -- a design branch merged ahead of a build
-branch, say -- is expressible for the same reason: the names and the count are
-declared, not assumed.
-
-**The test is the same as AS-2's.** Adding a flow, removing one, or changing
-what its branches are called requires no change to `pipeline_orchestrator.py`.
+It is the same principle as the cadence above. What a flow already said is
+readable from the work item that says it, and when the flow last ran is readable
+from the record -- so neither question needs a store kept in parallel with the
+thing it describes.
 
 ---
 
