@@ -116,9 +116,22 @@ The labels on a work item are the state. A step is a transition. The orchestrato
 reads the labels, selects the one step whose conditions are met, runs it, and
 writes the outcome back as a label.
 
-Because state lives on the work item, any orchestrator process reading it
-reaches the same conclusion. There is nothing to synchronise, nothing to
-recover, and no position that exists only in memory.
+Because state lives on the work item, there is nothing to recover and no
+position that exists only in memory. Any orchestrator process reading settled
+labels reaches the same conclusion.
+
+**Settled is the load-bearing word.** A label write is not visible instantly, so
+two runs overlapping inside that window read different states and both conclude
+the step is eligible -- and the write that starts the race is the orchestrator's
+own `:wip`, which fires an event that starts the next run. The window is only
+wide enough to matter for steps that run long, which is what makes it a
+sporadic, hard-to-reproduce duplicate rather than a permanent fault.
+
+So one thing does have to be synchronised: **at most one orchestrator run at a
+time.** Once runs are serialised, every run begins with settled labels and the
+`:wip` check becomes a fast skip rather than a guard against a race. The state
+model is unchanged -- labels are still the whole of it -- but "read the labels
+and act" is only deterministic if no other run is mid-write.
 
 ### Every step has the same four parts
 
