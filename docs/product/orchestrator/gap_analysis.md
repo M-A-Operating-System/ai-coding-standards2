@@ -43,6 +43,7 @@ mechanism is now specified, and three parts of it do not exist at all:
 | A step returns one result to a path the orchestrator gave it | No such path and no such file. The outcome is a regex over the last five lines of the agent's prose (`_SENTINEL_RE`, `pipeline_orchestrator.py:1925`) |
 | Five outcomes, including `exhausted` | The sentinel accepts three (`complete`, `review`, `blocked`). `statuses.json` has no `exhausted`. Budget exhaustion is reported as `:failed`, or as `:complete` when the run exits 0 without a sentinel |
 | Every step declares `expected_effect` | Not a field in `pipeline.json`, so MI-6 has nothing to compare an observed change against |
+| Two budgets, both declared in `pipeline.json` | Neither is. `AGENT_TIMEOUT_SECONDS = 1800` is a module constant applying to every step with no per-step override, and `DEFAULT_MAX_TURNS = 30` is a constant overridable only in agent frontmatter -- a limit defined outside `pipeline.json`, which is AS-1. `11-orchestrator.md` states the wall-clock limit is "set per agent in `pipeline.json` via `max_wall_seconds`"; that field appears in neither the file nor the schema |
 | Retry `failed`, never `exhausted` | `_invoke_with_retries` retries on "no sentinel", which conflates a crash with a turn wall, so an exhausted step burns its budget again before landing on `:failed` |
 
 The CLI already reports what `exhausted` needs -- `subtype`, `is_error` and

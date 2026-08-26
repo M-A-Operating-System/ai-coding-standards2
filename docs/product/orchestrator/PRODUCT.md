@@ -382,7 +382,7 @@ report honestly when it did nothing -- which is exactly where
 | **One work item** | Exactly one issue or PR. The agent never chooses its own subject |
 | **Its allowed commands** | Everything the agent may do, complete and enforced. An action outside the set is refused, not merely discouraged |
 | **A scratch directory** | An existing, writable path for working files, prepared before the agent starts and removed after |
-| **A turn budget** | A bounded number of turns, known to be enough for the step's declared work |
+| **Two budgets** | A bounded number of turns and a bounded wall-clock time, each declared for this step in `pipeline.json`, each known to be enough for the work the step declares |
 | **Its instructions** | A prompt whose every instruction is executable under the commands allowed |
 
 ### What a step must return
@@ -448,15 +448,22 @@ Five, and which of them a step may choose is itself part of the boundary.
 | `review` | the step | It did its work; a person must act before the next step |
 | `blocked` | the step | It cannot proceed, and says what it needs |
 | `failed` | the orchestrator | The step broke: it crashed, returned nothing, or returned something malformed |
-| `exhausted` | the orchestrator | The step ran out of its turn budget before returning |
+| `exhausted` | the orchestrator | The step ran out of one of its budgets before returning. The record says which |
 
 A step never sets the last two, because a step that broke is in no position to
 report it, and one that hit the turn wall never got to write anything at all.
 
 `exhausted` is separate from `failed` because the two ask for different things
 from a person. A failure means read the logs and fix something. Exhaustion means
-the budget does not fit the step: raise it, or make the step smaller. Collapsing
+a budget does not fit the step: raise it, or make the step smaller. Collapsing
 them makes budget calibration permanently invisible.
+
+There are two walls and a step can hit either. Turns bound how much work it may
+attempt; wall-clock time bounds how long it may hold the step open, which is
+what stops a stalled run occupying the pipeline indefinitely. They are separate
+because they fail separately -- a step can burn its turns in a minute, or spend
+an hour inside a single one -- but the remedy has the same shape either way, so
+one outcome covers both and the record names the wall that was hit.
 
 It also settles what a retry means. **The orchestrator retries `failed` and
 never retries `exhausted`** -- the same step against the same wall is
