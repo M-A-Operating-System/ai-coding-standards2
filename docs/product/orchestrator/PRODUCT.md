@@ -726,8 +726,38 @@ is a security property that holds in one reading and not the other, and a second
 definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
 
+**A repository may have its own.** The pipeline ships with a default definition,
+and a repository can declare flows of its own that take precedence over it.
+That does not weaken this promise, provided one thing holds: **precedence is per
+flow, not per file.**
+
+A repository's file names the flows it wants to change or add. A flow it names
+replaces the shipped one; a flow it does not name keeps coming from the default
+and keeps improving as the default does. Whole-file replacement would look
+simpler and be much worse -- the moment a repository needed one flow of its own
+it would copy everything, and from then on receive none of the improvements to
+any of the rest. That is a fork wearing the word "override".
+
+What this promise forbids is a definition living somewhere nobody would think to
+read: a constant in the orchestrator, a field in an agent's frontmatter, a grant
+in a settings file. Two declared files with a stated precedence is not that. The
+effective definition for any repository is still readable, still complete, and
+still the only thing that decides what happens.
+
+The repository's file lives with its other project-owned artefacts, outside the
+framework it overrides -- seeded once by onboarding and never overwritten, so
+what a repository decided about its own process survives every framework
+version.
+
+**The cost, stated.** A flow a repository overrides stops tracking the default.
+The framework may improve its version and the repository will not see it, in the
+same way a fork does not -- just scoped to one flow rather than everything. That
+is the trade for being able to differ at all, and it is why the unit of override
+should be as small as the thing being changed.
+
 **Precisely.** Process, sequence, dependencies, entitled activities, expected
-effect, flows and budgets are defined in `pipeline.json` and nowhere else. No
+effect, flows and budgets are defined in the pipeline definition -- the shipped
+default, plus whatever the repository declares over it -- and nowhere else. No
 constant in the orchestrator, no agent frontmatter field, and no settings file
 adds to, narrows or overrides any of the seven. A limit is a definition like any
 other: a budget that lives as a constant is a step's declared allowance that no

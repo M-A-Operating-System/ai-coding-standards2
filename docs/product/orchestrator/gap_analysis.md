@@ -424,6 +424,30 @@ above. Both behaviours were observed on 25 August, on the same day.
 
 ---
 
+## A repository's own pipeline definition
+
+**Status:** `VIOLATED`. There is no local definition and no composition.
+
+`pipeline.json` lives in the submodule and `get_started.py` has no
+`install_pipeline` -- unlike `standards/`, `.claude/` and `adrs/`, nothing puts a
+pipeline definition anywhere near a consuming repository. Every repository reads
+the same file from the framework, and a repository that needs its own flow has
+nowhere to put it.
+
+Three things are missing:
+
+| | |
+|---|---|
+| A local file | Nowhere for a repository to declare a flow, seeded once and never overwritten as `adrs/adrs.json` is |
+| Composition | Nothing merges a local definition over the shipped one, so nothing to give precedence with |
+| A unit to override | Flows do not exist as named objects, so there is nothing a local file could name. Per-flow precedence needs steps nested under named flows, not a flat list |
+
+The third is the one that constrains the schema. Whole-file override needs no
+structure and is the wrong answer -- a repository wanting one flow of its own
+would copy everything and stop receiving improvements to all the rest.
+
+---
+
 ## Flows
 
 **Status:** `VIOLATED`. The orchestrator supports exactly one flow. Everything
