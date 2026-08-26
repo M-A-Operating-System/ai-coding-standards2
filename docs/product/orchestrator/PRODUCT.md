@@ -289,6 +289,34 @@ value, and that is all it means. Nothing is inferred from a clean exit.
 The orchestrator writes the summary and the output to the issue as structured
 comments. The step does not.
 
+### What lands on the issue
+
+"Structured comment" is a specific thing, not a style. Every comment the system
+writes opens with a marker on its own line, and the machine-readable content
+follows in a fenced block. Prose may sit alongside it for a human to read; where
+the two disagree, the structured content is what counts.
+
+| Marker | What it carries |
+|---|---|
+| `announcement` | A step started, or finished, and what it did |
+| `artefact` | Something produced for a person to read -- a review, a PRD, a plan |
+| `question` | A question for a person, in a fixed schema, with the answer recorded on the same thread |
+| `session` | Which run this was, for the pair of work item and step |
+| `claim` | A step taking the mutex on this item, so a concurrent runner can see it |
+| `snapshot` | Human-authored content preserved verbatim before a step rewrote it |
+
+Every marker carries the acting step's name. This matters because every step
+posts under the same account, so the marker is the only place an individual
+step's identity appears in the timeline -- a person can see which step said
+what by reading one line per comment, and tooling can select every artefact from
+one step with a regex rather than parsing bodies.
+
+**`snapshot` is a safety property, not bookkeeping.** Some steps rewrite content
+a person wrote -- an issue body becoming a specification is the standard case.
+Agents draft and humans decide (P-10), so the original has to survive the
+rewrite: without it, an agent's rewrite silently replaces what a person asked
+for, and nobody can tell what changed.
+
 ### The outcomes
 
 Five, and which of them a step may choose is itself part of the boundary.
@@ -313,6 +341,26 @@ It also settles what a retry means. **The orchestrator retries `failed` and
 never retries `exhausted`** -- the same step against the same wall is
 deterministic, so a second run is waste that costs a full budget to learn
 nothing.
+
+### The three a person sets
+
+An outcome is what a *run* produced. Three more states exist because a person
+put them there, and they are not outcomes of anything:
+
+| Status | Set by | Means |
+|---|---|---|
+| `requested` | a person | Run this step on this item now, whatever its normal trigger would say |
+| `approved` | a person | The gate is crossed. This is the record of a human decision (MI-7) |
+| `skipped` | a person | This step does not apply to this item, and I am accountable for that |
+
+`skipped` is terminal and **counts as `complete` when the orchestrator resolves
+what may run next**, which is what makes it useful: it releases everything
+downstream without pretending work was done. It is also an exit under MI-4 --
+for a step that can never succeed on this particular item, skipping it is the
+way forward, and the label is the whole record of who decided that.
+
+Together with `:wip`, these are the eight states a step can be in. Five are the
+machine's account of a run; three are a person's instruction to the machine.
 
 ### How the obligations below are enforced
 
@@ -690,6 +738,35 @@ That gives a rule with no ambiguity to resolve:
 The requirement is identical in both -- a person decided. What differs is the
 evidence available to show it, which is a legitimate difference under MI-8 and
 is listed as one.
+
+#### How a non-human actor is recognised
+
+The rule above turns on telling a person's action from the system's, so that
+distinction has to be real at the point GitHub records it, not inferred
+afterwards.
+
+Everything the system does on GitHub acts as a **dedicated identity of its
+own** -- not a person's account, and not the generic identity a CI run gets by
+default. The default is the trap: it makes every action the system takes look
+like any other automation in the repository, so agent activity cannot be told
+apart from unrelated CI in the same timeline, and "was this applied by a
+person?" stops having an answer.
+
+A dedicated identity buys four things, and MI-7 needs the first:
+
+| | |
+|---|---|
+| **Decidability** | "A person applied this label" is a fact readable off the timeline, not a guess |
+| **Least privilege** | The identity is scoped to exactly what steps need -- no administration, no secrets, no settings |
+| **Legibility** | A distinct name and avatar makes agent activity obvious to a person scanning the issue |
+| **Isolation** | The system's API usage does not consume a contributor's quota |
+
+The identity is the system's, not any one step's: every step acts under it, which
+is why the marker on each comment carries the step's name. Two mechanisms can
+back it -- an installed application with short-lived rotating credentials, or a
+dedicated account with a long-lived token that someone has to rotate. The first
+is better and the difference is operational, not architectural: what MI-7
+requires is only that the system's actions are attributable to the system.
 
 **One assumption must be asserted rather than trusted:** that a non-headless
 invocation genuinely has a person present. That is true by construction today,

@@ -422,6 +422,47 @@ above. Both behaviours were observed on 25 August, on the same day.
 
 ---
 
+## The record format
+
+**Status:** `PARTIAL`. Two of the six markers `PRODUCT.md` names are widely
+implemented, one exists in a single agent, one only in the template, and two
+exist nowhere.
+
+| Marker | Where it is used |
+|---|---|
+| `announcement` | Implemented: the orchestrator, `create-pr.sh`, `ci-gate.sh`, `merge-docs-pr.sh`, `coder`, `pr-reviewer` |
+| `artefact` | Implemented: fourteen agent prompts, `AGENTS.md`, `maos-run` |
+| `snapshot` | `prd-writer` only -- the one step that rewrites a human-authored body, so the highest-value case is covered and nothing else is |
+| `question` | The agent template only. No agent asks a structured question, so the mechanism is documented and unused |
+| `session` | Nowhere |
+| `claim` | Nowhere -- although P-4 describes the mutex as a claim-and-verify protocol, so the marker that would make a claim visible to a concurrent runner does not exist |
+
+The two that are implemented are the two that carry a step's output, which is
+why the step contract's "the orchestrator writes it, the step does not" is a
+change of *writer* rather than of format. The four that are missing are the ones
+that would make the record legible for anything other than reading it in order.
+
+---
+
+## Agent identity
+
+**Status:** `VIOLATED`. MI-7's test -- a gate label applied by any non-human
+actor is rejected -- requires the system's actions to be attributable to the
+system. They are not consistently attributable to anything.
+
+Observed during this work: actions taken through the GitHub MCP tools are
+attributed to a **human contributor's account**, while actions taken through
+`gh api` in the same session are attributed to `claude[bot]`. The same logical
+actor therefore appears in the timeline as either a person or a bot depending on
+which path a step happened to take.
+
+That is the precise failure the dedicated identity exists to prevent, and it
+makes MI-7 undecidable from the record rather than merely untested: a label
+applied by automation through one path is indistinguishable from one a person
+applied.
+
+---
+
 ## MI-8 -- Any difference is written down
 
 **Status:** `PARTIAL`.
