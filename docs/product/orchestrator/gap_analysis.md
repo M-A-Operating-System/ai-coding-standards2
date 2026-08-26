@@ -432,8 +432,12 @@ code.
 |---|---|
 | Branch and pull-request names declared in `pipeline.json` | `f"issue-{work_item.number}"` is built in seven places in `pipeline_orchestrator.py` (lines 829, 898, 2121, 2147, 3697, 4161, 4329). Only the suffix is data (`branch_suffix`), so a flow not named `issue-N` cannot be added without editing code |
 | More than one kind of work item | All sixteen steps declare `object: ["issue"]`. `WORK_ITEM_KIND` distinguishes an issue from a PR, but nothing declares a PR-driven step |
-| A flow started by a schedule | No step has a schedule trigger; triggers are `event` or `label` only. The weekly sweep exists as an `orchestrator_checks` entry declaring `"runs": "orchestrator-native (no registered agent, no LLM invocation)"` |
-| An epic as a flow | Not a flow. `exclude_labels: ["epic"]` on every step keeps epics out of the one flow, and `epic-completion` is a second orchestrator-native check |
+| A flow started by a schedule | The schema allows `trigger.schedule` as a cron expression, but the orchestrator does not act on it: `pipeline_orchestrator.py:1742` reads `# Event and schedule triggers are handled externally (GitHub Actions)`, and eligibility is decided from `agent_def.trigger["label"]` alone (line 1745). The cadence therefore lives in the workflow's cron, outside `pipeline.json`, and no step can have a cadence of its own -- every step is evaluated on every tick |
+| A cadence the orchestrator can reason about | No step or flow records when it last ran in a form the orchestrator reads. The weekly sweep exists as an `orchestrator_checks` entry declaring `"runs": "orchestrator-native (no registered agent, no LLM invocation)"`, so "is it due" is a decision inside the coordinator |
+| A claim for a flow with no work item | `:wip` is a label on a work item (P-4). A scheduled flow has no work item, so there is nothing to label and no mutex; two runners would start the same sweep |
+| An epic as a flow | Not a flow. `exclude_labels: ["epic"]` on every step keeps epics out of the one flow, and `epic-completion` is a second orchestrator-native check that closes the parent when the children close |
+| A review that the parts add up | Does not exist. `epic-completion` closes an epic on child count, so nothing checks that the implementation hangs together -- every child can pass its own review while the whole leaves a seam nobody owned |
+| A trigger about other work items | Triggers are `event`, `label`, `schedule` or `path_filter`, all about the item itself. "Every child of this item is closed" cannot be declared, which is why the epic wait is code rather than configuration |
 
 The last two rows are the same defect as AS-2: work that `pipeline.json` cannot
 express ends up inside the coordinator, where no reader of the process
@@ -443,6 +447,12 @@ The two-phase design-to-build flow (`04-lifecycle.md`) is the existing evidence
 that a flow can need more than one branch and more than one pull request per
 item. It works today only because the second branch is a hardcoded suffix on a
 hardcoded name.
+
+The cadence gap is the one with a ready answer. Once every completed step
+appends a timestamped entry to the log and metrics branches (MI-6), when a flow
+last ran is a read of the record rather than a store to keep in step with it --
+so what is missing is the orchestrator deriving due-ness from it, not a new
+place to keep the time.
 
 ---
 
