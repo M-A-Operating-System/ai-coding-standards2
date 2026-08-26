@@ -470,6 +470,28 @@ never retries `exhausted`** -- the same step against the same wall is
 deterministic, so a second run is waste that costs a full budget to learn
 nothing.
 
+### An invocation can be withdrawn
+
+Not every invocation reaches an outcome. Sometimes a step is started and the
+system takes it back: an upstream limit is hit before the work could begin, and
+the step never got a fair run.
+
+**A withdrawn invocation produces no outcome, deliberately.** The step returns to
+exactly the state it was in before, its lock is released, and a later tick
+invokes it again. Recording it as `failed` would be a lie about a run that never
+happened -- and worse, an expensive one, since `failed` needs a person to clear
+it, so someone would be asked to intervene on a step that was never given a
+chance to work.
+
+This is not a sixth outcome. It is the absence of one, and the difference
+matters: an outcome says what a run did, and there was no run to describe.
+
+**The attempt is still recorded.** Time passed and budget may have been spent,
+so the record shows that the step was started and withdrawn, and why. Otherwise
+attempts vanish -- and a person reading the trail to work out why an issue sat
+still for an hour would find nothing at all, which is exactly the silence MI-6
+exists to prevent.
+
 ### The three a person sets
 
 An outcome is what a *run* produced. Three more states exist because a person

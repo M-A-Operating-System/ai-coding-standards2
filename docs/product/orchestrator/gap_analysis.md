@@ -470,6 +470,28 @@ place to keep the time.
 
 ---
 
+## A withdrawn invocation leaves no record
+
+**Status:** `PARTIAL`. The behaviour is right; the record is missing.
+
+The withdrawal itself is implemented and deliberate. On an upstream rate limit
+the orchestrator writes a pause marker, removes `:wip`, and applies no terminal
+label -- `pipeline_orchestrator.py:4597`, with the contract stated in the
+docstring at line 2879: "Caller MUST NOT apply `:failed` when rate_limited is
+True -- the agent never got a fair run." The step returns to its prior state and
+a later tick re-invokes it.
+
+What is missing is the trace. The short-circuit returns before `_apply_result`,
+which is the only caller of `_post_cycle_metrics` (lines 4413, 4433, 4477), so a
+withdrawn run appends nothing to the metrics branch and nothing to the log. An
+attempt that consumed wall-clock time, and possibly tokens before the limit was
+hit, leaves no evidence it happened.
+
+The consequence is a hole in MI-6 rather than in the pause logic: an issue can
+sit still for an hour with nothing on the record explaining why.
+
+---
+
 ## Reclaiming a stranded lock
 
 **Status:** `VIOLATED`. A step that vanishes strands its `:wip` permanently, and
