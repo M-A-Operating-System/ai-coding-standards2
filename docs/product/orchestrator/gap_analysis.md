@@ -34,12 +34,24 @@ That last point is the one to act on first. Until each promise has a test,
 `PRODUCT.md` describes an intention rather than a property, and defects keep
 arriving by surprise instead of being derived from this table.
 
-The step contract in `PRODUCT.md` has no conformance rows yet. It was written
-after this analysis and nothing has been measured against it -- which is itself
-a gap, and the likeliest place for the next round of defects, since the obligations
-it states (blocked means say so, a re-run does the work again, out of budget is
-its own outcome) are exactly the behaviours #358 and the `max_turns` failures
-violated.
+The step contract in `PRODUCT.md` has no conformance rows yet, but its return
+mechanism is now specified, and three parts of it do not exist at all:
+
+| What the contract requires | Today |
+|---|---|
+| A step returns one result to a path the orchestrator gave it | No such path and no such file. The outcome is a regex over the last five lines of the agent's prose (`_SENTINEL_RE`, `pipeline_orchestrator.py:1925`) |
+| Five outcomes, including `exhausted` | The sentinel accepts three (`complete`, `review`, `blocked`). `statuses.json` has no `exhausted`. Budget exhaustion is reported as `:failed`, or as `:complete` when the run exits 0 without a sentinel |
+| Every step declares `expected_effect` | Not a field in `pipeline.json`, so MI-6 has nothing to compare an observed change against |
+| Retry `failed`, never `exhausted` | `_invoke_with_retries` retries on "no sentinel", which conflates a crash with a turn wall, so an exhausted step burns its budget again before landing on `:failed` |
+
+The CLI already reports what `exhausted` needs -- `subtype`, `is_error` and
+`num_turns` reach the orchestrator and are written into the metrics record
+(`pipeline_orchestrator.py:852-856`) -- and are never read by the status
+decision. The information arrives and is discarded at the one point it matters.
+
+The obligations the contract states (blocked means say so, a re-run does the
+work again, out of budget is its own outcome) are exactly the behaviours #358
+and the `max_turns` failures violated.
 
 ---
 

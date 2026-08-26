@@ -265,15 +265,77 @@ report honestly when it did nothing -- which is exactly where
 
 ### What a step must return
 
+A step returns a value, the way any process returns a value: it writes one
+result to a path the orchestrator gave it, and the orchestrator reads it. It
+does not announce its outcome in prose that something else has to parse back
+out.
+
+That matters because the outcome has to carry more than a single word. A step
+must be able to say it finished, and also what it left undone -- and no word
+from a fixed set can say the second thing.
+
 | Returned | Requirement |
 |---|---|
-| **Exactly one terminal status** | From the fixed set in `statuses.json`. Never absent, never two, never invented |
+| **An outcome** | Exactly one, from the set below. Never absent, never two, never invented |
 | **A summary of what it did** | Its own account, in plain words, including when it did nothing |
+| **What it expected to change** | The effect the step believes it had, so the orchestrator can compare it against what actually changed (MI-6) |
+| **What it did not do** | Present and empty when the step finished everything. "I finished" is an assertion the step makes, never a silence the orchestrator interprets |
 | **Its output** | Whatever the step produces -- a review, a classification, a plan. Returned, not posted |
 | **Its files, in the repository or scratch** | Real work in the tree, working files in scratch. Nothing anywhere else |
 
+**No result is a failure.** A step that returns nothing has not returned a
+value, and that is all it means. Nothing is inferred from a clean exit.
+
 The orchestrator writes the summary and the output to the issue as structured
 comments. The step does not.
+
+### The outcomes
+
+Five, and which of them a step may choose is itself part of the boundary.
+
+| Outcome | Set by | Means |
+|---|---|---|
+| `complete` | the step | It did the whole thing |
+| `review` | the step | It did its work; a person must act before the next step |
+| `blocked` | the step | It cannot proceed, and says what it needs |
+| `failed` | the orchestrator | The step broke: it crashed, returned nothing, or returned something malformed |
+| `exhausted` | the orchestrator | The step ran out of its turn budget before returning |
+
+A step never sets the last two, because a step that broke is in no position to
+report it, and one that hit the turn wall never got to write anything at all.
+
+`exhausted` is separate from `failed` because the two ask for different things
+from a person. A failure means read the logs and fix something. Exhaustion means
+the budget does not fit the step: raise it, or make the step smaller. Collapsing
+them makes budget calibration permanently invisible.
+
+It also settles what a retry means. **The orchestrator retries `failed` and
+never retries `exhausted`** -- the same step against the same wall is
+deterministic, so a second run is waste that costs a full budget to learn
+nothing.
+
+### How the obligations below are enforced
+
+The four obligations in the next section are not enforced the same way, and
+saying which is which is the difference between a contract and a wish.
+
+| Obligation | Enforced by |
+|---|---|
+| Out of budget is its own outcome | **Vocabulary** -- `exhausted` exists, and the orchestrator sets it from what the run reports |
+| Partial work is declared | **Vocabulary** -- the result carries what was left undone, present and empty when nothing was |
+| Blocked means say so | **Evidence** -- a step that improvised past a refusal declares an effect it did not produce, and MI-6 compares the two |
+| A re-run does the work again | **Evidence** -- a replayed answer has no change behind it, and MI-6 sees a declared effect with no diff |
+
+Two mechanisms, not four. No return format can stop a step reporting success
+after improvising, so the first two obligations are structural and the last two
+are caught by observation. Anything claiming to enforce the last two by format
+alone is claiming something it cannot do.
+
+**One limit, stated rather than glossed.** A step that hits the turn wall never
+writes a result, so *what it did not do* only ever captures work a step
+deliberately left. Being cut off mid-task is caught by `exhausted` and the
+diff, never by the declaration -- which means the step most likely to have
+unfinished work is the one that could not tell you about it.
 
 ### What a step must never do
 
@@ -283,7 +345,8 @@ comments. The step does not.
   append-only is enforced.
 - **Decide what runs next.** Routing belongs to the orchestrator.
 - **Apply its own lifecycle labels.** `:wip`, `:complete`, `:review`, `:failed`
-  are the orchestrator's record of the agent, not the agent's own claim.
+  and `:exhausted` are the orchestrator's record of the step, not the step's own
+  claim -- and the last two it could not truthfully make about itself anyway.
 - **Approve a gate.** Agents draft, humans decide (P-10). No exceptions, in
   either mode.
 - **Act outside its allowed commands**, or route around a refusal.
@@ -328,18 +391,20 @@ each one is recorded in [`gap_analysis.md`](gap_analysis.md).
 ### AS-1 -- One file tells you what the pipeline does
 
 > **You can read one file and know what will happen: which steps run, in what
-> order, what has to finish first, and what each step is allowed to touch.
-> Nothing behaves in a way that file does not describe.**
+> order, what has to finish first, what each step is allowed to touch, and what
+> each is supposed to change. Nothing behaves in a way that file does not
+> describe.**
 
-`pipeline.json` is the authoritative definition of four concerns, and nothing
+`pipeline.json` is the authoritative definition of five concerns, and nothing
 else defines any of them:
 
-| Concern | What it covers |
-|---|---|
-| **Process** | Which steps exist, what each one is, and which phase it belongs to |
-| **Sequence** | What triggers a step and what it emits |
-| **Dependencies** | What must have completed before a step is eligible |
-| **Entitled activities** | `defaults.extra_allowedTools`, plus each step's `extra_allowedTools`, lifecycle actions and post-steps |
+| Concern | Declared as | What it covers |
+|---|---|---|
+| **Process** | step entries | Which steps exist, what each one is, and which phase it belongs to |
+| **Sequence** | `trigger` | What triggers a step and what it emits |
+| **Dependencies** | `dependencies` | What must have completed before a step is eligible |
+| **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
+| **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
 itself. It matters most for allowed commands: a permission defined in two places
@@ -347,14 +412,16 @@ is a security property that holds in one reading and not the other, and a second
 definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
 
-**Precisely.** Process, sequence, dependencies and entitled activities are
-defined in `pipeline.json` and nowhere else. No constant in the orchestrator, no
-agent frontmatter field, and no settings file adds to, narrows or overrides any
-of the four.
+**Precisely.** Process, sequence, dependencies, entitled activities and
+expected effect are defined in `pipeline.json` and nowhere else. No constant in
+the orchestrator, no agent frontmatter field, and no settings file adds to,
+narrows or overrides any of the five.
 
 **Test.** The resolved command set for every step is derivable from
 `pipeline.json` alone. Any permission that cannot be traced to it is a test
-failure. The same for triggers and dependencies.
+failure. The same for triggers, dependencies, and expected effect: every step
+declares one, and a step declaring no effect that produces one is as much a
+failure as the reverse.
 
 ---
 
@@ -539,8 +606,9 @@ things about every step and compares them:
 | **The account** | What the step says it did, in its own words | The step |
 | **The evidence** | What actually changed -- commits, files, labels, comments | The orchestrator, by observation |
 
-Each step also declares in `pipeline.json` what effect it is *expected* to have.
-`coder` produces commits; `pr-reviewer` produces none. That makes the comparison
+Each step also declares in `pipeline.json`, as `expected_effect`, what it is
+supposed to change. `coder` produces commits; `pr-reviewer` produces none, and
+says so rather than leaving it unstated. That makes the comparison
 meaningful in both directions: a step that should change something and did not
 is as wrong as a step that changed something it had no business touching.
 
@@ -666,20 +734,39 @@ You must be able to start an issue in one mode, walk away, and have the other
 finish it, with no difference in the result. That is what the eleven promises
 above are for.
 
-### Two ways to run a single agent
+### The three interactive commands
 
-Interactive mode offers two different things, and they must not share a name.
+Interactive mode offers three things. Two of them run the pipeline and one
+openly does not, and they must not share a name.
 
-| Command | What it does | Mode |
-|---|---|---|
-| `/maos-{agent} {N}` | Runs the **exact step**. The orchestrator resolves it and spawns it as a subprocess, exactly as the headless path does | `headless` |
-| `/maos-{agent}-i {N}` | Resolves the step and works through its instructions **with you**, in the session | `interactive` |
+| Command | What it invokes | Activity performed by | Mode |
+|---|---|---|---|
+| `/maos-run {N}` | The orchestrator, repeatedly -- one step per invocation, each picking the next eligible step | a spawned agent or script | `headless` |
+| `/maos-{agent} {N}` | The orchestrator, naming one step, which it spawns as a subprocess exactly as the headless path does | a spawned agent or script | `headless` |
+| `/maos-{agent}-i {N}` | The orchestrator in resolve-only mode; you then work through the step's instructions | you and the chat-AI | `interactive` |
 
-The orchestrator already separates these. Resolving an invocation and spawning
-it are distinct operations: the resolve-only path reports
-`AI_AGILE_EXECUTION_MODE=interactive`, and the spawn path reports `headless`.
-Both commands are thin wrappers over one of those two (AS-3), and both are
-generated from `pipeline.json` so they cannot drift from it.
+**All three advance state, and none of them advances it by hand.** The
+orchestrator performs every label transition, every artefact comment, every
+post-action and commit -- in interactive mode exactly as in headless. A driver
+command never applies a lifecycle label, never posts an artefact, and never
+performs a step's work itself. Hand-mirroring any of that is how a run ends up
+with misplaced artefacts, missing downstream labels and orphaned branches, and
+it is the single rule that keeps an interactive run indistinguishable from a
+headless one in the record.
+
+There are two exceptions, both narrow and both about the driver relaying
+something only a person can supply: applying the `{agent}:approved` gate label
+on a confirmation you gave (MI-7), and marking a pull request ready when a
+restricted session blocks the operation the orchestrator would otherwise use.
+Neither is value-add work; both are the driver acting as a hand for something
+the environment denied.
+
+The orchestrator already separates resolving from spawning. Resolving an
+invocation and spawning it are distinct operations: the resolve-only path
+reports `AI_AGILE_EXECUTION_MODE=interactive`, and the spawn path reports
+`headless`. Every command is a thin wrapper over one of those two (AS-3), and
+the per-agent pair is generated from `pipeline.json` so neither can drift from
+the step it names.
 
 **Why the distinction is load-bearing, not cosmetic.**
 
