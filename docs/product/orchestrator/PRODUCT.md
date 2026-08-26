@@ -693,6 +693,21 @@ the chat-AI work through the agent's instructions together, in your session,
 with your permissions and your context. Nothing is enforced against an agent's
 allowlist, because no agent is running -- a person is, with an assistant.
 
+**It still advances the pipeline.** Not being an agent invocation does not make
+it a private exercise. The step was performed and it produced something, so it
+returns its result the way every step does, and the orchestrator records it: the
+label transition, the artefact comment, the observed change. Work done in the
+loop lands on the issue exactly as work done by a spawned agent -- because
+nothing that influenced the work may exist only in a chat transcript.
+
+**What the record must carry is how it was produced.** The result says that a
+person performed the activity rather than a spawned agent. Enforcement did not
+apply, the context was the session's, and a human could intervene at any point,
+so an in-the-loop run is a legitimate way to move an issue forward and is not
+evidence of what the pipeline would do unattended. Recording the provenance is
+what keeps both of those true at once, and it is what lets a conformance check
+tell the two apart instead of trusting a naming convention.
+
 That last point resolves what would otherwise be a contradiction with MI-3.
 Enforcement must be one mechanism, and it is: the platform's own, on the spawn
 path. The in-the-loop command needs no second enforcement mechanism because it
@@ -702,8 +717,9 @@ present, whose session it is, and who is accountable for what they run.
 **The risk this creates, stated plainly.** Someone reaches for the `-i` command
 believing they are testing what the pipeline does. They are not: different
 context, different permissions, a human able to intervene. The naming carries
-that distinction and must stay obvious, because nothing else prevents the
-mistake.
+that distinction and must stay obvious. The recorded provenance is the backstop:
+the trail says which runs were driven by hand, so a mistaken belief in the chat
+does not become a mistaken conclusion from the record.
 
 ---
 
