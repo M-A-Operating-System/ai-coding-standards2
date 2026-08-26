@@ -807,6 +807,19 @@ editing state by hand outside the system, which nobody sees and nothing records
 both modes. A state reachable in one mode and escapable only in the other is a
 defect.
 
+**Clearing a halt is a claim, not a click.** The exits from `blocked` and
+`failed` are a person removing the label, and that act means something specific:
+*I have dealt with the cause.* The next tick takes it literally and runs the
+step again.
+
+So the meaning has to be the same for everyone, or the exit is worse than none.
+A label cleared to make a red thing go away sends the step straight back into
+whatever stopped it, and the second failure looks identical to the first -- so
+the trail now says a step failed twice for the same reason, with nothing
+recording that the first clearance was a guess. The label model can show who
+cleared a halt and when; it cannot show whether they fixed anything, which is
+exactly why what the act means must be agreed rather than assumed.
+
 #### A step can vanish, and the lock it holds must come back
 
 Every outcome assumes the step got far enough to return one. A step can also
