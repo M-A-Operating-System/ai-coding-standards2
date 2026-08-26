@@ -470,6 +470,29 @@ place to keep the time.
 
 ---
 
+## Concurrency limits
+
+**Status:** `VIOLATED` for AS-1, and one of the two is misnamed.
+
+`PIPELINE_MAX_CONCURRENT = 20` is a module constant, so a pipeline-wide limit
+lives outside `pipeline.json` -- the same violation as the budgets. It also does
+not limit concurrency: its own comment reads "Maximum agent instances *launched*
+across ALL agent types in a single tick", and `invoke_agent` blocks on
+`proc.wait()`, so twenty launched agents run one after another. It is a
+batch-size cap wearing a concurrency name.
+
+`max_concurrent` is a genuine concurrency limit -- how many work items may carry
+`{agent}:wip` at once -- but it defaults to 1 and **no step in `pipeline.json`
+sets it**. Combined with global run serialisation and blocking invocation, the
+pipeline is strictly sequential today: one run at a time, one agent at a time
+within it, one work item at a time per step.
+
+That is worth stating plainly because P-9 asserts the opposite -- unconstrained
+cross-issue parallelism -- and the ceilings can only ever bite on `:wip` labels
+left behind by a run that died, which is the stranded-lock case above.
+
+---
+
 ## A withdrawn invocation leaves no record
 
 **Status:** `PARTIAL`. The behaviour is right; the record is missing.

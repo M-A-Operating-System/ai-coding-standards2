@@ -133,6 +133,20 @@ time.** Once runs are serialised, every run begins with settled labels and the
 model is unchanged -- labels are still the whole of it -- but "read the labels
 and act" is only deterministic if no other run is mid-write.
 
+Two further limits sit alongside it, and they answer different questions:
+
+| Limit | Question it answers |
+|---|---|
+| How many work items may have the same step in flight at once | Can two issues be having code written for them at the same time? |
+| How much work one tick will start before it stops | A hundred issues become eligible at once -- does the pipeline try all of them? |
+
+The second is not about concurrency, despite being easy to name as though it
+were. It bounds how much a single pass takes on, so a burst of eligible work
+does not consume everything available in one go. Both are limits on
+consumption, so both are declared with the other budgets rather than fixed in
+code -- one number chosen once for every step and every situation is a number
+nobody can tune for the case in front of them.
+
 ### Every step has the same four parts
 
 | Part | Declared in `pipeline.json` as | What it is | Determinism |
@@ -609,7 +623,7 @@ else defines any of them:
 | **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
-| **Budgets** | `max_turns`, `max_wall_seconds` | How much a step may attempt and how long it may hold the pipeline, per step |
+| **Budgets** | `max_turns`, `max_wall_seconds`, `max_concurrent`, per-tick launch cap | What a step may consume: how much it may attempt, how long it may hold the pipeline, how many may be in flight at once, and how much work one tick starts |
 
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
 itself. It matters most for allowed commands: a permission defined in two places
