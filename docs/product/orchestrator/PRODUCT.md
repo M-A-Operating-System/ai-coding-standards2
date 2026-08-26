@@ -99,6 +99,7 @@ that differs is a bug (MI-1 to MI-8).
 
 - [Core requirements](#core-requirements)
 - [The state machine](#the-state-machine)
+- [The pipeline defines flows, not a flow](#the-pipeline-defines-flows-not-a-flow)
 - [How the orchestrator tells a step where it is](#how-the-orchestrator-tells-a-step-where-it-is)
 - [How it uses agents](#how-it-uses-agents)
 - [The step contract](#the-step-contract)
@@ -145,6 +146,55 @@ consequences run as pre- and post-actions on either side of the agent, on the
 orchestrator's schedule rather than at the agent's request. What the agent
 actually influences is the work product and one status value -- and nothing else
 in the system depends on the agent having behaved reasonably.
+
+---
+
+## The pipeline defines flows, not a flow
+
+The orchestrator runs work. It does not know what kinds of work exist.
+
+A **flow** is one kind of work, declared in `pipeline.json`: what it applies to,
+what starts it, which steps run in what order, and what its branches and pull
+requests are called. The orchestrator knows how to run a flow; the file says
+which flows there are.
+
+That distinction is the whole of AS-2 applied to process. A system that knows
+about one kind of work has that kind written into it, and every new kind of work
+becomes a change to the component every other kind depends on.
+
+### Three shapes a flow can take
+
+These are not the flows. They are the shapes a flow can have, and all three must
+be expressible without touching the orchestrator.
+
+| Shape | Started by | Example |
+|---|---|---|
+| **Work that produces change** | A work item appearing or a label on it | An issue, taken from description to shipped code |
+| **Work that coordinates other work** | A work item whose children are the real work | An epic, which advances as its children close and finishes when they all have |
+| **Work with no work item behind it** | A schedule | A weekly sweep over branches, issues or the codebase, which produces work items rather than consuming one |
+
+The third is the one that breaks a design built around a single flow. It has no
+triggering item, so anything that assumes "a step runs against an issue" has
+nowhere to start. It is still a flow: it has steps, permissions, outcomes and a
+record, and it belongs in the same file as the others rather than as a special
+case beside them.
+
+### Names are declared, never computed
+
+A flow says what its branches and pull requests are called. The orchestrator
+reads those names; it does not build them.
+
+This sounds like a detail and is not. A branch name assembled from a pattern
+inside the orchestrator is a piece of the process definition living outside
+`pipeline.json` -- so a flow that needs a different convention cannot be added
+without editing code, and a reader of the process definition cannot tell what
+the branches will be called. Every flow that needs more than one branch or more
+than one pull request per item -- a design branch merged ahead of a build
+branch, say -- is expressible for the same reason: the names and the count are
+declared, not assumed.
+
+**The test is the same as AS-2's.** Adding a flow, removing one, or changing
+what its branches are called requires no change to `pipeline_orchestrator.py`.
 
 ---
 
@@ -447,7 +497,7 @@ each one is recorded in [`gap_analysis.md`](gap_analysis.md).
 > each is supposed to change. Nothing behaves in a way that file does not
 > describe.**
 
-`pipeline.json` is the authoritative definition of five concerns, and nothing
+`pipeline.json` is the authoritative definition of six concerns, and nothing
 else defines any of them:
 
 | Concern | Declared as | What it covers |
@@ -457,6 +507,7 @@ else defines any of them:
 | **Dependencies** | `dependencies` | What must have completed before a step is eligible |
 | **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
+| **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
 
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
 itself. It matters most for allowed commands: a permission defined in two places
@@ -464,10 +515,12 @@ is a security property that holds in one reading and not the other, and a second
 definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
 
-**Precisely.** Process, sequence, dependencies, entitled activities and
-expected effect are defined in `pipeline.json` and nowhere else. No constant in
+**Precisely.** Process, sequence, dependencies, entitled activities, expected
+effect and flows are defined in `pipeline.json` and nowhere else. No constant in
 the orchestrator, no agent frontmatter field, and no settings file adds to,
-narrows or overrides any of the five.
+narrows or overrides any of the six. In particular no name is computed in code:
+a branch or pull-request name that is a string built inside the orchestrator is
+a definition living outside the file that is supposed to hold it.
 
 **Test.** The resolved command set for every step is derivable from
 `pipeline.json` alone. Any permission that cannot be traced to it is a test
@@ -957,7 +1010,8 @@ Two things are often mistaken for legitimate differences and are not:
 | Vision and problem | `01-vision.md` | not yet superseded |
 | Principles P-1 to P-16 | `02-principles.md` | not yet superseded |
 | Pipeline configuration | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its schema | not yet superseded |
-| Lifecycle, status model, gates | `04`, `06`, `07` | not yet superseded |
+| The process itself -- which flows exist, their phases and forks | [`04-lifecycle.md`](04-lifecycle.md) | **stays there by design.** This document says the orchestrator can run whatever flows `pipeline.json` declares; which flows those are, and why, is process |
+| Status model, gates | `06`, `07` | not yet superseded |
 | Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |
 | Agent specification | `12-agent-spec.md` | partially superseded |
 | Standards model | `14-standards.md` | not yet superseded |

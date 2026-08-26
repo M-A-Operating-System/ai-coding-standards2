@@ -422,6 +422,30 @@ above. Both behaviours were observed on 25 August, on the same day.
 
 ---
 
+## Flows
+
+**Status:** `VIOLATED`. The orchestrator supports exactly one flow. Everything
+that is not that flow is either excluded by label or written in orchestrator
+code.
+
+| What the design requires | Today |
+|---|---|
+| Branch and pull-request names declared in `pipeline.json` | `f"issue-{work_item.number}"` is built in seven places in `pipeline_orchestrator.py` (lines 829, 898, 2121, 2147, 3697, 4161, 4329). Only the suffix is data (`branch_suffix`), so a flow not named `issue-N` cannot be added without editing code |
+| More than one kind of work item | All sixteen steps declare `object: ["issue"]`. `WORK_ITEM_KIND` distinguishes an issue from a PR, but nothing declares a PR-driven step |
+| A flow started by a schedule | No step has a schedule trigger; triggers are `event` or `label` only. The weekly sweep exists as an `orchestrator_checks` entry declaring `"runs": "orchestrator-native (no registered agent, no LLM invocation)"` |
+| An epic as a flow | Not a flow. `exclude_labels: ["epic"]` on every step keeps epics out of the one flow, and `epic-completion` is a second orchestrator-native check |
+
+The last two rows are the same defect as AS-2: work that `pipeline.json` cannot
+express ends up inside the coordinator, where no reader of the process
+definition can see it and no step can be added without a code change.
+
+The two-phase design-to-build flow (`04-lifecycle.md`) is the existing evidence
+that a flow can need more than one branch and more than one pull request per
+item. It works today only because the second branch is a hardcoded suffix on a
+hardcoded name.
+
+---
+
 ## The record format
 
 **Status:** `PARTIAL`. Two of the six markers `PRODUCT.md` names are widely
