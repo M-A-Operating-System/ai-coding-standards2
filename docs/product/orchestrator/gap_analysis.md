@@ -34,7 +34,7 @@ That last point is the one to act on first. Until each promise has a test,
 `PRODUCT.md` describes an intention rather than a property, and defects keep
 arriving by surprise instead of being derived from this table.
 
-The agent contract in `PRODUCT.md` has no conformance rows yet. It was written
+The step contract in `PRODUCT.md` has no conformance rows yet. It was written
 after this analysis and nothing has been measured against it -- which is itself
 a gap, and the likeliest place for the next round of defects, since the obligations
 it states (blocked means say so, a re-run does the work again, out of budget is
@@ -253,7 +253,7 @@ Two findings made this cheaper than it first appeared:
   than assumed.
 
 What is genuinely lost on the exact-step path is intervening mid-run, which the
-agent contract says should not be possible anyway. That capability moves to the
+step contract says should not be possible anyway. That capability moves to the
 `-i` command, where it is honest.
 
 **Not implemented.** Both commands need generating from `pipeline.json`, the

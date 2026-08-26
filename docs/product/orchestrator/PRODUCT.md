@@ -10,7 +10,8 @@ the two is tracked separately in [`gap_analysis.md`](gap_analysis.md).
 
 ## Core requirements
 
-Read these together. Everything after this section is detail.
+Read these together. They describe what the product is; [the
+promises](#the-promises) state what it guarantees and how each is tested.
 
 **Work is a GitHub issue, and the issue is the record.** You describe a piece of
 work as an issue. The orchestrator walks it through the steps that turn an issue
@@ -23,13 +24,12 @@ Steps are the transitions between states. The machine is deterministic: given
 the same labels it always chooses the same next step, and that choice is
 computed by code, never by a model.
 
-**Every activity has the same four parts.** Each step declares the commands it
-is allowed to run, the deterministic work that happens before it, the activity
+**Every step has the same four parts.** A step declares the commands it is
+allowed to run, the deterministic work that happens before it, the activity
 itself, and the deterministic work that happens after. The activity is either an
-AI agent or a script; the work before and after is always scripts. So a step
-whose activity is a script is deterministic end to end, and only a step with an
-agent has any uncertainty in it at all. Commands every step needs are declared
-once, globally, rather than repeated on each step.
+AI agent or a script; everything around it is always scripts. So uncertainty
+enters the system at exactly one place, and only in the steps that need
+judgement.
 
 **A step is told everything it needs to know.** Each step runs as a separate
 process and learns its situation entirely from environment variables the
@@ -37,51 +37,38 @@ orchestrator sets: where the repository is, what it is working on, where to put
 working files, and whether a human is attached to it. A step never works its own
 context out, and never probes to find out.
 
-**The orchestrator coordinates and nothing else.** It reads the state, picks the
-next step, runs it, and records what happened. Every piece of work that produces
-or changes anything is a step, a pre-action or a post-action -- all of them
-scripts or agents. No value-add work lives in the orchestrator. Changing the
-process means changing `pipeline.json` and the scripts it names; it should not
-mean changing the orchestrator.
-
-**A command names something; it does not do something.** Every `/maos-*`
-command is a thin wrapper that says what to run and passes along what you typed.
-Procedure written into a command is logic living where nothing can test it and
-the headless path cannot reuse it.
+**The orchestrator coordinates; steps do the work.** It reads the state, picks
+the next step, runs it, and records what happened. Everything that produces or
+changes an artefact is a step, a pre-action or a post-action. Changing the
+process means changing `pipeline.json` and the scripts it names rather than the
+orchestrator (AS-2), and a `/maos-*` command names what to run rather than
+describing how to do it (AS-3).
 
 **One file defines the process.** `pipeline.json` says which steps exist, what
 starts each one, what must finish first, and what each is permitted to do.
-Nothing behaves in a way that file does not describe, and nothing else defines
-any of those four things.
-
-**Steps produce output; the orchestrator posts it.** Every step, agent or
-script, returns what it produced and a summary of what it did. The orchestrator
-writes those to the issue as structured comments. A step never posts anything
-itself, so there is exactly one thing writing to GitHub and exactly one format
-to read.
+Nothing behaves in a way that file does not describe (AS-1).
 
 **Agents produce; they never decide.** An agent is a black box that receives a
-work item and returns a result. It cannot choose what runs next, cannot set its
-own state, cannot approve anything, and cannot act outside the commands it was
-allowed. Its only influence on the machine is a single status value from a fixed
-set.
-
-**Agents are not deterministic, and the design assumes it.** The same prompt can
-produce different work on different runs. That is contained by keeping every
-consequential decision in code, so a poor run costs one step, is visible on the
-issue, and cannot corrupt anything.
+work item and returns a result. It cannot choose what runs next, set its own
+state, approve anything, or act outside the commands it was allowed. Its only
+influence on the machine is one status value from a fixed set -- which is what
+contains the fact that the same prompt can produce different work on different
+runs.
 
 **An agent that cannot comply says so.** Being blocked, running out of budget,
-or finishing only part of the work are distinct outcomes and each is reported as
-itself. An agent never substitutes a different approach and reports success,
+and finishing only part of the work are distinct outcomes, and each is reported
+as itself. An agent never substitutes a different approach and reports success,
 because a silent workaround is an unrecorded change to the process.
+
+**Steps produce output; the orchestrator posts it.** Every step returns what it
+produced and a summary of what it did, including when it did nothing. The
+orchestrator writes those to the issue and separately records what actually
+changed, so exactly one thing writes to GitHub and a disagreement between the
+account and the evidence surfaces rather than hides (MI-6).
 
 **Only a person approves.** Named gates require a human decision, recorded the
 same way every time. The system cannot approve itself, and an approval check
-that cannot reach a conclusion refuses rather than admits. Rather than trying to
-detect an agent approving itself, the design makes it unreachable: in headless
-mode only a person can cross a gate, and in interactive mode only the
-orchestrator records one -- and an agent can reach neither.
+that cannot reach a conclusion refuses rather than admits (MI-7).
 
 **People speak to the pipeline through GitHub, or through the chat.** In
 headless mode the issue is the only channel: you add labels and write comments,
@@ -91,38 +78,30 @@ The record is identical either way -- the difference is whether you write it
 yourself or dictate it.
 
 **Nothing gets stuck.** Every state the work can reach has a way forward that
-someone can actually perform. A halt is a pause, never a loss.
-
-**Every step says what it did, and the orchestrator checks.** Each step reports
-what it did including when it did nothing, and the orchestrator separately
-records what actually changed. Where the account and the evidence disagree, you
-are told -- because a step that reports success while doing nothing makes every
-signal after it meaningless.
+someone can actually perform. A halt is a pause, never a loss (MI-4).
 
 **It will not run in a repository that has not been onboarded.** The
-orchestrator depends on things onboarding puts in place: the standards and agent
+orchestrator depends on what onboarding puts in place: the standards and agent
 definitions it reads, the labels that are its state, and the project's own ADR
-file. When they are missing it does not improvise and it does not half-run -- it
-stops before its first step and says the repository has not been onboarded.
-Onboarding records that it completed; the orchestrator checks that record before
-doing anything else. A repository that was never set up fails immediately and
-legibly, rather than part-way through its first piece of work with half a
-pipeline behind it.
+file. Onboarding records that it completed and the orchestrator checks that
+record before doing anything else, so a repository that was never set up fails
+immediately and legibly rather than part-way through its first piece of work.
 
 **It runs two ways, and they behave identically.** Headless as a continuous
 background process on GitHub Actions, or interactive inside a chat session in
 Claude Code. You can start work in one, walk away, and let the other finish it.
 The short list of things that legitimately differ is written down; anything else
-that differs is a bug.
+that differs is a bug (MI-1 to MI-8).
 
 ---
 
 ## Contents
 
+- [Core requirements](#core-requirements)
 - [The state machine](#the-state-machine)
 - [How the orchestrator tells a step where it is](#how-the-orchestrator-tells-a-step-where-it-is)
 - [How it uses agents](#how-it-uses-agents)
-- [The agent contract](#the-agent-contract)
+- [The step contract](#the-step-contract)
 - [The promises](#the-promises)
 - [Headless and interactive](#headless-and-interactive)
 - [What is allowed to differ](#what-is-allowed-to-differ)
@@ -140,13 +119,13 @@ Because state lives on the work item, any orchestrator process reading it
 reaches the same conclusion. There is nothing to synchronise, nothing to
 recover, and no position that exists only in memory.
 
-### Every activity has the same four parts
+### Every step has the same four parts
 
 | Part | Declared in `pipeline.json` as | What it is | Determinism |
 |---|---|---|---|
 | Allowed commands | `extra_allowedTools` | Everything this activity may do. Anything else is refused | Data |
 | Pre-actions | `defaults.agent_lifecycle.before` | Work performed before the activity -- checking out the branch, preparing the scratch directory | Code |
-| The activity | `type` with `agent` or `script` | The step itself: an AI agent, or a script | Deterministic when a script; **not deterministic when an agent** |
+| The activity | `type` with `agent` or `script` | The work the step exists to do: an AI agent, or a script | Deterministic when a script; **not deterministic when an agent** |
 | Post-actions | `post_steps`, `git_ops`, `defaults.agent_lifecycle.after` | Work performed after -- committing, pushing, labelling, posting the artefact | Code |
 
 Three of the four parts are always code or data. The fourth is code too, unless
@@ -218,8 +197,11 @@ person drives a run interactively, the orchestrator is interactive -- but the
 agents it spawns are still subprocesses with nobody watching them. An agent must
 never behave as though it can ask a question, whichever way the tick began.
 
-So `AI_AGILE_EXECUTION_MODE` answers the second question and is `headless` for
-every spawned activity, always. The first question is the orchestrator's own,
+So `AI_AGILE_EXECUTION_MODE` answers the second question, and it describes the
+activity rather than the run: every activity the orchestrator spawns as a
+subprocess is `headless`, whichever way the tick began. The only activity that
+is `interactive` is one a person is working through themselves, which is not a
+spawned agent at all. The first question is the orchestrator's own,
 and any step whose behaviour genuinely depends on it -- how to treat an
 emergency stop, whether a human can be prompted right now -- must be told
 separately and explicitly.
@@ -259,15 +241,16 @@ contract below states.
 
 ---
 
-## The agent contract
+## The step contract
 
-Binds every step whose activity is an agent, in both modes. An agent that does
-not meet this is not a different kind of agent -- it is a defect.
+Binds every step, in both modes, whether its activity is an agent or a script. A
+step that does not meet this is not a different kind of step -- it is a defect.
 
-A step whose activity is a script is bound by the same contract, and meets most
-of it by construction: a script cannot replay a previous answer or improvise
-past a refusal. What it must still do is return one status, keep its files where
-they belong, and report honestly when it did nothing -- which is exactly where
+Most of the contract exists because an agent is not deterministic, and a script
+meets those clauses by construction: a script cannot replay a previous answer or
+improvise past a refusal. But the clauses still apply to it. What a script must
+do deliberately is return one status, keep its files where they belong, and
+report honestly when it did nothing -- which is exactly where
 `commit-agent-work.sh` and `merge-docs-pr.sh` have failed.
 
 ### What the orchestrator provides
@@ -280,7 +263,7 @@ they belong, and report honestly when it did nothing -- which is exactly where
 | **A turn budget** | A bounded number of turns, known to be enough for the step's declared work |
 | **Its instructions** | A prompt whose every instruction is executable under the commands allowed |
 
-### What the agent must return
+### What a step must return
 
 | Returned | Requirement |
 |---|---|
@@ -292,7 +275,7 @@ they belong, and report honestly when it did nothing -- which is exactly where
 The orchestrator writes the summary and the output to the issue as structured
 comments. The step does not.
 
-### What the agent must never do
+### What a step must never do
 
 - **Write to the issue or PR.** No comments, no edits, no labels. A step returns
   what it produced and the orchestrator records it. Exactly one thing writes to
@@ -307,7 +290,7 @@ comments. The step does not.
 - **Depend on state from a previous run** that is not on the work item or in
   git. There is no memory between invocations beyond what is recorded.
 
-### What the agent must do when it cannot comply
+### What a step must do when it cannot comply
 
 These obligations are what make a non-deterministic worker safe to depend on.
 They matter more than the happy path, because an agent that fails quietly is
@@ -329,9 +312,16 @@ indistinguishable from one that succeeded.
 
 ## The promises
 
-Eleven promises. Each states what it means for you, why it matters, and how it is
-tested. Whether the implementation currently keeps each one is recorded in
-[`gap_analysis.md`](gap_analysis.md).
+Eleven promises in two families:
+
+- **AS -- architectural separation.** Where a fact, or a piece of work, is
+  allowed to live. Three promises about structure.
+- **MI -- mode invariant.** What must hold identically however the work was
+  started. Eight promises, each with a both-modes clause.
+
+Each promise states what it means for you, why it matters, exactly what is
+being claimed, and how it is tested. Whether the implementation currently keeps
+each one is recorded in [`gap_analysis.md`](gap_analysis.md).
 
 ---
 
@@ -356,6 +346,11 @@ itself. It matters most for allowed commands: a permission defined in two places
 is a security property that holds in one reading and not the other, and a second
 definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
+
+**Precisely.** Process, sequence, dependencies and entitled activities are
+defined in `pipeline.json` and nowhere else. No constant in the orchestrator, no
+agent frontmatter field, and no settings file adds to, narrows or overrides any
+of the four.
 
 **Test.** The resolved command set for every step is derivable from
 `pipeline.json` alone. Any permission that cannot be traced to it is a test
@@ -556,8 +551,17 @@ records both. A disagreement between account, evidence and expectation is
 surfaced, not buried. Silence is read as success, so silence about a non-event
 is a false report.
 
-**Where the record lives.** A record that survives only as long as someone is
-watching is not a record. The account, the evidence and the measurements are
+**Test.** Every step returns a summary on the path where it acted and the path
+where it did not. Every step declares its expected effect. The orchestrator
+records the observed change for every step and flags any case where account,
+evidence and expectation do not agree. After a run in either mode, both branches
+carry one appended record per completed step, and the two runs are
+indistinguishable in what they wrote.
+
+#### Where the record lives
+
+A record that survives only as long as someone is watching is not a record. The
+account, the evidence and the measurements are
 written to two protected orphan branches -- `ai-agile/log` for the narrative of
 what happened, `ai-agile/metrics` for what it cost -- appended once per
 completed step. Both are written by a git push, so both work identically whether
@@ -565,13 +569,6 @@ the run was started by a schedule or by a person; neither depends on a console
 that scrolls away or a build log that ages out. The branches are orphan and
 carry only their own data: a log branch that also carries a copy of the
 repository is a second, stale copy of the repository.
-
-**Test.** Every step returns a summary on the path where it acted and the path
-where it did not. Every step declares its expected effect. The orchestrator
-records the observed change for every step and flags any case where account,
-evidence and expectation do not agree. After a run in either mode, both branches
-carry one appended record per completed step, and the two runs are
-indistinguishable in what they wrote.
 
 ---
 
@@ -585,12 +582,19 @@ enforced differently in one mode is a gate not enforced, and a guard that admits
 an approval when its check is inconclusive is a guard that fails at exactly the
 moment it is needed.
 
-**Precisely.** Two things are separate and must stay separate:
+**Precisely.** The decision is always a person's, in both modes, and nothing
+else may originate it. The record is always the same gate label, in both modes,
+readable by either. A gate is crossed only by a person's own label (headless) or
+by the orchestrator recording a confirmation the driver relayed (interactive) --
+never by an agent, and never by a driver writing the label itself. An approval
+the orchestrator cannot establish a person stood behind is refused, not admitted.
 
-| | Requirement |
-|---|---|
-| **The decision** | Always a person's, in both modes. Nothing else may originate it |
-| **The record** | Always the same gate label, in both modes, readable by either |
+**Test.** In headless mode, a gate label applied by any non-human actor is
+rejected. In interactive mode, an approval recorded by the orchestrator on a
+relayed human confirmation is honoured. No agent can cause either, in either
+mode. An inconclusive check refuses rather than admits.
+
+#### Why this is built as unreachability, not detection
 
 The obvious rule -- "no bot may apply a gate label" -- does not work. In
 interactive mode the chat-AI writing the label on the person's instruction is
@@ -599,8 +603,8 @@ transcription and origination look identical at the point of writing, both being
 a non-human actor applying a label, so no amount of actor-checking separates
 them.
 
-**So the design does not try to detect origination. It makes origination
-unreachable.**
+So the design does not try to detect origination. It makes origination
+unreachable.
 
 The orchestrator is the only component that is neither an agent nor a
 credential-holder, and it knows first-hand how it was invoked. That fact cannot
@@ -619,17 +623,12 @@ The requirement is identical in both -- a person decided. What differs is the
 evidence available to show it, which is a legitimate difference under MI-8 and
 is listed as one.
 
-**This depends on one assumption, which must be asserted rather than trusted:**
-that a non-headless invocation genuinely has a person present. That is true by
-construction today, because the interactive path exists only inside a chat
-session. If anything ever invokes the orchestrator non-headlessly without a
-human, this guarantee disappears silently -- so the orchestrator must refuse to
-record an approval when it cannot establish that a person is there.
-
-**Test.** In headless mode, a gate label applied by any non-human actor is
-rejected. In interactive mode, an approval recorded by the orchestrator on a
-relayed human confirmation is honoured. No agent can cause either, in either
-mode. An inconclusive check refuses rather than admits.
+**One assumption must be asserted rather than trusted:** that a non-headless
+invocation genuinely has a person present. That is true by construction today,
+because the interactive path exists only inside a chat session. If anything ever
+invokes the orchestrator non-headlessly without a human, this guarantee
+disappears silently -- so the orchestrator refuses to record an approval when it
+cannot establish that a person is there.
 
 ---
 
@@ -783,7 +782,7 @@ Two things are often mistaken for legitimate differences and are not:
 | Core requirements | this document | draft |
 | The state machine and activity shape | this document | draft |
 | How a step is told where it is | this document | draft |
-| How it uses agents, and the agent contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
+| How it uses agents, and the step contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
 | The promises (AS-1 to AS-3, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
