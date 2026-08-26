@@ -438,7 +438,7 @@ Three things are missing:
 
 | | |
 |---|---|
-| A local file | `pipeline/pipeline.json` in the repository does not exist and nothing creates it. `get_started.py` seeds `adrs/adrs.json` and would need the same treatment here: written once, kept on every later sync, and left out of the gitignore entries so it stays committed |
+| Somewhere for a local file to be found | Nothing looks for `pipeline/pipeline.json` in the repository. Onboarding needs no change -- the file is not seeded and most repositories will never have one -- but a repository that writes one today has it ignored, and it would need leaving out of the gitignore entries so it stays committed where it does exist |
 | Composition | Nothing merges a local definition over the shipped one, so nothing to give precedence with |
 | A unit to override | Flows do not exist as named objects, so there is nothing a local file could name. Per-flow precedence needs steps nested under named flows, not a flat list |
 

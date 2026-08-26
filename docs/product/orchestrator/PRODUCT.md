@@ -750,17 +750,29 @@ the same shape as the shipped definition and holds only the parts the repository
 declares -- flows it adds, flows it replaces, and any default it wants to differ
 on.
 
-It is project-owned, and gets the treatment that implies: seeded once by
-onboarding, never overwritten by a sync, and committed normally rather than
-gitignored. What a repository decided about its own process has to survive every
-framework version, which is precisely what the framework's own files must not
-do. The shipped definition is read verbatim and can be replaced wholesale on
-upgrade; the local one is never touched.
+**Most repositories will not have one, and nothing creates it for them.** The
+shipped definition is read from the framework every time; onboarding puts no
+copy anywhere. The local file exists only when someone writes one, and its
+absence is the ordinary case meaning "the default, entirely".
 
-That is the same split as `standards/` and `adrs/`: one side inherited and
-identical everywhere, the other side the repository's own and safe from the
-sync. The difference is only that here the local side *overrides* rather than
-sits beside -- which is why precedence has to be stated rather than assumed.
+That matters more than it sounds. A file seeded empty into every repository
+would sit exactly where a reader expects the pipeline to be defined while
+defining nothing, and would be the obvious place to edit for anyone who had not
+read this. Absent, there is one definition to find; present, it is present
+because someone decided something.
+
+Where it does exist it is the repository's own: never overwritten by a sync, and
+committed normally rather than gitignored. What a repository decided about its
+process has to survive every framework version -- which is precisely what the
+framework's own files must not do. The shipped definition can be replaced
+wholesale on upgrade; the local one is never touched.
+
+That is the same split as `standards/` and `adrs/` -- one side inherited and
+identical everywhere, the other the repository's own and safe from the sync --
+with two differences. The local side here *overrides* rather than sits beside,
+which is why precedence has to be stated. And it is not seeded, because an
+empty ADR store is a store with nothing in it yet, while an empty override is a
+second answer to a question that already has one.
 
 **The cost, stated.** A flow a repository overrides stops tracking the default.
 The framework may improve its version and the repository will not see it, in the
