@@ -99,6 +99,16 @@ records what actually changed. Where the account and the evidence disagree, you
 are told -- because a step that reports success while doing nothing makes every
 signal after it meaningless.
 
+**It will not run in a repository that has not been onboarded.** The
+orchestrator depends on things onboarding puts in place: the standards and agent
+definitions it reads, the labels that are its state, and the project's own ADR
+file. When they are missing it does not improvise and it does not half-run -- it
+stops before its first step and says the repository has not been onboarded.
+Onboarding records that it completed; the orchestrator checks that record before
+doing anything else. A repository that was never set up fails immediately and
+legibly, rather than part-way through its first piece of work with half a
+pipeline behind it.
+
 **It runs two ways, and they behave identically.** Headless as a continuous
 background process on GitHub Actions, or interactive inside a chat session in
 Claude Code. You can start work in one, walk away, and let the other finish it.
