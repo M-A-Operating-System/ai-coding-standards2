@@ -398,6 +398,7 @@ report honestly when it did nothing -- which is exactly where
 | **A scratch directory** | An existing, writable path for working files, prepared before the agent starts and removed after |
 | **Two budgets** | A bounded number of turns and a bounded wall-clock time, each declared for this step in `pipeline.json`, each known to be enough for the work the step declares |
 | **Its instructions** | A prompt whose every instruction is executable under the commands allowed |
+| **A model** | Which model this step runs on, chosen when the step was declared. A step does not choose its own model, any more than it chooses its own permissions |
 
 ### What a step must return
 
@@ -636,7 +637,7 @@ else defines any of them:
 
 | Concern | Declared as | What it covers |
 |---|---|---|
-| **Process** | step entries | Which steps exist, what each one is, and which phase it belongs to |
+| **Process** | step entries | Which steps exist, what each one is -- including which model an agent step runs on -- and which phase it belongs to |
 | **Sequence** | `trigger` | What triggers a step and what it emits |
 | **Dependencies** | `dependencies` | What must have completed before a step is eligible |
 | **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |

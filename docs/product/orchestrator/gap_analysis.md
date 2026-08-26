@@ -470,6 +470,38 @@ place to keep the time.
 
 ---
 
+## Model choice, and the validator that does not exist
+
+**Status:** `VIOLATED` for AS-1, and one claimed enforcement mechanism is absent.
+
+**Model choice lives in agent frontmatter.** The orchestrator reads it at
+`pipeline_orchestrator.py:2800` (`frontmatter.get("model")`), so which model a
+step runs on is declared outside `pipeline.json` -- the same class as the
+budgets. `12-agent-spec.md` states the policy well, with a rationale worth
+keeping: "Choosing a more expensive model than necessary wastes budget without
+improving outcomes. Choosing a cheaper model than necessary produces poor
+artefacts that fail review and re-run anyway." But it names dated model
+identifiers that will go stale, and assigns four of them to agents that do not
+exist (`02_design/architect`, `05_continuous/process-reviewer`,
+`04_evaluate/standards-evolver`, `01_product_docs/ticket-sizer`).
+
+**`pipeline/validate_agent_prompts.py` does not exist.** `12-agent-spec.md`
+describes it as running on every PR that touches `.claude/agents/*.md`, lists
+nine checks, and states that "PRs that fail validation cannot merge". None of
+that is true as written.
+
+What does exist is `validate_agent_files()` in `pipeline/validate.py`, covering
+three of the nine: every agent declared in `pipeline.json` has a prompt file,
+that file declares a `model`, and the model is in an approved set. The other six
+-- name matches path, tools are a subset of the allowable matrix, required body
+sections, the terminal sentinel, and the forbidden-tool block -- are unenforced.
+
+The tools-subset check is the one worth noting, because it is the only claimed
+mechanism that would have caught permissions drifting between an agent's
+frontmatter and `pipeline.json`, which is AS-1's central violation.
+
+---
+
 ## Environment limits a step cannot see
 
 **Status:** `VIOLATED`. The one known limit of this class is enforced by prose
