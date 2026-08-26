@@ -547,13 +547,16 @@ advance together is decided by their `component:` labels, and an item with no
 such label runs alone -- so a count of permitted concurrent instances is not the
 control, and the field goes rather than moving to `pipeline.json`.
 
-Three things are missing for that to work. No `component:` label exists on any
-issue and no repository declares the set of components it recognises, so every
-item is untagged and every item therefore runs alone -- which is the correct
-behaviour and identical to today, but by accident rather than by decision. And
-runs share one working tree (#373), so even correctly-labelled non-overlapping
-items would disturb each other on disk; deciding two runs may proceed is not the
-same as isolating them.
+Two things are missing for that to work. No `component:` label exists on any
+issue, so every item is untagged and every item therefore runs alone -- the
+correct behaviour, reached by accident rather than by decision. And runs share
+one working tree (#373), so even correctly-labelled non-overlapping items would
+disturb each other on disk; deciding two runs may proceed is not the same as
+isolating them.
+
+Nothing is missing on the declaration side, because there is nothing to declare:
+the orchestrator reads whatever `component:` labels an item carries and compares
+them for equality, with no register anywhere.
 
 P-9 is neither wrong nor merely unimplemented: it was blocked on an input that
 did not exist. Cross-issue parallelism is safe only between runs that will not

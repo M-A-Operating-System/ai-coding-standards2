@@ -190,12 +190,27 @@ what an issue affects by inspection is hard, and has to be trusted before it can
 be relied on; a label is a claim someone made, visible on the issue, and wrong
 in ways a person can see and correct.
 
-**The claim is only as good as its completeness.** An issue tagged with two of
-the three components it actually touches is more dangerous than one tagged with
-none, because it will be allowed to run beside something it collides with.
-Under-tagging is the failure direction and it fails silently -- so the
-components a repository recognises are declared, and a label naming something
-outside that set is an error rather than a new component invented on the spot.
+**Nothing knows what the components are.** There is no register of them, in
+`pipeline.json` or anywhere else. The orchestrator reads whatever
+`component:` labels an item carries, treats them as opaque names, and compares
+them for equality. Components exist because someone wrote one on an issue, and
+a repository's set is whatever its issues happen to say -- which is what keeps
+the orchestrator coordinating rather than knowing about the system it is
+building.
+
+**The claim is only as good as the person making it.** Two failures follow, both
+silent, both landing in the same place. An issue tagged with two of the three
+components it touches is *more* dangerous than one tagged with none, because it
+will be allowed to run beside something it collides with. And `component:auth`
+and `component:authentication` are two different components as far as equality
+is concerned, so a near-miss reads as no overlap at all.
+
+A register would not fix either. Picking the wrong valid name is as easy as
+mistyping one, and the register would be a second thing to maintain and a
+second place to be wrong. The control is the same in both cases and it is not
+mechanical: the labels are visible on the issue and in the repository's label
+list, so a divergent name is something a person can see -- and the label picker
+pushes towards names already in use without anything having to enforce it.
 
 **Deciding is not the same as isolating.** Component labels answer whether two
 runs *may* proceed together. They do nothing about two runs sharing one working
