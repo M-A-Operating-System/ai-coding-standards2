@@ -161,14 +161,29 @@ system the work touches**.
 
 #### The issue says which parts it touches
 
-An issue carries a `component:` label for each part of the system it affects.
-Two items may run at the same time when their components do not intersect.
+An issue carries a `component:` label for each part of the system it affects,
+and may carry several. Before an item starts, it takes a claim on every
+component it names, and it starts only if it can take them **all**. Several
+items proceed together exactly when none of them wants a component another is
+holding.
+
+**Claimed together, released together.** An item never holds part of what it
+needs while waiting for the rest -- so two items can never end up each holding
+something the other is waiting on. Either everything an item named is free and
+it starts, or nothing is taken and it waits. That all-or-nothing rule is the
+whole of what keeps this from deadlocking, and it is worth more than the
+throughput it costs.
 
 **An issue with no component label runs alone.** Not knowing what something
-touches is not the same as knowing it touches nothing, so the absence of the
-label means maximum exclusion: that item waits for everything and everything
-waits for it. The pipeline is then exactly as sequential as it is today, and
-becomes parallel only where someone has said enough for that to be safe.
+touches is not the same as knowing it touches nothing, so an untagged item
+claims everything: it waits for all work to finish and all work waits for it.
+The pipeline is then exactly as sequential as it is today, and becomes parallel
+only where someone has said enough for that to be safe.
+
+**The cost is that broad work waits for a quiet moment.** An item naming six
+components needs all six free at once, and a steady stream of single-component
+work can keep it waiting. That is the honest trade: the alternative is letting
+it start while something it will change is already being changed.
 
 This is what makes the feature available now rather than pending. Working out
 what an issue affects by inspection is hard, and has to be trusted before it can
