@@ -470,6 +470,28 @@ place to keep the time.
 
 ---
 
+## Reclaiming a stranded lock
+
+**Status:** `VIOLATED`. A step that vanishes strands its `:wip` permanently, and
+`:wip` has `blocks_pipeline: true`.
+
+`_clear_inflight_wip_on_signal` (`pipeline_orchestrator.py:5426`) clears the
+in-flight label when the process receives SIGTERM or SIGINT. It is best-effort
+and signal-only: a process killed outright runs no handler, a lost runner clears
+nothing, and a failed `remove_label` is caught, logged and abandoned on the way
+out.
+
+There is no age-based reclaim. `11-orchestrator.md` states that "a `:wip` label
+older than the configured agent timeout (default 30 minutes, set per agent in
+`pipeline.json` via `max_wall_seconds`) is forcibly reclaimed by the
+orchestrator on its next scheduled tick". No such logic exists, and
+`max_wall_seconds` is not a field -- both claims are in the same paragraph.
+
+So the only recovery from a lost runner is a person deleting the label by hand,
+which is the intervention MI-4 exists to prevent.
+
+---
+
 ## The record format
 
 **Status:** `PARTIAL`. Two of the six markers `PRODUCT.md` names are widely

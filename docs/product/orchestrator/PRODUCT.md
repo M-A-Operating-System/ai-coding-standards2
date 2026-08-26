@@ -751,6 +751,36 @@ editing state by hand outside the system, which nobody sees and nothing records
 both modes. A state reachable in one mode and escapable only in the other is a
 defect.
 
+#### A step can vanish, and the lock it holds must come back
+
+Every outcome assumes the step got far enough to return one. A step can also
+just stop existing -- the machine running it is lost, the process is killed
+outright, the tick is cancelled between one write and the next. Nothing is
+returned, so no outcome is produced, and the `:wip` the step was holding stays
+where it is.
+
+That label is the mutex, and it blocks the pipeline. So a step that vanishes
+does not merely fail: it takes that pairing of work item and step out of the
+system permanently, and the only way back is a person deleting a label by hand
+-- the un-auditable intervention this promise exists to prevent.
+
+**Releasing the lock on the way down is not enough.** Catching a termination
+signal and clearing the label first covers the tidy cases, and none of the ones
+that matter: a process killed outright runs no handler, and a lost machine
+cannot clear anything.
+
+So the reclaim has to be something a *later* tick does, by looking at the label
+rather than at the run. A `:wip` older than that step's wall-clock budget cannot
+still be legitimately running -- the budget is the whole of what "still running"
+means -- so the orchestrator takes the lock back, records the step as `failed`,
+and says why. It returned nothing, which is what `failed` means; no sixth
+outcome is needed for it.
+
+This is the second reason the wall-clock budget belongs per step in
+`pipeline.json` (AS-1). One number for every step means either a slow step is
+reclaimed while it is still working, or a fast one stays stranded for as long as
+the slowest step in the pipeline might legitimately take.
+
 **Test.** Every status in `statuses.json` where `blocks_pipeline` is true names
 a `cleared_by`, that exit is reachable from the step's own configuration, and it
 is performable in both modes.
