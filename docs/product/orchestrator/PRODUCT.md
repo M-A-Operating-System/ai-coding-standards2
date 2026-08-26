@@ -394,7 +394,7 @@ report honestly when it did nothing -- which is exactly where
 | Provided | Guarantee |
 |---|---|
 | **One work item** | Exactly one issue or PR. The agent never chooses its own subject |
-| **Its allowed commands** | Everything the agent may do, complete and enforced. An action outside the set is refused, not merely discouraged |
+| **Its allowed commands** | Everything the step may do, complete and enforced. An action outside the set is refused, not merely discouraged. Where the environment refuses something the set permits, the step is told before it starts, not when it tries |
 | **A scratch directory** | An existing, writable path for working files, prepared before the agent starts and removed after |
 | **Two budgets** | A bounded number of turns and a bounded wall-clock time, each declared for this step in `pipeline.json`, each known to be enough for the work the step declares |
 | **Its instructions** | A prompt whose every instruction is executable under the commands allowed |
@@ -451,6 +451,25 @@ a person wrote -- an issue body becoming a specification is the standard case.
 Agents draft and humans decide (P-10), so the original has to survive the
 rewrite: without it, an agent's rewrite silently replaces what a person asked
 for, and nobody can tell what changed.
+
+### Some limits are not ours
+
+A step's allowed commands are what the design permits. The environment it runs
+in has limits of its own, and they do not always agree: a credential can be
+refused write access to somewhere the allowlist happily allows, and no
+declaration on our side changes that.
+
+**A step must learn such a limit before it starts, not when it hits it.** A step
+that discovers the refusal at the moment it tries has already done the work, and
+its options at that point are all bad -- fail with the work finished, or find
+another way, which is the improvisation the contract forbids. Told in advance,
+it can do the thing that is actually useful: produce the change somewhere the
+limit does not apply, and say plainly that a person must carry it the last step.
+
+This is a small class, but it has to be named. Otherwise each such limit is
+rediscovered as a defect, then written into one prompt as a warning -- which
+holds only for the step whose author knew, and only for as long as nobody edits
+the prompt.
 
 ### The outcomes
 

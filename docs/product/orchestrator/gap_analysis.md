@@ -470,6 +470,27 @@ place to keep the time.
 
 ---
 
+## Environment limits a step cannot see
+
+**Status:** `VIOLATED`. The one known limit of this class is enforced by prose
+in a single prompt.
+
+A credential provisioned by the CI platform cannot push to `.github/workflows/`.
+`coder.md:731` handles it -- "Never write files to `.github/workflows/`" -- and
+instructs the agent to write to `docs/workflow-proposals/{filename}.yml` instead
+and flag that a person must move it.
+
+Three problems. The rule lives in one agent's prompt, so `prd-docs-updater`,
+`new-agent` and anything added later have no such instruction and nothing stops
+them trying. Nothing outside the prompt knows the limit exists, so no check can
+verify it is respected. And `docs/workflow-proposals/` does not exist, so the
+escape hatch the instruction names has never been used.
+
+This is the same shape as the read-only finding: a real constraint carried as
+prose, invisible to the declaration, and unchecked.
+
+---
+
 ## Concurrency limits
 
 **Status:** `VIOLATED` for AS-1, and one of the two is misnamed.
