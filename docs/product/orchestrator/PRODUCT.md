@@ -1054,6 +1054,7 @@ The complete list. Anything not here is a defect.
 | How long an approval waits | Until someone next looks | Immediately | A person being present is the difference |
 | How you address the pipeline | Labels and comments on the issue | The same, or in your own words to the chat-AI, which writes them for you | Only the channel differs; what lands on the issue is identical |
 | Who writes a gate label | Only the person, from their own account | The orchestrator, on a confirmation the driver relays | The decision is the person's either way; only the evidence available to show it differs (MI-7) |
+| Whether the emergency stop applies | Halts the run before any step | Logged, and the run proceeds | The stop exists to halt unattended automation. A person driving one issue by hand is not unattended, and stopping them too would remove the means of investigating whatever caused the stop |
 
 Everything else is governed by the promises above and must be identical.
 

@@ -22,11 +22,12 @@ Current as of 25 August 2026, commit `37e3566` on `main`.
 | MI-1 An issue means the same thing to everyone | PARTIAL, UNTESTED | #380 |
 | MI-2 Same situation, same next step | VIOLATED | #356 |
 | MI-3 An agent can only do what you allowed | VIOLATED | #335, #356, #374, #383, #388 |
-| MI-4 Nothing gets stuck with no way out | VIOLATED | #377, #380, #314 |
+| MI-4 Nothing gets stuck with no way out | VIOLATED | #377, #380 |
 | MI-5 The result does not depend on who watched | UNTESTED | none known |
 | MI-6 You can believe what the system tells you | VIOLATED | #308, #315, #326, #334, #343, #346, #358, #362, #378, #387, #388 |
 | MI-7 Only a person approves | VIOLATED | #377 |
 | MI-8 Any difference is written down | PARTIAL | -- |
+| Emergency stop applies headless only | RESOLVED by decision -- now a listed difference | #314 closes |
 
 **Nine of eleven are broken or unverified, and none has a test.**
 
