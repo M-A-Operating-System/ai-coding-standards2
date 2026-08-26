@@ -176,34 +176,25 @@ be expressible without touching the orchestrator.
 The second and third both break a design built around the first, and they break
 it in different ways.
 
-### Coordinating work: an epic
+### Coordinating work needs a trigger that can look outward
 
-An epic is a work item whose value is in the parts it creates and the judgement
-that they add up. Its flow is short and every stage is a real step:
-
-| Stage | What it is |
-|---|---|
-| Pick it up | The epic enters the flow like any other work item |
-| Decompose it | Produce the issues that are the actual work, linked to the epic |
-| Wait for the parts | The children run their own flow, independently and in parallel |
-| Review the whole | Confirm the implementation hangs together and the sum of the parts does what the epic asked for |
-| Close it | The epic is finished, with that review as the record of why |
-
-The fourth stage is the one worth having. Every child can pass its own review and
-the epic still fail: the parts can be individually correct and collectively
-wrong, or leave a seam nobody owned. A flow that closes an epic the moment its
-last child closes has checked that the pieces exist, not that they add up.
+A flow that coordinates other work has a stage where it is waiting: the parts
+are running and the parent has nothing to do until they finish. The process
+document defines what our epic flow actually does; two things about it are the
+orchestrator's problem.
 
 **Waiting is not a step.** "Wait for the parts" is not something that runs and
-returns; it is a step further on whose conditions are not yet met. The
-orchestrator finds the epic ineligible and moves on, and the epic advances on a
-later tick when the children have closed. Making waiting into a step means
-inventing something that polls, and a step that returns "not yet" is a sixth
-outcome the design does not need.
+returns; it is a later step whose conditions are not yet met. The orchestrator
+finds the item ineligible and moves on, and it advances on a tick once the
+condition holds. Making waiting into a step means inventing something that
+polls, and a step that returns "not yet" is a sixth outcome the design does not
+need.
 
-What this does require is that a trigger can say more than "a label on this
-item". "Every child of this item is closed" is a condition about other work
-items, and a flow that coordinates work cannot be declared without it.
+**A trigger must be able to say more than "a label on this item".** "Every child
+of this item is closed" is a condition about other work items. Without it, a
+flow that coordinates work cannot be declared at all -- the waiting has to be
+written in code instead, which is how coordination ends up inside the
+orchestrator rather than in the file that is supposed to describe it.
 
 ### Scheduled work: how a flow knows it is due
 
@@ -233,17 +224,13 @@ A scheduled step is a step. What it may do is its allowed commands and its
 expected effect, declared in `pipeline.json` -- not a property the orchestrator
 infers from the fact that a schedule started it.
 
-The common case is a step that only looks: it reads the codebase, the backlog or
-the record, and where it concludes something should change it raises an issue
-saying so. That is expressed by giving it no commands that write, plus the one
-that raises an issue, and an expected effect of no change to the repository.
-Nothing about it is special-cased; it is a permission set like any other.
-
-Some scheduled steps will act, and should. A sweep that tidies something
-mechanical does not need to route through an issue to do it. Whether a
-particular one acts or only reports is a decision made when the flow is
-declared, and it is visible to anyone reading `pipeline.json` -- which is the
-whole point of it living there rather than in the orchestrator.
+A step that only looks is expressed by granting it no commands that write, plus
+whatever it needs to record what it found, and declaring an expected effect of
+no change to the repository. A step that acts is expressed by granting it the
+commands to act. Neither is special-cased and neither is inferred from the fact
+that a schedule started it: both are permission sets, visible to anyone reading
+`pipeline.json`, which is the whole point of them living there rather than in
+the orchestrator.
 
 **The declaration is what makes it checkable.** A step declaring no change that
 produces a commit disagrees with itself, and MI-6 surfaces the disagreement.
