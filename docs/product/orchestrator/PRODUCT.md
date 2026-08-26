@@ -144,13 +144,36 @@ is a cap on how much work a tick *starts*, and it belongs with the other budgets
 rather than fixed in code: one number chosen once for every situation is a
 number nobody can tune for the case in front of them.
 
-A limit on how many work items may have the same step in flight at once is a
-different thing, and today it would have nothing to limit. It becomes meaningful
-only if the pipeline stops being sequential, which means giving up the run
-serialisation above -- and that exists for a reason, so it is a decision to take
-deliberately rather than a knob to leave lying around. **Until then the field
-should not exist.** A declared limit that cannot bind teaches a reader that
-something is bounded when nothing is.
+### Working on several things at once
+
+One orchestrator works on one item at a time; that part is settled, and the
+serialisation above is what makes it safe. Nothing says there may only be one
+orchestrator.
+
+**Two runs on two different issues are fine right up until they touch the same
+code.** Labels keep two runs off the same *item*, and that is all they do. Two
+issues that both change the same module have nothing keeping them apart: each
+run reads a tree the other is about to change, and the collision surfaces as a
+merge conflict at best and as two half-correct changes at worst.
+
+So the unit that has to be exclusive is not the issue, it is **the part of the
+system the work touches**. Two runs may proceed together when what they will
+change does not overlap, and must not when it does.
+
+That is why this is not built. It needs something that can say what an issue
+will touch, before the work starts, well enough to be trusted -- and nothing
+determines that today. The limit is a missing input, not a missing appetite:
+until an issue can be placed against the parts of the system it affects, there
+is no safe basis on which to let two runs proceed, and running them anyway would
+trade a slow pipeline for corrupted work.
+
+Two things follow for the design. A limit on how many items may have a step in
+flight is meaningless while the pipeline is sequential, so **the field should not
+exist until the exclusion it depends on does** -- a declared limit that cannot
+bind teaches a reader that something is bounded when nothing is. And whatever
+partitioning eventually allows two runs to proceed, keeping two runs off one
+item stays a separate requirement: the race that forced serialisation is about
+one item read twice, and no partitioning by component addresses it.
 
 ### Every step has the same four parts
 

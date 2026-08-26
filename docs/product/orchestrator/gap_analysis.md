@@ -548,9 +548,17 @@ giving up run serialisation -- a deliberate decision, not a knob to keep on
 hand. Until then a declared limit that cannot bind teaches a reader that
 something is bounded when nothing is.
 
-This is also where P-9 is wrong rather than unimplemented: it asserts
-unconstrained cross-issue parallelism, and the serialisation it would need to
-give up is what keeps label reads deterministic.
+P-9 is neither wrong nor merely unimplemented: it is blocked on an input that
+does not exist. Cross-issue parallelism is safe only between runs that will not
+change the same code, and nothing determines what an issue will touch before the
+work starts. Labels keep two runs off one item and do nothing about two items
+converging on one module.
+
+Two requirements are separate here and worth not conflating. Keeping two runs
+off the same item is what the serialisation solves. Keeping two runs off the
+same part of the system is what would allow parallelism, and it needs a way to
+place an issue against the components it affects. The first does not deliver the
+second; a design that adds the second still needs the first.
 
 ---
 
@@ -676,6 +684,12 @@ safe. Neither exists in `pipeline.json` or as a prompt file, and the
 orchestrator has no `blocked-by` handling (#135). The concurrency model runs
 with its entire safety layer unimplemented, on a single shared working tree
 (#373).
+
+Those two agents are the missing input described under [Concurrency
+limits](#concurrency-limits): between them they would say what an issue touches
+and which issues may therefore proceed together. Parallelism was designed with
+that safety layer and never enabled without it, which is the right order -- what
+is left is the assertion in P-9, which reads as though the layer were there.
 
 ---
 
