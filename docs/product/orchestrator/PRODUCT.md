@@ -300,7 +300,6 @@ the two disagree, the structured content is what counts.
 |---|---|
 | `announcement` | A step started, or finished, and what it did |
 | `artefact` | Something produced for a person to read -- a review, a PRD, a plan |
-| `question` | A question for a person, in a fixed schema, with the answer recorded on the same thread |
 | `session` | Which run this was, for the pair of work item and step |
 | `claim` | A step taking the mutex on this item, so a concurrent runner can see it |
 | `snapshot` | Human-authored content preserved verbatim before a step rewrote it |
@@ -407,8 +406,13 @@ These obligations are what make a non-deterministic worker safe to depend on.
 They matter more than the happy path, because an agent that fails quietly is
 indistinguishable from one that succeeded.
 
-- **Blocked means say so.** An agent that cannot perform an instruction reports
-  it and stops. It does not substitute a different approach and report success.
+- **Blocked means say so, and say what would unblock it.** A step that cannot
+  perform an instruction reports that, stops, and states what it needs. It does
+  not substitute a different approach and report success. This is the whole of
+  how a step asks for something: no spawned step can ask a question and wait for
+  an answer, because nobody is attached to it -- so the halt is the question, and
+  a person answers by fixing the cause and clearing the label. A `blocked` that
+  does not say what would resolve it is a halt with no exit, which MI-4 forbids.
 - **A re-run does the work again.** Re-invoking an agent performs the work
   afresh. Returning a previous run's result is a failure, however plausible the
   answer.

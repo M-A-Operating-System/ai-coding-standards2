@@ -433,13 +433,15 @@ exist nowhere.
 | `announcement` | Implemented: the orchestrator, `create-pr.sh`, `ci-gate.sh`, `merge-docs-pr.sh`, `coder`, `pr-reviewer` |
 | `artefact` | Implemented: fourteen agent prompts, `AGENTS.md`, `maos-run` |
 | `snapshot` | `prd-writer` only -- the one step that rewrites a human-authored body, so the highest-value case is covered and nothing else is |
-| `question` | The agent template only. No agent asks a structured question, so the mechanism is documented and unused |
 | `session` | Nowhere |
 | `claim` | Nowhere -- although P-4 describes the mutex as a claim-and-verify protocol, so the marker that would make a claim visible to a concurrent runner does not exist |
 
 The two that are implemented are the two that carry a step's output, which is
 why the step contract's "the orchestrator writes it, the step does not" is a
-change of *writer* rather than of format. The four that are missing are the ones
+change of *writer* rather than of format. A sixth marker, `question`, is
+described in `09-human-interaction.md` and appears only in the agent template.
+It is not carried into the target design: no spawned step can ask and wait, so
+`blocked` is the channel, and nothing has ever needed more than that. The four that are missing are the ones
 that would make the record legible for anything other than reading it in order.
 
 ---
