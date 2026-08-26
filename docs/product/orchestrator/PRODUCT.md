@@ -546,10 +546,22 @@ records both. A disagreement between account, evidence and expectation is
 surfaced, not buried. Silence is read as success, so silence about a non-event
 is a false report.
 
+**Where the record lives.** A record that survives only as long as someone is
+watching is not a record. The account, the evidence and the measurements are
+written to two protected orphan branches -- `ai-agile/log` for the narrative of
+what happened, `ai-agile/metrics` for what it cost -- appended once per
+completed step. Both are written by a git push, so both work identically whether
+the run was started by a schedule or by a person; neither depends on a console
+that scrolls away or a build log that ages out. The branches are orphan and
+carry only their own data: a log branch that also carries a copy of the
+repository is a second, stale copy of the repository.
+
 **Test.** Every step returns a summary on the path where it acted and the path
 where it did not. Every step declares its expected effect. The orchestrator
 records the observed change for every step and flags any case where account,
-evidence and expectation do not agree. Both modes produce the same records.
+evidence and expectation do not agree. After a run in either mode, both branches
+carry one appended record per completed step, and the two runs are
+indistinguishable in what they wrote.
 
 ---
 
