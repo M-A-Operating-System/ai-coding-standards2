@@ -21,6 +21,13 @@ human-readable views are generated from machine-readable sources.
 | `pipeline.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
 | `pipeline_phases.mmd` | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
 | `phases/{phase}.mmd` (one per phase) | `pipeline/pipeline.json` | `pipeline/generators/generate_phase_mermaid.py` |
+| `pipeline-schema-reference.md` | `docs/product/orchestrator/schema/pipeline.schema.json` | `pipeline/generators/generate_schema_reference.py` |
+
+The last row is a different kind of source. Every other row describes
+`pipeline/pipeline.json` as it exists today; `pipeline-schema-reference.md`
+describes the **target** shape (issue #393) -- what `pipeline.json` is meant
+to become, not what it currently is. See
+[`gap_analysis.md`](../gap_analysis.md) for the distance between them.
 
 ---
 
@@ -31,6 +38,7 @@ From the repo root:
 ```bash
 python3 pipeline/generators/generate_docs.py
 python3 pipeline/generators/generate_phase_mermaid.py
+python3 pipeline/generators/generate_schema_reference.py
 ```
 
 Generators are idempotent -- running them twice produces byte-identical

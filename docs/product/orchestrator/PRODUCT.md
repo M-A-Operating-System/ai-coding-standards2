@@ -750,6 +750,17 @@ else defines any of them:
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
 | **Budgets** | `max_turns`, `max_wall_seconds`, and a per-tick cap on work started | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
 
+The table states what the seven concerns are. What each is called, its exact
+shape, and which are required is a JSON Schema:
+[`schema/pipeline.schema.json`](schema/pipeline.schema.json). Same rule applied
+one level down -- the schema is the machine-readable source for the target
+shape, and the written reference
+([`generated/pipeline-schema-reference.md`](generated/pipeline-schema-reference.md))
+is generated from it rather than restated here, so this table and that
+reference cannot drift apart by one of them being hand-edited. This document
+still states what is true and why; the schema states exactly what a
+conforming `pipeline.json` looks like.
+
 This is P-2 ("one machine-readable source per concern") applied to the pipeline
 itself. It matters most for allowed commands: a permission defined in two places
 is a security property that holds in one reading and not the other, and a second
@@ -826,7 +837,10 @@ a definition living outside the file that is supposed to hold it.
 `pipeline.json` alone. Any permission that cannot be traced to it is a test
 failure. The same for triggers, dependencies, and expected effect: every step
 declares one, and a step declaring no effect that produces one is as much a
-failure as the reverse.
+failure as the reverse. Both the shipped `pipeline.json` and a repository's own
+validate against `schema/pipeline.schema.json` -- a definition the schema
+rejects is not a test failure to discover later, it is a file that does not
+parse.
 
 ---
 
@@ -1354,7 +1368,8 @@ Two things are often mistaken for legitimate differences and are not:
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | `01-vision.md` | not yet superseded |
 | Principles P-1 to P-16 | `02-principles.md` | not yet superseded |
-| Pipeline configuration | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its schema | not yet superseded |
+| Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
+| Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its current schema | not yet superseded |
 | The process itself -- which flows exist, their phases and forks | [`04-lifecycle.md`](04-lifecycle.md) | **stays there by design.** This document says the orchestrator can run whatever flows `pipeline.json` declares; which flows those are, and why, is process |
 | Status model, gates | `06`, `07` | not yet superseded |
 | Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |

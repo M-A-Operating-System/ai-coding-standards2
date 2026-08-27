@@ -1,0 +1,407 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-agile.org/standards/schemas/pipeline.target.schema.json",
+  "title": "AI Agile Pipeline -- target schema",
+  "description": "The target shape of pipeline.json, as decided in docs/product/orchestrator/PRODUCT.md (issue #393). Not yet live: pipeline/schemas/pipeline.schema.json governs the current pipeline.json and is unaffected by this file. The two files that compose against each other -- the framework's shipped pipeline/pipeline.json and a repository's own pipeline/pipeline.json -- both validate against this same schema (PRODUCT.md, 'A repository may have its own').",
+  "type": "object",
+  "required": ["flows"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+
+    "defaults": {
+      "type": "object",
+      "description": "Pipeline-wide defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema.",
+      "additionalProperties": false,
+      "properties": {
+        "extra_allowedTools": {
+          "type": "array",
+          "description": "Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- nothing else contributes.",
+          "items": { "type": "string" }
+        },
+        "agent_lifecycle": {
+          "type": "object",
+          "description": "Scripts the orchestrator runs around every agent-type step to prepare and tear down its environment. Not steps themselves: no outcome, no label, and a non-zero exit is logged rather than failing the run.",
+          "additionalProperties": false,
+          "properties": {
+            "before": {
+              "type": "array",
+              "description": "Run immediately before each invocation, including retries. Must be idempotent (05-pipeline-config.md): a run killed mid-flight leaves state behind, and re-running setup is what clears it.",
+              "items": { "type": "string" }
+            },
+            "after": {
+              "type": "array",
+              "description": "Run once after the final retry, on every outcome.",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "budgets": {
+      "type": "object",
+      "description": "Pipeline-wide consumption limits that are not properties of any one step. See PRODUCT.md 'Working on several things at once'.",
+      "additionalProperties": false,
+      "properties": {
+        "max_launches_per_tick": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How much work a single tick will start before it stops, so a burst of eligible work (a hundred issues becoming eligible at once) does not consume everything available in one pass. Not a concurrency limit -- the pipeline is sequential (one run at a time, one step at a time within it) until component-based parallelism exists. This is the target-schema name for the current PIPELINE_MAX_CONCURRENT constant, moved out of orchestrator code and given its true meaning."
+        }
+      }
+    },
+
+    "flows": {
+      "type": "object",
+      "description": "Every flow the pipeline runs, keyed by a stable flow name. A repository's own pipeline/pipeline.json names the flows it adds or replaces; a flow it does not name is inherited from the shipped default unchanged. Precedence is per flow, not per file (PRODUCT.md, AS-1): a named flow replaces the shipped one wholesale, everything else keeps tracking the default.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/definitions/flow" },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
+        "description": "The flow's stable name. Referenced by nothing outside this file -- it exists so a local override can name what it replaces."
+      }
+    }
+  },
+
+  "definitions": {
+    "flow": {
+      "type": "object",
+      "required": ["description", "trigger", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What kind of work this is and why it is its own flow."
+        },
+
+        "trigger": {
+          "type": "object",
+          "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and label) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["issue", "pr"],
+                  "description": "Which GitHub object kind this flow processes."
+                },
+                "classification": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "enum": ["bug", "toil", "enhancement", "feature", "spike"]
+                  },
+                  "description": "Restrict this flow to these classifications. Absent means every classification -- this is the one place classification is allowed to change what runs; see AS-1, 'Selection by classification'."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Restrict this flow to items carrying this label (e.g. 'epic'). Absent means no label restriction."
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["schedule"],
+              "additionalProperties": false,
+              "properties": {
+                "schedule": {
+                  "type": "string",
+                  "description": "Cron expression. This flow has no triggering work item; it fires on cadence and, if it concludes something is needed, raises one (PRODUCT.md, 'Scheduled work'). Due-ness is derived from the record (when this flow's steps last appended an entry), never stored separately."
+                }
+              }
+            }
+          ]
+        },
+
+        "naming": {
+          "type": "object",
+          "description": "What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (04-lifecycle.md) that need it. Absent for a flow whose steps never commit.",
+          "additionalProperties": false,
+          "required": ["branch"],
+          "properties": {
+            "branch": {
+              "type": "string",
+              "description": "Token pattern for this flow's primary branch, e.g. 'issue-{number}'."
+            },
+            "pull_requests": {
+              "type": "array",
+              "minItems": 1,
+              "description": "One entry per pull request this flow opens. A flow needing only its primary branch and one PR may omit this; a flow needing more (a design PR merged ahead of a code PR) declares each here.",
+              "items": {
+                "type": "object",
+                "required": ["id", "branch"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Referenced by a step's commits_to to say which of this flow's branches that step commits to."
+                  },
+                  "branch": {
+                    "type": "string",
+                    "description": "Token pattern for this pull request's branch, e.g. 'issue-{number}-docs'."
+                  },
+                  "closes_issue": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether this PR's body carries a Closes trailer for the triggering issue."
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "description": "This flow's steps, in execution order.",
+          "items": { "$ref": "#/definitions/step" }
+        }
+      }
+    },
+
+    "step": {
+      "type": "object",
+      "required": [
+        "agent",
+        "phase",
+        "trigger",
+        "dependencies",
+        "expected_effect",
+        "human_gate_after",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string",
+          "pattern": "^(00_ondemand|01_product_docs|02_design|03_execute|04_evaluate|05_continuous)/[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "Stable step name in the form {phase}/{short-name}. For an agent-type step this matches the prompt at .claude/agents/{phase}/{short-name}.md and its frontmatter name field. Unaffected by which flow the step lives in -- phase governs where the prompt file sorts, not what work the step is for."
+        },
+        "phase": {
+          "type": "string",
+          "enum": ["00_ondemand", "01_product_docs", "02_design", "03_execute", "04_evaluate", "05_continuous"],
+          "description": "Must equal the agent field's phase prefix."
+        },
+
+        "trigger": {
+          "type": "object",
+          "description": "What makes this step eligible, within a flow its item has already entered. Sequencing (label) and, for a step in a coordinating or self-continuing flow, a condition about the item's own children (PRODUCT.md, 'Coordinating work needs a trigger that can look outward' and 'The same capability lets a step finish its own work in pieces').",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "description": "Fires when this label is applied -- ordinarily the previous step's terminal label."
+            },
+            "event": {
+              "type": "string",
+              "description": "Fires on a raw GitHub event, for a flow's entry step."
+            },
+            "path_filter": {
+              "type": "string",
+              "description": "Glob; modifier on an event trigger."
+            },
+            "children": {
+              "type": "string",
+              "enum": ["all_closed", "any_open"],
+              "description": "all_closed: eligible once every child of this item is closed (the epic wait). any_open: eligible while at least one child remains open (a step re-invoked once per remaining piece, e.g. coder). Both read the same underlying fact about the item's children; which direction a given step needs is the only difference."
+            }
+          }
+        },
+
+        "unit": {
+          "type": "string",
+          "enum": ["item", "sub_item"],
+          "default": "item",
+          "description": "What one invocation of this step addresses. 'item' (default): the work item itself. 'sub_item': one of the item's open children -- the orchestrator selects one and tells the step which via SUB_ITEM_NUMBER. Pairs with trigger.children: any_open: the step stays eligible, one sub-issue per invocation, so a step that exhausts mid-item has already committed the pieces it finished (PRODUCT.md, 'The unit of work shrinks; the contract does not change')."
+        },
+
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "Other steps in this flow that must be complete first."
+        },
+
+        "type": {
+          "type": "string",
+          "enum": ["agent", "script"],
+          "default": "agent",
+          "description": "'agent' invokes the Claude CLI with this step's prompt. 'script' runs the file at 'script' directly. The step contract binds both; a script meets most of it by construction and must still return one outcome and report honestly when it did nothing (PRODUCT.md, 'The step contract')."
+        },
+        "script": {
+          "type": "string",
+          "description": "Repo-relative path. Required when type is 'script'."
+        },
+        "model": {
+          "type": "string",
+          "description": "Which model this step runs on, chosen when the step was declared -- a step does not choose its own model, any more than it chooses its own permissions (AS-1). Agent-type steps only."
+        },
+
+        "expected_effect": {
+          "type": "object",
+          "description": "What this step is supposed to change, declared explicitly so the orchestrator can compare it against what actually changed (MI-6). A step declaring no commits that produces one disagrees with itself, and the disagreement is surfaced, not buried -- this is also how a read-only step's constraint (PRODUCT.md, 'What a scheduled step may do is declared') becomes checkable rather than a claim in a prompt.",
+          "required": ["commits"],
+          "additionalProperties": false,
+          "properties": {
+            "commits": {
+              "type": "boolean",
+              "description": "Whether this step is expected to change tracked files. true implies git_ops.commit_after is meaningful for this step; a step that produces a commit while declaring false is a step disagreeing with itself."
+            },
+            "creates_issues": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether this step is expected to raise a new work item -- the shape a step that only looks uses to say what it concluded (PRODUCT.md, 'A scheduled flow reviews')."
+            }
+          }
+        },
+
+        "budgets": {
+          "type": "object",
+          "description": "This step's own consumption limits, declared here and nowhere else (AS-1) -- not a module constant applying to every step alike. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion). Required for an agent-type step; a script-type step needs only max_wall_seconds.",
+          "additionalProperties": false,
+          "properties": {
+            "max_turns": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Bounds how much back-and-forth this step's invocation is allowed, regardless of how long any of it takes. Agent-type steps only."
+            },
+            "max_wall_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Bounds how long this step's invocation may hold the pipeline, regardless of how many turns it took. Reclaims a stranded :wip: a lock older than this cannot still be legitimately running, so the orchestrator takes it back and records failed (PRODUCT.md, 'A step can vanish')."
+            }
+          }
+        },
+
+        "extra_allowedTools": {
+          "type": "array",
+          "description": "Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged.",
+          "items": { "type": "string" }
+        },
+
+        "git_ops": {
+          "type": "object",
+          "description": "Declares that this step produces file output the orchestrator commits. Absent means it does not.",
+          "additionalProperties": false,
+          "required": ["commit_after"],
+          "properties": {
+            "commit_after": {
+              "type": "boolean",
+              "description": "When true the orchestrator stages, commits and pushes after this step's result is recorded. The orchestrator is the only committer in every case -- a step never runs git itself."
+            },
+            "commits_to": {
+              "type": "string",
+              "description": "Which of the flow's naming.pull_requests entries this step commits to. Required when the flow declares more than one; omitted when the flow has only its primary branch."
+            }
+          }
+        },
+
+        "human_gate_after": {
+          "type": "boolean",
+          "description": "Whether a named gate label is required before downstream steps see this one as satisfied."
+        },
+        "human_gate_label": {
+          "type": "string",
+          "description": "Required when human_gate_after is true."
+        },
+        "auto_approve_on_complete": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true and this step completes, the orchestrator applies human_gate_label itself without a human acting."
+        },
+        "self_gates": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, the orchestrator trusts this step's own outcome (review vs complete) instead of forcing complete to review."
+        },
+        "review_gate": {
+          "type": "boolean",
+          "description": "Set true only on the step that is the final automated review gate before human merge approval."
+        },
+        "review_loop": {
+          "type": "object",
+          "description": "Automatic retry loop: when this step emits review, the orchestrator re-invokes a target step (up to max_cycles) before escalating to human sign-off.",
+          "additionalProperties": false,
+          "required": ["re_invoke", "max_cycles"],
+          "properties": {
+            "re_invoke": {
+              "type": "string",
+              "description": "The step to re-invoke. Must be an earlier step in the same flow."
+            },
+            "max_cycles": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Retry cycles before escalating to human sign-off."
+            },
+            "also_clear": {
+              "type": "array",
+              "items": { "type": "string" },
+              "uniqueItems": true,
+              "description": "Other steps whose complete label is also cleared when the loop fires, so intermediate steps re-run."
+            }
+          }
+        },
+
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0,
+          "description": "How many times the orchestrator retries this step after failed before giving up. Never retries exhausted -- the same step against the same wall is deterministic, so a retry there is waste that costs a full budget to learn nothing."
+        },
+
+        "session": {
+          "type": "object",
+          "description": "Session management for an agent-type step.",
+          "additionalProperties": false,
+          "required": ["scope"],
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": ["per_issue", "global"]
+            },
+            "id_pattern": {
+              "type": "string",
+              "description": "Optional token pattern for the session ID; the built-in default for the chosen scope is used when omitted."
+            }
+          }
+        },
+
+        "post_steps": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered repo-relative script paths the orchestrator runs after this step's result is recorded. A non-zero exit transitions the step from complete to failed."
+        },
+
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this step does, for a person reading pipeline.json."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "human_gate_after": { "const": true } } },
+          "then": { "required": ["human_gate_label"] }
+        },
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "const": "script" } }
+          },
+          "then": { "required": ["script"] }
+        }
+      ]
+    }
+  }
+}
