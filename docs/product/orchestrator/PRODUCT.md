@@ -514,7 +514,7 @@ report honestly when it did nothing -- which is exactly where
 | **One work item** | Exactly one issue or PR. The agent never chooses its own subject |
 | **Its allowed commands** | Everything the step may do, complete and enforced. An action outside the set is refused, not merely discouraged. Where the environment refuses something the set permits, the step is told before it starts, not when it tries |
 | **A scratch directory** | An existing, writable path for working files, prepared before the agent starts and removed after |
-| **Two budgets** | A bounded number of turns and a bounded wall-clock time, each declared for this step in `pipeline.json`, each known to be enough for the work the step declares |
+| **Two budgets** | A bounded number of turns and a bounded wall-clock time -- the pipeline-wide default, or this step's own override where it genuinely differs -- each known to be enough for the work the step declares |
 | **Its instructions** | A prompt whose every instruction is executable under the commands allowed |
 | **A model** | Which model this step runs on, chosen when the step was declared. A step does not choose its own model, any more than it chooses its own permissions |
 
@@ -661,8 +661,10 @@ downstream without pretending work was done. It is also an exit under MI-4 --
 for a step that can never succeed on this particular item, skipping it is the
 way forward, and the label is the whole record of who decided that.
 
-Together with `:wip`, these are the eight states a step can be in. Five are the
-machine's account of a run; three are a person's instruction to the machine.
+Together with `:wip`, these are the nine states a step can be in. Five are the
+machine's account of a run; three are a person's instruction to the machine;
+`:wip` is neither -- it is the mutex, present only while a step is actually
+running.
 
 ### How the obligations below are enforced
 
@@ -761,7 +763,7 @@ else defines any of them:
 | **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
-| **Budgets** | `max_turns`, `max_wall_seconds`, and a per-tick cap on work started, declared once globally and overridable per step | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
+| **Budgets** | `max_turns` and `max_wall_seconds`, declared once globally and overridable per step; a per-tick cap on work started, global only | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
 
 The table states what the seven concerns are. What each is called, its exact
 shape, and which are required is a JSON Schema:
@@ -839,10 +841,12 @@ effect, flows and budgets are defined in the pipeline definition -- the shipped
 default, plus whatever the repository declares over it -- and nowhere else. No
 constant in the orchestrator, no agent frontmatter field, and no settings file
 adds to, narrows or overrides any of the seven. A limit is a definition like any
-other: a budget that lives as a constant is a step's declared allowance that no
-reader of the process definition can see, and a budget with no per-step value is
-one number asserted to fit every step in the pipeline. In particular no name is
-computed in code:
+other: a budget that lives as a constant in orchestrator code is a step's
+declared allowance that no reader of the process definition can see, and with no
+override mechanism at all, the same number is asserted to fit every step in the
+pipeline whether it does or not. A shared default in `pipeline.json`, visible
+and overridable, is not this problem -- it is the fix for it (see 'Every step
+has the same four parts'). In particular no name is computed in code:
 a branch or pull-request name that is a string built inside the orchestrator is
 a definition living outside the file that is supposed to hold it.
 
