@@ -787,28 +787,26 @@ definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
 
 **A repository may have its own.** The pipeline ships with a default definition,
-and a repository can declare flows of its own that take precedence over it.
-That does not weaken this promise, provided one thing holds: **precedence is per
-flow, not per file.**
+and a repository can replace it entirely with one of its own. That does not
+weaken this promise: there is still exactly one effective definition for any
+repository, and it is still readable in one file, still complete, and still the
+only thing that decides what happens. What this promise forbids is a definition
+living somewhere nobody would think to read -- a constant in the orchestrator, a
+field in an agent's frontmatter, a grant in a settings file. A second declared
+file that replaces the first outright is not that.
 
-A repository's file names the flows it wants to change or add. A flow it names
-replaces the shipped one; a flow it does not name keeps coming from the default
-and keeps improving as the default does. Whole-file replacement would look
-simpler and be much worse -- the moment a repository needed one flow of its own
-it would copy everything, and from then on receive none of the improvements to
-any of the rest. That is a fork wearing the word "override".
-
-What this promise forbids is a definition living somewhere nobody would think to
-read: a constant in the orchestrator, a field in an agent's frontmatter, a grant
-in a settings file. Two declared files with a stated precedence is not that. The
-effective definition for any repository is still readable, still complete, and
-still the only thing that decides what happens.
+**All or nothing.** A local `pipeline.json` is not a set of changes layered over
+the shipped one -- it is a complete pipeline definition in its own right,
+validating against the identical schema, with every flow, process and budget the
+repository needs stated in it. There is no partial override, no per-flow
+precedence, and nothing to merge. Presence means the repository's file decides
+everything; absence means the shipped default decides everything. Kept
+deliberately simple: naming which flows are overridden and which fall through to
+the default would add a second axis -- which file said what -- to a promise that
+exists specifically to keep there being only one.
 
 **Where it lives.** `pipeline/pipeline.json` in the repository itself, mirroring
-the path of the file it overrides so the relationship needs no explaining. It is
-the same shape as the shipped definition and holds only the parts the repository
-declares -- flows it adds, flows it replaces, and any default it wants to differ
-on.
+the path of the file it overrides so the relationship needs no explaining.
 
 **Most repositories will not have one, and nothing creates it for them.** The
 shipped definition is read from the framework every time; onboarding puts no
@@ -827,22 +825,16 @@ process has to survive every framework version -- which is precisely what the
 framework's own files must not do. The shipped definition can be replaced
 wholesale on upgrade; the local one is never touched.
 
-That is the same split as `standards/` and `adrs/` -- one side inherited and
-identical everywhere, the other the repository's own and safe from the sync --
-with two differences. The local side here *overrides* rather than sits beside,
-which is why precedence has to be stated. And it is not seeded, because an
-empty ADR store is a store with nothing in it yet, while an empty override is a
-second answer to a question that already has one.
-
-**The cost, stated.** A flow a repository overrides stops tracking the default.
-The framework may improve its version and the repository will not see it, in the
-same way a fork does not -- just scoped to one flow rather than everything. That
-is the trade for being able to differ at all, and it is why the unit of override
-should be as small as the thing being changed.
+**The cost, stated.** A repository that goes local stops tracking the default
+entirely -- every flow, not just the one it needed to change. The framework may
+improve its version and the repository will not see any of it, the same way a
+fork does not. That is the trade for the simpler rule: nothing to reconcile
+between two files, at the cost of losing the rest when only one part needed to
+differ.
 
 **Precisely.** Process, sequence, dependencies, entitled activities, expected
 effect, flows and budgets are defined in the pipeline definition -- the shipped
-default, plus whatever the repository declares over it -- and nowhere else. No
+default, or a repository's own complete replacement of it -- and nowhere else. No
 constant in the orchestrator, no agent frontmatter field, and no settings file
 adds to, narrows or overrides any of the seven. A limit is a definition like any
 other: a budget that lives as a constant in orchestrator code is a step's
