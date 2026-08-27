@@ -10,7 +10,8 @@ description: >
   Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on
   the PR -- this is a hard block regardless of automated findings. On APPROVE
   with no unresolved human reviews, marks the PR ready for human review.
-  Gates on pr-reviewer:approved.
+  No human gate on this step -- human sign-off is required only after three
+  failed review cycles.
 tools: [Bash, Read, Glob, Grep]
 model: claude-sonnet-4-6
 max_turns: 80
