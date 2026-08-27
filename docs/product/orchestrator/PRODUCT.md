@@ -702,8 +702,12 @@ unfinished work is the one that could not tell you about it.
 - **Approve a gate.** Agents draft, humans decide (P-10). No exceptions, in
   either mode.
 - **Act outside its allowed commands**, or route around a refusal.
-- **Depend on state from a previous run** that is not on the work item or in
-  git. There is no memory between invocations beyond what is recorded.
+- **Depend on state from outside its own (object, agent) session.** Sessions
+  never cross-pollinate -- a different agent on the same object, or the same
+  agent on a different object, starts with no memory of the other (P-7). A
+  re-invocation of the same agent on the same object does resume its own
+  prior conversation, but that memory is never a substitute for the work item
+  and git as the source of truth, and it does not excuse the next obligation.
 
 ### What a step must do when it cannot comply
 
