@@ -626,10 +626,17 @@ Five, and which of them a step may choose is itself part of the boundary.
 | Outcome | Set by | Means |
 |---|---|---|
 | `complete` | the step | It did the whole thing |
-| `review` | the step | It did its work; a person must act before the next step |
+| `review` | the step | It did its work, and names what a person must act on before the next step |
 | `blocked` | the step | It cannot proceed, and says what it needs |
 | `failed` | the orchestrator | The step broke: it crashed, returned nothing, or returned something malformed |
 | `exhausted` | the orchestrator | The step ran out of one of its budgets before returning. The record says which |
+
+**`review` carries the same obligation `blocked` does.** Doing the work is not
+the whole of what a step returns when it emits `review` -- it also names what a
+person must act on, the same way `blocked` names what would unblock it. A step
+with no declared gate has nothing legitimate to name, so it has no legitimate
+use of `review` at all: MI-4's rule that every halt has a documented exit
+applies to `review` exactly as it applies to `blocked`.
 
 A step never sets the last two, because a step that broke is in no position to
 report it, and one that hit the turn wall never got to write anything at all.
