@@ -25,7 +25,7 @@ remains a human responsibility. Agents draft. Humans decide.
 The authoritative source for the gate list is
 [`pipeline/pipeline.json`](../../../pipeline/pipeline.json), rendered as a
 generated catalogue per
-[P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
+[P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does).
 This document describes what each gate means for the human approving it.
 
 Each row gives the gate's approver, the artefact the human reads, what
@@ -114,7 +114,7 @@ at the gate:
   `<!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->`. It stays
   as first captured even if the PRD is rewritten after rejection,
   preserving the audit trail under the
-  [P-10](02-principles.md#p-10--agents-draft-humans-decide) carve-out that
+  [MI-7](PRODUCT.md#mi-7----only-a-person-approves) carve-out that
   lets `prd-writer` edit issue title and body.
 
 ---

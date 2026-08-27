@@ -63,7 +63,7 @@ rest as reference you consult when a question comes up.
 | # | Document | What it tells you |
 |---|---|---|
 | — | [Vision](PRODUCT.md#vision) | The problem, and what the orchestrator promises |
-| 02 | [Principles](02-principles.md) | The 16 rules the system is built on (P-1…P-16), cited by ID everywhere else |
+| — | [The promises](PRODUCT.md#the-promises) | The architectural-separation guarantees (AS-1 to AS-3) and mode invariants (MI-1 to MI-8) the system is built on, cited by ID everywhere else |
 | 03 | [Personas](03-personas.md) | Who uses AI Agile and what each needs from it |
 | 04 | [Lifecycle](04-lifecycle.md) | The five phases (four per-ticket + one continuous) plus on-demand agents, with an end-to-end walkthrough |
 
@@ -105,7 +105,7 @@ Authoritative facts about the pipeline are declared once in
 `pipeline/pipeline.json` and rendered for human reading by
 `pipeline/generators/generate_phase_mermaid.py`. These files are never
 hand-edited and are committed in the same PR as any change to the source
-JSON (see [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
+JSON (see [P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does)).
 The generated views are listed in
 [`generated/README.md`](generated/README.md); whole-pipeline catalogues
 (agents, gates) are tracked in [`backlog.md`](15-backlog.md).

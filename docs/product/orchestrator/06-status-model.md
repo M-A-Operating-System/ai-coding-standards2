@@ -6,7 +6,7 @@ reads labels, decides who runs next, and applies status changes via the
 shared script `.github/scripts/status.sh`.
 
 The canonical definition is in `pipeline/statuses.json`
-(see [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
+(see [P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does)).
 Every transition also emits a JSON event to stdout
 (see [`08-audit-log.md`](08-audit-log.md)) so that the cross-session
 timeline is intact even after labels are mutated. This document describes

@@ -6,7 +6,7 @@ Every file here is produced by a generator from a single machine-readable
 source. Editing the generated file directly will be overwritten on the
 next regeneration and rejected by CI.
 
-This directory implements [P-2](../02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated):
+This directory implements [P-2](../PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does):
 human-readable views are generated from machine-readable sources.
 
 ---

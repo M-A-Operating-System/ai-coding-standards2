@@ -56,8 +56,8 @@ quality of the change.
 - The `task-decomposer` and `dependency-planner` propose an ordered build
   plan. The engineer approves it before any code is written.
 - The `coder` produces the code PR for each shippable-unit issue (the
-  design docs merge in a separate design PR first; per
-  [P-5](02-principles.md#p-5--one-shippable-unit-one-pr)) with one
+  design docs merge in a separate design PR first; see
+  [`04-lifecycle.md`](04-lifecycle.md#two-phase-design-to-build-delivery)) with one
   commit per child task from the build plan. The
   `standards-compliance-reviewer` flags violations with proposed
   diffs. The `pr-reviewer` checks scope and alignment with the
@@ -243,9 +243,8 @@ smuggled into technical design as "implementation detail".
 **What this persona does NOT serve.** Technical-intermediate work
 (refactors, library upgrades, internal API rewrites) and code-only
 acceptance criteria are not System actor stories — see the
-non-functional-requirements treatment under
-[P-15](02-principles.md#p-15--product-led-target-state-in-product-docs-leads-code)
-and the toil classification in [04-lifecycle.md](04-lifecycle.md).
+product-led target-state rule and the toil classification in
+[04-lifecycle.md](04-lifecycle.md#issue-classification-taxonomy).
 
 **How AI Agile serves them.**
 

@@ -2,7 +2,7 @@
 
 The pipeline graph — every agent, every dependency, every gate, every
 trigger — lives in one file: `pipeline/pipeline.json`. This is
-the single source of truth referenced by [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated).
+the single source of truth referenced by [P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does).
 
 Anything human-readable about the pipeline (agent catalogues, phase
 tables, mermaid diagrams, gate lists) is generated from this file and
@@ -225,11 +225,12 @@ on the step entry in `pipeline.json`.
 
 ### Principle
 
-Agents own git commits (write files, `git add`, `git commit`, `git push`
-to their branch). The orchestrator owns the PR object (create, ready,
-merge). Agents may read issues and PRs freely; they must not call
-`gh pr create`, `gh pr ready`, or `gh pr merge`. See
-[P-16](02-principles.md#p-16--git-commit-ownership-two-modes).
+Agents write files; the orchestrator commits and pushes them to the branch
+after the agent signals complete (`git_ops.commit_after: true`), and owns the
+PR object throughout (create, ready, merge). Agents may read issues and PRs
+freely; they must not call `gh pr create`, `gh pr ready`, or `gh pr merge`, or
+commit or push directly themselves. See
+[The step contract](PRODUCT.md#the-step-contract).
 
 ### Automatic issue close and branch delete
 

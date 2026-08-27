@@ -37,10 +37,10 @@ See [`04-lifecycle.md`](04-lifecycle.md).
 a super-issue). Each shippable unit is delivered as up to two sequenced
 phase-PRs — a design PR then a code PR, each on its own branch — and only the
 code PR closes it. Child issues are tracking units, not shippable units. See
-[`02-principles.md`](02-principles.md) (P-5).
+[`04-lifecycle.md`](04-lifecycle.md#two-phase-design-to-build-delivery).
 
 **Super-issue** — A parent issue that groups several small related items into
-one shippable unit. See [`02-principles.md`](02-principles.md) (P-6).
+one shippable unit. See [`04-lifecycle.md`](04-lifecycle.md#many-small-tickets-in-a-window).
 
 ## How work advances
 
@@ -55,7 +55,7 @@ transition; humans only apply gate labels. See [`06-status-model.md`](06-status-
 
 **`:wip` (mutex)** — The `{agent}:wip` label doubles as the lock that stops
 two orchestrator runs from working the same `(object, agent)` at once.
-See [`02-principles.md`](02-principles.md) (P-4).
+See [`PRODUCT.md`](PRODUCT.md#the-state-machine).
 
 **Human gate** — A point where work cannot advance until a named human
 approves by applying a gate label (e.g. `prd-writer:approved`). Agents draft;
@@ -68,8 +68,7 @@ applies the matching label. See [`12-agent-spec.md`](12-agent-spec.md).
 **Session** — The lifecycle of one agent's interactions with one object,
 identified by a deterministic ID (e.g.
 `ais-v1-01-product-docs-prd-writer-issue-42`). Re-runs resume the same
-session. See [`02-principles.md`](02-principles.md) (P-7) and
-[`05-pipeline-config.md`](05-pipeline-config.md).
+session. See [`05-pipeline-config.md`](05-pipeline-config.md).
 
 ## Records and rules
 
@@ -87,9 +86,10 @@ for a project (exception ADR) or document an architectural decision that
 overrides no standard (decision-only ADR). Both forms live in `adrs/adrs.json`.
 See [`14-standards.md`](14-standards.md).
 
-**Principle (P-x)** — One of the 16 numbered rules the system is built on,
-each with a stable ID cited from code and docs (e.g. P-4 is the mutex rule).
-See [`02-principles.md`](02-principles.md).
+**Promise (AS-x / MI-x)** — One of the architectural-separation guarantees
+(AS-1 to AS-3) or mode invariants (MI-1 to MI-8) `PRODUCT.md` states, each
+with a stated test, cited by ID from code and docs (e.g. MI-7 is the
+human-approval rule). See [`PRODUCT.md`](PRODUCT.md#the-promises).
 
 **Toil** — Necessary technical or process work that is not product work
 (e.g. a refactor, a pipeline fix). Handled by the System actor persona, not

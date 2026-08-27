@@ -4,7 +4,7 @@ This document defines how humans and agents communicate during a
 session. Two concerns are covered together because they're two halves
 of the same thing: agents need a way to ask, humans need a way to
 answer, and both need to be auditable, machine-readable, and built on
-GitHub-native primitives ([P-1](02-principles.md#p-1--git-is-authoritative)).
+GitHub-native primitives (see [Core requirements](PRODUCT.md#core-requirements) in `PRODUCT.md`).
 
 - **Section 1** — the interaction model: how agents reach humans, and
   how humans reach agents back.
@@ -32,7 +32,7 @@ Markers used:
 | An artefact awaiting review (PRD, design, spec) | `<!-- ai-agile/artefact/v1 by {agent-name} -->` |
 | A claim during mutex acquisition (P-4) | `<!-- ai-agile/claim/v1 by {agent-name} -->` |
 | Opening / closing announcement | `<!-- ai-agile/announcement/v1 by {agent-name} -->` |
-| Snapshot of human-authored content before agent rewrite (e.g. issue title/body before `prd-writer` rewrites them per the [P-10](02-principles.md#p-10--agents-draft-humans-decide) carve-out) | `<!-- ai-agile/snapshot/v1 by {agent-name} -->` |
+| Snapshot of human-authored content before agent rewrite (e.g. issue title/body before `prd-writer` rewrites them per the [MI-7](PRODUCT.md#mi-7----only-a-person-approves) carve-out) | `<!-- ai-agile/snapshot/v1 by {agent-name} -->` |
 
 Every marker carries the **actor** as a `by {actor-name}` suffix.
 The actor is the agent's full phase-prefixed name (e.g.
@@ -94,7 +94,7 @@ themselves. See
 
 Free-text-only conversation forces every agent to LLM-parse human
 replies. That's slow, expensive, non-deterministic, and breaks the
-[P-14](02-principles.md#p-14--deterministic-python-orchestrator-with-sole-routing-authority)
+[AS-2](PRODUCT.md#as-2----the-orchestrator-only-coordinates)
 guarantee that routing is unit-testable Python.
 
 Structured cards + GitHub primitives give a deterministic input space:
@@ -306,8 +306,8 @@ they have their own mechanisms:
 |---|---|
 | Approval at a known gate (PRD, design, spec, etc.) | Gate label (e.g., `01_product_docs/prd-writer:approved`) — see [`07-human-gates.md`](07-human-gates.md) |
 | Status of an agent on an object | `{agent}:{status}` label — see [`06-status-model.md`](06-status-model.md) |
-| Lock on an `(object, agent)` pair | `:wip` label + claim comment — see [P-4](02-principles.md#p-4--wip-is-the-mutex) |
-| Cross-issue dependency | GitHub `blocked-by` issue link — see [P-9](02-principles.md#p-9--cross-issue-parallel-intra-issue-serial) |
+| Lock on an `(object, agent)` pair | `:wip` label + claim comment — see [PRODUCT.md](PRODUCT.md#the-state-machine) |
+| Two issues touching the same part of the system | `component:` labels the orchestrator claims before starting either — see [Working on several things at once](PRODUCT.md#working-on-several-things-at-once) |
 | Standards violation | Issue raised by `standards-compliance-reviewer` |
 
 A Question Card is for **structured asks that don't fit any of the
