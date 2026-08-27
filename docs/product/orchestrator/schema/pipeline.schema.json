@@ -141,6 +141,10 @@
               "type": "string",
               "description": "Token pattern for this flow's primary branch, e.g. 'issue-{number}'."
             },
+            "base": {
+              "type": "string",
+              "description": "Token pattern for the branch this flow's primary branch is created from, e.g. 'feature-{parent_number}'. Defaults to the repository's default branch when omitted, and falls back to it when the computed branch does not exist."
+            },
             "pull_requests": {
               "type": "array",
               "minItems": 1,

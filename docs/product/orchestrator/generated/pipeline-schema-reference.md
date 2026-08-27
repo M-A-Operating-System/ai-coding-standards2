@@ -56,6 +56,7 @@ What this flow's branches and pull requests are called. Declared here, never com
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `branch` | string | yes | Token pattern for this flow's primary branch, e.g. 'issue-{number}'. |
+| `base` | string | no | Token pattern for the branch this flow's primary branch is created from, e.g. 'feature-{parent_number}'. Defaults to the repository's default branch when omitted, and falls back to it when the computed branch does not exist. |
 | `pull_requests` | array of object | no | One entry per pull request this flow opens. A flow needing only its primary branch and one PR may omit this; a flow needing more (a design PR merged ahead of a code PR) declares each here. |
 
 ## A step

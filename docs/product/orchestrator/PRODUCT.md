@@ -357,6 +357,18 @@ different pieces of it; the step also needs to know which one this
 invocation is for. That is an addition to what every step is told, not a new
 concept -- the same channel, one more thing on it.
 
+### A branch is not always cut from the default
+
+A flow's primary branch is created from the repository's default branch unless
+the flow says otherwise -- declared the same way the branch name itself is, a
+token pattern in `naming`, never computed in code. An epic's sub-issues need
+this: their branch has to be cut from the epic's own integration branch
+(`feature-{parent_number}`), not `main`, or their work never lands where the
+epic expects it to. If the computed base does not exist -- the epic's branch
+was never created, or has already been merged and deleted -- the flow falls
+back to the repository's default branch rather than failing over something
+that was never guaranteed to be there.
+
 ### Scheduled work: how a flow knows it is due
 
 A scheduled flow has no work item, so it has nowhere to carry a label -- and
