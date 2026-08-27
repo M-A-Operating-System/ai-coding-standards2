@@ -298,6 +298,35 @@ flow that coordinates work cannot be declared at all -- the waiting has to be
 written in code instead, which is how coordination ends up inside the
 orchestrator rather than in the file that is supposed to describe it.
 
+### The same capability lets a step finish its own work in pieces
+
+An epic waits *while* its children are open. A step can use the identical
+capability the other way round: stay eligible *while* its own children are
+open, so that finishing the item takes several invocations instead of one.
+
+**Why this matters.** A step's turn and wall-clock budgets bound one
+invocation. An issue decomposed into several sub-issues can need more of
+either than any single invocation should be given, even though no one
+sub-issue does. Giving the whole issue to one invocation means a step that
+runs out partway through loses everything back to the last commit -- which,
+because the orchestrator commits once per invocation, is the very start of
+the issue.
+
+**The unit of work shrinks; the contract does not change.** When a step is
+invoked this way, its job for that invocation is one sub-issue, not the whole
+issue. `complete` still means exactly what it always means -- the step
+finished what it was given -- because what it was given is now smaller. No
+new outcome, no mid-run signal, no change to "exactly one result per
+invocation." The orchestrator commits after that one result exactly as it
+does today, so a step that later runs out on sub-issue four leaves one, two
+and three committed rather than nothing.
+
+**The step needs to be told which piece is its.** A work item number is not
+enough once a step can be invoked several times against the same item for
+different pieces of it; the step also needs to know which one this
+invocation is for. That is an addition to what every step is told, not a new
+concept -- the same channel, one more thing on it.
+
 ### Scheduled work: how a flow knows it is due
 
 A scheduled flow has no work item, so it has nowhere to carry a label -- and
@@ -386,6 +415,7 @@ Actions runner and under a chat session.
 | `REPO` | Which GitHub repository to act on |
 | `WORK_ITEM_KIND`, `WORK_ITEM_NUMBER` | What it is working on |
 | `ISSUE_NUMBER` or `PR_NUMBER` | The same, in the form the step expects |
+| `SUB_ITEM_NUMBER` (when applicable) | Which piece of the item this invocation covers, for a step invoked once per sub-issue rather than once for the whole item |
 | `SESSION_ID`, `SESSION_SCOPE` | Which run this is, and how far it persists |
 | `AI_AGILE_SCRATCH` | Where working files go |
 

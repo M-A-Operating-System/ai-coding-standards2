@@ -467,6 +467,8 @@ code.
 | An epic as a flow | Not a flow. `exclude_labels: ["epic"]` on every step keeps epics out of the one flow, and `epic-completion` is a second orchestrator-native check that closes the parent when the children close |
 | A review that the parts add up | Does not exist. `epic-completion` closes an epic on child count, so nothing checks that the implementation hangs together -- every child can pass its own review while the whole leaves a seam nobody owned |
 | A trigger about other work items | Triggers are `event`, `label`, `schedule` or `path_filter`, all about the item itself. "Every child of this item is closed" cannot be declared, which is why the epic wait is code rather than configuration |
+| The same trigger, inverted, for a step to finish itself in pieces | Missing for the same reason as the row above -- it is the same capability. `coder` cannot stay eligible while its own sub-issues remain open, so a large issue is given to one invocation start to finish. `coder.md:396-397` says so explicitly: "Repeat for each sub-issue. The orchestrator will commit all changes when you signal completion -- you do not need to commit between sub-issues." `git_ops.commit_after` fires once, after that single invocation, regardless of how many sub-issues it covered |
+| A way to address one piece of an item | No env var identifies a sub-issue. `WORK_ITEM_NUMBER` names the parent only, so even if re-invocation existed, nothing would tell a given invocation which sub-issue is its |
 | A read-only step declared as one | Not expressible as a declaration. `branch-cleanup` and `issue-cleanup` are read-only on their first invocation and act on the second, but that is enforced by prose in the prompt, not by their allowed commands -- so nothing outside the prompt knows, and nothing checks |
 | Provenance on a work item the orchestrator creates | Designed but not implemented. `04-lifecycle.md` specifies `Gap-source:` and `Debt-source:` trailers; neither appears in any code or prompt. They are also two names for one concept -- which step produced this -- where one would serve every flow rather than a new name per loop |
 
@@ -480,6 +482,14 @@ which work a step is *for*. Negative filtering makes every step apply to
 everything until told otherwise, which is the wrong default for a system where
 most steps belong to exactly one flow, and it makes each new flow a change to
 every existing step rather than one declaration.
+
+**Observed consequence.** `coder` is reported hitting its turn cap more often
+than before. Under the current design that is not a recoverable partial
+result -- the commit happens once, at the end of the one invocation covering
+every sub-issue, so a run that exhausts partway through commits nothing and
+the next attempt starts over. The fix is the missing trigger row above, not a
+larger `max_turns`: raising the cap delays the same failure rather than
+removing it, because the unit of work stays the whole issue.
 
 The two-phase design-to-build flow (`04-lifecycle.md`) is the existing evidence
 that a flow can need more than one branch and more than one pull request per
