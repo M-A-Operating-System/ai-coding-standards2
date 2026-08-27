@@ -82,6 +82,52 @@ def _field_rows(schema, obj_schema, required):
     return rows
 
 
+def _describe_condition(cond):
+    """Describe an if-condition of the shape this schema actually uses:
+    {"properties": {field: {"const": v}}} optionally wrapped in {"not": ...}
+    and optionally paired with {"required": [field]}."""
+    negated = "not" in cond
+    inner = cond["not"] if negated else cond
+    (field, field_schema), = inner.get("properties", {}).items()
+    const = json.dumps(field_schema["const"])
+    if negated:
+        return f"`{field}` is not `{const}` (including when `{field}` is absent)"
+    return f"`{field}` is `{const}`"
+
+
+def _describe_then(then):
+    """Describe a then-branch: top-level required fields, plus any nested
+    properties.<field>.required (one level, which is all this schema uses)."""
+    parts = []
+    top_required = then.get("required")
+    if top_required:
+        parts.append("requires " + ", ".join(f"`{f}`" for f in top_required))
+    for name, sub in then.get("properties", {}).items():
+        sub_required = sub.get("required")
+        if sub_required:
+            parts.append(
+                f"`{name}` must include " + ", ".join(f"`{f}`" for f in sub_required)
+            )
+    return "; ".join(parts)
+
+
+def _render_conditional_requirements(obj_schema):
+    """Render allOf if/then pairs as plain conditional-requirement notes.
+    Purpose-built for this schema's conditionals (const-equality triggers,
+    required-field consequences) -- not a general JSON Schema renderer."""
+    entries = obj_schema.get("allOf")
+    if not entries:
+        return []
+    lines = ["**Conditional requirements:**", ""]
+    for entry in entries:
+        condition = _describe_condition(entry["if"])
+        consequence = _describe_then(entry["then"])
+        if consequence:
+            lines.append(f"- When {condition}: {consequence}.")
+    lines.append("")
+    return lines
+
+
 def _render_object_section(schema, title, obj_schema, level=3, seen=None):
     """Render an object schema as a heading, an intro, a field table, and a
     recursive subsection for every nested object-typed field."""
@@ -112,6 +158,8 @@ def _render_object_section(schema, title, obj_schema, level=3, seen=None):
         lines += ["| Field | Type | Required | Description |", "|---|---|---|---|"]
         lines += [f"| {f} | {t} | {r} | {d} |" for f, t, r, d in rows]
         lines += [""]
+
+    lines += _render_conditional_requirements(obj_schema)
 
     # Recurse into nested object-typed properties, once each.
     for name, prop in obj_schema.get("properties", {}).items():

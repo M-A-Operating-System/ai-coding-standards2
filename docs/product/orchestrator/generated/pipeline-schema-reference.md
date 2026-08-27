@@ -85,6 +85,13 @@ What this flow's branches and pull requests are called. Declared here, never com
 | `post_steps` | array of string | no | Ordered repo-relative script paths the orchestrator runs after this step's result is recorded. A non-zero exit transitions the step from complete to failed. |
 | `description` | string | yes | What this step does, for a person reading pipeline.json. |
 
+**Conditional requirements:**
+
+- When `human_gate_after` is `true`: requires `human_gate_label`.
+- When `type` is `"script"`: requires `script`.
+- When `type` is not `"script"` (including when `type` is absent): requires `budgets`; `budgets` must include `max_turns`, `max_wall_seconds`.
+- When `type` is `"script"`: requires `budgets`; `budgets` must include `max_wall_seconds`.
+
 ### A step -- `trigger`
 
 What makes this step eligible, within a flow its item has already entered. Sequencing (label) and, for a step in a coordinating or self-continuing flow, a condition about the item's own children (PRODUCT.md, 'Coordinating work needs a trigger that can look outward' and 'The same capability lets a step finish its own work in pieces').

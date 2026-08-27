@@ -400,6 +400,34 @@
             "properties": { "type": { "const": "script" } }
           },
           "then": { "required": ["script"] }
+        },
+        {
+          "if": {
+            "not": {
+              "required": ["type"],
+              "properties": { "type": { "const": "script" } }
+            }
+          },
+          "then": {
+            "required": ["budgets"],
+            "properties": {
+              "budgets": { "required": ["max_turns", "max_wall_seconds"] }
+            }
+          },
+          "description": "An agent-type step (type absent or 'agent') always declares both budgets -- a step's turn and wall-clock limits do not fall back to a shared default, per AS-1: a budget with no per-step value is one number asserted to fit every step in the pipeline."
+        },
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "const": "script" } }
+          },
+          "then": {
+            "required": ["budgets"],
+            "properties": {
+              "budgets": { "required": ["max_wall_seconds"] }
+            }
+          },
+          "description": "A script-type step declares its own wall-clock limit; turns do not apply."
         }
       ]
     }
