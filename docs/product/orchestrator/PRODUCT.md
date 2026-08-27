@@ -285,7 +285,7 @@ be expressible without touching the orchestrator.
 | Shape | Started by | Example |
 |---|---|---|
 | **Work that produces change** | A work item appearing, or a label on it | An issue, taken from description to shipped code |
-| **Work that coordinates other work** | A work item whose children are the real work | An epic, which decomposes into issues and closes when the whole is sound |
+| **Work that coordinates other work** | A work item whose children are the real work | An epic, which decomposes into issues and closes when its review step confirms the whole, not merely when the parts are closed |
 | **Work with no work item behind it** | A schedule | A periodic loop over the codebase, the backlog or the record, which produces work items rather than consuming one |
 
 The second and third both break a design built around the first, and they break
@@ -310,6 +310,23 @@ of this item is closed" is a condition about other work items. Without it, a
 flow that coordinates work cannot be declared at all -- the waiting has to be
 written in code instead, which is how coordination ends up inside the
 orchestrator rather than in the file that is supposed to describe it.
+
+### A flow is not the only thing that can watch an object
+
+Nothing requires exactly one flow per object kind. What the orchestrator
+actually routes on is a step's own trigger and dependencies, not which flow
+declared it -- so a second flow may match an object kind a first flow already
+covers, as long as their steps' conditions never make two steps eligible on the
+same item at once. Two flows sharing an object kind is then no different from
+two steps in one flow: MI-2 still holds, because it is a property of trigger
+conditions, not of flow boundaries.
+
+That is what makes "closes when the whole is sound" a real thing rather than a
+phrase. An epic's children closing is not itself the soundness check -- it is
+what makes a review step eligible. That step, declared like any other step with
+its own allowed commands and expected effect, is what the epic's closing
+actually depends on. What the review judges is a decision for whoever declares
+that step, not something fixed in advance here.
 
 ### The same capability lets a step finish its own work in pieces
 
