@@ -242,6 +242,19 @@ global set plus its own `extra_allowedTools`, and nothing else. Two levels, both
 in `pipeline.json`, both readable in one place -- which is what keeps AS-1 true
 as the pipeline grows.
 
+Budgets follow the same shape. A number every step needs is declared once, in
+`pipeline.json`'s top-level `budgets`; a step's effective budget is that number,
+or its own if it declares one. Most steps never need to: the global figure is a
+person's reasonable starting judgement, not a formula, and a wrong one is not
+silently wrong -- it surfaces as `exhausted`, naming the wall a step hit, and
+gets revised the same way any other value in this file is revised when the
+evidence says so. A step declares its own only when it genuinely differs, and it
+may override one wall without touching the other -- a tightly scoped step
+overriding `max_turns` alone still inherits the global `max_wall_seconds`. This
+is the AS-1-compliant version of what `AGENT_TIMEOUT_SECONDS` is today: not that
+a shared number is wrong, but that a shared number hidden in orchestrator code,
+with no way for any step to differ, is.
+
 This is where the design contains its own uncertainty. Permission is decided
 before the activity runs and cannot be widened by it. The setup and the
 consequences run as pre- and post-actions on either side of the agent, on the
@@ -748,7 +761,7 @@ else defines any of them:
 | **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
-| **Budgets** | `max_turns`, `max_wall_seconds`, and a per-tick cap on work started | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
+| **Budgets** | `max_turns`, `max_wall_seconds`, and a per-tick cap on work started, declared once globally and overridable per step | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
 
 The table states what the seven concerns are. What each is called, its exact
 shape, and which are required is a JSON Schema:

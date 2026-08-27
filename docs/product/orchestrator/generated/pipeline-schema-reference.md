@@ -5,7 +5,7 @@
 
 # Target Pipeline Schema
 
-The target shape of pipeline.json, as decided in docs/product/orchestrator/PRODUCT.md (issue #393). Not yet live: pipeline/schemas/pipeline.schema.json governs the current pipeline.json and is unaffected by this file. The two files that compose against each other -- the framework's shipped pipeline/pipeline.json and a repository's own pipeline/pipeline.json -- both validate against this same schema (PRODUCT.md, 'A repository may have its own').
+The target shape of a COMPLETE pipeline definition, as decided in docs/product/orchestrator/PRODUCT.md (issue #393). Not yet live: pipeline/schemas/pipeline.schema.json governs the current pipeline.json and is unaffected by this file. This schema's required-ness (flows present and non-empty, budgets present and complete) describes the framework's shipped pipeline/pipeline.json, and the EFFECTIVE result of composing a repository's own pipeline/pipeline.json over it. A repository's file is a fragment by design (PRODUCT.md, 'A repository may have its own') and is not expected to satisfy this schema's required-ness on its own -- how a bare fragment is validated before composition, as opposed to after, is not yet decided; see gap_analysis.md.
 
 This is the target. `pipeline/schemas/pipeline.schema.json` governs
 the pipeline.json that exists today; see
@@ -16,8 +16,8 @@ the pipeline.json that exists today; see
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `$schema` | string | no |  |
-| `defaults` | object | no | Pipeline-wide defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema. |
-| `budgets` | object | no | Pipeline-wide consumption limits that are not properties of any one step. See PRODUCT.md 'Working on several things at once'. |
+| `defaults` | object | no | Pipeline-wide entitlement and lifecycle defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema. Step budgets are a separate, sibling concern -- see the top-level budgets key -- so a repository overriding one does not have to restate the other. |
+| `budgets` | object | yes | Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level equivalent, and the default turn/wall-clock budget every step gets unless it declares its own -- the same two-level shape as extra_allowedTools (a global value declared once and visible, overridable per step where a step genuinely needs to differ), applied to budgets instead of entitlements. max_turns and max_wall_seconds are required so every step has an effective budget even when it declares none itself; a hidden constant asserted to fit every step alike is exactly what this replaces (AS-1). |
 | `flows` | object | yes | Every flow the pipeline runs, keyed by a stable flow name. A repository's own pipeline/pipeline.json names the flows it adds or replaces; a flow it does not name is inherited from the shipped default unchanged. Precedence is per flow, not per file (PRODUCT.md, AS-1): a named flow replaces the shipped one wholesale, everything else keeps tracking the default. |
 
 ## A flow
@@ -71,7 +71,7 @@ What this flow's branches and pull requests are called. Declared here, never com
 | `script` | string | no | Repo-relative path. Required when type is 'script'. |
 | `model` | string | no | Which model this step runs on, chosen when the step was declared -- a step does not choose its own model, any more than it chooses its own permissions (AS-1). Agent-type steps only. |
 | `expected_effect` | object | yes | What this step is supposed to change, declared explicitly so the orchestrator can compare it against what actually changed (MI-6). A step declaring no commits that produces one disagrees with itself, and the disagreement is surfaced, not buried -- this is also how a read-only step's constraint (PRODUCT.md, 'What a scheduled step may do is declared') becomes checkable rather than a claim in a prompt. |
-| `budgets` | object | no | This step's own consumption limits, declared here and nowhere else (AS-1) -- not a module constant applying to every step alike. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion). Required for an agent-type step; a script-type step needs only max_wall_seconds. |
+| `budgets` | object | no | Overrides the top-level budgets default for this step only, field by field: a step declaring only max_turns still inherits max_wall_seconds from the default, and vice versa. Absent entirely means this step uses the default for both. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion) -- which is why an override can target one wall without touching the other. |
 | `extra_allowedTools` | array of string | no | Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged. |
 | `git_ops` | object | no | Declares that this step produces file output the orchestrator commits. Absent means it does not. |
 | `human_gate_after` | boolean | yes | Whether a named gate label is required before downstream steps see this one as satisfied. |
@@ -89,8 +89,6 @@ What this flow's branches and pull requests are called. Declared here, never com
 
 - When `human_gate_after` is `true`: requires `human_gate_label`.
 - When `type` is `"script"`: requires `script`.
-- When `type` is not `"script"` (including when `type` is absent): requires `budgets`; `budgets` must include `max_turns`, `max_wall_seconds`.
-- When `type` is `"script"`: requires `budgets`; `budgets` must include `max_wall_seconds`.
 
 ### A step -- `trigger`
 
@@ -114,7 +112,7 @@ What this step is supposed to change, declared explicitly so the orchestrator ca
 
 ### A step -- `budgets`
 
-This step's own consumption limits, declared here and nowhere else (AS-1) -- not a module constant applying to every step alike. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion). Required for an agent-type step; a script-type step needs only max_wall_seconds.
+Overrides the top-level budgets default for this step only, field by field: a step declaring only max_turns still inherits max_wall_seconds from the default, and vice versa. Absent entirely means this step uses the default for both. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion) -- which is why an override can target one wall without touching the other.
 
 | Field | Type | Required | Description |
 |---|---|---|---|

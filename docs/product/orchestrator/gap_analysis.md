@@ -43,7 +43,7 @@ mechanism is now specified, and three parts of it do not exist at all:
 | A step returns one result to a path the orchestrator gave it | No such path and no such file. The outcome is a regex over the last five lines of the agent's prose (`_SENTINEL_RE`, `pipeline_orchestrator.py:1925`) |
 | Five outcomes, including `exhausted` | The sentinel accepts three (`complete`, `review`, `blocked`). `statuses.json` has no `exhausted`. Budget exhaustion is reported as `:failed`, or as `:complete` when the run exits 0 without a sentinel |
 | Every step declares `expected_effect` | Not a field in `pipeline.json`, so MI-6 has nothing to compare an observed change against |
-| Two budgets, both declared in `pipeline.json` | Neither is. `AGENT_TIMEOUT_SECONDS = 1800` is a module constant applying to every step with no per-step override, and `DEFAULT_MAX_TURNS = 30` is a constant overridable only in agent frontmatter -- a limit defined outside `pipeline.json`, which is AS-1. `11-orchestrator.md` states the wall-clock limit is "set per agent in `pipeline.json` via `max_wall_seconds`"; that field appears in neither the file nor the schema |
+| A global default per budget, in `pipeline.json`, overridable per step | Neither is in `pipeline.json`. `AGENT_TIMEOUT_SECONDS = 1800` is a module constant applying to every step with no per-step override at all. `DEFAULT_MAX_TURNS = 30` is closer in shape -- a global default a step can override -- but the override lives in agent frontmatter, not `pipeline.json`, which is AS-1. `11-orchestrator.md` states the wall-clock limit is "set per agent in `pipeline.json` via `max_wall_seconds`"; that field appears in neither the file nor the schema |
 | Retry `failed`, never `exhausted` | `_invoke_with_retries` retries on "no sentinel", which conflates a crash with a turn wall, so an exhausted step burns its budget again before landing on `:failed` |
 
 The CLI already reports what `exhausted` needs -- `subtype`, `is_error` and
@@ -441,10 +441,17 @@ Three things are missing:
 | Somewhere for a local file to be found | Nothing looks for `pipeline/pipeline.json` in the repository. Onboarding needs no change -- the file is not seeded and most repositories will never have one -- but a repository that writes one today has it ignored, and it would need leaving out of the gitignore entries so it stays committed where it does exist |
 | Composition | Nothing merges a local definition over the shipped one, so nothing to give precedence with |
 | A unit to override | Flows do not exist as named objects, so there is nothing a local file could name. Per-flow precedence needs steps nested under named flows, not a flat list |
+| How a fragment, not yet composed, is itself validated | Not decided. The target schema (`schema/pipeline.schema.json`) requires `flows` (non-empty) and `budgets` (complete) at the top level -- correct for the shipped file and for the effective result of composing a repository's file over it, wrong for the repository's file read on its own, which is a fragment by design and may contain neither key. Validating a fragment against the same required-ness it is exempt from would force it back toward whole-file restatement, the outcome per-flow precedence exists to avoid |
 
 The third is the one that constrains the schema. Whole-file override needs no
 structure and is the wrong answer -- a repository wanting one flow of its own
 would copy everything and stop receiving improvements to all the rest.
+
+The fourth is a genuine open question rather than a missing implementation.
+Validating only the composed, effective result -- never the bare fragment --
+is the simplest answer and the one this schema currently assumes, but it means
+a repository only discovers a mistake in its own file at composition time, not
+when it saves it.
 
 ---
 
