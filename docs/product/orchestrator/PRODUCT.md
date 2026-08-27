@@ -8,6 +8,24 @@ the two is tracked separately in [`gap_analysis.md`](gap_analysis.md).
 
 ---
 
+## Vision
+
+Software teams spend a disproportionate share of their time on the connective
+tissue around code -- writing PRDs, translating them into designs, deciding
+what to test, decomposing work into tasks, reviewing for standards -- work
+that is repetitive, done under time pressure, and where most quality issues
+originate: a missing acceptance criterion, an unrecorded architectural
+decision, a forgotten test case.
+
+AI Agile is a product development lifecycle in which specialised AI agents own
+each repetitive activity, run from a single source of truth -- a GitHub issue
+-- and produce a complete trail of artefacts, with humans approving at
+well-defined gates rather than performing the work. The orchestrator is what
+makes that lifecycle run: it is not a replacement for product or engineering
+judgement, only for the repetitive work around it.
+
+---
+
 ## Core requirements
 
 Read these together. They describe what the product is; [the
@@ -97,6 +115,7 @@ that differs is a bug (MI-1 to MI-8).
 
 ## Contents
 
+- [Vision](#vision)
 - [Core requirements](#core-requirements)
 - [The state machine](#the-state-machine)
 - [The pipeline defines flows, not a flow](#the-pipeline-defines-flows-not-a-flow)
@@ -1430,7 +1449,7 @@ Two things are often mistaken for legitimate differences and are not:
 | The promises (AS-1 to AS-3, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
-| Vision and problem | `01-vision.md` | not yet superseded |
+| Vision and problem | this document | draft |
 | Principles P-1 to P-16 | `02-principles.md` | not yet superseded |
 | Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
 | Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its current schema | not yet superseded |

@@ -19,8 +19,8 @@ Read these four, in this order, and you will understand the system:
 
 1. **[The 60-second summary](#the-60-second-summary)** below — the whole
    loop in one paragraph.
-2. **[01-vision.md](01-vision.md)** — the problem this solves and what
-   success looks like (the *why*).
+2. **[PRODUCT.md](PRODUCT.md#vision)** — the problem this solves and what
+   the orchestrator promises (the *why* and the *what*).
 3. **[04-lifecycle.md](04-lifecycle.md)** — the five phases, then its
    [End-to-end happy path](04-lifecycle.md#end-to-end-happy-path) section,
    which walks one ticket from issue to merged PR (the *how*).
@@ -62,7 +62,7 @@ rest as reference you consult when a question comes up.
 
 | # | Document | What it tells you |
 |---|---|---|
-| 01 | [Vision](01-vision.md) | The problem, and what success looks like |
+| — | [Vision](PRODUCT.md#vision) | The problem, and what the orchestrator promises |
 | 02 | [Principles](02-principles.md) | The 16 rules the system is built on (P-1…P-16), cited by ID everywhere else |
 | 03 | [Personas](03-personas.md) | Who uses AI Agile and what each needs from it |
 | 04 | [Lifecycle](04-lifecycle.md) | The five phases (four per-ticket + one continuous) plus on-demand agents, with an end-to-end walkthrough |

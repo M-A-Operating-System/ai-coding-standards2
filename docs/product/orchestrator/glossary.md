@@ -9,7 +9,7 @@ skim this once — most of the docs assume these terms.
 **AI Agile** — The product-development lifecycle described by these docs:
 specialised AI agents move every change from a GitHub issue to shipped,
 tested, documented code, with humans approving at gates.
-See [`01-vision.md`](01-vision.md).
+See [`PRODUCT.md`](PRODUCT.md#vision).
 
 **Agent** — A single-purpose AI worker with one job (write a PRD, review a
 PR, resolve a merge conflict). An agent is a prompt file plus a tool
