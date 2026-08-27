@@ -1469,7 +1469,7 @@ Two things are often mistaken for legitimate differences and are not:
 | Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | this document | draft |
-| Principles P-1 to P-16 | `02-principles.md` | not yet superseded |
+| Promises (formerly principles P-1 to P-16) | this document and `04-lifecycle.md` | draft |
 | Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
 | Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `05-pipeline-config.md` documents its current schema | not yet superseded |
 | The process itself -- which flows exist, their phases and forks | [`04-lifecycle.md`](04-lifecycle.md) | **stays there by design.** This document says the orchestrator can run whatever flows `pipeline.json` declares; which flows those are, and why, is process |
