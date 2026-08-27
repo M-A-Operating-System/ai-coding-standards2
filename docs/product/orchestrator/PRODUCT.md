@@ -98,6 +98,11 @@ yourself or dictate it.
 **Nothing gets stuck.** Every state the work can reach has a way forward that
 someone can actually perform. A halt is a pause, never a loss (MI-4).
 
+**Closed is terminal.** Once an issue closes, the orchestrator drops every
+event on it, permanently. There is no reopening it back into the pipeline --
+a bug found later in what it shipped is a new issue, not a resumption of the
+old one.
+
 **It will not run in a repository that has not been onboarded.** The
 orchestrator depends on what onboarding puts in place: the standards and agent
 definitions it reads, the labels that are its state, and the project's own ADR
