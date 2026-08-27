@@ -786,6 +786,21 @@ is a security property that holds in one reading and not the other, and a second
 definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
 
+**Selection by classification.** A work item's classification -- `bug`, `toil`,
+`enhancement`, `feature`, `spike` -- does not change what a step does; the same
+`coder` runs the same way regardless of it. It is allowed to change exactly one
+thing: which flow a work item enters, declared as a `classification`
+restriction on a flow's trigger. That is the mechanism flow selection needs.
+Selection is positive (a flow's trigger states what it matches; there is no
+exclude list to forget one entry of), so keeping `spike` out of the default flow
+means the default flow's classification list omits it, or a dedicated flow
+claims it -- not a rule written elsewhere that has to be kept in sync. `bug`,
+`enhancement`, `feature` and `toil` currently share the one default flow and run
+identically; nothing today needs them to diverge, so nothing declares that they
+do. A repository is free to add a flow restricted to a subset of them if it ever
+needs one to behave differently, but the mechanism existing is not an invitation
+to use it without a reason.
+
 **A repository may have its own.** The pipeline ships with a default definition,
 and a repository can replace it entirely with one of its own. That does not
 weaken this promise: there is still exactly one effective definition for any
