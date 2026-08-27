@@ -762,6 +762,11 @@ unfinished work is the one that could not tell you about it.
 - **Approve a gate.** Agents draft, humans decide (P-10). No exceptions, in
   either mode.
 - **Act outside its allowed commands**, or route around a refusal.
+- **Rewrite or delete history.** No step's allowed commands may include
+  `git reset`, `git push --force`, `git branch -D`, or any other command
+  that rewrites or deletes history, however narrowly a step's other grants
+  are scoped. These are operator-only actions taken outside the pipeline,
+  not something any `pipeline.json` entry can grant.
 - **Depend on state from outside its own (object, agent) session.** Sessions
   never cross-pollinate -- a different agent on the same object, or the same
   agent on a different object, starts with no memory of the other (P-7). A
@@ -784,7 +789,12 @@ indistinguishable from one that succeeded.
   does not say what would resolve it is a halt with no exit, which MI-4 forbids.
 - **A re-run does the work again.** Re-invoking an agent performs the work
   afresh. Returning a previous run's result is a failure, however plausible the
-  answer.
+  answer. "Afresh" means the effect, not the record: a re-run must not open a
+  second PR, create a second branch, or double-apply a label, but its artefact
+  comment is a new one, headed `(Re-run)`, never an edit to the previous
+  comment in place -- the trail of what changed between rounds is evidence,
+  and overwriting a prior artefact destroys the only record that a finding was
+  ever raised.
 - **Out of budget is its own outcome.** Exhausting the turn budget is reported
   as exhausting the turn budget, never as the work failing. The two demand
   different responses.
@@ -840,8 +850,12 @@ reference cannot drift apart by one of them being hand-edited. This document
 still states what is true and why; the schema states exactly what a
 conforming `pipeline.json` looks like.
 
-This is P-2 ("one machine-readable source per concern") applied to the pipeline
-itself. It matters most for allowed commands: a permission defined in two places
+This is the general rule "one machine-readable source per concern; human views
+are generated" (P-2) applied to the pipeline itself: every structured fact
+about the system lives in exactly one machine-readable file with a published
+schema, and the human-readable view of it -- a markdown table, a diagram -- is
+generated from that source and committed as build output, never hand-edited.
+It matters most here for allowed commands: a permission defined in two places
 is a security property that holds in one reading and not the other, and a second
 definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
