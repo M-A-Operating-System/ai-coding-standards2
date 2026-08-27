@@ -1,9 +1,13 @@
 # Audit Log
 
-The audit log is a stream of structured JSON lines written to stdout by
-the orchestrator. GitHub Actions captures stdout natively; the workflow
-run log is the persistent record. Operators can filter with `jq` if
-needed.
+**Stale on where the record is kept.** This document describes stdout capture as
+the persistent record. That is no longer the design: the audit stream is
+appended to the protected orphan branch `ai-agile/log`, because a workflow log
+exists only for headless runs. See [P-3](02-principles.md#p-3--immutable-audit-log-branch)
+and MI-6 in [`PRODUCT.md`](PRODUCT.md). The event schema below is unaffected.
+
+The audit log is a stream of structured JSON lines emitted by the orchestrator.
+Operators can filter with `jq` if needed.
 
 ---
 

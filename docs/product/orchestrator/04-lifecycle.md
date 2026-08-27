@@ -206,8 +206,31 @@ approval, the agent auto-creates the child issues and links them back
 to the parent. Each child re-enters the pipeline at `issue-classifier`
 and runs through its own full lifecycle.
 
-**Epic completion.** The parent (labeled `epic`) is excluded from every
-pipeline stage until its children finish. On each scheduled sweep, the
+**The epic flow (target state).** An epic is a work item whose value is in the
+parts it creates and the judgement that they add up. It has five stages, and
+each one is a step in its own flow rather than an exclusion from someone else's:
+
+| Stage | What it is |
+|---|---|
+| Pick it up | The epic enters its flow like any other work item |
+| Decompose it | Produce the child issues that are the actual work, linked back to the epic |
+| Wait for the parts | The children run their own flow, independently and in parallel. Not a step -- a later step whose trigger condition is not yet met |
+| Review the whole | Confirm the implementation hangs together and the sum of the parts does what the epic asked for |
+| Close it | The epic is finished, with that review as the record of why |
+
+The fourth stage is the one worth having. Every child can pass its own review and
+the epic still fail: the parts can be individually correct and collectively
+wrong, or leave a seam nobody owned. Closing an epic the moment its last child
+closes checks that the pieces exist, not that they add up.
+
+Declaring this as a flow needs a trigger that can say "every child of this item
+is closed" -- a condition about other work items, which the current trigger
+vocabulary cannot express. That is why the waiting is orchestrator-native code
+today rather than configuration; see
+[`PRODUCT.md`](PRODUCT.md#coordinating-work-needs-a-trigger-that-can-look-outward).
+
+**Epic completion (as built today).** The parent (labeled `epic`) is excluded
+from every pipeline stage until its children finish. On each scheduled sweep, the
 orchestrator checks every open `epic`-labeled issue: if all of its
 `parent-issue:{N}`-labeled children are closed, the orchestrator
 re-processes the parent as a work item so it advances through its own next

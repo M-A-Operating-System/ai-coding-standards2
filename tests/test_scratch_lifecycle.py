@@ -770,7 +770,7 @@ class TestShippedFilesAreAscii:
 
     @pytest.mark.parametrize("name", [
         "architecture.json", "data.json", "documentation.json", "process.json",
-        "security.json", "adrs.json", "ux-design.json", "testing.json",
+        "security.json", "ux-design.json", "testing.json",
     ])
     def test_standards_json_is_ascii(self, name):
         path = self.REPO_ROOT / "standards" / name

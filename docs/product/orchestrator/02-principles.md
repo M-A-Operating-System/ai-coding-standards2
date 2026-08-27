@@ -60,10 +60,8 @@ hand-edited.
 |---|---|---|
 | Pipeline graph | `pipeline/pipeline.json` | `pipeline.schema.json` |
 | Status definitions | `pipeline/statuses.json` | `statuses.schema.json` |
-| Org-wide standards | `ai-coding-standards2/standards/*.json` | `standards.schema.json` |
-| Project standards | `{project-root}/standards/*.json` | `standards.schema.json` |
-| Org ADRs | `ai-coding-standards2/standards/adrs.json` | `standards.schema.json` |
-| Project ADRs | `{project-root}/adrs/adrs.json` | `standards.schema.json` |
+| Standards (universal) | `ai-coding-standards2/standards/*.json` | `standards.schema.json` |
+| ADRs (repo-local) | `{repo-root}/adrs/adrs.json` | `standards.schema.json` |
 
 **Consequences.**
 
@@ -80,17 +78,16 @@ off the moment a fact would otherwise have drifted across two documents.
 
 ### P-3 — Immutable audit log branch
 
-**Status: retired.** Superseded by [ADR-0001](../../adr/0001-retire-p3-audit-log-branch.md).
-
-~~**Statement.** Every event across every session is appended to a protected
+**Statement.** Every event across every session is appended to a protected
 branch (`ai-agile/log`). The branch is orphan, force-push and delete
 protected, and append-only. It is the cross-session, cross-issue timeline
-of everything that happened.~~
+of everything that happened.
 
-The orchestrator now emits one structured JSON line per audit event to stdout.
-GitHub Actions captures stdout natively; the workflow run log is the persistent
-audit record. See [`08-audit-log.md`](08-audit-log.md) and ADR-0001 for the
-current mechanism.
+This was briefly retired in favour of emitting audit events to stdout and
+letting GitHub Actions capture them. That reasoning holds only for headless
+runs: an interactive session has no workflow log, so the record did not survive
+at all there. It is reinstated, and `ai-agile/metrics` is written by the same
+mechanism. See MI-6 in [`PRODUCT.md`](PRODUCT.md) for the current form.
 
 ### P-4 — `:wip` is the mutex
 

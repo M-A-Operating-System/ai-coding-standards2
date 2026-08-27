@@ -36,8 +36,9 @@ vague criteria.
   violation: secrets, RLS, injection/sanitisation, fail-closed, migration safety,
   PII. Worded with no exception clause.
 - **`true`** — firm rules a documented business reason could waive **once**, via a
-  project ADR in `standards/adrs.json` whose `authorises_exception_to` cites the
-  STD ID. The standard is still worded as a hard rule; the ADR is the only escape
+  repo-local ADR in that repository's own `adrs/adrs.json` whose
+  `authorises_exception_to` cites the STD ID. Never inside `standards/`: this
+  folder is the universal set, identical in every repository and read verbatim. The standard is still worded as a hard rule; the ADR is the only escape
   hatch, not soft language in the standard.
 
 ### Object shape
