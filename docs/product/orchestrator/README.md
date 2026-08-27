@@ -86,7 +86,6 @@ rest as reference you consult when a question comes up.
 | 13 | [Todos](13-todos.md) | How task lists are stored in issue/PR bodies |
 | 14 | [Standards](14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
-| 17 | [Operating modes](17-operating-modes.md) | Scheduled (GitHub Actions) vs. in-session (`/maos-run`) — comparison and current limitations |
 | — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |
 
 ### Planning & status

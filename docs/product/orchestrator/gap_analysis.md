@@ -709,11 +709,11 @@ applied.
 
 **Status:** `PARTIAL`.
 
-`17-operating-modes.md` documents differences, but as a comparison table plus a
-list of *current limitations* -- things that happen to be true today, not
-differences argued to be permanent. Nothing distinguishes an intended difference
-from an unrepaired defect, and no test maps mode-conditional code branches to
-either.
+`PRODUCT.md`'s "What is allowed to differ" table now names the complete,
+permanent list, superseding the old comparison table's mix of intended
+differences and things that merely happened to be true that day. What remains
+open: no test maps mode-conditional code branches to that list, so an
+undocumented difference is still only caught by inspection.
 
 ---
 

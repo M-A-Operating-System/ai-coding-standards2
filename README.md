@@ -198,9 +198,9 @@ The pipeline runs in two modes and both can be active on the same repo:
   pauses at gates for approval in the same conversation. Auth is the session's
   own Claude subscription/OAuth rather than an API key secret.
 
-For a side-by-side comparison and current limitations, see
-[`docs/product/orchestrator/17-operating-modes.md`](docs/product/orchestrator/17-operating-modes.md).
-To get a first run working in either mode, see
+For a side-by-side comparison, see
+[Headless and interactive](docs/product/orchestrator/PRODUCT.md#headless-and-interactive)
+in `PRODUCT.md`. To get a first run working in either mode, see
 [`docs/product/orchestrator/quick-start.md`](docs/product/orchestrator/quick-start.md).
 
 ---

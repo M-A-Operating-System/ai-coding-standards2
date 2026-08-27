@@ -1466,7 +1466,7 @@ Two things are often mistaken for legitimate differences and are not:
 | How a step is told where it is | this document | draft |
 | How it uses agents, and the step contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
 | The promises (AS-1 to AS-3, MI-1 to MI-8) | this document | draft |
-| Headless and interactive | this document | draft -- supersedes `17-operating-modes.md` |
+| Headless and interactive | this document | draft -- `17-operating-modes.md` retired |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | this document | draft |
 | Promises (formerly principles P-1 to P-16) | this document and `04-lifecycle.md` | draft |
