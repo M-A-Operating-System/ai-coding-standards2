@@ -341,7 +341,7 @@ capitalised names (Stakeholder, Engineer) are human personas from
 
 The **Outcome label** column shows the label applied at the end of
 the step. `agent:complete` and `agent:review` are agent status labels
-(see [`06-status-model.md`](06-status-model.md)); the `*:approved`
+(see [PRODUCT.md](PRODUCT.md#the-state-machine)); the `*:approved`
 labels are human gates (see [`07-human-gates.md`](07-human-gates.md)).
 Rows marked _(orchestrator …)_ are git operations run directly by the
 orchestrator, not label transitions.

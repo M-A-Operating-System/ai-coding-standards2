@@ -11,8 +11,8 @@ follow-through: it removes `{agent}:review`, applies `{agent}:complete`,
 and emits the matching events to the audit log. Humans never directly
 apply `{agent}:complete` — they apply the gate label, the orchestrator
 promotes the agent. See
-[`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition)
-for the full lifecycle.
+[MI-7](PRODUCT.md#mi-7----only-a-person-approves)
+for the full guarantee.
 
 Gates exist for one reason: to make sure the deciding work — what to build,
 how to design it, what "done" looks like, whether the code is right —

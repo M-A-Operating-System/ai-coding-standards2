@@ -71,7 +71,6 @@ rest as reference you consult when a question comes up.
 
 | # | Document | What it tells you |
 |---|---|---|
-| 06 | [Status model](06-status-model.md) | The label-driven state machine and who may change what |
 | 07 | [Human gates](07-human-gates.md) | Every gate: who approves and what they are signing off |
 | 08 | [Audit log](08-audit-log.md) | The immutable JSONL event timeline |
 | 09 | [Human interaction](09-human-interaction.md) | How agents and humans communicate; the Question Card protocol |

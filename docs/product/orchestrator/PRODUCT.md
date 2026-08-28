@@ -1530,7 +1530,8 @@ Two things are often mistaken for legitimate differences and are not:
 | Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
 | Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `pipeline/schemas/pipeline.schema.json`'s own field descriptions are the current reference -- `05-pipeline-config.md` retired | durable content migrated; current-only content (script-step sentinel mechanics, `git_ops.commit_after` as a per-step opt-in, `orchestrator_checks`) not preserved, since the target design replaces each |
 | The process itself -- which flows exist, their phases and forks | [`04-lifecycle.md`](04-lifecycle.md) | **stays there by design.** This document says the orchestrator can run whatever flows `pipeline.json` declares; which flows those are, and why, is process |
-| Status model, gates | `06`, `07` | not yet superseded |
+| Status model | this document | draft -- `06-status-model.md` retired |
+| Human gates | `07-human-gates.md` | not yet superseded |
 | Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |
 | Agent specification | `12-agent-spec.md` | partially superseded |
 | Standards model | `14-standards.md` | not yet superseded |

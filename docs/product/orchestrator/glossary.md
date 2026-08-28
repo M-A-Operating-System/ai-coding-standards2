@@ -46,12 +46,12 @@ one shippable unit. See [`04-lifecycle.md`](04-lifecycle.md#many-small-tickets-i
 
 **Status label** — A GitHub label that encodes pipeline state, of the form
 `{agent}:{status}` (e.g. `prd-writer:complete`). Labels are the entire state
-machine — there is no separate database. See [`06-status-model.md`](06-status-model.md).
+machine — there is no separate database. See [`PRODUCT.md`](PRODUCT.md#the-state-machine).
 
 **Status suffixes** — `:wip` (running), `:complete` (done), `:review`
 (awaiting a human), `:blocked` (stuck, needs a human), `:failed` (errored),
 `:approved` (a human applied a gate label). The orchestrator owns every
-transition; humans only apply gate labels. See [`06-status-model.md`](06-status-model.md).
+transition; humans only apply gate labels. See [`PRODUCT.md`](PRODUCT.md#the-state-machine).
 
 **`:wip` (mutex)** — The `{agent}:wip` label doubles as the lock that stops
 two orchestrator runs from working the same `(object, agent)` at once.

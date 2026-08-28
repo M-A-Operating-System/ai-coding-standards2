@@ -72,7 +72,7 @@ Nothing to learn beyond ordinary GitHub usage:
 | **Apply a gate label** (e.g., `01_product_docs/prd-writer:approved`) | Approve at this gate. The orchestrator then removes the agent's `:review` label and applies `:complete`. Humans never apply `{agent}:complete` directly. |
 | **Remove a `:review` label without a gate label** | Reject; the agent re-runs and reads feedback comments |
 | **Remove a `:blocked` label** | Unblock (after fixing the cause); the agent re-runs |
-| **Apply a `:skipped` label** | Take responsibility for bypassing this agent ([Status model](06-status-model.md)) |
+| **Apply a `:skipped` label** | Take responsibility for bypassing this agent ([PRODUCT.md](PRODUCT.md#the-state-machine)) |
 | **Inline comment on a PR diff or artefact line** | Targeted feedback on a specific line; the agent reads inline comments on its next run |
 | **Edit the agent's comment in place** | Correct a draft; the edit is in the issue's history |
 | **Reply to a Question Card** | Answer a structured question (Section 2) |
@@ -88,7 +88,7 @@ label appears, the orchestrator promotes the agent from `:review` to
 is rejected and re-runs. Humans interact with **gate labels** and with
 removing `:review`/`:blocked` — they never touch `:complete`
 themselves. See
-[`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition).
+[MI-7](PRODUCT.md#mi-7----only-a-person-approves).
 
 ### Why not free text only
 
@@ -305,7 +305,7 @@ they have their own mechanisms:
 | Concept | Mechanism |
 |---|---|
 | Approval at a known gate (PRD, design, spec, etc.) | Gate label (e.g., `01_product_docs/prd-writer:approved`) — see [`07-human-gates.md`](07-human-gates.md) |
-| Status of an agent on an object | `{agent}:{status}` label — see [`06-status-model.md`](06-status-model.md) |
+| Status of an agent on an object | `{agent}:{status}` label — see [PRODUCT.md](PRODUCT.md#the-state-machine) |
 | Lock on an `(object, agent)` pair | `:wip` label + claim comment — see [PRODUCT.md](PRODUCT.md#the-state-machine) |
 | Two issues touching the same part of the system | `component:` labels the orchestrator claims before starting either — see [Working on several things at once](PRODUCT.md#working-on-several-things-at-once) |
 | Standards violation | Issue raised by `standards-compliance-reviewer` |

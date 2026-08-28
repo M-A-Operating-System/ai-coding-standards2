@@ -305,8 +305,7 @@ are treated as failed.
 `status.sh` and never call `set-failed` themselves. The orchestrator
 applies `:wip` before invoking the agent, and it owns the `:complete`
 transition for gated work — an agent must not apply `:complete` for
-gated work (see
-[`06-status-model.md`](06-status-model.md#gated-agents-the-review--complete-transition)).
+gated work (see [MI-7](PRODUCT.md#mi-7----only-a-person-approves)).
 
 ---
 
