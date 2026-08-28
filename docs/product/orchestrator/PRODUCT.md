@@ -126,6 +126,7 @@ that differs is a bug (MI-1 to MI-8).
 - [The pipeline defines flows, not a flow](#the-pipeline-defines-flows-not-a-flow)
 - [How the orchestrator tells a step where it is](#how-the-orchestrator-tells-a-step-where-it-is)
 - [How it uses agents](#how-it-uses-agents)
+- [The agent prompt file](#the-agent-prompt-file)
 - [The step contract](#the-step-contract)
 - [The promises](#the-promises)
 - [Headless and interactive](#headless-and-interactive)
@@ -571,6 +572,113 @@ change what happens next.
 
 That containment is only real if the boundary is precise, which is what the
 contract below states.
+
+---
+
+## The agent prompt file
+
+An agent step's activity lives in exactly one file: a prompt at
+`.claude/agents/{phase}/{short-name}.md`. Declaring the step in
+`pipeline.json` is necessary but not sufficient -- the orchestrator will not
+invoke an agent that has no matching file, and the file's shape is not left to
+convention. It is enforced the same way `pipeline.json` is: a file that does
+not conform does not merge.
+
+### Naming carries the phase
+
+An agent's name is `{phase}/{short-name}`, and the name is not cosmetic: the
+orchestrator computes the file's path by treating the `/` as a directory
+separator, so the name, the file location and the `pipeline.json` `agent`
+field are three spellings of one fact, not three facts to keep in sync by
+hand.
+
+| Per-ticket | Continuous | On-demand |
+|---|---|---|
+| `01_product_docs` | `05_continuous` | `00_ondemand` |
+| `02_design` | | |
+| `03_execute` | | |
+| `04_evaluate` | | |
+
+The phase directory uses `NN_snake_case` so it matches the phase enum in
+`pipeline.json` and sorts in lifecycle order in a directory listing; the
+short-name uses `kebab-case` because it appears in GitHub labels, audit-log
+entries and status markers, where hyphens are the standard separator. The two
+conventions serve different readers and are not interchangeable. Carrying the
+phase as a prefix lets a label, comment or audit-log line reveal which phase
+an agent belongs to without opening `pipeline.json`, and it keeps names from
+colliding across phases.
+
+`_templates/` holds copy-paste starting points and is never itself referenced
+in `pipeline.json`; `00_ondemand/` holds human-triggered agents that sit
+outside the per-ticket and continuous phases, run only when a person applies
+their `:requested` label or invokes them directly, and sort first by
+construction. A phase change is a rename: a new `pipeline.json` entry replaces
+the old one, the prior file retires, and closed work keeps the old name in its
+audit trail -- an agent's history is not rewritten to match where it lives
+today.
+
+### The frontmatter is identity, not entitlement
+
+The file opens with a YAML block, and CI validates it; frontmatter that fails
+validation blocks the PR.
+
+| Field | Type | Constraints |
+|---|---|---|
+| `name` | string | `{phase}/{short-name}`; matches the file's path under `.claude/agents/`; matches `pipeline.json`'s `agent` field |
+| `description` | string | One paragraph, plain language, states what the agent does and when it runs |
+
+That is the whole of it. What the step may do and which model it runs on are
+not frontmatter fields -- both are entitled activities and process facts in
+the sense AS-1 means, declared in `pipeline.json` alone (`extra_allowedTools`;
+the model named on the step's own entry) and nowhere else, including here. A
+prompt file that also carried a `tools:` or `model:` field would be a second
+definition of a fact AS-1 already places in exactly one file -- the precise
+failure mode AS-1 exists to rule out, not a convenience.
+
+### The tool vocabulary a step's entitlement is drawn from
+
+`extra_allowedTools` (AS-1) names commands from a fixed vocabulary:
+
+| Tool | What it does |
+|---|---|
+| `Bash` | Runs shell commands |
+| `Read` | Reads files |
+| `Glob` | Pattern-based file lookup |
+| `Grep` | Content search |
+| `Edit` | In-place file edits |
+| `Write` | Creates files |
+| `WebFetch` | Fetches URLs -- forbidden by default |
+| `WebSearch` | Web search -- forbidden by default |
+
+The rule for granting them is the smallest set that lets the step do its job,
+not the largest one that might someday be convenient: `Edit` and `Write` go to
+a step that writes files, not to a reviewer that only reads. `WebFetch` and
+`WebSearch` are forbidden by default for two reasons that both point the same
+way -- fetched content can carry text that steers the agent (prompt
+injection), and issue or PR content can be encoded into an outbound URL (data
+exfiltration). A step that genuinely needs external content requests it
+through a controlled endpoint, and the grant is a documented exception, not a
+quiet default.
+
+### The body is seven required sections, in order
+
+| # | Section | Purpose |
+|---|---|---|
+| 1 | Role statement | What the agent owns, in plain English |
+| 2 | Opening announcement | Posts the start `announcement` comment before any work begins |
+| 3 | Read-input steps | Gathers context from the work item, comments and files -- fresh every run, never assumed from a prior one |
+| 4 | Work steps | The agent's actual job, one step per logical action |
+| 5 | Closing announcement | Posts the end `announcement` comment naming what was produced |
+| 6 | Terminal status step | Returns exactly one outcome, as the step contract requires |
+| 7 | Behaviour rules | A short, specific, testable list of hard constraints -- the last line of defence against the agent doing something the design did not intend |
+
+A prompt file does not restate the shared protocol every agent already reads
+before it starts (the marker formats, the status contract, what a step must
+never do) -- repeating it in each prompt is exactly the kind of second
+definition P-2 exists to prevent, and it drifts the moment one copy is edited
+and the others are not. What belongs in a prompt is only what is specific to
+that agent: its inputs, its work, its artefact, and the rules that apply to
+it alone.
 
 ---
 
@@ -1532,7 +1640,7 @@ Two things are often mistaken for legitimate differences and are not:
 | Core requirements | this document | draft |
 | The state machine and activity shape | this document | draft |
 | How a step is told where it is | this document | draft |
-| How it uses agents, and the step contract | this document | draft -- supersedes parts of `12-agent-spec.md` |
+| How it uses agents, the agent prompt file, and the step contract | this document | draft -- supersedes most of `12-agent-spec.md` (naming, frontmatter schema, tool vocabulary, required body structure); `12-agent-spec.md`'s status-transition and CI-validation sections still describe the current stdout-sentinel mechanism, which this document's step contract (`#what-a-step-must-return`) replaces -- not yet reconciled |
 | The promises (AS-1 to AS-3, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- `17-operating-modes.md` retired |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
