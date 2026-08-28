@@ -1,10 +1,9 @@
 # Agent Specification
 
 > **Scope: AI agent steps only.** This document covers pipeline steps with
-> `"type": "agent"` (Claude CLI invocations). For `"type": "script"` steps,
-> see [`05-pipeline-config.md § Script steps`](05-pipeline-config.md#script-steps).
-> Script steps do not use prompt files, `status.sh`, or the tool allowlist —
-> they emit an `AI_AGILE_STATUS:` sentinel to stdout instead.
+> `"type": "agent"` (Claude CLI invocations). `"type": "script"` steps do not
+> use prompt files, `status.sh`, or the tool allowlist — they emit an
+> `AI_AGILE_STATUS:` sentinel to stdout instead.
 
 Every agent has exactly one prompt file at `.claude/agents/{agent-name}.md`.
 This document defines the required shape of that file: the YAML frontmatter
@@ -12,9 +11,8 @@ schema, the required body sections, the tool allowlist policy, and the
 status-transition contract.
 
 When adding a new agent, the **graph entry in `pipeline.json` lands
-first** (per [`05-pipeline-config.md`](05-pipeline-config.md) — the
-orchestrator will not invoke an agent that is not declared in
-`pipeline.json` even if a prompt file exists). The prompt file lands
+first** — the orchestrator will not invoke an agent that is not declared in
+`pipeline.json` even if a prompt file exists. The prompt file lands
 in the same PR and must conform to this spec; CI validates the
 frontmatter and the required body markers on every PR that touches
 `.claude/agents/` and refuses to merge until both halves are in
@@ -276,8 +274,7 @@ They should be specific, testable, and few (3–10 bullets is typical).
 
 **This contract applies to AI agent steps only.** Script steps (`type:
 "script"`) signal status by printing `AI_AGILE_STATUS:` to stdout; the
-orchestrator reads the sentinel and applies the label. See
-[`05-pipeline-config.md § Script steps`](05-pipeline-config.md#script-steps).
+orchestrator reads the sentinel and applies the label.
 
 Agent steps use the same sentinel mechanism: the agent prints one of
 the following as its **final stdout line**, and the orchestrator reads
@@ -345,8 +342,8 @@ PRs that fail validation cannot merge.
    `.claude/agents/{new-agent}.md`.
 2. Fill in the frontmatter: `name`, `description`, `tools`, `model`.
 3. Replace the role statement, work steps, and behaviour rules.
-4. Add the agent's entry to `pipeline/pipeline.json`
-   (graph entry first, per [`05-pipeline-config.md`](05-pipeline-config.md)).
+4. Add the agent's entry to `pipeline/pipeline.json` (graph entry first —
+   the orchestrator will not invoke an undeclared agent).
 5. Run `python pipeline/validate_agent_prompts.py` locally.
 6. Run `python pipeline/generators/generate_docs.py` to
    refresh the generated agent catalogue.

@@ -437,7 +437,7 @@ behind and the next run clears it. A `SIGTERM` handler would not work here, sinc
 the kill that ends a background tick is uncatchable.
 
 Full field reference:
-[`05-pipeline-config.md`](05-pipeline-config.md#defaultsagent_lifecycle--scripts-that-wrap-every-agent-invocation).
+[`PRODUCT.md`](PRODUCT.md#every-step-has-the-same-four-parts).
 
 ---
 

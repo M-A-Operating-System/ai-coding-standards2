@@ -26,7 +26,7 @@
           "properties": {
             "before": {
               "type": "array",
-              "description": "Run immediately before each invocation, including retries. Must be idempotent (05-pipeline-config.md): a run killed mid-flight leaves state behind, and re-running setup is what clears it.",
+              "description": "Run immediately before each invocation, including retries. Must be idempotent: a run killed mid-flight leaves state behind, and re-running setup is what clears it.",
               "items": { "type": "string" }
             },
             "after": {

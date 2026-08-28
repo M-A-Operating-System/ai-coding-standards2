@@ -178,5 +178,4 @@ phases, all 22 agents, all personas including Security Owner and Data Owner
 gates. This
 roadmap describes how to get there incrementally. Nothing in the target-state
 docs is retracted; the MVP simply defers parts of it. When a deferred item is
-implemented it is added to `pipeline.json` following the normal change process
-described in [`05-pipeline-config.md`](05-pipeline-config.md).
+implemented it is added to `pipeline.json` following the normal change process.

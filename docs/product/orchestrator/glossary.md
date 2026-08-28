@@ -23,7 +23,7 @@ so it is testable and predictable. See [`11-orchestrator.md`](11-orchestrator.md
 **Pipeline** — The ordered graph of agents, declared once in
 `pipeline/pipeline.json`. This single file is the source of truth for which
 agents exist, what triggers them, and what they depend on.
-See [`05-pipeline-config.md`](05-pipeline-config.md).
+See [`PRODUCT.md`](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does).
 
 **Phase** — A stage of the lifecycle. Phases 1–4 run per ticket (Product
 docs → Design → Execute → Evaluate); Phase 5 runs continuously across all
@@ -68,7 +68,8 @@ applies the matching label. See [`12-agent-spec.md`](12-agent-spec.md).
 **Session** — The lifecycle of one agent's interactions with one object,
 identified by a deterministic ID (e.g.
 `ais-v1-01-product-docs-prd-writer-issue-42`). Re-runs resume the same
-session. See [`05-pipeline-config.md`](05-pipeline-config.md).
+session. See [`schema/pipeline.schema.json`](schema/pipeline.schema.json), the
+`session` field.
 
 ## Records and rules
 

@@ -253,7 +253,7 @@ eligible step — today, that means closing it with a completion comment.
 This is orchestrator-native logic, not a registered agent step (a
 mechanical label check needs no LLM invocation), declared in
 `pipeline.json` as an `orchestrator_checks` entry rather than a pipeline
-step — see [`05-pipeline-config.md`](05-pipeline-config.md#orchestrator_checks--standalone-orchestrator-behaviour).
+step.
 The mechanism is intentionally general: future pipeline steps added to
 epics (such as a whole-feature review before release) plug in by extending
 what the parent's "next eligible step" is, without revisiting this check.
