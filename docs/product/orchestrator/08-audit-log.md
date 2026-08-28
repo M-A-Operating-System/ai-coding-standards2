@@ -55,7 +55,7 @@ Every line is one JSON object:
 | `detail` | string or null | Human-readable detail for the event (stop reason, exit code, mode, etc.) |
 | `session_id` | string | Deterministic session identifier for this (object, agent) pair |
 | `object` | object or null | `{"kind": "issue"\|"pr", "id": number, "repo": "owner/repo"}` |
-| `actor` | object | Identifies the run's trigger. For scheduled/unattended runs (`--headless`): `{"kind": "orchestrator", "id": "github-actions", "human": null}`. For human-initiated runs (e.g. `/maos-run`, omitting `--headless`): `{"kind": "orchestrator", "id": <actor-id>, "human": true}`. The distinction is set by the `--headless` flag passed to `pipeline_orchestrator.py`; see `11-orchestrator.md`. |
+| `actor` | object | Identifies the run's trigger. For scheduled/unattended runs (`--headless`): `{"kind": "orchestrator", "id": "github-actions", "human": null}`. For human-initiated runs (e.g. `/maos-run`, omitting `--headless`): `{"kind": "orchestrator", "id": <actor-id>, "human": true}`. The distinction is set by the `--headless` flag passed to `pipeline_orchestrator.py`. |
 | `ref` | string or null | Reserved; always null |
 | `duration_ms` | integer or null | Wall-clock duration of the agent run in milliseconds |
 

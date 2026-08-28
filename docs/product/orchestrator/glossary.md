@@ -18,7 +18,7 @@ allowlist; it never calls other agents. See [`12-agent-spec.md`](12-agent-spec.m
 **Orchestrator** — The deterministic Python program that decides which agent
 runs next. It reads labels, checks the dependency graph, invokes the one
 eligible agent, and records the result. All routing is plain Python (no LLM),
-so it is testable and predictable. See [`11-orchestrator.md`](11-orchestrator.md).
+so it is testable and predictable. See [`PRODUCT.md`](PRODUCT.md#how-it-uses-agents).
 
 **Pipeline** — The ordered graph of agents, declared once in
 `pipeline/pipeline.json`. This single file is the source of truth for which

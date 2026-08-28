@@ -1544,6 +1544,6 @@ Two things are often mistaken for legitimate differences and are not:
 | Status model | this document | draft -- `06-status-model.md` retired |
 | Human gates, mechanism | this document (MI-7) | draft |
 | Human gates, which ones exist today | [`04-lifecycle.md`](04-lifecycle.md#human-gates) | current -- `07-human-gates.md` retired |
-| Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |
+| Orchestrator responsibilities | this document (target-design promises); `pipeline_orchestrator.py` itself (current implementation) | draft -- `11-orchestrator.md` retired; durable trust-boundary content migrated (AS-1); current-only implementation detail (function names, JSON marker formats, CLI flags, retry constants) not preserved, since it has no target-design analog |
 | Agent specification | `12-agent-spec.md` | partially superseded |
 | Standards model | [`docs/product/standards/14-standards.md`](../standards/14-standards.md) | stays there by design -- standards enforcement is agent behaviour (`coder`, `pr-reviewer` reading `standards/*.json`), not orchestrator mechanism, so this document was never going to absorb it |

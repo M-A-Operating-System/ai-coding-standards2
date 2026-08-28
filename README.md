@@ -324,7 +324,6 @@ repos.
 
 - [`docs/product/orchestrator/README.md`](docs/product/orchestrator/README.md) — the full design index and reading order
 - [`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md) — MVP scope and rollout phases
-- [`docs/product/orchestrator/11-orchestrator.md`](docs/product/orchestrator/11-orchestrator.md) — orchestrator technical design
 - [`docs/product/orchestrator/12-agent-spec.md`](docs/product/orchestrator/12-agent-spec.md) — agent prompt-file spec
 - [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md) — onboarding a consuming repo, platform behaviour, path resolution
 

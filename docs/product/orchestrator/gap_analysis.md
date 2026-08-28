@@ -43,7 +43,7 @@ mechanism is now specified, and three parts of it do not exist at all:
 | A step returns one result to a path the orchestrator gave it | No such path and no such file. The outcome is a regex over the last five lines of the agent's prose (`_SENTINEL_RE`, `pipeline_orchestrator.py:1925`) |
 | Five outcomes, including `exhausted` | The sentinel accepts three (`complete`, `review`, `blocked`). `statuses.json` has no `exhausted`. Budget exhaustion is reported as `:failed`, or as `:complete` when the run exits 0 without a sentinel |
 | Every step declares `expected_effect` | Not a field in `pipeline.json`, so MI-6 has nothing to compare an observed change against |
-| A global default per budget, in `pipeline.json`, overridable per step | Neither is in `pipeline.json`. `AGENT_TIMEOUT_SECONDS = 1800` is a module constant applying to every step with no per-step override at all. `DEFAULT_MAX_TURNS = 30` is closer in shape -- a global default a step can override -- but the override lives in agent frontmatter, not `pipeline.json`, which is AS-1. `11-orchestrator.md` states the wall-clock limit is "set per agent in `pipeline.json` via `max_wall_seconds`"; that field appears in neither the file nor the schema |
+| A global default per budget, in `pipeline.json`, overridable per step | Neither is in `pipeline.json`. `AGENT_TIMEOUT_SECONDS = 1800` is a module constant applying to every step with no per-step override at all. `DEFAULT_MAX_TURNS = 30` is closer in shape -- a global default a step can override -- but the override lives in agent frontmatter, not `pipeline.json`, which is AS-1. There is no `max_wall_seconds` field in `pipeline.json` or its schema; the per-step wall-clock override PRODUCT.md describes does not exist yet |
 | Retry `failed`, never `exhausted` | `_invoke_with_retries` retries on "no sentinel", which conflates a crash with a turn wall, so an exhausted step burns its budget again before landing on `:failed` |
 
 The CLI already reports what `exhausted` needs -- `subtype`, `is_error` and
@@ -651,11 +651,9 @@ and signal-only: a process killed outright runs no handler, a lost runner clears
 nothing, and a failed `remove_label` is caught, logged and abandoned on the way
 out.
 
-There is no age-based reclaim. `11-orchestrator.md` states that "a `:wip` label
-older than the configured agent timeout (default 30 minutes, set per agent in
-`pipeline.json` via `max_wall_seconds`) is forcibly reclaimed by the
-orchestrator on its next scheduled tick". No such logic exists, and
-`max_wall_seconds` is not a field -- both claims are in the same paragraph.
+There is no age-based reclaim, and no such logic exists in
+`pipeline_orchestrator.py`. `max_wall_seconds` is not a field in
+`pipeline.json` or its schema, so there is nothing to reclaim by.
 
 So the only recovery from a lost runner is a person deleting the label by hand,
 which is the intervention MI-4 exists to prevent.
