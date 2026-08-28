@@ -78,7 +78,6 @@ rest as reference you consult when a question comes up.
 
 | # | Document | What it tells you |
 |---|---|---|
-| 12 | [Agent specification](12-agent-spec.md) | How to write an agent prompt file: frontmatter, body, tool allowlist |
 | 13 | [Todos](13-todos.md) | How task lists are stored in issue/PR bodies |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
 | — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |

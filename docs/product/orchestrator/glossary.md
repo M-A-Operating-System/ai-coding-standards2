@@ -13,7 +13,7 @@ See [`PRODUCT.md`](PRODUCT.md#vision).
 
 **Agent** — A single-purpose AI worker with one job (write a PRD, review a
 PR, resolve a merge conflict). An agent is a prompt file plus a tool
-allowlist; it never calls other agents. See [`12-agent-spec.md`](12-agent-spec.md).
+allowlist; it never calls other agents. See [`PRODUCT.md`](PRODUCT.md#the-agent-prompt-file).
 
 **Orchestrator** — The deterministic Python program that decides which agent
 runs next. It reads labels, checks the dependency graph, invokes the one
@@ -63,7 +63,10 @@ humans decide. See [MI-7](PRODUCT.md#mi-7----only-a-person-approves).
 
 **Sentinel** — The single line an agent prints to report its outcome:
 `AI_AGILE_STATUS: complete|review|blocked`. The orchestrator reads it and
-applies the matching label. See [`12-agent-spec.md`](12-agent-spec.md).
+applies the matching label -- the current mechanism; PRODUCT.md's target
+design replaces it with a written result (see
+[`#what-a-step-must-return`](PRODUCT.md#what-a-step-must-return)). See
+[`.claude/AGENTS.md`](../../../.claude/AGENTS.md) for today's exact syntax.
 
 **Session** — The lifecycle of one agent's interactions with one object,
 identified by a deterministic ID (e.g.

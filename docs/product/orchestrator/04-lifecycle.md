@@ -399,7 +399,7 @@ there is no code to ship, so no branch or PR is created.
 
 The **Actor** column shows who performs each step — agent names
 formatted as `{phase}/{short-name}` (see
-[`12-agent-spec.md`](12-agent-spec.md#naming-convention));
+[`PRODUCT.md`](PRODUCT.md#naming-carries-the-phase));
 capitalised names (Stakeholder, Engineer) are human personas from
 [`03-personas.md`](03-personas.md).
 

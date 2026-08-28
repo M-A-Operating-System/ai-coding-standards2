@@ -705,6 +705,14 @@ report honestly when it did nothing -- which is exactly where
 | **Its instructions** | A prompt whose every instruction is executable under the commands allowed |
 | **A model** | Which model this step runs on, chosen when the step was declared. A step does not choose its own model, any more than it chooses its own permissions |
 
+**The smallest model that does the job, chosen deliberately.** A more
+expensive model than the step needs wastes budget without improving the
+result; a cheaper one than the step needs produces an artefact that fails
+review and gets re-run anyway, which costs more than the model it saved.
+Sonnet is the default; stepping up or down from it is a decision made once,
+when the step is declared, for that step specifically -- not a blanket
+setting and not something the step revisits at runtime.
+
 ### What a step must return
 
 A step returns a value, the way any process returns a value: it writes one
@@ -1640,7 +1648,7 @@ Two things are often mistaken for legitimate differences and are not:
 | Core requirements | this document | draft |
 | The state machine and activity shape | this document | draft |
 | How a step is told where it is | this document | draft |
-| How it uses agents, the agent prompt file, and the step contract | this document | draft -- supersedes most of `12-agent-spec.md` (naming, frontmatter schema, tool vocabulary, required body structure); `12-agent-spec.md`'s status-transition and CI-validation sections still describe the current stdout-sentinel mechanism, which this document's step contract (`#what-a-step-must-return`) replaces -- not yet reconciled |
+| How it uses agents, the agent prompt file, and the step contract | this document | draft -- `12-agent-spec.md` retired; durable design content migrated (naming, frontmatter schema, tool vocabulary, model-selection rationale, required body structure); its current-only content (the stdout-sentinel status mechanism, the CI-validation checklist, the add-a-new-agent checklist) not preserved, since the step contract's written-result model (`#what-a-step-must-return`) replaces the first and the rest is operational detail with no target-design analog |
 | The promises (AS-1 to AS-3, MI-1 to MI-8) | this document | draft |
 | Headless and interactive | this document | draft -- `17-operating-modes.md` retired |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
@@ -1653,5 +1661,4 @@ Two things are often mistaken for legitimate differences and are not:
 | Human gates, mechanism | this document (MI-7) | draft |
 | Human gates, which ones exist today | [`04-lifecycle.md`](04-lifecycle.md#human-gates) | current -- `07-human-gates.md` retired |
 | Orchestrator responsibilities | this document (target-design promises); `pipeline_orchestrator.py` itself (current implementation) | draft -- `11-orchestrator.md` retired; durable trust-boundary content migrated (AS-1); current-only implementation detail (function names, JSON marker formats, CLI flags, retry constants) not preserved, since it has no target-design analog |
-| Agent specification | `12-agent-spec.md` | partially superseded |
 | Standards model | [`docs/product/standards/14-standards.md`](../standards/14-standards.md) | stays there by design -- standards enforcement is agent behaviour (`coder`, `pr-reviewer` reading `standards/*.json`), not orchestrator mechanism, so this document was never going to absorb it |
