@@ -383,11 +383,12 @@
           "properties": {
             "scope": {
               "type": "string",
-              "enum": ["per_issue", "global"]
+              "enum": ["per_issue", "global"],
+              "description": "per_issue -- a distinct session for each work item; default ID ais-v1-{safe_agent}-issue-{number}. global -- one persistent session shared across every invocation of this agent; default ID ais-v1-{safe_agent}. Use global for agents that benefit from context accumulated across issues (e.g. a doc reviewer)."
             },
             "id_pattern": {
               "type": "string",
-              "description": "Optional token pattern for the session ID; the built-in default for the chosen scope is used when omitted."
+              "description": "Optional token pattern for the session ID; the built-in default for the chosen scope is used when omitted. Available tokens: {agent}, {safe_agent}, {phase}, {safe_phase}, {number}, {kind}, {owner}, {repo_name}, {safe_repo} -- only bare {identifier} placeholders are accepted, not attribute or index access. {title} and {url} are deliberately excluded: titles are human-authored and change over time, and both contain characters unsafe in a session ID. On a retry the orchestrator appends -r{attempt} to the seed before deriving the session's UUID, giving each retry attempt a distinct session."
             }
           }
         },

@@ -260,6 +260,26 @@ the step uses an agent -- so uncertainty enters the system at exactly one place,
 and only for the steps that need judgement. A step whose activity is a script is
 deterministic from end to end.
 
+**Post-actions run in two different shapes, for two different jobs.**
+`post_steps` is an ordered list of scripts specific to one step, firing only
+when that step signals `complete` -- never on `review`, `blocked`, or
+`failed` -- and a non-zero exit aborts whatever is left in the list and fails
+the step. `defaults.agent_lifecycle.after` is different in kind: declared
+once, it wraps every agent step regardless of outcome (`complete`, `review`,
+`blocked`, a crash, or retries exhausted), and its own failure is logged and
+swallowed rather than failing the run. Use `post_steps` for an action
+specific to one step's success; use `agent_lifecycle` for work every agent
+needs done around it, win or lose.
+
+**Why `agent_lifecycle.before` must be idempotent.** It runs again on every
+retry, including one following a kill mid-run -- and that is what makes the
+lifecycle self-healing without a signal handler. A `SIGTERM` handler cannot
+save it: the kill that ends a background tick is uncatchable, so a handler
+never runs to clean up on the way out. Idempotent setup covers the same case
+without one -- `before` removes its scratch directory before creating it,
+rather than assuming it is absent, so a tick killed mid-run leaves debris
+that the next run on the same session simply clears before it starts.
+
 Commands every step needs are declared once in `defaults.extra_allowedTools`
 rather than repeated on each step. A step's effective permission is exactly the
 global set plus its own `extra_allowedTools`, and nothing else. Two levels, both
@@ -484,6 +504,12 @@ Actions runner and under a chat session.
 | `SUB_ITEM_NUMBER` (when applicable) | Which piece of the item this invocation covers, for a step invoked once per sub-issue rather than once for the whole item |
 | `SESSION_ID`, `SESSION_SCOPE` | Which run this is, and how far it persists |
 | `AI_AGILE_SCRATCH` | Where working files go |
+
+`SESSION_ID` is derived from a token pattern declared on the step
+(`session.id_pattern`) -- the available tokens, the two `title`/`url`
+exclusions, and the retry-suffix behaviour are specified in
+[`schema/pipeline.schema.json`](schema/pipeline.schema.json), the
+authoritative source (see AS-1).
 
 Credentials are supplied the same way and are deliberately not part of this
 list: a step receives what it needs to authenticate and nothing about how that
@@ -849,6 +875,13 @@ is generated from it rather than restated here, so this table and that
 reference cannot drift apart by one of them being hand-edited. This document
 still states what is true and why; the schema states exactly what a
 conforming `pipeline.json` looks like.
+
+**Why JSON, not YAML or TOML.** JSON has a published schema language with
+broad tooling, and it is what the orchestrator reads directly -- no parser
+ambiguity, no format the CLI has to translate first. The same schema
+validates in CI, in editors, and in pre-commit hooks uniformly. JSON's
+verbosity is a low cost here specifically because the file is generated-from
+for human reading, never hand-read in raw form.
 
 This is the general rule "one machine-readable source per concern; human views
 are generated" (P-2) applied to the pipeline itself: every structured fact
