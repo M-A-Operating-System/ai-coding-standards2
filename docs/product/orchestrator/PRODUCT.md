@@ -985,6 +985,17 @@ validate against `schema/pipeline.schema.json` -- a definition the schema
 rejects is not a test failure to discover later, it is a file that does not
 parse.
 
+**Always the version on `main`, never the version the tick is about.** A tick
+is often triggered by a pull request, and the default checkout for a
+`pull_request` event is that PR's own merge ref -- which would let a PR
+editing `pipeline.json`, the orchestrator itself, or an agent prompt alter the
+run that is supposed to be reviewing it. So the orchestrator always runs its
+own code, `pipeline.json` and the agent prompts from `main`, regardless of
+what triggered the tick, and never from the ref the event points at. The PR's
+own content is still reviewed -- over the API, not by checking out its ref --
+so nothing about this pins stale content, only which copy of the *process
+definition itself* governs the run.
+
 ---
 
 ### AS-2 -- The orchestrator only coordinates
