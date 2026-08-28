@@ -26,6 +26,32 @@ judgement, only for the repetitive work around it.
 
 ---
 
+## Personas
+
+Six kinds of person, and one automated role, rely on AI Agile, each meeting it
+at a different point in the pipeline:
+
+- **Stakeholder** -- opens the issue that starts a piece of work, and approves
+  the PRD that comes back.
+- **Engineer** -- owns the design and the code; approves the build plan before
+  any of it is written.
+- **Reviewer** -- approves at the gates a Stakeholder or Engineer does not:
+  sizing, design, test spec, PR.
+- **Standards Owner** -- owns the standards the pipeline enforces, and
+  approves proposed changes to them.
+- **Security Owner** -- approves any change flagged as touching a
+  security-sensitive surface.
+- **Data Owner** -- approves any change that includes a data migration.
+- **System actor** -- the role a capability is written against when its
+  primary actor is genuinely automation (a scheduled job, an audit logger),
+  not a person, so automated capabilities go through the same product-led
+  pipeline as everything else.
+
+What each wants and how AI Agile serves them:
+[`03-personas.md`](03-personas.md).
+
+---
+
 ## Core requirements
 
 Read these together. They describe what the product is; [the
@@ -121,6 +147,7 @@ that differs is a bug (MI-1 to MI-8).
 ## Contents
 
 - [Vision](#vision)
+- [Personas](#personas)
 - [Core requirements](#core-requirements)
 - [The state machine](#the-state-machine)
 - [The pipeline defines flows, not a flow](#the-pipeline-defines-flows-not-a-flow)
@@ -1653,6 +1680,8 @@ Two things are often mistaken for legitimate differences and are not:
 | Headless and interactive | this document | draft -- `17-operating-modes.md` retired |
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | this document | draft |
+| Personas -- who AI Agile serves, in brief | this document | draft |
+| Personas -- what each wants and how they are served, in full | [`03-personas.md`](03-personas.md) | **stays there by design.** One level of detail below what this document scopes itself to |
 | Promises (formerly principles P-1 to P-16) | this document and `04-lifecycle.md` | draft |
 | Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
 | Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `pipeline/schemas/pipeline.schema.json`'s own field descriptions are the current reference -- `05-pipeline-config.md` retired | durable content migrated; current-only content (script-step sentinel mechanics, `git_ops.commit_after` as a per-step opt-in, `orchestrator_checks`) not preserved, since the target design replaces each |
