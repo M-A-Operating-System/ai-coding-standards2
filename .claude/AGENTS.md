@@ -26,7 +26,7 @@ full statements and rationale live there.
 | **P-2** One source per concern | Standards live in JSON, the pipeline lives in `pipeline.json`. Don't duplicate facts; reference them by ID. |
 | **P-4** `:wip` is the mutex | If `{your-agent}:wip` is already on the work item when you start, another runner has it — abort. |
 | **P-5** One shippable unit, one PR | Don't open multiple PRs for one issue. Don't conflate two issues into one PR. |
-| **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. Use it in announcements and Question Cards. |
+| **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. Use it in announcements. |
 | **P-9** Cross-issue parallel, intra-issue serial | You are not racing other agents on the same issue. Assume nothing about sibling agents on other issues. |
 | **P-10** Agents draft, humans decide | Never approve a gate. Never apply a `*:approved` label. Humans do that; the orchestrator promotes you afterward. |
 | **P-11** Resumable by default | Be idempotent: a re-run must not double-apply an effect — no second PR, no second branch, no re-applied label. Artefacts are append-only: post a new artefact each run, headed `(Re-run)`, and never rewrite a previous one. |
@@ -73,13 +73,12 @@ identity:
 <!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
 ```
 
-Five marker types:
+Four marker types:
 
 | Marker | Use for |
 |---|---|
 | `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
 | `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
-| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2) |
 | `claim/v1` | The mutex claim you post during P-4 acquisition |
 | `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
 
@@ -199,7 +198,6 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 | Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
 | Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` |
 | ADRs (architecture decisions of record) | `adrs/adrs.json` (repo-local; `standards/` holds the universal standards and never ADRs) |
-| Question Card schema | [`docs/product/orchestrator/09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2 |
 | Todos in issue/PR bodies (read protocol, write protocol, marker conventions) | [`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md) |
 
 When referencing a standard in a comment or commit, use its stable
@@ -215,6 +213,6 @@ When referencing a standard in a comment or commit, use its stable
 
 | Situation | Action |
 |---|---|
-| Input is ambiguous and you would have to guess | Emit `AI_AGILE_STATUS: blocked` with a Question Card naming the ambiguity |
+| Input is ambiguous and you would have to guess | Emit `AI_AGILE_STATUS: blocked "reason"` naming the ambiguity |
 | Issue is too large for one phase artefact | Emit `AI_AGILE_STATUS: blocked` with a decomposition recommendation |
 | You hit an error you cannot describe | Exit non-zero; the orchestrator will apply `:failed` with your tail of output |

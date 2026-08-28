@@ -107,13 +107,10 @@ treated as a user-facing feature. See [`PRODUCT.md`](PRODUCT.md#personas) and
 acceptance criteria, scope, metrics). The approved PRD is the source of truth
 for everything downstream. See [`04-lifecycle.md`](04-lifecycle.md#prd-format-and-the-prd-writer-gate).
 
-**Question Card** — A structured JSON block an agent posts when it needs a
-human decision before it can proceed. See [`09-human-interaction.md`](09-human-interaction.md).
-
 **Snapshot marker** — An immutable comment (`<!-- ai-agile/snapshot/v1 -->`)
 preserving an artefact's original state for the audit trail, e.g. the
 stakeholder's issue body before `prd-writer` rewrote it.
-See [`09-human-interaction.md`](09-human-interaction.md).
+See [`PRODUCT.md`](PRODUCT.md#what-lands-on-the-issue).
 
 **Todos block** — The marker-delimited task list stored in an issue or PR
 body (not in comments or a separate file), with ISO 8601 timestamps.

@@ -160,7 +160,7 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 > A dedicated bot user gives the AI Agile pipeline its own avatar
 > and login so reviewers can see at a glance which actions are
 > agent-driven vs human-driven. See
-> [`docs/product/orchestrator/09-human-interaction.md`](docs/product/orchestrator/09-human-interaction.md#4-agent-identity)
+> [`docs/product/orchestrator/PRODUCT.md`](docs/product/orchestrator/PRODUCT.md#how-a-non-human-actor-is-recognised)
 > for the full rationale.
 
 ### 5. Run the Onboard job

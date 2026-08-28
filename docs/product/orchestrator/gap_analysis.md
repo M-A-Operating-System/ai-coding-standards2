@@ -661,9 +661,8 @@ which is the intervention MI-4 exists to prevent.
 
 ## The record format
 
-**Status:** `PARTIAL`. Two of the six markers `PRODUCT.md` names are widely
-implemented, one exists in a single agent, one only in the template, and two
-exist nowhere.
+**Status:** `PARTIAL`. Two of the five markers `PRODUCT.md` names are widely
+implemented, one exists in a single agent, and two exist nowhere.
 
 | Marker | Where it is used |
 |---|---|
@@ -675,11 +674,12 @@ exist nowhere.
 
 The two that are implemented are the two that carry a step's output, which is
 why the step contract's "the orchestrator writes it, the step does not" is a
-change of *writer* rather than of format. A sixth marker, `question`, is
-described in `09-human-interaction.md` and appears only in the agent template.
-It is not carried into the target design: no spawned step can ask and wait, so
-`blocked` is the channel, and nothing has ever needed more than that. The four that are missing are the ones
-that would make the record legible for anything other than reading it in order.
+change of *writer* rather than of format. A sixth marker, `question`, existed
+in the now-retired `09-human-interaction.md` and the agent template; both are
+gone, and rightly so -- it was never carried into the target design: no
+spawned step can ask and wait, so `blocked` is the channel, and nothing has
+ever needed more than that. The four that are missing are the ones that would
+make the record legible for anything other than reading it in order.
 
 ---
 

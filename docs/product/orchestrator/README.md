@@ -72,7 +72,6 @@ rest as reference you consult when a question comes up.
 | # | Document | What it tells you |
 |---|---|---|
 | — | [Audit log](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you) | The immutable JSONL event timeline: where it lives, and the shape of one record |
-| 09 | [Human interaction](09-human-interaction.md) | How agents and humans communicate; the Question Card protocol |
 
 ### Building & operating
 

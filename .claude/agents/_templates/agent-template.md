@@ -67,10 +67,6 @@ gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
   -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
-If the agent produces a structured question for a human, use the
-Question Card schema (see `docs/product/orchestrator/09-human-interaction.md`
-§2) with the `ai-agile/question/v1` marker.
-
 ---
 
 ## Step 3 — Signal outcome
