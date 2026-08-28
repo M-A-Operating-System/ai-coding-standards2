@@ -304,7 +304,7 @@ they have their own mechanisms:
 
 | Concept | Mechanism |
 |---|---|
-| Approval at a known gate (PRD, design, spec, etc.) | Gate label (e.g., `01_product_docs/prd-writer:approved`) — see [`07-human-gates.md`](07-human-gates.md) |
+| Approval at a known gate (PRD, design, spec, etc.) | Gate label (e.g., `01_product_docs/prd-writer:approved`) — see [`04-lifecycle.md`](04-lifecycle.md#human-gates) |
 | Status of an agent on an object | `{agent}:{status}` label — see [PRODUCT.md](PRODUCT.md#the-state-machine) |
 | Lock on an `(object, agent)` pair | `:wip` label + claim comment — see [PRODUCT.md](PRODUCT.md#the-state-machine) |
 | Two issues touching the same part of the system | `component:` labels the orchestrator claims before starting either — see [Working on several things at once](PRODUCT.md#working-on-several-things-at-once) |

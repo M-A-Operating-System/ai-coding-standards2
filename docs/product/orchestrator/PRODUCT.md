@@ -1531,7 +1531,8 @@ Two things are often mistaken for legitimate differences and are not:
 | Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `pipeline/schemas/pipeline.schema.json`'s own field descriptions are the current reference -- `05-pipeline-config.md` retired | durable content migrated; current-only content (script-step sentinel mechanics, `git_ops.commit_after` as a per-step opt-in, `orchestrator_checks`) not preserved, since the target design replaces each |
 | The process itself -- which flows exist, their phases and forks | [`04-lifecycle.md`](04-lifecycle.md) | **stays there by design.** This document says the orchestrator can run whatever flows `pipeline.json` declares; which flows those are, and why, is process |
 | Status model | this document | draft -- `06-status-model.md` retired |
-| Human gates | `07-human-gates.md` | not yet superseded |
+| Human gates, mechanism | this document (MI-7) | draft |
+| Human gates, which ones exist today | [`04-lifecycle.md`](04-lifecycle.md#human-gates) | current -- `07-human-gates.md` retired |
 | Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |
 | Agent specification | `12-agent-spec.md` | partially superseded |
 | Standards model | `14-standards.md` | not yet superseded |

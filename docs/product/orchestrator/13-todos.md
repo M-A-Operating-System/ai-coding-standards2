@@ -27,7 +27,7 @@ The following are **not** todos and have their own mechanism:
 | Concept | Mechanism |
 |---|---|
 | Agent statuses | `{agent}:{status}` labels ([The state machine](PRODUCT.md#the-state-machine)) |
-| Human gates | `{gate}:approved` labels ([Human gates](07-human-gates.md)) |
+| Human gates | `{gate}:approved` labels ([Human gates](04-lifecycle.md#human-gates)) |
 | Cross-issue dependencies | GitHub `blocked-by` issue links |
 | Per-agent internal task backlogs (cross-ticket agents) | See "Cross-ticket agent trackers" below — these live in a dedicated tracker issue body, one per agent |
 | Standards proposals | Issues filed by `standards-evolver` |

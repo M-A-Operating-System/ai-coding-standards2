@@ -59,7 +59,7 @@ See [`PRODUCT.md`](PRODUCT.md#the-state-machine).
 
 **Human gate** — A point where work cannot advance until a named human
 approves by applying a gate label (e.g. `prd-writer:approved`). Agents draft;
-humans decide. See [`07-human-gates.md`](07-human-gates.md).
+humans decide. See [MI-7](PRODUCT.md#mi-7----only-a-person-approves).
 
 **Sentinel** — The single line an agent prints to report its outcome:
 `AI_AGILE_STATUS: complete|review|blocked`. The orchestrator reads it and
@@ -102,7 +102,7 @@ treated as a user-facing feature. See [`03-personas.md`](03-personas.md) and
 **PRD** — Product Requirements Document: the issue body, rewritten by
 `prd-writer` into a canonical format (problem, goal, user stories, Gherkin
 acceptance criteria, scope, metrics). The approved PRD is the source of truth
-for everything downstream. See [`07-human-gates.md`](07-human-gates.md).
+for everything downstream. See [`04-lifecycle.md`](04-lifecycle.md#prd-format-and-the-prd-writer-gate).
 
 **Question Card** — A structured JSON block an agent posts when it needs a
 human decision before it can proceed. See [`09-human-interaction.md`](09-human-interaction.md).
