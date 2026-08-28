@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "standards.schema.json",
   "title": "AI Agile Standards",
-  "description": "Schema for standards/*.json files loaded by the coder and pr-reviewer agents. Each file is either a StandardsFile (array of enforceable rules) or an AdrsFile (registry of approved exceptions). See docs/product/orchestrator/14-standards.md.",
+  "description": "Schema for standards/*.json files loaded by the coder and pr-reviewer agents. Each file is either a StandardsFile (array of enforceable rules) or an AdrsFile (registry of approved exceptions). See docs/product/standards/14-standards.md.",
   "oneOf": [
     { "$ref": "#/definitions/StandardsFile" },
     { "$ref": "#/definitions/AdrsFile" }

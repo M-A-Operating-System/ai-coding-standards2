@@ -81,9 +81,9 @@ rest as reference you consult when a question comes up.
 | 11 | [Orchestrator](11-orchestrator.md) | The Python orchestrator's internal design and GitHub Actions workflows |
 | 12 | [Agent specification](12-agent-spec.md) | How to write an agent prompt file: frontmatter, body, tool allowlist |
 | 13 | [Todos](13-todos.md) | How task lists are stored in issue/PR bodies |
-| 14 | [Standards](14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
 | — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |
+| — | [Standards](../standards/14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping -- lives in its own `docs/product/standards/` area, not this one; standards enforcement is agent behaviour, not orchestrator mechanism |
 
 ### Planning & status
 

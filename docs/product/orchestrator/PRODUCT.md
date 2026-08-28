@@ -1535,4 +1535,4 @@ Two things are often mistaken for legitimate differences and are not:
 | Human gates, which ones exist today | [`04-lifecycle.md`](04-lifecycle.md#human-gates) | current -- `07-human-gates.md` retired |
 | Orchestrator responsibilities | `11-orchestrator.md` | not yet superseded |
 | Agent specification | `12-agent-spec.md` | partially superseded |
-| Standards model | `14-standards.md` | not yet superseded |
+| Standards model | [`docs/product/standards/14-standards.md`](../standards/14-standards.md) | stays there by design -- standards enforcement is agent behaviour (`coder`, `pr-reviewer` reading `standards/*.json`), not orchestrator mechanism, so this document was never going to absorb it |

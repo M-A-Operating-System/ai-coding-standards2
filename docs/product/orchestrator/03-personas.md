@@ -106,7 +106,7 @@ architecture and product standards that govern the codebase.
 
 - Every standard has a stable STD ID, a scope (`org` or `project`), a
   category, an `adr_overridable` flag, and machine-readable acceptance
-  criteria and anti-patterns. See [14-standards.md](14-standards.md) for
+  criteria and anti-patterns. See [14-standards.md](../standards/14-standards.md) for
   the full field reference and category taxonomy.
 - Standards exist at two tiers: org-wide rules in the `ai-coding-standards2`
   submodule (read-only in consuming projects) and project-specific rules in

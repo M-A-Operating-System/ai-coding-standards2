@@ -79,13 +79,13 @@ See [`08-audit-log.md`](08-audit-log.md).
 
 **Standards** — Machine-readable rules (`standards/*.json`) the coder and
 reviewer enforce, in two tiers: organisation-wide and project-specific.
-See [`14-standards.md`](14-standards.md).
+See [`14-standards.md`](../standards/14-standards.md).
 
 **ADR** — Architecture Decision Record: a logged, dated decision with its
 context, rationale, and consequences. An ADR may waive a specific standard
 for a project (exception ADR) or document an architectural decision that
 overrides no standard (decision-only ADR). Both forms live in `adrs/adrs.json`.
-See [`14-standards.md`](14-standards.md).
+See [`14-standards.md`](../standards/14-standards.md).
 
 **Promise (AS-x / MI-x)** — One of the architectural-separation guarantees
 (AS-1 to AS-3) or mode invariants (MI-1 to MI-8) `PRODUCT.md` states, each

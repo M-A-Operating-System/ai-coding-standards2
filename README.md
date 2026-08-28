@@ -15,7 +15,7 @@ orchestrator, the agents, the gates, and the standards. Standards are
 defined centrally here; the only thing a project owns locally is its **ADRs**
 — the architecture decisions and standard-exceptions it records in its own
 `adrs/adrs.json`, seeded once and never overwritten (see
-[14-standards.md](docs/product/orchestrator/14-standards.md)).
+[14-standards.md](docs/product/standards/14-standards.md)).
 
 Software teams spend a disproportionate share of their time on the
 connective tissue around code: writing PRDs, translating them into designs,

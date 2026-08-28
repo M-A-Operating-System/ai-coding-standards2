@@ -95,7 +95,7 @@ rest as reference you consult when a question comes up.
 
 - [`taxonomy/README.md`](../../../taxonomy/README.md) — structure and
   authoring conventions for the JSON itself.
-- [`14-standards.md`](../orchestrator/14-standards.md) — the two-tier
+- [`14-standards.md`](../standards/14-standards.md) — the two-tier
   standards system whose applicability this vocabulary is designed to target.
 - [`05_product-architecture-and-technical-architecture.md`](../_process/05_product-architecture-and-technical-architecture.md)
   — the architecture narrative this documentation sits within.

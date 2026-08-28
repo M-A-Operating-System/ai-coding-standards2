@@ -42,7 +42,7 @@ full statements and rationale live there.
 |---|---|
 | Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author` |
 | Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
-| Standards | JSON under `standards/*.json` (see [`14-standards.md`](../docs/product/orchestrator/14-standards.md)) |
+| Standards | JSON under `standards/*.json` (see [`14-standards.md`](../docs/product/standards/14-standards.md)) |
 | Pipeline graph | Don't read it. The orchestrator routes work; focus on your task. |
 | Prior runs of yourself | Read them, don't rewrite them. Find your prior artefact to head this run `(Re-run)` and to see what you said last time; post a new one (P-11). |
 
