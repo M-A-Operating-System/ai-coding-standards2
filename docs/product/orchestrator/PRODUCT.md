@@ -883,6 +883,14 @@ validates in CI, in editors, and in pre-commit hooks uniformly. JSON's
 verbosity is a low cost here specifically because the file is generated-from
 for human reading, never hand-read in raw form.
 
+**A helper script maintains `pipeline.json` directly.** Adding a step or
+changing a setting on an existing one goes through it, not a hand-edit:
+given a step whose prompt file already exists, the script adds its entry to
+`pipeline.json` or updates a field on one already there, validating against
+the schema as it writes. The prompt file itself is authored separately --
+the script's job is the graph, not the behaviour, the same split this
+document draws between `pipeline.json` and `.claude/agents/`.
+
 This is the general rule "one machine-readable source per concern; human views
 are generated" (P-2) applied to the pipeline itself: every structured fact
 about the system lives in exactly one machine-readable file with a published
