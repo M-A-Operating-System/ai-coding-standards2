@@ -30,9 +30,9 @@ Read these four, in this order, and you will understand the system:
 Want to skip straight to running something? See **[quick-start.md](quick-start.md)**
 for the shortest path to a first pipeline run.
 
-Then read **[03-personas.md](03-personas.md)** to find your own role, and
+Then read **[PRODUCT.md](PRODUCT.md#personas)** to find your own role, and
 dip into the reference docs below as you need them. You do **not** need to
-read all 16 documents in order to get started.
+read all of them in order to get started.
 
 ---
 
@@ -64,7 +64,7 @@ rest as reference you consult when a question comes up.
 |---|---|---|
 | — | [Vision](PRODUCT.md#vision) | The problem, and what the orchestrator promises |
 | — | [The promises](PRODUCT.md#the-promises) | The architectural-separation guarantees (AS-1 to AS-3) and mode invariants (MI-1 to MI-8) the system is built on, cited by ID everywhere else |
-| 03 | [Personas](03-personas.md) | Who uses AI Agile and what each needs from it |
+| — | [Personas](PRODUCT.md#personas) | Who uses AI Agile; the enforced vocabulary lives in [`standards/personas.json`](../../../standards/personas.json) |
 | 04 | [Lifecycle](04-lifecycle.md) | The five phases (four per-ticket + one continuous) plus on-demand agents, with an end-to-end walkthrough |
 
 ### How the machine works — reference

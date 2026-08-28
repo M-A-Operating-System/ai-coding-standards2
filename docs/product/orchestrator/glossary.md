@@ -97,7 +97,7 @@ human-approval rule). See [`PRODUCT.md`](PRODUCT.md#the-promises).
 
 **Toil** — Necessary technical or process work that is not product work
 (e.g. a refactor, a pipeline fix). Handled by the System actor persona, not
-treated as a user-facing feature. See [`03-personas.md`](03-personas.md) and
+treated as a user-facing feature. See [`PRODUCT.md`](PRODUCT.md#personas) and
 [`04-lifecycle.md`](04-lifecycle.md).
 
 ## Artefacts and communication

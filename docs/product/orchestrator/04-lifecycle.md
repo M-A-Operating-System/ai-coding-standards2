@@ -181,7 +181,7 @@ getting it wrong.
 
 | Gate label | Phase | Approver | Artefact | What you're signing off | Cost if wrong |
 |---|---|---|---|---|---|
-| `01_product_docs/prd-writer:approved` | Product docs | Stakeholder who opened the issue, or their delegate | The **issue body itself**, after `01_product_docs/prd-writer` rewrites it into the canonical PRD format (see [PRD format](#prd-format-and-the-prd-writer-gate) below) and rewrites the title | The problem and goal are correct; each user story names a real persona (including the System actor, [`03-personas.md`](03-personas.md) §7) and `As a developer` stories are suspect; each Gherkin scenario is falsifiable; "Out of scope" actually rules things out; success metrics are externally observable; the new title categorises the work correctly and names a real bounded context. Once approved, the PRD is the source of truth for everything downstream | The most expensive gate to skim — wrong PRD → wrong everything downstream (design, testing, evaluation) |
+| `01_product_docs/prd-writer:approved` | Product docs | Stakeholder who opened the issue, or their delegate | The **issue body itself**, after `01_product_docs/prd-writer` rewrites it into the canonical PRD format (see [PRD format](#prd-format-and-the-prd-writer-gate) below) and rewrites the title | The problem and goal are correct; each user story names a real persona from [`standards/personas.json`](../../../standards/personas.json) (including the System actor, whose entry there carries the qualifying test that keeps it from being a disguise for technical work) and `As a developer` stories are suspect; each Gherkin scenario is falsifiable; "Out of scope" actually rules things out; success metrics are externally observable; the new title categorises the work correctly and names a real bounded context. Once approved, the PRD is the source of truth for everything downstream | The most expensive gate to skim — wrong PRD → wrong everything downstream (design, testing, evaluation) |
 | `size:approved` | Product docs | Engineer who will own the work, or the tech lead | A sizing comment from `ticket-sizer` (`S`, `M`, `L`, `XL`) with rationale | That the ticket fits a single development cycle. If `XL`, you are committing to break it into children before proceeding | An XL ticket past the gate produces a sprawling design and a multi-week PR |
 | `super-issue:approved` | Product docs | Engineer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
 | `design:approved` | Technical docs | Engineer or tech lead | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
@@ -401,7 +401,7 @@ The **Actor** column shows who performs each step — agent names
 formatted as `{phase}/{short-name}` (see
 [`PRODUCT.md`](PRODUCT.md#naming-carries-the-phase));
 capitalised names (Stakeholder, Engineer) are human personas from
-[`03-personas.md`](03-personas.md).
+[`standards/personas.json`](../../../standards/personas.json).
 
 The **Outcome label** column shows the label applied at the end of
 the step. `agent:complete` and `agent:review` are agent status labels

@@ -1,0 +1,48 @@
+{
+  "$schema": "../pipeline/schemas/standards.schema.json",
+  "version": "1.0.0",
+  "description": "The closed vocabulary of personas a PRD user story may name. prd-writer validates every 'As the {persona} ...' story against this list -- see docs/product/orchestrator/PRODUCT.md, 'Personas'.",
+  "personas": [
+    {
+      "id": "PERSONA-STAKEHOLDER",
+      "name": "Stakeholder",
+      "role": "Product manager, designer, founder, or business stakeholder who opens the issue that starts a piece of work, and approves the PRD that comes back."
+    },
+    {
+      "id": "PERSONA-ENGINEER",
+      "name": "Engineer",
+      "role": "Software engineer responsible for the design, the code, and the quality of the change; approves the build plan before any of it is written."
+    },
+    {
+      "id": "PERSONA-REVIEWER",
+      "name": "Reviewer",
+      "role": "Tech lead, staff engineer, or peer who approves at gates a Stakeholder or Engineer does not: sizing, design, test spec, PR."
+    },
+    {
+      "id": "PERSONA-STANDARDS_OWNER",
+      "name": "Standards Owner",
+      "role": "Architect, platform team, or technical lead who owns the standards the pipeline enforces, and approves proposed changes to them."
+    },
+    {
+      "id": "PERSONA-SECURITY_OWNER",
+      "name": "Security Owner",
+      "role": "Security engineer, AppSec lead, or compliance officer who approves any change flagged as touching a security-sensitive surface."
+    },
+    {
+      "id": "PERSONA-DATA_OWNER",
+      "name": "Data Owner",
+      "role": "Owner of a data domain's content, schema, and lifecycle; approves any change that includes a data migration."
+    },
+    {
+      "id": "PERSONA-SYSTEM_ACTOR",
+      "name": "System actor",
+      "role": "The role a capability is written against when its primary actor is genuinely automation (a scheduled job, an audit logger), not a person -- so automated capabilities go through the same product-led pipeline as everything else.",
+      "automated": true,
+      "qualifying_test": [
+        "Names a real human stakeholder who benefits, even indirectly -- the 'so that' clause states that benefit. If no human can be named, it is technical preference, not product.",
+        "Is expressible as Gherkin acceptance criteria with an observable Then-clause (a row appears in a table, an alert fires, a number increases on a dashboard). If the only observable outcome is that code is structured a certain way, it is technical design, not product.",
+        "Names a stable automated role, not an implementation choice or a tool user -- 'As the audit log writer' qualifies; 'As the database' or 'As a developer' does not."
+      ]
+    }
+  ]
+}

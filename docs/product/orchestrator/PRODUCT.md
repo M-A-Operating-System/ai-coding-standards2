@@ -47,8 +47,13 @@ at a different point in the pipeline:
   not a person, so automated capabilities go through the same product-led
   pipeline as everything else.
 
-What each wants and how AI Agile serves them:
-[`03-personas.md`](03-personas.md).
+This is not just a description -- it is the closed vocabulary a PRD user story
+must draw from. `prd-writer` validates every `As the {persona} ...` story
+against it, the same way `coder` validates a diff against a standards
+category: [`standards/personas.json`](../../../standards/personas.json) is
+the machine-readable source (one file, P-2), and the System actor's
+qualifying test lives there as data, not as prose duplicated in a prompt --
+see [`14-standards.md`](../standards/14-standards.md#personas-not-a-category-a-closed-vocabulary).
 
 ---
 
@@ -1681,7 +1686,7 @@ Two things are often mistaken for legitimate differences and are not:
 | Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
 | Vision and problem | this document | draft |
 | Personas -- who AI Agile serves, in brief | this document | draft |
-| Personas -- what each wants and how they are served, in full | [`03-personas.md`](03-personas.md) | **stays there by design.** One level of detail below what this document scopes itself to |
+| Personas -- the enforced vocabulary and the System actor's qualifying test | [`standards/personas.json`](../../../standards/personas.json) | current -- `03-personas.md` retired; its prose ("wants" / "how AI Agile serves them" per persona) not preserved, since it restated agent-catalogue detail already covered by `04-lifecycle.md`; the one genuinely durable piece (the System actor's 3-part validity test) migrated into the new standards file instead |
 | Promises (formerly principles P-1 to P-16) | this document and `04-lifecycle.md` | draft |
 | Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
 | Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `pipeline/schemas/pipeline.schema.json`'s own field descriptions are the current reference -- `05-pipeline-config.md` retired | durable content migrated; current-only content (script-step sentinel mechanics, `git_ops.commit_after` as a per-step opt-in, `orchestrator_checks`) not preserved, since the target design replaces each |

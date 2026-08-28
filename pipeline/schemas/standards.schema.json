@@ -2,10 +2,11 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "standards.schema.json",
   "title": "AI Agile Standards",
-  "description": "Schema for standards/*.json files loaded by the coder and pr-reviewer agents. Each file is either a StandardsFile (array of enforceable rules) or an AdrsFile (registry of approved exceptions). See docs/product/standards/14-standards.md.",
+  "description": "Schema for standards/*.json files loaded by the coder and pr-reviewer agents. Each file is a StandardsFile (array of enforceable rules), an AdrsFile (registry of approved exceptions), or a PersonasFile (the closed vocabulary of valid PRD user-story actors). See docs/product/standards/14-standards.md.",
   "oneOf": [
     { "$ref": "#/definitions/StandardsFile" },
-    { "$ref": "#/definitions/AdrsFile" }
+    { "$ref": "#/definitions/AdrsFile" },
+    { "$ref": "#/definitions/PersonasFile" }
   ],
   "definitions": {
     "Scope": {
@@ -115,6 +116,50 @@
         "standards": {
           "type": "array",
           "items": { "$ref": "#/definitions/Standard" }
+        }
+      }
+    },
+    "Persona": {
+      "type": "object",
+      "required": ["id", "name", "role"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PERSONA-[A-Z_]+$",
+          "description": "Unique identifier, e.g. PERSONA-STAKEHOLDER. Stable -- never reused even if the persona is retired."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name, e.g. 'Stakeholder'."
+        },
+        "role": {
+          "type": "string",
+          "description": "One or two sentences: who this is and what they own in the pipeline."
+        },
+        "automated": {
+          "type": "boolean",
+          "description": "true only for a persona whose primary actor is genuinely automation, not a person (e.g. the System actor). Omit or false otherwise."
+        },
+        "qualifying_test": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional. Criteria a user story must meet to legitimately name this persona. Required in practice for an automated persona, where a technical-implementation detail could otherwise be smuggled in disguised as a product actor."
+        }
+      }
+    },
+    "PersonasFile": {
+      "type": "object",
+      "required": ["version", "personas"],
+      "additionalProperties": false,
+      "properties": {
+        "$schema": { "type": "string" },
+        "version": { "type": "string" },
+        "description": { "type": "string" },
+        "personas": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/Persona" }
         }
       }
     },
