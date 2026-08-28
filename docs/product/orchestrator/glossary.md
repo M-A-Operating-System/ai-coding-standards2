@@ -77,8 +77,8 @@ session. See [`schema/pipeline.schema.json`](schema/pipeline.schema.json), the
 ## Records and rules
 
 **Audit log** — The immutable, append-only timeline of every pipeline event,
-emitted as JSONL. Replaying "what happened" is a `grep`.
-See [`08-audit-log.md`](08-audit-log.md).
+one JSON record per completed step, appended to the protected `ai-agile/log`
+orphan branch. See [MI-6](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you).
 
 **Standards** — Machine-readable rules (`standards/*.json`) the coder and
 reviewer enforce, in two tiers: organisation-wide and project-specific.

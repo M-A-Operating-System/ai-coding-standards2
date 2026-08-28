@@ -369,7 +369,7 @@ Each event is appended to the task text in parentheses as
 
 ISO 8601 UTC with minute precision: `YYYY-MM-DDTHH:MMZ`. Seconds are
 omitted to keep the line readable; the audit log retains full
-precision (see [`08-audit-log.md`](08-audit-log.md)).
+precision (see [`PRODUCT.md`](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you)).
 
 Properties:
 

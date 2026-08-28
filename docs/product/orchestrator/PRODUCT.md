@@ -1410,6 +1410,47 @@ that scrolls away or a build log that ages out. The branches are orphan and
 carry only their own data: a log branch that also carries a copy of the
 repository is a second, stale copy of the repository.
 
+#### The shape of one record
+
+Each appended entry is one JSON object, e.g.:
+
+```json
+{
+  "ts": "2026-05-04T14:23:11Z",
+  "event": "agent.complete",
+  "agent": "01_product_docs/prd-writer",
+  "issue": 42,
+  "status": "complete"
+}
+```
+
+Required on every entry: `ts` (an ISO-8601 timestamp), `event` (the type, from
+the table below), `agent` (the `pipeline.json` name, or null for a
+system-level event with no associated step), `issue` (the work item number, or
+null for a PR or a global event), and `status` (the resulting status).
+Alongside them, and each nullable: `detail` (a human-readable note -- a stop
+reason, an exit code, a mode), `session_id` (the (object, agent) session this
+entry belongs to), `object` (`{"kind": "issue"|"pr", "id": number, "repo":
+"owner/repo"}`), `actor` (who triggered the run -- the first of the two mode
+questions above, not the second: `{"kind": "orchestrator", "id":
+"github-actions", "human": null}` for a scheduled or unattended run, `{"kind":
+"orchestrator", "id": <actor-id>, "human": true}` for a human-initiated one),
+and `duration_ms` (the run's wall-clock duration).
+
+| Event | Emitted when |
+|---|---|
+| `agent.invoked` | The orchestrator launched the step |
+| `agent.complete` | The step returned `complete`, or a gate promotion completed |
+| `agent.review` | The step returned `review` |
+| `agent.blocked` | The step returned `blocked` |
+| `agent.failed` | The step crashed, timed out, or exited without a sentinel |
+| `gate.approved` | A human applied the gate label; gate promotion ran |
+| `lock.reclaimed` | A stale `:wip` was force-reclaimed |
+| `system.emergency_stop` | The stop marker was detected; the orchestrator exited without invoking anything |
+
+One entry per completed step -- the same "one appended record per completed
+step" the test above already requires, named down to its fields.
+
 ---
 
 ### MI-7 -- Only a person approves
@@ -1696,3 +1737,4 @@ Two things are often mistaken for legitimate differences and are not:
 | Human gates, which ones exist today | [`04-lifecycle.md`](04-lifecycle.md#human-gates) | current -- `07-human-gates.md` retired |
 | Orchestrator responsibilities | this document (target-design promises); `pipeline_orchestrator.py` itself (current implementation) | draft -- `11-orchestrator.md` retired; durable trust-boundary content migrated (AS-1); current-only implementation detail (function names, JSON marker formats, CLI flags, retry constants) not preserved, since it has no target-design analog |
 | Standards model | [`docs/product/standards/14-standards.md`](../standards/14-standards.md) | stays there by design -- standards enforcement is agent behaviour (`coder`, `pr-reviewer` reading `standards/*.json`), not orchestrator mechanism, so this document was never going to absorb it |
+| Audit log, mechanism and record shape | this document (MI-6) | draft -- `08-audit-log.md` retired; its stdout/GitHub-Actions-run-log mechanism was already stale in that document's own text (superseded by the `ai-agile/log` orphan branch); the event schema and event-type table, still live (cited by `pipeline_orchestrator.py`), migrated in |

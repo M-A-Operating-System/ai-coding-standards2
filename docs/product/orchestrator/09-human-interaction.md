@@ -410,8 +410,9 @@ auto-provisioned `GITHUB_TOKEN`. Suggested handle convention:
   resource permissions the agents need — no admin, no secrets access,
   no settings — narrower than any human admin would have.
 - **Audit-log fidelity.** The `actor.kind` field in the audit log
-  events (see [`08-audit-log.md`](08-audit-log.md)) becomes verifiable
-  from the GitHub login itself, not just a hint we set in the JSON.
+  events (see [`PRODUCT.md`](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you))
+  becomes verifiable from the GitHub login itself, not just a hint we
+  set in the JSON.
 - **Quota and rate-limit isolation.** The bot's API usage doesn't
   compete with human contributors' GitHub quota.
 

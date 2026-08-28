@@ -665,7 +665,7 @@ def _make_audit_event(
     outcome_detail: Optional[str] = None,
     duration_ms: Optional[int] = None,
 ) -> dict:
-    """Build one audit event per the schema in docs/product/orchestrator/08-audit-log.md."""
+    """Build one audit event per the schema in docs/product/orchestrator/PRODUCT.md, MI-6 'The shape of one record'."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     obj: Optional[dict] = None
     if work_item is not None:
