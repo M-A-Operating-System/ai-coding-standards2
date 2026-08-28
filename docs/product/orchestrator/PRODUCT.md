@@ -1137,6 +1137,14 @@ recording that the first clearance was a guess. The label model can show who
 cleared a halt and when; it cannot show whether they fixed anything, which is
 exactly why what the act means must be agreed rather than assumed.
 
+**The orchestrator posts the recovery guidance, not just the step.** A
+step's own account can be terse, and a step cut off mid-task is the one most
+likely to explain itself badly. So a halt's exit is never left to whatever
+the step happened to say: the orchestrator posts the same, consistent
+recovery comment on every `review`, `blocked`, or `failed` transition,
+naming what the halt means and what clears it, independent of how well the
+step's own report was worded.
+
 #### A step can vanish, and the lock it holds must come back
 
 Every outcome assumes the step got far enough to return one. A step can also
@@ -1266,6 +1274,14 @@ the orchestrator cannot establish a person stood behind is refused, not admitted
 rejected. In interactive mode, an approval recorded by the orchestrator on a
 relayed human confirmation is honoured. No agent can cause either, in either
 mode. An inconclusive check refuses rather than admits.
+
+**A gate label and its promotion appear together, or not at all.** A
+downstream step's dependency check reads `{agent}:complete` and
+`{gate}:approved` as a pair -- the orchestrator guarantees both are present
+or neither is, so a transient state where the gate label exists but the
+promotion has not yet landed is never visible to anything checking
+eligibility. What a downstream step sees is binary: the gate was crossed, or
+it was not.
 
 #### Why this is built as unreachability, not detection
 
