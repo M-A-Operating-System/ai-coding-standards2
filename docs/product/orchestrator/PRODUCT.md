@@ -771,6 +771,21 @@ value, and that is all it means. Nothing is inferred from a clean exit.
 The orchestrator writes the summary and the output to the issue as structured
 comments. The step does not.
 
+**The same rule covers changing what is already there, not only adding a
+comment.** `prd-writer` rewriting an issue body into a PRD and `coder` ticking
+off one entry in a todos-block subsection are the same case: the step's job is
+to decide what the new content should be, not to apply it. It returns that
+content as its output, the same as any other result, and the orchestrator is
+what writes it to GitHub -- a full-body replace for a rewrite, a
+section-scoped patch for a partial update. Reading the current body, applying
+the change, and retrying if another write landed first is concurrency
+handling, and concurrency handling is post-action plumbing: the same class of
+work as staging and pushing a commit after `git_ops.commit_after`, not
+something a step's own code performs. A step that called the GitHub API to
+apply its own edit would be a step writing to the issue, which the prior
+section already forbids -- this is not a special case of that rule, it is the
+same rule.
+
 ### What lands on the issue
 
 "Structured comment" is a specific thing, not a style. Every comment the system
