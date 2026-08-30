@@ -68,19 +68,20 @@ is moving forward. No code change ships unless it is already described in
 past the product-docs phase, and a PR landing code with no corresponding
 target-state entry does not merge.
 
-Every issue entering the pipeline is classified by `issue-classifier` as exactly one of seven types. The classification is recorded both in an artefact comment on the issue and as a `classification: {type}` label applied automatically at classification time. Seven `classification:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface.
+Every issue entering the pipeline is classified by `issue-classifier` as exactly one of six types. The classification is recorded both in an artefact comment on the issue and as a `classification: {type}` label applied automatically at classification time. Six `classification:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface.
+
+**One axis explains five of the six: does the work move the product forward, or not.** `enhancement` is the baseline unit -- a change sized to ship end-to-end in one sequence, into production, without leaving users mid-broken. `feature` is the same forward motion at a scale too big to be one enhancement, so it decomposes into an ordered sequence of enhancements instead. `security`, `bug`, and `tech-debt` are enhancement-scale and enhancement-complexity, but exist *without* moving the product forward -- they close an exposure, correct a drift from an already-documented target, or remediate/maintain rather than advance. `spike` is the one type not measured against the baseline at all: it ships no increment, only knowledge. Splitting "forward" from "not forward" this way is deliberate -- it is what makes a product-management ratio like `enhancement : (tech-debt + bug + security)` a real signal read off the label alone, not an audit.
 
 | Classification | Label | Definition | Qualifying criterion |
 |---|---|---|---|
-| `security` | `classification: security` | A concrete security vulnerability with a clear exploit path — injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all seven — a `security-review:approved` gate applies in addition to standard review whenever the resulting PR touches a flagged sensitive surface. |
+| `security` | `classification: security` | A concrete security vulnerability with a clear exploit path — injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all six — a `security-review:approved` gate applies in addition to standard review whenever the resulting PR touches a flagged sensitive surface. |
 | `bug` | `classification: bug` | Broken behaviour — something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target (see above); the fix is to correct the code, not the docs. |
 | `enhancement` | `classification: enhancement` | An improvement to an **existing** capability — making a feature richer, faster, more accessible, or more reliable. | The capability exists in production today; the issue moves it closer to the target state but does not add a new user-observable outcome. |
-| `feature` | `classification: feature` | A **new** capability the product cannot do today. | Adds a fresh user-observable outcome to the target state; deserves a full PRD with new acceptance criteria. |
+| `feature` | `classification: feature` | A **new** capability the product cannot do today, too large to ship as one enhancement. | Adds a fresh user-observable outcome to the target state; decomposes into an ordered sequence of enhancement-sized deliverables, each shipped and reviewed the enhancement way; deserves a full PRD with new acceptance criteria. |
 | `spike` | `classification: spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, or a prototype — not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
-| `toil` | `classification: toil` | Operational or maintenance work that does not change product capability, with no structural-debt evidence behind it. | Dependency upgrades, infrastructure changes, doc-only fixes — tied to a non-functional requirement in the product docs, not a user-facing feature, and not itself remediating a prior design or implementation choice. |
-| `tech-debt` | `classification: tech-debt` | Remediation of a previously made structural or architectural choice now recognised as costly. | Backed by evidence — a metric outlier (size, complexity, coupling, coverage, churn), an ADR whose context has materially shifted, or a repeated `blocked` pattern against one surface — rather than ordinary maintenance preference. The Tech-debt continuous loop ([Phase 5](#phase-5-the-continuous-meta-loops)) is its primary source, via `debt-issues` carrying a `Debt-source:` trailer, but a human may open one directly with the same evidence bar. |
+| `tech-debt` | `classification: tech-debt` | Enhancement-scale work that does not move the product forward: routine operational/maintenance upkeep (dependency upgrades, infrastructure changes, doc-only fixes) and remediation of a previously made structural or architectural choice now recognised as costly, merged into one classification -- both are "the product isn't advancing, something about how it's built is being paid down or kept current." | Tied to a non-functional requirement in the product docs, not a user-facing feature. Evidence (a metric outlier, an ADR whose context has shifted, a repeated `blocked` pattern) is present when the Tech-debt continuous loop ([Phase 5](#phase-5-the-continuous-meta-loops)) is the source, via `debt-issues` carrying a `Debt-source:` trailer -- but is not required for ordinary maintenance a human files directly. |
 
-When two classifications are plausible, prefer the one with the higher review bar: `security` over `bug` (only when the impact is clear and concrete -- an ambiguous "might be a security concern" stays `bug`); `bug` over `toil`; `tech-debt` over `toil` (evidence of a prior costly choice outranks routine upkeep); `feature` over `enhancement`; `enhancement` over `toil`. The distinction between `feature` and `enhancement` matters because a feature adds new product surface (heavier review); an enhancement refines an existing one (lighter review against the existing PRD). The distinction between `toil` and `tech-debt` is evidence: `toil` is upkeep with no debt story behind it; `tech-debt` names which prior choice is being undone and why.
+When two classifications are plausible, prefer the one with the higher review bar: `security` over `bug` (only when the impact is clear and concrete -- an ambiguous "might be a security concern" stays `bug`); `bug` over `tech-debt`; `feature` over `enhancement`. The distinction between `feature` and `enhancement` matters because a feature adds new product surface (heavier review) and always decomposes; an enhancement refines an existing one (lighter review against the existing PRD) and always ships as itself.
 
 ---
 
@@ -374,7 +375,7 @@ of the standard review path.
 
 ## End-to-end happy path
 
-A typical security/feature/bug/enhancement/toil/tech-debt ticket flows like
+A typical security/feature/bug/enhancement/tech-debt ticket flows like
 this. Agent names, dependencies, and gates are as declared in
 [`pipeline.json`](../../../pipeline/pipeline.json).
 
@@ -486,9 +487,9 @@ Every step named anywhere in this document belongs to exactly one of four
 families. This section is an index, not a new description — each family
 points back to where it is already detailed in full above.
 
-### 1. The standard ticket flow — security, feature, enhancement, bug, toil, tech-debt
+### 1. The standard ticket flow — security, feature, enhancement, bug, tech-debt
 
-Six of the seven classifications ([Issue classification
+Five of the six classifications ([Issue classification
 taxonomy](#issue-classification-taxonomy)) run the identical flow, in the
 identical order, through the identical gates. Classification changes review
 depth, not flow shape:
@@ -496,11 +497,10 @@ depth, not flow shape:
 | Classification | What differs — never the flow itself |
 |---|---|
 | `security` | Same shape as `bug`, plus a `security-review:approved` gate on any PR touching a flagged sensitive surface |
-| `feature` | Full PRD, new acceptance criteria — the heaviest review bar among the rest |
-| `enhancement` | Reviewed against the *existing* PRD, not a new one |
+| `feature` | Full PRD, new acceptance criteria, and decomposes into an ordered sequence of enhancements rather than shipping as itself — the heaviest review bar |
+| `enhancement` | Reviewed against the *existing* PRD, not a new one; the baseline shape every other type is enhancement-scale *against* |
 | `bug` | The PRD phase corrects the code to match an already-documented target, not the docs |
-| `toil` | Tied to a non-functional requirement, not a user-facing PRD, with no debt evidence behind it |
-| `tech-debt` | Same shape as `toil`, but the PRD phase must name the prior choice being undone and the evidence for it, not just the maintenance task |
+| `tech-debt` | Tied to a non-functional requirement, not a user-facing PRD; evidence of the prior choice being undone is present when it came from the Tech-debt loop, not required otherwise |
 
 The shared shape — classify, PRD, design-phase publish to `main`, build-phase
 code PR, review, merge — is walked in full in [End-to-end happy
