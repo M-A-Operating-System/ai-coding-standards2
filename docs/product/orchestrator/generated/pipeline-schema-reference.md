@@ -5,11 +5,11 @@
 
 # Target Pipeline Schema
 
-The target shape of a COMPLETE pipeline definition, as decided in docs/product/orchestrator/PRODUCT.md (issue #393). Not yet live: pipeline/schemas/pipeline.schema.json governs the current pipeline.json and is unaffected by this file. This schema's required-ness (flows present and non-empty, budgets present and complete) describes the framework's shipped pipeline/pipeline.json, and the EFFECTIVE result of composing a repository's own pipeline/pipeline.json over it. A repository's file is a fragment by design (PRODUCT.md, 'A repository may have its own') and is not expected to satisfy this schema's required-ness on its own -- how a bare fragment is validated before composition, as opposed to after, is not yet decided; see gap_analysis.md.
+The target shape of a COMPLETE pipeline definition, as decided in docs/product/orchestrator/PRODUCT.md (issue #393). Not yet live: pipeline/schemas/pipeline.schema.json governs the current pipeline.json and is unaffected by this file. This schema's required-ness (flows present and non-empty, budgets present and complete) describes the framework's shipped pipeline/pipeline.json, and the EFFECTIVE result of composing a repository's own pipeline/pipeline.json over it. A repository's file is a fragment by design (PRODUCT.md, 'A repository may have its own') and is not expected to satisfy this schema's required-ness on its own -- how a bare fragment is validated before composition, as opposed to after, is not yet decided; tracked on issue #393.
 
 This is the target. `pipeline/schemas/pipeline.schema.json` governs
-the pipeline.json that exists today; see
-[`gap_analysis.md`](../gap_analysis.md) for the distance between them.
+the pipeline.json that exists today; the build plan closing that
+distance is sequenced on issue #393.
 
 ## Top level
 

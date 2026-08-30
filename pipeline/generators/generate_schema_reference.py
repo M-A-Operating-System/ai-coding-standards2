@@ -9,9 +9,9 @@ beside it. If a fact is not in the schema's own type/required/description,
 it does not appear here.
 
 This is the TARGET schema. It does not describe pipeline/pipeline.json as it
-exists today -- see docs/product/orchestrator/gap_analysis.md for that
-distance. pipeline/schemas/pipeline.schema.json (the live schema) is
-untouched by this generator.
+exists today -- the build plan closing that distance is sequenced on issue
+#393. pipeline/schemas/pipeline.schema.json (the live schema) is untouched
+by this generator.
 
 Idempotent by construction -- output depends only on the schema file, so
 running twice produces byte-identical output. CI regenerates and fails the
@@ -180,8 +180,8 @@ def render(schema):
         (schema.get("description") or "").strip(),
         "",
         "This is the target. `pipeline/schemas/pipeline.schema.json` governs",
-        "the pipeline.json that exists today; see",
-        "[`gap_analysis.md`](../gap_analysis.md) for the distance between them.",
+        "the pipeline.json that exists today; the build plan closing that",
+        "distance is sequenced on issue #393.",
         "",
         "## Top level",
         "",

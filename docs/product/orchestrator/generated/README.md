@@ -26,8 +26,8 @@ human-readable views are generated from machine-readable sources.
 The last row is a different kind of source. Every other row describes
 `pipeline/pipeline.json` as it exists today; `pipeline-schema-reference.md`
 describes the **target** shape (issue #393) -- what `pipeline.json` is meant
-to become, not what it currently is. See
-[`gap_analysis.md`](../gap_analysis.md) for the distance between them.
+to become, not what it currently is. The build plan closing that distance is
+sequenced on [issue #393](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/393).
 
 ---
 

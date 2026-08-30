@@ -2,9 +2,11 @@
 
 The single description of what the orchestrator is and what it promises.
 
-This document describes the target design (issue #393). It states what the
-product does, not what the implementation currently manages -- the gap between
-the two is tracked separately in [`gap_analysis.md`](gap_analysis.md).
+This document describes the target design. It states what the product does,
+not what the implementation currently manages -- closing that gap is tracked
+as a sequenced build plan on [issue #393](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/393),
+against the [`feature/393-orchestrator-target-design`](https://github.com/M-A-Operating-System/ai-coding-standards2/tree/feature/393-orchestrator-target-design)
+integration branch.
 
 ---
 
@@ -991,8 +993,8 @@ Eleven promises in two families:
   started. Eight promises, each with a both-modes clause.
 
 Each promise states what it means for you, why it matters, exactly what is
-being claimed, and how it is tested. Whether the implementation currently keeps
-each one is recorded in [`gap_analysis.md`](gap_analysis.md).
+being claimed, and how it is tested. Closing the gap between this document
+and what the implementation currently keeps is sequenced on issue #393.
 
 ---
 
