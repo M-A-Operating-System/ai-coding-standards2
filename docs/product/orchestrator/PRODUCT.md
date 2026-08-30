@@ -224,104 +224,46 @@ not folded into headless's guarantee.
 ### Working on several things at once
 
 **From an issue's perspective, at most one issue per component is in flight
-at a time -- headless and interactive combined.** That is the whole of the
-promise. It holds under two different concurrency shapes without becoming two
-different rules: headless is one process working through several items in
-turn; interactive is several processes, each working through one.
+at a time -- headless and interactive combined.** Labels only ever keep two
+runs off the same *item*; two issues that change the same module have nothing
+else keeping them apart, and the collision surfaces as a merge conflict at
+best. So the unit that has to be exclusive is not the issue, it is **the part
+of the system the work touches**.
 
-**Headless already only ever has the one process** (above), so within a
-headless run, working through several eligible items has nothing new to
-prove: it is still the same run, reading its own settled copy, deciding each
-item in turn.
+**How it works.** An issue carries a `component:` label for each part of the
+system it affects, and may carry several. Before starting an item, an
+orchestrator instance -- headless or interactive -- claims every component
+the item names, and starts only if it can claim them **all** at once: an item
+never holds part of what it needs while waiting for the rest, which is what
+keeps this from deadlocking. An untagged item claims everything, so it runs
+exactly as sequentially as the pipeline does today. There is no register of
+valid components anywhere; the orchestrator just reads whatever `component:`
+labels exist and compares them for equality, which is what keeps it
+coordinating rather than needing to know about the system it is building.
 
-**Interactive genuinely has more than one process, and this is the case the
-claim actually has to earn its keep on.** Two people -- or one person in two
-sessions -- can each start `/maos-{agent}` at the same time, on different
-issues, with no shared memory between them and no concurrency group
-serialising them. Before starting a step, an orchestrator instance checks
-whether any other item currently carries `:wip` together with a `component:`
-label the candidate item also carries; if one does, it waits, and if none do,
-it proceeds. A headless run answers this from the settled copy it already
-holds. An interactive instance has no such copy to consult, so it reads
-GitHub's labels fresh -- the same settled-labels reasoning the `:wip` check
-itself relies on, not a new kind of race: two people invoking colliding
-commands within the same narrow window is a person-timed coincidence, not an
-automatic cascade, which is a materially rarer event than the webhook-driven
-case headless serialises against.
+**Unlike almost everything else this document promises, that correctness is
+never checked against evidence (MI-6).** A mistagged item -- claiming fewer
+components than it actually touches -- produces no signal until the collision
+it causes is the evidence, and a near-miss name (`component:auth` vs.
+`component:authentication`) reads as no overlap at all. This is a deliberate
+trade, not an oversight: inspecting what an issue really touches is unreliable
+enough that a visible, person-correctable label beats it, but the label is
+still the whole of the guarantee.
 
-**Two items may proceed together right up until they touch the same code.**
-Labels keep two items off the same *item*, and that is all they do. Two
-issues that both change the same module have nothing keeping them apart: each
-reads a tree the other is about to change, and the collision surfaces as a
-merge conflict at best and as two half-correct changes at worst.
+**The same claim holds under two concurrency shapes.** Headless is one
+process (the state machine above), so it answers "is this component free?"
+from the settled copy it already holds. Interactive is genuinely several
+processes -- each `/maos-{agent}` invocation is its own, unserialised, since
+waiting on someone else's chat session would defeat the point -- so an
+interactive instance reads GitHub's labels fresh for the same check. That is
+the same settled-labels reasoning the `:wip` check already relies on, just
+triggered by a person instead of a webhook, which makes the collision window
+far narrower in practice.
 
-So the unit that has to be exclusive is not the issue, it is **the part of the
-system the work touches**.
-
-#### The issue says which parts it touches
-
-An issue carries a `component:` label for each part of the system it affects,
-and may carry several. Before starting an item, an orchestrator instance --
-headless or interactive -- takes a claim on every component the item names,
-and starts only if it can take them **all**. Several items proceed together,
-in one headless run or across concurrent interactive instances, exactly when
-none of them wants a component another already holds.
-
-**Claimed together, released together.** An item never holds part of what it
-needs while waiting for the rest -- so two items can never end up each holding
-something the other is waiting on. Either everything an item named is free and
-it starts, or nothing is taken and it waits. That all-or-nothing rule is the
-whole of what keeps this from deadlocking, and it is worth more than the
-throughput it costs.
-
-**An issue with no component label runs alone.** Not knowing what something
-touches is not the same as knowing it touches nothing, so an untagged item
-claims everything: it starts only when nothing that could collide with it
-currently holds `:wip`, in either mode. It becomes parallel with other work
-only where someone has said enough for that to be safe.
-
-**The cost is that broad work waits for a quiet moment.** An item naming six
-components needs all six free at once, and a steady stream of single-component
-work can keep it waiting. That is the honest trade: the alternative is letting
-it start while something it will change is already being changed.
-
-This is what makes the feature available now rather than pending. Working out
-what an issue affects by inspection is hard, and has to be trusted before it can
-be relied on; a label is a claim someone made, visible on the issue, and wrong
-in ways a person can see and correct.
-
-**Nothing knows what the components are.** There is no register of them, in
-`pipeline.json` or anywhere else. The orchestrator reads whatever
-`component:` labels an item carries, treats them as opaque names, and compares
-them for equality. Components exist because someone wrote one on an issue, and
-a repository's set is whatever its issues happen to say -- which is what keeps
-the orchestrator coordinating rather than knowing about the system it is
-building.
-
-**The claim is only as good as the person making it, and nothing here checks
-it.** Two failures follow, both silent, both landing in the same place. An
-issue tagged with two of the three components it touches is *more* dangerous
-than one tagged with none, because it will be let into a batch beside
-something it collides with. And `component:auth` and `component:authentication`
-are two different components as far as equality is concerned, so a near-miss
-reads as no overlap at all. Unlike almost everything else this document
-promises, this correctness is never compared against evidence (MI-6) -- there
-is no observed signal a wrong label produces that a right one does not, so a
-mistagged item is indistinguishable from a correctly tagged one until the
-collision itself is the evidence.
-
-A register would not fix either. Picking the wrong valid name is as easy as
-mistyping one, and the register would be a second thing to maintain and a
-second place to be wrong. The control is the same in both cases and it is not
-mechanical: the labels are visible on the issue and in the repository's label
-list, so a divergent name is something a person can see -- and the label picker
-pushes towards names already in use without anything having to enforce it.
-
-**Deciding is not the same as isolating.** Component labels answer whether two
-items *may* proceed at the same time. They do nothing about two concurrently
-running items sharing one working tree, where the second checkout disturbs
-the first whatever either one touches. Parallelism needs both: the labels to
-decide, and separate working trees per item so the decision means something.
+**Claiming decides who may proceed together; it does not isolate them.** Two
+cleared items still need separate working trees -- a shared checkout means
+the second disturbs the first regardless of what either touches. The label is
+the decision; the working tree is what makes the decision mean something.
 
 ### Every step has the same four parts
 
@@ -415,139 +357,103 @@ it in different ways.
 ### Coordinating work needs a trigger that can look outward
 
 A flow that coordinates other work has a stage where it is waiting: the parts
-are running and the parent has nothing to do until they finish. The process
-document defines what our epic flow actually does; two things about it are the
-orchestrator's problem.
+are running and the parent has nothing to do until they finish.
 
-**Waiting is not a step.** "Wait for the parts" is not something that runs and
-returns; it is a later step whose conditions are not yet met. The orchestrator
-finds the item ineligible and moves on, and it advances on a tick once the
-condition holds. Making waiting into a step means inventing something that
-polls, and a step that returns "not yet" is a sixth outcome the design does not
-need.
+**Waiting is not a step.** It is a later step whose conditions are not yet
+met, so the orchestrator finds the item ineligible and moves on, advancing on
+a tick once the condition holds. Inventing a step that polls, or that returns
+"not yet", would add a sixth outcome the design does not need.
 
-**A trigger must be able to say more than "a label on this item".** "Every child
-of this item is closed" is a condition about other work items. Without it, a
-flow that coordinates work cannot be declared at all -- the waiting has to be
-written in code instead, which is how coordination ends up inside the
-orchestrator rather than in the file that is supposed to describe it.
+**A trigger must be able to say more than "a label on this item".** "Every
+child of this item is closed" is a condition about other work items; without
+it, the waiting has to be written in code instead, which is how coordination
+ends up inside the orchestrator rather than in the file that is supposed to
+describe it.
 
 ### A flow is not the only thing that can watch an object
 
 Nothing requires exactly one flow per object kind. What the orchestrator
-actually routes on is a step's own trigger and dependencies, not which flow
-declared it -- so a second flow may match an object kind a first flow already
-covers, as long as their steps' conditions never make two steps eligible on the
-same item at once. Two flows sharing an object kind is then no different from
-two steps in one flow: MI-2 still holds, because it is a property of trigger
-conditions, not of flow boundaries.
+routes on is a step's own trigger and dependencies, not which flow declared
+it, so a second flow may match an object kind a first already covers, as long
+as their steps' conditions never make two eligible on the same item at once
+-- no different from two steps in one flow, so MI-2 still holds.
 
-That is what makes "closes when the whole is sound" a real thing rather than a
-phrase. An epic's children closing is not itself the soundness check -- it is
-what makes a review step eligible. That step, declared like any other step with
-its own allowed commands and expected effect, is what the epic's closing
-actually depends on. What the review judges is a decision for whoever declares
-that step, not something fixed in advance here.
+That is what makes "closes when the whole is sound" real rather than a
+phrase: an epic's children closing is not the soundness check, it is what
+makes a review step eligible, and that step -- declared like any other, with
+its own allowed commands and expected effect -- is what the epic's closing
+actually depends on. What the review judges is a decision for whoever
+declares that step, not fixed in advance here.
 
 ### The same capability lets a step finish its own work in pieces
 
 An epic waits *while* its children are open. A step can use the identical
-capability the other way round: stay eligible *while* its own children are
-open, so that finishing the item takes several invocations instead of one.
+capability the other way round: stay eligible *while its own* children are
+open, so finishing the item takes several invocations instead of one.
 
-**Why this matters.** A step's turn and wall-clock budgets bound one
-invocation. An issue decomposed into several sub-issues can need more of
-either than any single invocation should be given, even though no one
-sub-issue does. Giving the whole issue to one invocation means a step that
-runs out partway through loses everything back to the last commit -- which,
-because the orchestrator commits once per invocation, is the very start of
-the issue.
+A step's turn and wall-clock budgets bound one invocation, and a
+sub-issue-heavy issue can need more of either than any single invocation
+should be given, even though no one sub-issue does -- without this, a step
+that runs out partway through loses everything back to the last commit, which
+is the very start of the issue.
 
-**The unit of work shrinks; the contract does not change.** When a step is
-invoked this way, its job for that invocation is one sub-issue, not the whole
-issue. `complete` still means exactly what it always means -- the step
-finished what it was given -- because what it was given is now smaller. No
-new outcome, no mid-run signal, no change to "exactly one result per
-invocation." The orchestrator commits after that one result exactly as it
-does today, so a step that later runs out on sub-issue four leaves one, two
-and three committed rather than nothing.
+The unit of work shrinks; the contract does not. `complete` still means the
+step finished what it was given, because what it was given is now smaller --
+no new outcome, no mid-run signal. The orchestrator commits after each
+invocation exactly as it does today, so a step that later runs out on
+sub-issue four leaves the first three committed rather than nothing. The step
+just needs one more thing on the channel every step is already told: which
+piece this invocation is for.
 
-**The step needs to be told which piece is its.** A work item number is not
-enough once a step can be invoked several times against the same item for
-different pieces of it; the step also needs to know which one this
-invocation is for. That is an addition to what every step is told, not a new
-concept -- the same channel, one more thing on it.
-
-### A branch is not always cut from the default
-
-A flow's primary branch is created from the repository's default branch unless
-the flow says otherwise -- declared the same way the branch name itself is, a
-token pattern in `naming`, never computed in code. An epic's sub-issues need
-this: their branch has to be cut from the epic's own integration branch
+A flow's primary branch is created from the default branch unless the flow
+says otherwise -- declared the same way the branch name itself is, a token
+pattern in `naming`, never computed in code. An epic's sub-issues need this:
+their branch has to be cut from the epic's own integration branch
 (`feature-{parent_number}`), not `main`, or their work never lands where the
-epic expects it to. If the computed base does not exist -- the epic's branch
-was never created, or has already been merged and deleted -- the flow falls
-back to the repository's default branch rather than failing over something
-that was never guaranteed to be there.
+epic expects it to. If that base does not exist -- never created, or already
+merged and deleted -- the flow falls back to the default branch rather than
+failing over something never guaranteed to be there.
 
 ### Scheduled work: how a flow knows it is due
 
 A scheduled flow has no work item, so it has nowhere to carry a label -- and
-labels are the state. The question that follows is where "this last ran on
-Tuesday" is kept.
+labels are the state. Where "this last ran on Tuesday" is kept is not kept
+anywhere new: every completed step appends a timestamped entry to the log and
+metrics branches, so when a flow last ran is a read of the record rather than
+a second store to keep in step with it, and a flow that has never run has no
+entry, which is the same answer as overdue.
 
-**It is not kept anywhere new.** The record already holds it. Every completed
-step appends one entry, timestamped, to the log and the metrics branches, so
-when a flow last ran is a read of the record rather than a second store to keep
-in step with it. A flow that has never run has no entry, which is the same
-answer as overdue.
-
-This matters more than it looks. The alternative -- a table of last-run times,
-or a cadence written into a workflow file -- is exactly the hidden state the
-label model exists to avoid, and in the workflow-file case it would put part of
-the process definition outside `pipeline.json`. The cadence is declared with the
-flow; whether it is due is derived from what already happened.
+The alternative -- a last-run table, or a cadence in a workflow file -- is
+exactly the hidden state the label model exists to avoid, and would put part
+of the process definition outside `pipeline.json`. The cadence is declared
+with the flow; whether it is due is derived from what already happened.
 
 A scheduled flow also needs a claim of its own, because the `:wip` mutex is a
-label on a work item and there is no work item to label -- two runners must not
-start the same sweep.
+label on a work item and there is no work item to label -- two runners must
+not start the same sweep.
 
 ### What a scheduled step may do is declared, like any other step
 
-A scheduled step is a step. What it may do is its allowed commands and its
-expected effect, declared in `pipeline.json` -- not a property the orchestrator
-infers from the fact that a schedule started it.
+A scheduled step is a step: what it may do is its allowed commands and its
+expected effect, declared in `pipeline.json`, never inferred from the fact
+that a schedule started it. A step that only looks is granted no commands
+that write, plus whatever it needs to record what it found, and an expected
+effect of no change; a step that acts is granted the commands to act -- both
+permission sets, visible to anyone reading `pipeline.json`.
 
-A step that only looks is expressed by granting it no commands that write, plus
-whatever it needs to record what it found, and declaring an expected effect of
-no change to the repository. A step that acts is expressed by granting it the
-commands to act. Neither is special-cased and neither is inferred from the fact
-that a schedule started it: both are permission sets, visible to anyone reading
-`pipeline.json`, which is the whole point of them living there rather than in
-the orchestrator.
-
-**The declaration is what makes it checkable.** A step declaring no change that
-produces a commit disagrees with itself, and MI-6 surfaces the disagreement.
-That holds for every step, not just scheduled ones: the guarantee comes from
-comparing the declaration against what happened, never from a rule about a
-category of work.
+**The declaration is what makes it checkable.** A step declaring no change
+that produces a commit disagrees with itself, and MI-6 surfaces the
+disagreement, the same as for every other step.
 
 ### The orchestrator stamps what it creates
 
 A step returns what it produced and the orchestrator writes it (the step
-contract). When what a step produced is a new work item, the orchestrator
-records which step and which flow produced it.
-
-That provenance is what lets a flow find its own earlier output. A step that
-runs repeatedly can then read what it already reported and raise only what has
-appeared since, rather than repeating the same findings every run until nobody
-reads them. Whether a given step does that is the step's business; the
-orchestrator's part is only that the trail exists to be read.
-
-It is the same principle as the cadence above. What a flow already said is
-readable from the work item that says it, and when the flow last ran is readable
-from the record -- so neither question needs a store kept in parallel with the
-thing it describes.
+contract); when what it produced is a new work item, the orchestrator also
+records which step and which flow produced it. That provenance is what lets a
+flow find its own earlier output and raise only what is new since, rather
+than repeating the same findings every run -- the same principle as the
+cadence above: what already happened is readable from the record, so neither
+question needs a store kept in parallel with the thing it describes.
 
 ---
 
@@ -1148,13 +1054,9 @@ the path of the file it overrides so the relationship needs no explaining.
 **Most repositories will not have one, and nothing creates it for them.** The
 shipped definition is read from the framework every time; onboarding puts no
 copy anywhere. The local file exists only when someone writes one, and its
-absence is the ordinary case meaning "the default, entirely".
-
-That matters more than it sounds. A file seeded empty into every repository
-would sit exactly where a reader expects the pipeline to be defined while
-defining nothing, and would be the obvious place to edit for anyone who had not
-read this. Absent, there is one definition to find; present, it is present
-because someone decided something.
+absence is the ordinary case meaning "the default, entirely" -- never a file
+seeded empty that would sit where a reader expects the pipeline to be
+defined while actually defining nothing.
 
 Where it does exist it is the repository's own: never overwritten by a sync, and
 committed normally rather than gitignored. What a repository decided about its
@@ -1677,71 +1579,42 @@ reports `AI_AGILE_EXECUTION_MODE=interactive`, and the spawn path reports
 the per-agent pair is generated from `pipeline.json` so neither can drift from
 the step it names.
 
-**Why the distinction is load-bearing, not cosmetic.**
+**Why the distinction is load-bearing, not cosmetic.** `/maos-{agent}` is the
+pipeline: same prompt, same allowed commands, same enforcement, so what you
+see is what the headless runner would do, which is the only thing that makes
+it useful for reproducing a problem. `/maos-{agent}-i` is **not the
+pipeline**, and does not pretend to be: you and the chat-AI work through the
+agent's instructions together, in your session, with your permissions --
+nothing is enforced against an agent's allowlist, because no agent is
+running, a person is, with an assistant.
 
-`/maos-{agent}` is the pipeline. Same prompt, same allowed commands, same clean
-context, same enforcement. What you see is what the headless runner would do,
-which is the only thing that makes it useful for reproducing a problem.
+**It still advances the pipeline, and the record says how.** Not being an
+agent invocation does not make it a private exercise: the step returns its
+result the way every step does, and the orchestrator records it, including
+that a person performed the activity rather than a spawned agent. That
+provenance is what keeps two things true at once -- an in-the-loop run is a
+legitimate way to move an issue forward, and it is not evidence of what the
+pipeline would do unattended -- and it is also what resolves an apparent
+contradiction with MI-3: enforcement is still one mechanism, the platform's
+own on the spawn path, and the in-the-loop command needs no second one
+because it is not an agent invocation to enforce.
 
-`/maos-{agent}-i` is **not the pipeline**, and does not pretend to be. You and
-the chat-AI work through the agent's instructions together, in your session,
-with your permissions and your context. Nothing is enforced against an agent's
-allowlist, because no agent is running -- a person is, with an assistant.
-
-**It still advances the pipeline.** Not being an agent invocation does not make
-it a private exercise. The step was performed and it produced something, so it
-returns its result the way every step does, and the orchestrator records it: the
-label transition, the artefact comment, the observed change. Work done in the
-loop lands on the issue exactly as work done by a spawned agent -- because
-nothing that influenced the work may exist only in a chat transcript.
-
-**What the record must carry is how it was produced.** The result says that a
-person performed the activity rather than a spawned agent. Enforcement did not
-apply, the context was the session's, and a human could intervene at any point,
-so an in-the-loop run is a legitimate way to move an issue forward and is not
-evidence of what the pipeline would do unattended. Recording the provenance is
-what keeps both of those true at once, and it is what lets a conformance check
-tell the two apart instead of trusting a naming convention.
-
-That last point resolves what would otherwise be a contradiction with MI-3.
-Enforcement must be one mechanism, and it is: the platform's own, on the spawn
-path. The in-the-loop command needs no second enforcement mechanism because it
-is not an agent invocation to enforce. The control there is the person, who is
-present, whose session it is, and who is accountable for what they run.
-
-**The risk this creates, stated plainly.** Someone reaches for the `-i` command
-believing they are testing what the pipeline does. They are not: different
-context, different permissions, a human able to intervene. The naming carries
-that distinction and must stay obvious. The recorded provenance is the backstop:
-the trail says which runs were driven by hand, so a mistaken belief in the chat
-does not become a mistaken conclusion from the record.
+**The risk this creates, stated plainly.** Someone reaches for `-i` believing
+they are testing what the pipeline does. They are not: different context,
+different permissions, a human able to intervene. The naming carries that
+distinction, and the recorded provenance is the backstop against a mistaken
+belief in the chat becoming a mistaken conclusion from the record.
 
 ---
 
 ### How people interact with it
 
-**In headless mode, GitHub is the only channel.** You add labels and write
-comments on the issue. There is nobody to talk to and nothing else to use. Every
-instruction you can give the pipeline is expressible as a label or a comment,
-because that is the entire interface.
-
-**In interactive mode you can also talk to the chat-AI**, in your own words --
-feedback, corrections, instructions, questions. The chat-AI then writes the
-labels and comments that carry your intent to the pipeline. You are not bypassing
-GitHub; you are dictating to something that writes GitHub for you.
-
-Two consequences follow, and both matter.
-
-The **record is identical**. Whatever you say in the chat ends up on the issue as
-a label or a comment, so an issue driven interactively is indistinguishable, as
-a record, from one driven headlessly. Nothing that influenced the work exists
-only in a chat transcript.
-
-The **chat-AI is a scribe, not a decision-maker**. When it applies a gate label
-it is transcribing a decision you made, and it may never originate one. That
-distinction is the whole of MI-7, and it is the reason a blanket "no bot may
-apply a gate label" rule is wrong: it would forbid the supported interactive
-path along with the thing it means to prevent.
+**In headless mode, GitHub is the only channel** -- labels and comments on
+the issue, nothing else. **In interactive mode you can also talk to the
+chat-AI**, in your own words, and it writes the labels and comments that
+carry your intent: a scribe, not a decision-maker, never originating a
+decision it only transcribes (MI-7). The record is identical either way --
+nothing that influenced the work exists only in a chat transcript.
 
 ---
 
