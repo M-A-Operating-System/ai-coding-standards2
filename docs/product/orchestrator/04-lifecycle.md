@@ -62,26 +62,47 @@ different inputs at different cadences:
 **Product docs are the target state; code is the current state.**
 `docs/product/` describes what should exist, and the gap between that and
 what has shipped is the issue backlog: an issue is a `bug` when the code has
-drifted from the target, or a `feature`/`enhancement` when the target itself
-is moving forward. No code change ships unless it is already described in
+drifted from the target, or an `enhancement` when the target itself is
+moving forward. No code change ships unless it is already described in
 `docs/product/` first -- an issue without an approved PRD does not progress
 past the product-docs phase, and a PR landing code with no corresponding
 target-state entry does not merge.
 
-Every issue entering the pipeline is classified by `issue-classifier` as exactly one of six types. The classification is recorded both in an artefact comment on the issue and as a `classification: {type}` label applied automatically at classification time. Six `classification:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface.
+Every issue entering the pipeline is classified by `issue-classifier` as exactly one of five types. The classification is recorded both in an artefact comment on the issue and as a `type: {type}` label applied automatically at classification time. Five `type:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface. `type:` is one of two independent label dimensions; the other is how big the work is, not why it exists -- see [Sizing](#sizing) below.
 
-**One axis explains five of the six: does the work move the product forward, or not.** `enhancement` is the baseline unit -- a change sized to ship end-to-end in one sequence, into production, without leaving users mid-broken. `feature` is the same forward motion at a scale too big to be one enhancement, so it decomposes into an ordered sequence of enhancements instead. `security`, `bug`, and `tech-debt` are enhancement-scale and enhancement-complexity, but exist *without* moving the product forward -- they close an exposure, correct a drift from an already-documented target, or remediate/maintain rather than advance. `spike` is the one type not measured against the baseline at all: it ships no increment, only knowledge. Splitting "forward" from "not forward" this way is deliberate -- it is what makes a product-management ratio like `enhancement : (tech-debt + bug + security)` a real signal read off the label alone, not an audit.
+**One axis explains four of the five: does the work move the product forward, or not.** `enhancement` is the baseline unit -- a change, new capability or improvement alike, sized to ship end-to-end in one sequence, into production, without leaving users mid-broken. `security`, `bug`, and `tech-debt` are the same scale and complexity, but exist *without* moving the product forward -- they close an exposure, correct a drift from an already-documented target, or remediate/maintain rather than advance. `spike` is the one type not measured against the baseline at all: it ships no increment, only knowledge. Splitting "forward" from "not forward" this way is deliberate -- it is what makes a product-management ratio like `enhancement : (tech-debt + bug + security)` a real signal read off the label alone, not an audit. There is no separate type for "too big" -- that is what [Sizing](#sizing) is for, uniformly, across all five.
 
-| Classification | Label | Definition | Qualifying criterion |
+| Type | Label | Definition | Qualifying criterion |
 |---|---|---|---|
-| `security` | `classification: security` | A concrete security vulnerability with a clear exploit path — injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all six — a `security-review:approved` gate applies in addition to standard review whenever the resulting PR touches a flagged sensitive surface. |
-| `bug` | `classification: bug` | Broken behaviour — something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target (see above); the fix is to correct the code, not the docs. |
-| `enhancement` | `classification: enhancement` | An improvement to an **existing** capability — making a feature richer, faster, more accessible, or more reliable. | The capability exists in production today; the issue moves it closer to the target state but does not add a new user-observable outcome. |
-| `feature` | `classification: feature` | A **new** capability the product cannot do today, too large to ship as one enhancement. | Adds a fresh user-observable outcome to the target state; decomposes into an ordered sequence of enhancement-sized deliverables, each shipped and reviewed the enhancement way; deserves a full PRD with new acceptance criteria. |
-| `spike` | `classification: spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, or a prototype — not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
-| `tech-debt` | `classification: tech-debt` | Enhancement-scale work that does not move the product forward: routine operational/maintenance upkeep (dependency upgrades, infrastructure changes, doc-only fixes) and remediation of a previously made structural or architectural choice now recognised as costly, merged into one classification -- both are "the product isn't advancing, something about how it's built is being paid down or kept current." | Tied to a non-functional requirement in the product docs, not a user-facing feature. Evidence (a metric outlier, an ADR whose context has shifted, a repeated `blocked` pattern) is present when the Tech-debt continuous loop ([Phase 5](#phase-5-the-continuous-meta-loops)) is the source, via `debt-issues` carrying a `Debt-source:` trailer -- but is not required for ordinary maintenance a human files directly. |
+| `security` | `type: security` | A concrete security vulnerability with a clear exploit path — injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all five — a `security-review:approved` gate applies in addition to standard review whenever the resulting PR touches a flagged sensitive surface. |
+| `bug` | `type: bug` | Broken behaviour — something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target (see above); the fix is to correct the code, not the docs. |
+| `enhancement` | `type: enhancement` | A change to the product's capability, new or existing, sized to ship end-to-end in one sequence. | Moves the target state forward -- a fresh user-observable outcome or an improvement to one that exists. Deserves a PRD with acceptance criteria; scale alone does not change the type, only its [size](#sizing). |
+| `spike` | `type: spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, or a prototype — not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
+| `tech-debt` | `type: tech-debt` | Enhancement-scale work that does not move the product forward: routine operational/maintenance upkeep (dependency upgrades, infrastructure changes, doc-only fixes) and remediation of a previously made structural or architectural choice now recognised as costly, merged into one classification -- both are "the product isn't advancing, something about how it's built is being paid down or kept current." | Tied to a non-functional requirement in the product docs, not a user-facing feature. Evidence (a metric outlier, an ADR whose context has shifted, a repeated `blocked` pattern) is present when the Tech-debt continuous loop ([Phase 5](#phase-5-the-continuous-meta-loops)) is the source, via `debt-issues` carrying a `Debt-source:` trailer -- but is not required for ordinary maintenance a human files directly. |
 
-When two classifications are plausible, prefer the one with the higher review bar: `security` over `bug` (only when the impact is clear and concrete -- an ambiguous "might be a security concern" stays `bug`); `bug` over `tech-debt`; `feature` over `enhancement`. The distinction between `feature` and `enhancement` matters because a feature adds new product surface (heavier review) and always decomposes; an enhancement refines an existing one (lighter review against the existing PRD) and always ships as itself.
+When two types are plausible, prefer the one with the higher review bar: `security` over `bug` (only when the impact is clear and concrete -- an ambiguous "might be a security concern" stays `bug`); `bug` over `tech-debt`.
+
+---
+
+## Sizing
+
+A second, independent label dimension: **`size:`** answers how much of the
+work there is, never why it exists. Every issue carries exactly one
+alongside its `type:` (see [Issue classification
+taxonomy](#issue-classification-taxonomy) above). `ticket-sizer` applies it
+as a `size: {S|M|L}` label with a rationale comment, gated by
+`size:approved`.
+
+| Size | Meaning | What it triggers |
+|---|---|---|
+| `S` | Small enough on its own that shipping it alone wastes review overhead | **Combiner.** The orchestrator suggests grouping it under a super-issue with other `S`-sized issues in the current window. On approval the super-issue becomes the shippable unit; its children pause their own pipelines, attach, and one PR closes the super-issue and all of them (see [Many small tickets in a window](#many-small-tickets-in-a-window)) |
+| `M` | Fits the enhancement baseline as itself | No fork -- ships as one item through the standard ticket flow |
+| `L` | Too big for one item | **Decomposer.** `issue-decomposer` drafts an ordered child-issue roadmap, gated on `decomposition:approved`; each child re-enters at `issue-classifier`, is independently typed and sized, and runs its own full lifecycle (see [The ticket is too big](#the-ticket-is-too-big)) |
+
+`size:` applies uniformly across every `type:` -- a `tech-debt` issue that
+comes back `L` decomposes exactly like an `enhancement` that does, and each
+child keeps the parent's `type:`. There is no type that is "big by
+definition"; bigness is `size: L`, for anything.
 
 ---
 
@@ -185,7 +206,7 @@ getting it wrong.
 | Gate label | Phase | Approver | Artefact | What you're signing off | Cost if wrong |
 |---|---|---|---|---|---|
 | `01_product_docs/prd-writer:approved` | Product docs | Stakeholder who opened the issue, or their delegate | The **issue body itself**, after `01_product_docs/prd-writer` rewrites it into the canonical PRD format (see [PRD format](#prd-format-and-the-prd-writer-gate) below) and rewrites the title | The problem and goal are correct; each user story names a real persona from [`standards/personas.json`](../../../standards/personas.json) (including the System actor, whose entry there carries the qualifying test that keeps it from being a disguise for technical work) and `As a developer` stories are suspect; each Gherkin scenario is falsifiable; "Out of scope" actually rules things out; success metrics are externally observable; the new title categorises the work correctly and names a real bounded context. Once approved, the PRD is the source of truth for everything downstream | The most expensive gate to skim — wrong PRD → wrong everything downstream (design, testing, evaluation) |
-| `size:approved` | Product docs | Engineer who will own the work, or the tech lead | A sizing comment from `ticket-sizer` (`S`, `M`, `L`, `XL`) with rationale | That the ticket fits a single development cycle. If `XL`, you are committing to break it into children before proceeding | An XL ticket past the gate produces a sprawling design and a multi-week PR |
+| `size:approved` | Product docs | Engineer who will own the work, or the tech lead | A `size: {S\|M\|L}` label and rationale from `ticket-sizer` | That the size is right. `M` fits a single development cycle as itself. `L` commits you to breaking it into children before proceeding. `S` commits you to considering combination with other small tickets in the window | An `L` ticket past the gate produces a sprawling design and a multi-week PR; a wrongly-approved `S` either wastes review overhead shipped alone or gets combined with unrelated work |
 | `super-issue:approved` | Product docs | Engineer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
 | `design:approved` | Technical docs | Engineer or tech lead | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
 | `test-spec:approved` | Testing spec | Engineer | A Gherkin scenario list from `test-spec-writer`, plus a coverage report from `test-coverage-auditor` confirming every PRD acceptance criterion maps to at least one scenario | That these scenarios — and only these — are what "done" means | Tests get written for the wrong things |
@@ -197,16 +218,17 @@ getting it wrong.
 | `data-migration:approved` | Execute | Data owner | The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance | That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted | Data loss or corruption in production. Only required on PRs that include `**/*.sql` files |
 | `merge-conflict:approved` | Execute | Engineer | A prioritised list of conflict resolution recommendations from the `merge-conflict` agent, posted as a PR comment; each identifies the affected file, the conflict scope, and the suggested resolution approach | That the proposed resolution for each conflicting file is correct, safe, and consistent with both sides of the merge. Binary and generated files (lock files, compiled assets) may be flagged but require manual handling | Applying the wrong resolution silently drops or corrupts intentional changes. Review each conflicting hunk against the PR's stated intent. Only required on PRs that contain merge conflict markers when marked Ready for Review; clean PRs skip this gate automatically |
 | `gap-report:approved` | Gap assessment | Stakeholder + Standards owner (dual approval) | The rolled-up gap report from `gap-curator` listing candidate gap-issues grouped by severity | That the identified gaps are real (not stale requirements the product has intentionally moved away from) and worth filing as tickets | Filing phantom issues wastes the per-ticket pipeline on work no one wants |
-| `debt-report:approved` | Tech debt | Engineer (or tech lead) + Standards owner (dual approval) | The rolled-up debt report from `debt-curator` listing candidate debt-issues with structural evidence (metrics, ADR age, hot-spot trends) | That the identified debt is real and worth prioritising against the feature backlog | Remediating false debt distracts from delivering value |
+| `debt-report:approved` | Tech debt | Engineer (or tech lead) + Standards owner (dual approval) | The rolled-up debt report from `debt-curator` listing candidate debt-issues with structural evidence (metrics, ADR age, hot-spot trends) | That the identified debt is real and worth prioritising against the enhancement backlog | Remediating false debt distracts from delivering value |
 | `pipeline-change:approved` | Learn | Standards owner | A PR against `pipeline.json` from `pipeline-tuner`, with evidence from the metrics report | That the proposed pipeline change — adjusted schedule, added dependency, changed gate — is sound and will not degrade pipeline health | A bad pipeline change affects every subsequent ticket |
 | `prompt-change:approved` | Learn | The agent's designated owner (responsible for that agent's quality) | A PR against `.claude/agents/{agent}.md` from `prompt-tuner`, with rejection-rate evidence and diff | That the proposed prompt edit improves agent quality and does not introduce regression | A regressed prompt silently degrades every run of that agent |
 | `process-review:approved` | Learn | Standards owner + a principal stakeholder (dual approval required) | A coordinated change proposal from `process-reviewer` spanning the pipeline graph, agent prompts, standards, and docs | That the system-level diagnosis is correct, the proposed coordinated changes are coherent, and the dual approvers together represent both the technical and product perspectives | A bad coordinated change is harder to unwind than a single-component change; the dual approval bar reflects the blast radius |
 
 Two gates carry additional refusal/guard behaviour worth noting:
 
-- **`size:approved`** — `ticket-sizer`'s `XL` verdict is itself the trigger
-  to decompose; approving an `XL` commits you to breaking the ticket into
-  children first.
+- **`size:approved`** — `ticket-sizer`'s `L` verdict is itself the trigger
+  to decompose; approving an `L` commits you to breaking the ticket into
+  children first. An `S` verdict similarly triggers the combiner suggestion,
+  though grouping itself gates separately on `super-issue:approved`.
 - **`01_product_docs/prd-writer:approved`** — `prd-writer` will refuse to
   draft an oversized PRD. If the issue describes multiple distinct user
   outcomes or spans multiple bounded contexts, the agent set-blocks with a
@@ -280,7 +302,7 @@ above: still exactly one PR per branch, now up to two phase-PRs per issue
 
 ### The ticket is too big
 
-If `ticket-sizer` returns `XL`, an **`issue-decomposer`** agent runs.
+If `ticket-sizer` returns `L`, an **`issue-decomposer`** agent runs.
 It drafts a roadmap of proposed child issues — each a smaller business
 outcome — and posts the roadmap as a comment on the parent. A human
 approves the decomposition by applying `decomposition:approved`. On
@@ -334,7 +356,7 @@ This replaces the standalone `close-epic-on-children-complete.yml` workflow,
 which is retired.
 
 Distinct from `task-decomposer` (Design phase): `task-decomposer`
-breaks a *sized* feature into implementation tasks (one file, one
+breaks a *sized* ticket into implementation tasks (one file, one
 concern) that all ship in one PR. `issue-decomposer` runs *before*
 sizing clears, breaking a too-large issue into smaller business-outcome
 issues, each with its own PR.
@@ -375,11 +397,11 @@ of the standard review path.
 
 ## End-to-end happy path
 
-A typical security/feature/bug/enhancement/tech-debt ticket flows like
+A typical security/bug/enhancement/tech-debt ticket flows like
 this. Agent names, dependencies, and gates are as declared in
 [`pipeline.json`](../../../pipeline/pipeline.json).
 
-**Spike issues** (`classification: spike`) stop after `prd-writer:approved`.
+**Spike issues** (`type: spike`) stop after `prd-writer:approved`.
 `create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —
 there is no code to ship, so no branch or PR is created.
 
@@ -464,16 +486,17 @@ edits. This keeps a hard boundary:
   primary source of the `tech-debt` classification (see [Issue
   classification taxonomy](#issue-classification-taxonomy)), carrying its
   `Debt-source:` trailer as the evidence a human reviewer checks at
-  classification time; a gap-issue typically lands as `feature` or
-  `enhancement`, depending on whether the missing capability is wholly new.
+  classification time; a gap-issue lands as `enhancement`, sized by
+  `ticket-sizer` like any other -- large enough to warrant decomposition if
+  the missing capability turns out to be.
 - Every change still flows through Phases 1–4, with the same gates,
   the same standards checks, and the same audit trail.
 - Gap-issues and debt-issues are visible in the issue list alongside
-  feature work, so reviewers can see and prioritise them against the
-  feature backlog rather than as a hidden second queue.
+  enhancement work, so reviewers can see and prioritise them against the
+  enhancement backlog rather than as a hidden second queue.
 
 The cost is some queue mixing: a busy week may see gap-issues and
-debt-issues compete with feature issues for reviewer attention. The
+debt-issues compete with enhancement issues for reviewer attention. The
 mitigation is curation — `gap-curator` and `debt-curator` produce
 prioritised, deduplicated reports rather than a firehose, and the
 human gates (`gap-report:approved`, `debt-report:approved`) are the
@@ -487,18 +510,18 @@ Every step named anywhere in this document belongs to exactly one of four
 families. This section is an index, not a new description — each family
 points back to where it is already detailed in full above.
 
-### 1. The standard ticket flow — security, feature, enhancement, bug, tech-debt
+### 1. The standard ticket flow — security, enhancement, bug, tech-debt
 
-Five of the six classifications ([Issue classification
+All four non-`spike` types ([Issue classification
 taxonomy](#issue-classification-taxonomy)) run the identical flow, in the
-identical order, through the identical gates. Classification changes review
-depth, not flow shape:
+identical order, through the identical gates. Type changes review depth,
+not flow shape; size, independently, decides whether a ticket ships as
+itself or forks (see [Sizing](#sizing)):
 
-| Classification | What differs — never the flow itself |
+| Type | What differs — never the flow itself |
 |---|---|
 | `security` | Same shape as `bug`, plus a `security-review:approved` gate on any PR touching a flagged sensitive surface |
-| `feature` | Full PRD, new acceptance criteria, and decomposes into an ordered sequence of enhancements rather than shipping as itself — the heaviest review bar |
-| `enhancement` | Reviewed against the *existing* PRD, not a new one; the baseline shape every other type is enhancement-scale *against* |
+| `enhancement` | The baseline shape every other type is enhancement-scale *against*; carries new acceptance criteria when the capability is new, reviewed against the existing PRD when it isn't |
 | `bug` | The PRD phase corrects the code to match an already-documented target, not the docs |
 | `tech-debt` | Tied to a non-functional requirement, not a user-facing PRD; evidence of the prior choice being undone is present when it came from the Tech-debt loop, not required otherwise |
 
@@ -518,16 +541,18 @@ path](#end-to-end-happy-path)).
 
 ### 3. Structural forks
 
-Four shape variants layer on top of whichever classification a ticket
-carries — they are not classifications themselves. All four are detailed in
+Four shape variants layer on top of whichever type a ticket carries — they
+are not types themselves, and the first two are driven by `size:`, not
+`type:` at all (see [Sizing](#sizing)). All four are detailed in
 [Forks in the path](#forks-in-the-path):
 
-- **Oversized ticket** — `ticket-sizer` returns `XL`; `issue-decomposer`
+- **Oversized ticket** — `ticket-sizer` returns `L`; `issue-decomposer`
   drafts a child-issue roadmap, gated on `decomposition:approved`; each
-  child re-enters at `issue-classifier` and runs its own full lifecycle.
-- **Many small tickets in a window** — small bugs/chores batch under a
-  super-issue, which becomes the shippable unit; one PR closes it and every
-  grouped child.
+  child re-enters at `issue-classifier` and runs its own full lifecycle,
+  keeping the parent's `type:`.
+- **Many small tickets in a window** — `ticket-sizer` returns `S`; small
+  tickets batch under a super-issue, which becomes the shippable unit; one
+  PR closes it and every grouped child.
 - **Merge conflict** — `merge-conflict` auto-advances a clean PR; a
   conflicted one gates on `merge-conflict:approved` before `coder` is
   re-invoked with the resolution plan.
@@ -551,12 +576,12 @@ classify:
   that does not route through `issue-classifier`, because its output
   targets the pipeline's own configuration, not a product ticket.
 - **Gap-assessment loop** — produces gap-issues (`Gap-source:` trailer),
-  gated on `gap-report:approved`, which re-enter as `feature` or
-  `enhancement` per family 1.
+  gated on `gap-report:approved`, which re-enter as `enhancement` per
+  family 1, sized on their own merits.
 - **Tech-debt loop** — produces debt-issues (`Debt-source:` trailer), gated
   on `debt-report:approved`, which re-enter as `tech-debt` per family 1 —
-  its primary source, not the whole of the classification: a human may
-  also open a `tech-debt` issue directly, given the same evidence.
+  its primary source, not the whole of the type: a human may also open a
+  `tech-debt` issue directly, given the same evidence.
 
 ---
 
@@ -582,8 +607,8 @@ not yet declared anywhere, and inventing a value here would misstate that.
 | `00_ondemand/issue-cleanup` | agent | On-demand | Recommends, then (on approval) closes, complete or duplicate issues | Bash, Read, Grep | Live |
 | `01_product_docs/issue-classifier` | agent | Standard ticket flow | Classifies the issue; validates required fields are present | Bash, Read | Live |
 | `01_product_docs/prd-writer` | agent | Standard ticket flow | Drafts the PRD; rewrites the issue body into user-story + Gherkin format | Bash, Read, Grep | Live |
-| `ticket-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`/`XL`); an `XL` verdict commits to decomposition before proceeding | not yet declared | Target-only |
-| `issue-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `XL` ticket, gated on `decomposition:approved` | not yet declared | Target-only |
+| `ticket-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`); an `L` verdict commits to decomposition, an `S` verdict to the combiner | not yet declared | Target-only |
+| `issue-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `L` ticket, gated on `decomposition:approved` | not yet declared | Target-only |
 | `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing | n/a — deterministic script | Live |
 | `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; cross-checks `docs/product/`; self-gates on design review | Bash, Read, Write, Grep | Live |
 | `01_product_docs/merge-docs-pr` | script | Standard ticket flow | Merges the design PR to `main` ahead of the build phase | n/a — deterministic script | Live |
@@ -592,7 +617,7 @@ not yet declared anywhere, and inventing a value here would misstate that.
 | `test-spec-writer` | agent | Standard ticket flow | Derives a numbered Gherkin scenario list from the approved PRD | not yet declared | Target-only |
 | `test-coverage-auditor` | agent | Standard ticket flow | Confirms every PRD acceptance criterion maps to at least one scenario | not yet declared | Target-only |
 | `dependency-planner` | agent | Standard ticket flow | Produces the build plan — ordered child-task list and critical path | not yet declared | Target-only |
-| `task-decomposer` | agent | Standard ticket flow | Breaks a *sized* feature into one-file, one-concern tasks that all ship in one PR | not yet declared | Target-only — distinct from `issue-decomposer`, which runs before sizing and splits into separate issues and PRs |
+| `task-decomposer` | agent | Standard ticket flow | Breaks a sized ticket into one-file, one-concern implementation tasks that all ship in one PR | not yet declared | Target-only — distinct from `issue-decomposer`, which runs before sizing and splits into separate issues and PRs |
 | `03_execute/coder` | agent | Standard ticket flow | Implements the issue and its sub-issues; the orchestrator commits on completion | Bash, Read, Edit, Write, Grep, Glob | Live |
 | `03_execute/ci-gate` | script | Standard ticket flow | Polls CI checks; `review` on failure (recycles `coder`), `blocked` on a 14-minute timeout | n/a — deterministic script | Live |
 | `03_execute/merge-conflict` | agent | Structural fork (merge conflict) | Auto-advances a clean PR; posts a resolution plan and gates `merge-conflict:approved` otherwise | Bash, Read, Glob, Grep | Live |
