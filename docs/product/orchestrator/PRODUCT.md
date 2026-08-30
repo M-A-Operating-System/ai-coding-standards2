@@ -772,6 +772,13 @@ an outer marker pair. Each subsection sits inside its own marker pair nested
 within it, so the step that owns one subsection can rewrite it without
 touching what another step owns.
 
+**This is also how a step is re-invoked across many runs without redoing what
+it already finished.** "A re-run does the work again" (below) means the
+*effect*, not every item in it: `coder` invoked a second time for the same
+issue reads which entries are already checked, does the ones that are not,
+and ticks them off in turn -- the list is what makes "what remains" a fact the
+step reads rather than a state it has to reconstruct or re-derive each time.
+
 | Subsection | On issue | On PR | Owner |
 |---|---|---|---|
 | Build plan | yes | yes, mirrored | the step that turns the issue into a plan (issue); `coder`, ticking an item off as its commit lands (PR) |
