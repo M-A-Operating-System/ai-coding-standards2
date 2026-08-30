@@ -110,12 +110,6 @@ PATH_REWRITES = [
     # Bare "pipeline/..." -> "ai-coding-standards2/pipeline/..."
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
     (rf"(?<!{SUBMODULE_NAME}/)pipeline/", f"{SUBMODULE_NAME}/pipeline/"),
-    # Bare ".claude/agent-todo-standard.md" was retired (see 13-todos.md);
-    # rewrite any lingering reference to point at the new doc.
-    (
-        r"\.claude/agent-todo-standard\.md",
-        f"{SUBMODULE_NAME}/docs/product/orchestrator/13-todos.md",
-    ),
 ]
 
 

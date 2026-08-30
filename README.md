@@ -46,8 +46,7 @@ The full design is in [`docs/product/orchestrator/`](docs/product/orchestrator/R
 start with its 60-second summary and reading order.
 
 The authoritative list of agents and their dependencies is
-`pipeline/pipeline.json`; delivery sequencing lives in
-[`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md).
+`pipeline/pipeline.json`.
 
 ---
 
@@ -323,7 +322,6 @@ repos.
 ## Documentation
 
 - [`docs/product/orchestrator/README.md`](docs/product/orchestrator/README.md) — the full design index and reading order
-- [`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md) — MVP scope and rollout phases
 - [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md) — onboarding a consuming repo, platform behaviour, path resolution
 
 ## Contributing

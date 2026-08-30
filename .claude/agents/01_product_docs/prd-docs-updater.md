@@ -258,7 +258,7 @@ AI_AGILE_STATUS: complete
 - Keep `docs/product/` edits minimal. Do not reformat, reorder, or restructure
   sections unrelated to this issue.
 - Never update `docs/product/orchestrator/` pipeline system files
-  (`PRODUCT.md`, `02-principles.md` through `13-todos.md`) on the basis of a consuming-
+  (`PRODUCT.md` and the rest of that directory) on the basis of a consuming-
   repo feature PRD. Those files describe the AI Agile pipeline itself.
 - If `docs/product/` does not exist, post a comment noting the
   directory is absent and emit `AI_AGILE_STATUS: complete`.

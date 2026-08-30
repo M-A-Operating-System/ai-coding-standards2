@@ -163,7 +163,6 @@ that differs is a bug (MI-1 to MI-8).
 - [The promises](#the-promises)
 - [Headless and interactive](#headless-and-interactive)
 - [What is allowed to differ](#what-is-allowed-to-differ)
-- [Status of this document](#status-of-this-document)
 
 ---
 
@@ -762,6 +761,34 @@ a person wrote -- an issue body becoming a specification is the standard case.
 Agents draft and humans decide (P-10), so the original has to survive the
 rewrite: without it, an agent's rewrite silently replaces what a person asked
 for, and nobody can tell what changed.
+
+### Todo lists in issue and PR bodies
+
+Some work needs a list that survives many runs, not one comment's worth of
+state -- a build plan, acceptance criteria, a standards remediation list, test
+scenarios. That list lives in the body of the issue or PR it belongs to, below
+any human-authored prose, under an `## AI Agile -- Tasks` heading, wrapped in
+an outer marker pair. Each subsection sits inside its own marker pair nested
+within it, so the step that owns one subsection can rewrite it without
+touching what another step owns.
+
+| Subsection | On issue | On PR | Owner |
+|---|---|---|---|
+| Build plan | yes | yes, mirrored | the step that turns the issue into a plan (issue); `coder`, ticking an item off as its commit lands (PR) |
+| Acceptance criteria | yes | no | `prd-writer` |
+| Standards remediations | no | yes | the step that reviews standards compliance |
+| Test scenarios | no | yes | the step that writes the scenarios (populates); the step that runs them (ticks off) |
+
+A checkbox is `- [ ]` (pending) or `- [x]` (done). Every state change carries a
+timestamp and the actor that made it -- raised, and done, blocked, or skipped
+the same way -- so the list is a record of who did what and when, not only
+what is true now. An actor is a step, a person, or the orchestrator itself.
+
+A step touches only the subsection it owns, and never removes a checked
+item -- the item is the record that the work happened. Writing one is the
+same case the previous section already states: the step returns the
+subsection's new content as its output, and the orchestrator applies it as a
+section-scoped patch to the body.
 
 ### Some limits are not ours
 
@@ -1659,30 +1686,3 @@ Two things are often mistaken for legitimate differences and are not:
   repository are different failures needing different responses, but which one
   you get must never depend on how the work was started.
 
----
-
-## Status of this document
-
-| Topic | Authoritative source | State |
-|---|---|---|
-| Core requirements | this document | draft |
-| The state machine and activity shape | this document | draft |
-| How a step is told where it is | this document | draft |
-| How it uses agents, the agent prompt file, and the step contract | this document | draft -- `12-agent-spec.md` retired; durable design content migrated (naming, frontmatter schema, tool vocabulary, model-selection rationale, required body structure); its current-only content (the stdout-sentinel status mechanism, the CI-validation checklist, the add-a-new-agent checklist) not preserved, since the step contract's written-result model (`#what-a-step-must-return`) replaces the first and the rest is operational detail with no target-design analog |
-| The promises (AS-1 to AS-3, MI-1 to MI-8) | this document | draft |
-| Headless and interactive | this document | draft -- `17-operating-modes.md` retired |
-| Conformance and traceability | [`gap_analysis.md`](gap_analysis.md) | current |
-| Vision and problem | this document | draft |
-| Personas -- who AI Agile serves, in brief | this document | draft |
-| Personas -- the enforced vocabulary and the System actor's qualifying test | [`standards/personas.json`](../../../standards/personas.json) | current -- `03-personas.md` retired; its prose ("wants" / "how AI Agile serves them" per persona) not preserved, since it restated agent-catalogue detail already covered by `04-lifecycle.md`; the one genuinely durable piece (the System actor's 3-part validity test) migrated into the new standards file instead |
-| Promises (formerly principles P-1 to P-16) | this document and `04-lifecycle.md` | draft |
-| Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
-| Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `pipeline/schemas/pipeline.schema.json`'s own field descriptions are the current reference -- `05-pipeline-config.md` retired | durable content migrated; current-only content (script-step sentinel mechanics, `git_ops.commit_after` as a per-step opt-in, `orchestrator_checks`) not preserved, since the target design replaces each |
-| The process itself -- which flows exist, their phases and forks | [`04-lifecycle.md`](04-lifecycle.md) | **stays there by design.** This document says the orchestrator can run whatever flows `pipeline.json` declares; which flows those are, and why, is process |
-| Status model | this document | draft -- `06-status-model.md` retired |
-| Human gates, mechanism | this document (MI-7) | draft |
-| Human gates, which ones exist today | [`04-lifecycle.md`](04-lifecycle.md#human-gates) | current -- `07-human-gates.md` retired |
-| Orchestrator responsibilities | this document (target-design promises); `pipeline_orchestrator.py` itself (current implementation) | draft -- `11-orchestrator.md` retired; durable trust-boundary content migrated (AS-1); current-only implementation detail (function names, JSON marker formats, CLI flags, retry constants) not preserved, since it has no target-design analog |
-| Standards model | [`docs/product/standards/14-standards.md`](../standards/14-standards.md) | stays there by design -- standards enforcement is agent behaviour (`coder`, `pr-reviewer` reading `standards/*.json`), not orchestrator mechanism, so this document was never going to absorb it |
-| Audit log, mechanism and record shape | this document (MI-6) | draft -- `08-audit-log.md` retired; its stdout/GitHub-Actions-run-log mechanism was already stale in that document's own text (superseded by the `ai-agile/log` orphan branch); the event schema and event-type table, still live (cited by `pipeline_orchestrator.py`), migrated in |
-| Human interaction -- markers, gates, agent identity | this document (the step contract's marker table, MI-7) | draft -- `09-human-interaction.md` retired; nothing migrated. Agent identity duplicated MI-7's existing 'How a non-human actor is recognised'; agent announcements restated the step contract's existing return/marker requirements at a level of detail nothing needs; Question Cards were never carried into the target design (see `gap_analysis.md`, 'The record format') -- headless steps have `blocked`, interactive sessions are a conversation, neither needs a bespoke Q&A protocol |

@@ -137,16 +137,34 @@ Two rules, and nothing else to remember:
 Use the `TodoWrite` tool freely during your run to keep a working list of
 steps. It is internal to your session -- not visible on GitHub, does not
 survive the run -- and is not a substitute for GitHub artefacts. Persistent
-todos in issue/PR bodies (build plans, acceptance criteria, open questions)
-are different: they live **in the body of the issue or PR they belong to** --
-never in a comment, a file, or a sub-issue -- and you only write them if your
-specific prompt instructs you to. The body is the single, visible,
-edited-in-place source of truth for what work remains.
+todos in issue/PR bodies (build plans, acceptance criteria, standards
+remediations, test scenarios) are different: they live **in the body of the
+issue or PR they belong to** -- never in a comment, a file, or a sub-issue --
+and you only write them if your specific prompt instructs you to. The body is
+the single, visible, edited-in-place source of truth for what work remains.
+
+The block sits below any human-authored prose, wrapped in an outer marker
+pair (`<!-- ai-agile/todos/v1 START -->` / `END`) under a
+`## AI Agile — Tasks` heading, with each subsection independently wrapped in
+its own marker pair (`<!-- ai-agile/todos/{name}/v1 START -->` / `END`) so
+one agent can update its subsection without touching another's:
+
+| Subsection | On issue | On PR | Owner |
+|---|---|---|---|
+| `build-plan` | yes | yes (mirrored) | `task-decomposer` (issue), `coder` (PR -- ticks boxes as commits land) |
+| `acceptance-criteria` | yes | no | `prd-writer` |
+| `standards-remediations` | no | yes | `standards-compliance-reviewer` |
+| `test-scenarios` | no | yes | `test-spec-writer` (populates), `test-runner` (ticks off) |
+
+Checkbox state is `- [ ]` (pending) or `- [x]` (done). Every entry carries
+the timestamp and actor for each state change as `(raised <ISO-8601-UTC> by
+<actor>)`, with `done`, `blocked: <reason>`, or `skipped: <reason>` events
+appended the same way, comma-separated when more than one applies. An actor
+is a bare agent name matching `pipeline.json`, a `@github-login` for a
+human, or the literal `orchestrator`.
 
 **Only rewrite the subsection you own**, leaving the others untouched, and
-**never remove a checked item** -- they are the audit trail. Marker format,
-subsection owners, and checkbox syntax:
-[`13-todos.md`](../docs/product/orchestrator/13-todos.md).
+**never remove a checked item** -- they are the audit trail.
 
 ---
 
@@ -193,12 +211,11 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 
 | Topic | Location |
 |---|---|
-| Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, todos, roadmap, orchestrator design, agent spec) | [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md) — start with the README |
+| Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, orchestrator design, agent spec) | [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md) — start with the README |
 | Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you don't |
 | Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
 | Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` |
 | ADRs (architecture decisions of record) | `adrs/adrs.json` (repo-local; `standards/` holds the universal standards and never ADRs) |
-| Todos in issue/PR bodies (read protocol, write protocol, marker conventions) | [`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md) |
 
 When referencing a standard in a comment or commit, use its stable
 `STD` ID, not the prose:

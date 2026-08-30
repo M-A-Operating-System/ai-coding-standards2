@@ -77,7 +77,6 @@ rest as reference you consult when a question comes up.
 
 | # | Document | What it tells you |
 |---|---|---|
-| 13 | [Todos](13-todos.md) | How task lists are stored in issue/PR bodies |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
 | — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |
 | — | [Standards](../standards/14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping -- lives in its own `docs/product/standards/` area, not this one; standards enforcement is agent behaviour, not orchestrator mechanism |
@@ -86,9 +85,9 @@ rest as reference you consult when a question comes up.
 
 | # | Document | What it tells you |
 |---|---|---|
-| 10 | [Roadmap](10-roadmap.md) | What ships now versus later; MVP scope and rollout phases |
 | 15 | [Backlog](15-backlog.md) | Point-in-time snapshot of open issues (GitHub is authoritative) |
 | — | [Glossary](glossary.md) | Plain-language definitions of every term used above |
+| — | [Retirement log](retirement-log.md) | Where each retired legacy document's content ended up -- history of the consolidation, not part of the design |
 
 ---
 

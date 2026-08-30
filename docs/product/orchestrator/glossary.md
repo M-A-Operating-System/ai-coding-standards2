@@ -114,7 +114,7 @@ See [`PRODUCT.md`](PRODUCT.md#what-lands-on-the-issue).
 
 **Todos block** — The marker-delimited task list stored in an issue or PR
 body (not in comments or a separate file), with ISO 8601 timestamps.
-See [`13-todos.md`](13-todos.md).
+See [`.claude/AGENTS.md`](../../../.claude/AGENTS.md), "Todo lists".
 
 **Retrospective** — The per-ticket reflection produced in the Evaluate phase;
 recurring findings feed standards proposals. See [`04-lifecycle.md`](04-lifecycle.md).
