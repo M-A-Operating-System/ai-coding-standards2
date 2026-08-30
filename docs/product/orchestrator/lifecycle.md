@@ -89,20 +89,89 @@ When two types are plausible, prefer the one with the higher review bar: `securi
 A second, independent label dimension: **`size:`** answers how much of the
 work there is, never why it exists. Every issue carries exactly one
 alongside its `type:` (see [Issue classification
-taxonomy](#issue-classification-taxonomy) above). `ticket-sizer` applies it
+taxonomy](#issue-classification-taxonomy) above). `issue-sizer` applies it
 as a `size: {S|M|L}` label with a rationale comment, gated by
 `size:approved`.
 
 | Size | Meaning | What it triggers |
 |---|---|---|
-| `S` | Small enough on its own that shipping it alone wastes review overhead | **Combiner.** The orchestrator suggests grouping it under a super-issue with other `S`-sized issues in the current window. On approval the super-issue becomes the shippable unit; its children pause their own pipelines, attach, and one PR closes the super-issue and all of them (see [Many small tickets in a window](#many-small-tickets-in-a-window)) |
-| `M` | Fits the enhancement baseline as itself | No fork -- ships as one item through the standard ticket flow |
-| `L` | Too big for one item | **Decomposer.** `issue-decomposer` drafts an ordered child-issue roadmap, gated on `decomposition:approved`; each child re-enters at `issue-classifier`, is independently typed and sized, and runs its own full lifecycle (see [The ticket is too big](#the-ticket-is-too-big)) |
+| `S` | Small enough on its own that shipping it alone wastes review overhead | **Combiner.** The orchestrator suggests grouping it under a super-issue with other `S`-sized issues in the current window. On approval the super-issue becomes the shippable unit; its children pause their own pipelines and attach. The super-issue itself is a fresh work item, sized on its own merits |
+| `M` | Fits the enhancement baseline as itself | No fork -- this is the only size at which code actually ships |
+| `L` | Too big for one item | **Decomposer.** `large-decomposer` drafts an ordered child-issue roadmap, gated on `decomposition:approved`; each child re-enters at `issue-classifier`, is independently typed and sized, and runs its own full lifecycle (see [The ticket is too big](#the-ticket-is-too-big)) |
 
 `size:` applies uniformly across every `type:` -- a `tech-debt` issue that
 comes back `L` decomposes exactly like an `enhancement` that does, and each
 child keeps the parent's `type:`. There is no type that is "big by
 definition"; bigness is `size: L`, for anything.
+
+**Only `M` ever ships code.** `S` and `L` are routing sizes, not build
+sizes: neither the small issue that gets combined nor the large issue that
+gets decomposed is itself the thing `coder` implements. `S` routes to the
+combiner and the resulting super-issue is what gets built; `L` routes to
+the decomposer and its children are what get built -- each of which is a
+fresh issue, sized on its own merits, and the recursion bottoms out at `M`
+before any of Execute's steps ever run. See [What runs, for each type and
+size](#what-runs-for-each-type-and-size) for the complete picture.
+
+**At `L`, design and planning happen before decomposition, not after.**
+`architect` settles the component boundaries, API contracts, and data
+model; `large-decomposer` uses those boundaries as the natural split points
+for the children. Decomposing first and designing second would mean
+guessing at seams before anything has decided where they belong --
+`dependency-planner`'s child order and critical path depend on the same
+design for the same reason. So the order at `L` is: `prd-writer` →
+`architect` → `test-spec-writer` / `test-coverage-auditor` →
+`dependency-planner` → `large-decomposer`.
+
+**`L` closes only once its children do, and only after a real review.**
+Once every child (recursively resolved to `M`) has merged, `large-reviewer`
+reviews the aggregate against the parent's PRD, design, and plan -- the
+same shape as `pr-reviewer` reading a diff against a spec, spanning every
+child's merged PR instead of one. A person approves that assessment at
+`large-review:approved` before the parent closes; every child can pass its
+own review and the whole still be wrong, which is exactly what this step
+exists to catch. `REQUEST_CHANGES` files a new child under the same parent
+addressing the gap, rather than reopening a child that already merged.
+
+---
+
+## What runs, for each type and size
+
+One table, every step as a row, every type as a column. `S`/`M`/`L`
+rows inside a cell where size changes the answer.
+
+| Step | Security | Enhancement | Bug | Tech-debt | Spike |
+|---|---|---|---|---|---|
+| **Trigger** | Issue opened → `type: security` | Issue opened → `type: enhancement` | Issue opened → `type: bug` | Issue opened → `type: tech-debt` | Issue opened → `type: spike` |
+| `issue-classifier` | YES | YES | YES | YES | YES |
+| `issue-sizer` | S: `size: S` → combiner<br>M: `size: M` → proceeds<br>L: `size: L` → `large-decomposer` | Same | Same | Same | Not sized — not measured against the baseline |
+| `prd-writer` | YES — gate `prd-writer:approved` | Same | Same | Same | YES — gate `prd-writer:approved`; **flow stops here** |
+| `architect` | S: NO<br>M: CONDITIONAL — new API/data-model/integration surface<br>L: YES — settles design before decomposition | Same | Same | Same | NO |
+| `test-spec-writer` | S: NO<br>M: NO — the PRD's own Gherkin suffices<br>L: YES — defines the scenario set the children divide | Same | Same | Same | NO |
+| `test-coverage-auditor` | S: NO<br>M: NO<br>L: YES — gate `test-spec:approved` | Same | Same | Same | NO |
+| `dependency-planner` | S: NO<br>M: NO — nothing to order<br>L: YES — gate `plan:approved`, names child order | Same | Same | Same | NO |
+| **Combiner** (orchestrator) | S: YES — groups with other `S` issues, gate `super-issue:approved`; this issue's own pipeline pauses here<br>M/L: N/A | Same | Same | Same | N/A |
+| `large-decomposer` | L: YES — gate `decomposition:approved`; this issue's own pipeline stops here<br>S/M: N/A | Same | Same | Same | N/A |
+| **Children / super-issue** (recursive) | The super-issue (`S`) or each child (`L`) re-enters at `issue-classifier`, sized on its own merits — everything below only runs once that recursion bottoms out at `M` | Same | Same | Same | N/A |
+| `create-docs-pr` (script) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `prd-docs-updater` | S: NO<br>M: YES — scoped edit, never a rewrite<br>L: NO | Same | Same | Same | NO |
+| `merge-docs-pr` (script) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `create-pr` (script, code PR) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `coder` | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — ships research, not code |
+| `ci-gate` (script) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `merge-conflict` | S: NO<br>M: YES — auto-advances if clean<br>L: NO | Same | Same | Same | NO |
+| `pr-reviewer` | S: NO<br>M: YES — plus `security-review:approved` when flagged<br>L: NO | S: NO<br>M: YES<br>L: NO | Same | Same | NO |
+| `coverage-enforcer` | S: NO<br>M: YES — gate `coverage:approved`<br>L: NO | Same | Same | Same | NO |
+| `impact-assessor` | S: NO<br>M: YES — expected to trigger<br>L: NO | S: NO<br>M: CONDITIONAL<br>L: NO | Same | Same | NO |
+| `migration-validator` | S: NO<br>M: CONDITIONAL — touches `**/*.sql`<br>L: NO | Same | Same | Same | NO |
+| Changelog | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — the approved PRD scope is the deliverable |
+| Retrospective | S: NO<br>M: NO, unless multiple review cycles<br>L: NO | Same | Same | Same | NO |
+| `large-reviewer` | L: YES — once every child resolves to `M` and merges, reviews the aggregate against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merged PR<br>S/M: N/A | Same | Same | Same | N/A |
+| Gate: `large-review:approved` | L: YES — a person reviews the assessment, not a child-count rubber stamp. `REQUEST_CHANGES` files a new child under the same parent; `APPROVE` closes it<br>S/M: N/A | Same | Same | Same | N/A |
+
+`task-decomposer` does not appear in this table: with code only ever
+shipping at `M`, there is no multi-task PR left to break down --
+`coder` implements the one PRD directly.
 
 ---
 
@@ -206,13 +275,14 @@ getting it wrong.
 | Gate label | Phase | Approver | Artefact | What you're signing off | Cost if wrong |
 |---|---|---|---|---|---|
 | `01_product_docs/prd-writer:approved` | Product docs | Stakeholder who opened the issue, or their delegate | The **issue body itself**, after `01_product_docs/prd-writer` rewrites it into the canonical PRD format (see [PRD format](#prd-format-and-the-prd-writer-gate) below) and rewrites the title | The problem and goal are correct; each user story names a real persona from [`standards/personas.json`](../../../standards/personas.json) (including the System actor, whose entry there carries the qualifying test that keeps it from being a disguise for technical work) and `As a developer` stories are suspect; each Gherkin scenario is falsifiable; "Out of scope" actually rules things out; success metrics are externally observable; the new title categorises the work correctly and names a real bounded context. Once approved, the PRD is the source of truth for everything downstream | The most expensive gate to skim — wrong PRD → wrong everything downstream (design, testing, evaluation) |
-| `size:approved` | Product docs | Engineer who will own the work, or the tech lead | A `size: {S\|M\|L}` label and rationale from `ticket-sizer` | That the size is right. `M` fits a single development cycle as itself. `L` commits you to breaking it into children before proceeding. `S` commits you to considering combination with other small tickets in the window | An `L` ticket past the gate produces a sprawling design and a multi-week PR; a wrongly-approved `S` either wastes review overhead shipped alone or gets combined with unrelated work |
+| `size:approved` | Product docs | Engineer who will own the work, or the tech lead | A `size: {S\|M\|L}` label and rationale from `issue-sizer` | That the size is right. `M` fits a single development cycle as itself. `L` commits you to breaking it into children before proceeding. `S` commits you to considering combination with other small tickets in the window | An `L` ticket past the gate produces a sprawling design and a multi-week PR; a wrongly-approved `S` either wastes review overhead shipped alone or gets combined with unrelated work |
 | `super-issue:approved` | Product docs | Engineer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
 | `design:approved` | Technical docs | Engineer or tech lead | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
 | `test-spec:approved` | Testing spec | Engineer | A Gherkin scenario list from `test-spec-writer`, plus a coverage report from `test-coverage-auditor` confirming every PRD acceptance criterion maps to at least one scenario | That these scenarios — and only these — are what "done" means | Tests get written for the wrong things |
 | `plan:approved` | Build plan | Engineer | A build plan showing the ordered child task list and the critical path, produced by `dependency-planner` | That the decomposition is sensible and the order is correct | Wasted work; merge conflicts; tasks that discover the design has a hole |
 | `pr:approved` | Execute | Engineer | A PR review from `pr-reviewer` checking scope, design alignment, and resolution of `required` standards violations | That the code is right and ready to test | Bugs in production. Use this gate to look at the actual diff, not just the agent's review summary |
 | `coverage:approved` | Test | Engineer | A coverage report showing test results, coverage delta, and any acceptance criterion without a passing test, produced by `coverage-enforcer` | That tests pass, coverage hasn't regressed, and every required scenario has a passing test | Untested code in production |
+| `large-review:approved` | Execute (`L` only) | Engineer or tech lead | A structured assessment from `large-reviewer`, comparing what every child actually shipped against the parent's PRD, design, and plan -- posted once every child has merged | That the sum of the parts does what the parent's PRD asked for, not just that every child individually passed its own review | A large item closes on child-count alone; individually-correct parts that collectively miss the scope, or leave a seam nobody owned, ship undetected |
 | `standards-proposal:approved` | Evaluate (weekly) | Standards owner | An issue from `standards-evolver` proposing a new or changed standard, in JSON schema format | That the proposed standard is sound, the rationale is real, and the agent guidance is unambiguous | A bad standard ripples into every subsequent ticket |
 | `security-review:approved` | Execute | Security owner | The PR diff and the `impact-assessor` security-flag comment listing the sensitive surfaces touched (auth flows, RLS policies, IAM definitions, secrets, PII fields) | That the change is safe from an authentication, authorisation, and data-exposure perspective. Not a full pentest — a focused review of the flagged surface | Security vulnerabilities in production. Only required on PRs flagged by `impact-assessor`; non-flagged PRs skip this gate automatically |
 | `data-migration:approved` | Execute | Data owner | The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance | That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted | Data loss or corruption in production. Only required on PRs that include `**/*.sql` files |
@@ -225,7 +295,7 @@ getting it wrong.
 
 Two gates carry additional refusal/guard behaviour worth noting:
 
-- **`size:approved`** — `ticket-sizer`'s `L` verdict is itself the trigger
+- **`size:approved`** — `issue-sizer`'s `L` verdict is itself the trigger
   to decompose; approving an `L` commits you to breaking the ticket into
   children first. An `S` verdict similarly triggers the combiner suggestion,
   though grouping itself gates separately on `super-issue:approved`.
@@ -279,8 +349,9 @@ so the approved design reaches `main` before any code is written:
 
 - The **design PR must not carry a closing keyword** (`Closes`/`Fixes`/`Resolves`).
   The issue stays open through the build phase; only the **code PR** closes it.
-  A premature close would also trip the branch-delete / epic-close automation
-  (see [Epic completion](#the-ticket-is-too-big) below).
+  A premature close would also trip the branch-delete automation and the
+  `large-review:approved` gate that closes a decomposed parent
+  (see [The ticket is too big](#the-ticket-is-too-big) below).
 - The **code branch (`issue-{N}`) is cut from the post-design-merge `main`**, so
   the build always starts from a tree that already contains the latest approved
   design (and the latest pipeline infrastructure).
@@ -308,75 +379,51 @@ above: still exactly one PR per branch, now up to two phase-PRs per issue
 
 ### The ticket is too big
 
-If `ticket-sizer` returns `L`, an **`issue-decomposer`** agent runs.
-It drafts a roadmap of proposed child issues — each a smaller business
-outcome — and posts the roadmap as a comment on the parent. A human
-approves the decomposition by applying `decomposition:approved`. On
-approval, the agent auto-creates the child issues and links them back
-to the parent. Each child re-enters the pipeline at `issue-classifier`
-and runs through its own full lifecycle.
+If `issue-sizer` returns `L`, `architect`, `test-spec-writer` /
+`test-coverage-auditor`, and `dependency-planner` settle the design, the
+scenario coverage, and the child order first (see
+[Sizing](#sizing)) -- then **`large-decomposer`** drafts a roadmap of
+proposed child issues, each a smaller business outcome shaped by that
+design, and posts the roadmap as a comment on the parent. A human approves
+the decomposition by applying `decomposition:approved`. On approval, the
+agent auto-creates the child issues and links them back to the parent.
+Each child re-enters the pipeline at `issue-classifier`, is independently
+typed and sized, and runs through its own full lifecycle -- recursively,
+until it resolves to `M`, the only size that ships code.
 
-**The epic flow (target state).** An epic is a work item whose value is in the
-parts it creates and the judgement that they add up. It has five stages, and
-each one is a step in its own flow rather than an exclusion from someone else's:
+**A large item's value is in the parts it creates and the judgement that
+they add up.** It has five stages, and each one is a step in its own flow
+rather than an exclusion from someone else's:
 
 | Stage | What it is |
 |---|---|
-| Pick it up | The epic enters its flow like any other work item |
-| Decompose it | Produce the child issues that are the actual work, linked back to the epic |
-| Wait for the parts | The children run their own flow, independently and in parallel. Not a step -- a later step whose trigger condition is not yet met |
-| Review the whole | Confirm the implementation hangs together and the sum of the parts does what the epic asked for |
-| Close it | The epic is finished, with that review as the record of why |
+| Pick it up | The item enters its flow like any other work item |
+| Decompose it | `architect`, `test-spec-writer`/`test-coverage-auditor`, and `dependency-planner` settle the design and plan; `large-decomposer` produces the child issues that are the actual work, linked back to the parent |
+| Wait for the parts | The children run their own flow, independently and in parallel, each recursing through this same table at its own size. Not a step -- a later step whose trigger condition is not yet met |
+| Review the whole | `large-reviewer` confirms the implementation hangs together and the sum of the parts does what the parent's PRD asked for, gated on `large-review:approved` |
+| Close it | The parent closes once `large-review:approved` is applied, with that review as the record of why |
 
 The fourth stage is the one worth having. Every child can pass its own review and
-the epic still fail: the parts can be individually correct and collectively
-wrong, or leave a seam nobody owned. Closing an epic the moment its last child
-closes checks that the pieces exist, not that they add up.
+the parent still fail: the parts can be individually correct and collectively
+wrong, or leave a seam nobody owned. Closing a large item the moment its last
+child closes checks that the pieces exist, not that they add up -- which is
+exactly what `large-reviewer` exists to catch instead.
 
-Declaring this as a flow needs a trigger that can say "every child of this item
-is closed" -- a condition about other work items, which the current trigger
-vocabulary cannot express. That is why the waiting is orchestrator-native code
-today rather than configuration; see
+Declaring "wait for the parts" as a flow needs a trigger that can say "every
+child of this item is closed" -- a condition about other work items, which the
+current trigger vocabulary cannot express; see
 [`PRODUCT.md`](PRODUCT.md#coordinating-work-needs-a-trigger-that-can-look-outward).
-
-**Epic completion (as built today).** The parent (labeled `epic`) is excluded
-from every pipeline stage until its children finish. On each scheduled sweep, the
-orchestrator checks every open `epic`-labeled issue: if all of its
-`parent-issue:{N}`-labeled children are closed, the orchestrator
-re-processes the parent as a work item so it advances through its own next
-eligible step — today, that means closing it with a completion comment.
-This is orchestrator-native logic, not a registered agent step (a
-mechanical label check needs no LLM invocation), declared in
-`pipeline.json` as an `orchestrator_checks` entry rather than a pipeline
-step.
-The mechanism is intentionally general: future pipeline steps added to
-epics (such as a whole-feature review before release) plug in by extending
-what the parent's "next eligible step" is, without revisiting this check.
-
-Because the check runs on the periodic sweep rather than on an
-`issues.closed` event, there is an inherent delay of up to one sweep
-interval (currently ~30 minutes between weekday ticks) between the last
-child closing and the parent being processed — an accepted trade-off for a
-simpler mechanism with no dependency on catching a specific webhook event.
-This replaces the standalone `close-epic-on-children-complete.yml` workflow,
-which is retired.
-
-Distinct from `task-decomposer` (Design phase): `task-decomposer`
-breaks a *sized* ticket into implementation tasks (one file, one
-concern) that all ship in one PR. `issue-decomposer` runs *before*
-sizing clears, breaking a too-large issue into smaller business-outcome
-issues, each with its own PR.
 
 ### Many small tickets in a window
 
-If `ticket-sizer` returns `S` and the issue is the Nth small
+If `issue-sizer` returns `S` and the issue is the Nth small
 bug or chore in a configured window, the orchestrator suggests
 grouping under a super-issue before sizing completes. On approval the
 super-issue becomes the shippable unit
 (see [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)):
-it runs through the full pipeline as a single unit, the grouped children pause
-their own pipelines and attach, and one PR closes the super-issue and
-all its children on merge.
+it re-enters as its own work item, sized on its own merits (typically `M`),
+the grouped children pause their own pipelines and attach, and one PR
+closes the super-issue and all its children on merge.
 
 ### PR contains merge conflicts
 
@@ -493,7 +540,7 @@ edits. This keeps a hard boundary:
   classification taxonomy](#issue-classification-taxonomy)), carrying its
   `Debt-source:` trailer as the evidence a human reviewer checks at
   classification time; a gap-issue lands as `enhancement`, sized by
-  `ticket-sizer` like any other -- large enough to warrant decomposition if
+  `issue-sizer` like any other -- large enough to warrant decomposition if
   the missing capability turns out to be.
 - Every change still flows through Phases 1–4, with the same gates,
   the same standards checks, and the same audit trail.
@@ -520,9 +567,10 @@ points back to where it is already detailed in full above.
 
 All four non-`spike` types ([Issue classification
 taxonomy](#issue-classification-taxonomy)) run the identical flow, in the
-identical order, through the identical gates. Type changes review depth,
-not flow shape; size, independently, decides whether a ticket ships as
-itself or forks (see [Sizing](#sizing)):
+identical order, through the identical gates, whenever they actually reach
+Execute. Type changes review depth, not flow shape; size, independently,
+decides whether a ticket ships as itself, at all -- only `size: M` ever
+does; `S` and `L` route elsewhere first (see [Sizing](#sizing)):
 
 | Type | What differs — never the flow itself |
 |---|---|
@@ -552,13 +600,18 @@ are not types themselves, and the first two are driven by `size:`, not
 `type:` at all (see [Sizing](#sizing)). All four are detailed in
 [Forks in the path](#forks-in-the-path):
 
-- **Oversized ticket** — `ticket-sizer` returns `L`; `issue-decomposer`
-  drafts a child-issue roadmap, gated on `decomposition:approved`; each
-  child re-enters at `issue-classifier` and runs its own full lifecycle,
-  keeping the parent's `type:`.
-- **Many small tickets in a window** — `ticket-sizer` returns `S`; small
-  tickets batch under a super-issue, which becomes the shippable unit; one
-  PR closes it and every grouped child.
+- **Oversized ticket** — `issue-sizer` returns `L`; `architect`,
+  `test-spec-writer`/`test-coverage-auditor`, and `dependency-planner`
+  settle the design and plan; `large-decomposer` drafts a child-issue
+  roadmap shaped by that design, gated on `decomposition:approved`; each
+  child re-enters at `issue-classifier`, recursing to its own size, keeping
+  the parent's `type:`. Once every child resolves and merges,
+  `large-reviewer` checks the sum against the original scope, gated on
+  `large-review:approved`, before the parent closes.
+- **Many small tickets in a window** — `issue-sizer` returns `S`; small
+  tickets batch under a super-issue, which becomes the shippable unit,
+  re-entering as its own sized work item; one PR closes it and every
+  grouped child.
 - **Merge conflict** — `merge-conflict` auto-advances a clean PR; a
   conflicted one gates on `merge-conflict:approved` before `coder` is
   re-invoked with the resolution plan.
@@ -594,63 +647,48 @@ classify:
 ## Every step across every flow
 
 One row per step named anywhere in this document, regardless of which
-family it belongs to. **Tools** reflects each live step's declared agent
-frontmatter (`tools:`) for orientation only — per-step tool grants are
-currently split across more sources than that single field
-([AS-1](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does) is not
-yet satisfied), so `pipeline.json` and the agent's own frontmatter are
-authoritative if this drifts. A **Target-only** step is named in this
-document's prose but does not exist in `pipeline.json` yet; its tools are
-not yet declared anywhere, and inventing a value here would misstate that.
+family it belongs to. This is a reference to the intended design; tool
+grants and other implementation specifics belong to `pipeline.json` and
+each agent's own frontmatter (AS-1), not here.
 
-| Step | Kind | Family | Purpose | Tools | Status |
-|---|---|---|---|---|---|
-| `00_ondemand/codebase-reviewer` | agent | On-demand | Three-persona codebase review; files a Technical Review issue | Bash, Read, Grep | Live |
-| `00_ondemand/sizer` | agent | Structural fork (oversized ticket) | Sizes an issue; decomposes it if too large, gated on human review of the breakdown | Bash, Read, Grep | Live — see the naming note below |
-| `00_ondemand/new-agent` | agent | On-demand | Scaffolds a new pipeline agent from an issue description | Bash, Read, Write, Edit, Grep | Live |
-| `00_ondemand/standards-migrator` | agent | On-demand | Converts a consuming repo's existing knowledge files into `standards/*.json` | Bash, Read, Write, Grep, Glob | Live |
-| `00_ondemand/branch-cleanup` | agent | On-demand | Recommends, then (on approval) deletes, stale remote branches | Bash, Read, Grep | Live |
-| `00_ondemand/issue-cleanup` | agent | On-demand | Recommends, then (on approval) closes, complete or duplicate issues | Bash, Read, Grep | Live |
-| `01_product_docs/issue-classifier` | agent | Standard ticket flow | Classifies the issue; validates required fields are present | Bash, Read | Live |
-| `01_product_docs/prd-writer` | agent | Standard ticket flow | Drafts the PRD; rewrites the issue body into user-story + Gherkin format | Bash, Read, Grep | Live |
-| `ticket-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`); an `L` verdict commits to decomposition, an `S` verdict to the combiner | not yet declared | Target-only |
-| `issue-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `L` ticket, gated on `decomposition:approved` | not yet declared | Target-only |
-| `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing | n/a — deterministic script | Live |
-| `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; makes a scoped edit to `docs/product/` for what the PRD changed, never a full-file rewrite; self-gates on design review | Bash, Read, Write, Grep | Live |
-| `01_product_docs/merge-docs-pr` | script | Standard ticket flow | Merges the design PR to `main` ahead of the build phase | n/a — deterministic script | Live |
-| `01_product_docs/create-pr` | script | Standard ticket flow | Opens the code PR (`issue-{N}`), cut from the post-design `main` | n/a — deterministic script | Live |
-| `architect` | agent | Standard ticket flow | Technical design — data model, API contracts, boundaries, NFRs; flags ADR-worthy decisions | not yet declared | Target-only |
-| `test-spec-writer` | agent | Standard ticket flow | Derives a numbered Gherkin scenario list from the approved PRD | not yet declared | Target-only |
-| `test-coverage-auditor` | agent | Standard ticket flow | Confirms every PRD acceptance criterion maps to at least one scenario | not yet declared | Target-only |
-| `dependency-planner` | agent | Standard ticket flow | Produces the build plan — ordered child-task list and critical path | not yet declared | Target-only |
-| `task-decomposer` | agent | Standard ticket flow | Breaks a sized ticket into one-file, one-concern implementation tasks that all ship in one PR | not yet declared | Target-only — distinct from `issue-decomposer`, which runs before sizing and splits into separate issues and PRs |
-| `03_execute/coder` | agent | Standard ticket flow | Implements the issue and its sub-issues; the orchestrator commits on completion | Bash, Read, Edit, Write, Grep, Glob | Live |
-| `03_execute/ci-gate` | script | Standard ticket flow | Polls CI checks; `review` on failure (recycles `coder`), `blocked` on a 14-minute timeout | n/a — deterministic script | Live |
-| `03_execute/merge-conflict` | agent | Structural fork (merge conflict) | Auto-advances a clean PR; posts a resolution plan and gates `merge-conflict:approved` otherwise | Bash, Read, Glob, Grep | Live |
-| `03_execute/pr-reviewer` | agent | Standard ticket flow | Structured code review; `REQUEST_CHANGES`/`APPROVE`, blocked on unresolved human reviews | Bash, Read, Glob, Grep | Live |
-| `impact-assessor` | agent | Structural fork (security-flagged PR) | Flags sensitive surfaces touched (auth, RLS, IAM, secrets, PII), gating `security-review:approved` | not yet declared | Target-only |
-| `migration-validator` | agent | Structural fork (SQL changes) | Confirms forward-only, idempotent, RLS-compliant migrations; blocks merge on violation | not yet declared | Target-only |
-| `coverage-enforcer` | agent | Standard ticket flow | Confirms tests pass, coverage hasn't regressed, every required scenario has a passing test | not yet declared | Target-only |
-| `standards-evolver` | agent | Standard ticket flow (weekly aggregate) | Proposes a new or changed standard from repeated findings, gated `standards-proposal:approved` | not yet declared | Target-only |
-| *(unnamed)* | agent | Standard ticket flow | Produces the changelog and per-ticket retrospective — Phase 4's primary artefact besides standards proposals | not yet declared | Target-only, and unnamed: no agent name for this artefact appears anywhere in this document yet |
-| `metrics-aggregator` | agent | Continuous — Learn loop | Daily: cycle time, gate dwell time, agent duration, rejection rate from the audit log | not yet declared | Target-only |
-| `pipeline-tuner` | agent | Continuous — Learn loop | Monthly: drafts PRs against `pipeline.json` from systemic metric patterns, gated `pipeline-change:approved` | not yet declared | Target-only |
-| `prompt-tuner` | agent | Continuous — Learn loop | Monthly: drafts targeted agent-prompt edits from rejection-rate evidence, gated `prompt-change:approved` | not yet declared | Target-only |
-| `knowledge-curator` | agent | Continuous — Learn loop | Weekly: drafts knowledge artefacts (runbooks, templates) from tickets with reusable patterns | not yet declared | Target-only |
-| `process-reviewer` | agent | Continuous — Learn loop | Quarterly: holistic assessment against `PRODUCT.md`; may propose coordinated changes, gated `process-review:approved` (dual) | not yet declared | Target-only |
-| `gap-assessor` | agent | Continuous — Gap-assessment loop | Weekly: cross-checks PRD acceptance criteria against tests, shipped code, and the changelog | not yet declared | Target-only |
-| `vision-aligner` | agent | Continuous — Gap-assessment loop | Weekly: checks the codebase for capabilities the vision implies but no ticket has captured | not yet declared | Target-only |
-| `gap-curator` | agent | Continuous — Gap-assessment loop | Weekly: de-duplicates and prioritises gap candidates into one report, gated `gap-report:approved` (dual) | not yet declared | Target-only |
-| `debt-finder` | agent | Continuous — Tech-debt loop | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn | not yet declared | Target-only |
-| `adr-revisitor` | agent | Continuous — Tech-debt loop | Monthly: flags accepted ADRs whose context has materially shifted | not yet declared | Target-only |
-| `debt-curator` | agent | Continuous — Tech-debt loop | Weekly: de-duplicates and prioritises debt candidates into one report, gated `debt-report:approved` (dual) | not yet declared | Target-only |
-| `epic-completion` | orchestrator-native check | Structural fork (epic) | Scheduled sweep: closes an epic once every child is closed | n/a — no LLM invocation | Live — declared in `pipeline.json`'s `orchestrator_checks` |
-
-**The `00_ondemand/sizer` / `ticket-sizer` naming gap.** The current
-`00_ondemand/sizer` is human-triggered (`sizer:requested` label) and
-combines sizing and decomposition into one on-demand step. `ticket-sizer`
-and `issue-decomposer` above name a different target shape: an automatic
-per-ticket phase step with its own `size:approved` gate, and a separate
-decomposition step downstream of it. Whether the target design is two
-agents or one is not yet decided; recorded here rather than silently
-treating the two names as identical.
+| Step | Kind | Family | Purpose |
+|---|---|---|---|
+| `00_ondemand/codebase-reviewer` | agent | On-demand | Three-persona codebase review; files a Technical Review issue |
+| `00_ondemand/sizer` | agent | On-demand | Ad-hoc, human-triggered sizing and decomposition of an issue, on request, outside the automatic per-ticket flow |
+| `00_ondemand/new-agent` | agent | On-demand | Scaffolds a new pipeline agent from an issue description |
+| `00_ondemand/standards-migrator` | agent | On-demand | Converts a consuming repo's existing knowledge files into `standards/*.json` |
+| `00_ondemand/branch-cleanup` | agent | On-demand | Recommends, then (on approval) deletes, stale remote branches |
+| `00_ondemand/issue-cleanup` | agent | On-demand | Recommends, then (on approval) closes, complete or duplicate issues |
+| `01_product_docs/issue-classifier` | agent | Standard ticket flow | Classifies the issue; validates required fields are present |
+| `issue-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`); an `L` verdict routes to `large-decomposer`, an `S` verdict to the combiner, `M` proceeds |
+| `01_product_docs/prd-writer` | agent | Standard ticket flow | Drafts the PRD; rewrites the issue body into user-story + Gherkin format |
+| `architect` | agent | Standard ticket flow | Technical design — data model, API contracts, boundaries, NFRs; flags ADR-worthy decisions. At `L`, settles the boundaries `large-decomposer` splits along |
+| `test-spec-writer` | agent | Standard ticket flow | Derives a numbered Gherkin scenario list from the approved PRD; at `L`, the set its children's coverage is checked against |
+| `test-coverage-auditor` | agent | Standard ticket flow | Confirms every PRD acceptance criterion maps to at least one scenario |
+| `dependency-planner` | agent | Standard ticket flow | Produces the build plan — ordered child-task list and critical path, for `large-decomposer` to follow |
+| `large-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `L` ticket, shaped by `architect`'s design, gated on `decomposition:approved` |
+| `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing. Runs only once a ticket resolves to `M` |
+| `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; makes a scoped edit to `docs/product/` for what the PRD changed, never a full-file rewrite; self-gates on design review |
+| `01_product_docs/merge-docs-pr` | script | Standard ticket flow | Merges the design PR to `main` ahead of the build phase |
+| `01_product_docs/create-pr` | script | Standard ticket flow | Opens the code PR (`issue-{N}`), cut from the post-design `main` |
+| `03_execute/coder` | agent | Standard ticket flow | Implements the issue; the orchestrator commits on completion. The only step that writes product code, and it only ever runs at `size: M` |
+| `03_execute/ci-gate` | script | Standard ticket flow | Polls CI checks; `review` on failure (recycles `coder`), `blocked` on a 14-minute timeout |
+| `03_execute/merge-conflict` | agent | Structural fork (merge conflict) | Auto-advances a clean PR; posts a resolution plan and gates `merge-conflict:approved` otherwise |
+| `03_execute/pr-reviewer` | agent | Standard ticket flow | Structured code review; `REQUEST_CHANGES`/`APPROVE`, blocked on unresolved human reviews |
+| `impact-assessor` | agent | Structural fork (security-flagged PR) | Flags sensitive surfaces touched (auth, RLS, IAM, secrets, PII), gating `security-review:approved`; guaranteed to trigger for `type: security` |
+| `migration-validator` | agent | Structural fork (SQL changes) | Confirms forward-only, idempotent, RLS-compliant migrations; blocks merge on violation |
+| `coverage-enforcer` | agent | Standard ticket flow | Confirms tests pass, coverage hasn't regressed, every required scenario has a passing test |
+| `standards-evolver` | agent | Standard ticket flow (weekly aggregate) | Proposes a new or changed standard from repeated findings, gated `standards-proposal:approved` |
+| *(unnamed)* | agent | Standard ticket flow | Produces the changelog and per-ticket retrospective — Phase 4's primary artefact besides standards proposals; no agent name for this artefact appears anywhere in this document yet |
+| `large-reviewer` | agent | Structural fork (oversized ticket) | Once every child of an `L` ticket resolves to `M` and merges, reviews the aggregate against the parent's PRD, design, and plan — `pr-reviewer`'s shape, spanning every child's merged PR. Gated on `large-review:approved`; `REQUEST_CHANGES` files a new child under the same parent |
+| `metrics-aggregator` | agent | Continuous — Learn loop | Daily: cycle time, gate dwell time, agent duration, rejection rate from the audit log |
+| `pipeline-tuner` | agent | Continuous — Learn loop | Monthly: drafts PRs against `pipeline.json` from systemic metric patterns, gated `pipeline-change:approved` |
+| `prompt-tuner` | agent | Continuous — Learn loop | Monthly: drafts targeted agent-prompt edits from rejection-rate evidence, gated `prompt-change:approved` |
+| `knowledge-curator` | agent | Continuous — Learn loop | Weekly: drafts knowledge artefacts (runbooks, templates) from tickets with reusable patterns |
+| `process-reviewer` | agent | Continuous — Learn loop | Quarterly: holistic assessment against `PRODUCT.md`; may propose coordinated changes, gated `process-review:approved` (dual) |
+| `gap-assessor` | agent | Continuous — Gap-assessment loop | Weekly: cross-checks PRD acceptance criteria against tests, shipped code, and the changelog |
+| `vision-aligner` | agent | Continuous — Gap-assessment loop | Weekly: checks the codebase for capabilities the vision implies but no ticket has captured |
+| `gap-curator` | agent | Continuous — Gap-assessment loop | Weekly: de-duplicates and prioritises gap candidates into one report, gated `gap-report:approved` (dual) |
+| `debt-finder` | agent | Continuous — Tech-debt loop | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn |
+| `adr-revisitor` | agent | Continuous — Tech-debt loop | Monthly: flags accepted ADRs whose context has materially shifted |
+| `debt-curator` | agent | Continuous — Tech-debt loop | Weekly: de-duplicates and prioritises debt candidates into one report, gated `debt-report:approved` (dual) |
