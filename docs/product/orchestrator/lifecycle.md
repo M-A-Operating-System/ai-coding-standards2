@@ -291,6 +291,12 @@ so the approved design reaches `main` before any code is written:
 - **Naming:** the code branch stays `issue-{N}` (unchanged, so all existing
   tooling keyed on that pattern is untouched); only the new `issue-{N}-docs`
   design branch is added. `delete-branch.sh` broadens its match to clean up both.
+- **The design PR's edit is scoped, not a rewrite.** `prd-docs-updater` changes
+  only the section(s) the PRD affects -- it does not reformat, reorder, or
+  restructure a doc file to make room for the change. Keeping docs current is
+  non-negotiable (P-15); rewriting the file to do it is not the same
+  requirement and is not asked for. This is what keeps the design PR small
+  enough to review as a small PR, for an enhancement same as anything else.
 
 This refines -- it does not abandon -- the one-branch-per-PR invariant stated
 above: still exactly one PR per branch, now up to two phase-PRs per issue
@@ -610,7 +616,7 @@ not yet declared anywhere, and inventing a value here would misstate that.
 | `ticket-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`); an `L` verdict commits to decomposition, an `S` verdict to the combiner | not yet declared | Target-only |
 | `issue-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `L` ticket, gated on `decomposition:approved` | not yet declared | Target-only |
 | `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing | n/a — deterministic script | Live |
-| `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; cross-checks `docs/product/`; self-gates on design review | Bash, Read, Write, Grep | Live |
+| `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; makes a scoped edit to `docs/product/` for what the PRD changed, never a full-file rewrite; self-gates on design review | Bash, Read, Write, Grep | Live |
 | `01_product_docs/merge-docs-pr` | script | Standard ticket flow | Merges the design PR to `main` ahead of the build phase | n/a — deterministic script | Live |
 | `01_product_docs/create-pr` | script | Standard ticket flow | Opens the code PR (`issue-{N}`), cut from the post-design `main` | n/a — deterministic script | Live |
 | `architect` | agent | Standard ticket flow | Technical design — data model, API contracts, boundaries, NFRs; flags ADR-worthy decisions | not yet declared | Target-only |
