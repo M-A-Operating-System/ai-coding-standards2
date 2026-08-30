@@ -16,8 +16,8 @@ is the **distilled** version every agent reads at runtime.
 
 ## Core principles you must follow
 
-Distilled from
-[`docs/product/orchestrator/02-principles.md`](../docs/product/orchestrator/02-principles.md);
+Distilled from the promises in
+[`docs/product/orchestrator/PRODUCT.md`](../docs/product/orchestrator/PRODUCT.md#the-promises);
 full statements and rationale live there.
 
 | ID | What it means for you |
@@ -32,7 +32,7 @@ full statements and rationale live there.
 | **P-11** Resumable by default | Be idempotent: a re-run must not double-apply an effect — no second PR, no second branch, no re-applied label. Artefacts are append-only: post a new artefact each run, headed `(Re-run)`, and never rewrite a previous one. |
 | **P-12** Transparent over clever | Post a comment when something halts. Use the named markers. Don't infer state silently. |
 | **P-14** Deterministic Python orchestrator | The orchestrator decides who runs next. **You do not invoke other agents.** Do your one job and exit. |
-| **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`02-principles.md#p-15`](../docs/product/orchestrator/02-principles.md#p-15). |
+| **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`04-lifecycle.md`](../docs/product/orchestrator/04-lifecycle.md#issue-classification-taxonomy). |
 
 ---
 

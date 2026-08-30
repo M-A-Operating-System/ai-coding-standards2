@@ -68,17 +68,19 @@ is moving forward. No code change ships unless it is already described in
 past the product-docs phase, and a PR landing code with no corresponding
 target-state entry does not merge.
 
-Every issue entering the pipeline is classified by `issue-classifier` as exactly one of five types. The classification is recorded both in an artefact comment on the issue and as a `classification: {type}` label applied automatically at classification time. Five `classification:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface.
+Every issue entering the pipeline is classified by `issue-classifier` as exactly one of seven types. The classification is recorded both in an artefact comment on the issue and as a `classification: {type}` label applied automatically at classification time. Seven `classification:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface.
 
 | Classification | Label | Definition | Qualifying criterion |
 |---|---|---|---|
+| `security` | `classification: security` | A concrete security vulnerability with a clear exploit path — injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all seven — a `security-review:approved` gate applies in addition to standard review whenever the resulting PR touches a flagged sensitive surface. |
 | `bug` | `classification: bug` | Broken behaviour — something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target (see above); the fix is to correct the code, not the docs. |
 | `enhancement` | `classification: enhancement` | An improvement to an **existing** capability — making a feature richer, faster, more accessible, or more reliable. | The capability exists in production today; the issue moves it closer to the target state but does not add a new user-observable outcome. |
 | `feature` | `classification: feature` | A **new** capability the product cannot do today. | Adds a fresh user-observable outcome to the target state; deserves a full PRD with new acceptance criteria. |
 | `spike` | `classification: spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, or a prototype — not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
-| `toil` | `classification: toil` | Operational or maintenance work that does not change product capability. | Dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes — tied to a non-functional requirement in the product docs, not a user-facing feature. |
+| `toil` | `classification: toil` | Operational or maintenance work that does not change product capability, with no structural-debt evidence behind it. | Dependency upgrades, infrastructure changes, doc-only fixes — tied to a non-functional requirement in the product docs, not a user-facing feature, and not itself remediating a prior design or implementation choice. |
+| `tech-debt` | `classification: tech-debt` | Remediation of a previously made structural or architectural choice now recognised as costly. | Backed by evidence — a metric outlier (size, complexity, coupling, coverage, churn), an ADR whose context has materially shifted, or a repeated `blocked` pattern against one surface — rather than ordinary maintenance preference. The Tech-debt continuous loop ([Phase 5](#phase-5-the-continuous-meta-loops)) is its primary source, via `debt-issues` carrying a `Debt-source:` trailer, but a human may open one directly with the same evidence bar. |
 
-When two classifications are plausible, prefer the one with the higher review bar: `bug` over `toil`; `feature` over `enhancement`; `enhancement` over `toil`. The distinction between `feature` and `enhancement` matters because a feature adds new product surface (heavier review); an enhancement refines an existing one (lighter review against the existing PRD).
+When two classifications are plausible, prefer the one with the higher review bar: `security` over `bug` (only when the impact is clear and concrete -- an ambiguous "might be a security concern" stays `bug`); `bug` over `toil`; `tech-debt` over `toil` (evidence of a prior costly choice outranks routine upkeep); `feature` over `enhancement`; `enhancement` over `toil`. The distinction between `feature` and `enhancement` matters because a feature adds new product surface (heavier review); an enhancement refines an existing one (lighter review against the existing PRD). The distinction between `toil` and `tech-debt` is evidence: `toil` is upkeep with no debt story behind it; `tech-debt` names which prior choice is being undone and why.
 
 ---
 
@@ -372,8 +374,8 @@ of the standard review path.
 
 ## End-to-end happy path
 
-A typical feature/bug/enhancement/toil ticket flows like this. Agent
-names, dependencies, and gates are as declared in
+A typical security/feature/bug/enhancement/toil/tech-debt ticket flows like
+this. Agent names, dependencies, and gates are as declared in
 [`pipeline.json`](../../../pipeline/pipeline.json).
 
 **Spike issues** (`classification: spike`) stop after `prd-writer:approved`.
@@ -450,10 +452,19 @@ all subsequent tickets — which is why each carries a higher review bar.
 
 ## How the gap and debt loops integrate with the per-ticket pipeline
 
-Both loops produce **issues**, not direct edits. This keeps a hard
-boundary:
+**The general rule: a continuous loop never does work itself -- it files a
+work item, and that work item is picked up exactly like any other.** Both
+the Gap-assessment and Tech-debt loops produce **issues**, not direct
+edits. This keeps a hard boundary:
 
 - The continuous phase never touches the codebase directly.
+- Every gap-issue and debt-issue re-enters at `issue-classifier` and is
+  classified the same as a stakeholder-opened issue -- a debt-issue is the
+  primary source of the `tech-debt` classification (see [Issue
+  classification taxonomy](#issue-classification-taxonomy)), carrying its
+  `Debt-source:` trailer as the evidence a human reviewer checks at
+  classification time; a gap-issue typically lands as `feature` or
+  `enhancement`, depending on whether the missing capability is wholly new.
 - Every change still flows through Phases 1–4, with the same gates,
   the same standards checks, and the same audit trail.
 - Gap-issues and debt-issues are visible in the issue list alongside
@@ -466,3 +477,149 @@ mitigation is curation — `gap-curator` and `debt-curator` produce
 prioritised, deduplicated reports rather than a firehose, and the
 human gates (`gap-report:approved`, `debt-report:approved`) are the
 throttle.
+
+---
+
+## The four process families
+
+Every step named anywhere in this document belongs to exactly one of four
+families. This section is an index, not a new description — each family
+points back to where it is already detailed in full above.
+
+### 1. The standard ticket flow — security, feature, enhancement, bug, toil, tech-debt
+
+Six of the seven classifications ([Issue classification
+taxonomy](#issue-classification-taxonomy)) run the identical flow, in the
+identical order, through the identical gates. Classification changes review
+depth, not flow shape:
+
+| Classification | What differs — never the flow itself |
+|---|---|
+| `security` | Same shape as `bug`, plus a `security-review:approved` gate on any PR touching a flagged sensitive surface |
+| `feature` | Full PRD, new acceptance criteria — the heaviest review bar among the rest |
+| `enhancement` | Reviewed against the *existing* PRD, not a new one |
+| `bug` | The PRD phase corrects the code to match an already-documented target, not the docs |
+| `toil` | Tied to a non-functional requirement, not a user-facing PRD, with no debt evidence behind it |
+| `tech-debt` | Same shape as `toil`, but the PRD phase must name the prior choice being undone and the evidence for it, not just the maintenance task |
+
+The shared shape — classify, PRD, design-phase publish to `main`, build-phase
+code PR, review, merge — is walked in full in [End-to-end happy
+path](#end-to-end-happy-path); its gates are detailed in [Human
+gates](#human-gates); the branch/PR mechanics are
+[Two-phase design-to-build delivery](#two-phase-design-to-build-delivery).
+
+### 2. The spike flow
+
+`spike` is not a lighter version of the flow above — it is structurally
+shorter. It stops after `prd-writer:approved`. `create-pr`,
+`prd-docs-updater`, and `coder` are excluded outright: there is no code to
+ship, so no branch and no PR are created (stated in [End-to-end happy
+path](#end-to-end-happy-path)).
+
+### 3. Structural forks
+
+Four shape variants layer on top of whichever classification a ticket
+carries — they are not classifications themselves. All four are detailed in
+[Forks in the path](#forks-in-the-path):
+
+- **Oversized ticket** — `ticket-sizer` returns `XL`; `issue-decomposer`
+  drafts a child-issue roadmap, gated on `decomposition:approved`; each
+  child re-enters at `issue-classifier` and runs its own full lifecycle.
+- **Many small tickets in a window** — small bugs/chores batch under a
+  super-issue, which becomes the shippable unit; one PR closes it and every
+  grouped child.
+- **Merge conflict** — `merge-conflict` auto-advances a clean PR; a
+  conflicted one gates on `merge-conflict:approved` before `coder` is
+  re-invoked with the resolution plan.
+- **SQL changes** — `migration-validator` runs in addition to standard
+  review when a PR touches `**/*.sql`; blocks merge on RLS/naming/type
+  violations regardless of the normal review path.
+
+### 4. The continuous loops
+
+Three loops run on independent cadences and never touch code directly
+([Phase 5 — the continuous meta-loops](#phase-5-the-continuous-meta-loops)).
+A continuous loop never does work itself -- it files a work item, and that
+work item is picked up exactly like any other. For two of the three, "work
+item" means a new issue that re-enters the standard flow at
+`issue-classifier`; the Learn loop's work item is a gated PR against the
+pipeline's own configuration instead, since there is no product ticket to
+classify:
+
+- **Learn loop** — the only one that changes the *pipeline itself*
+  (`pipeline.json`, agent prompts), not the product; it is the one loop
+  that does not route through `issue-classifier`, because its output
+  targets the pipeline's own configuration, not a product ticket.
+- **Gap-assessment loop** — produces gap-issues (`Gap-source:` trailer),
+  gated on `gap-report:approved`, which re-enter as `feature` or
+  `enhancement` per family 1.
+- **Tech-debt loop** — produces debt-issues (`Debt-source:` trailer), gated
+  on `debt-report:approved`, which re-enter as `tech-debt` per family 1 —
+  its primary source, not the whole of the classification: a human may
+  also open a `tech-debt` issue directly, given the same evidence.
+
+---
+
+## Every step across every flow
+
+One row per step named anywhere in this document, regardless of which
+family it belongs to. **Tools** reflects each live step's declared agent
+frontmatter (`tools:`) for orientation only — per-step tool grants are
+currently split across more sources than that single field
+([AS-1](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does) is not
+yet satisfied), so `pipeline.json` and the agent's own frontmatter are
+authoritative if this drifts. A **Target-only** step is named in this
+document's prose but does not exist in `pipeline.json` yet; its tools are
+not yet declared anywhere, and inventing a value here would misstate that.
+
+| Step | Kind | Family | Purpose | Tools | Status |
+|---|---|---|---|---|---|
+| `00_ondemand/codebase-reviewer` | agent | On-demand | Three-persona codebase review; files a Technical Review issue | Bash, Read, Grep | Live |
+| `00_ondemand/sizer` | agent | Structural fork (oversized ticket) | Sizes an issue; decomposes it if too large, gated on human review of the breakdown | Bash, Read, Grep | Live — see the naming note below |
+| `00_ondemand/new-agent` | agent | On-demand | Scaffolds a new pipeline agent from an issue description | Bash, Read, Write, Edit, Grep | Live |
+| `00_ondemand/standards-migrator` | agent | On-demand | Converts a consuming repo's existing knowledge files into `standards/*.json` | Bash, Read, Write, Grep, Glob | Live |
+| `00_ondemand/branch-cleanup` | agent | On-demand | Recommends, then (on approval) deletes, stale remote branches | Bash, Read, Grep | Live |
+| `00_ondemand/issue-cleanup` | agent | On-demand | Recommends, then (on approval) closes, complete or duplicate issues | Bash, Read, Grep | Live |
+| `01_product_docs/issue-classifier` | agent | Standard ticket flow | Classifies the issue; validates required fields are present | Bash, Read | Live |
+| `01_product_docs/prd-writer` | agent | Standard ticket flow | Drafts the PRD; rewrites the issue body into user-story + Gherkin format | Bash, Read, Grep | Live |
+| `ticket-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`/`XL`); an `XL` verdict commits to decomposition before proceeding | not yet declared | Target-only |
+| `issue-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `XL` ticket, gated on `decomposition:approved` | not yet declared | Target-only |
+| `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing | n/a — deterministic script | Live |
+| `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; cross-checks `docs/product/`; self-gates on design review | Bash, Read, Write, Grep | Live |
+| `01_product_docs/merge-docs-pr` | script | Standard ticket flow | Merges the design PR to `main` ahead of the build phase | n/a — deterministic script | Live |
+| `01_product_docs/create-pr` | script | Standard ticket flow | Opens the code PR (`issue-{N}`), cut from the post-design `main` | n/a — deterministic script | Live |
+| `architect` | agent | Standard ticket flow | Technical design — data model, API contracts, boundaries, NFRs; flags ADR-worthy decisions | not yet declared | Target-only |
+| `test-spec-writer` | agent | Standard ticket flow | Derives a numbered Gherkin scenario list from the approved PRD | not yet declared | Target-only |
+| `test-coverage-auditor` | agent | Standard ticket flow | Confirms every PRD acceptance criterion maps to at least one scenario | not yet declared | Target-only |
+| `dependency-planner` | agent | Standard ticket flow | Produces the build plan — ordered child-task list and critical path | not yet declared | Target-only |
+| `task-decomposer` | agent | Standard ticket flow | Breaks a *sized* feature into one-file, one-concern tasks that all ship in one PR | not yet declared | Target-only — distinct from `issue-decomposer`, which runs before sizing and splits into separate issues and PRs |
+| `03_execute/coder` | agent | Standard ticket flow | Implements the issue and its sub-issues; the orchestrator commits on completion | Bash, Read, Edit, Write, Grep, Glob | Live |
+| `03_execute/ci-gate` | script | Standard ticket flow | Polls CI checks; `review` on failure (recycles `coder`), `blocked` on a 14-minute timeout | n/a — deterministic script | Live |
+| `03_execute/merge-conflict` | agent | Structural fork (merge conflict) | Auto-advances a clean PR; posts a resolution plan and gates `merge-conflict:approved` otherwise | Bash, Read, Glob, Grep | Live |
+| `03_execute/pr-reviewer` | agent | Standard ticket flow | Structured code review; `REQUEST_CHANGES`/`APPROVE`, blocked on unresolved human reviews | Bash, Read, Glob, Grep | Live |
+| `impact-assessor` | agent | Structural fork (security-flagged PR) | Flags sensitive surfaces touched (auth, RLS, IAM, secrets, PII), gating `security-review:approved` | not yet declared | Target-only |
+| `migration-validator` | agent | Structural fork (SQL changes) | Confirms forward-only, idempotent, RLS-compliant migrations; blocks merge on violation | not yet declared | Target-only |
+| `coverage-enforcer` | agent | Standard ticket flow | Confirms tests pass, coverage hasn't regressed, every required scenario has a passing test | not yet declared | Target-only |
+| `standards-evolver` | agent | Standard ticket flow (weekly aggregate) | Proposes a new or changed standard from repeated findings, gated `standards-proposal:approved` | not yet declared | Target-only |
+| *(unnamed)* | agent | Standard ticket flow | Produces the changelog and per-ticket retrospective — Phase 4's primary artefact besides standards proposals | not yet declared | Target-only, and unnamed: no agent name for this artefact appears anywhere in this document yet |
+| `metrics-aggregator` | agent | Continuous — Learn loop | Daily: cycle time, gate dwell time, agent duration, rejection rate from the audit log | not yet declared | Target-only |
+| `pipeline-tuner` | agent | Continuous — Learn loop | Monthly: drafts PRs against `pipeline.json` from systemic metric patterns, gated `pipeline-change:approved` | not yet declared | Target-only |
+| `prompt-tuner` | agent | Continuous — Learn loop | Monthly: drafts targeted agent-prompt edits from rejection-rate evidence, gated `prompt-change:approved` | not yet declared | Target-only |
+| `knowledge-curator` | agent | Continuous — Learn loop | Weekly: drafts knowledge artefacts (runbooks, templates) from tickets with reusable patterns | not yet declared | Target-only |
+| `process-reviewer` | agent | Continuous — Learn loop | Quarterly: holistic assessment against `PRODUCT.md`; may propose coordinated changes, gated `process-review:approved` (dual) | not yet declared | Target-only |
+| `gap-assessor` | agent | Continuous — Gap-assessment loop | Weekly: cross-checks PRD acceptance criteria against tests, shipped code, and the changelog | not yet declared | Target-only |
+| `vision-aligner` | agent | Continuous — Gap-assessment loop | Weekly: checks the codebase for capabilities the vision implies but no ticket has captured | not yet declared | Target-only |
+| `gap-curator` | agent | Continuous — Gap-assessment loop | Weekly: de-duplicates and prioritises gap candidates into one report, gated `gap-report:approved` (dual) | not yet declared | Target-only |
+| `debt-finder` | agent | Continuous — Tech-debt loop | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn | not yet declared | Target-only |
+| `adr-revisitor` | agent | Continuous — Tech-debt loop | Monthly: flags accepted ADRs whose context has materially shifted | not yet declared | Target-only |
+| `debt-curator` | agent | Continuous — Tech-debt loop | Weekly: de-duplicates and prioritises debt candidates into one report, gated `debt-report:approved` (dual) | not yet declared | Target-only |
+| `epic-completion` | orchestrator-native check | Structural fork (epic) | Scheduled sweep: closes an epic once every child is closed | n/a — no LLM invocation | Live — declared in `pipeline.json`'s `orchestrator_checks` |
+
+**The `00_ondemand/sizer` / `ticket-sizer` naming gap.** The current
+`00_ondemand/sizer` is human-triggered (`sizer:requested` label) and
+combines sizing and decomposition into one on-demand step. `ticket-sizer`
+and `issue-decomposer` above name a different target shape: an automatic
+per-ticket phase step with its own `size:approved` gate, and a separate
+decomposition step downstream of it. Whether the target design is two
+agents or one is not yet decided; recorded here rather than silently
+treating the two names as identical.
