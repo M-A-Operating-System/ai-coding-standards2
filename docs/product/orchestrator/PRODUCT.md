@@ -817,9 +817,13 @@ an hour inside a single one -- but the remedy has the same shape either way, so
 one outcome covers both and the record names the wall that was hit.
 
 It also settles what a retry means. **The orchestrator retries `failed` and
-never retries `exhausted`** -- the same step against the same wall is
-deterministic, so a second run is waste that costs a full budget to learn
-nothing.
+never retries `exhausted`** -- not because a retry would behave identically
+(an agent is not deterministic; it might finish in fewer turns next time), but
+because the budget itself does not change between runs. If a step genuinely
+needs more turns or wall-clock time than it was given, an identical retry
+against an identical wall is waste that costs a full budget to learn nothing
+new: the fix is raising the budget or shrinking the step, never another
+attempt at the same one.
 
 ### An invocation can be withdrawn
 
@@ -1260,10 +1264,12 @@ exactly why what the act means must be agreed rather than assumed.
 **The orchestrator posts the recovery guidance, not just the step.** A
 step's own account can be terse, and a step cut off mid-task is the one most
 likely to explain itself badly. So a halt's exit is never left to whatever
-the step happened to say: the orchestrator posts the same, consistent
-recovery comment on every `review`, `blocked`, or `failed` transition,
-naming what the halt means and what clears it, independent of how well the
-step's own report was worded.
+the step happened to say: on every `review`, `blocked`, or `failed`
+transition, the orchestrator's own closing `announcement` carries the same,
+consistent recovery guidance -- naming what the halt means and what clears it
+-- independent of how well the step's own report was worded. It is not a
+sixth kind of comment; it is what the orchestrator, rather than the step,
+puts in the one it already posts.
 
 #### A step can vanish, and the lock it holds must come back
 
@@ -1289,6 +1295,12 @@ still be legitimately running -- the budget is the whole of what "still running"
 means -- so the orchestrator takes the lock back, records the step as `failed`,
 and says why. It returned nothing, which is what `failed` means; no sixth
 outcome is needed for it.
+
+**A reclaim counts as an attempt, the same as a crash.** Retrying `failed`
+draws from the one retry budget regardless of why the step landed there -- a
+step that hangs the identical way on every invocation still exhausts its
+retries and lands on a `failed` a person must clear, rather than reclaiming,
+retrying, and hanging again indefinitely with nothing ever escalating.
 
 This is the second reason the wall-clock budget belongs per step in
 `pipeline.json` (AS-1). One number for every step means either a slow step is
@@ -1503,11 +1515,14 @@ is better and the difference is operational, not architectural: what MI-7
 requires is only that the system's actions are attributable to the system.
 
 **One assumption must be asserted rather than trusted:** that a non-headless
-invocation genuinely has a person present. That is true by construction today,
-because the interactive path exists only inside a chat session. If anything ever
-invokes the orchestrator non-headlessly without a human, this guarantee
-disappears silently -- so the orchestrator refuses to record an approval when it
-cannot establish that a person is there.
+invocation genuinely has a person present. There is no independent check for
+this -- it holds today only because the interactive path exists nowhere
+except inside a chat session, the same unreachability logic as above, not a
+runtime verification the orchestrator performs. If anything ever invokes the
+orchestrator non-headlessly without a human, this guarantee disappears
+silently, because nothing exists to catch that case: what has to hold is that
+the interactive path stays unreachable except through a chat session, not
+that the orchestrator can somehow tell.
 
 ---
 
