@@ -190,6 +190,14 @@ time.** Once runs are serialised, every run begins with settled labels and the
 model is unchanged -- labels are still the whole of it -- but "read the labels
 and act" is only deterministic if no other run is mid-write.
 
+That settled read is not a snapshot a run discards after using it once. It
+keeps its own copy current for the rest of the tick, updating it the instant
+it writes a label itself -- the same thing that makes the `:wip` check a fast
+skip rather than a round trip back to GitHub. Everything below rests on that
+one property: for as long as this run is the only one alive, its in-memory
+copy is as good as GitHub's, for every item it looks at, not only the one it
+is currently acting on.
+
 Serialising runs decides more than it looks. One run at a time, and a run that
 waits for each step it starts, means the pipeline is **sequential**: no two
 steps are ever in flight together, so nothing needs limiting to keep them apart.
@@ -203,15 +211,19 @@ number nobody can tune for the case in front of them.
 
 ### Working on several things at once
 
-One orchestrator works on one item at a time; that part is settled, and the
-serialisation above is what makes it safe. Nothing says there may only be one
-orchestrator.
+Parallelism is not a second orchestrator. It is the one run choosing to start
+several eligible items together, in the same tick, instead of starting one and
+waiting for it before considering the next. Nothing outside that one process
+ever gets a chance to read a label between two of its writes, so batching
+several items into a tick is additional work inside the guarantee
+serialisation already provides, not a competing process that needs a guarantee
+of its own.
 
-**Two runs on two different issues are fine right up until they touch the same
-code.** Labels keep two runs off the same *item*, and that is all they do. Two
-issues that both change the same module have nothing keeping them apart: each
-run reads a tree the other is about to change, and the collision surfaces as a
-merge conflict at best and as two half-correct changes at worst.
+**Two items are fine to batch together right up until they touch the same
+code.** Labels keep two batched items off the same *item*, and that is all
+they do. Two issues that both change the same module have nothing keeping them
+apart: each reads a tree the other is about to change, and the collision
+surfaces as a merge conflict at best and as two half-correct changes at worst.
 
 So the unit that has to be exclusive is not the issue, it is **the part of the
 system the work touches**.
@@ -219,23 +231,24 @@ system the work touches**.
 #### The issue says which parts it touches
 
 An issue carries a `component:` label for each part of the system it affects,
-and may carry several. Before an item starts, it takes a claim on every
-component it names, and it starts only if it can take them **all**. Several
-items proceed together exactly when none of them wants a component another is
-holding.
+and may carry several. Before adding an item to this tick's batch, the run
+takes a claim on every component the item names, and adds it only if it can
+take them **all**. Several items join the same batch exactly when none of them
+wants a component another already holds.
 
 **Claimed together, released together.** An item never holds part of what it
 needs while waiting for the rest -- so two items can never end up each holding
 something the other is waiting on. Either everything an item named is free and
-it starts, or nothing is taken and it waits. That all-or-nothing rule is the
-whole of what keeps this from deadlocking, and it is worth more than the
-throughput it costs.
+it joins the batch, or nothing is taken and it waits for a later tick. That
+all-or-nothing rule is the whole of what keeps this from deadlocking, and it is
+worth more than the throughput it costs.
 
 **An issue with no component label runs alone.** Not knowing what something
 touches is not the same as knowing it touches nothing, so an untagged item
-claims everything: it waits for all work to finish and all work waits for it.
-The pipeline is then exactly as sequential as it is today, and becomes parallel
-only where someone has said enough for that to be safe.
+claims everything: nothing else joins its batch, and it only starts on a tick
+where nothing it might collide with is already running. The pipeline is then
+exactly as sequential as it is today for that item, and becomes parallel only
+where someone has said enough for that to be safe.
 
 **The cost is that broad work waits for a quiet moment.** An item naming six
 components needs all six free at once, and a steady stream of single-component
@@ -255,12 +268,17 @@ a repository's set is whatever its issues happen to say -- which is what keeps
 the orchestrator coordinating rather than knowing about the system it is
 building.
 
-**The claim is only as good as the person making it.** Two failures follow, both
-silent, both landing in the same place. An issue tagged with two of the three
-components it touches is *more* dangerous than one tagged with none, because it
-will be allowed to run beside something it collides with. And `component:auth`
-and `component:authentication` are two different components as far as equality
-is concerned, so a near-miss reads as no overlap at all.
+**The claim is only as good as the person making it, and nothing here checks
+it.** Two failures follow, both silent, both landing in the same place. An
+issue tagged with two of the three components it touches is *more* dangerous
+than one tagged with none, because it will be let into a batch beside
+something it collides with. And `component:auth` and `component:authentication`
+are two different components as far as equality is concerned, so a near-miss
+reads as no overlap at all. Unlike almost everything else this document
+promises, this correctness is never compared against evidence (MI-6) -- there
+is no observed signal a wrong label produces that a right one does not, so a
+mistagged item is indistinguishable from a correctly tagged one until the
+collision itself is the evidence.
 
 A register would not fix either. Picking the wrong valid name is as easy as
 mistyping one, and the register would be a second thing to maintain and a
@@ -270,14 +288,10 @@ list, so a divergent name is something a person can see -- and the label picker
 pushes towards names already in use without anything having to enforce it.
 
 **Deciding is not the same as isolating.** Component labels answer whether two
-runs *may* proceed together. They do nothing about two runs sharing one working
-tree, where the second run's checkout disturbs the first whatever either one
-touches. Parallelism needs both: the labels to decide, and separate working
-trees so the decision means something.
-
-And keeping two runs off one item stays a separate requirement throughout. The
-race that forced serialisation is about one item being read twice, and no
-partitioning by component addresses it.
+items *may* run in the same batch. They do nothing about two batched items
+sharing one working tree, where the second checkout disturbs the first whatever
+either one touches. Parallelism needs both: the labels to decide, and separate
+working trees per item so the decision means something.
 
 ### Every step has the same four parts
 
