@@ -177,53 +177,83 @@ Because state lives on the work item, there is nothing to recover and no
 position that exists only in memory. Any orchestrator process reading settled
 labels reaches the same conclusion.
 
-**Settled is the load-bearing word.** A label write is not visible instantly, so
-two runs overlapping inside that window read different states and both conclude
-the step is eligible -- and the write that starts the race is the orchestrator's
-own `:wip`, which fires an event that starts the next run. The window is only
-wide enough to matter for steps that run long, which is what makes it a
-sporadic, hard-to-reproduce duplicate rather than a permanent fault.
+**Settled is the load-bearing word, and this is specifically headless mode's
+problem.** A headless run is started by a GitHub event, automatically. A
+label write is not visible instantly, so a run's own `:wip` write can fire an
+event that starts a second, automatic run inside that unsettled window, and
+that second run reads stale state and reaches the same, wrong conclusion the
+first one already acted on. The window is only wide enough to matter for
+steps that run long, which is what makes it a sporadic, hard-to-reproduce
+duplicate rather than a permanent fault -- but it is a real one, because
+nothing about a webhook firing waits for a person to notice.
 
-So one thing does have to be synchronised: **at most one orchestrator run at a
-time.** Once runs are serialised, every run begins with settled labels and the
-`:wip` check becomes a fast skip rather than a guard against a race. The state
-model is unchanged -- labels are still the whole of it -- but "read the labels
-and act" is only deterministic if no other run is mid-write.
+So headless needs one thing synchronised: **at most one headless orchestrator
+run at a time**, enforced by the GitHub Actions concurrency group the
+workflow runs under. Once runs are serialised this way, every run begins with
+settled labels and the `:wip` check becomes a fast skip rather than a guard
+against a race. That settled read is not a snapshot a run discards after
+using it once, either: it keeps its own copy current for the rest of the run,
+updating it the instant it writes a label itself -- the same thing that makes
+the `:wip` check a fast skip rather than a round trip back to GitHub. For as
+long as it is the only headless run alive, that in-memory copy is as good as
+GitHub's, for every item it looks at, not only the one it is currently acting
+on.
 
-That settled read is not a snapshot a run discards after using it once. It
-keeps its own copy current for the rest of the tick, updating it the instant
-it writes a label itself -- the same thing that makes the `:wip` check a fast
-skip rather than a round trip back to GitHub. Everything below rests on that
-one property: for as long as this run is the only one alive, its in-memory
-copy is as good as GitHub's, for every item it looks at, not only the one it
-is currently acting on.
-
-Serialising runs decides more than it looks. One run at a time, and a run that
-waits for each step it starts, means the pipeline is **sequential**: no two
-steps are ever in flight together, so nothing needs limiting to keep them apart.
+One headless run, then, works through as many eligible items as it has room
+for -- bounded by the per-tick cap below and by the run's own wall-clock
+ceiling -- rather than handling one and exiting. Nothing about that reopens
+the race: it is still the one process, still reading its one settled copy,
+for as long as it runs.
 
 One limit is still needed, and it is not about concurrency. When a burst of work
 becomes eligible at once -- a hundred issues, a backlog import -- something has
-to bound how much a single pass takes on, or one tick tries to do all of it. That
-is a cap on how much work a tick *starts*, and it belongs with the other budgets
+to bound how much a single pass takes on, or one run tries to do all of it. That
+is a cap on how much work a run *starts*, and it belongs with the other budgets
 rather than fixed in code: one number chosen once for every situation is a
 number nobody can tune for the case in front of them.
 
+**Interactive mode is not this problem, because it is not this shape.** A
+person typing `/maos-{agent}` starts an orchestrator instance directly --
+there is no webhook, no automatic respawn, and therefore no version of the
+race above to serialise against. Nothing stops two people, or one person in
+two sessions, from doing this at the same time; nothing should, since a
+person waiting on someone else's chat session defeats the point of working
+interactively. Interactive concurrency is addressed on its own terms below,
+not folded into headless's guarantee.
+
 ### Working on several things at once
 
-Parallelism is not a second orchestrator. It is the one run choosing to start
-several eligible items together, in the same tick, instead of starting one and
-waiting for it before considering the next. Nothing outside that one process
-ever gets a chance to read a label between two of its writes, so batching
-several items into a tick is additional work inside the guarantee
-serialisation already provides, not a competing process that needs a guarantee
-of its own.
+**From an issue's perspective, at most one issue per component is in flight
+at a time -- headless and interactive combined.** That is the whole of the
+promise. It holds under two different concurrency shapes without becoming two
+different rules: headless is one process working through several items in
+turn; interactive is several processes, each working through one.
 
-**Two items are fine to batch together right up until they touch the same
-code.** Labels keep two batched items off the same *item*, and that is all
-they do. Two issues that both change the same module have nothing keeping them
-apart: each reads a tree the other is about to change, and the collision
-surfaces as a merge conflict at best and as two half-correct changes at worst.
+**Headless already only ever has the one process** (above), so within a
+headless run, working through several eligible items has nothing new to
+prove: it is still the same run, reading its own settled copy, deciding each
+item in turn.
+
+**Interactive genuinely has more than one process, and this is the case the
+claim actually has to earn its keep on.** Two people -- or one person in two
+sessions -- can each start `/maos-{agent}` at the same time, on different
+issues, with no shared memory between them and no concurrency group
+serialising them. Before starting a step, an orchestrator instance checks
+whether any other item currently carries `:wip` together with a `component:`
+label the candidate item also carries; if one does, it waits, and if none do,
+it proceeds. A headless run answers this from the settled copy it already
+holds. An interactive instance has no such copy to consult, so it reads
+GitHub's labels fresh -- the same settled-labels reasoning the `:wip` check
+itself relies on, not a new kind of race: two people invoking colliding
+commands within the same narrow window is a person-timed coincidence, not an
+automatic cascade, which is a materially rarer event than the webhook-driven
+case headless serialises against.
+
+**Two items may proceed together right up until they touch the same code.**
+Labels keep two items off the same *item*, and that is all they do. Two
+issues that both change the same module have nothing keeping them apart: each
+reads a tree the other is about to change, and the collision surfaces as a
+merge conflict at best and as two half-correct changes at worst.
 
 So the unit that has to be exclusive is not the issue, it is **the part of the
 system the work touches**.
@@ -231,24 +261,24 @@ system the work touches**.
 #### The issue says which parts it touches
 
 An issue carries a `component:` label for each part of the system it affects,
-and may carry several. Before adding an item to this tick's batch, the run
-takes a claim on every component the item names, and adds it only if it can
-take them **all**. Several items join the same batch exactly when none of them
-wants a component another already holds.
+and may carry several. Before starting an item, an orchestrator instance --
+headless or interactive -- takes a claim on every component the item names,
+and starts only if it can take them **all**. Several items proceed together,
+in one headless run or across concurrent interactive instances, exactly when
+none of them wants a component another already holds.
 
 **Claimed together, released together.** An item never holds part of what it
 needs while waiting for the rest -- so two items can never end up each holding
 something the other is waiting on. Either everything an item named is free and
-it joins the batch, or nothing is taken and it waits for a later tick. That
-all-or-nothing rule is the whole of what keeps this from deadlocking, and it is
-worth more than the throughput it costs.
+it starts, or nothing is taken and it waits. That all-or-nothing rule is the
+whole of what keeps this from deadlocking, and it is worth more than the
+throughput it costs.
 
 **An issue with no component label runs alone.** Not knowing what something
 touches is not the same as knowing it touches nothing, so an untagged item
-claims everything: nothing else joins its batch, and it only starts on a tick
-where nothing it might collide with is already running. The pipeline is then
-exactly as sequential as it is today for that item, and becomes parallel only
-where someone has said enough for that to be safe.
+claims everything: it starts only when nothing that could collide with it
+currently holds `:wip`, in either mode. It becomes parallel with other work
+only where someone has said enough for that to be safe.
 
 **The cost is that broad work waits for a quiet moment.** An item naming six
 components needs all six free at once, and a steady stream of single-component
@@ -288,10 +318,10 @@ list, so a divergent name is something a person can see -- and the label picker
 pushes towards names already in use without anything having to enforce it.
 
 **Deciding is not the same as isolating.** Component labels answer whether two
-items *may* run in the same batch. They do nothing about two batched items
-sharing one working tree, where the second checkout disturbs the first whatever
-either one touches. Parallelism needs both: the labels to decide, and separate
-working trees per item so the decision means something.
+items *may* proceed at the same time. They do nothing about two concurrently
+running items sharing one working tree, where the second checkout disturbs
+the first whatever either one touches. Parallelism needs both: the labels to
+decide, and separate working trees per item so the decision means something.
 
 ### Every step has the same four parts
 
@@ -1728,7 +1758,7 @@ The complete list. Anything not here is a defect.
 | How you address the pipeline | Labels and comments on the issue | The same, or in your own words to the chat-AI, which writes them for you | Only the channel differs; what lands on the issue is identical |
 | Who writes a gate label | Only the person, from their own account | The orchestrator, on a confirmation the driver relays | The decision is the person's either way; only the evidence available to show it differs (MI-7) |
 | Whether the emergency stop applies | Halts the run before any step | Logged, and the run proceeds | The stop exists to halt unattended automation. A person driving one issue by hand is not unattended, and stopping them too would remove the means of investigating whatever caused the stop |
-| How many items advance at once | Several, where their components do not overlap | One | A session is one conversation and a person drives one issue through it; there is no second conversation to drive a second issue. What differs is throughput, never what happens to any one item -- an issue driven either way leaves the same trail |
+| How many items advance at once | Several, where their components do not overlap -- one run working through them in turn | Several, where their components do not overlap -- one instance per item, each started by a person | The invariant is identical (see 'Working on several things at once'); only the shape differs -- one process serving many items, or many separately-started processes each serving one. An issue driven either way leaves the same trail |
 
 Everything else is governed by the promises above and must be identical.
 
