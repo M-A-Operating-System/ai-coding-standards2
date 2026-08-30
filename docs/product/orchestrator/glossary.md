@@ -28,7 +28,7 @@ See [`PRODUCT.md`](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does)
 **Phase** — A stage of the lifecycle. Phases 1–4 run per ticket (Product
 docs → Design → Execute → Evaluate); Phase 5 runs continuously across all
 tickets; `00_ondemand` holds human-triggered tools.
-See [`04-lifecycle.md`](04-lifecycle.md).
+See [`lifecycle.md`](lifecycle.md).
 
 **Work item / object** — The thing an agent acts on: a GitHub **issue** or a
 **pull request**. "Object kind" is `issue` or `pr`.
@@ -37,10 +37,10 @@ See [`04-lifecycle.md`](04-lifecycle.md).
 a super-issue). Each shippable unit is delivered as up to two sequenced
 phase-PRs — a design PR then a code PR, each on its own branch — and only the
 code PR closes it. Child issues are tracking units, not shippable units. See
-[`04-lifecycle.md`](04-lifecycle.md#two-phase-design-to-build-delivery).
+[`lifecycle.md`](lifecycle.md#two-phase-design-to-build-delivery).
 
 **Super-issue** — A parent issue that groups several small related items into
-one shippable unit. See [`04-lifecycle.md`](04-lifecycle.md#many-small-tickets-in-a-window).
+one shippable unit. See [`lifecycle.md`](lifecycle.md#many-small-tickets-in-a-window).
 
 ## How work advances
 
@@ -98,14 +98,14 @@ human-approval rule). See [`PRODUCT.md`](PRODUCT.md#the-promises).
 **Toil** — Necessary technical or process work that is not product work
 (e.g. a refactor, a pipeline fix). Handled by the System actor persona, not
 treated as a user-facing feature. See [`PRODUCT.md`](PRODUCT.md#personas) and
-[`04-lifecycle.md`](04-lifecycle.md).
+[`lifecycle.md`](lifecycle.md).
 
 ## Artefacts and communication
 
 **PRD** — Product Requirements Document: the issue body, rewritten by
 `prd-writer` into a canonical format (problem, goal, user stories, Gherkin
 acceptance criteria, scope, metrics). The approved PRD is the source of truth
-for everything downstream. See [`04-lifecycle.md`](04-lifecycle.md#prd-format-and-the-prd-writer-gate).
+for everything downstream. See [`lifecycle.md`](lifecycle.md#prd-format-and-the-prd-writer-gate).
 
 **Snapshot marker** — An immutable comment (`<!-- ai-agile/snapshot/v1 -->`)
 preserving an artefact's original state for the audit trail, e.g. the
@@ -117,7 +117,7 @@ body (not in comments or a separate file), with ISO 8601 timestamps.
 See [`.claude/AGENTS.md`](../../../.claude/AGENTS.md), "Todo lists".
 
 **Retrospective** — The per-ticket reflection produced in the Evaluate phase;
-recurring findings feed standards proposals. See [`04-lifecycle.md`](04-lifecycle.md).
+recurring findings feed standards proposals. See [`lifecycle.md`](lifecycle.md).
 
 ## Continuous phase
 
@@ -125,11 +125,11 @@ recurring findings feed standards proposals. See [`04-lifecycle.md`](04-lifecycl
 loop** (improve the pipeline), the **Gap-assessment loop** (find missing
 product work), and the **Tech-debt loop** (find remediation work). The latter
 two file ordinary issues that re-enter the pipeline.
-See [`04-lifecycle.md`](04-lifecycle.md).
+See [`lifecycle.md`](lifecycle.md).
 
 **Gap-issue / debt-issue** — A new issue proposed by a continuous loop, tagged
 with its provenance, that runs through the normal per-ticket pipeline.
-See [`04-lifecycle.md`](04-lifecycle.md).
+See [`lifecycle.md`](lifecycle.md).
 
 ## Setup
 

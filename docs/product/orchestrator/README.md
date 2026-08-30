@@ -21,8 +21,8 @@ Read these four, in this order, and you will understand the system:
    loop in one paragraph.
 2. **[PRODUCT.md](PRODUCT.md#vision)** — the problem this solves and what
    the orchestrator promises (the *why* and the *what*).
-3. **[04-lifecycle.md](04-lifecycle.md)** — the five phases, then its
-   [End-to-end happy path](04-lifecycle.md#end-to-end-happy-path) section,
+3. **[lifecycle.md](lifecycle.md)** — the five phases, then its
+   [End-to-end happy path](lifecycle.md#end-to-end-happy-path) section,
    which walks one ticket from issue to merged PR (the *how*).
 4. **[glossary.md](glossary.md)** — keep it open; the other docs assume the
    terms it defines (gate, sentinel, work item, `:wip`, session, …).
@@ -65,7 +65,7 @@ rest as reference you consult when a question comes up.
 | — | [Vision](PRODUCT.md#vision) | The problem, and what the orchestrator promises |
 | — | [The promises](PRODUCT.md#the-promises) | The architectural-separation guarantees (AS-1 to AS-3) and mode invariants (MI-1 to MI-8) the system is built on, cited by ID everywhere else |
 | — | [Personas](PRODUCT.md#personas) | Who uses AI Agile; the enforced vocabulary lives in [`standards/personas.json`](../../../standards/personas.json) |
-| 04 | [Lifecycle](04-lifecycle.md) | The five phases (four per-ticket + one continuous) plus on-demand agents, with an end-to-end walkthrough |
+| 04 | [Lifecycle](lifecycle.md) | The five phases (four per-ticket + one continuous) plus on-demand agents, with an end-to-end walkthrough |
 
 ### How the machine works — reference
 

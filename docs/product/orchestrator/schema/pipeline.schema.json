@@ -133,7 +133,7 @@
 
         "naming": {
           "type": "object",
-          "description": "What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (04-lifecycle.md) that need it. Absent for a flow whose steps never commit.",
+          "description": "What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit.",
           "additionalProperties": false,
           "required": ["branch"],
           "properties": {

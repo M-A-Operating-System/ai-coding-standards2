@@ -26,7 +26,7 @@ distance is sequenced on issue #393.
 |---|---|---|---|
 | `description` | string | yes | What kind of work this is and why it is its own flow. |
 | `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and label) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
-| `naming` | object | no | What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (04-lifecycle.md) that need it. Absent for a flow whose steps never commit. |
+| `naming` | object | no | What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit. |
 | `steps` | array of object | yes | This flow's steps, in execution order. |
 
 ### A flow -- `trigger`
@@ -51,7 +51,7 @@ Exactly one of the following shapes:
 
 ### A flow -- `naming`
 
-What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (04-lifecycle.md) that need it. Absent for a flow whose steps never commit.
+What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
