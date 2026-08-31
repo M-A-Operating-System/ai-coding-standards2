@@ -30,7 +30,7 @@ independent of any ticket's progress.
 |---|---|---|---|---|---|
 | 0 | On-demand | `00_ondemand` | Human-triggered | Ad-hoc analysis and setup tools (codebase review, standards migration) | Varies per agent |
 | 1 | Product docs | `01_product_docs` | Per ticket | Establish what is being built and whether it fits | PRD + sized ticket + dependency map |
-| 2 | Design | `02_design` | Per ticket | Establish how it will be built, what "done" means, and the order of work | Technical design + ADR drafts + numbered Gherkin scenarios + ordered task list |
+| 2 | Design | `02_design` | Per ticket | Establish how it will be built, what "done" means, and (at `size: L`) the order children are created in | Technical design + ADR drafts + numbered Gherkin scenarios, when the change warrants them; an ordered child-issue plan at `L` |
 | 3 | Execute | `03_execute` | Per ticket | Build it and verify it | One PR (draft from first commit, per [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)) including tests and coverage |
 | 4 | Evaluate | `04_evaluate` | Per ticket | Record what shipped and reflect on this ticket | Changelog, per-ticket retrospective, targeted standards proposals |
 | 5 | Continuous | `05_continuous` | Continuous | Improve the pipeline, the product, and the implementation from accumulated evidence | Pipeline metrics and tuning proposals, gap-issue proposals, tech-debt issue proposals |
@@ -120,7 +120,7 @@ for the children. Decomposing first and designing second would mean
 guessing at seams before anything has decided where they belong --
 `dependency-planner`'s child order and critical path depend on the same
 design for the same reason. So the order at `L` is: `prd-writer` →
-`architect` → `test-spec-writer` / `test-coverage-auditor` →
+`issue-sizer` → `architect` → `test-spec-writer` / `test-coverage-auditor` →
 `dependency-planner` → `large-decomposer`.
 
 **`L` closes only once its children do, and only after a real review.**
@@ -142,14 +142,14 @@ rows inside a cell where size changes the answer.
 
 | Step | Security | Enhancement | Bug | Tech-debt | Spike |
 |---|---|---|---|---|---|
-| **Trigger** | Issue opened → `type: security` | Issue opened → `type: enhancement` | Issue opened → `type: bug` | Issue opened → `type: tech-debt` | Issue opened → `type: spike` |
-| `issue-classifier` | YES | YES | YES | YES | YES |
+| **Unclassified** | Issue opened by a stakeholder — no `type:` yet; identical across every eventual outcome | Same | Same | Same | Same |
+| `issue-classifier` | YES — assigns `type:`; the first point any column below actually applies | Same | Same | Same | Same |
+| `prd-writer` | YES — gate `prd-writer:approved`; also flags whether the change touches a new API contract, data-model change, or integration boundary, feeding `architect`'s trigger below | Same | Same | Same | YES — gate `prd-writer:approved`; **flow stops here** |
 | `issue-sizer` | S: `size: S` → combiner<br>M: `size: M` → proceeds<br>L: `size: L` → `large-decomposer` | Same | Same | Same | Not sized — not measured against the baseline |
-| `prd-writer` | YES — gate `prd-writer:approved` | Same | Same | Same | YES — gate `prd-writer:approved`; **flow stops here** |
-| `architect` | S: NO<br>M: CONDITIONAL — new API/data-model/integration surface<br>L: YES — settles design before decomposition | Same | Same | Same | NO |
+| `architect` | S: NO<br>M: CONDITIONAL — runs only when `prd-writer` flagged new API/data-model/integration surface<br>L: YES — settles design before decomposition | Same | Same | Same | NO |
 | `test-spec-writer` | S: NO<br>M: NO — the PRD's own Gherkin suffices<br>L: YES — defines the scenario set the children divide | Same | Same | Same | NO |
-| `test-coverage-auditor` | S: NO<br>M: NO<br>L: YES — gate `test-spec:approved` | Same | Same | Same | NO |
-| `dependency-planner` | S: NO<br>M: NO — nothing to order<br>L: YES — gate `plan:approved`, names child order | Same | Same | Same | NO |
+| `test-coverage-auditor` | S: NO<br>M: NO<br>L: YES — gate `test-spec:approved`; a **plan-time** check that the intended split covers every acceptance criterion, before any child exists -- distinct from `large-reviewer` checking what actually shipped, after | Same | Same | Same | NO |
+| `dependency-planner` | S: NO<br>M: NO — nothing to order<br>L: YES — gate `plan:approved`, names the order children are created and built in | Same | Same | Same | NO |
 | **Combiner** (orchestrator) | S: YES — groups with other `S` issues, gate `super-issue:approved`; this issue's own pipeline pauses here<br>M/L: N/A | Same | Same | Same | N/A |
 | `large-decomposer` | L: YES — gate `decomposition:approved`; this issue's own pipeline stops here<br>S/M: N/A | Same | Same | Same | N/A |
 | **Children / super-issue** (recursive) | The super-issue (`S`) or each child (`L`) re-enters at `issue-classifier`, sized on its own merits — everything below only runs once that recursion bottoms out at `M` | Same | Same | Same | N/A |
@@ -166,7 +166,7 @@ rows inside a cell where size changes the answer.
 | `migration-validator` | S: NO<br>M: CONDITIONAL — touches `**/*.sql`<br>L: NO | Same | Same | Same | NO |
 | Changelog | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — the approved PRD scope is the deliverable |
 | Retrospective | S: NO<br>M: NO, unless multiple review cycles<br>L: NO | Same | Same | Same | NO |
-| `large-reviewer` | L: YES — once every child resolves to `M` and merges, reviews the aggregate against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merged PR<br>S/M: N/A | Same | Same | Same | N/A |
+| `large-reviewer` | L: YES — once every child resolves to `M` and merges, reviews the aggregate against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merged PR. An **outcome-time** check -- catches execution drift the plan-time `test-coverage-auditor` pass couldn't see<br>S/M: N/A | Same | Same | Same | N/A |
 | Gate: `large-review:approved` | L: YES — a person reviews the assessment, not a child-count rubber stamp. `REQUEST_CHANGES` files a new child under the same parent; `APPROVE` closes it<br>S/M: N/A | Same | Same | Same | N/A |
 
 `task-decomposer` does not appear in this table: with code only ever
@@ -279,7 +279,7 @@ getting it wrong.
 | `super-issue:approved` | Product docs | Engineer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
 | `design:approved` | Technical docs | Engineer or tech lead | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
 | `test-spec:approved` | Testing spec | Engineer | A Gherkin scenario list from `test-spec-writer`, plus a coverage report from `test-coverage-auditor` confirming every PRD acceptance criterion maps to at least one scenario | That these scenarios — and only these — are what "done" means | Tests get written for the wrong things |
-| `plan:approved` | Build plan | Engineer | A build plan showing the ordered child task list and the critical path, produced by `dependency-planner` | That the decomposition is sensible and the order is correct | Wasted work; merge conflicts; tasks that discover the design has a hole |
+| `plan:approved` | Build plan | Engineer | A build plan showing the order children are created and built in, and the critical path, produced by `dependency-planner` | That the decomposition is sensible and the order is correct | Wasted work; merge conflicts; children that discover the design has a hole |
 | `pr:approved` | Execute | Engineer | A PR review from `pr-reviewer` checking scope, design alignment, and resolution of `required` standards violations | That the code is right and ready to test | Bugs in production. Use this gate to look at the actual diff, not just the agent's review summary |
 | `coverage:approved` | Test | Engineer | A coverage report showing test results, coverage delta, and any acceptance criterion without a passing test, produced by `coverage-enforcer` | That tests pass, coverage hasn't regressed, and every required scenario has a passing test | Untested code in production |
 | `large-review:approved` | Execute (`L` only) | Engineer or tech lead | A structured assessment from `large-reviewer`, comparing what every child actually shipped against the parent's PRD, design, and plan -- posted once every child has merged | That the sum of the parts does what the parent's PRD asked for, not just that every child individually passed its own review | A large item closes on child-count alone; individually-correct parts that collectively miss the scope, or leave a seam nobody owned, ship undetected |
@@ -316,8 +316,8 @@ documentation, not duplicated here. Two facts about that artefact matter
 at the gate:
 
 - **Gherkin flows downstream.** Each Gherkin scenario in an approved PRD
-  becomes a numbered test scenario in Phase 3
-  (`testing-spec/test-spec-writer`), tying every test back to a
+  is what `test-spec-writer` derives its numbered test scenarios from, at
+  `size: L` (see [Sizing](#sizing)), tying every test back to a
   stakeholder-approved acceptance condition.
 - **The original is preserved.** The stakeholder's original title and body
   — before `prd-writer` rewrote them — are kept as a one-off, immutable
@@ -450,9 +450,8 @@ of the standard review path.
 
 ## End-to-end happy path
 
-A typical security/bug/enhancement/tech-debt ticket flows like
-this. Agent names, dependencies, and gates are as declared in
-[`pipeline.json`](../../../pipeline/pipeline.json).
+A typical `size: M` security/bug/enhancement/tech-debt ticket flows like
+this -- the case with no fork, walked end to end.
 
 **Spike issues** (`type: spike`) stop after `prd-writer:approved`.
 `create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —
@@ -464,13 +463,15 @@ there is no code to ship, so no branch or PR is created.
 | T+2m | Issue | `01_product_docs/issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` |
 | T+5m | Issue | `01_product_docs/prd-writer` | Drafts PRD; rewrites issue body in user-story + Gherkin format | `prd-writer:review` |
 | T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` → `prd-writer:complete` |
+| T+2m | Issue | `issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` |
+| T+15m | Issue | Engineer | Approves the size | `size:approved` → `issue-sizer:complete` |
 | | | | **Design phase — approved design publishes to `main`** | |
 | T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` (no closing keyword); posts the link on the issue | `create-pr:complete` |
 | T+5m | PR | `01_product_docs/prd-docs-updater` | Writes the `docs/product/` + `docs/features/{feature}.md` changes on `issue-{N}-docs` | `prd-docs-updater:review` |
 | T+30m | PR | Stakeholder | Approves the design; the design PR merges to `main` | `prd-docs-updater:approved` → `prd-docs-updater:complete` → _design merged_ |
 | | | | **Build phase — code builds on the now-current `main`** | |
 | T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`), cut from the post-design-merge `main` | `create-pr:complete` |
-| T+30m | Issue | `03_execute/coder` | Implements issue and sub-issues; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
+| T+30m | Issue | `03_execute/coder` | Implements the issue; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
 | T+10m | PR | `03_execute/pr-reviewer` | Reviews code PR diff against spec; posts structured review | `pr-reviewer:review` |
 | T+30m | PR | Engineer | Approves review | `pr-reviewer:approved` → orchestrator marks PR ready |
 | — | PR | Engineer | Reviews and merges the code PR | `pr.merged` → issue auto-closes |
@@ -579,8 +580,8 @@ does; `S` and `L` route elsewhere first (see [Sizing](#sizing)):
 | `bug` | The PRD phase corrects the code to match an already-documented target, not the docs |
 | `tech-debt` | Tied to a non-functional requirement, not a user-facing PRD; evidence of the prior choice being undone is present when it came from the Tech-debt loop, not required otherwise |
 
-The shared shape — classify, PRD, design-phase publish to `main`, build-phase
-code PR, review, merge — is walked in full in [End-to-end happy
+The shared shape — classify, PRD, size, design-phase publish to `main`,
+build-phase code PR, review, merge — is walked in full in [End-to-end happy
 path](#end-to-end-happy-path); its gates are detailed in [Human
 gates](#human-gates); the branch/PR mechanics are
 [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery).
@@ -665,7 +666,7 @@ each agent's own frontmatter (AS-1), not here.
 | `architect` | agent | Standard ticket flow | Technical design — data model, API contracts, boundaries, NFRs; flags ADR-worthy decisions. At `L`, settles the boundaries `large-decomposer` splits along |
 | `test-spec-writer` | agent | Standard ticket flow | Derives a numbered Gherkin scenario list from the approved PRD; at `L`, the set its children's coverage is checked against |
 | `test-coverage-auditor` | agent | Standard ticket flow | Confirms every PRD acceptance criterion maps to at least one scenario |
-| `dependency-planner` | agent | Standard ticket flow | Produces the build plan — ordered child-task list and critical path, for `large-decomposer` to follow |
+| `dependency-planner` | agent | Standard ticket flow | Produces the build plan — the order children are created and built in, and the critical path, for `large-decomposer` to follow |
 | `large-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `L` ticket, shaped by `architect`'s design, gated on `decomposition:approved` |
 | `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing. Runs only once a ticket resolves to `M` |
 | `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; makes a scoped edit to `docs/product/` for what the PRD changed, never a full-file rewrite; self-gates on design review |
