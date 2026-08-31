@@ -1,736 +1,231 @@
 # Lifecycle
 
-Every change passes through four per-ticket phases. A fifth phase runs
-continuously across all tickets — learning from the pipeline itself,
-finding gaps between the product design and what actually shipped, and
-surfacing tech debt for remediation. A zero-numbered on-demand group
-holds human-triggered agents that sit outside the lifecycle flow. Each
-phase has clearly defined inputs, outputs, agents, and (where
-applicable) a human gate.
-
-This document describes the phases conceptually. The authoritative list
-of agents per phase, their dependencies, triggers, and gates lives in
-[`pipeline/pipeline.json`](../../../pipeline/pipeline.json)
-and per-phase mermaid charts are rendered at
-[`generated/phases/`](generated/phases/).
-
-If anything in the prose below disagrees with `pipeline.json`,
-`pipeline.json` is correct. See [P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does).
+This document lists the pipeline's phases, its agents, and the flows a
+ticket moves through. What each label means as a product concept —
+`type:`, `size:`, `priority:`, blocking — is defined in
+[`PRODUCT.md`](PRODUCT.md) and only referenced here. The authoritative
+list of agents per phase, their dependencies, triggers, and gates lives
+in [`pipeline/pipeline.json`](../../../pipeline/pipeline.json), and
+per-phase mermaid charts are rendered at
+[`generated/phases/`](generated/phases/). If anything below disagrees
+with `pipeline.json`, `pipeline.json` is correct
+(see [P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does)).
 
 ---
 
-## The five phases (plus on-demand)
-
-Phases 1–4 run per ticket, in order. Phase 5 runs continuously across
-all tickets. `00_ondemand` is not a lifecycle phase: it holds agents a
-human triggers explicitly (by label or manual invocation), at any time,
-independent of any ticket's progress.
+## Phases
 
 | # | Phase | Directory | Cadence | Purpose | Primary artefact |
 |---|---|---|---|---|---|
-| 0 | On-demand | `00_ondemand` | Human-triggered | Ad-hoc analysis and setup tools (codebase review, standards migration) | Varies per agent |
+| 0 | On-demand | `00_ondemand` | Human-triggered | Ad-hoc analysis and setup tools | Varies per agent |
 | 1 | Product docs | `01_product_docs` | Per ticket | Establish what is being built and whether it fits | PRD + sized ticket + dependency map |
-| 2 | Design | `02_design` | Per ticket | Establish how it will be built, what "done" means, and (at `size: L`) the order children are created in | Technical design + ADR drafts + numbered Gherkin scenarios, when the change warrants them; an ordered child-issue plan at `L` |
-| 3 | Execute | `03_execute` | Per ticket | Build it and verify it | One PR (draft from first commit, per [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)) including tests and coverage |
+| 2 | Design | `02_design` | Per ticket | Establish how it will be built, what "done" means, and (at `size: L`) the order children are created in | Technical design + ADR drafts + numbered Gherkin scenarios, when warranted; a child-issue plan at `L` |
+| 3 | Execute | `03_execute` | Per ticket | Build it and verify it | One PR including tests and coverage |
 | 4 | Evaluate | `04_evaluate` | Per ticket | Record what shipped and reflect on this ticket | Changelog, per-ticket retrospective, targeted standards proposals |
 | 5 | Continuous | `05_continuous` | Continuous | Improve the pipeline, the product, and the implementation from accumulated evidence | Pipeline metrics and tuning proposals, gap-issue proposals, tech-debt issue proposals |
 
 Each per-ticket phase produces an artefact that is the input to the
 next. Skipping a phase is not supported — the orchestrator will not
 invoke a downstream agent until its declared dependencies are
-satisfied. Phase 5 does not block any per-ticket flow; it operates
-independently and feeds back into the queue as new issues (gap-issues,
-debt-issues) or as proposals against `pipeline.json` and the standards.
+satisfied. Phase 5 does not block any per-ticket flow.
 
-**Phase consolidation note.** An earlier ten-phase model is consolidated into the five phases above: technical docs / testing spec / build plan became **Design**, test folded into **Execute** (tests ship in the same PR as the code), and learn / gap assessment / tech debt became three loops within one **Continuous** phase.
+---
 
-**The three continuous loops.** Within Phase 5, three loops mine
-different inputs at different cadences:
+## Agents
 
-| | Learn loop | Gap-assessment loop | Tech-debt loop |
+| Agent | Phase | Kind | Purpose |
 |---|---|---|---|
-| Inputs | Audit log + retrospectives | PRDs/vision + shipped code | Codebase + ADRs + standards |
-| Looks at | The pipeline | The product | The implementation |
-| Output | Pipeline/agent improvements | New "fill the gap" issues | New "remediate this" issues |
-| Approver | Standards owner | Stakeholder + standards owner | Engineer + standards owner |
-| Cadence | Daily / weekly / monthly | Weekly | Weekly |
+| `00_ondemand/codebase-reviewer` | 0 | agent | Three-persona codebase review; files a Technical Review issue |
+| `00_ondemand/new-agent` | 0 | agent | Scaffolds a new pipeline agent from an issue description |
+| `00_ondemand/standards-migrator` | 0 | agent | Converts a consuming repo's existing knowledge files into `standards/*.json` |
+| `00_ondemand/branch-cleanup` | 0 | agent | Recommends, then (on approval) deletes, stale remote branches |
+| `00_ondemand/issue-cleanup` | 0 | agent | Recommends, then (on approval) closes, complete or duplicate issues |
+| `00_ondemand/blocker` | 0 | agent | Applies a cross-issue `blockedby:`/`blocks:` pair on request |
+| `00_ondemand/unblocker` | 0 | agent | Scheduled: clears `blockedby:`/`blocks:` once the blocking issue closes |
+| `01_product_docs/issue-classifier` | 1 | agent | Classifies the issue; validates required fields are present |
+| `01_product_docs/issue-sizer` | 1 | agent | Sizes the ticket (`S`/`M`/`L`) |
+| `01_product_docs/prd-writer` | 1 | agent | Drafts the PRD; rewrites the issue body into user-story + Gherkin format |
+| `01_product_docs/create-docs-pr` | 1 | script | Opens the design PR (`issue-{N}-docs`), non-closing |
+| `01_product_docs/prd-docs-updater` | 1 | agent | Writes the scoped `docs/product/` + `docs/features/` change; copies approved Gherkin |
+| `01_product_docs/merge-docs-pr` | 1 | script | Merges the design PR to `main` ahead of the build phase |
+| `01_product_docs/create-pr` | 1 | script | Opens the code PR (`issue-{N}`), cut from the post-design `main` |
+| `02_design/architect` | 2 | agent | Technical design — data model, API contracts, boundaries, NFRs |
+| `02_design/test-spec-writer` | 2 | agent | Derives a numbered Gherkin scenario list from the approved PRD |
+| `02_design/test-coverage-auditor` | 2 | agent | Confirms every PRD acceptance criterion maps to at least one scenario |
+| `02_design/dependency-planner` | 2 | agent | Produces the build plan — child creation order and critical path |
+| `02_design/large-decomposer` | 2 | agent | Drafts the child-issue roadmap for an `L` ticket |
+| `02_design/create-integration-pr` | 2 | script | Opens `feature-{parent_N}` and its non-closing integration PR into `main` |
+| `03_execute/coder` | 3 | agent | Implements the issue; the orchestrator commits on completion |
+| `03_execute/ci-gate` | 3 | script | Polls CI checks |
+| `03_execute/merge-conflict` | 3 | agent | Auto-advances a clean PR; posts a resolution plan otherwise |
+| `03_execute/pr-reviewer` | 3 | agent | Structured code review; `REQUEST_CHANGES`/`APPROVE` |
+| `03_execute/impact-assessor` | 3 | agent | Flags sensitive surfaces touched (auth, RLS, IAM, secrets, PII) |
+| `03_execute/migration-validator` | 3 | agent | Confirms forward-only, idempotent, RLS-compliant migrations |
+| `03_execute/coverage-enforcer` | 3 | agent | Confirms tests pass and coverage hasn't regressed |
+| `03_execute/large-reviewer` | 3 | agent | Reviews an `L` ticket's aggregate diff once every child merges |
+| `04_evaluate/standards-evolver` | 4 | agent | Proposes a new or changed standard from repeated findings |
+| `05_continuous/metrics-aggregator` | 5 | agent | Daily: cycle time, gate dwell time, agent duration, rejection rate |
+| `05_continuous/pipeline-tuner` | 5 | agent | Monthly: drafts PRs against `pipeline.json` from systemic metric patterns |
+| `05_continuous/prompt-tuner` | 5 | agent | Monthly: drafts targeted agent-prompt edits from rejection-rate evidence |
+| `05_continuous/knowledge-curator` | 5 | agent | Weekly: drafts knowledge artefacts from tickets with reusable patterns |
+| `05_continuous/process-reviewer` | 5 | agent | Quarterly: holistic assessment against `PRODUCT.md` |
+| `05_continuous/gap-assessor` | 5 | agent | Weekly: cross-checks PRD acceptance criteria against tests and shipped code |
+| `05_continuous/vision-aligner` | 5 | agent | Weekly: checks the codebase for capabilities the vision implies but no ticket captured |
+| `05_continuous/gap-curator` | 5 | agent | Weekly: de-duplicates and prioritises gap candidates into one report |
+| `05_continuous/debt-finder` | 5 | agent | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn |
+| `05_continuous/adr-revisitor` | 5 | agent | Monthly: flags accepted ADRs whose context has materially shifted |
+| `05_continuous/debt-curator` | 5 | agent | Weekly: de-duplicates and prioritises debt candidates into one report |
 
 ---
 
-## Issue classification taxonomy
+## Flows
 
-What each `type:` value means, and why the taxonomy is shaped the way it
-is, is a product feature -- defined in full in [PRODUCT.md,
-Type](PRODUCT.md#type-ranks-five-reasons-an-issue-exists). What follows here is process only: `issue-classifier`
-classifies every issue entering the pipeline as exactly one of the five
-types, recording it both as an artefact comment and as a `type: {type}`
-label applied at classification time. Five `type:` labels are pre-created
-in the repository so the full taxonomy is always available for filtering
-in the GitHub interface. `type:` is one of two independent label
-dimensions that decide which steps run; the other is how big the work is,
-not why it exists -- see [Sizing](#sizing) below.
+`type:` and `size:` ([PRODUCT.md](PRODUCT.md#type-ranks-five-reasons-an-issue-exists),
+[PRODUCT.md](PRODUCT.md#size-measures-how-much-work-there-is)) decide
+which flow below a ticket takes. Each flow's table names the gate and
+its approver inline, where one applies.
 
----
+### Issue classification taxonomy
 
-## Sizing
+Every issue enters at `01_product_docs/issue-classifier`, which assigns
+`type:` and starts whichever flow below matches.
 
-What each `size:` value means, and the "only `M` ever ships code" rule, is
-a product feature -- defined in full in [PRODUCT.md, Size](PRODUCT.md#size-measures-how-much-work-there-is).
-What follows here is process only: `issue-sizer` applies `size:` as a
-`size: {S|M|L}` label with a rationale comment, gated by `size:approved`;
-the routing each value triggers is the subject of [What runs, for each
-type and size](#what-runs-for-each-type-and-size) below.
+### Two-phase design-to-build delivery
 
-**At `L`, design and planning happen before decomposition, not after.**
-`architect` settles the component boundaries, API contracts, and data
-model; `large-decomposer` uses those boundaries as the natural split points
-for the children. Decomposing first and designing second would mean
-guessing at seams before anything has decided where they belong --
-`dependency-planner`'s child order and critical path depend on the same
-design for the same reason. So the order at `L` is: `prd-writer` →
-`issue-sizer` → `architect` → `test-spec-writer` / `test-coverage-auditor` →
-`dependency-planner` → `large-decomposer` → `create-integration-pr`
-(script).
-
-**Every child of a decomposed `L` ticket builds on a shared integration
-branch, not `main` directly.** `create-integration-pr` opens
-`feature-{parent_N}` from `main` and a non-closing integration PR
-(`feature-{parent_N}` → `main`, `Closes #{parent_N}`) once
-`large-decomposer:complete` is applied -- the same gated-completion
-pattern `create-docs-pr` already follows for `prd-writer`. Each child's
-own two-phase delivery (see [Two-phase design-to-build
-delivery](#two-phase-design-to-build-delivery)) then targets that branch
-instead of `main`: its design PR merges into `feature-{parent_N}`, and
-its code PR is cut from the post-design-merge `feature-{parent_N}` and
-merges back into it, closing the child but leaving `main` untouched.
-This is what lets every child's work land somewhere reviewable as a
-whole before any of it reaches `main`.
-
-**`L` closes only once its children do, and only after a real review.**
-Once every child (recursively resolved to `M`) has merged into
-`feature-{parent_N}`, `large-reviewer` reviews the integration branch's
-accumulated diff against the parent's PRD, design, and plan -- the same
-shape as `pr-reviewer` reading a diff against a spec, spanning every
-child's merge instead of one. A person approves that assessment at
-`large-review:approved`, which marks the integration PR ready; merging
-it is what closes the parent and finally brings the aggregate into
-`main`. Every child can pass its own review and the whole still be
-wrong, which is exactly what this step exists to catch.
-`REQUEST_CHANGES` files a new child under the same parent addressing
-the gap, rather than reopening a child that already merged.
-
----
-
-## What runs, for each type and size
-
-One table, every step as a row, every state a column -- `Unclassified`
-plus the five types. `S`/`M`/`L` lines inside a cell where size changes
-the answer.
-
-| Step | Unclassified | Security | Enhancement | Bug | Tech-debt | Spike |
-|---|---|---|---|---|---|---|
-| `issue-classifier` | YES — assigns `type:`; this is what ends the `Unclassified` state | N/A — already assigned | N/A | N/A | N/A | N/A |
-| `prd-writer` | N/A — no type to draft a PRD against yet | YES — gate `prd-writer:approved`; also flags whether the change touches a new API contract, data-model change, or integration boundary, feeding `architect`'s trigger below | Same | Same | Same | YES — gate `prd-writer:approved`; **flow stops here** |
-| `issue-sizer` | N/A | S: `size: S` → combiner<br>M: `size: M` → proceeds<br>L: `size: L` → `large-decomposer` | Same | Same | Same | Not sized — not measured against the baseline |
-| `architect` | N/A | S: NO<br>M: CONDITIONAL — runs only when `prd-writer` flagged new API/data-model/integration surface<br>L: YES — settles design before decomposition | Same | Same | Same | NO |
-| `test-spec-writer` | N/A | S: NO<br>M: NO — the PRD's own Gherkin suffices<br>L: YES — defines the scenario set the children divide | Same | Same | Same | NO |
-| `test-coverage-auditor` | N/A | S: NO<br>M: NO<br>L: YES — gate `test-spec:approved`; a **plan-time** check that the intended split covers every acceptance criterion, before any child exists -- distinct from `large-reviewer` checking what actually shipped, after | Same | Same | Same | NO |
-| `dependency-planner` | N/A | S: NO<br>M: NO — nothing to order<br>L: YES — gate `plan:approved`, names the order children are created and built in | Same | Same | Same | NO |
-| **Combiner** (orchestrator) | N/A | S: YES — groups with other `S` issues, gate `super-issue:approved`; this issue's own pipeline pauses here<br>M/L: N/A | Same | Same | Same | N/A |
-| `large-decomposer` | N/A | L: YES — gate `decomposition:approved`; this issue's own pipeline stops here<br>S/M: N/A | Same | Same | Same | N/A |
-| `create-integration-pr` (script) | N/A | L: YES — opens `feature-{parent_N}` and its non-closing integration PR into `main`, once `large-decomposer:complete`<br>S/M: N/A | Same | Same | Same | N/A |
-| **Children / super-issue** (recursive) | N/A | The super-issue (`S`) or each child (`L`) re-enters at `Unclassified`, sized on its own merits — everything below only runs once that recursion bottoms out at `M` | Same | Same | Same | N/A |
-| `create-docs-pr` (script) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `prd-docs-updater` | N/A | S: NO<br>M: YES — scoped edit, never a rewrite<br>L: NO | Same | Same | Same | NO |
-| `merge-docs-pr` (script) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `create-pr` (script, code PR) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `coder` | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — ships research, not code |
-| `ci-gate` (script) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `merge-conflict` | N/A | S: NO<br>M: YES — auto-advances if clean<br>L: NO | Same | Same | Same | NO |
-| `pr-reviewer` | N/A | S: NO<br>M: YES — plus `security-review:approved` when flagged<br>L: NO | S: NO<br>M: YES<br>L: NO | Same | Same | NO |
-| `coverage-enforcer` | N/A | S: NO<br>M: YES — gate `coverage:approved`<br>L: NO | Same | Same | Same | NO |
-| `impact-assessor` | N/A | S: NO<br>M: YES — expected to trigger<br>L: NO | S: NO<br>M: CONDITIONAL<br>L: NO | Same | Same | NO |
-| `migration-validator` | N/A | S: NO<br>M: CONDITIONAL — touches `**/*.sql`<br>L: NO | Same | Same | Same | NO |
-| Changelog | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — the approved PRD scope is the deliverable |
-| Retrospective | N/A | S: NO<br>M: NO, unless multiple review cycles<br>L: NO | Same | Same | Same | NO |
-| `large-reviewer` | N/A | L: YES — once every child resolves to `M` and merges into `feature-{parent_N}`, reviews that branch's accumulated diff against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merge. An **outcome-time** check -- catches execution drift the plan-time `test-coverage-auditor` pass couldn't see<br>S/M: N/A | Same | Same | Same | N/A |
-| Gate: `large-review:approved` | N/A | L: YES — a person reviews the assessment, not a child-count rubber stamp, and marks the integration PR ready. `REQUEST_CHANGES` files a new child under the same parent; `APPROVE` + merge brings `feature-{parent_N}` into `main` and closes the parent<br>S/M: N/A | Same | Same | Same | N/A |
-
-`task-decomposer` does not appear in this table: with code only ever
-shipping at `M`, there is no multi-task PR left to break down --
-`coder` implements the one PRD directly.
-
-Every YES / CONDITIONAL / NO above is a step's trigger evaluated
-against a combination of labels (`type: enhancement` and `size: M`
-both have to hold for `coder` to run on an enhancement) -- the general
-compound-label trigger mechanism is a product feature, described in
-full in [PRODUCT.md, Selection by
-classification](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does).
-
----
-
-## Priority
-
-What `priority:` means, who sets it, and why it never changes which
-steps run is a product feature -- defined in full in [PRODUCT.md,
-Priority](PRODUCT.md#priority-orders-pickup-among-eligible-work). See [How the pipeline
-advances](#how-the-pipeline-advances) for how the orchestrator uses it
-to order pickup.
-
----
-
-## Blocking between issues
-
-What `blocks:`/`blockedby:` mean, how they're set, and how a block is
-cleared, is a product feature -- defined in full in [PRODUCT.md,
-Blocking between issues](PRODUCT.md#blocking-declares-an-ordering-dependency-between-issues). `blocker`
-and `unblocker` are the agents that apply and clear them; see [Every
-step across every flow](#every-step-across-every-flow).
-
----
-
-## How the pipeline advances
-
-A single deterministic Python orchestrator has sole authority for
-routing — reacting to events and deciding which agent runs next
-([PRODUCT.md](PRODUCT.md#as-2----the-orchestrator-only-coordinates)).
-The rest of this section describes the operational mechanics.
-
-The orchestrator is invoked on three triggers:
-
-1. **Label events.** Any time a label is added or removed on an issue
-   or PR, the orchestrator re-evaluates eligibility.
-2. **PR events.** PR opened, synchronised, ready-for-review, merged,
-   closed.
-3. **Schedule.** Every 15 minutes during working hours, as a backstop.
-
-Which of several eligible items the orchestrator works on first, and
-whether a not-yet-started item is eligible at all, is product-level
-scheduling logistics -- defined in full in [PRODUCT.md, Which eligible
-item runs next](PRODUCT.md#eligibility-and-order-decide-which-item-runs-next).
-
-For each eligible work item, the orchestrator picks the one step whose
-conditions are met, invokes it, and records the outcome. The general
-mechanism -- the state machine, the step contract, how a step reports
-what it did -- is a product feature, described in full in
-[PRODUCT.md, The state machine](PRODUCT.md#labels-are-state-a-step-is-a-transition) and
-[PRODUCT.md, The step contract](PRODUCT.md#every-step-agent-or-script-is-bound-by-the-same-contract). A
-halted pipeline (`review`, `blocked`, `failed`) resumes the moment a
-human removes the offending label -- there is no separate "retry"
-button.
-
-Every transition appends one JSON record to the audit log
-(see [`PRODUCT.md`](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you)).
-
-In the **Execute** phase, branch and PR ownership follows
-[Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)
-(draft PRs early, one branch per PR) and
-[PRODUCT.md](PRODUCT.md#every-step-agent-or-script-is-bound-by-the-same-contract)
-(agents write files, the orchestrator commits and owns the PR lifecycle):
-
-- The `create-pr` script step opens the draft **code** PR on the
-  `issue-{N}` branch, cut from the post-design-merge `main`, establishing
-  the branch and PR that subsequent coder commits accumulate into. The
-  design phase has already merged the approved `docs/product/` +
-  `docs/features/` to `main` via the `issue-{N}-docs` PR (see
-  [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)),
-  so the code branch starts from a tree that already contains the latest
-  design.
-- Agents (`coder`) write files during their run; the orchestrator commits
-  and pushes those changes to the branch after the agent signals
-  `complete` (`git_ops.commit_after: true`). Agents may read issues and
-  PRs, but only the orchestrator may create, commit to, or advance the PR.
-- `pr-reviewer` issues `REQUEST_CHANGES` for any Critical, High, or
-  Medium severity finding; it issues `APPROVE` only when all findings
-  are Low or Informational severity.
-- Human reviewer feedback is a first-class input. `pr-reviewer` reads
-  all open human `REQUEST_CHANGES` reviews on the PR in addition to the
-  diff and spec, and **cannot** issue `APPROVE` while any unresolved
-  human `REQUEST_CHANGES` review remains open, regardless of its own
-  findings. Reviews from bot accounts are excluded — only human GitHub
-  accounts count.
-- When the `coder` is re-invoked it reads both the `pr-reviewer`'s
-  findings and any unresolved human review comments, so both sources
-  are addressed in one pass.
-- On `APPROVE` with no unresolved human `REQUEST_CHANGES` reviews, the
-  orchestrator marks the PR ready-for-review
-  (`git_ops.mark_ready_on_complete`).
-- On `REQUEST_CHANGES`, the orchestrator automatically re-invokes the
-  coder to address the findings (up to three cycles before requiring
-  human sign-off).
-- **Edge case:** if `pr-reviewer` issues `APPROVE` but one or more
-  human `REQUEST_CHANGES` reviews remain open, the orchestrator does
-  not mark the PR ready — it re-invokes the coder once to address the
-  human feedback (this re-invocation does not count toward the
-  three-cycle limit), then ci-gate and `pr-reviewer` run again.
-- The linked issue closes automatically on merge via the "Closes #{N}"
-  trailer in the **code** PR body. The design PR (`issue-{N}-docs`)
-  carries no closing keyword, so the issue stays open through the build
-  phase; only the code PR closes it. The `issue-{N}` and `issue-{N}-docs`
-  branches are deleted by the orchestrator when it receives the
-  `pull_request.closed` event with `merged=true` — `_wake` calls
-  `delete-branch.sh` for this. Branches from PRs closed without merging
-  are not auto-deleted; they are handled by the `00_ondemand/branch-cleanup`
-  agent on human request.
-
----
-
-## Human gates
-
-The mechanism -- how a gate is crossed, and by whom -- is
-[MI-7](PRODUCT.md#mi-7----only-a-person-approves). This table is what each
-gate in the current pipeline means for the human approving it: the
-approver, the artefact they read, what approval signs off, and the cost of
-getting it wrong.
-
-| Gate label | Phase | Approver | Artefact | What you're signing off | Cost if wrong |
-|---|---|---|---|---|---|
-| `01_product_docs/prd-writer:approved` | Product docs | Stakeholder who opened the issue, or their delegate | The **issue body itself**, after `01_product_docs/prd-writer` rewrites it into the canonical PRD format (see [PRD format](#prd-format-and-the-prd-writer-gate) below) and rewrites the title | The problem and goal are correct; each user story names a real persona from [`standards/personas.json`](../../../standards/personas.json) (including the System actor, whose entry there carries the qualifying test that keeps it from being a disguise for technical work) and `As a developer` stories are suspect; each Gherkin scenario is falsifiable; "Out of scope" actually rules things out; success metrics are externally observable; the new title categorises the work correctly and names a real bounded context. Once approved, the PRD is the source of truth for everything downstream | The most expensive gate to skim — wrong PRD → wrong everything downstream (design, testing, evaluation) |
-| `size:approved` | Product docs | Reviewer | A `size: {S\|M\|L}` label and rationale from `issue-sizer` | That the size is right. `M` fits a single development cycle as itself. `L` commits you to breaking it into children before proceeding. `S` commits you to considering combination with other small tickets in the window | An `L` ticket past the gate produces a sprawling design and a multi-week PR; a wrongly-approved `S` either wastes review overhead shipped alone or gets combined with unrelated work |
-| `super-issue:approved` | Product docs | Reviewer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
-| `design:approved` | Design | Reviewer | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
-| `test-spec:approved` | Design | Reviewer | A Gherkin scenario list from `test-spec-writer`, plus a coverage report from `test-coverage-auditor` confirming every PRD acceptance criterion maps to at least one scenario | That these scenarios — and only these — are what "done" means | Tests get written for the wrong things |
-| `plan:approved` | Design | Engineer | A build plan showing the order children are created and built in, and the critical path, produced by `dependency-planner` | That the decomposition is sensible and the order is correct | Wasted work; merge conflicts; children that discover the design has a hole |
-| `decomposition:approved` | Design (`L` only) | Engineer | A child-issue roadmap from `large-decomposer`, shaped by `architect`'s design and `dependency-planner`'s build order | That the proposed split is sensible -- each child is an independently deliverable business outcome, not an arbitrary file-level slice | A bad split produces children that can't be built or reviewed independently, defeating the point of decomposing |
-| `pr:approved` | Execute | Reviewer | A PR review from `pr-reviewer` checking scope, design alignment, and resolution of `required` standards violations | That the code is right and ready to test | Bugs in production. Use this gate to look at the actual diff, not just the agent's review summary |
-| `coverage:approved` | Execute | Engineer | A coverage report showing test results, coverage delta, and any acceptance criterion without a passing test, produced by `coverage-enforcer` | That tests pass, coverage hasn't regressed, and every required scenario has a passing test | Untested code in production |
-| `large-review:approved` | Execute (`L` only) | Reviewer | A structured assessment from `large-reviewer`, posted on the `feature-{parent_N}` integration PR, comparing what every child actually shipped into it against the parent's PRD, design, and plan -- posted once every child has merged | That the sum of the parts does what the parent's PRD asked for, not just that every child individually passed its own review. Approval marks the integration PR ready; merging it is the final step | A large item closes on child-count alone; individually-correct parts that collectively miss the scope, or leave a seam nobody owned, ship undetected |
-| `standards-proposal:approved` | Evaluate (weekly) | Standards owner | An issue from `standards-evolver` proposing a new or changed standard, in JSON schema format | That the proposed standard is sound, the rationale is real, and the agent guidance is unambiguous | A bad standard ripples into every subsequent ticket |
-| `security-review:approved` | Execute | Security owner | The PR diff and the `impact-assessor` security-flag comment listing the sensitive surfaces touched (auth flows, RLS policies, IAM definitions, secrets, PII fields) | That the change is safe from an authentication, authorisation, and data-exposure perspective. Not a full pentest — a focused review of the flagged surface | Security vulnerabilities in production. Only required on PRs flagged by `impact-assessor`; non-flagged PRs skip this gate automatically |
-| `data-migration:approved` | Execute | Data owner | The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance | That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted | Data loss or corruption in production. Only required on PRs that include `**/*.sql` files |
-| `merge-conflict:approved` | Execute | Engineer | A prioritised list of conflict resolution recommendations from the `merge-conflict` agent, posted as a PR comment; each identifies the affected file, the conflict scope, and the suggested resolution approach | That the proposed resolution for each conflicting file is correct, safe, and consistent with both sides of the merge. Binary and generated files (lock files, compiled assets) may be flagged but require manual handling | Applying the wrong resolution silently drops or corrupts intentional changes. Review each conflicting hunk against the PR's stated intent. Only required on PRs that contain merge conflict markers when marked Ready for Review; clean PRs skip this gate automatically |
-| `gap-report:approved` | Gap assessment | Stakeholder + Standards owner (dual approval) | The rolled-up gap report from `gap-curator` listing candidate gap-issues grouped by severity | That the identified gaps are real (not stale requirements the product has intentionally moved away from) and worth filing as tickets | Filing phantom issues wastes the per-ticket pipeline on work no one wants |
-| `debt-report:approved` | Tech debt | Engineer (or tech lead) + Standards owner (dual approval) | The rolled-up debt report from `debt-curator` listing candidate debt-issues with structural evidence (metrics, ADR age, hot-spot trends) | That the identified debt is real and worth prioritising against the enhancement backlog | Remediating false debt distracts from delivering value |
-| `pipeline-change:approved` | Learn | Standards owner | A PR against `pipeline.json` from `pipeline-tuner`, with evidence from the metrics report | That the proposed pipeline change — adjusted schedule, added dependency, changed gate — is sound and will not degrade pipeline health | A bad pipeline change affects every subsequent ticket |
-| `prompt-change:approved` | Learn | The agent's designated owner (responsible for that agent's quality) | A PR against `.claude/agents/{agent}.md` from `prompt-tuner`, with rejection-rate evidence and diff | That the proposed prompt edit improves agent quality and does not introduce regression | A regressed prompt silently degrades every run of that agent |
-| `process-review:approved` | Learn | Standards owner + a principal stakeholder (dual approval required) | A coordinated change proposal from `process-reviewer` spanning the pipeline graph, agent prompts, standards, and docs | That the system-level diagnosis is correct, the proposed coordinated changes are coherent, and the dual approvers together represent both the technical and product perspectives | A bad coordinated change is harder to unwind than a single-component change; the dual approval bar reflects the blast radius |
-
-Two gates carry additional refusal/guard behaviour worth noting:
-
-- **`size:approved`** — `issue-sizer`'s `L` verdict is itself the trigger
-  to decompose; approving an `L` commits you to breaking the ticket into
-  children first. An `S` verdict similarly triggers the combiner suggestion,
-  though grouping itself gates separately on `super-issue:approved`.
-- **`01_product_docs/prd-writer:approved`** — `prd-writer` will refuse to
-  draft an oversized PRD. If the issue describes multiple distinct user
-  outcomes or spans multiple bounded contexts, the agent set-blocks with a
-  decomposition recommendation rather than producing a sprawling PRD.
-  Decomposing early is cheaper than reviewing a too-big PRD.
-
-### PRD format and the `prd-writer` gate
-
-The artefact for `01_product_docs/prd-writer:approved` is the rewritten
-issue body. Its required structure — the six sections (Problem, Goal,
-User stories, Acceptance criteria, Out of scope, Success metrics), the
-user-story and Gherkin formats, and the `[CATEGORY] - {module} - {Title}`
-title format — is defined in the `prd-writer` / product-docs
-documentation, not duplicated here. Two facts about that artefact matter
-at the gate:
-
-- **Gherkin flows downstream.** Each Gherkin scenario in an approved PRD
-  is what `test-spec-writer` derives its numbered test scenarios from, at
-  `size: L` (see [Sizing](#sizing)), tying every test back to a
-  stakeholder-approved acceptance condition.
-- **The original is preserved.** The stakeholder's original title and body
-  — before `prd-writer` rewrote them — are kept as a one-off, immutable
-  snapshot comment marked
-  `<!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->`. It stays
-  as first captured even if the PRD is rewritten after rejection,
-  preserving the audit trail under the
-  [MI-7](PRODUCT.md#mi-7----only-a-person-approves) carve-out that
-  lets `prd-writer` edit issue title and body.
-
----
-
-## Two-phase design-to-build delivery
-
-A **shippable unit** is an issue that owns a deliverable: any issue at
-`size: M` -- including each independently-sized child of a decomposed `L`
-ticket, once it resolves to `M` -- or a super-issue grouping smaller items.
-These two kinds of children are opposites. A decomposed `L` ticket's
-children are themselves shippable units: each recurses through this same
-lifecycle independently and closes its own PR (see [The ticket is too
-big](#the-ticket-is-too-big)). A super-issue's grouped children are not:
-they pause their own pipelines, attach to the super-issue, and close only
-when *its* PR merges (see [Many small tickets in a
-window](#many-small-tickets-in-a-window)) -- tracking and audit units, not
-independent deliverables. No PR spans more than one shippable-unit issue,
-and every branch produces exactly one PR.
-
-Each issue is delivered in **two sequenced phases, each its own branch and PR**,
-so the approved design reaches its target branch before any code is
-written -- `main` for most issues, `feature-{parent_N}` for a decomposed
-`L` ticket's children (see [Sizing](#sizing)):
+Every shippable unit (any `size: M` issue, or a super-issue) is
+delivered as two sequenced phases, each its own branch and PR, so the
+approved design reaches its target branch before any code is written:
 
 | Phase | Branch | PR | Closes issue? | Merges at |
 |---|---|---|---|---|
-| **Design** | `issue-{N}-docs` | design PR (`docs/product/` + `docs/features/{feature}.md`) | **No** | design approval (`prd-docs-updater:approved`) |
-| **Build** | `issue-{N}` | code PR (tests + implementation) | **Yes** (`Closes #{N}`) | end of code review |
+| **Design** | `issue-{N}-docs` | design PR (`docs/product/` + `docs/features/{feature}.md`) | No | `prd-docs-updater:approved` (Stakeholder) |
+| **Build** | `issue-{N}` | code PR (tests + implementation) | Yes (`Closes #{N}`) | end of code review |
 
-- The **design PR must not carry a closing keyword** (`Closes`/`Fixes`/`Resolves`).
-  The issue stays open through the build phase; only the **code PR** closes it.
-  A premature close would also trip the branch-delete automation and the
-  `large-review:approved` gate that closes a decomposed parent
-  (see [The ticket is too big](#the-ticket-is-too-big) below).
-- The **code branch (`issue-{N}`) is cut from the post-design-merge target
-  branch** -- `main` normally, `feature-{parent_N}` for a decomposition
-  child -- so the build always starts from a tree that already contains the
-  latest approved design (and, for `main`, the latest pipeline
-  infrastructure).
-- This keeps the target branch continuously carrying the latest approved
-  *desired state* (design) while the *current state* (code) catches up. It
-  also lets parallel builds see each other's merged design, and surfaces
-  overlapping-design conflicts at the small docs merge rather than late in
-  two colliding code PRs.
-- **Naming:** the code branch stays `issue-{N}` (unchanged, so all existing
-  tooling keyed on that pattern is untouched); only the new `issue-{N}-docs`
-  design branch is added. `delete-branch.sh` broadens its match to clean up both.
-- **The design PR's edit is scoped, not a rewrite.** `prd-docs-updater` changes
-  only the section(s) the PRD affects -- it does not reformat, reorder, or
-  restructure a doc file to make room for the change. Keeping docs current is
-  non-negotiable (P-15); rewriting the file to do it is not the same
-  requirement and is not asked for. This is what keeps the design PR small
-  enough to review as a small PR, for an enhancement same as anything else.
+The code branch is cut from the post-design-merge target branch —
+`main` normally, `feature-{parent_N}` for a decomposition child (see
+[The ticket is too big](#the-ticket-is-too-big)) — so the build always
+starts from a tree that already contains the latest approved design.
+`prd-docs-updater`'s edit is scoped to what the PRD changed, never a
+full-file rewrite.
 
-This refines -- it does not abandon -- the one-branch-per-PR invariant stated
-above: still exactly one PR per branch, now up to two phase-PRs per issue
-(design then code).
+### PRD format and the `prd-writer` gate
 
----
+The artefact for `prd-writer:approved` is the rewritten issue body: six
+sections (Problem, Goal, User stories, Acceptance criteria, Out of
+scope, Success metrics) in user-story and Gherkin format, approved by
+the Stakeholder who opened the issue. `prd-writer` refuses to draft an
+oversized PRD — an issue describing multiple distinct user outcomes or
+spanning multiple bounded contexts gets a decomposition recommendation
+instead. Each Gherkin scenario in an approved PRD is what
+`test-spec-writer` derives its scenarios from at `size: L`. The
+stakeholder's original title and body are kept as an immutable snapshot
+comment, under the [MI-7](PRODUCT.md#mi-7----only-a-person-approves)
+carve-out that lets `prd-writer` edit issue title and body.
 
-## Forks in the path
+### End-to-end happy path
+
+A typical `size: M` security/bug/enhancement/tech-debt ticket, walked
+end to end, with no fork. **Spike issues** (`type: spike`) stop after
+`prd-writer:approved` — `create-pr`, `prd-docs-updater`, and `coder`
+are excluded, since there is no code to ship.
+
+| Time | Actor | Event | Outcome label | Gate (Approver) |
+|---|---|---|---|---|
+| T+0 | Stakeholder | Opens issue | — | — |
+| T+2m | `issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` | — |
+| T+5m | `prd-writer` | Drafts PRD; rewrites issue body | `prd-writer:review` | — |
+| T+1h | Stakeholder | Approves PRD | `prd-writer:approved` | **`prd-writer:approved`** — Stakeholder |
+| T+2m | `issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` | — |
+| T+15m | Reviewer | Approves the size | `size:approved` | **`size:approved`** — Reviewer |
+| T+2m | `create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` | `create-pr:complete` | — |
+| T+5m | `prd-docs-updater` | Writes the `docs/product/` + `docs/features/` changes | `prd-docs-updater:review` | — |
+| T+30m | Stakeholder | Approves the design; design PR merges to `main` | `prd-docs-updater:approved` | **`prd-docs-updater:approved`** — Stakeholder |
+| T+2m | `create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`) | `create-pr:complete` | — |
+| T+30m | `coder` | Implements the issue; orchestrator commits and pushes | — | — |
+| T+10m | `pr-reviewer` | Reviews code PR diff against spec | `pr-reviewer:review` | — |
+| T+30m | Reviewer | Approves review | `pr-reviewer:approved` | **`pr:approved`** — Reviewer |
+| — | Reviewer | Reviews and merges the code PR | `pr.merged` → issue auto-closes | — |
+
+Notes: `REQUEST_CHANGES` from `pr-reviewer` re-invokes `coder`, up to
+three cycles before requiring human sign-off; `pr-reviewer` cannot
+`APPROVE` while any human `REQUEST_CHANGES` review is unresolved,
+regardless of its own findings. Merged branches (`issue-{N}` and
+`issue-{N}-docs`) are auto-deleted by the orchestrator.
+
+Two gates not shown above apply conditionally, regardless of type/size:
+`coverage:approved` (Engineer, from `coverage-enforcer`) always at
+`size: M`; `security-review:approved` (Security owner, from
+`impact-assessor`) only when a PR is flagged; `data-migration:approved`
+(Data owner, from `migration-validator`) only when a PR touches
+`**/*.sql`.
 
 ### The ticket is too big
 
-If `issue-sizer` returns `L`, `architect`, `test-spec-writer` /
-`test-coverage-auditor`, and `dependency-planner` settle the design, the
-scenario coverage, and the child order first (see
-[Sizing](#sizing)) -- then **`large-decomposer`** drafts a roadmap of
-proposed child issues, each a smaller business outcome shaped by that
-design, and posts the roadmap as a comment on the parent. A human approves
-the decomposition by applying `decomposition:approved`. On approval, the
-agent auto-creates the child issues and links them back to the parent, and
-`create-integration-pr` (script) opens the shared `feature-{parent_N}`
-branch and its non-closing integration PR into `main`. Each child re-enters
-the pipeline at `issue-classifier`, is independently typed and sized, and
-runs through its own full lifecycle -- recursively, until it resolves to
-`M`, the only size that ships code -- building on `feature-{parent_N}`
-rather than `main` throughout (see [Two-phase design-to-build
-delivery](#two-phase-design-to-build-delivery)).
+At `size: L`, design and planning happen before decomposition, not after —
+`architect` settles the boundaries `large-decomposer` splits along, and
+`dependency-planner`'s child order depends on the same design.
 
-**A large item's value is in the parts it creates and the judgement that
-they add up.** It has five stages, and each one is a step in its own flow
-rather than an exclusion from someone else's:
+| Step | Actor | What happens | Gate (Approver) |
+|---|---|---|---|
+| Design | `architect` | Settles component boundaries, API contracts, data model | **`design:approved`** — Reviewer |
+| Test spec | `test-spec-writer` / `test-coverage-auditor` | Scenario set + coverage check against the PRD | **`test-spec:approved`** — Reviewer |
+| Plan | `dependency-planner` | Build plan: child creation order and critical path | **`plan:approved`** — Engineer |
+| Decompose | `large-decomposer` | Drafts the child-issue roadmap | **`decomposition:approved`** — Engineer |
+| Open integration branch | `create-integration-pr` (script) | Opens `feature-{parent_N}` and its non-closing integration PR into `main` | — |
+| Build the parts | Children (recursive) | Each child re-enters at `issue-classifier`, sized on its own merits, building on `feature-{parent_N}` instead of `main`, until it resolves to `M` | — |
+| Review the whole | `large-reviewer` | Reviews `feature-{parent_N}`'s accumulated diff against the parent's PRD, design, and plan | **`large-review:approved`** — Reviewer |
+| Close it | Reviewer merges the integration PR | Brings the aggregate into `main`; closes the parent | — |
 
-| Stage | What it is |
-|---|---|
-| Pick it up | The item enters its flow like any other work item |
-| Decompose it | `architect`, `test-spec-writer`/`test-coverage-auditor`, and `dependency-planner` settle the design and plan; `large-decomposer` produces the child issues that are the actual work, linked back to the parent; `create-integration-pr` opens `feature-{parent_N}` for them to build on |
-| Wait for the parts | The children run their own flow, independently and in parallel, each recursing through this same table at its own size, each merging into `feature-{parent_N}` rather than `main`. Not a step -- a later step whose trigger condition is not yet met |
-| Review the whole | `large-reviewer` reviews `feature-{parent_N}`'s accumulated diff, confirming the implementation hangs together and the sum of the parts does what the parent's PRD asked for, gated on `large-review:approved` |
-| Close it | `large-review:approved` marks the integration PR ready; merging it brings the aggregate into `main` and closes the parent, with the review as the record of why |
-
-The fourth stage is the one worth having. Every child can pass its own review and
-the parent still fail: the parts can be individually correct and collectively
-wrong, or leave a seam nobody owned. Closing a large item the moment its last
-child closes checks that the pieces exist, not that they add up -- which is
-exactly what `large-reviewer` exists to catch instead.
-
-Declaring "wait for the parts" as a flow needs a trigger that can say "every
-child of this item is closed" -- a condition about other work items, which the
-current trigger vocabulary cannot express; see
-[`PRODUCT.md`](PRODUCT.md#coordinating-work-needs-a-trigger-that-can-look-outward).
+`REQUEST_CHANGES` on `large-review:approved` files a new child under
+the same parent, rather than reopening one that already merged.
+Declaring "wait for the parts" needs a trigger that can say "every
+child of this item is closed" — a condition about other work items;
+see [`PRODUCT.md`](PRODUCT.md#coordinating-work-needs-a-trigger-that-can-look-outward).
 
 ### Many small tickets in a window
 
-If `issue-sizer` returns `S` and the issue is the Nth small
-bug or chore in a configured window, the orchestrator suggests
-grouping under a super-issue before sizing completes. On approval the
-super-issue becomes the shippable unit
-(see [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)):
-it re-enters as its own work item, sized on its own merits (typically `M`),
-the grouped children pause their own pipelines and attach, and one PR
-closes the super-issue and all its children on merge.
+At `size: S`:
+
+| Step | Actor | What happens | Gate (Approver) |
+|---|---|---|---|
+| Group | Orchestrator (combiner) | Suggests grouping with other `S` issues in the window | **`super-issue:approved`** — Reviewer |
+| Re-enter | Super-issue | Becomes the shippable unit, sized on its own merits (typically `M`); grouped children pause their own pipelines and attach | follows [End-to-end happy path](#end-to-end-happy-path) |
+| Close | One PR | Closes the super-issue and every grouped child on merge | — |
 
 ### PR contains merge conflicts
 
-After CI passes, a **`merge-conflict`** agent runs automatically before
-pr-reviewer. It checks the PR's mergeability via the GitHub API. If the
-branch is clean, the agent emits complete and the orchestrator auto-advances
-the pipeline to pr-reviewer without any human action (clean PRs are
-unaffected). If conflicts are found, the agent fetches both branches
-locally, simulates the merge, and posts a prioritised list of resolution
-recommendations on the PR — one entry per file, each naming the conflict
-scope and the suggested resolution approach. The pipeline pauses at a
-`merge-conflict:approved` gate (see [Human gates](#human-gates) above).
-On approval, the coding agent is re-invoked with the approved resolution
-plan as context; it applies the resolutions and pushes the updated branch.
+| Step | Actor | What happens | Gate (Approver) |
+|---|---|---|---|
+| Check | `merge-conflict` | Runs after CI passes, before `pr-reviewer`; checks mergeability via the GitHub API | — |
+| Clean | Orchestrator | Auto-advances to `pr-reviewer`, no human action | — |
+| Conflicted | `merge-conflict` | Simulates the merge; posts a prioritised per-file resolution plan | **`merge-conflict:approved`** — Engineer |
+| Resolve | `coder` | Re-invoked with the approved plan; applies resolutions and pushes | — |
 
 ### SQL changes
 
-When the `coder` opens a PR that touches `**/*.sql`, a
-`migration-validator` runs in addition to the standard reviewers.
-Merge is blocked on naming, RLS, and type violations regardless
-of the standard review path.
+When `coder` opens a PR touching `**/*.sql`, `migration-validator` runs
+in addition to the standard reviewers and gates
+**`data-migration:approved`** (Data owner) on the migration file(s) and
+its report. Merge is blocked on naming, RLS, and type violations
+regardless of the standard review path.
 
----
+### Continuous loops (Phase 5)
 
-## End-to-end happy path
-
-A typical `size: M` security/bug/enhancement/tech-debt ticket flows like
-this -- the case with no fork, walked end to end.
-
-**Spike issues** (`type: spike`) stop after `prd-writer:approved`.
-`create-pr`, `prd-docs-updater`, and `coder` are excluded for spikes —
-there is no code to ship, so no branch or PR is created.
-
-| Time | Object | Actor | Event | Outcome label |
-|---|---|---|---|---|
-| T+0 | Issue | Stakeholder | Opens issue | — |
-| T+2m | Issue | `01_product_docs/issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` |
-| T+5m | Issue | `01_product_docs/prd-writer` | Drafts PRD; rewrites issue body in user-story + Gherkin format | `prd-writer:review` |
-| T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` → `prd-writer:complete` |
-| T+2m | Issue | `01_product_docs/issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` |
-| T+15m | Issue | Reviewer | Approves the size | `size:approved` → `issue-sizer:complete` |
-| | | | **Design phase — approved design publishes to `main`** | |
-| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` (no closing keyword); posts the link on the issue | `create-pr:complete` |
-| T+5m | PR | `01_product_docs/prd-docs-updater` | Writes the `docs/product/` + `docs/features/{feature}.md` changes on `issue-{N}-docs` | `prd-docs-updater:review` |
-| T+30m | PR | Stakeholder | Approves the design; the design PR merges to `main` | `prd-docs-updater:approved` → `prd-docs-updater:complete` → _design merged_ |
-| | | | **Build phase — code builds on the now-current `main`** | |
-| T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`), cut from the post-design-merge `main` | `create-pr:complete` |
-| T+30m | Issue | `03_execute/coder` | Implements the issue; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
-| T+10m | PR | `03_execute/pr-reviewer` | Reviews code PR diff against spec; posts structured review | `pr-reviewer:review` |
-| T+30m | PR | Reviewer | Approves review | `pr-reviewer:approved` → orchestrator marks PR ready |
-| — | PR | Reviewer | Reviews and merges the code PR | `pr.merged` → issue auto-closes |
-
-The **Actor** column shows who performs each step — agent names
-formatted as `{phase}/{short-name}` (see
-[`PRODUCT.md`](PRODUCT.md#an-agents-activity-lives-in-one-prompt-file));
-capitalised names (Stakeholder, Reviewer) are human personas from
-[`standards/personas.json`](../../../standards/personas.json).
-
-The **Outcome label** column shows the label applied at the end of
-the step. `agent:complete` and `agent:review` are agent status labels
-(see [PRODUCT.md](PRODUCT.md#labels-are-state-a-step-is-a-transition)); the `*:approved`
-labels are human gates (see [Human gates](#human-gates) above).
-Rows marked _(orchestrator …)_ are git operations run directly by the
-orchestrator, not label transitions.
-
-Total wall-clock human time: minutes. Total elapsed time: hours.
-
----
-
-## Phase 5 — the continuous meta-loops
-
-Phase 5 (`05_continuous`) holds three continuously running meta-loops,
-not per-ticket steps. None blocks the per-ticket pipeline; they feed it
-new issues and proposals. The three loops share one template: each
-treats a different **corpus** as its primary input, runs a set of
-**agents** on a cadence, rolls candidates into a curated report, and
-gates that report behind a **human approval** before any output takes
-effect. The comparison table at the top of this document
-([The three continuous loops](#the-five-phases-plus-on-demand))
-differentiates them at a glance; the table below records each loop's
-inputs, outputs, agents, and gates in full.
+Three loops run on independent cadences and never touch code directly.
+Each files a work item rather than doing work itself: for two of the
+three, that means a new issue that re-enters at `issue-classifier`
+(Gap-assessment issues land as `enhancement`; Tech-debt issues carry a
+`Debt-source:` trailer and are a primary source of the `tech-debt`
+type — see [Issue classification taxonomy](#issue-classification-taxonomy)).
+The Learn loop's output is a gated PR against the pipeline's own
+configuration instead, since there is no product ticket to classify.
 
 | | Learn loop | Gap-assessment loop | Tech-debt loop |
 |---|---|---|---|
-| Targets | Improvements to the pipeline itself | Drift between the product design and what was actually shipped | Poor architecture or implementation choices that warrant remediation |
-| Inputs | Audit log branch (see [`PRODUCT.md`](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you)); corpus of closed retrospectives | Approved PRDs (issue comments tagged with the PRD marker); product vision ([`PRODUCT.md`](PRODUCT.md#vision)) and product-layer standards; shipped codebase (code, tests, public API surface, UI flows); closed retrospectives (a noted "we cut scope X" seeds a gap-issue) | Codebase (module sizes, dependency graphs, test ratios, duplication, coupling, hot-spot files); ADRs (`adrs/adrs.json`), especially `status: accepted` whose context has changed; standards (`standards/*.json`); closed retrospectives ("we'll come back to this" seeds a debt-issue); audit log (repeated `:blocked` against one surface flags structural fragility) |
-| Outputs | Proposals against the pipeline itself (`pipeline.json`, agent prompts, schedules): pipeline metrics, pipeline-graph proposals, prompt tuning, knowledge artefacts | New GitHub *gap-issues* proposing work to close a gap. They re-enter the pipeline at `issue-classifier` and run through Phases 1–4; provenance recorded via a `Gap-source: ai-agile/gap-assessor` trailer | New GitHub *debt-issues* proposing remediation. They re-enter the pipeline at `issue-classifier` and carry a `Debt-source: ai-agile/debt-finder` trailer |
-| Agents | **`metrics-aggregator`** (daily) — reads the audit log; computes cycle time per phase, gate dwell time per gate, agent duration distributions, rejection rates, blocked/failed counts; writes a metrics report to `docs/product/orchestrator/generated/metrics/` (per [P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does)). **`pipeline-tuner`** (monthly) — scans metrics for systemic patterns (agents that exceed timeout, dependencies that always halt, gates that are rubber-stamped, schedules that miss work); drafts PRs against `pipeline.json`. **`prompt-tuner`** (monthly) — per agent, examines rejection rates and the diff between first draft and human-approved version; drafts targeted prompt edits at `.claude/agents/{agent}.md` as PRs. **`knowledge-curator`** (weekly) — identifies tickets with reusable patterns (recurring incident shape, novel architecture choice, useful test pattern) and drafts knowledge artefacts (runbooks, templates, teaching examples) into `docs/learnings/`. **`process-reviewer`** (quarterly) — reads [`PRODUCT.md`](PRODUCT.md), the metrics from `metrics-aggregator`, and closed retrospectives; produces a holistic assessment (are we honoring our promises, serving our personas, where has practice drifted) and drafts *coordinated* change proposals spanning the pipeline graph, agent prompts, standards, and docs; may propose changes to `PRODUCT.md` itself (rare; requires an ADR). Distinct from `prompt-tuner`: tactical one-agent tuning vs. strategic multi-component review. | **`gap-assessor`** (weekly) — walks approved PRDs, cross-checks each acceptance criterion against the test suite, shipped code, and changelog; flags criteria with no matching test, no shipped behaviour, or behaviour that diverges from spec. **`vision-aligner`** (weekly) — reads the product vision and product-layer standards; checks the codebase for *missing* capabilities the vision implies but no ticket has captured; drafts gap-issues. **`gap-curator`** (weekly) — de-duplicates and clusters candidates from `gap-assessor` and `vision-aligner`, prioritises by severity (broken acceptance criterion > missing capability > divergent behaviour), posts one rolled-up gap report for human review. | **`debt-finder`** (weekly) — computes structural metrics (module size, cyclomatic complexity, coupling, test coverage on hot files, churn) and surfaces outliers; cross-references hot-spot files against open issues and recent retrospectives; drafts candidate debt-issues with evidence (file paths, metric snapshots, trend over the last N weeks). **`adr-revisitor`** (monthly) — walks accepted ADRs, evaluates whether the *context* of each decision still holds; drafts revisit-this-ADR issues for those whose tradeoff has materially shifted. **`debt-curator`** (weekly) — like `gap-curator`: de-duplicates and prioritises candidates from `debt-finder` and `adr-revisitor`, posts one rolled-up debt report for human review. |
-| Human gates | **`pipeline-change:approved`** (standards owner) for `pipeline-tuner` changes to `pipeline.json`; **`prompt-change:approved`** (agent owner) for `prompt-tuner` changes to an agent prompt; **`process-review:approved`** (standards owner *and* a principal stakeholder) for `process-reviewer` coordinated changes, the dual approval reflecting their cross-cutting nature; `knowledge-curator` changes follow normal PR review | **`gap-report:approved`** — stakeholder *and* standards owner approve which gap-issues become issues. Dual approval keeps the queue from flooding with churn issues that don't reflect real product intent | **`debt-report:approved`** — engineer (or tech lead) *and* standards owner approve which debt-issues become issues. The engineer judges feasibility and priority; the standards owner judges fit with architecture direction |
+| Agents (cadence) | `metrics-aggregator` (daily); `pipeline-tuner` (monthly); `prompt-tuner` (monthly); `knowledge-curator` (weekly); `process-reviewer` (quarterly) | `gap-assessor` (weekly); `vision-aligner` (weekly); `gap-curator` (weekly) | `debt-finder` (weekly); `adr-revisitor` (monthly); `debt-curator` (weekly) |
+| Output | Proposals against `pipeline.json`, agent prompts, schedules | Gap-issues, re-entering at `issue-classifier` | Debt-issues, re-entering at `issue-classifier` |
+| Gate (Approver) | `pipeline-change:approved` (Standards owner); `prompt-change:approved` (agent owner); `process-review:approved` (Standards owner + a principal stakeholder) | `gap-report:approved` (Stakeholder + Standards owner) | `debt-report:approved` (Engineer/tech lead + Standards owner) |
 
-The Learn loop is the only one that changes the *pipeline*; Gap and
-Tech-debt both change the *product* and route their output back through
-Phases 1–4 as ordinary issues (Gap = new product work, Tech-debt =
-remediation of implementation choices). All three are deliberately
-separated from Phase 4 (Evaluate), which closes a single ticket
-(changelog, per-ticket retrospective, targeted standards proposals);
-the meta-loops instead look across many tickets, so their signals are
-systemic and slow-moving, their cadences vary (daily / weekly / monthly
-/ quarterly) independently of any one ticket, and their changes affect
-all subsequent tickets — which is why each carries a higher review bar.
-
----
-
-## How the gap and debt loops integrate with the per-ticket pipeline
-
-**The general rule: a continuous loop never does work itself -- it files a
-work item, and that work item is picked up exactly like any other.** Both
-the Gap-assessment and Tech-debt loops produce **issues**, not direct
-edits. This keeps a hard boundary:
-
-- The continuous phase never touches the codebase directly.
-- Every gap-issue and debt-issue re-enters at `issue-classifier` and is
-  classified the same as a stakeholder-opened issue -- a debt-issue is the
-  primary source of the `tech-debt` classification (see [Issue
-  classification taxonomy](#issue-classification-taxonomy)), carrying its
-  `Debt-source:` trailer as the evidence a human reviewer checks at
-  classification time; a gap-issue lands as `enhancement`, sized by
-  `issue-sizer` like any other -- large enough to warrant decomposition if
-  the missing capability turns out to be.
-- Every change still flows through Phases 1–4, with the same gates,
-  the same standards checks, and the same audit trail.
-- Gap-issues and debt-issues are visible in the issue list alongside
-  enhancement work, so reviewers can see and prioritise them against the
-  enhancement backlog rather than as a hidden second queue.
-
-The cost is some queue mixing: a busy week may see gap-issues and
-debt-issues compete with enhancement issues for reviewer attention. The
-mitigation is curation — `gap-curator` and `debt-curator` produce
-prioritised, deduplicated reports rather than a firehose, and the
-human gates (`gap-report:approved`, `debt-report:approved`) are the
-throttle.
-
----
-
-## The four process families
-
-Every step named anywhere in this document belongs to exactly one of four
-families. This section is an index, not a new description — each family
-points back to where it is already detailed in full above.
-
-### 1. The standard ticket flow — security, enhancement, bug, tech-debt
-
-All four non-`spike` types ([Issue classification
-taxonomy](#issue-classification-taxonomy)) run the identical flow, in the
-identical order, through the identical gates, whenever they actually reach
-Execute. Type changes review depth, not flow shape; size, independently,
-decides whether a ticket ships as itself, at all -- only `size: M` ever
-does; `S` and `L` route elsewhere first (see [Sizing](#sizing)):
-
-| Type | What differs — never the flow itself |
-|---|---|
-| `security` | Same shape as `bug`, plus a `security-review:approved` gate on any PR touching a flagged sensitive surface |
-| `enhancement` | The baseline shape every other type is enhancement-scale *against*; carries new acceptance criteria when the capability is new, reviewed against the existing PRD when it isn't |
-| `bug` | The PRD phase corrects the code to match an already-documented target, not the docs |
-| `tech-debt` | Tied to a non-functional requirement, not a user-facing PRD; evidence of the prior choice being undone is present when it came from the Tech-debt loop, not required otherwise |
-
-The shared shape — classify, PRD, size, design-phase publish to `main`,
-build-phase code PR, review, merge — is walked in full in [End-to-end happy
-path](#end-to-end-happy-path); its gates are detailed in [Human
-gates](#human-gates); the branch/PR mechanics are
-[Two-phase design-to-build delivery](#two-phase-design-to-build-delivery).
-
-### 2. The spike flow
-
-`spike` is not a lighter version of the flow above — it is structurally
-shorter. It stops after `prd-writer:approved`. `create-pr`,
-`prd-docs-updater`, and `coder` are excluded outright: there is no code to
-ship, so no branch and no PR are created (stated in [End-to-end happy
-path](#end-to-end-happy-path)).
-
-### 3. Structural forks
-
-Four shape variants layer on top of whichever type a ticket carries — they
-are not types themselves, and the first two are driven by `size:`, not
-`type:` at all (see [Sizing](#sizing)). All four are detailed in
-[Forks in the path](#forks-in-the-path):
-
-- **Oversized ticket** — `issue-sizer` returns `L`; `architect`,
-  `test-spec-writer`/`test-coverage-auditor`, and `dependency-planner`
-  settle the design and plan; `large-decomposer` drafts a child-issue
-  roadmap shaped by that design, gated on `decomposition:approved`;
-  `create-integration-pr` opens `feature-{parent_N}` for the children to
-  build on instead of `main`. Each child re-enters at `issue-classifier`,
-  recursing to its own size, keeping the parent's `type:`. Once every
-  child resolves and merges into `feature-{parent_N}`, `large-reviewer`
-  checks the sum against the original scope, gated on
-  `large-review:approved`, before the integration PR merges and closes
-  the parent.
-- **Many small tickets in a window** — `issue-sizer` returns `S`; small
-  tickets batch under a super-issue, which becomes the shippable unit,
-  re-entering as its own sized work item; one PR closes it and every
-  grouped child.
-- **Merge conflict** — `merge-conflict` auto-advances a clean PR; a
-  conflicted one gates on `merge-conflict:approved` before `coder` is
-  re-invoked with the resolution plan.
-- **SQL changes** — `migration-validator` runs in addition to standard
-  review when a PR touches `**/*.sql`; blocks merge on RLS/naming/type
-  violations regardless of the normal review path.
-
-### 4. The continuous loops
-
-Three loops run on independent cadences and never touch code directly
-([Phase 5 — the continuous meta-loops](#phase-5-the-continuous-meta-loops)).
-A continuous loop never does work itself -- it files a work item, and that
-work item is picked up exactly like any other. For two of the three, "work
-item" means a new issue that re-enters the standard flow at
-`issue-classifier`; the Learn loop's work item is a gated PR against the
-pipeline's own configuration instead, since there is no product ticket to
-classify:
-
-- **Learn loop** — the only one that changes the *pipeline itself*
-  (`pipeline.json`, agent prompts), not the product; it is the one loop
-  that does not route through `issue-classifier`, because its output
-  targets the pipeline's own configuration, not a product ticket.
-- **Gap-assessment loop** — produces gap-issues (`Gap-source:` trailer),
-  gated on `gap-report:approved`, which re-enter as `enhancement` per
-  family 1, sized on their own merits.
-- **Tech-debt loop** — produces debt-issues (`Debt-source:` trailer), gated
-  on `debt-report:approved`, which re-enter as `tech-debt` per family 1 —
-  its primary source, not the whole of the type: a human may also open a
-  `tech-debt` issue directly, given the same evidence.
-
----
-
-## Every step across every flow
-
-One row per step named anywhere in this document, regardless of which
-family it belongs to. This is a reference to the intended design; tool
-grants and other implementation specifics belong to `pipeline.json` and
-each agent's own frontmatter (AS-1), not here.
-
-| Step | Kind | Family | Purpose |
-|---|---|---|---|
-| `00_ondemand/codebase-reviewer` | agent | On-demand | Three-persona codebase review; files a Technical Review issue |
-| `00_ondemand/new-agent` | agent | On-demand | Scaffolds a new pipeline agent from an issue description |
-| `00_ondemand/standards-migrator` | agent | On-demand | Converts a consuming repo's existing knowledge files into `standards/*.json` |
-| `00_ondemand/branch-cleanup` | agent | On-demand | Recommends, then (on approval) deletes, stale remote branches |
-| `00_ondemand/issue-cleanup` | agent | On-demand | Recommends, then (on approval) closes, complete or duplicate issues |
-| `00_ondemand/blocker` | agent | On-demand | Declares a cross-issue ordering dependency on request: applies `blockedby: {N}` here and `blocks: {this}` on issue `N` |
-| `00_ondemand/unblocker` | agent | On-demand | Scheduled: clears `blockedby:`/`blocks:` once the blocking issue closes -- a short, mechanical check |
-| `01_product_docs/issue-classifier` | agent | Standard ticket flow | Classifies the issue; validates required fields are present |
-| `01_product_docs/issue-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`); an `L` verdict routes to `large-decomposer`, an `S` verdict to the combiner, `M` proceeds |
-| `01_product_docs/prd-writer` | agent | Standard ticket flow | Drafts the PRD; rewrites the issue body into user-story + Gherkin format |
-| `02_design/architect` | agent | Standard ticket flow | Technical design — data model, API contracts, boundaries, NFRs; flags ADR-worthy decisions. At `L`, settles the boundaries `large-decomposer` splits along |
-| `02_design/test-spec-writer` | agent | Standard ticket flow | Derives a numbered Gherkin scenario list from the approved PRD; at `L`, the set its children's coverage is checked against |
-| `02_design/test-coverage-auditor` | agent | Standard ticket flow | Confirms every PRD acceptance criterion maps to at least one scenario |
-| `02_design/dependency-planner` | agent | Standard ticket flow | Produces the build plan — the order children are created and built in, and the critical path, for `large-decomposer` to follow |
-| `02_design/large-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `L` ticket, shaped by `architect`'s design, gated on `decomposition:approved` |
-| `02_design/create-integration-pr` | script | Structural fork (oversized ticket) | Opens `feature-{parent_N}` and its non-closing integration PR into `main` for the children to build on, once `large-decomposer:complete` |
-| `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing. Runs only once a ticket resolves to `M` |
-| `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; makes a scoped edit to `docs/product/` for what the PRD changed, never a full-file rewrite; self-gates on design review |
-| `01_product_docs/merge-docs-pr` | script | Standard ticket flow | Merges the design PR to `main` ahead of the build phase |
-| `01_product_docs/create-pr` | script | Standard ticket flow | Opens the code PR (`issue-{N}`), cut from the post-design `main` |
-| `03_execute/coder` | agent | Standard ticket flow | Implements the issue; the orchestrator commits on completion. The only step that writes product code, and it only ever runs at `size: M` |
-| `03_execute/ci-gate` | script | Standard ticket flow | Polls CI checks; `review` on failure (recycles `coder`), `blocked` on a 14-minute timeout |
-| `03_execute/merge-conflict` | agent | Structural fork (merge conflict) | Auto-advances a clean PR; posts a resolution plan and gates `merge-conflict:approved` otherwise |
-| `03_execute/pr-reviewer` | agent | Standard ticket flow | Structured code review; `REQUEST_CHANGES`/`APPROVE`, blocked on unresolved human reviews |
-| `03_execute/impact-assessor` | agent | Structural fork (security-flagged PR) | Flags sensitive surfaces touched (auth, RLS, IAM, secrets, PII), gating `security-review:approved`; guaranteed to trigger for `type: security` |
-| `03_execute/migration-validator` | agent | Structural fork (SQL changes) | Confirms forward-only, idempotent, RLS-compliant migrations; blocks merge on violation |
-| `03_execute/coverage-enforcer` | agent | Standard ticket flow | Confirms tests pass, coverage hasn't regressed, every required scenario has a passing test |
-| `03_execute/large-reviewer` | agent | Structural fork (oversized ticket) | Once every child of an `L` ticket resolves to `M` and merges, reviews the aggregate against the parent's PRD, design, and plan — `pr-reviewer`'s shape, spanning every child's merged PR. Gated on `large-review:approved`; `REQUEST_CHANGES` files a new child under the same parent |
-| `04_evaluate/standards-evolver` | agent | Standard ticket flow (weekly aggregate) | Proposes a new or changed standard from repeated findings, gated `standards-proposal:approved` |
-| *(unnamed)* | agent | Standard ticket flow | Produces the changelog and per-ticket retrospective — Phase 4's primary artefact besides standards proposals; no agent name for this artefact appears anywhere in this document yet |
-| `05_continuous/metrics-aggregator` | agent | Continuous — Learn loop | Daily: cycle time, gate dwell time, agent duration, rejection rate from the audit log |
-| `05_continuous/pipeline-tuner` | agent | Continuous — Learn loop | Monthly: drafts PRs against `pipeline.json` from systemic metric patterns, gated `pipeline-change:approved` |
-| `05_continuous/prompt-tuner` | agent | Continuous — Learn loop | Monthly: drafts targeted agent-prompt edits from rejection-rate evidence, gated `prompt-change:approved` |
-| `05_continuous/knowledge-curator` | agent | Continuous — Learn loop | Weekly: drafts knowledge artefacts (runbooks, templates) from tickets with reusable patterns |
-| `05_continuous/process-reviewer` | agent | Continuous — Learn loop | Quarterly: holistic assessment against `PRODUCT.md`; may propose coordinated changes, gated `process-review:approved` (dual) |
-| `05_continuous/gap-assessor` | agent | Continuous — Gap-assessment loop | Weekly: cross-checks PRD acceptance criteria against tests, shipped code, and the changelog |
-| `05_continuous/vision-aligner` | agent | Continuous — Gap-assessment loop | Weekly: checks the codebase for capabilities the vision implies but no ticket has captured |
-| `05_continuous/gap-curator` | agent | Continuous — Gap-assessment loop | Weekly: de-duplicates and prioritises gap candidates into one report, gated `gap-report:approved` (dual) |
-| `05_continuous/debt-finder` | agent | Continuous — Tech-debt loop | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn |
-| `05_continuous/adr-revisitor` | agent | Continuous — Tech-debt loop | Monthly: flags accepted ADRs whose context has materially shifted |
-| `05_continuous/debt-curator` | agent | Continuous — Tech-debt loop | Weekly: de-duplicates and prioritises debt candidates into one report, gated `debt-report:approved` (dual) |
-
-`00_ondemand/sizer` -- today's single agent that both sizes and decomposes
-an issue on request -- does not appear in this table. The target design
-splits its job into `01_product_docs/issue-sizer` (sizing only, automatic,
-gated `size:approved`) and `02_design/large-decomposer` (decomposition
-only, automatic, gated `decomposition:approved`); running either ad hoc
-outside the automatic flow is what interactive mode's `/maos-{agent}`
-already does generically for any step, so a standalone on-demand tool
-duplicating that is retired rather than kept alongside the split pair.
+`gap-curator` and `debt-curator` de-duplicate and prioritise candidates
+into one rolled-up report each, rather than a firehose, so the human
+gates above are the only queue throttle.
