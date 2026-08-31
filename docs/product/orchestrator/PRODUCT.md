@@ -156,6 +156,7 @@ that differs is a bug (MI-1 to MI-8).
 - [Vision](#vision)
 - [Personas](#personas)
 - [Core requirements](#core-requirements)
+- [The work-item taxonomy](#the-work-item-taxonomy)
 - [The state machine](#the-state-machine)
 - [The pipeline defines flows, not a flow](#the-pipeline-defines-flows-not-a-flow)
 - [How the orchestrator tells a step where it is](#how-the-orchestrator-tells-a-step-where-it-is)
@@ -165,6 +166,106 @@ that differs is a bug (MI-1 to MI-8).
 - [The promises](#the-promises)
 - [Headless and interactive](#headless-and-interactive)
 - [What is allowed to differ](#what-is-allowed-to-differ)
+
+---
+
+## The work-item taxonomy
+
+Four independent label dimensions describe a work item. None chooses what a
+step *does* -- the same `coder` runs identically regardless of any of them --
+they choose which flow and which steps apply (`type`, `size`), or how the
+orchestrator schedules eligible work (`priority`, blocking). Which agent
+applies each, and the exact flow each combination produces, is process --
+see [lifecycle.md](lifecycle.md), starting with [Issue classification
+taxonomy](lifecycle.md#issue-classification-taxonomy).
+
+### Type
+
+**Product docs are the target state; code is the current state.**
+`docs/product/` describes what should exist, and the gap between that and
+what has shipped is the issue backlog: an issue is a `bug` when the code has
+drifted from the target, or an `enhancement` when the target itself is
+moving forward. No code change ships unless it is already described in
+`docs/product/` first.
+
+Every issue carries a `type:` label, exactly one of five. Four split on one
+axis -- does the work move the product forward, or not. `enhancement` is the
+baseline unit that does; `security`, `bug`, and `tech-debt` are the same
+scale and complexity but exist *without* moving the product forward -- they
+close an exposure, correct a drift from an already-documented target, or
+remediate/maintain rather than advance. `spike` is the one type not measured
+against the baseline at all: it ships no increment, only knowledge. This
+split is deliberate -- it is what makes a product-management ratio like
+`enhancement : (tech-debt + bug + security)` a real signal read off the
+label alone, not an audit.
+
+| Type | Definition | Qualifying criterion |
+|---|---|---|
+| `security` | A concrete security vulnerability with a clear exploit path -- injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all five. |
+| `bug` | Broken behaviour -- something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target; the fix is to correct the code, not the docs. |
+| `enhancement` | A change to the product's capability, new or existing, sized to ship end-to-end in one sequence. | Moves the target state forward -- a fresh user-observable outcome or an improvement to one that exists. Scale alone does not change the type, only its size. |
+| `spike` | Research or investigation whose primary output is knowledge -- a recommendation, an ADR, or a prototype -- not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
+| `tech-debt` | Enhancement-scale work that does not move the product forward: routine operational/maintenance upkeep and remediation of a previously made structural or architectural choice now recognised as costly, merged into one classification. | Tied to a non-functional requirement in the product docs, not a user-facing feature. |
+
+When two types are plausible, prefer the one with the higher review bar:
+`security` over `bug` (only when the impact is clear and concrete); `bug`
+over `tech-debt`.
+
+### Size
+
+A second, independent dimension: `size:` answers how much of the work there
+is, never why it exists. Every issue carries exactly one, alongside its
+`type:`.
+
+| Size | Meaning |
+|---|---|
+| `S` | Small enough on its own that shipping it alone wastes review overhead -- a candidate for grouping with other small work |
+| `M` | Fits the enhancement baseline as itself |
+| `L` | Too big for one item -- a candidate for splitting into independently-sized children |
+
+**Only `M` ever ships code.** `S` and `L` are routing sizes, not build sizes:
+neither the small issue that gets grouped nor the large issue that gets
+split is itself the thing that gets implemented. Each routes to a fresh
+work item -- a super-issue for `S`, children for `L` -- sized on its own
+merits, and the recursion bottoms out at `M` before any code-producing step
+ever runs. `size:` applies uniformly across every `type:`: there is no type
+that is "big by definition"; bigness is `size: L`, for anything.
+
+### Priority
+
+A third, independent dimension: `priority: high`, `priority: medium`, or
+`priority: low`. Unlike `type:` and `size:`, priority never changes which
+steps run or what a step does. It answers a different question: when
+several issues are eligible for the same next step at once, which the
+orchestrator works on first (see [Which eligible item runs
+next](#which-eligible-item-runs-next)).
+
+A human applies `priority:` -- it reflects business urgency, not something a
+step can infer from an issue's body, so no agent assigns or changes it.
+Unprioritised work stays eligible; it just sorts behind anything carrying a
+`priority:` label.
+
+### Blocking between issues
+
+A separate mechanism from `type:`/`size:`/`priority:`, for an ordering
+dependency between two issues that has nothing to do with either one's
+classification. `blocks: {N}` on one issue and `blockedby: {N}` on the
+other declare it symmetrically, so the relationship reads off either
+issue's own label list. A human applies them directly, or delegates the
+applying to a request-triggered step; either way the labels are the
+whole of the fact -- there is no second record of the dependency
+anywhere else.
+
+An issue carrying `blockedby: {N}` while `N` is still open is not eligible
+to start at all -- this gates only the entry step, never a step mid-flow;
+once a flow has started, further changes to `blocks:`/`blockedby:` have no
+effect on it. Clearing works two ways, both ordinary: a human removes
+either label directly at any time, the same way clearing `review` or
+`blocked` already resumes a halted step, identically in either mode --
+there is no special interactive-only path, because label removal already
+works the same way regardless of who is watching; or, once `N` closes on
+its own, both labels come off automatically. Either way, nothing about
+who or what removed the label changes what it meant while it was there.
 
 ---
 
@@ -217,29 +318,24 @@ number nobody can tune for the case in front of them.
 
 Two questions, not one, and both are core orchestration logistics --
 part of the target design, not an implementation detail of how a tick
-happens to iterate.
+happens to iterate, and not one of [AS-1's seven
+concerns](#as-1----one-file-tells-you-what-the-pipeline-does) either --
+a sibling to that promise, under the same governing rule, not an
+omission from it.
 
 **Eligibility: is this item allowed to start at all.** An item halted
 mid-flow -- any step of it sitting in `review` or `blocked` -- has no
 eligible next step until a human clears the gate, so it drops out of
-contention on its own; nothing extra checks for this. An item that
-has not yet started is additionally ineligible while it carries
-`blockedby: {N}` and `N` is still open -- a second, independent kind
-of block, declared by a human (or on their behalf, on request) rather
-than raised by a step's own outcome. `blocks:` and `blockedby:` are
-ordinary labels: a human clears either one directly, the same way
-clearing `review` or `blocked` already resumes a halted step, in
-either mode -- there is no special interactive path, because label
-removal already works identically regardless of who is watching (see
-[lifecycle.md, Blocking between
-issues](lifecycle.md#blocking-between-issues)).
+contention on its own. An item that has not yet started is
+additionally ineligible while it carries `blockedby: {N}` and `N` is
+still open (see [Blocking between issues](#blocking-between-issues)).
+Both kinds of halt clear the same way: a human removes the label, in
+either mode, and the item is eligible again on the next check.
 
 **Order: among what's eligible, which goes first.** `priority:` orders
 the rest -- `high` before `medium` before `low` before unprioritised --
 and within a tier, the item raised earliest goes first (see
-[lifecycle.md, Priority](lifecycle.md#priority)). Priority never
-touches eligibility; an unprioritised item is still eligible, only
-last in line.
+[Priority](#priority)).
 
 **AS-1's declared-not-hidden principle applies to this the same as
 everything else.** Priority tiering is already there today:
@@ -248,8 +344,9 @@ externalized rather than a constant in `pipeline_orchestrator.py` --
 this document simply had not said so until now. Blocking eligibility
 has no equivalent yet: nothing declares `blockedby:` as a condition
 anywhere machine-readable; it exists only as this section's prose and
-lifecycle.md's. Giving it a declared home, the way priority already
-has one, is unfinished target-state work, not a decision made here.
+[Blocking between issues](#blocking-between-issues)'s. Giving it a
+declared home, the way priority already has one, is unfinished
+target-state work, not a decision made here.
 
 **Interactive mode is not this problem, because it is not this shape.** A
 person typing `/maos-{agent}` starts an orchestrator instance directly --
@@ -1055,6 +1152,17 @@ else defines any of them:
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
 | **Budgets** | `max_turns` and `max_wall_seconds`, declared once globally and overridable per step; a per-tick cap on work started, global only | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
+
+**"In what order" in the headline promise means step sequence within a
+flow -- Sequence and Dependencies above -- not which of several eligible
+work items the orchestrator picks up first.** That is a genuinely
+different question: not what happens once a step runs, but whose turn is
+next among items that are all already eligible to run one. It is not an
+eighth entry quietly missing from the table above; it is a sibling
+concern, governed by the same rule this whole promise rests on (P-2: one
+machine-readable source per concern, nothing hidden in orchestrator code)
+but declared in its own file(s) rather than folded into `pipeline.json` --
+see [Which eligible item runs next](#which-eligible-item-runs-next).
 
 The table states what the seven concerns are. What each is called, its exact
 shape, and which are required is a JSON Schema:

@@ -59,59 +59,27 @@ different inputs at different cadences:
 
 ## Issue classification taxonomy
 
-**Product docs are the target state; code is the current state.**
-`docs/product/` describes what should exist, and the gap between that and
-what has shipped is the issue backlog: an issue is a `bug` when the code has
-drifted from the target, or an `enhancement` when the target itself is
-moving forward. No code change ships unless it is already described in
-`docs/product/` first -- an issue without an approved PRD does not progress
-past the product-docs phase, and a PR landing code with no corresponding
-target-state entry does not merge.
-
-Every issue entering the pipeline is classified by `issue-classifier` as exactly one of five types. The classification is recorded both in an artefact comment on the issue and as a `type: {type}` label applied automatically at classification time. Five `type:` labels are pre-created in the repository — one per type — so the full taxonomy is always available for filtering in the GitHub interface. `type:` is one of two independent label dimensions; the other is how big the work is, not why it exists -- see [Sizing](#sizing) below.
-
-**One axis explains four of the five: does the work move the product forward, or not.** `enhancement` is the baseline unit -- a change, new capability or improvement alike, sized to ship end-to-end in one sequence, into production, without leaving users mid-broken. `security`, `bug`, and `tech-debt` are the same scale and complexity, but exist *without* moving the product forward -- they close an exposure, correct a drift from an already-documented target, or remediate/maintain rather than advance. `spike` is the one type not measured against the baseline at all: it ships no increment, only knowledge. Splitting "forward" from "not forward" this way is deliberate -- it is what makes a product-management ratio like `enhancement : (tech-debt + bug + security)` a real signal read off the label alone, not an audit. There is no separate type for "too big" -- that is what [Sizing](#sizing) is for, uniformly, across all five.
-
-| Type | Label | Definition | Qualifying criterion |
-|---|---|---|---|
-| `security` | `type: security` | A concrete security vulnerability with a clear exploit path — injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all five — a `security-review:approved` gate applies in addition to standard review whenever the resulting PR touches a flagged sensitive surface. |
-| `bug` | `type: bug` | Broken behaviour — something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target (see above); the fix is to correct the code, not the docs. |
-| `enhancement` | `type: enhancement` | A change to the product's capability, new or existing, sized to ship end-to-end in one sequence. | Moves the target state forward -- a fresh user-observable outcome or an improvement to one that exists. Deserves a PRD with acceptance criteria; scale alone does not change the type, only its [size](#sizing). |
-| `spike` | `type: spike` | Research or investigation whose primary output is knowledge — a recommendation, an ADR, or a prototype — not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
-| `tech-debt` | `type: tech-debt` | Enhancement-scale work that does not move the product forward: routine operational/maintenance upkeep (dependency upgrades, infrastructure changes, doc-only fixes) and remediation of a previously made structural or architectural choice now recognised as costly, merged into one classification -- both are "the product isn't advancing, something about how it's built is being paid down or kept current." | Tied to a non-functional requirement in the product docs, not a user-facing feature. Evidence (a metric outlier, an ADR whose context has shifted, a repeated `blocked` pattern) is present when the Tech-debt continuous loop ([Phase 5](#phase-5-the-continuous-meta-loops)) is the source, via `debt-issues` carrying a `Debt-source:` trailer -- but is not required for ordinary maintenance a human files directly. |
-
-When two types are plausible, prefer the one with the higher review bar: `security` over `bug` (only when the impact is clear and concrete -- an ambiguous "might be a security concern" stays `bug`); `bug` over `tech-debt`.
+What each `type:` value means, and why the taxonomy is shaped the way it
+is, is a product feature -- defined in full in [PRODUCT.md,
+Type](PRODUCT.md#type). What follows here is process only: `issue-classifier`
+classifies every issue entering the pipeline as exactly one of the five
+types, recording it both as an artefact comment and as a `type: {type}`
+label applied at classification time. Five `type:` labels are pre-created
+in the repository so the full taxonomy is always available for filtering
+in the GitHub interface. `type:` is one of two independent label
+dimensions that decide which steps run; the other is how big the work is,
+not why it exists -- see [Sizing](#sizing) below.
 
 ---
 
 ## Sizing
 
-A second, independent label dimension: **`size:`** answers how much of the
-work there is, never why it exists. Every issue carries exactly one
-alongside its `type:` (see [Issue classification
-taxonomy](#issue-classification-taxonomy) above). `issue-sizer` applies it
-as a `size: {S|M|L}` label with a rationale comment, gated by
-`size:approved`.
-
-| Size | Meaning | What it triggers |
-|---|---|---|
-| `S` | Small enough on its own that shipping it alone wastes review overhead | **Combiner.** The orchestrator suggests grouping it under a super-issue with other `S`-sized issues in the current window. On approval the super-issue becomes the shippable unit; its children pause their own pipelines and attach. The super-issue itself is a fresh work item, sized on its own merits |
-| `M` | Fits the enhancement baseline as itself | No fork -- this is the only size at which code actually ships |
-| `L` | Too big for one item | **Decomposer.** `large-decomposer` drafts an ordered child-issue roadmap, gated on `decomposition:approved`; each child re-enters at `issue-classifier`, is independently typed and sized, and runs its own full lifecycle (see [The ticket is too big](#the-ticket-is-too-big)) |
-
-`size:` applies uniformly across every `type:` -- a `tech-debt` issue that
-comes back `L` decomposes exactly like an `enhancement` that does, and each
-child keeps the parent's `type:`. There is no type that is "big by
-definition"; bigness is `size: L`, for anything.
-
-**Only `M` ever ships code.** `S` and `L` are routing sizes, not build
-sizes: neither the small issue that gets combined nor the large issue that
-gets decomposed is itself the thing `coder` implements. `S` routes to the
-combiner and the resulting super-issue is what gets built; `L` routes to
-the decomposer and its children are what get built -- each of which is a
-fresh issue, sized on its own merits, and the recursion bottoms out at `M`
-before any of Execute's steps ever run. See [What runs, for each type and
-size](#what-runs-for-each-type-and-size) for the complete picture.
+What each `size:` value means, and the "only `M` ever ships code" rule, is
+a product feature -- defined in full in [PRODUCT.md, Size](PRODUCT.md#size).
+What follows here is process only: `issue-sizer` applies `size:` as a
+`size: {S|M|L}` label with a rationale comment, gated by `size:approved`;
+the routing each value triggers is the subject of [What runs, for each
+type and size](#what-runs-for-each-type-and-size) below.
 
 **At `L`, design and planning happen before decomposition, not after.**
 `architect` settles the component boundaries, API contracts, and data
@@ -174,70 +142,31 @@ shipping at `M`, there is no multi-task PR left to break down --
 `coder` implements the one PRD directly.
 
 Every YES / CONDITIONAL / NO above is a step's trigger evaluated
-against a combination of labels, not a single one -- `type:
-enhancement` and `size: M` both have to hold for `coder` to run on an
-enhancement. The mechanism is general, not special-cased to type and
-size: a step's trigger can require any combination of labels (`type:
-enhancement & priority: high`, say), so a genuinely new need doesn't
-require a new dimension in this table, only a step whose trigger
-names the labels it cares about.
+against a combination of labels (`type: enhancement` and `size: M`
+both have to hold for `coder` to run on an enhancement) -- the general
+compound-label trigger mechanism is a product feature, described in
+full in [PRODUCT.md, Selection by
+classification](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does).
 
 ---
 
 ## Priority
 
-A third, independent label dimension: `priority: high`, `priority:
-medium`, or `priority: low`. Unlike `type:` and `size:`, priority
-never changes which steps run or what a step does -- every YES /
-CONDITIONAL / NO in [What runs, for each type and
-size](#what-runs-for-each-type-and-size) is decided by type and size
-alone. Priority answers a different question: when several issues are
-eligible for the same next step at once, which the orchestrator works
-on first (see [How the pipeline advances](#how-the-pipeline-advances)).
-
-A human applies `priority:` -- it reflects business urgency, not
-something a step can infer from an issue's body, so no agent assigns
-or changes it. Unprioritised work stays eligible; it just sorts behind
-anything carrying a `priority:` label.
+What `priority:` means, who sets it, and why it never changes which
+steps run is a product feature -- defined in full in [PRODUCT.md,
+Priority](PRODUCT.md#priority). See [How the pipeline
+advances](#how-the-pipeline-advances) for how the orchestrator uses it
+to order pickup.
 
 ---
 
 ## Blocking between issues
 
-A separate mechanism from `type:`/`size:`/`priority:`, for an ordering
-dependency between two issues that has nothing to do with either
-one's classification. `blocks: {N}` on one issue and `blockedby: {N}`
-on the other declare it symmetrically -- the same convention
-`parent-issue:` already uses for decomposition, so the relationship
-reads off either issue's own label list.
-
-`blocker` (`00_ondemand`, human-triggered via `blocker:requested`)
-reads the issue, identifies which issue it should wait on, and
-applies `blockedby: {N}` here and the matching `blocks: {this}` on
-issue `N`. `unblocker` (`00_ondemand`, scheduled) is the mirror: on
-each run it checks every open issue carrying `blockedby: {N}`, and
-once `N` closes, removes both labels and posts a note. The check
-itself needs no judgment -- has `N` closed, yes or no -- so `unblocker`
-is a short, cheap run, the same shape as `issue-classifier`'s.
-
-**Blocking gates only the entry step, never a step mid-flow.** An
-issue carrying `blockedby: {N}` while `N` is still open is not
-eligible for `issue-classifier` -- it cannot enter its flow at all.
-Once a flow has started, further changes to `blocks:`/`blockedby:`
-have no effect on it; there is no mid-flow pause analogous to a human
-gate. Like [Priority](#priority), this is read once, at pickup, not
-re-checked step by step (see [How the pipeline
-advances](#how-the-pipeline-advances)).
-
-**A human can overrule a block directly, by removing it.**
-`blocks:`/`blockedby:` are ordinary labels -- a human can remove them
-at any time, in either mode, without waiting for `N` to close, the
-same way clearing `review` or `blocked` already resumes a halted step
-(see [How the pipeline advances](#how-the-pipeline-advances)). This
-needs no interactive-only carve-out: label removal works identically
-headless and interactive, so it is governed by the existing
-invariant -- labels are the only state, cleared the same way
-regardless of who is watching -- not a new mode difference.
+What `blocks:`/`blockedby:` mean, how they're set, and how a block is
+cleared, is a product feature -- defined in full in [PRODUCT.md,
+Blocking between issues](PRODUCT.md#blocking-between-issues). `blocker`
+and `unblocker` are the agents that apply and clear them; see [Every
+step across every flow](#every-step-across-every-flow).
 
 ---
 
@@ -256,38 +185,20 @@ The orchestrator is invoked on three triggers:
    closed.
 3. **Schedule.** Every 15 minutes during working hours, as a backstop.
 
-Before working an individual item, the orchestrator orders the
-eligible ones for the tick. A work item currently halted -- any step
-of it sitting in `review` or `blocked` -- has no eligible next step
-until a human clears the gate (see [Human gates](#human-gates)), so it
-drops out of contention on its own; no separate blocked-status check
-is needed. A work item that has not yet started is further ineligible
-while it carries `blockedby: {N}` and `N` is still open (see [Blocking
-between issues](#blocking-between-issues)) -- checked once, at entry,
-never revisited once the flow is under way. Among what remains
-eligible, `priority: high` sorts first,
-then `priority: medium`, then `priority: low`, then anything
-unprioritised (see [Priority](#priority)); within the same tier, the
-issue raised earliest is worked first, so an equal-priority backlog is
-worked oldest-first rather than newest-first.
+Which of several eligible items the orchestrator works on first, and
+whether a not-yet-started item is eligible at all, is product-level
+scheduling logistics -- defined in full in [PRODUCT.md, Which eligible
+item runs next](PRODUCT.md#which-eligible-item-runs-next).
 
-For each work item it:
-
-1. Reads the current label set.
-2. For each agent, checks whether (a) the trigger condition is satisfied,
-   (b) every dependency has applied its `:complete` label, and (c) every
-   required human gate label is present.
-3. If yes, acquires the `:wip` mutex (see [PRODUCT.md](PRODUCT.md#the-state-machine))
-   and invokes the agent.
-4. The agent does its work and emits exactly one terminal status as the
-   last line of its stdout: `AI_AGILE_STATUS: complete`,
-   `AI_AGILE_STATUS: review`, or `AI_AGILE_STATUS: blocked`. The
-   orchestrator reads the sentinel and applies the matching label.
-5. If the agent crashes without emitting a sentinel, the orchestrator
-   applies `:failed` and posts a comment.
-
-A halted pipeline (`review`, `blocked`, `failed`) resumes the moment a
-human removes the offending label. There is no separate "retry" button.
+For each eligible work item, the orchestrator picks the one step whose
+conditions are met, invokes it, and records the outcome. The general
+mechanism -- the state machine, the step contract, how a step reports
+what it did -- is a product feature, described in full in
+[PRODUCT.md, The state machine](PRODUCT.md#the-state-machine) and
+[PRODUCT.md, The step contract](PRODUCT.md#the-step-contract). A
+halted pipeline (`review`, `blocked`, `failed`) resumes the moment a
+human removes the offending label -- there is no separate "retry"
+button.
 
 Every transition appends one JSON record to the audit log
 (see [`PRODUCT.md`](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you)).
