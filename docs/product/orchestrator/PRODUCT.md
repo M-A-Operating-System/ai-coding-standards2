@@ -213,13 +213,43 @@ is a cap on how much work a run *starts*, and it belongs with the other budgets
 rather than fixed in code: one number chosen once for every situation is a
 number nobody can tune for the case in front of them.
 
-Which of those eligible items a bounded run starts first is not arbitrary,
-either: a halted item (sitting in `review` or `blocked`) has no eligible next
-step until a human clears the gate, so it drops out of contention on its own;
-among what remains, `priority:` orders the rest, oldest-raised-first within a
-tier (see [lifecycle.md, Priority](lifecycle.md#priority) and [How the
-pipeline advances](lifecycle.md#how-the-pipeline-advances) for the concrete
-tiers).
+### Which eligible item runs next
+
+Two questions, not one, and both are core orchestration logistics --
+part of the target design, not an implementation detail of how a tick
+happens to iterate.
+
+**Eligibility: is this item allowed to start at all.** An item halted
+mid-flow -- any step of it sitting in `review` or `blocked` -- has no
+eligible next step until a human clears the gate, so it drops out of
+contention on its own; nothing extra checks for this. An item that
+has not yet started is additionally ineligible while it carries
+`blockedby: {N}` and `N` is still open -- a second, independent kind
+of block, declared by a human (or on their behalf, on request) rather
+than raised by a step's own outcome. `blocks:` and `blockedby:` are
+ordinary labels: a human clears either one directly, the same way
+clearing `review` or `blocked` already resumes a halted step, in
+either mode -- there is no special interactive path, because label
+removal already works identically regardless of who is watching (see
+[lifecycle.md, Blocking between
+issues](lifecycle.md#blocking-between-issues)).
+
+**Order: among what's eligible, which goes first.** `priority:` orders
+the rest -- `high` before `medium` before `low` before unprioritised --
+and within a tier, the item raised earliest goes first (see
+[lifecycle.md, Priority](lifecycle.md#priority)). Priority never
+touches eligibility; an unprioritised item is still eligible, only
+last in line.
+
+**AS-1's declared-not-hidden principle applies to this the same as
+everything else.** Priority tiering is already there today:
+`pipeline/statuses.json`'s `priority_ordering` list is exactly this,
+externalized rather than a constant in `pipeline_orchestrator.py` --
+this document simply had not said so until now. Blocking eligibility
+has no equivalent yet: nothing declares `blockedby:` as a condition
+anywhere machine-readable; it exists only as this section's prose and
+lifecycle.md's. Giving it a declared home, the way priority already
+has one, is unfinished target-state work, not a decision made here.
 
 **Interactive mode is not this problem, because it is not this shape.** A
 person typing `/maos-{agent}` starts an orchestrator instance directly --
@@ -1090,9 +1120,11 @@ without a reason.
 
 A third label dimension, `priority:` (`high`/`medium`/`low`), is deliberately
 never a selection criterion -- it never appears in a `type` or `labels`
-restriction, at either level. It answers a different question, addressed
-below: given several eligible items, which does the orchestrator work on
-first (see [lifecycle.md, Priority](lifecycle.md#priority)).
+restriction, at either level, and neither do `blocks:`/`blockedby:`. All
+three answer a different question, addressed in [Which eligible item runs
+next](#which-eligible-item-runs-next): given several eligible items, which
+does the orchestrator work on first, and is a not-yet-started item eligible
+at all.
 
 **A repository may have its own.** The pipeline ships with a default definition,
 and a repository can replace it entirely with one of its own. That does not

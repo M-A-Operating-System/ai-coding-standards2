@@ -229,14 +229,15 @@ gate. Like [Priority](#priority), this is read once, at pickup, not
 re-checked step by step (see [How the pipeline
 advances](#how-the-pipeline-advances)).
 
-**Interactive mode checks the same thing, but a human can overrule
-it.** A person driving `/maos-{agent} {N}` directly is told the issue
-is blocked and on what; unlike headless, where no human is present in
-the tick to decide, the person present *is* the decision, so they can
-proceed anyway -- the same standing a live confirmation already has to
-cross a human gate without a label round-trip (see [PRODUCT.md,
-MI-7](PRODUCT.md#mi-7----only-a-person-approves)). Headless never gets
-this option: there is no person in that tick to make the call.
+**A human can overrule a block directly, by removing it.**
+`blocks:`/`blockedby:` are ordinary labels -- a human can remove them
+at any time, in either mode, without waiting for `N` to close, the
+same way clearing `review` or `blocked` already resumes a halted step
+(see [How the pipeline advances](#how-the-pipeline-advances)). This
+needs no interactive-only carve-out: label removal works identically
+headless and interactive, so it is governed by the existing
+invariant -- labels are the only state, cleared the same way
+regardless of who is watching -- not a new mode difference.
 
 ---
 
