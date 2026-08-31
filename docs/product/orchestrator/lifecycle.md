@@ -61,7 +61,7 @@ different inputs at different cadences:
 
 What each `type:` value means, and why the taxonomy is shaped the way it
 is, is a product feature -- defined in full in [PRODUCT.md,
-Type](PRODUCT.md#type). What follows here is process only: `issue-classifier`
+Type](PRODUCT.md#type-ranks-five-reasons-an-issue-exists). What follows here is process only: `issue-classifier`
 classifies every issue entering the pipeline as exactly one of the five
 types, recording it both as an artefact comment and as a `type: {type}`
 label applied at classification time. Five `type:` labels are pre-created
@@ -75,7 +75,7 @@ not why it exists -- see [Sizing](#sizing) below.
 ## Sizing
 
 What each `size:` value means, and the "only `M` ever ships code" rule, is
-a product feature -- defined in full in [PRODUCT.md, Size](PRODUCT.md#size).
+a product feature -- defined in full in [PRODUCT.md, Size](PRODUCT.md#size-measures-how-much-work-there-is).
 What follows here is process only: `issue-sizer` applies `size:` as a
 `size: {S|M|L}` label with a rationale comment, gated by `size:approved`;
 the routing each value triggers is the subject of [What runs, for each
@@ -173,7 +173,7 @@ classification](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does).
 
 What `priority:` means, who sets it, and why it never changes which
 steps run is a product feature -- defined in full in [PRODUCT.md,
-Priority](PRODUCT.md#priority). See [How the pipeline
+Priority](PRODUCT.md#priority-orders-pickup-among-eligible-work). See [How the pipeline
 advances](#how-the-pipeline-advances) for how the orchestrator uses it
 to order pickup.
 
@@ -183,7 +183,7 @@ to order pickup.
 
 What `blocks:`/`blockedby:` mean, how they're set, and how a block is
 cleared, is a product feature -- defined in full in [PRODUCT.md,
-Blocking between issues](PRODUCT.md#blocking-between-issues). `blocker`
+Blocking between issues](PRODUCT.md#blocking-declares-an-ordering-dependency-between-issues). `blocker`
 and `unblocker` are the agents that apply and clear them; see [Every
 step across every flow](#every-step-across-every-flow).
 
@@ -207,14 +207,14 @@ The orchestrator is invoked on three triggers:
 Which of several eligible items the orchestrator works on first, and
 whether a not-yet-started item is eligible at all, is product-level
 scheduling logistics -- defined in full in [PRODUCT.md, Which eligible
-item runs next](PRODUCT.md#which-eligible-item-runs-next).
+item runs next](PRODUCT.md#eligibility-and-order-decide-which-item-runs-next).
 
 For each eligible work item, the orchestrator picks the one step whose
 conditions are met, invokes it, and records the outcome. The general
 mechanism -- the state machine, the step contract, how a step reports
 what it did -- is a product feature, described in full in
-[PRODUCT.md, The state machine](PRODUCT.md#the-state-machine) and
-[PRODUCT.md, The step contract](PRODUCT.md#the-step-contract). A
+[PRODUCT.md, The state machine](PRODUCT.md#labels-are-state-a-step-is-a-transition) and
+[PRODUCT.md, The step contract](PRODUCT.md#every-step-agent-or-script-is-bound-by-the-same-contract). A
 halted pipeline (`review`, `blocked`, `failed`) resumes the moment a
 human removes the offending label -- there is no separate "retry"
 button.
@@ -225,7 +225,7 @@ Every transition appends one JSON record to the audit log
 In the **Execute** phase, branch and PR ownership follows
 [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)
 (draft PRs early, one branch per PR) and
-[PRODUCT.md](PRODUCT.md#the-step-contract)
+[PRODUCT.md](PRODUCT.md#every-step-agent-or-script-is-bound-by-the-same-contract)
 (agents write files, the orchestrator commits and owns the PR lifecycle):
 
 - The `create-pr` script step opens the draft **code** PR on the
@@ -505,13 +505,13 @@ there is no code to ship, so no branch or PR is created.
 
 The **Actor** column shows who performs each step — agent names
 formatted as `{phase}/{short-name}` (see
-[`PRODUCT.md`](PRODUCT.md#naming-carries-the-phase));
+[`PRODUCT.md`](PRODUCT.md#an-agents-activity-lives-in-one-prompt-file));
 capitalised names (Stakeholder, Reviewer) are human personas from
 [`standards/personas.json`](../../../standards/personas.json).
 
 The **Outcome label** column shows the label applied at the end of
 the step. `agent:complete` and `agent:review` are agent status labels
-(see [PRODUCT.md](PRODUCT.md#the-state-machine)); the `*:approved`
+(see [PRODUCT.md](PRODUCT.md#labels-are-state-a-step-is-a-transition)); the `*:approved`
 labels are human gates (see [Human gates](#human-gates) above).
 Rows marked _(orchestrator …)_ are git operations run directly by the
 orchestrator, not label transitions.

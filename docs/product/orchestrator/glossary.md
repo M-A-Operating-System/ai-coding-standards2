@@ -13,12 +13,12 @@ See [`PRODUCT.md`](PRODUCT.md#vision).
 
 **Agent** — A single-purpose AI worker with one job (write a PRD, review a
 PR, resolve a merge conflict). An agent is a prompt file plus a tool
-allowlist; it never calls other agents. See [`PRODUCT.md`](PRODUCT.md#the-agent-prompt-file).
+allowlist; it never calls other agents. See [`PRODUCT.md`](PRODUCT.md#an-agents-activity-lives-in-one-prompt-file).
 
 **Orchestrator** — The deterministic Python program that decides which agent
 runs next. It reads labels, checks the dependency graph, invokes the one
 eligible agent, and records the result. All routing is plain Python (no LLM),
-so it is testable and predictable. See [`PRODUCT.md`](PRODUCT.md#how-it-uses-agents).
+so it is testable and predictable. See [`PRODUCT.md`](PRODUCT.md#the-orchestrator-decides-agents-only-produce).
 
 **Pipeline** — The ordered graph of agents, declared once in
 `pipeline/pipeline.json`. This single file is the source of truth for which
@@ -46,16 +46,16 @@ one shippable unit. See [`lifecycle.md`](lifecycle.md#many-small-tickets-in-a-wi
 
 **Status label** — A GitHub label that encodes pipeline state, of the form
 `{agent}:{status}` (e.g. `prd-writer:complete`). Labels are the entire state
-machine — there is no separate database. See [`PRODUCT.md`](PRODUCT.md#the-state-machine).
+machine — there is no separate database. See [`PRODUCT.md`](PRODUCT.md#labels-are-state-a-step-is-a-transition).
 
 **Status suffixes** — `:wip` (running), `:complete` (done), `:review`
 (awaiting a human), `:blocked` (stuck, needs a human), `:failed` (errored),
 `:approved` (a human applied a gate label). The orchestrator owns every
-transition; humans only apply gate labels. See [`PRODUCT.md`](PRODUCT.md#the-state-machine).
+transition; humans only apply gate labels. See [`PRODUCT.md`](PRODUCT.md#labels-are-state-a-step-is-a-transition).
 
 **`:wip` (mutex)** — The `{agent}:wip` label doubles as the lock that stops
 two orchestrator runs from working the same `(object, agent)` at once.
-See [`PRODUCT.md`](PRODUCT.md#the-state-machine).
+See [`PRODUCT.md`](PRODUCT.md#labels-are-state-a-step-is-a-transition).
 
 **Human gate** — A point where work cannot advance until a named human
 approves by applying a gate label (e.g. `prd-writer:approved`). Agents draft;
@@ -100,7 +100,7 @@ does not move the product forward -- routine operational/maintenance upkeep
 (dependency upgrades, refactors, pipeline fixes) and remediation of a
 previously made structural or architectural choice now recognised as
 costly, merged into one classification. (Formerly two separate concepts,
-"toil" and technical-debt remediation.) See [`PRODUCT.md`](PRODUCT.md#type)
+"toil" and technical-debt remediation.) See [`PRODUCT.md`](PRODUCT.md#type-ranks-five-reasons-an-issue-exists)
 and [`lifecycle.md`](lifecycle.md#issue-classification-taxonomy).
 
 ## Artefacts and communication
