@@ -202,6 +202,44 @@ anything carrying a `priority:` label.
 
 ---
 
+## Blocking between issues
+
+A separate mechanism from `type:`/`size:`/`priority:`, for an ordering
+dependency between two issues that has nothing to do with either
+one's classification. `blocks: {N}` on one issue and `blockedby: {N}`
+on the other declare it symmetrically -- the same convention
+`parent-issue:` already uses for decomposition, so the relationship
+reads off either issue's own label list.
+
+`blocker` (`00_ondemand`, human-triggered via `blocker:requested`)
+reads the issue, identifies which issue it should wait on, and
+applies `blockedby: {N}` here and the matching `blocks: {this}` on
+issue `N`. `unblocker` (`00_ondemand`, scheduled) is the mirror: on
+each run it checks every open issue carrying `blockedby: {N}`, and
+once `N` closes, removes both labels and posts a note. The check
+itself needs no judgment -- has `N` closed, yes or no -- so `unblocker`
+is a short, cheap run, the same shape as `issue-classifier`'s.
+
+**Blocking gates only the entry step, never a step mid-flow.** An
+issue carrying `blockedby: {N}` while `N` is still open is not
+eligible for `issue-classifier` -- it cannot enter its flow at all.
+Once a flow has started, further changes to `blocks:`/`blockedby:`
+have no effect on it; there is no mid-flow pause analogous to a human
+gate. Like [Priority](#priority), this is read once, at pickup, not
+re-checked step by step (see [How the pipeline
+advances](#how-the-pipeline-advances)).
+
+**Interactive mode checks the same thing, but a human can overrule
+it.** A person driving `/maos-{agent} {N}` directly is told the issue
+is blocked and on what; unlike headless, where no human is present in
+the tick to decide, the person present *is* the decision, so they can
+proceed anyway -- the same standing a live confirmation already has to
+cross a human gate without a label round-trip (see [PRODUCT.md,
+MI-7](PRODUCT.md#mi-7----only-a-person-approves)). Headless never gets
+this option: there is no person in that tick to make the call.
+
+---
+
 ## How the pipeline advances
 
 A single deterministic Python orchestrator has sole authority for
@@ -222,7 +260,11 @@ eligible ones for the tick. A work item currently halted -- any step
 of it sitting in `review` or `blocked` -- has no eligible next step
 until a human clears the gate (see [Human gates](#human-gates)), so it
 drops out of contention on its own; no separate blocked-status check
-is needed. Among what remains eligible, `priority: high` sorts first,
+is needed. A work item that has not yet started is further ineligible
+while it carries `blockedby: {N}` and `N` is still open (see [Blocking
+between issues](#blocking-between-issues)) -- checked once, at entry,
+never revisited once the flow is under way. Among what remains
+eligible, `priority: high` sorts first,
 then `priority: medium`, then `priority: low`, then anything
 unprioritised (see [Priority](#priority)); within the same tier, the
 issue raised earliest is worked first, so an equal-priority backlog is
@@ -698,6 +740,8 @@ each agent's own frontmatter (AS-1), not here.
 | `00_ondemand/standards-migrator` | agent | On-demand | Converts a consuming repo's existing knowledge files into `standards/*.json` |
 | `00_ondemand/branch-cleanup` | agent | On-demand | Recommends, then (on approval) deletes, stale remote branches |
 | `00_ondemand/issue-cleanup` | agent | On-demand | Recommends, then (on approval) closes, complete or duplicate issues |
+| `00_ondemand/blocker` | agent | On-demand | Declares a cross-issue ordering dependency on request: applies `blockedby: {N}` here and `blocks: {this}` on issue `N` |
+| `00_ondemand/unblocker` | agent | On-demand | Scheduled: clears `blockedby:`/`blocks:` once the blocking issue closes -- a short, mechanical check |
 | `01_product_docs/issue-classifier` | agent | Standard ticket flow | Classifies the issue; validates required fields are present |
 | `issue-sizer` | agent | Standard ticket flow | Sizes the ticket (`S`/`M`/`L`); an `L` verdict routes to `large-decomposer`, an `S` verdict to the combiner, `M` proceeds |
 | `01_product_docs/prd-writer` | agent | Standard ticket flow | Drafts the PRD; rewrites the issue body into user-story + Gherkin format |
