@@ -173,6 +173,33 @@ the answer.
 shipping at `M`, there is no multi-task PR left to break down --
 `coder` implements the one PRD directly.
 
+Every YES / CONDITIONAL / NO above is a step's trigger evaluated
+against a combination of labels, not a single one -- `type:
+enhancement` and `size: M` both have to hold for `coder` to run on an
+enhancement. The mechanism is general, not special-cased to type and
+size: a step's trigger can require any combination of labels (`type:
+enhancement & priority: high`, say), so a genuinely new need doesn't
+require a new dimension in this table, only a step whose trigger
+names the labels it cares about.
+
+---
+
+## Priority
+
+A third, independent label dimension: `priority: high`, `priority:
+medium`, or `priority: low`. Unlike `type:` and `size:`, priority
+never changes which steps run or what a step does -- every YES /
+CONDITIONAL / NO in [What runs, for each type and
+size](#what-runs-for-each-type-and-size) is decided by type and size
+alone. Priority answers a different question: when several issues are
+eligible for the same next step at once, which the orchestrator works
+on first (see [How the pipeline advances](#how-the-pipeline-advances)).
+
+A human applies `priority:` -- it reflects business urgency, not
+something a step can infer from an issue's body, so no agent assigns
+or changes it. Unprioritised work stays eligible; it just sorts behind
+anything carrying a `priority:` label.
+
 ---
 
 ## How the pipeline advances
@@ -189,6 +216,17 @@ The orchestrator is invoked on three triggers:
 2. **PR events.** PR opened, synchronised, ready-for-review, merged,
    closed.
 3. **Schedule.** Every 15 minutes during working hours, as a backstop.
+
+Before working an individual item, the orchestrator orders the
+eligible ones for the tick. A work item currently halted -- any step
+of it sitting in `review` or `blocked` -- has no eligible next step
+until a human clears the gate (see [Human gates](#human-gates)), so it
+drops out of contention on its own; no separate blocked-status check
+is needed. Among what remains eligible, `priority: high` sorts first,
+then `priority: medium`, then `priority: low`, then anything
+unprioritised (see [Priority](#priority)); within the same tier, the
+issue raised earliest is worked first, so an equal-priority backlog is
+worked oldest-first rather than newest-first.
 
 For each work item it:
 
