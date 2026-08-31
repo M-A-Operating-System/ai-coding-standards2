@@ -137,37 +137,37 @@ addressing the gap, rather than reopening a child that already merged.
 
 ## What runs, for each type and size
 
-One table, every step as a row, every type as a column. `S`/`M`/`L`
-rows inside a cell where size changes the answer.
+One table, every step as a row, every state a column -- `Unclassified`
+plus the five types. `S`/`M`/`L` lines inside a cell where size changes
+the answer.
 
-| Step | Security | Enhancement | Bug | Tech-debt | Spike |
-|---|---|---|---|---|---|
-| **Unclassified** | Issue opened by a stakeholder — no `type:` yet; identical across every eventual outcome | Same | Same | Same | Same |
-| `issue-classifier` | YES — assigns `type:`; the first point any column below actually applies | Same | Same | Same | Same |
-| `prd-writer` | YES — gate `prd-writer:approved`; also flags whether the change touches a new API contract, data-model change, or integration boundary, feeding `architect`'s trigger below | Same | Same | Same | YES — gate `prd-writer:approved`; **flow stops here** |
-| `issue-sizer` | S: `size: S` → combiner<br>M: `size: M` → proceeds<br>L: `size: L` → `large-decomposer` | Same | Same | Same | Not sized — not measured against the baseline |
-| `architect` | S: NO<br>M: CONDITIONAL — runs only when `prd-writer` flagged new API/data-model/integration surface<br>L: YES — settles design before decomposition | Same | Same | Same | NO |
-| `test-spec-writer` | S: NO<br>M: NO — the PRD's own Gherkin suffices<br>L: YES — defines the scenario set the children divide | Same | Same | Same | NO |
-| `test-coverage-auditor` | S: NO<br>M: NO<br>L: YES — gate `test-spec:approved`; a **plan-time** check that the intended split covers every acceptance criterion, before any child exists -- distinct from `large-reviewer` checking what actually shipped, after | Same | Same | Same | NO |
-| `dependency-planner` | S: NO<br>M: NO — nothing to order<br>L: YES — gate `plan:approved`, names the order children are created and built in | Same | Same | Same | NO |
-| **Combiner** (orchestrator) | S: YES — groups with other `S` issues, gate `super-issue:approved`; this issue's own pipeline pauses here<br>M/L: N/A | Same | Same | Same | N/A |
-| `large-decomposer` | L: YES — gate `decomposition:approved`; this issue's own pipeline stops here<br>S/M: N/A | Same | Same | Same | N/A |
-| **Children / super-issue** (recursive) | The super-issue (`S`) or each child (`L`) re-enters at `issue-classifier`, sized on its own merits — everything below only runs once that recursion bottoms out at `M` | Same | Same | Same | N/A |
-| `create-docs-pr` (script) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `prd-docs-updater` | S: NO<br>M: YES — scoped edit, never a rewrite<br>L: NO | Same | Same | Same | NO |
-| `merge-docs-pr` (script) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `create-pr` (script, code PR) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `coder` | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — ships research, not code |
-| `ci-gate` (script) | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
-| `merge-conflict` | S: NO<br>M: YES — auto-advances if clean<br>L: NO | Same | Same | Same | NO |
-| `pr-reviewer` | S: NO<br>M: YES — plus `security-review:approved` when flagged<br>L: NO | S: NO<br>M: YES<br>L: NO | Same | Same | NO |
-| `coverage-enforcer` | S: NO<br>M: YES — gate `coverage:approved`<br>L: NO | Same | Same | Same | NO |
-| `impact-assessor` | S: NO<br>M: YES — expected to trigger<br>L: NO | S: NO<br>M: CONDITIONAL<br>L: NO | Same | Same | NO |
-| `migration-validator` | S: NO<br>M: CONDITIONAL — touches `**/*.sql`<br>L: NO | Same | Same | Same | NO |
-| Changelog | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — the approved PRD scope is the deliverable |
-| Retrospective | S: NO<br>M: NO, unless multiple review cycles<br>L: NO | Same | Same | Same | NO |
-| `large-reviewer` | L: YES — once every child resolves to `M` and merges, reviews the aggregate against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merged PR. An **outcome-time** check -- catches execution drift the plan-time `test-coverage-auditor` pass couldn't see<br>S/M: N/A | Same | Same | Same | N/A |
-| Gate: `large-review:approved` | L: YES — a person reviews the assessment, not a child-count rubber stamp. `REQUEST_CHANGES` files a new child under the same parent; `APPROVE` closes it<br>S/M: N/A | Same | Same | Same | N/A |
+| Step | Unclassified | Security | Enhancement | Bug | Tech-debt | Spike |
+|---|---|---|---|---|---|---|
+| `issue-classifier` | YES — assigns `type:`; this is what ends the `Unclassified` state | N/A — already assigned | N/A | N/A | N/A | N/A |
+| `prd-writer` | N/A — no type to draft a PRD against yet | YES — gate `prd-writer:approved`; also flags whether the change touches a new API contract, data-model change, or integration boundary, feeding `architect`'s trigger below | Same | Same | Same | YES — gate `prd-writer:approved`; **flow stops here** |
+| `issue-sizer` | N/A | S: `size: S` → combiner<br>M: `size: M` → proceeds<br>L: `size: L` → `large-decomposer` | Same | Same | Same | Not sized — not measured against the baseline |
+| `architect` | N/A | S: NO<br>M: CONDITIONAL — runs only when `prd-writer` flagged new API/data-model/integration surface<br>L: YES — settles design before decomposition | Same | Same | Same | NO |
+| `test-spec-writer` | N/A | S: NO<br>M: NO — the PRD's own Gherkin suffices<br>L: YES — defines the scenario set the children divide | Same | Same | Same | NO |
+| `test-coverage-auditor` | N/A | S: NO<br>M: NO<br>L: YES — gate `test-spec:approved`; a **plan-time** check that the intended split covers every acceptance criterion, before any child exists -- distinct from `large-reviewer` checking what actually shipped, after | Same | Same | Same | NO |
+| `dependency-planner` | N/A | S: NO<br>M: NO — nothing to order<br>L: YES — gate `plan:approved`, names the order children are created and built in | Same | Same | Same | NO |
+| **Combiner** (orchestrator) | N/A | S: YES — groups with other `S` issues, gate `super-issue:approved`; this issue's own pipeline pauses here<br>M/L: N/A | Same | Same | Same | N/A |
+| `large-decomposer` | N/A | L: YES — gate `decomposition:approved`; this issue's own pipeline stops here<br>S/M: N/A | Same | Same | Same | N/A |
+| **Children / super-issue** (recursive) | N/A | The super-issue (`S`) or each child (`L`) re-enters at `Unclassified`, sized on its own merits — everything below only runs once that recursion bottoms out at `M` | Same | Same | Same | N/A |
+| `create-docs-pr` (script) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `prd-docs-updater` | N/A | S: NO<br>M: YES — scoped edit, never a rewrite<br>L: NO | Same | Same | Same | NO |
+| `merge-docs-pr` (script) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `create-pr` (script, code PR) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `coder` | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — ships research, not code |
+| `ci-gate` (script) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
+| `merge-conflict` | N/A | S: NO<br>M: YES — auto-advances if clean<br>L: NO | Same | Same | Same | NO |
+| `pr-reviewer` | N/A | S: NO<br>M: YES — plus `security-review:approved` when flagged<br>L: NO | S: NO<br>M: YES<br>L: NO | Same | Same | NO |
+| `coverage-enforcer` | N/A | S: NO<br>M: YES — gate `coverage:approved`<br>L: NO | Same | Same | Same | NO |
+| `impact-assessor` | N/A | S: NO<br>M: YES — expected to trigger<br>L: NO | S: NO<br>M: CONDITIONAL<br>L: NO | Same | Same | NO |
+| `migration-validator` | N/A | S: NO<br>M: CONDITIONAL — touches `**/*.sql`<br>L: NO | Same | Same | Same | NO |
+| Changelog | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — the approved PRD scope is the deliverable |
+| Retrospective | N/A | S: NO<br>M: NO, unless multiple review cycles<br>L: NO | Same | Same | Same | NO |
+| `large-reviewer` | N/A | L: YES — once every child resolves to `M` and merges, reviews the aggregate against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merged PR. An **outcome-time** check -- catches execution drift the plan-time `test-coverage-auditor` pass couldn't see<br>S/M: N/A | Same | Same | Same | N/A |
+| Gate: `large-review:approved` | N/A | L: YES — a person reviews the assessment, not a child-count rubber stamp. `REQUEST_CHANGES` files a new child under the same parent; `APPROVE` closes it<br>S/M: N/A | Same | Same | Same | N/A |
 
 `task-decomposer` does not appear in this table: with code only ever
 shipping at `M`, there is no multi-task PR left to break down --
