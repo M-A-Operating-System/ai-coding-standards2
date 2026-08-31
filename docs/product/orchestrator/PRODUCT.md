@@ -211,17 +211,27 @@ split is deliberate -- it is what makes a product-management ratio like
 `enhancement : (tech-debt + bug + security)` a real signal read off the
 label alone, not an audit.
 
-| Type | Definition | Qualifying criterion |
-|---|---|---|
-| `security` | A concrete security vulnerability with a clear exploit path -- injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all five. |
-| `bug` | Broken behaviour -- something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target; the fix is to correct the code, not the docs. |
-| `enhancement` | A change to the product's capability, new or existing, sized to ship end-to-end in one sequence. | Moves the target state forward -- a fresh user-observable outcome or an improvement to one that exists. Scale alone does not change the type, only its size. |
-| `spike` | Research or investigation whose primary output is knowledge -- a recommendation, an ADR, or a prototype -- not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
-| `tech-debt` | Enhancement-scale work that does not move the product forward: routine operational/maintenance upkeep and remediation of a previously made structural or architectural choice now recognised as costly, merged into one classification. | Tied to a non-functional requirement in the product docs, not a user-facing feature. |
+| Priority | Type | Definition | Qualifying criterion |
+|---|---|---|---|
+| 1 | `security` | A concrete security vulnerability with a clear exploit path -- injection, authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. | Classified conservatively: the impact must be clear and concrete, not "might be a security concern" (that stays `bug`). Carries the heaviest review bar of all five. |
+| 2 | `bug` | Broken behaviour -- something that used to work and no longer does, or behaviour that violates the target state in the product docs. | By definition the code has drifted from the product-docs target; the fix is to correct the code, not the docs. |
+| 3 | `enhancement` | A change to the product's capability, new or existing, sized to ship end-to-end in one sequence. | Moves the target state forward -- a fresh user-observable outcome or an improvement to one that exists. Scale alone does not change the type, only its size. |
+| 4 | `tech-debt` | Enhancement-scale work that does not move the product forward: routine operational/maintenance upkeep and remediation of a previously made structural or architectural choice now recognised as costly, merged into one classification. | Tied to a non-functional requirement in the product docs, not a user-facing feature. |
+| 5 | `spike` | Research or investigation whose primary output is knowledge -- a recommendation, an ADR, or a prototype -- not shipped code. | Time-boxed; the result feeds a later issue that ships the actual change. |
 
-When two types are plausible, prefer the one with the higher review bar:
-`security` over `bug` (only when the impact is clear and concrete); `bug`
-over `tech-debt`.
+**This priority column is a total order, not just a table sort -- when more
+than one type is plausible, `issue-classifier` picks the one that ranks
+highest.** `security` beats everything, but only when the impact is clear
+and concrete -- an ambiguous "might be a security concern" falls through to
+`bug`. `bug` beats `enhancement` and everything below it: if the code has
+drifted from the documented target at all, that drift is the story, not
+whatever capability it happens to sit inside. `enhancement` beats
+`tech-debt`: a user-observable change is product work, even if it also
+happens to pay something down. `tech-debt` beats `spike`: real, if
+unglamorous, remediation work outranks "let's go find out." `spike` is
+last on purpose -- it is a claim of *not knowing enough to build yet*, and
+if enough is already known to plausibly name the work as anything else on
+this list, it is not a spike.
 
 ### Size
 
@@ -252,8 +262,12 @@ several issues are eligible for the same next step at once, which the
 orchestrator works on first (see [Which eligible item runs
 next](#which-eligible-item-runs-next)).
 
-A human applies `priority:` -- it reflects business urgency, not something a
-step can infer from an issue's body, so no agent assigns or changes it.
+A human applies `priority:` today -- it reflects business urgency, which a
+step reading one issue in isolation has no way to weigh. That is a fact
+about today's mechanism, not a permanent rule: a future scheduled
+mechanism reading signals across the whole backlog -- the same shape as
+the Phase 5 continuous loops -- could propose or set it instead. No such
+mechanism is designed here; until one exists, a human is the only source.
 Unprioritised work stays eligible; it just sorts behind anything carrying a
 `priority:` label.
 
@@ -264,9 +278,12 @@ dependency between two issues that has nothing to do with either one's
 classification. `blocks: {N}` on one issue and `blockedby: {N}` on the
 other declare it symmetrically, so the relationship reads off either
 issue's own label list. A human applies them directly, or delegates the
-applying to a request-triggered step; either way the labels are the
-whole of the fact -- there is no second record of the dependency
-anywhere else.
+applying to a request-triggered step, today. That is not a permanent
+rule either: a future scheduled mechanism could detect and declare the
+dependency on its own, the same way a scheduled mechanism could set
+`priority:` (see [Priority](#priority)) -- no such mechanism is designed
+here. Either way the labels are the whole of the fact -- there is no
+second record of the dependency anywhere else.
 
 An issue carrying `blockedby: {N}` while `N` is still open is not eligible
 to start at all -- this gates only the entry step, never a step mid-flow;
@@ -878,6 +895,7 @@ from a fixed set can say the second thing.
 | **What it did not do** | Present and empty when the step finished everything. "I finished" is an assertion the step makes, never a silence the orchestrator interprets |
 | **Its output** | Whatever the step produces -- a review, a classification, a plan. Returned, not posted |
 | **Its files, in the repository or scratch** | Real work in the tree, working files in scratch. Nothing anywhere else |
+| **Label changes it's requesting, if any** | Which labels to add or remove, and on which issue -- defaults to the item itself when the issue is omitted. Never applied directly (a step still never writes to GitHub); the orchestrator checks each request against the step's declared `allowed_labels` and applies only what clears it, silently dropping the rest |
 
 **No result is a failure.** A step that returns nothing has not returned a
 value, and that is all it means. Nothing is inferred from a clean exit.
@@ -1107,6 +1125,10 @@ unfinished work is the one that could not tell you about it.
 - **Approve a gate.** Agents draft, humans decide (P-10). No exceptions, in
   either mode.
 - **Act outside its allowed commands**, or route around a refusal.
+- **Request a label outside its declared `allowed_labels`.** The
+  orchestrator checks every requested add/remove against it and applies
+  only what clears; asking for more is the same kind of refusal as any
+  other action outside what a step was granted.
 - **Rewrite or delete history.** No step's allowed commands may include
   `git reset`, `git push --force`, `git branch -D`, or any other command
   that rewrites or deletes history, however narrowly a step's other grants
@@ -1179,7 +1201,7 @@ else defines any of them:
 | **Process** | step entries | Which steps exist, what each one is -- including which model an agent step runs on -- and which phase it belongs to |
 | **Sequence** | `trigger` | What triggers a step and what it emits |
 | **Dependencies** | `dependencies` | What must have completed before a step is eligible |
-| **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools` | Everything a step may do, globally and per step, plus lifecycle actions and post-steps |
+| **Entitled activities** | `defaults.extra_allowedTools`, `extra_allowedTools`, `allowed_labels` | Everything a step may do, globally and per step, plus lifecycle actions, post-steps, and which labels it may ask the orchestrator to add or remove |
 | **Expected effect** | `expected_effect` | What the step is supposed to change -- commits, files, labels, comments -- or nothing, declared explicitly |
 | **Flows** | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
 | **Budgets** | `max_turns` and `max_wall_seconds`, declared once globally and overridable per step; a per-tick cap on work started, global only | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
@@ -1328,9 +1350,12 @@ declares one, and a step declaring no effect that produces one is as much a
 failure as the reverse. Flows and budgets are tested the same way: a work
 item entering a flow whose trigger it does not match, or a step running
 under a turn or wall-clock allowance the file does not declare, is equally a
-failure. Both the shipped `pipeline.json` and a repository's own
-validate against `schema/pipeline.schema.json` -- a definition the schema
-rejects is not a test failure to discover later, it is a file that does not
+failure. A label the orchestrator applies on a step's request that is not
+covered by that step's declared `allowed_labels` is the same class of
+failure as an unresolved command. Both the shipped `pipeline.json` and a
+repository's own validate against `schema/pipeline.schema.json` -- a
+definition the schema rejects is not a test failure to discover later, it
+is a file that does not
 parse.
 
 **Always the version on `main`, never the version the tick is about.** A tick
@@ -1456,9 +1481,10 @@ forever, and it will not be. Every divergence is a security property that holds
 in one mode and silently not in the other, with no way to tell from outside.
 This is the most expensive promise in the list to break.
 
-**Precisely.** Whatever enforces a step's allowed commands is the **same
-mechanism** in both modes, not an equivalent one. Neither mode re-implements the other's
-enforcement.
+**Precisely.** Whatever enforces a step's allowed commands -- and whatever
+checks a step's requested label changes against its `allowed_labels` -- is
+the **same mechanism** in both modes, not an equivalent one. Neither mode
+re-implements the other's enforcement.
 
 **Test.** Exactly one component decides whether an action is permitted, and both
 modes route through it. A second implementation is a test failure, not a design

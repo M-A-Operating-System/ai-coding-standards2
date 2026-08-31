@@ -102,6 +102,7 @@ What this flow's branches and pull requests are called. Declared here, never com
 | `expected_effect` | object | yes | What this step is supposed to change, declared explicitly so the orchestrator can compare it against what actually changed (MI-6). A step declaring no commits that produces one disagrees with itself, and the disagreement is surfaced, not buried -- this is also how a read-only step's constraint (PRODUCT.md, 'What a scheduled step may do is declared') becomes checkable rather than a claim in a prompt. |
 | `budgets` | object | no | Overrides the top-level budgets default for this step only, field by field: a step declaring only max_turns still inherits max_wall_seconds from the default, and vice versa. Absent entirely means this step uses the default for both. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion) -- which is why an override can target one wall without touching the other. |
 | `extra_allowedTools` | array of string | no | Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged. |
+| `allowed_labels` | object | no | Which labels this step may ask the orchestrator to add or remove, as part of its returned result (PRODUCT.md, 'What a step must return'). A step never writes to GitHub itself; it requests, and the orchestrator applies only what this declares, silently dropping the rest -- the same enforced-not-discouraged relationship extra_allowedTools has with commands. Absent means the step may request no label changes beyond its own lifecycle labels, which it never requests directly (those are computed from its outcome, not chosen). Patterns follow the same glob convention as extra_allowedTools (e.g. 'blockedby:*'). |
 | `git_ops` | object | no | Declares that this step produces file output the orchestrator commits. Absent means it does not. |
 | `human_gate_after` | boolean | yes | Whether a named gate label is required before downstream steps see this one as satisfied. |
 | `human_gate_label` | string | no | Required when human_gate_after is true. |
@@ -148,6 +149,15 @@ Overrides the top-level budgets default for this step only, field by field: a st
 |---|---|---|---|
 | `max_turns` | integer | no | Bounds how much back-and-forth this step's invocation is allowed, regardless of how long any of it takes. Agent-type steps only. |
 | `max_wall_seconds` | integer | no | Bounds how long this step's invocation may hold the pipeline, regardless of how many turns it took. Reclaims a stranded :wip: a lock older than this cannot still be legitimately running, so the orchestrator takes it back and records failed (PRODUCT.md, 'A step can vanish'). |
+
+### A step -- `allowed_labels`
+
+Which labels this step may ask the orchestrator to add or remove, as part of its returned result (PRODUCT.md, 'What a step must return'). A step never writes to GitHub itself; it requests, and the orchestrator applies only what this declares, silently dropping the rest -- the same enforced-not-discouraged relationship extra_allowedTools has with commands. Absent means the step may request no label changes beyond its own lifecycle labels, which it never requests directly (those are computed from its outcome, not chosen). Patterns follow the same glob convention as extra_allowedTools (e.g. 'blockedby:*').
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `add` | array of string | no | Label patterns this step may request be added, to its own item or another named in the request. |
+| `remove` | array of string | no | Label patterns this step may request be removed, to its own item or another named in the request. |
 
 ### A step -- `git_ops`
 

@@ -313,6 +313,24 @@
           "items": { "type": "string" }
         },
 
+        "allowed_labels": {
+          "type": "object",
+          "description": "Which labels this step may ask the orchestrator to add or remove, as part of its returned result (PRODUCT.md, 'What a step must return'). A step never writes to GitHub itself; it requests, and the orchestrator applies only what this declares, silently dropping the rest -- the same enforced-not-discouraged relationship extra_allowedTools has with commands. Absent means the step may request no label changes beyond its own lifecycle labels, which it never requests directly (those are computed from its outcome, not chosen). Patterns follow the same glob convention as extra_allowedTools (e.g. 'blockedby:*').",
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Label patterns this step may request be added, to its own item or another named in the request."
+            },
+            "remove": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Label patterns this step may request be removed, to its own item or another named in the request."
+            }
+          }
+        },
+
         "git_ops": {
           "type": "object",
           "description": "Declares that this step produces file output the orchestrator commits. Absent means it does not.",
