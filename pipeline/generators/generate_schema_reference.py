@@ -192,6 +192,15 @@ def render(schema):
     lines += [f"| {f} | {t} | {r} | {d} |" for f, t, r, d in rows]
     lines += [""]
 
+    # Expand every top-level object-typed field (defaults, budgets) into its
+    # own subsection, the same way flow/step fields recurse below -- without
+    # this, a field like budgets.max_launches_per_tick has no type/required/
+    # description anywhere in the generated output.
+    for name, prop in schema.get("properties", {}).items():
+        prop = _resolve(schema, prop)
+        if prop.get("type") == "object" and ("properties" in prop or "oneOf" in prop):
+            lines += _render_object_section(schema, f"Top level -- `{name}`", prop, level=3)
+
     flow = schema["definitions"]["flow"]
     lines += _render_object_section(schema, "A flow", flow, level=2)
 

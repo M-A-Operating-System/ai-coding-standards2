@@ -20,6 +20,34 @@ distance is sequenced on issue #393.
 | `budgets` | object | yes | Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level equivalent, and the default turn/wall-clock budget every step gets unless it declares its own -- the same two-level shape as extra_allowedTools (a global value declared once and visible, overridable per step where a step genuinely needs to differ), applied to budgets instead of entitlements. max_turns and max_wall_seconds are required so every step has an effective budget even when it declares none itself; a hidden constant asserted to fit every step alike is exactly what this replaces (AS-1). |
 | `flows` | object | yes | Every flow the pipeline runs, keyed by a stable flow name. A repository's own pipeline/pipeline.json names the flows it adds or replaces; a flow it does not name is inherited from the shipped default unchanged. Precedence is per flow, not per file (PRODUCT.md, AS-1): a named flow replaces the shipped one wholesale, everything else keeps tracking the default. |
 
+### Top level -- `defaults`
+
+Pipeline-wide entitlement and lifecycle defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema. Step budgets are a separate, sibling concern -- see the top-level budgets key -- so a repository overriding one does not have to restate the other.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `extra_allowedTools` | array of string | no | Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- nothing else contributes. |
+| `agent_lifecycle` | object | no | Scripts the orchestrator runs around every agent-type step to prepare and tear down its environment. Not steps themselves: no outcome, no label, and a non-zero exit is logged rather than failing the run. |
+
+#### Top level -- `defaults` -- `agent_lifecycle`
+
+Scripts the orchestrator runs around every agent-type step to prepare and tear down its environment. Not steps themselves: no outcome, no label, and a non-zero exit is logged rather than failing the run.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `before` | array of string | no | Run immediately before each invocation, including retries. Must be idempotent: a run killed mid-flight leaves state behind, and re-running setup is what clears it. |
+| `after` | array of string | no | Run once after the final retry, on every outcome. |
+
+### Top level -- `budgets`
+
+Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level equivalent, and the default turn/wall-clock budget every step gets unless it declares its own -- the same two-level shape as extra_allowedTools (a global value declared once and visible, overridable per step where a step genuinely needs to differ), applied to budgets instead of entitlements. max_turns and max_wall_seconds are required so every step has an effective budget even when it declares none itself; a hidden constant asserted to fit every step alike is exactly what this replaces (AS-1).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `max_turns` | integer | yes | Default turn budget for every agent-type step, unless the step declares its own. A person's starting judgement, not a formula -- a wrong number is not silently wrong: it surfaces as exhausted, naming the wall a step hit, and gets revised the same way any other config value is revised when the evidence says so. |
+| `max_wall_seconds` | integer | yes | Default wall-clock budget for every step, agent or script, unless the step declares its own. |
+| `max_launches_per_tick` | integer | no | How much work a single tick will start before it stops, so a burst of eligible work (a hundred issues becoming eligible at once) does not consume everything available in one pass. Not a concurrency limit -- concurrent execution is governed by component: label claiming, the decided target design (PRODUCT.md, 'Working on several things at once'), independently of how many of those starts can run together. This is the target-schema name for the current PIPELINE_MAX_CONCURRENT constant, moved out of orchestrator code and given its true meaning. Pipeline-wide only -- no per-step equivalent, since it bounds a tick rather than an invocation. |
+
 ## A flow
 
 | Field | Type | Required | Description |

@@ -58,7 +58,7 @@
         "max_launches_per_tick": {
           "type": "integer",
           "minimum": 1,
-          "description": "How much work a single tick will start before it stops, so a burst of eligible work (a hundred issues becoming eligible at once) does not consume everything available in one pass. Not a concurrency limit -- the pipeline is sequential (one run at a time, one step at a time within it) until component-based parallelism exists. This is the target-schema name for the current PIPELINE_MAX_CONCURRENT constant, moved out of orchestrator code and given its true meaning. Pipeline-wide only -- no per-step equivalent, since it bounds a tick rather than an invocation."
+          "description": "How much work a single tick will start before it stops, so a burst of eligible work (a hundred issues becoming eligible at once) does not consume everything available in one pass. Not a concurrency limit -- concurrent execution is governed by component: label claiming, the decided target design (PRODUCT.md, 'Working on several things at once'), independently of how many of those starts can run together. This is the target-schema name for the current PIPELINE_MAX_CONCURRENT constant, moved out of orchestrator code and given its true meaning. Pipeline-wide only -- no per-step equivalent, since it bounds a tick rather than an invocation."
         }
       }
     },
