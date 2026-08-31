@@ -53,7 +53,9 @@ This is not just a description -- it is the closed vocabulary a PRD user story
 must draw from. `prd-writer` validates every `As the {persona} ...` story
 against it, the same way `coder` validates a diff against a standards
 category: [`standards/personas.json`](../../../standards/personas.json) is
-the machine-readable source (one file, P-2), and the System actor's
+the machine-readable source (one file, P-2 -- one of a numbered principle
+set cited by ID at each use rather than enumerated as a list here), and
+the System actor's
 qualifying test lives there as data, not as prose duplicated in a prompt --
 see [`14-standards.md`](../standards/14-standards.md#personas-not-a-category-a-closed-vocabulary).
 
@@ -132,16 +134,21 @@ yourself or dictate it.
 someone can actually perform. A halt is a pause, never a loss (MI-4).
 
 **Closed is terminal.** Once an issue closes, the orchestrator drops every
-event on it, permanently. There is no reopening it back into the pipeline --
-a bug found later in what it shipped is a new issue, not a resumption of the
-old one.
+event on it, permanently -- no step ever runs on it again. There is no
+reopening it back into the pipeline -- a bug found later in what it shipped
+is a new issue, not a resumption of the old one. The one narrow exception:
+its closing is still visible to *other* issues that named it in
+`blockedby:` (see [Blocking between issues](#blocking-between-issues));
+nothing about the closed issue itself resumes.
 
 **It will not run in a repository that has not been onboarded.** The
 orchestrator depends on what onboarding puts in place: the standards and agent
 definitions it reads, the labels that are its state, and the project's own ADR
 file. Onboarding records that it completed and the orchestrator checks that
 record before doing anything else, so a repository that was never set up fails
-immediately and legibly rather than part-way through its first piece of work.
+immediately and legibly rather than part-way through its first piece of work
+(see [16-onboarding.md](16-onboarding.md) for what onboarding actually puts
+in place).
 
 **It runs two ways, and they behave identically.** Headless as a continuous
 background process on GitHub Actions, or interactive inside a chat session in
@@ -174,9 +181,14 @@ that differs is a bug (MI-1 to MI-8).
 Four independent label dimensions describe a work item. None chooses what a
 step *does* -- the same `coder` runs identically regardless of any of them --
 they choose which flow and which steps apply (`type`, `size`), or how the
-orchestrator schedules eligible work (`priority`, blocking). Which agent
-applies each, and the exact flow each combination produces, is process --
-see [lifecycle.md](lifecycle.md), starting with [Issue classification
+orchestrator schedules eligible work (`priority`, blocking). A fifth label,
+`component:`, is a different kind of thing entirely -- not a classification
+of the work but a concurrency claim on the part of the system it touches,
+covered in [Working on several things at
+once](#working-on-several-things-at-once) rather than here. Which agent
+applies each of the four above, and the exact flow each combination
+produces, is process -- see [lifecycle.md](lifecycle.md), starting with
+[Issue classification
 taxonomy](lifecycle.md#issue-classification-taxonomy).
 
 ### Type
@@ -330,7 +342,12 @@ contention on its own. An item that has not yet started is
 additionally ineligible while it carries `blockedby: {N}` and `N` is
 still open (see [Blocking between issues](#blocking-between-issues)).
 Both kinds of halt clear the same way: a human removes the label, in
-either mode, and the item is eligible again on the next check.
+either mode, and the item is eligible again on the next check. A
+third, unrelated reason an item may wait: it cannot claim every
+`component:` it names right now, because another item in flight
+already holds one -- not a halt, and not something a human clears;
+it resolves itself the moment the holding item finishes (see [Working
+on several things at once](#working-on-several-things-at-once)).
 
 **Order: among what's eligible, which goes first.** `priority:` orders
 the rest -- `high` before `medium` before `low` before unprioritised --
@@ -905,9 +922,11 @@ Some work needs a list that survives many runs, not one comment's worth of
 state -- a build plan, acceptance criteria, a standards remediation list, test
 scenarios. That list lives in the body of the issue or PR it belongs to, below
 any human-authored prose, under an `## AI Agile -- Tasks` heading, wrapped in
-an outer marker pair. Each subsection sits inside its own marker pair nested
-within it, so the step that owns one subsection can rewrite it without
-touching what another step owns.
+an outer marker pair -- an open/close delimiter, distinct from the
+single-line comment markers above, since a region inside a shared body
+needs its end marked, not just its start. Each subsection sits inside its
+own marker pair nested within it, so the step that owns one subsection can
+rewrite it without touching what another step owns.
 
 **This is also how a step is re-invoked across many runs without redoing what
 it already finished.** "A re-run does the work again" (below) means the
@@ -1070,9 +1089,10 @@ unfinished work is the one that could not tell you about it.
   GitHub, so there is one format, one failure path, and one place where
   append-only is enforced.
 - **Decide what runs next.** Routing belongs to the orchestrator.
-- **Apply its own lifecycle labels.** `:wip`, `:complete`, `:review`, `:failed`
-  and `:exhausted` are the orchestrator's record of the step, not the step's own
-  claim -- and the last two it could not truthfully make about itself anyway.
+- **Apply its own lifecycle labels.** `:wip`, `:complete`, `:review`,
+  `:blocked`, `:failed` and `:exhausted` are the orchestrator's record of the
+  step, not the step's own claim -- and the last two it could not truthfully
+  make about itself anyway.
 - **Approve a gate.** Agents draft, humans decide (P-10). No exceptions, in
   either mode.
 - **Act outside its allowed commands**, or route around a refusal.
@@ -1294,7 +1314,10 @@ a definition living outside the file that is supposed to hold it.
 `pipeline.json` alone. Any permission that cannot be traced to it is a test
 failure. The same for triggers, dependencies, and expected effect: every step
 declares one, and a step declaring no effect that produces one is as much a
-failure as the reverse. Both the shipped `pipeline.json` and a repository's own
+failure as the reverse. Flows and budgets are tested the same way: a work
+item entering a flow whose trigger it does not match, or a step running
+under a turn or wall-clock allowance the file does not declare, is equally a
+failure. Both the shipped `pipeline.json` and a repository's own
 validate against `schema/pipeline.schema.json` -- a definition the schema
 rejects is not a test failure to discover later, it is a file that does not
 parse.
@@ -1620,7 +1643,7 @@ and `duration_ms` (the run's wall-clock duration).
 | `agent.failed` | The step crashed, timed out, or exited without a sentinel |
 | `gate.approved` | A human applied the gate label; gate promotion ran |
 | `lock.reclaimed` | A stale `:wip` was force-reclaimed |
-| `system.emergency_stop` | The stop marker was detected; the orchestrator exited without invoking anything |
+| `system.emergency_stop` | The stop marker was detected -- headless, the orchestrator exits without invoking anything; interactive, it is logged and the run proceeds (see [What is allowed to differ](#what-is-allowed-to-differ)) |
 
 One entry per completed step -- the same "one appended record per completed
 step" the test above already requires, named down to its fields.
@@ -1784,9 +1807,12 @@ headless one in the record.
 There are two exceptions, both narrow and both about the driver relaying
 something only a person can supply: applying the `{agent}:approved` gate label
 on a confirmation you gave (MI-7), and marking a pull request ready when a
-restricted session blocks the operation the orchestrator would otherwise use.
-Neither is value-add work; both are the driver acting as a hand for something
-the environment denied.
+restricted session -- one running under the driver's own, more narrowly
+scoped login rather than the repository's service credentials (see "Which
+credentials are used" in [What is allowed to
+differ](#what-is-allowed-to-differ)) -- blocks the operation the
+orchestrator would otherwise use. Neither is value-add work; both are the
+driver acting as a hand for something the environment denied.
 
 The orchestrator already separates resolving from spawning. Resolving an
 invocation and spawning it are distinct operations: the resolve-only path
@@ -1836,7 +1862,13 @@ nothing that influenced the work exists only in a chat transcript.
 
 ## What is allowed to differ
 
-The complete list. Anything not here is a defect.
+The complete list. Anything not here is a defect. Headless and Interactive
+here mean [how the tick was started](#two-different-questions-about-mode) --
+a GitHub event versus any of the three interactive commands -- never
+`AI_AGILE_EXECUTION_MODE`, which answers a different question about a
+single activity, not about a run; a driver command spawns steps that are
+themselves `headless` regardless (see [The three interactive
+commands](#the-three-interactive-commands)).
 
 | Difference | Headless | Interactive | Why this is legitimate |
 |---|---|---|---|
