@@ -87,7 +87,6 @@ rest as reference you consult when a question comes up.
 |---|---|---|
 | 15 | [Backlog](15-backlog.md) | Point-in-time snapshot of open issues (GitHub is authoritative) |
 | — | [Glossary](glossary.md) | Plain-language definitions of every term used above |
-| — | [Retirement log](retirement-log.md) | Where each retired legacy document's content ended up -- history of the consolidation, not part of the design |
 
 ---
 
