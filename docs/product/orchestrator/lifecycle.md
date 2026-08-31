@@ -129,22 +129,22 @@ end to end, with no fork. **Spike issues** (`type: spike`) stop after
 `prd-writer:approved` — `create-pr`, `prd-docs-updater`, and `coder`
 are excluded, since there is no code to ship.
 
-| Time | Actor | Event | Outcome label | Gate (Approver) |
+| # | Actor | Event | Outcome label | Gate (Approver) |
 |---|---|---|---|---|
-| T+0 | Stakeholder | Opens issue | — | — |
-| T+2m | `issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` | — |
-| T+5m | `prd-writer` | Drafts PRD; rewrites issue body | `prd-writer:review` | — |
-| T+1h | Stakeholder | Approves PRD | `prd-writer:approved` | **`prd-writer:approved`** — Stakeholder |
-| T+2m | `issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` | — |
-| T+15m | Reviewer | Approves the size | `size:approved` | **`size:approved`** — Reviewer |
-| T+2m | `create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` | `create-pr:complete` | — |
-| T+5m | `prd-docs-updater` | Writes the `docs/product/` + `docs/features/` changes | `prd-docs-updater:review` | — |
-| T+30m | Stakeholder | Approves the design; design PR merges to `main` | `prd-docs-updater:approved` | **`prd-docs-updater:approved`** — Stakeholder |
-| T+2m | `create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`) | `create-pr:complete` | — |
-| T+30m | `coder` | Implements the issue; orchestrator commits and pushes | — | — |
-| T+10m | `pr-reviewer` | Reviews code PR diff against spec | `pr-reviewer:review` | — |
-| T+30m | Reviewer | Approves review | `pr-reviewer:approved` | **`pr:approved`** — Reviewer |
-| — | Reviewer | Reviews and merges the code PR | `pr.merged` → issue auto-closes | — |
+| 1 | Stakeholder | Opens issue | — | — |
+| 2 | `issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` | — |
+| 3 | `prd-writer` | Drafts PRD; rewrites issue body | `prd-writer:review` | — |
+| 4 | Stakeholder | Approves PRD | `prd-writer:approved` | **`prd-writer:approved`** — Stakeholder |
+| 5 | `issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` | — |
+| 6 | Reviewer | Approves the size | `size:approved` | **`size:approved`** — Reviewer |
+| 7 | `create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` | `create-pr:complete` | — |
+| 8 | `prd-docs-updater` | Writes the `docs/product/` + `docs/features/` changes | `prd-docs-updater:review` | — |
+| 9 | Stakeholder | Approves the design; design PR merges to `main` | `prd-docs-updater:approved` | **`prd-docs-updater:approved`** — Stakeholder |
+| 10 | `create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`) | `create-pr:complete` | — |
+| 11 | `coder` | Implements the issue; orchestrator commits and pushes | — | — |
+| 12 | `pr-reviewer` | Reviews code PR diff against spec | `pr-reviewer:review` | — |
+| 13 | Reviewer | Approves review | `pr-reviewer:approved` | **`pr:approved`** — Reviewer |
+| 14 | Reviewer | Reviews and merges the code PR | `pr.merged` → issue auto-closes | — |
 
 Notes: `REQUEST_CHANGES` from `pr-reviewer` re-invokes `coder`, up to
 three cycles before requiring human sign-off; `pr-reviewer` cannot
