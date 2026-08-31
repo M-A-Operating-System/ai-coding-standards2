@@ -89,17 +89,35 @@ guessing at seams before anything has decided where they belong --
 `dependency-planner`'s child order and critical path depend on the same
 design for the same reason. So the order at `L` is: `prd-writer` →
 `issue-sizer` → `architect` → `test-spec-writer` / `test-coverage-auditor` →
-`dependency-planner` → `large-decomposer`.
+`dependency-planner` → `large-decomposer` → `create-integration-pr`
+(script).
+
+**Every child of a decomposed `L` ticket builds on a shared integration
+branch, not `main` directly.** `create-integration-pr` opens
+`feature-{parent_N}` from `main` and a non-closing integration PR
+(`feature-{parent_N}` → `main`, `Closes #{parent_N}`) once
+`large-decomposer:complete` is applied -- the same gated-completion
+pattern `create-docs-pr` already follows for `prd-writer`. Each child's
+own two-phase delivery (see [Two-phase design-to-build
+delivery](#two-phase-design-to-build-delivery)) then targets that branch
+instead of `main`: its design PR merges into `feature-{parent_N}`, and
+its code PR is cut from the post-design-merge `feature-{parent_N}` and
+merges back into it, closing the child but leaving `main` untouched.
+This is what lets every child's work land somewhere reviewable as a
+whole before any of it reaches `main`.
 
 **`L` closes only once its children do, and only after a real review.**
-Once every child (recursively resolved to `M`) has merged, `large-reviewer`
-reviews the aggregate against the parent's PRD, design, and plan -- the
-same shape as `pr-reviewer` reading a diff against a spec, spanning every
-child's merged PR instead of one. A person approves that assessment at
-`large-review:approved` before the parent closes; every child can pass its
-own review and the whole still be wrong, which is exactly what this step
-exists to catch. `REQUEST_CHANGES` files a new child under the same parent
-addressing the gap, rather than reopening a child that already merged.
+Once every child (recursively resolved to `M`) has merged into
+`feature-{parent_N}`, `large-reviewer` reviews the integration branch's
+accumulated diff against the parent's PRD, design, and plan -- the same
+shape as `pr-reviewer` reading a diff against a spec, spanning every
+child's merge instead of one. A person approves that assessment at
+`large-review:approved`, which marks the integration PR ready; merging
+it is what closes the parent and finally brings the aggregate into
+`main`. Every child can pass its own review and the whole still be
+wrong, which is exactly what this step exists to catch.
+`REQUEST_CHANGES` files a new child under the same parent addressing
+the gap, rather than reopening a child that already merged.
 
 ---
 
@@ -120,6 +138,7 @@ the answer.
 | `dependency-planner` | N/A | S: NO<br>M: NO — nothing to order<br>L: YES — gate `plan:approved`, names the order children are created and built in | Same | Same | Same | NO |
 | **Combiner** (orchestrator) | N/A | S: YES — groups with other `S` issues, gate `super-issue:approved`; this issue's own pipeline pauses here<br>M/L: N/A | Same | Same | Same | N/A |
 | `large-decomposer` | N/A | L: YES — gate `decomposition:approved`; this issue's own pipeline stops here<br>S/M: N/A | Same | Same | Same | N/A |
+| `create-integration-pr` (script) | N/A | L: YES — opens `feature-{parent_N}` and its non-closing integration PR into `main`, once `large-decomposer:complete`<br>S/M: N/A | Same | Same | Same | N/A |
 | **Children / super-issue** (recursive) | N/A | The super-issue (`S`) or each child (`L`) re-enters at `Unclassified`, sized on its own merits — everything below only runs once that recursion bottoms out at `M` | Same | Same | Same | N/A |
 | `create-docs-pr` (script) | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO |
 | `prd-docs-updater` | N/A | S: NO<br>M: YES — scoped edit, never a rewrite<br>L: NO | Same | Same | Same | NO |
@@ -134,8 +153,8 @@ the answer.
 | `migration-validator` | N/A | S: NO<br>M: CONDITIONAL — touches `**/*.sql`<br>L: NO | Same | Same | Same | NO |
 | Changelog | N/A | S: NO<br>M: YES<br>L: NO | Same | Same | Same | NO — the approved PRD scope is the deliverable |
 | Retrospective | N/A | S: NO<br>M: NO, unless multiple review cycles<br>L: NO | Same | Same | Same | NO |
-| `large-reviewer` | N/A | L: YES — once every child resolves to `M` and merges, reviews the aggregate against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merged PR. An **outcome-time** check -- catches execution drift the plan-time `test-coverage-auditor` pass couldn't see<br>S/M: N/A | Same | Same | Same | N/A |
-| Gate: `large-review:approved` | N/A | L: YES — a person reviews the assessment, not a child-count rubber stamp. `REQUEST_CHANGES` files a new child under the same parent; `APPROVE` closes it<br>S/M: N/A | Same | Same | Same | N/A |
+| `large-reviewer` | N/A | L: YES — once every child resolves to `M` and merges into `feature-{parent_N}`, reviews that branch's accumulated diff against the parent's PRD/design/plan, same shape as `pr-reviewer` but spanning every child's merge. An **outcome-time** check -- catches execution drift the plan-time `test-coverage-auditor` pass couldn't see<br>S/M: N/A | Same | Same | Same | N/A |
+| Gate: `large-review:approved` | N/A | L: YES — a person reviews the assessment, not a child-count rubber stamp, and marks the integration PR ready. `REQUEST_CHANGES` files a new child under the same parent; `APPROVE` + merge brings `feature-{parent_N}` into `main` and closes the parent<br>S/M: N/A | Same | Same | Same | N/A |
 
 `task-decomposer` does not appear in this table: with code only ever
 shipping at `M`, there is no multi-task PR left to break down --
@@ -275,7 +294,7 @@ getting it wrong.
 | `decomposition:approved` | Design (`L` only) | Engineer | A child-issue roadmap from `large-decomposer`, shaped by `architect`'s design and `dependency-planner`'s build order | That the proposed split is sensible -- each child is an independently deliverable business outcome, not an arbitrary file-level slice | A bad split produces children that can't be built or reviewed independently, defeating the point of decomposing |
 | `pr:approved` | Execute | Reviewer | A PR review from `pr-reviewer` checking scope, design alignment, and resolution of `required` standards violations | That the code is right and ready to test | Bugs in production. Use this gate to look at the actual diff, not just the agent's review summary |
 | `coverage:approved` | Execute | Engineer | A coverage report showing test results, coverage delta, and any acceptance criterion without a passing test, produced by `coverage-enforcer` | That tests pass, coverage hasn't regressed, and every required scenario has a passing test | Untested code in production |
-| `large-review:approved` | Execute (`L` only) | Reviewer | A structured assessment from `large-reviewer`, comparing what every child actually shipped against the parent's PRD, design, and plan -- posted once every child has merged | That the sum of the parts does what the parent's PRD asked for, not just that every child individually passed its own review | A large item closes on child-count alone; individually-correct parts that collectively miss the scope, or leave a seam nobody owned, ship undetected |
+| `large-review:approved` | Execute (`L` only) | Reviewer | A structured assessment from `large-reviewer`, posted on the `feature-{parent_N}` integration PR, comparing what every child actually shipped into it against the parent's PRD, design, and plan -- posted once every child has merged | That the sum of the parts does what the parent's PRD asked for, not just that every child individually passed its own review. Approval marks the integration PR ready; merging it is the final step | A large item closes on child-count alone; individually-correct parts that collectively miss the scope, or leave a seam nobody owned, ship undetected |
 | `standards-proposal:approved` | Evaluate (weekly) | Standards owner | An issue from `standards-evolver` proposing a new or changed standard, in JSON schema format | That the proposed standard is sound, the rationale is real, and the agent guidance is unambiguous | A bad standard ripples into every subsequent ticket |
 | `security-review:approved` | Execute | Security owner | The PR diff and the `impact-assessor` security-flag comment listing the sensitive surfaces touched (auth flows, RLS policies, IAM definitions, secrets, PII fields) | That the change is safe from an authentication, authorisation, and data-exposure perspective. Not a full pentest — a focused review of the flagged surface | Security vulnerabilities in production. Only required on PRs flagged by `impact-assessor`; non-flagged PRs skip this gate automatically |
 | `data-migration:approved` | Execute | Data owner | The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance | That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted | Data loss or corruption in production. Only required on PRs that include `**/*.sql` files |
@@ -339,7 +358,9 @@ independent deliverables. No PR spans more than one shippable-unit issue,
 and every branch produces exactly one PR.
 
 Each issue is delivered in **two sequenced phases, each its own branch and PR**,
-so the approved design reaches `main` before any code is written:
+so the approved design reaches its target branch before any code is
+written -- `main` for most issues, `feature-{parent_N}` for a decomposed
+`L` ticket's children (see [Sizing](#sizing)):
 
 | Phase | Branch | PR | Closes issue? | Merges at |
 |---|---|---|---|---|
@@ -351,13 +372,16 @@ so the approved design reaches `main` before any code is written:
   A premature close would also trip the branch-delete automation and the
   `large-review:approved` gate that closes a decomposed parent
   (see [The ticket is too big](#the-ticket-is-too-big) below).
-- The **code branch (`issue-{N}`) is cut from the post-design-merge `main`**, so
-  the build always starts from a tree that already contains the latest approved
-  design (and the latest pipeline infrastructure).
-- This keeps `main` continuously carrying the latest approved *desired state*
-  (design) while the *current state* (code) catches up. It also lets parallel
-  builds see each other's merged design, and surfaces overlapping-design
-  conflicts at the small docs merge rather than late in two colliding code PRs.
+- The **code branch (`issue-{N}`) is cut from the post-design-merge target
+  branch** -- `main` normally, `feature-{parent_N}` for a decomposition
+  child -- so the build always starts from a tree that already contains the
+  latest approved design (and, for `main`, the latest pipeline
+  infrastructure).
+- This keeps the target branch continuously carrying the latest approved
+  *desired state* (design) while the *current state* (code) catches up. It
+  also lets parallel builds see each other's merged design, and surfaces
+  overlapping-design conflicts at the small docs merge rather than late in
+  two colliding code PRs.
 - **Naming:** the code branch stays `issue-{N}` (unchanged, so all existing
   tooling keyed on that pattern is untouched); only the new `issue-{N}-docs`
   design branch is added. `delete-branch.sh` broadens its match to clean up both.
@@ -385,10 +409,14 @@ scenario coverage, and the child order first (see
 proposed child issues, each a smaller business outcome shaped by that
 design, and posts the roadmap as a comment on the parent. A human approves
 the decomposition by applying `decomposition:approved`. On approval, the
-agent auto-creates the child issues and links them back to the parent.
-Each child re-enters the pipeline at `issue-classifier`, is independently
-typed and sized, and runs through its own full lifecycle -- recursively,
-until it resolves to `M`, the only size that ships code.
+agent auto-creates the child issues and links them back to the parent, and
+`create-integration-pr` (script) opens the shared `feature-{parent_N}`
+branch and its non-closing integration PR into `main`. Each child re-enters
+the pipeline at `issue-classifier`, is independently typed and sized, and
+runs through its own full lifecycle -- recursively, until it resolves to
+`M`, the only size that ships code -- building on `feature-{parent_N}`
+rather than `main` throughout (see [Two-phase design-to-build
+delivery](#two-phase-design-to-build-delivery)).
 
 **A large item's value is in the parts it creates and the judgement that
 they add up.** It has five stages, and each one is a step in its own flow
@@ -397,10 +425,10 @@ rather than an exclusion from someone else's:
 | Stage | What it is |
 |---|---|
 | Pick it up | The item enters its flow like any other work item |
-| Decompose it | `architect`, `test-spec-writer`/`test-coverage-auditor`, and `dependency-planner` settle the design and plan; `large-decomposer` produces the child issues that are the actual work, linked back to the parent |
-| Wait for the parts | The children run their own flow, independently and in parallel, each recursing through this same table at its own size. Not a step -- a later step whose trigger condition is not yet met |
-| Review the whole | `large-reviewer` confirms the implementation hangs together and the sum of the parts does what the parent's PRD asked for, gated on `large-review:approved` |
-| Close it | The parent closes once `large-review:approved` is applied, with that review as the record of why |
+| Decompose it | `architect`, `test-spec-writer`/`test-coverage-auditor`, and `dependency-planner` settle the design and plan; `large-decomposer` produces the child issues that are the actual work, linked back to the parent; `create-integration-pr` opens `feature-{parent_N}` for them to build on |
+| Wait for the parts | The children run their own flow, independently and in parallel, each recursing through this same table at its own size, each merging into `feature-{parent_N}` rather than `main`. Not a step -- a later step whose trigger condition is not yet met |
+| Review the whole | `large-reviewer` reviews `feature-{parent_N}`'s accumulated diff, confirming the implementation hangs together and the sum of the parts does what the parent's PRD asked for, gated on `large-review:approved` |
+| Close it | `large-review:approved` marks the integration PR ready; merging it brings the aggregate into `main` and closes the parent, with the review as the record of why |
 
 The fourth stage is the one worth having. Every child can pass its own review and
 the parent still fail: the parts can be individually correct and collectively
@@ -603,11 +631,14 @@ are not types themselves, and the first two are driven by `size:`, not
 - **Oversized ticket** — `issue-sizer` returns `L`; `architect`,
   `test-spec-writer`/`test-coverage-auditor`, and `dependency-planner`
   settle the design and plan; `large-decomposer` drafts a child-issue
-  roadmap shaped by that design, gated on `decomposition:approved`; each
-  child re-enters at `issue-classifier`, recursing to its own size, keeping
-  the parent's `type:`. Once every child resolves and merges,
-  `large-reviewer` checks the sum against the original scope, gated on
-  `large-review:approved`, before the parent closes.
+  roadmap shaped by that design, gated on `decomposition:approved`;
+  `create-integration-pr` opens `feature-{parent_N}` for the children to
+  build on instead of `main`. Each child re-enters at `issue-classifier`,
+  recursing to its own size, keeping the parent's `type:`. Once every
+  child resolves and merges into `feature-{parent_N}`, `large-reviewer`
+  checks the sum against the original scope, gated on
+  `large-review:approved`, before the integration PR merges and closes
+  the parent.
 - **Many small tickets in a window** — `issue-sizer` returns `S`; small
   tickets batch under a super-issue, which becomes the shippable unit,
   re-entering as its own sized work item; one PR closes it and every
@@ -668,6 +699,7 @@ each agent's own frontmatter (AS-1), not here.
 | `02_design/test-coverage-auditor` | agent | Standard ticket flow | Confirms every PRD acceptance criterion maps to at least one scenario |
 | `02_design/dependency-planner` | agent | Standard ticket flow | Produces the build plan — the order children are created and built in, and the critical path, for `large-decomposer` to follow |
 | `02_design/large-decomposer` | agent | Structural fork (oversized ticket) | Drafts the child-issue roadmap for an `L` ticket, shaped by `architect`'s design, gated on `decomposition:approved` |
+| `02_design/create-integration-pr` | script | Structural fork (oversized ticket) | Opens `feature-{parent_N}` and its non-closing integration PR into `main` for the children to build on, once `large-decomposer:complete` |
 | `01_product_docs/create-docs-pr` | script | Standard ticket flow | Opens the design PR (`issue-{N}-docs`), non-closing. Runs only once a ticket resolves to `M` |
 | `01_product_docs/prd-docs-updater` | agent | Standard ticket flow | Copies approved Gherkin into `docs/features/`; makes a scoped edit to `docs/product/` for what the PRD changed, never a full-file rewrite; self-gates on design review |
 | `01_product_docs/merge-docs-pr` | script | Standard ticket flow | Merges the design PR to `main` ahead of the build phase |

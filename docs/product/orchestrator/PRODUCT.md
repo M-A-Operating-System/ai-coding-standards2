@@ -566,17 +566,17 @@ piece this invocation is for.
 
 A flow's primary branch is created from the default branch unless the flow
 says otherwise -- declared the same way the branch name itself is, a token
-pattern in `naming`, never computed in code. This is what makes something
-like a shared integration branch expressible for a coordinating-work flow
-that wants one -- children that need to land somewhere other than the
-default branch before the parent integrates them -- without the
-orchestrator needing to know about that pattern specially; today's
-large-item flow (lifecycle.md, [The ticket is too
-big](lifecycle.md#the-ticket-is-too-big)) does not use this, since each
-child is cut from the default branch like any other issue. If a flow's
-declared base does not exist -- never created, or already merged and
-deleted -- it falls back to the default branch rather than failing over
-something never guaranteed to be there.
+pattern in `naming`, never computed in code. This is what makes a shared
+integration branch expressible for a coordinating-work flow, rather than
+computed specially in orchestrator code: today's large-item flow
+(lifecycle.md, [The ticket is too
+big](lifecycle.md#the-ticket-is-too-big)) uses exactly this -- every child
+of a decomposed `L` ticket is cut from, and merges into, the parent's own
+`feature-{parent_N}` integration branch instead of the default branch, so
+the aggregate lands somewhere reviewable as a whole before any of it
+reaches `main`. If a flow's declared base does not exist -- never created,
+or already merged and deleted -- it falls back to the default branch
+rather than failing over something never guaranteed to be there.
 
 ### Scheduled work: how a flow knows it is due
 
