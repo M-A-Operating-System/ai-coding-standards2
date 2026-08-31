@@ -95,10 +95,13 @@ See [`14-standards.md`](../standards/14-standards.md).
 with a stated test, cited by ID from code and docs (e.g. MI-7 is the
 human-approval rule). See [`PRODUCT.md`](PRODUCT.md#the-promises).
 
-**Toil** — Necessary technical or process work that is not product work
-(e.g. a refactor, a pipeline fix). Handled by the System actor persona, not
-treated as a user-facing feature. See [`PRODUCT.md`](PRODUCT.md#personas) and
-[`lifecycle.md`](lifecycle.md).
+**Tech-debt** — One of the five `type:` values: enhancement-scale work that
+does not move the product forward -- routine operational/maintenance upkeep
+(dependency upgrades, refactors, pipeline fixes) and remediation of a
+previously made structural or architectural choice now recognised as
+costly, merged into one classification. (Formerly two separate concepts,
+"toil" and technical-debt remediation.) See [`PRODUCT.md`](PRODUCT.md#type)
+and [`lifecycle.md`](lifecycle.md#issue-classification-taxonomy).
 
 ## Artefacts and communication
 
