@@ -89,7 +89,7 @@
 
         "trigger": {
           "type": "object",
-          "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and label) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
+          "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
           "oneOf": [
             {
               "type": "object",
@@ -101,19 +101,22 @@
                   "enum": ["issue", "pr"],
                   "description": "Which GitHub object kind this flow processes."
                 },
-                "classification": {
+                "type": {
                   "type": "array",
                   "uniqueItems": true,
                   "minItems": 1,
                   "items": {
                     "type": "string",
-                    "enum": ["bug", "toil", "enhancement", "feature", "spike"]
+                    "enum": ["security", "bug", "enhancement", "tech-debt", "spike"]
                   },
-                  "description": "Restrict this flow to these classifications. Absent means every classification -- this is the one place classification is allowed to change what runs; see AS-1, 'Selection by classification'."
+                  "description": "Restrict this flow to work items carrying any one of these type: labels (OR within the dimension -- a work item carries exactly one type, never two, so this is 'any of', never 'all of'). Absent means every type. See AS-1, 'Selection by classification'."
                 },
-                "label": {
-                  "type": "string",
-                  "description": "Restrict this flow to items carrying this label (e.g. 'epic'). Absent means no label restriction."
+                "labels": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "minItems": 1,
+                  "items": { "type": "string" },
+                  "description": "Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['type: enhancement', 'priority: high'] if a flow ever needed to key off more than type and size). Combines with `type` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority')."
                 }
               }
             },
@@ -228,6 +231,13 @@
               "type": "string",
               "enum": ["all_closed", "any_open"],
               "description": "all_closed: eligible once every child of this item is closed (the epic wait). any_open: eligible while at least one child remains open (a step re-invoked once per remaining piece, e.g. coder). Both read the same underlying fact about the item's children; which direction a given step needs is the only difference."
+            },
+            "labels": {
+              "type": "array",
+              "uniqueItems": true,
+              "minItems": 1,
+              "items": { "type": "string" },
+              "description": "Additional labels that must all be present for this step to be eligible, beyond whatever fires it (label/event) and whatever its dependencies require -- an AND combination, general to any dimension. This is what lets steps inside one flow vary by a dimension like size without becoming a separate flow: architect declares labels: ['size: L'] so it is eligible only on a large item, even though large-decomposer, the combiner, and every M-only step share the same flow and the same sequencing. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority')."
             }
           }
         },

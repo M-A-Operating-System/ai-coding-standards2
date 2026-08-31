@@ -25,13 +25,13 @@ distance is sequenced on issue #393.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `description` | string | yes | What kind of work this is and why it is its own flow. |
-| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and label) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
+| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
 | `naming` | object | no | What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit. |
 | `steps` | array of object | yes | This flow's steps, in execution order. |
 
 ### A flow -- `trigger`
 
-What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and label) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
+What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
 
 Exactly one of the following shapes:
 
@@ -40,8 +40,8 @@ Exactly one of the following shapes:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `kind` | string | yes | Which GitHub object kind this flow processes. One of: `issue`, `pr`. |
-| `classification` | array of string | no | Restrict this flow to these classifications. Absent means every classification -- this is the one place classification is allowed to change what runs; see AS-1, 'Selection by classification'. |
-| `label` | string | no | Restrict this flow to items carrying this label (e.g. 'epic'). Absent means no label restriction. |
+| `type` | array of string | no | Restrict this flow to work items carrying any one of these type: labels (OR within the dimension -- a work item carries exactly one type, never two, so this is 'any of', never 'all of'). Absent means every type. See AS-1, 'Selection by classification'. |
+| `labels` | array of string | no | Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['type: enhancement', 'priority: high'] if a flow ever needed to key off more than type and size). Combines with `type` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority'). |
 
 **Shape 2:**
 
@@ -101,6 +101,7 @@ What makes this step eligible, within a flow its item has already entered. Seque
 | `event` | string | no | Fires on a raw GitHub event, for a flow's entry step. |
 | `path_filter` | string | no | Glob; modifier on an event trigger. |
 | `children` | string | no | all_closed: eligible once every child of this item is closed (the epic wait). any_open: eligible while at least one child remains open (a step re-invoked once per remaining piece, e.g. coder). Both read the same underlying fact about the item's children; which direction a given step needs is the only difference. One of: `all_closed`, `any_open`. |
+| `labels` | array of string | no | Additional labels that must all be present for this step to be eligible, beyond whatever fires it (label/event) and whatever its dependencies require -- an AND combination, general to any dimension. This is what lets steps inside one flow vary by a dimension like size without becoming a separate flow: architect declares labels: ['size: L'] so it is eligible only on a large item, even though large-decomposer, the combiner, and every M-only step share the same flow and the same sequencing. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority'). |
 
 ### A step -- `expected_effect`
 

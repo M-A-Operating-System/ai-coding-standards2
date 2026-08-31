@@ -213,6 +213,14 @@ is a cap on how much work a run *starts*, and it belongs with the other budgets
 rather than fixed in code: one number chosen once for every situation is a
 number nobody can tune for the case in front of them.
 
+Which of those eligible items a bounded run starts first is not arbitrary,
+either: a halted item (sitting in `review` or `blocked`) has no eligible next
+step until a human clears the gate, so it drops out of contention on its own;
+among what remains, `priority:` orders the rest, oldest-raised-first within a
+tier (see [lifecycle.md, Priority](lifecycle.md#priority) and [How the
+pipeline advances](lifecycle.md#how-the-pipeline-advances) for the concrete
+tiers).
+
 **Interactive mode is not this problem, because it is not this shape.** A
 person typing `/maos-{agent}` starts an orchestrator instance directly --
 there is no webhook, no automatic respawn, and therefore no version of the
@@ -1054,20 +1062,37 @@ is a security property that holds in one reading and not the other, and a second
 definition is easy to add without noticing -- a constant in the orchestrator, a
 line in an agent's frontmatter, a grant in a settings file.
 
-**Selection by classification.** A work item's classification -- `bug`, `toil`,
-`enhancement`, `feature`, `spike` -- does not change what a step does; the same
-`coder` runs the same way regardless of it. It is allowed to change exactly one
-thing: which flow a work item enters, declared as a `classification`
-restriction on a flow's trigger. That is the mechanism flow selection needs.
-Selection is positive (a flow's trigger states what it matches; there is no
-exclude list to forget one entry of), so keeping `spike` out of the default flow
-means the default flow's classification list omits it, or a dedicated flow
-claims it -- not a rule written elsewhere that has to be kept in sync. `bug`,
-`enhancement`, `feature` and `toil` currently share the one default flow and run
-identically; nothing today needs them to diverge, so nothing declares that they
-do. A repository is free to add a flow restricted to a subset of them if it ever
-needs one to behave differently, but the mechanism existing is not an invitation
-to use it without a reason.
+**Selection by classification.** A work item carries a `type:` label --
+`security`, `bug`, `enhancement`, `tech-debt`, `spike` -- and, independently, a
+`size:` label (`S`/`M`/`L`). Neither changes what a step *does*; the same
+`coder` runs the same way regardless of either. What they're allowed to change
+is which flow a work item enters, and which steps within that flow are
+eligible, declared as a `type` and/or `labels` restriction on a flow's or a
+step's own trigger. That is the mechanism selection needs, and it is one
+mechanism at both levels: a flow's trigger restricts which items enter it
+(`type`, for the type dimension specifically, since a work item carries
+exactly one; `labels`, a general AND-combination, for everything else); a
+step's trigger restricts which of a flow's items make it eligible the same
+way. `type: enhancement` and `size: M` together is what a step's trigger
+checks to run only on a medium enhancement -- combining two dimensions is not
+a special case, it's the same `labels` array with two entries. Selection is
+positive (a trigger states what it matches; there is no exclude list to forget
+one entry of), so keeping `spike` out of the default flow means the default
+flow's `type` list omits it, or a dedicated flow claims it -- not a rule
+written elsewhere that has to be kept in sync. `security`, `bug`,
+`enhancement`, and `tech-debt` currently share the one default flow and run
+identically at the flow level, diverging only step by step on `size` (see
+[lifecycle.md, What runs, for each type and
+size](lifecycle.md#what-runs-for-each-type-and-size)); a repository is free to
+add a flow restricted to a subset of them if it ever needs one to diverge at
+the flow level too, but the mechanism existing is not an invitation to use it
+without a reason.
+
+A third label dimension, `priority:` (`high`/`medium`/`low`), is deliberately
+never a selection criterion -- it never appears in a `type` or `labels`
+restriction, at either level. It answers a different question, addressed
+below: given several eligible items, which does the orchestrator work on
+first (see [lifecycle.md, Priority](lifecycle.md#priority)).
 
 **A repository may have its own.** The pipeline ships with a default definition,
 and a repository can replace it entirely with one of its own. That does not
