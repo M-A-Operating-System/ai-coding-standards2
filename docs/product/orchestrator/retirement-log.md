@@ -20,7 +20,7 @@ from.
 | Personas -- who AI Agile serves, in brief | `PRODUCT.md` | draft |
 | Personas -- the enforced vocabulary and the System actor's qualifying test | [`standards/personas.json`](../../../standards/personas.json) | current -- `03-personas.md` retired; its prose ("wants" / "how AI Agile serves them" per persona) not preserved, since it restated agent-catalogue detail already covered by `lifecycle.md`; the one genuinely durable piece (the System actor's 3-part validity test) migrated into the new standards file instead |
 | Promises (formerly principles P-1 to P-16) | `PRODUCT.md` and `lifecycle.md` | draft |
-| Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | current |
+| Pipeline configuration, target shape | [`schema/pipeline.schema.json`](schema/pipeline.schema.json) | draft -- not yet live; `pipeline/schemas/pipeline.schema.json` governs `pipeline.json` as it exists today |
 | Pipeline configuration, as it exists today | `pipeline.json` itself (AS-1); `pipeline/schemas/pipeline.schema.json`'s own field descriptions are the current reference -- `05-pipeline-config.md` retired | durable content migrated; current-only content (script-step sentinel mechanics, `git_ops.commit_after` as a per-step opt-in, `orchestrator_checks`) not preserved, since the target design replaces each |
 | The process itself -- which flows exist, their phases and forks | [`lifecycle.md`](lifecycle.md) | **stays there by design.** `PRODUCT.md` says the orchestrator can run whatever flows `pipeline.json` declares; which flows those are, and why, is process |
 | Status model | `PRODUCT.md` | draft -- `06-status-model.md` retired |
