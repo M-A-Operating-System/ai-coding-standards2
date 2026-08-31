@@ -543,6 +543,12 @@ declares that step, not fixed in advance here.
 An epic waits *while* its children are open. A step can use the identical
 capability the other way round: stay eligible *while its own* children are
 open, so finishing the item takes several invocations instead of one.
+Lifecycle.md's super-issue, where several grouped small issues become one
+shippable unit (see [Many small tickets in a
+window](lifecycle.md#many-small-tickets-in-a-window)), is the shape this
+fits -- though lifecycle.md does not yet say explicitly whether its build
+step actually uses this capability, one grouped issue per invocation, or
+covers all of them in a single pass; that's unsettled, not decided here.
 
 A step's turn and wall-clock budgets bound one invocation, and a
 sub-issue-heavy issue can need more of either than any single invocation
@@ -560,12 +566,17 @@ piece this invocation is for.
 
 A flow's primary branch is created from the default branch unless the flow
 says otherwise -- declared the same way the branch name itself is, a token
-pattern in `naming`, never computed in code. An epic's sub-issues need this:
-their branch has to be cut from the epic's own integration branch
-(`feature-{parent_number}`), not `main`, or their work never lands where the
-epic expects it to. If that base does not exist -- never created, or already
-merged and deleted -- the flow falls back to the default branch rather than
-failing over something never guaranteed to be there.
+pattern in `naming`, never computed in code. This is what makes something
+like a shared integration branch expressible for a coordinating-work flow
+that wants one -- children that need to land somewhere other than the
+default branch before the parent integrates them -- without the
+orchestrator needing to know about that pattern specially; today's
+large-item flow (lifecycle.md, [The ticket is too
+big](lifecycle.md#the-ticket-is-too-big)) does not use this, since each
+child is cut from the default branch like any other issue. If a flow's
+declared base does not exist -- never created, or already merged and
+deleted -- it falls back to the default branch rather than failing over
+something never guaranteed to be there.
 
 ### Scheduled work: how a flow knows it is due
 

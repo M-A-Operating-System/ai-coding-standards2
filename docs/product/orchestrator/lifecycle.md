@@ -267,14 +267,15 @@ getting it wrong.
 | Gate label | Phase | Approver | Artefact | What you're signing off | Cost if wrong |
 |---|---|---|---|---|---|
 | `01_product_docs/prd-writer:approved` | Product docs | Stakeholder who opened the issue, or their delegate | The **issue body itself**, after `01_product_docs/prd-writer` rewrites it into the canonical PRD format (see [PRD format](#prd-format-and-the-prd-writer-gate) below) and rewrites the title | The problem and goal are correct; each user story names a real persona from [`standards/personas.json`](../../../standards/personas.json) (including the System actor, whose entry there carries the qualifying test that keeps it from being a disguise for technical work) and `As a developer` stories are suspect; each Gherkin scenario is falsifiable; "Out of scope" actually rules things out; success metrics are externally observable; the new title categorises the work correctly and names a real bounded context. Once approved, the PRD is the source of truth for everything downstream | The most expensive gate to skim — wrong PRD → wrong everything downstream (design, testing, evaluation) |
-| `size:approved` | Product docs | Engineer who will own the work, or the tech lead | A `size: {S\|M\|L}` label and rationale from `issue-sizer` | That the size is right. `M` fits a single development cycle as itself. `L` commits you to breaking it into children before proceeding. `S` commits you to considering combination with other small tickets in the window | An `L` ticket past the gate produces a sprawling design and a multi-week PR; a wrongly-approved `S` either wastes review overhead shipped alone or gets combined with unrelated work |
-| `super-issue:approved` | Product docs | Engineer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
-| `design:approved` | Design | Engineer or tech lead | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
-| `test-spec:approved` | Design | Engineer | A Gherkin scenario list from `test-spec-writer`, plus a coverage report from `test-coverage-auditor` confirming every PRD acceptance criterion maps to at least one scenario | That these scenarios — and only these — are what "done" means | Tests get written for the wrong things |
+| `size:approved` | Product docs | Reviewer | A `size: {S\|M\|L}` label and rationale from `issue-sizer` | That the size is right. `M` fits a single development cycle as itself. `L` commits you to breaking it into children before proceeding. `S` commits you to considering combination with other small tickets in the window | An `L` ticket past the gate produces a sprawling design and a multi-week PR; a wrongly-approved `S` either wastes review overhead shipped alone or gets combined with unrelated work |
+| `super-issue:approved` | Product docs | Reviewer | The proposed grouping | The proposed grouping is correct; the super-issue becomes the shippable unit and the grouped children attach to it | — |
+| `design:approved` | Design | Reviewer | A technical design comment from `architect` covering data model, API contracts, component boundaries, integration points, NFRs | That this is the right design and that any ADR-worthy decisions have been flagged | Code is written against this design; a flaw found at PR stage means re-doing implementation |
+| `test-spec:approved` | Design | Reviewer | A Gherkin scenario list from `test-spec-writer`, plus a coverage report from `test-coverage-auditor` confirming every PRD acceptance criterion maps to at least one scenario | That these scenarios — and only these — are what "done" means | Tests get written for the wrong things |
 | `plan:approved` | Design | Engineer | A build plan showing the order children are created and built in, and the critical path, produced by `dependency-planner` | That the decomposition is sensible and the order is correct | Wasted work; merge conflicts; children that discover the design has a hole |
-| `pr:approved` | Execute | Engineer | A PR review from `pr-reviewer` checking scope, design alignment, and resolution of `required` standards violations | That the code is right and ready to test | Bugs in production. Use this gate to look at the actual diff, not just the agent's review summary |
+| `decomposition:approved` | Design (`L` only) | Engineer | A child-issue roadmap from `large-decomposer`, shaped by `architect`'s design and `dependency-planner`'s build order | That the proposed split is sensible -- each child is an independently deliverable business outcome, not an arbitrary file-level slice | A bad split produces children that can't be built or reviewed independently, defeating the point of decomposing |
+| `pr:approved` | Execute | Reviewer | A PR review from `pr-reviewer` checking scope, design alignment, and resolution of `required` standards violations | That the code is right and ready to test | Bugs in production. Use this gate to look at the actual diff, not just the agent's review summary |
 | `coverage:approved` | Execute | Engineer | A coverage report showing test results, coverage delta, and any acceptance criterion without a passing test, produced by `coverage-enforcer` | That tests pass, coverage hasn't regressed, and every required scenario has a passing test | Untested code in production |
-| `large-review:approved` | Execute (`L` only) | Engineer or tech lead | A structured assessment from `large-reviewer`, comparing what every child actually shipped against the parent's PRD, design, and plan -- posted once every child has merged | That the sum of the parts does what the parent's PRD asked for, not just that every child individually passed its own review | A large item closes on child-count alone; individually-correct parts that collectively miss the scope, or leave a seam nobody owned, ship undetected |
+| `large-review:approved` | Execute (`L` only) | Reviewer | A structured assessment from `large-reviewer`, comparing what every child actually shipped against the parent's PRD, design, and plan -- posted once every child has merged | That the sum of the parts does what the parent's PRD asked for, not just that every child individually passed its own review | A large item closes on child-count alone; individually-correct parts that collectively miss the scope, or leave a seam nobody owned, ship undetected |
 | `standards-proposal:approved` | Evaluate (weekly) | Standards owner | An issue from `standards-evolver` proposing a new or changed standard, in JSON schema format | That the proposed standard is sound, the rationale is real, and the agent guidance is unambiguous | A bad standard ripples into every subsequent ticket |
 | `security-review:approved` | Execute | Security owner | The PR diff and the `impact-assessor` security-flag comment listing the sensitive surfaces touched (auth flows, RLS policies, IAM definitions, secrets, PII fields) | That the change is safe from an authentication, authorisation, and data-exposure perspective. Not a full pentest — a focused review of the flagged surface | Security vulnerabilities in production. Only required on PRs flagged by `impact-assessor`; non-flagged PRs skip this gate automatically |
 | `data-migration:approved` | Execute | Data owner | The migration file(s) and the `migration-validator` report confirming or flagging forward-only, idempotent, and RLS compliance | That the migration is safe to run against production data and that the data lifecycle implications (retention, PII, rollback) are understood and accepted | Data loss or corruption in production. Only required on PRs that include `**/*.sql` files |
@@ -324,12 +325,18 @@ at the gate:
 
 ## Two-phase design-to-build delivery
 
-A **shippable unit** is an issue that owns a deliverable: a feature issue, a
-chore issue, or a super-issue grouping smaller items. Child issues -- tasks
-decomposed from a parent, or bugs grouped under a super-issue -- are not
-shippable units; they are tracking and audit units that close when their
-parent's PR merges. No PR spans more than one shippable-unit issue, and every
-branch produces exactly one PR.
+A **shippable unit** is an issue that owns a deliverable: any issue at
+`size: M` -- including each independently-sized child of a decomposed `L`
+ticket, once it resolves to `M` -- or a super-issue grouping smaller items.
+These two kinds of children are opposites. A decomposed `L` ticket's
+children are themselves shippable units: each recurses through this same
+lifecycle independently and closes its own PR (see [The ticket is too
+big](#the-ticket-is-too-big)). A super-issue's grouped children are not:
+they pause their own pipelines, attach to the super-issue, and close only
+when *its* PR merges (see [Many small tickets in a
+window](#many-small-tickets-in-a-window)) -- tracking and audit units, not
+independent deliverables. No PR spans more than one shippable-unit issue,
+and every branch produces exactly one PR.
 
 Each issue is delivered in **two sequenced phases, each its own branch and PR**,
 so the approved design reaches `main` before any code is written:
@@ -456,7 +463,7 @@ there is no code to ship, so no branch or PR is created.
 | T+5m | Issue | `01_product_docs/prd-writer` | Drafts PRD; rewrites issue body in user-story + Gherkin format | `prd-writer:review` |
 | T+1h | Issue | Stakeholder | Approves PRD | `prd-writer:approved` → `prd-writer:complete` |
 | T+2m | Issue | `01_product_docs/issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` |
-| T+15m | Issue | Engineer | Approves the size | `size:approved` → `issue-sizer:complete` |
+| T+15m | Issue | Reviewer | Approves the size | `size:approved` → `issue-sizer:complete` |
 | | | | **Design phase — approved design publishes to `main`** | |
 | T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` (no closing keyword); posts the link on the issue | `create-pr:complete` |
 | T+5m | PR | `01_product_docs/prd-docs-updater` | Writes the `docs/product/` + `docs/features/{feature}.md` changes on `issue-{N}-docs` | `prd-docs-updater:review` |
@@ -465,13 +472,13 @@ there is no code to ship, so no branch or PR is created.
 | T+2m | Issue → PR | `01_product_docs/create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`), cut from the post-design-merge `main` | `create-pr:complete` |
 | T+30m | Issue | `03_execute/coder` | Implements the issue; orchestrator commits changes to `issue-{N}` | _(orchestrator commits + pushes)_ |
 | T+10m | PR | `03_execute/pr-reviewer` | Reviews code PR diff against spec; posts structured review | `pr-reviewer:review` |
-| T+30m | PR | Engineer | Approves review | `pr-reviewer:approved` → orchestrator marks PR ready |
-| — | PR | Engineer | Reviews and merges the code PR | `pr.merged` → issue auto-closes |
+| T+30m | PR | Reviewer | Approves review | `pr-reviewer:approved` → orchestrator marks PR ready |
+| — | PR | Reviewer | Reviews and merges the code PR | `pr.merged` → issue auto-closes |
 
 The **Actor** column shows who performs each step — agent names
 formatted as `{phase}/{short-name}` (see
 [`PRODUCT.md`](PRODUCT.md#naming-carries-the-phase));
-capitalised names (Stakeholder, Engineer) are human personas from
+capitalised names (Stakeholder, Reviewer) are human personas from
 [`standards/personas.json`](../../../standards/personas.json).
 
 The **Outcome label** column shows the label applied at the end of
