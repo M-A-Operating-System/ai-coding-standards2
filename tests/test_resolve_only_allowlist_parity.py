@@ -93,9 +93,11 @@ def test_resolve_only_matches_a_real_spawn_exactly(capsys):
 
 def test_the_comparison_is_against_a_substantial_allowlist():
     """A parity test between two short lists proves nothing. Guard the guard:
-    if the coder's grants ever shrink to near BASE_AGENT_TOOLS, this test's
-    subject is gone and the parity assertion above stops meaning anything."""
-    assert len(_real_spawn_allowlist()) > len(po.BASE_AGENT_TOOLS) + 40
+    if the coder's grants ever shrink to near the pipeline-wide defaults, this
+    test's subject is gone and the parity assertion above stops meaning
+    anything."""
+    _, default_extra_tools = po.load_pipeline(PIPELINE)
+    assert len(_real_spawn_allowlist()) > len(default_extra_tools) + 40
 
 
 def test_pipeline_defaults_are_included(capsys):

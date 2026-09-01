@@ -10,8 +10,8 @@ remove each other's scope files).
 
 The allowlist holds two entry forms and the hook must honour both (issue #335):
 bare tool names ("Read") granting a whole tool, and fine-grained patterns
-("Bash(gh pr diff *)") granting only matching commands. BASE_AGENT_TOOLS uses
-the pattern form exclusively for Bash.
+("Bash(gh pr diff *)") granting only matching commands. pipeline.json's
+defaults.extra_allowedTools uses the pattern form exclusively for Bash.
 """
 import json
 import os
@@ -51,9 +51,9 @@ def deny_reason(result):
     return hook_output["permissionDecisionReason"]
 
 
-# The Bash slice of BASE_AGENT_TOOLS (pipeline_orchestrator.py), i.e. the shape
+# The Bash slice of pipeline.json's defaults.extra_allowedTools, i.e. the shape
 # /run-agent writes to the scope file once it sources the allowlist from the
-# orchestrator's resolve-only mode rather than the agent's `tools:` frontmatter.
+# orchestrator's resolve-only mode rather than the agent's frontmatter.
 RESOLVED_ALLOWLIST = [
     "Bash(gh issue view *)",
     "Bash(gh issue comment *)",
@@ -224,8 +224,8 @@ def test_no_scope_file_allows_bash_commands(tmp_path):
 
 SPLITTER = REPO_ROOT / ".claude" / "hooks" / "split-command.py"
 
-# BASE_AGENT_TOOLS grants `cd` in its own right precisely so the idiomatic
-# `cd $AI_AGILE_ROOT && <granted>` survives decomposition.
+# pipeline.json's defaults.extra_allowedTools grants `cd` in its own right
+# precisely so the idiomatic `cd $AI_AGILE_ROOT && <granted>` survives decomposition.
 CHAINING_ALLOWLIST = RESOLVED_ALLOWLIST + [
     "Bash(cd *)",
     "Bash(sed *)",
@@ -338,9 +338,10 @@ def test_exec_wrappers_are_refused(tmp_path):
 def test_base_agent_tools_grants_cd(tmp_path):
     """Decomposition only works if `cd` is granted; otherwise it sinks every
     `cd X && <granted>` call, which is what it did on #321."""
-    orchestrator = (REPO_ROOT / "pipeline" / "pipeline_orchestrator.py").read_text()
-    assert '"Bash(cd *)"' in orchestrator, \
-        "BASE_AGENT_TOOLS must grant Bash(cd *) for sub-command matching to be usable"
+    import json
+    pipeline = json.loads((REPO_ROOT / "pipeline" / "pipeline.json").read_text())
+    assert "Bash(cd *)" in pipeline["defaults"]["extra_allowedTools"], \
+        "defaults.extra_allowedTools must grant Bash(cd *) for sub-command matching to be usable"
 
 
 def test_splitter_exits_two_on_refusal():

@@ -12,8 +12,9 @@
 # Entries come in two forms, and both must be honoured (issue #335):
 #   "Read", "Grep"        -- a bare tool name grants that whole tool.
 #   "Bash(gh pr diff *)"  -- a fine-grained pattern grants only matching commands.
-# BASE_AGENT_TOOLS uses the second form exclusively for Bash, so checking
-# tool-name membership alone denies every Bash call an agent makes.
+# pipeline.json's defaults.extra_allowedTools uses the second form
+# exclusively for Bash, so checking tool-name membership alone denies
+# every Bash call an agent makes.
 #
 # A Bash command is split into its sub-commands first and EVERY sub-command must
 # match a granted pattern (issue #362). Globbing a pattern against the whole

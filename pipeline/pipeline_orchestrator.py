@@ -137,9 +137,14 @@ SCRIPT_TIMEOUT_SECONDS = 300
 # Prevents unbounded resource consumption when many issues become eligible
 # simultaneously. Per-agent max_concurrent values may permit more in total,
 # but this aggregate cap is the backstop.
+# Default only -- load_pipeline() overwrites this from pipeline.json's
+# budgets.max_launches_per_tick once the pipeline definition is loaded (AS-1).
 PIPELINE_MAX_CONCURRENT = 20
 
-# Maximum wall-clock time for a single agent invocation.
+# Maximum wall-clock time for a single agent invocation, unless the step
+# declares its own override (AgentDef.max_wall_seconds).
+# Default only -- load_pipeline() overwrites this from pipeline.json's
+# budgets.max_wall_seconds once the pipeline definition is loaded (AS-1).
 AGENT_TIMEOUT_SECONDS = 1800
 
 # Controls stderr verbosity for the invoke_agent stdout read loop.
@@ -185,7 +190,12 @@ class AgentDef:
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
     self_gates: bool = False  # if True, the agent's own AI_AGILE_STATUS (review vs complete) decides whether the gate fires -- :complete is NOT force-overridden to :review. human_gate_after/human_gate_label still apply for promotion when the agent itself emits :review.
-    extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults and frontmatter
+    extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults.extra_allowedTools (AS-1: nowhere else)
+    model: Optional[str] = None         # agent-type steps only; which model this step runs on (AS-1: not a frontmatter field)
+    max_turns: Optional[int] = None     # per-step override of budgets.max_turns; None means use the pipeline-wide default
+    max_wall_seconds: Optional[int] = None  # per-step override of budgets.max_wall_seconds; None means use the pipeline-wide default
+    expected_effect: dict = field(default_factory=dict)  # {"commits": bool, "creates_issues": bool} — what this step is supposed to change (MI-6)
+    allowed_labels: dict = field(default_factory=dict)    # {"add": [...], "remove": [...]} — label patterns this step may request
 
     @property
     def label_key(self) -> str:
@@ -346,6 +356,11 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
                 self_gates=bool(entry.get("self_gates", False)),
                 extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
+                model=entry.get("model"),
+                max_turns=(entry.get("budgets") or {}).get("max_turns"),
+                max_wall_seconds=(entry.get("budgets") or {}).get("max_wall_seconds"),
+                expected_effect=dict(entry.get("expected_effect") or {}),
+                allowed_labels=dict(entry.get("allowed_labels") or {}),
             ))
             if entry.get("git_ops", {}).get("mark_ready_on_complete"):
                 log.warning(
@@ -373,6 +388,18 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
             if _agent.step_type == "agent":
                 _agent.lifecycle_before = list(_before)
                 _agent.lifecycle_after = list(_after)
+
+        # AS-1: pipeline.json's budgets is the sole source for these three
+        # values -- they used to be hardcoded module constants. Mutating the
+        # globals here (rather than threading a return value through every
+        # caller) keeps every existing reference to DEFAULT_MAX_TURNS /
+        # AGENT_TIMEOUT_SECONDS / PIPELINE_MAX_CONCURRENT unchanged; only their
+        # source of truth moves.
+        global DEFAULT_MAX_TURNS, AGENT_TIMEOUT_SECONDS, PIPELINE_MAX_CONCURRENT
+        _budgets = raw["budgets"]
+        DEFAULT_MAX_TURNS = int(_budgets["max_turns"])
+        AGENT_TIMEOUT_SECONDS = int(_budgets["max_wall_seconds"])
+        PIPELINE_MAX_CONCURRENT = int(_budgets.get("max_launches_per_tick", PIPELINE_MAX_CONCURRENT))
 
         return agents, default_extra_tools
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -1828,9 +1855,11 @@ DEFAULT_PAUSE_SECONDS = 300
 # shorter than any reasonable manual response time.
 MAX_PAUSE_SECONDS = 3600
 
-# Default max turns for agents that do not declare one in frontmatter.
-# 30 is enough for complex agents; simple ones (classifier) declare lower
-# values via max_turns: in their frontmatter.
+# Default max turns for steps that do not declare their own budgets.max_turns
+# in pipeline.json. 30 is enough for complex agents; simple ones (classifier)
+# declare a lower per-step override.
+# Default only -- load_pipeline() overwrites this from pipeline.json's
+# budgets.max_turns once the pipeline definition is loaded (AS-1).
 DEFAULT_MAX_TURNS = 30
 
 # Patterns in agent subprocess output that indicate a rate-limit /
@@ -2696,11 +2725,14 @@ def _build_agent_env(
     return agent_env
 
 
-# Scoped base tool allowlist granted to every Claude agent. Each entry is a
-# glob the bash command must match; keeping these narrow blocks a prompt-injected
-# agent from reaching secrets/settings/branches. NOTE: the orchestrator owns the
-# label lifecycle (AGENTS.md P-10/P-14). `gh pr edit` is NOT granted -- no agent
-# has a legitimate use for it, and it would let an injected agent add a PR gate
+# Scoped base tool allowlist granted to every Claude agent -- now declared in
+# pipeline.json's defaults.extra_allowedTools (AS-1: pipeline.json is the sole
+# source of entitlements; JSON cannot carry inline comments, so the rationale
+# for each pattern is kept here instead). Each entry is a glob the bash
+# command must match; keeping these narrow blocks a prompt-injected agent from
+# reaching secrets/settings/branches. NOTE: the orchestrator owns the label
+# lifecycle (AGENTS.md P-10/P-14). `gh pr edit` is NOT granted -- no agent has
+# a legitimate use for it, and it would let an injected agent add a PR gate
 # label. `gh issue edit` IS granted broadly because issue-classifier applies the
 # routing `classification: {type}` label and sizer applies `epic,blocked` at
 # runtime; narrowing it to specific --add-label globs is unsafe (a positive glob
@@ -2709,52 +2741,55 @@ def _build_agent_env(
 # self-approval vector (via `gh issue edit` OR the REST issue-write grant below,
 # which reaches PRs too since PRs are issues) is closed ORCHESTRATOR-SIDE: the
 # gate check rejects any `{agent}:approved` label not applied by a human (#263).
-BASE_AGENT_TOOLS = [
-    "Bash(gh issue view *)",       # read issue body / labels
-    "Bash(gh issue comment *)",    # post artefact comments
-    "Bash(gh issue edit *)",       # prd-writer/sizer body rewrites + classifier/sizer routing labels
-    "Bash(gh issue list *)",       # cross-issue reads (impact-assessor etc.)
-    "Bash(gh pr view *)",          # PR-side agents read PR
-    "Bash(gh pr comment *)",       # PR-side agents post comments
-    "Bash(gh pr list *)",
-    "Bash(gh pr diff *)",          # pr-reviewer reads the diff
-    "Bash(gh api repos/*/issues/*)",  # narrow direct API; only issue/PR endpoints
-    "Bash(gh api repos/*/pulls/*)",
-    "Bash(gh api repos/*/issues*)",   # REST reads incl. list/query forms (issues?labels=...)
-    "Bash(gh api repos/*/pulls*)",     # REST reads incl. list/query forms (pulls?head=...)
-    # Quoted-URL counterparts of the four patterns above. Permission-rule matching
-    # is literal-text prefix matching (a `*` spans characters, not shell tokens), so
-    # an agent that quotes its URL argument (idiomatic, defensively-reasonable shell
-    # style -- e.g. `gh api "repos/o/r/issues/1"`) needs its own pattern; the
-    # unquoted pattern's literal ` repos/` never appears in that command's text
-    # (issue #326).
-    "Bash(gh api \"repos/*/issues/*)",
-    "Bash(gh api \"repos/*/pulls/*)",
-    "Bash(gh api \"repos/*/issues*)",
-    "Bash(gh api \"repos/*/pulls*)",
-    # REST WRITES on issues only (labels/comments/body) -- the in-session
-    # equivalent of `gh issue edit`, needed because that command is GraphQL and
-    # 403s in a restricted session. It carries the SAME gate-label self-approval
-    # vector as `gh issue edit` (a positive glob cannot permit routing labels
-    # while denying gate labels), which is closed ORCHESTRATOR-SIDE by the
-    # human-actor gate check (#263). No `--method` grant on /pulls: agents never
-    # write PRs (merge/ready/close are the orchestrator's/driver's job), so
-    # granting it would hand an injected agent merge/close/retarget power.
-    "Bash(gh api --method * repos/*/issues*)",
-    "Bash(gh api --method * \"repos/*/issues*)",  # quoted-URL counterpart (#326)
-    "Bash(cat *)",                 # read prompt-side files
-    "Bash(grep *)",
-    "Bash(find *)",
-    # Scope checking splits a command into its sub-commands and requires every
-    # one of them to be granted (#362), so the idiomatic `cd $AI_AGILE_ROOT &&
-    # <granted command>` needs `cd` granted in its own right. Without it the
-    # leading `cd` sinks the whole call, which is how a granted `sed` was
-    # refused on #321. `cd` reads and writes nothing.
-    "Bash(cd *)",
-    "Read",
-    "Glob",
-    "Grep",
-]
+#
+#   "Bash(gh issue view *)"       -- read issue body / labels
+#   "Bash(gh issue comment *)"    -- post artefact comments
+#   "Bash(gh issue edit *)"       -- prd-writer/sizer body rewrites + classifier/sizer routing labels
+#   "Bash(gh issue list *)"       -- cross-issue reads (impact-assessor etc.)
+#   "Bash(gh pr view *)"          -- PR-side agents read PR
+#   "Bash(gh pr comment *)"       -- PR-side agents post comments
+#   "Bash(gh pr list *)"
+#   "Bash(gh pr diff *)"          -- pr-reviewer reads the diff
+#   "Bash(gh api repos/*/issues/*)"  -- narrow direct API; only issue/PR endpoints
+#   "Bash(gh api repos/*/pulls/*)"
+#   "Bash(gh api repos/*/issues*)"   -- REST reads incl. list/query forms (issues?labels=...)
+#   "Bash(gh api repos/*/pulls*)"    -- REST reads incl. list/query forms (pulls?head=...)
+#
+# Quoted-URL counterparts of the four patterns above. Permission-rule matching
+# is literal-text prefix matching (a `*` spans characters, not shell tokens), so
+# an agent that quotes its URL argument (idiomatic, defensively-reasonable shell
+# style -- e.g. `gh api "repos/o/r/issues/1"`) needs its own pattern; the
+# unquoted pattern's literal ` repos/` never appears in that command's text
+# (issue #326):
+#
+#   "Bash(gh api \"repos/*/issues/*)"
+#   "Bash(gh api \"repos/*/pulls/*)"
+#   "Bash(gh api \"repos/*/issues*)"
+#   "Bash(gh api \"repos/*/pulls*)"
+#
+# REST WRITES on issues only (labels/comments/body) -- the in-session
+# equivalent of `gh issue edit`, needed because that command is GraphQL and
+# 403s in a restricted session. It carries the SAME gate-label self-approval
+# vector as `gh issue edit` (a positive glob cannot permit routing labels
+# while denying gate labels), which is closed ORCHESTRATOR-SIDE by the
+# human-actor gate check (#263). No `--method` grant on /pulls: agents never
+# write PRs (merge/ready/close are the orchestrator's/driver's job), so
+# granting it would hand an injected agent merge/close/retarget power.
+#
+#   "Bash(gh api --method * repos/*/issues*)"
+#   "Bash(gh api --method * \"repos/*/issues*)"  -- quoted-URL counterpart (#326)
+#   "Bash(cat *)"                 -- read prompt-side files
+#   "Bash(grep *)"
+#   "Bash(find *)"
+#
+# Scope checking splits a command into its sub-commands and requires every one
+# of them to be granted (#362), so the idiomatic `cd $AI_AGILE_ROOT &&
+# <granted command>` needs `cd` granted in its own right. Without it the
+# leading `cd` sinks the whole call, which is how a granted `sed` was refused
+# on #321. `cd` reads and writes nothing.
+#
+#   "Bash(cd *)"
+#   "Read", "Glob", "Grep"
 
 
 @dataclass
@@ -2796,18 +2831,14 @@ def _resolve_agent_invocation(
     else:
         agent_text = agent_file.read_text()
 
-    frontmatter = parse_frontmatter(agent_text)
-    agent_model: Optional[str] = frontmatter.get("model")  # type: ignore[assignment]
-    _frontmatter_extra: list[str] = _coerce_tools(frontmatter.get("extra_allowedTools"))
+    # Model and max_turns come from agent_def (pipeline.json) only -- not the
+    # agent's frontmatter, which declares just name and description (AS-1).
+    agent_model: Optional[str] = agent_def.model
     extra_tools = list(dict.fromkeys(
         list(default_extra_tools or []) +
-        list(agent_def.extra_allowedTools) +
-        _frontmatter_extra
+        list(agent_def.extra_allowedTools)
     ))
-    try:
-        max_turns = int(frontmatter.get("max_turns", DEFAULT_MAX_TURNS))
-    except (ValueError, TypeError):
-        max_turns = DEFAULT_MAX_TURNS
+    max_turns = agent_def.max_turns or DEFAULT_MAX_TURNS
 
     agents_md = AI_AGILE_CONTEXT.read_text() if AI_AGILE_CONTEXT.exists() else ""
     agent_body = _strip_frontmatter(agent_text)
@@ -2843,7 +2874,7 @@ def _resolve_agent_invocation(
 
     return ResolvedInvocation(
         prompt=prompt,
-        allowed_tools=BASE_AGENT_TOOLS + extra_tools,
+        allowed_tools=extra_tools,
         model=agent_model,
         max_turns=max_turns,
         session_id=agent_session_id,
@@ -2992,6 +3023,10 @@ def invoke_agent(
     captured_lines: list[str] = []       # raw NDJSON lines (for diagnostics)
     acc = _StreamAccumulator()           # agent text + token usage from events
 
+    # Per-step override of the pipeline-wide wall-clock budget (budgets.max_wall_seconds
+    # in pipeline.json), same shape as max_turns above.
+    wall_seconds = agent_def.max_wall_seconds or AGENT_TIMEOUT_SECONDS
+
     proc: subprocess.Popen | None = None
     try:
         proc = subprocess.Popen(
@@ -3001,7 +3036,7 @@ def invoke_agent(
             text=True,
             env=agent_env,
         )
-        deadline = time.monotonic() + AGENT_TIMEOUT_SECONDS
+        deadline = time.monotonic() + wall_seconds
         # Wall-clock timer fires unconditionally — unlike the per-line check
         # below, it also fires when the agent hangs without emitting output.
         # _timed_out lets the loop raise TimeoutExpired with a clear message
@@ -3011,7 +3046,7 @@ def invoke_agent(
         def _timer_callback() -> None:
             _timed_out.set()
             _terminate_subprocess(proc)
-        _kill_timer = threading.Timer(AGENT_TIMEOUT_SECONDS, _timer_callback)
+        _kill_timer = threading.Timer(wall_seconds, _timer_callback)
         _kill_timer.daemon = True
         _kill_timer.start()
         try:
@@ -3029,12 +3064,12 @@ def invoke_agent(
                 # Shared with _accumulate_stream_text so tests cover this path.
                 acc.feed(line)
                 if time.monotonic() > deadline or _timed_out.is_set():
-                    raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
+                    raise subprocess.TimeoutExpired(cmd, wall_seconds)
             # Timer may have fired and drained stdout without triggering the
             # per-line check above (process died between lines). Raise here so
             # the timeout path is always taken when the timer fired.
             if _timed_out.is_set():
-                raise subprocess.TimeoutExpired(cmd, AGENT_TIMEOUT_SECONDS)
+                raise subprocess.TimeoutExpired(cmd, wall_seconds)
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             log.error("    Agent %s timed out on #%d", agent_def.agent, work_item.number)
@@ -3045,7 +3080,7 @@ def invoke_agent(
                 success=False,
                 returncode=proc.returncode,
                 captured_tail=(
-                    f"Agent timed out after {AGENT_TIMEOUT_SECONDS}s.\n\n"
+                    f"Agent timed out after {wall_seconds}s.\n\n"
                     f"Last output:\n{agent_tail}"
                 ),
                 input_tokens=acc.input_tokens,
@@ -4995,9 +5030,11 @@ def _run_print_prompt(args) -> None:
     if agent_def is None:
         # An agent file exists but pipeline.json does not register it: on-demand
         # agents (00_ondemand/*) are invoked by label, not by a pipeline step.
-        # Fall back to the frontmatter-only AgentDef -- the defaults still apply.
+        # Fall back to a bare AgentDef -- default_extra_tools (pipeline.json's
+        # defaults.extra_allowedTools) still applies; there is nothing left to
+        # read from frontmatter, which declares only name and description (AS-1).
         log.info(
-            "  %s is not registered in %s; resolving from its frontmatter alone",
+            "  %s is not registered in %s; resolving with pipeline-wide defaults only",
             agent_name, args.pipeline,
         )
         agent_def = AgentDef(
@@ -5009,9 +5046,6 @@ def _run_print_prompt(args) -> None:
             human_gate_after=False,
             human_gate_label=None,
             description="",
-            extra_allowedTools=_coerce_tools(
-                parse_frontmatter(agent_file.read_text()).get("extra_allowedTools")
-            ),
         )
 
     if agent_def.objects and work_item.kind not in agent_def.objects:

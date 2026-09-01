@@ -11,9 +11,6 @@ description: >
   auto-closes it. On re-invocation after the human confirms the
   breakdown, emits complete. Triggered by applying the sizer:requested
   label to any issue.
-tools: [Bash, Read, Grep]
-model: claude-sonnet-4-6
-max_turns: 30
 ---
 
 # 00_ondemand/sizer

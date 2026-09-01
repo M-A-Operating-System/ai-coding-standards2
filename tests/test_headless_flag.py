@@ -16,7 +16,6 @@ from pipeline_orchestrator import (
     PRINT_PROMPT_ENV_KEYS,
     _build_agent_env,
     _resolve_agent_invocation,
-    BASE_AGENT_TOOLS,
     WorkItem,
     AgentDef,
 )
@@ -220,20 +219,25 @@ class TestResolveAgentInvocation:
     """/run-agent obtains tool allowlist from orchestrator, not hand-parsing."""
 
     def test_run_agent_obtains_its_tool_allowlist_from_the_orchestrator_instead_of_hand_parsing_frontmatter(self):
-        """_resolve_agent_invocation is the authoritative source for allowed_tools,
-        and includes all BASE_AGENT_TOOLS plus any extra tools from the agent definition."""
+        """_resolve_agent_invocation is the authoritative source for allowed_tools:
+        pipeline.json's defaults.extra_allowedTools (passed in as default_extra_tools,
+        the way load_pipeline supplies it) plus the agent definition's own
+        extra_allowedTools -- never anything parsed from the agent's frontmatter,
+        which declares only name and description (AS-1)."""
         wi = _make_work_item()
-        agent_text = "---\nextra_allowedTools:\n  - Write\n---\nDo some work.\n"
+        agent_text = "---\nname: test/agent\ndescription: t\n---\nDo some work.\n"
         agent_def = _make_agent_def(extra_tools=["Write"])
+        pipeline_defaults = ["Bash(gh issue view *)", "Read", "Grep"]
 
         resolved = _resolve_agent_invocation(
             agent_def, wi, "test/repo",
             agent_text_override=agent_text,
+            default_extra_tools=pipeline_defaults,
         )
 
         assert resolved is not None
-        for tool in BASE_AGENT_TOOLS:
-            assert tool in resolved.allowed_tools, f"BASE_AGENT_TOOLS entry missing: {tool}"
+        for tool in pipeline_defaults:
+            assert tool in resolved.allowed_tools, f"pipeline.json default missing: {tool}"
         assert "Write" in resolved.allowed_tools, "Extra tool from agent def must appear in allowlist"
 
     def test_resolve_returns_none_for_missing_agent_file(self):

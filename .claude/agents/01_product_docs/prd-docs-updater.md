@@ -10,11 +10,6 @@ description: >
   comment on the issue. Requests human review
   (prd-docs-updater:approved) only when docs/product/ prose changed — the
   docs/features/ copy is mechanical and never gates on its own.
-tools: [Bash, Read, Write, Grep]
-model: claude-sonnet-4-6
-# 40 turns observed ~25-35 on a typical run; 40 gives ~25% headroom over the DEFAULT_MAX_TURNS=30 global default
-max_turns: 40
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 01_product_docs/prd-docs-updater

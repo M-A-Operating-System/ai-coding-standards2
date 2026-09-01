@@ -149,15 +149,6 @@ def render_steps(pipeline):
             f"| {_cell(step.get('git_ops'))} |"
         )
 
-    lines += [
-        "",
-        "> **Known gap.** Entitlements are not yet defined by `pipeline.json`",
-        "> alone. `BASE_AGENT_TOOLS` in `pipeline/pipeline_orchestrator.py`, each",
-        "> agent's `tools:` frontmatter, and `.claude/settings.json` also grant",
-        "> capability, so this table is incomplete by construction. See AS-1 in",
-        "> [`../PRODUCT.md`](../PRODUCT.md) and issue #357.",
-        "",
-    ]
     return "\n".join(lines).rstrip() + "\n"
 
 

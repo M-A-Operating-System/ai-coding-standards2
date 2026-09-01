@@ -8,10 +8,6 @@ description: >
   human names specific issues in a reply comment, closes exactly those issues
   with the correct state_reason (completed or duplicate) and posts a summary.
   Triggered by applying the issue-cleanup:requested label to any issue.
-tools: [Bash, Read, Grep]
-model: claude-sonnet-4-6
-max_turns: 60
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 00_ondemand/issue-cleanup

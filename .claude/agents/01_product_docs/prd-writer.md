@@ -10,9 +10,6 @@ description: >
   the classification band's minimum, never inventing new requirements). If no
   pre-existing spec is found, rewrites the issue body with a full PRD in
   user-story and Gherkin format. Waits for the prd-writer:approved gate.
-tools: [Bash, Read, Grep]
-model: claude-sonnet-4-6
-max_turns: 45
 ---
 
 # 01_product_docs/prd-writer

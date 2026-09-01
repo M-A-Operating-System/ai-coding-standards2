@@ -6,9 +6,6 @@ description: >
   statement, acceptance criteria). Rejects malformed issues with a
   corrective comment so the stakeholder can fix the issue and
   re-trigger the pipeline by removing the failed label.
-tools: [Bash, Read]
-model: claude-haiku-4-5-20251001
-max_turns: 8
 ---
 
 # 01_product_docs/issue-classifier

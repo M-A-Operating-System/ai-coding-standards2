@@ -88,7 +88,9 @@ class TestBranchSuffix:
         assert _agents_by_name()["03_execute/coder"].branch_suffix == ""
 
     def test_load_pipeline_defaults_branch_suffix_to_empty(self, tmp_path):
-        pipeline_data = {"pipeline": [{
+        pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
+            "pipeline": [{
             "agent": "01_product_docs/issue-classifier",
             "phase": "01_product_docs",
             "object": ["issue"],
@@ -103,7 +105,9 @@ class TestBranchSuffix:
         assert agents[0].branch_suffix == ""
 
     def test_load_pipeline_reads_branch_suffix(self, tmp_path):
-        pipeline_data = {"pipeline": [{
+        pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
+            "pipeline": [{
             "agent": "01_product_docs/prd-docs-updater",
             "phase": "01_product_docs",
             "object": ["issue"],

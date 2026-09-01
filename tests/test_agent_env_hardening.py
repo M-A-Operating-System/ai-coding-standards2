@@ -15,9 +15,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
 from pipeline_orchestrator import (
     AGENT_ENV_PASSTHROUGH,
-    BASE_AGENT_TOOLS,
+    PIPELINE_PATH,
     WorkItem,
     _build_agent_env,
+    load_pipeline,
 )
 
 
@@ -146,14 +147,23 @@ class TestAgentEnvAllowlist:
 # ---------------------------------------------------------------------------
 
 class TestBaseAgentTools:
+    """defaults.extra_allowedTools in pipeline.json (AS-1) is the base
+    allowlist granted to every step -- it replaced the hardcoded
+    BASE_AGENT_TOOLS constant that used to live in pipeline_orchestrator.py."""
+
+    def _pipeline_defaults(self):
+        _, default_extra_tools = load_pipeline(PIPELINE_PATH)
+        return default_extra_tools
+
     def test_no_gh_pr_edit_grant(self):
         # gh pr edit has no legitimate agent use; removing it blocks the
         # PR-side gate-label self-approval vector (CR-02).
-        assert not any(t.startswith("Bash(gh pr edit") for t in BASE_AGENT_TOOLS)
+        assert not any(t.startswith("Bash(gh pr edit") for t in self._pipeline_defaults())
 
     def test_gh_issue_edit_granted_for_routing_labels(self):
         # gh issue edit stays granted: issue-classifier applies the routing
         # `classification:` label and sizer applies `epic,blocked` at runtime.
         # The residual gate-label self-approval vector is closed orchestrator-side
-        # (see BASE_AGENT_TOOLS comment), not via a positive-glob allowlist.
-        assert "Bash(gh issue edit *)" in BASE_AGENT_TOOLS
+        # (see pipeline_orchestrator.py's defaults.extra_allowedTools comment),
+        # not via a positive-glob allowlist.
+        assert "Bash(gh issue edit *)" in self._pipeline_defaults()
