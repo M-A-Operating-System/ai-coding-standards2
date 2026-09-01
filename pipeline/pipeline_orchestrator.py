@@ -12,6 +12,7 @@ issue and PR labels of the form:
     {agent-name}:blocked      — agent cannot proceed (ambiguous spec, missing
                                 data, conflict); remove label once resolved
     {agent-name}:failed       — agent exited with an error
+    {agent-name}:exhausted    — agent ran out of its turn or wall-clock budget
     {agent-name}:skipped      — agent was bypassed by a human
 
 For each open issue or PR, the orchestrator:
@@ -38,6 +39,7 @@ Requirements:
 
 import argparse
 import base64
+import fnmatch
 import json
 import logging
 import os
@@ -74,6 +76,7 @@ STATUS_WIP         = "wip"
 STATUS_REVIEW      = "review"
 STATUS_BLOCKED     = "blocked"
 STATUS_FAILED      = "failed"
+STATUS_EXHAUSTED   = "exhausted"
 STATUS_SKIPPED     = "skipped"
 STATUS_REQUESTED   = "requested"
 
@@ -81,7 +84,7 @@ STATUS_REQUESTED   = "requested"
 STATUS_IN_PROGRESS = STATUS_WIP
 
 ALL_STATUSES: list[str] = [
-    STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED,   # terminal — highest priority
+    STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED,  # terminal — highest priority
     STATUS_REVIEW, STATUS_BLOCKED,                     # halt
     STATUS_WIP,                                        # running
     STATUS_REQUESTED,                                  # manual trigger
@@ -89,9 +92,12 @@ ALL_STATUSES: list[str] = [
 
 # Statuses where the orchestrator takes no further action on this agent.
 # review and blocked halt the pipeline but are NOT terminal — a human
-# removes the label to resume. failed and skipped are terminal.
+# removes the label to resume. failed, exhausted and skipped are terminal:
+# the orchestrator never auto-retries any of the three (PRODUCT.md, "A step
+# returns exactly one of five outcomes" — exhausted is never retried because
+# the budget itself has not changed between runs).
 HALT_STATUSES    = {STATUS_REVIEW, STATUS_BLOCKED}
-TERMINAL_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED}
+TERMINAL_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED}
 
 # Label applied by the orchestrator when the pr-reviewer APPROVE path detects
 # unresolved human REQUEST_CHANGES reviews and triggers a free coder re-invoke.
@@ -215,6 +221,10 @@ class AgentDef:
         return f"{self.label_key}:{STATUS_FAILED}"
 
     @property
+    def exhausted_label(self) -> str:
+        return f"{self.label_key}:{STATUS_EXHAUSTED}"
+
+    @property
     def review_label(self) -> str:
         return f"{self.label_key}:{STATUS_REVIEW}"
 
@@ -265,6 +275,11 @@ class AgentRunResult:
                     None when the agent did not emit a result event.
     retry_count  — Number of system/api_retry events observed during the run.
     retry_errors — Error category strings from each api_retry event.
+    timed_out    — True if the subprocess was killed for exceeding its
+                    wall-clock budget (agent_def.max_wall_seconds /
+                    AGENT_TIMEOUT_SECONDS). Distinguishes a budget exhaustion
+                    from a generic crash so the caller can apply :exhausted
+                    (never retried) instead of :failed (retried).
     """
     success: bool
     returncode: Optional[int] = None
@@ -276,6 +291,7 @@ class AgentRunResult:
     result_event: Optional[dict] = None
     retry_count: int = 0
     retry_errors: list = field(default_factory=list)
+    timed_out: bool = False
 
 
 @dataclass
@@ -1976,6 +1992,187 @@ def _parse_agent_sentinel(captured_tail: str) -> tuple[Optional[str], str]:
     return m.group(1), (m.group(2) or "")
 
 
+# ---------------------------------------------------------------------------
+# Step result file (issue #400) — agent-type steps only. Script-type steps
+# (invoke_script) still use the AI_AGILE_STATUS stdout sentinel above; that
+# migration is out of scope here (a script "meets the contract by
+# construction", per PRODUCT.md — it cannot improvise past a refusal or
+# replay a stale answer the way a non-deterministic agent can).
+# ---------------------------------------------------------------------------
+
+_RESULT_FILENAME = "result.json"
+_VALID_OUTCOMES = (STATUS_COMPLETE, STATUS_REVIEW, STATUS_BLOCKED)
+
+
+@dataclass
+class StepResult:
+    """One step's structured return, read from $AI_AGILE_SCRATCH/result.json.
+
+    Mirrors PRODUCT.md's "What a step must return" table. outcome/summary/
+    undone are required; message/output/expected_effect/label_requests
+    default to empty when the step omits them (e.g. a `complete` outcome
+    with nothing to report beyond the summary).
+    """
+    outcome: str                    # complete | review | blocked
+    summary: str                    # the step's own account, including "did nothing"
+    undone: str = ""                # what's left; empty when nothing was left
+    message: str = ""               # short message for review/blocked (what a person must act on)
+    output: str = ""                # artefact content; the orchestrator posts this, the step doesn't
+    expected_effect: dict = field(default_factory=dict)   # the step's own belief about what it changed this run
+    label_requests: list = field(default_factory=list)    # [{"issue": int|None, "add": [...], "remove": [...]}]
+
+
+def _result_file_path(scratch_dir: str) -> Path:
+    """Sole definition of the result-file path formula, matching _scratch_path."""
+    return Path(scratch_dir) / _RESULT_FILENAME
+
+
+def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
+    """Read and validate the step's result file.
+
+    Returns (StepResult, "") on success, or (None, reason) when the file is
+    missing, unreadable, not a JSON object, or missing/malformed a required
+    field. Any of these is treated as "returned something malformed" — the
+    same bucket PRODUCT.md puts a crash and an empty return in ("A step
+    returns exactly one of five outcomes": failed is set by the orchestrator
+    when a step "crashed, returned nothing, or returned something
+    malformed"). No outcome is inferred from a clean process exit alone.
+    """
+    if not scratch_dir:
+        return None, "no scratch directory for this run"
+    path = _result_file_path(scratch_dir)
+    if not path.is_file():
+        return None, f"no result file at {path}"
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"result file could not be read/parsed: {exc}"
+    if not isinstance(raw, dict):
+        return None, "result file is not a JSON object"
+
+    outcome = raw.get("outcome")
+    if outcome not in _VALID_OUTCOMES:
+        return None, f"result.outcome must be one of {_VALID_OUTCOMES}, got {outcome!r}"
+
+    summary = raw.get("summary")
+    if not isinstance(summary, str):
+        return None, "result.summary must be a string"
+
+    for _field in ("undone", "message", "output"):
+        _val = raw.get(_field, "")
+        if not isinstance(_val, str):
+            return None, f"result.{_field} must be a string"
+
+    expected_effect = raw.get("expected_effect", {})
+    if not isinstance(expected_effect, dict):
+        return None, "result.expected_effect must be an object"
+
+    label_requests = raw.get("label_requests", [])
+    if not isinstance(label_requests, list):
+        return None, "result.label_requests must be an array"
+    for lr in label_requests:
+        if not isinstance(lr, dict):
+            return None, "each result.label_requests entry must be an object"
+        _issue = lr.get("issue")
+        if _issue is not None and not isinstance(_issue, int):
+            return None, "result.label_requests[].issue must be an integer or null"
+        for _key in ("add", "remove"):
+            _labels = lr.get(_key, [])
+            if not isinstance(_labels, list) or not all(isinstance(x, str) for x in _labels):
+                return None, f"result.label_requests[].{_key} must be an array of strings"
+
+    return StepResult(
+        outcome=outcome,
+        summary=summary,
+        undone=raw.get("undone", ""),
+        message=raw.get("message", ""),
+        output=raw.get("output", ""),
+        expected_effect=expected_effect,
+        label_requests=label_requests,
+    ), ""
+
+
+def _is_exhausted(result: "AgentRunResult") -> bool:
+    """True when the run hit a budget wall rather than crashing or finishing.
+
+    Two independent signals: the orchestrator's own wall-clock timer fired
+    (result.timed_out), or the CLI itself reports exhausting --max-turns via
+    the result event's subtype (already captured into metrics as
+    result_event["subtype"] — see _build_agent_metrics).
+    """
+    if result.timed_out:
+        return True
+    return (result.result_event or {}).get("subtype") == "error_max_turns"
+
+
+def _label_pattern_matches(pattern: str, label: str) -> bool:
+    """Same glob convention as extra_allowedTools: '*' spans any characters."""
+    return fnmatch.fnmatchcase(label, pattern)
+
+
+def _filter_allowed_label_requests(agent_def: "AgentDef", label_requests: list) -> list:
+    """Filter requested label add/remove ops down to what allowed_labels permits.
+
+    Returns a flat list of (issue_number_or_None, "add"|"remove", label)
+    tuples that clear the check. Everything else is silently dropped
+    (PRODUCT.md: "the orchestrator checks each request against the step's
+    declared allowed_labels and applies only what clears, silently dropping
+    the rest") — a step with no declared allowed_labels may request nothing.
+    """
+    allowed_add = agent_def.allowed_labels.get("add", []) or []
+    allowed_remove = agent_def.allowed_labels.get("remove", []) or []
+    cleared: list = []
+    for lr in label_requests:
+        issue_num = lr.get("issue")
+        for lbl in lr.get("add", []) or []:
+            if any(_label_pattern_matches(p, lbl) for p in allowed_add):
+                cleared.append((issue_num, "add", lbl))
+        for lbl in lr.get("remove", []) or []:
+            if any(_label_pattern_matches(p, lbl) for p in allowed_remove):
+                cleared.append((issue_num, "remove", lbl))
+    return cleared
+
+
+def _apply_label_requests(
+    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", label_requests: list,
+) -> None:
+    """Apply every label request that clears allowed_labels. Never raises."""
+    for issue_num, op, lbl in _filter_allowed_label_requests(agent_def, label_requests):
+        target = issue_num if issue_num is not None else work_item.number
+        try:
+            if op == "add":
+                gh.add_label(target, lbl)
+            else:
+                gh.remove_label(target, lbl)
+            log.info("  LABEL   %-38s  %s %r on #%d", agent_def.agent, op, lbl, target)
+        except Exception as exc:
+            log.warning(
+                "  could not %s label %r on #%d (requested by %s): %s",
+                op, lbl, target, agent_def.agent, exc,
+            )
+
+
+def _post_artefact_if_present(
+    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", step_result: Optional[StepResult],
+) -> None:
+    """Post the step's output as a structured artefact comment, if it produced one.
+
+    The step never posts its own comments (P-10/P-14, PRODUCT.md "What a
+    step must never do"); this is the orchestrator doing that on its behalf,
+    the same way it already owns the opening/closing announcements.
+    """
+    if not step_result or not step_result.output:
+        return
+    body = f"<!-- ai-agile/artefact/v1 by {agent_def.agent} -->\n\n{step_result.output}"
+    try:
+        gh.post_comment(work_item.number, body)
+    except Exception as exc:
+        log.warning(
+            "  could not post artefact comment for %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
+
+
 def _should_emit_stream_line(line: str, verbose: bool) -> bool:
     """Return True when line should be forwarded to stderr from the agent read loop.
 
@@ -2162,6 +2359,7 @@ def _build_closing_announcement(
     session_id: str,
     outcome: str,
     summary: str,
+    expected_effect: Optional[dict] = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
@@ -2172,6 +2370,12 @@ def _build_closing_announcement(
         "outcome": outcome,
         "summary": summary,
     }
+    # The step's declared expected effect (pipeline.json, MI-6) — recorded
+    # here so it's visible in the audit trail alongside the outcome it
+    # produced. Comparing it against what actually changed is a follow-up;
+    # this records the declared half of that comparison.
+    if expected_effect:
+        payload["expected_effect"] = expected_effect
     if work_item.kind == "issue":
         payload["branch"] = f"issue-{work_item.number}"
     return (
@@ -2864,12 +3068,23 @@ def _resolve_agent_invocation(
         f"SESSION_SCOPE={agent_def.session_scope.strip()}\n"
         f"AI_AGILE_ROOT={os.environ.get('AI_AGILE_ROOT', str(SUBMODULE_ROOT)).strip()}\n"
         f"AI_AGILE_CONTEXT={str(AI_AGILE_CONTEXT).strip()}\n\n"
-        f"Print exactly one of these as the last line before exiting:\n"
-        f"AI_AGILE_STATUS: complete\n"
-        f"AI_AGILE_STATUS: review \"short message\"\n"
-        f"AI_AGILE_STATUS: blocked \"reason\"\n"
-        f"(No leading spaces — the orchestrator's regex matches only at line start.)\n"
-        f"The orchestrator reads this sentinel, applies the label, and posts the closing announcement."
+        f"Before exiting, write your result to $AI_AGILE_SCRATCH/{_RESULT_FILENAME} "
+        f"(use the Write tool — see AGENTS.md's \"How you communicate\" for why). "
+        f"A JSON object with these fields:\n"
+        f"  outcome           (required) one of \"complete\", \"review\", \"blocked\"\n"
+        f"  summary           (required) your own account of what you did, in plain words,\n"
+        f"                    including when you did nothing\n"
+        f"  undone            what you left, if anything — empty string when you finished it all\n"
+        f"  message           short message for \"review\"/\"blocked\": what a person must act on\n"
+        f"  output            the artefact you produced (a review, a PRD, a plan) — the\n"
+        f"                    orchestrator posts this as a comment; you do not post it yourself\n"
+        f"  expected_effect   what you believe you changed this run, e.g. {{\"commits\": true}}\n"
+        f"  label_requests    [{{\"issue\": null, \"add\": [...], \"remove\": [...]}}] — \"issue\" null\n"
+        f"                    means this work item; only requests matching your declared\n"
+        f"                    allowed_labels are applied, the rest are silently dropped\n"
+        f"Do not print an AI_AGILE_STATUS sentinel — that mechanism is retired for agent-type "
+        f"steps. The orchestrator reads the result file, applies the matching label, posts the "
+        f"closing announcement and any artefact/label changes on your behalf."
     )
 
     return ResolvedInvocation(
@@ -2893,18 +3108,17 @@ def invoke_agent(
     """
     Invoke the agent via claude CLI.
 
-    Agents signal their outcome by emitting a sentinel line to stdout:
-
-      AI_AGILE_STATUS: complete
-      AI_AGILE_STATUS: review "short message for stakeholder"
-      AI_AGILE_STATUS: blocked "reason the agent could not proceed"
-
-    The orchestrator parses the sentinel, applies the matching label, and
-    posts the closing announcement. Agents must NOT call status.sh for
-    ceremony -- set-wip, opening/closing announcements, and final label
-    transitions are all handled here. set-failed is applied by the
-    orchestrator when the agent exits non-zero without a sentinel after
-    all retries are exhausted.
+    Agents signal their outcome by writing one structured result to
+    $AI_AGILE_SCRATCH/result.json (issue #400) -- see _read_step_result and
+    the "Before exiting, write your result" text _resolve_agent_invocation
+    injects into the prompt. The orchestrator reads that file, applies the
+    matching label, and posts the closing announcement and any artefact
+    comment / label changes on the agent's behalf. Agents must NOT call
+    status.sh for ceremony -- set-wip, opening/closing announcements, and
+    final label transitions are all handled here. :failed is applied by the
+    orchestrator when the agent exits without a valid result after all
+    retries are exhausted; :exhausted is applied when it ran out of its
+    turn or wall-clock budget first (never retried).
 
     Returns an AgentRunResult with success/returncode/captured_tail and
     a rate_limited flag (set when a pause was written). Caller MUST NOT
@@ -3089,6 +3303,7 @@ def invoke_agent(
                 result_event=acc.result_event,
                 retry_count=acc.retry_count,
                 retry_errors=list(acc.retry_errors),
+                timed_out=True,
             )
         finally:
             _kill_timer.cancel()
@@ -3397,6 +3612,65 @@ def _apply_failed(
         )
 
 
+def _apply_exhausted(gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem, result: AgentRunResult) -> None:
+    """Apply :exhausted -- the step ran out of turn or wall-clock budget
+    before it could write a result. Distinct from :failed (a crash): the
+    step didn't break, it just didn't finish inside the budget it was
+    given, so the recovery instruction is "raise the budget or shrink the
+    step", not "read the logs" (PRODUCT.md, "A step returns exactly one of
+    five outcomes"). Mirrors _apply_failed's structure and best-effort
+    error handling.
+    """
+    for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED, STATUS_REQUESTED):
+        try:
+            gh.remove_label(work_item.number, agent_def.status_label(stale))
+        except Exception as exc:  # pragma: no cover — best-effort cleanup
+            log.debug(
+                "  could not remove %s during exhausted transition: %s",
+                agent_def.status_label(stale), exc,
+            )
+
+    try:
+        gh.add_label(work_item.number, agent_def.exhausted_label)
+    except Exception as exc:
+        log.error(
+            "  could not apply %s on #%d: %s — pipeline state may be inconsistent",
+            agent_def.exhausted_label, work_item.number, exc,
+        )
+
+    _which_budget = "wall-clock" if result.timed_out else "turn"
+    detail = result.captured_tail or "(no captured output)"
+    body_parts = [
+        f"### `{agent_def.agent}` exhausted its {_which_budget} budget",
+        "",
+        f"Return code: `{result.returncode if result.returncode is not None else 'unknown'}`",
+        "",
+        "**Last output (tail):**",
+        "",
+        "```",
+        detail,
+        "```",
+        "",
+        "**To recover:**",
+        f"- Raise this step's `{'max_wall_seconds' if result.timed_out else 'max_turns'}` budget "
+        f"in pipeline.json, or make the step smaller, then **remove** the "
+        f"`{agent_def.exhausted_label}` label to retry, or",
+        f"- Apply the `{agent_def.skipped_label}` label to bypass this agent on this item.",
+        "",
+        "_Posted by the orchestrator — this run is never retried automatically, "
+        "since the budget itself does not change between runs._",
+    ]
+    body = "\n".join(body_parts)
+    try:
+        gh.post_comment(work_item.number, body)
+    except Exception as exc:
+        log.error(
+            "  could not post exhaustion comment on #%d (%s); :exhausted label is still applied. "
+            "Detail follows in this log:\n%s",
+            work_item.number, exc, body,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Core orchestration logic
 # ---------------------------------------------------------------------------
@@ -3450,7 +3724,7 @@ def _should_run(
 
     current_status = agent_status(labels, agent_def.label_key)
 
-    if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED):
+    if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED):
         log.debug("  skip %-40s  [%s]", agent_def.agent, current_status)
         return False
 
@@ -3614,17 +3888,22 @@ def _invoke_with_retries(
     default_extra_tools: Optional[list],
     agent_text_snapshot: Optional[str],
 ) -> tuple:
-    """Invoke an agent, retrying on crash (no sentinel) up to max_retries.
+    """Invoke an agent, retrying on a crashed/malformed result up to max_retries.
 
-    Rate-limit events break immediately without applying :failed. Parses the
-    sentinel from the final run. Returns (result, sentinel_status,
-    sentinel_message, attempt).
+    A run that hits its turn or wall-clock budget (_is_exhausted) is never
+    retried, whatever attempt count it's on — the budget itself hasn't
+    changed between runs, so retrying would just hit the same wall
+    (PRODUCT.md, "A step returns exactly one of five outcomes"). Rate-limit
+    events also break immediately without applying :failed or :exhausted;
+    the run never got a fair try. Reads the step's result file after every
+    attempt. Returns (result, step_result, exhausted, attempt).
     """
-    sentinel_status: Optional[str] = None
-    sentinel_message: str = ""
+    scratch_dir = _scratch_path(_compute_agent_session_id(agent_def, work_item, repo))
+    step_result: Optional[StepResult] = None
+    exhausted = False
     _attempt = 0
-    # Retry loop: re-invoke on crash (no sentinel) up to max_retries times.
-    # Rate-limit events break immediately without applying :failed.
+    # Retry loop: re-invoke on a crashed/malformed result up to max_retries
+    # times. Rate-limit and exhaustion events break immediately.
     result = invoke_agent(
         agent_def, work_item, dry_run, repo, attempt=0,
         agent_text_override=agent_text_snapshot,
@@ -3633,8 +3912,9 @@ def _invoke_with_retries(
     while not dry_run:
         if result.rate_limited:
             break
-        sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
-        if sentinel_status or result.success or _attempt >= agent_def.max_retries:
+        exhausted = _is_exhausted(result)
+        step_result, _ = _read_step_result(scratch_dir)
+        if step_result is not None or exhausted or _attempt >= agent_def.max_retries:
             break
         _attempt += 1
         _backoff = 5 * (2 ** (_attempt - 1))
@@ -3647,7 +3927,7 @@ def _invoke_with_retries(
             gh.post_comment(
                 work_item.number,
                 f"**`{agent_def.agent}` retry {_attempt}/{agent_def.max_retries}** — "
-                f"attempt {_attempt} failed "
+                f"attempt {_attempt} did not return a valid result "
                 f"(exit {result.returncode if result.returncode is not None else 'unknown'}); "
                 f"retrying automatically.",
             )
@@ -3662,10 +3942,7 @@ def _invoke_with_retries(
         if result.rate_limited:
             break
 
-    if not dry_run and not result.rate_limited:
-        sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
-
-    return result, sentinel_status, sentinel_message, _attempt
+    return result, step_result, exhausted, _attempt
 
 
 def _run_agent(
@@ -3683,12 +3960,20 @@ def _run_agent(
     """Pre-invocation ceremony, agent/script dispatch, and retry loop.
 
     Applies :wip, posts the opening announcement, manages the review-cycle
-    counter, invokes the agent or script, and parses the sentinel.
+    counter, invokes the agent or script, and resolves its outcome.
+
+    Agent-type steps resolve via the step's result file (issue #400):
+    sentinel_status/sentinel_message are populated from step_result.outcome/
+    message for compatibility with the rest of the pipeline, and the step's
+    output (if any) is posted as an artefact comment here, by the
+    orchestrator, before returning. Script-type steps are unaffected and
+    still resolve via the AI_AGILE_STATUS stdout sentinel (out of scope for
+    #400 — see _read_step_result's module comment).
 
     Modifies labels and work_item.labels in-place (review-cycle tracking).
 
     Returns: (result, sentinel_status, sentinel_message,
-              pre_agent_branch, invoked_at, attempt)
+              pre_agent_branch, invoked_at, attempt, exhausted, step_result)
     """
     log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
 
@@ -3749,6 +4034,8 @@ def _run_agent(
 
     sentinel_status: Optional[str] = None
     sentinel_message: str = ""
+    step_result: Optional[StepResult] = None
+    exhausted = False
     _attempt = 0
 
     if agent_def.step_type == "script":
@@ -3756,10 +4043,13 @@ def _run_agent(
         if not dry_run:
             sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
     else:
-        result, sentinel_status, sentinel_message, _attempt = _invoke_with_retries(
+        result, step_result, exhausted, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
             default_extra_tools, _agent_text_snapshot,
         )
+        if step_result is not None:
+            sentinel_status, sentinel_message = step_result.outcome, step_result.message
+        _post_artefact_if_present(gh, agent_def, work_item, step_result)
 
     if not dry_run:
         _sweep_agent_root_files(agent_def, _root_before)
@@ -3774,7 +4064,10 @@ def _run_agent(
             _scratch_path(_compute_agent_session_id(agent_def, work_item, repo)),
         )
 
-    return result, sentinel_status, sentinel_message, _pre_agent_branch, _invoked_at, _attempt
+    return (
+        result, sentinel_status, sentinel_message, _pre_agent_branch,
+        _invoked_at, _attempt, exhausted, step_result,
+    )
 
 
 def _repo_root() -> Path:
@@ -4165,6 +4458,37 @@ def _finalize_run_failure(
         ))
 
 
+def _finalize_run_exhaustion(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    result: AgentRunResult,
+    invoked_at: float,
+    gh: "GitHubClient",
+    session_id: str,
+    repo: str,
+) -> None:
+    """Apply :exhausted and emit agent.exhausted. Never varies by attempt --
+    exhaustion always breaks the retry loop on the first hit (_invoke_with_retries).
+    """
+    _apply_exhausted(gh, agent_def, work_item, result)
+    log.error(
+        "  EXHAUSTED  %-35s  on #%d (%s budget)",
+        agent_def.agent, work_item.number,
+        "wall-clock" if result.timed_out else "turn",
+    )
+    if session_id:
+        _emit_audit_event(_make_audit_event(
+            session_id, "agent.exhausted", repo,
+            work_item=work_item, agent=agent_def.agent,
+            outcome_status="exhausted",
+            outcome_detail=(
+                f"{'wall-clock' if result.timed_out else 'turn'} budget exhausted "
+                f"mode={agent_def.step_type}"
+            ),
+            duration_ms=int((time.monotonic() - invoked_at) * 1000),
+        ))
+
+
 def _compute_human_review_override(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -4288,6 +4612,7 @@ def _announce_and_prompt(
             work_item.number,
             _build_closing_announcement(
                 agent_def, work_item, session_id, applied_status, sentinel_message,
+                expected_effect=agent_def.expected_effect,
             ),
         )
     except Exception as exc:
@@ -4414,13 +4739,15 @@ def _apply_result(
     cycle_id: str = "",
     timestamp_start: str = "",
     timestamp_end: str = "",
+    exhausted: bool = False,
+    step_result: Optional[StepResult] = None,
 ) -> bool:
     """Apply GitHub side-effects for a completed agent run.
 
     Handles rate-limit short-circuit, final status determination, commit-after
     invocation, human review override, terminal label application, closing
-    announcement, gate prompt, label refresh, audit event, PR ready promotion,
-    and per-cycle metrics (issue #121).
+    announcement, gate prompt, requested label-change application, label
+    refresh, audit event, PR ready promotion, and per-cycle metrics (issue #121).
 
     Calls _restore_pre_agent_branch on every break path before returning True.
     The caller (process_work_item) calls _restore_pre_agent_branch on the
@@ -4433,10 +4760,29 @@ def _apply_result(
     # _apply_result is invoked, so result.rate_limited is always False here.
     if sentinel_status:
         final_status = sentinel_status
-    elif result.success:
+    elif exhausted:
+        _finalize_run_exhaustion(
+            agent_def, work_item, result, invoked_at, gh, session_id, repo,
+        )
+        _metrics_record = _build_step_metrics(
+            agent_def, work_item, result,
+            timestamp_start, timestamp_end, cycle_id,
+            is_error_override=True,
+        )
+        _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
+        _restore_pre_agent_branch(pre_agent_branch)
+        return True
+    elif agent_def.step_type == "script" and result.success:
+        # Script-type steps are unaffected by issue #400 — they meet the
+        # return contract "by construction" (PRODUCT.md) and still resolve
+        # via the AI_AGILE_STATUS stdout sentinel; a clean exit with none is
+        # inferred complete, unchanged from before #400.
         final_status = STATUS_COMPLETE
         sentinel_message = "completed (no sentinel; inferred from exit 0)"
     else:
+        # Agent-type step with no valid result file (crashed, or exited 0
+        # without writing one) — both are "malformed" per PRODUCT.md's
+        # `failed` definition. No outcome is inferred from a clean exit alone.
         _finalize_run_failure(
             agent_def, work_item, result, attempt, invoked_at, gh, session_id, repo,
         )
@@ -4496,6 +4842,12 @@ def _apply_result(
     _announce_and_prompt(
         agent_def, work_item, session_id, applied_status, sentinel_message, gh,
     )
+
+    # Apply the step's requested label changes, filtered against its
+    # declared allowed_labels (issue #400) — a step never writes labels
+    # itself; this is the orchestrator applying only what clears.
+    if step_result and step_result.label_requests:
+        _apply_label_requests(gh, agent_def, work_item, step_result.label_requests)
 
     # Refresh label set from GitHub after our writes.
     labels_refreshed = gh.get_issue_labels(work_item.number)
@@ -4618,7 +4970,10 @@ def process_work_item(
         _cycle_id = str(uuid.uuid4())
         _timestamp_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        result, sentinel_status, sentinel_message, pre_branch, invoked_at, attempt = _run_agent(
+        (
+            result, sentinel_status, sentinel_message, pre_branch, invoked_at,
+            attempt, exhausted, step_result,
+        ) = _run_agent(
             agent_def, work_item, dry_run, repo, labels,
             session_id, default_extra_tools, concurrency, gh, pipeline_map,
         )
@@ -4656,6 +5011,7 @@ def process_work_item(
                 gh, session_id, repo, pipeline_map,
                 dry_run=dry_run, cycle_id=_cycle_id,
                 timestamp_start=_timestamp_start, timestamp_end=_timestamp_end,
+                exhausted=exhausted, step_result=step_result,
             )
             labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
             if stop:

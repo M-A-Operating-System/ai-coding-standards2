@@ -85,6 +85,20 @@
       "orchestrator_behaviour": "Halt pipeline for this item. Do not retry automatically -- require a human to remove the label."
     },
     {
+      "status": "exhausted",
+      "label_suffix": "exhausted",
+      "colour": "5319E7",
+      "colour_name": "purple-dark",
+      "meaning": "Agent ran out of its turn or wall-clock budget before it could write a result. Distinct from failed: the agent did not crash or return something malformed, it simply did not finish inside the budget it was given. The orchestrator never retries an exhausted run automatically -- the budget itself has not changed between runs, so an identical retry would hit the same wall.",
+      "set_by": "orchestrator",
+      "cleared_by": "human",
+      "blocks_pipeline": true,
+      "terminal": true,
+      "human_action_required": true,
+      "human_instruction": "Raise this step's budget (max_turns or max_wall_seconds) in pipeline.json, or narrow the step's scope, then remove this label to retry. Or apply skipped to bypass this agent entirely.",
+      "orchestrator_behaviour": "Halt pipeline for this item. Do not retry automatically -- require a human to remove the label."
+    },
+    {
       "status": "skipped",
       "label_suffix": "skipped",
       "colour": "BFD4F2",
@@ -161,10 +175,11 @@
     "transitions": {
       "none":      ["wip", "requested"],
       "requested": ["wip"],
-      "wip":       ["complete", "review", "blocked", "failed"],
+      "wip":       ["complete", "review", "blocked", "failed", "exhausted"],
       "review":    ["wip"],
       "blocked":   ["wip"],
       "failed":    ["wip", "skipped"],
+      "exhausted": ["wip", "skipped"],
       "complete":  ["approved"],
       "approved":  [],
       "skipped":   []

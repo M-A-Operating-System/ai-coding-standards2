@@ -20,8 +20,9 @@ depends on a documented protocol.
 The orchestrator applies `:wip`, posts the opening announcement, and
 provides `$ISSUE_NUMBER`, `$REPO`, `$AGENT_SESSION_ID`, and
 `$AGENT_COMMIT_SHA` before invoking this agent. After the agent exits,
-the orchestrator reads the `AI_AGILE_STATUS:` sentinel from stdout,
-applies the outcome label, and posts the closing announcement.
+the orchestrator reads `$AI_AGILE_SCRATCH/result.json`, applies the
+outcome label, and posts the closing announcement and any artefact
+comment / label changes on the agent's behalf.
 
 ---
 
@@ -53,42 +54,47 @@ action — drafting a section, validating a rule, checking a constraint.
 Keep steps coarse; avoid step soup.
 
 If the agent produces an artefact for human review (PRD, design, test
-spec, gap report, etc.), post it as a fenced comment with the
-`ai-agile/artefact/v1` marker:
-
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
-<!-- ai-agile/artefact/v1 -->
-## {Artefact title}
-
-{Artefact body — markdown}
-EOF
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-```
+spec, gap report, etc.), it goes in `result.json`'s `output` field
+(Step 3) — do not post it as a comment yourself; the orchestrator does
+that on your behalf.
 
 ---
 
-## Step 3 — Signal outcome
+## Step 3 — Write the result
 
-End your run by outputting — as plain text, not a bash command — exactly
-one sentinel line as your final text response:
+Before exiting, use the Write tool to create `$AI_AGILE_SCRATCH/result.json`:
 
+```json
+{
+  "outcome": "complete",
+  "summary": "What you did, in plain words — including when you did nothing.",
+  "undone": "",
+  "message": "",
+  "output": "",
+  "expected_effect": {"commits": false},
+  "label_requests": []
+}
 ```
-AI_AGILE_STATUS: complete
-```
 
-Valid values: `complete`, `review`, `blocked`.
+`outcome` (required): exactly one of `complete`, `review`, `blocked`.
 
 - Use `complete` when the work is done and no human gate is needed.
 - Use `review` when you have produced an artefact that needs human
-  approval before the pipeline advances (gated agents only).
+  approval before the pipeline advances (gated agents only) — put the
+  artefact in `output` and a short note for the reviewer in `message`.
 - Use `blocked` when you cannot proceed without human input — ambiguous
   requirements, missing data, or a decision that exceeds your authority.
-  Always post a comment explaining the blocker before emitting this.
+  Explain the blocker in `message`; do not post a separate comment.
 
-The orchestrator applies the corresponding label and posts the closing
-announcement. Do not call `status.sh` — it is no longer used by agents.
+`summary` is required; the rest default to empty/false when omitted. Never
+write `outcome: "failed"` or `"exhausted"` — those are the orchestrator's
+own labels, applied when you exit without a valid result file at all.
+
+The orchestrator reads this file, applies the corresponding label, posts
+the closing announcement, posts `output` as an artefact comment (if
+non-empty), and applies any `label_requests` that clear this step's
+declared `allowed_labels` in `pipeline.json`. Do not call `status.sh` — it
+is no longer used by agents.
 
 ---
 
@@ -98,13 +104,12 @@ announcement. Do not call `status.sh` — it is no longer used by agents.
 - Use 3–10 bullets. Be specific and testable.
 - Examples of useful rules:
   - "Do not edit the issue body — it is human-authored."
-  - "Post one artefact comment per run, not many."
+  - "Put at most one artefact in `output` per run, not many."
   - "Reference STD IDs by their stable identifier; do not inline the
     standard text."
-  - "If the input is ambiguous, emit `AI_AGILE_STATUS: blocked` rather
+  - "If the input is ambiguous, write `outcome: \"blocked\"` rather
     than guessing."
   - "Do not invoke other agents; the orchestrator handles routing."
-  - "Do not call `status.sh` — signal outcome via `AI_AGILE_STATUS:`
-    sentinel only."
+  - "Do not call `status.sh` — signal outcome via `result.json` only."
 - Avoid vague rules like "be concise" or "be helpful" — they do not
   constrain anything.

@@ -199,28 +199,35 @@ class TestAdrDowngradeCarveOut:
 
 
 class TestScenarioVerdictInClosingAnnouncement:
-    """Scenario: Verdict is present in the structured closing announcement"""
+    """Scenario: Verdict is present in the structured result the step writes.
 
-    def test_verdict_field_present_in_step10(self):
+    Since issue #400, pr-reviewer no longer posts its own closing
+    announcement — it writes one result to $AI_AGILE_SCRATCH/result.json and
+    the orchestrator posts the closing announcement on its behalf. The
+    verdict must still be traceable from that result (in summary/message),
+    bound to a shell variable rather than hardcoded.
+    """
+
+    def test_verdict_field_present_in_result_write(self):
         text = _load_pr_reviewer_text()
-        step10_match = re.search(r"## Step 12 — Close(.+?)(?=\n---|\Z)", text, re.DOTALL)
-        assert step10_match, "Step 12 — Close section not found in pr-reviewer.md"
-        step10 = step10_match.group(1)
-        assert '"verdict"' in step10, (
-            'Step 12 closing JSON must contain a "verdict" field'
+        step_match = re.search(r"## Step 11 — Write the result(.+?)(?=\n---|\Z)", text, re.DOTALL)
+        assert step_match, "Step 11 — Write the result section not found in pr-reviewer.md"
+        step = step_match.group(1)
+        assert "Verdict:" in step, (
+            "the result.json write must include the verdict (e.g. in summary/message)"
         )
 
     def test_verdict_field_bound_to_a_variable(self):
-        # Presence of the field is covered by test_verdict_field_present_in_step10.
-        # Here we only assert the field is bound to *some* shell variable, without
+        # Presence of the verdict text is covered by the test above.
+        # Here we only assert it is bound to *some* shell variable, without
         # coupling to the exact variable name (which is an implementation detail).
         text = _load_pr_reviewer_text()
-        step10_match = re.search(r"## Step 12 — Close(.+?)(?=\n---|\Z)", text, re.DOTALL)
-        assert step10_match
-        step10 = step10_match.group(1)
-        assert re.search(r'"verdict":\s*"\$\{?\w+\}?"', step10), (
-            'verdict field must be bound to a shell variable (e.g. "$VERDICT") '
-            "in the Step 12 closing JSON"
+        step_match = re.search(r"## Step 11 — Write the result(.+?)(?=\n---|\Z)", text, re.DOTALL)
+        assert step_match
+        step = step_match.group(1)
+        assert re.search(r"Verdict:\s*\$\{?\w+\}?", step), (
+            "the verdict must be bound to a shell variable (e.g. $VERDICT), "
+            "not hardcoded, in the Step 11 result.json write"
         )
 
 

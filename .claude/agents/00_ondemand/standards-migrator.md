@@ -479,14 +479,11 @@ before the summary.
 
 ---
 
-## Step 6 — Post summary artefact
+## Step 6 — Write the result
 
-If `$ISSUE_NUMBER` and `$REPO` are set, post a structured comment (otherwise print
-it):
+Compose the summary body:
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
-<!-- ai-agile/artefact/v1 by 00_ondemand/standards-migrator -->
+```text
 ## Standards Migration Report
 
 **Knowledge files scanned:** {N}   **Ground-truth artifacts:** {N}
@@ -519,12 +516,20 @@ cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
 ---
 _To waive a specific violation of any standard, add a project ADR to
 `adrs/adrs.json` citing the STD ID in `authorises_exception_to`._
-EOF
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
 ```
 
-If not running inside the pipeline, print the same summary to the conversation.
+Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json`:
+
+```json
+{
+  "outcome": "complete",
+  "summary": "Extracted {N} candidate rules from {N} knowledge files and {N} ground-truth artifacts; {N} approved and written across {N} file(s); {N} discovered issues filed.",
+  "output": "{the summary body above}"
+}
+```
+
+If `$ISSUE_NUMBER` and `$REPO` are not set (standalone/interactive use), print
+the same summary to the conversation instead of writing `result.json`.
 
 ---
 

@@ -47,9 +47,15 @@ Extract from the issue body:
 - **Human gate** — whether a human must approve before the pipeline advances
 - **Dependencies** — which agents must complete first (empty list if none)
 
-If any of the above are missing or ambiguous, emit:
-```
-AI_AGILE_STATUS: blocked "Cannot scaffold agent — missing: {list what is unclear}. Please update the issue body."
+If any of the above are missing or ambiguous, use the `Write` tool to create
+`$AI_AGILE_SCRATCH/result.json`:
+
+```json
+{
+  "outcome": "blocked",
+  "summary": "Could not scaffold agent — missing or ambiguous inputs in the issue body.",
+  "message": "Cannot scaffold agent — missing: {list what is unclear}. Please update the issue body."
+}
 ```
 
 ---
@@ -71,7 +77,8 @@ Verify the trigger label is not already used in `pipeline.json`:
 grep -F "\"label\": \"${TRIGGER_LABEL}\"" pipeline/pipeline.json
 ```
 
-If either check fails, emit `AI_AGILE_STATUS: blocked` with a clear explanation.
+If either check fails, write `$AI_AGILE_SCRATCH/result.json` with
+`outcome: "blocked"` and a `message` giving a clear explanation.
 
 ---
 
@@ -155,15 +162,11 @@ Add `"type": "script"` and `"script": "path"` only for non-Claude script steps.
 
 ---
 
-## Step 5 — Post artefact comment
+## Step 5 — Compose the artefact
 
-Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
-body, substituting the runtime values yourself. A heredoc cannot carry it:
-the body contains backticks, and an unquoted heredoc body is scanned for
-command substitution, so the write would be refused.
+Compose the artefact body, substituting the runtime values yourself:
 
 ````markdown
-<!-- ai-agile/artefact/v1 by 00_ondemand/new-agent -->
 ## Agent scaffolded
 
 **File:** \`.claude/agents/${PHASE}/${AGENT_NAME}.md\`
@@ -177,19 +180,21 @@ command substitution, so the write would be refused.
 3. Apply \`new-agent:approved\` to merge the scaffolded files.
 ````
 
-Then post it:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-```
-
 ---
 
-## Step 6 — Signal outcome
+## Step 6 — Write the result
 
-```
-AI_AGILE_STATUS: review "Agent scaffold posted — review the generated files and apply new-agent:approved to merge."
+Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json` — a heredoc
+cannot carry this body, since it contains backticks and an unquoted heredoc
+body is scanned for command substitution, so the write would be refused:
+
+```json
+{
+  "outcome": "review",
+  "summary": "Scaffolded ${PHASE}/${AGENT_NAME} at .claude/agents/${PHASE}/${AGENT_NAME}.md and registered it in pipeline.json.",
+  "message": "Agent scaffold posted — review the generated files and apply new-agent:approved to merge.",
+  "output": "{the Step 5 artefact body}"
+}
 ```
 
 ---
@@ -198,7 +203,7 @@ AI_AGILE_STATUS: review "Agent scaffold posted — review the generated files an
 
 - **Sequential integers only.** Every agent file you create must use `Step 1`, `Step 2`, `Step 3`... Plain integers. Never use letter suffixes (`Step 3A`), decimal numbers (`Step 1.5`), or hyphenated sub-steps (`Step 3A-2`). This is a hard constraint, not a style preference.
 - **Renumber on insert.** If a step is added between existing steps, all subsequent step numbers must be updated to maintain a gapless sequence.
-- **No AGENTS.md duplication.** Never include in a generated agent file anything already covered by `.claude/AGENTS.md` — status sentinel, do-not-call-status.sh, scope rule, fetch rules, marker protocol. Generated Behaviour rules must be agent-specific only.
+- **No AGENTS.md duplication.** Never include in a generated agent file anything already covered by `.claude/AGENTS.md` — the `result.json` status contract, do-not-call-status.sh, scope rule, fetch rules, marker protocol. Generated Behaviour rules must be agent-specific only.
 - **Skeleton only.** Do not implement the agent's logic. Leave step bodies as `{Replace with ...}` placeholders. The human fills in the details.
 - **One agent per run.** If the issue describes multiple agents, emit `blocked` and ask the human to create one issue per agent.
 - **Validate before writing.** Complete Steps 1 and 2 before writing any files. A blocked condition in Step 1 or 2 means no files are created.

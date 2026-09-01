@@ -1,6 +1,9 @@
 """Tests for _fetch_unresolved_human_review_requests and the human-review
 free re-invoke path in _handle_review_loop (issue #100).
 """
+import os
+import json
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -14,7 +17,35 @@ from pipeline.pipeline_orchestrator import (
     AgentDef,
     WorkItem,
     AgentRunResult,
+    _compute_agent_session_id,
+    _scratch_path,
+    _result_file_path,
 )
+
+
+def _invoke_agent_writing_result(outcome="complete", **fields):
+    """side_effect for a mocked invoke_agent: writes a real result.json to the
+    real scratch dir (computed the same way production code computes it) so
+    the unmocked _read_step_result finds it (issue #400).
+    """
+    def _effect(agent_def, work_item, dry_run, repo, attempt=0,
+                agent_text_override=None, default_extra_tools=None):
+        if not dry_run:
+            scratch = _scratch_path(_compute_agent_session_id(agent_def, work_item, repo))
+            os.makedirs(scratch, exist_ok=True)
+            payload = {
+                "outcome": outcome,
+                "summary": fields.get("summary", "done"),
+                "undone": fields.get("undone", ""),
+                "message": fields.get("message", ""),
+                "output": fields.get("output", ""),
+                "expected_effect": fields.get("expected_effect", {}),
+                "label_requests": fields.get("label_requests", []),
+            }
+            with open(_result_file_path(scratch), "w") as f:
+                json.dump(payload, f)
+        return AgentRunResult(success=True)
+    return _effect
 
 
 # ---------------------------------------------------------------------------
@@ -443,9 +474,7 @@ class TestProcessWorkItemHumanReviewGuard:
     def test_once_only_guard_cleanup_removes_pending_label(self, mock_invoke):
         """When HUMAN_REVIEW_PENDING_LABEL is already present and pr-reviewer emits
         :complete, the elif cleanup path removes the label — no second free re-invoke."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         reviewer = self._make_pr_reviewer_def()
         coder = self._make_coder_def()
         pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
@@ -469,9 +498,7 @@ class TestProcessWorkItemHumanReviewGuard:
     def test_pr_lookup_fallback_uses_source_issue_label(self, mock_invoke):
         """When find_pr_by_branch returns None, find_pr_by_label is called with
         source-issue:{number} so rebased branches are still found."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         reviewer = self._make_pr_reviewer_def()
         coder = self._make_coder_def()
         pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
@@ -492,9 +519,7 @@ class TestProcessWorkItemHumanReviewGuard:
     def test_no_human_reviews_leaves_status_complete(self, mock_invoke):
         """When _fetch_unresolved_human_review_requests returns [], final_status stays
         :complete — the post_steps script runs, no review-cycle label is applied."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         reviewer = self._make_pr_reviewer_def()
         coder = self._make_coder_def()
         pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}

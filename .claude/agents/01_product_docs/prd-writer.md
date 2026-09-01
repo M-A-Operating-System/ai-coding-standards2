@@ -504,10 +504,14 @@ gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
 
 ## Step 8 — Signal outcome
 
-Emit the sentinel:
+Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool:
 
-```
-AI_AGILE_STATUS: review "PRD written into issue body; awaiting prd-writer:approved."
+```json
+{
+  "outcome": "review",
+  "summary": "PRD written into the issue body.",
+  "message": "PRD written into issue body; awaiting prd-writer:approved."
+}
 ```
 
 The orchestrator applies `:review`, posts the closing announcement, and
@@ -517,48 +521,17 @@ prompts the stakeholder to apply `prd-writer:approved`.
 
 ## Step 9 — Decomposition path (too-big issue)
 
-Do **not** draft a PRD. Post a decomposition recommendation:
+Do **not** draft a PRD. Write your decomposition recommendation to
+`$AI_AGILE_SCRATCH/result.json` using the Write tool, substituting the
+runtime values yourself:
 
-Use the Write tool to create `$AI_AGILE_SCRATCH/body_2.md` with this
-body, substituting the runtime values yourself. A heredoc cannot carry it:
-the body contains backticks, and an unquoted heredoc body is scanned for
-command substitution, so the write would be refused.
-
-````markdown
-<!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
-## Decomposition recommended — issue is too large for one PRD
-
-This issue describes work that spans multiple distinct user outcomes
-(or bounded contexts, or weeks of effort). Drafting a single PRD here
-would produce a sprawling design that the rest of the pipeline cannot
-size, decompose, or test cleanly.
-
-**Suggested smaller issues:**
-
-1. **{Title for child 1}** — {one-sentence scope}
-2. **{Title for child 2}** — {one-sentence scope}
-3. **{Title for child 3}** — {one-sentence scope}
-
-Each child should have one user goal, touch one bounded context, and
-produce a PRD whose Gherkin scenario count matches the classification
-band in 5a (typically 2–5 for enhancements, 3–7 for features).
-
-**To proceed:** Open the suggested smaller issues (or narrow this one
-to a single child's scope) and remove the \`prd-writer:blocked\`
-label to re-run.
-````
-
-Then post it:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
-```
-
-Then emit:
-
-```
-AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition recommendation."
+```json
+{
+  "outcome": "blocked",
+  "summary": "Issue is too large for one PRD.",
+  "message": "Issue is too large for one PRD. See decomposition recommendation.",
+  "output": "## Decomposition recommended — issue is too large for one PRD\n\nThis issue describes work that spans multiple distinct user outcomes (or bounded contexts, or weeks of effort). Drafting a single PRD here would produce a sprawling design that the rest of the pipeline cannot size, decompose, or test cleanly.\n\n**Suggested smaller issues:**\n\n1. **{Title for child 1}** — {one-sentence scope}\n2. **{Title for child 2}** — {one-sentence scope}\n3. **{Title for child 3}** — {one-sentence scope}\n\nEach child should have one user goal, touch one bounded context, and produce a PRD whose Gherkin scenario count matches the classification band in 5a (typically 2-5 for enhancements, 3-7 for features).\n\n**To proceed:** Open the suggested smaller issues (or narrow this one to a single child's scope) and remove the `prd-writer:blocked` label to re-run."
+}
 ```
 
 ---
@@ -582,5 +555,6 @@ AI_AGILE_STATUS: blocked "Issue is too large for one PRD. See decomposition reco
 - Don't fabricate a module. If no clear bounded context emerges, omit
   the module segment.
 - When in doubt about size, decompose.
-- Do not call `status.sh` — the orchestrator handles all label
-  transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
+- Do not call `status.sh` or post comments yourself — the orchestrator
+  handles all label transitions and posts your `output` as the artefact
+  comment. `result.json` must be written before you exit.

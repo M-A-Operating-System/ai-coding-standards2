@@ -85,83 +85,40 @@ If either is missing, proceed to Step 5 (rejection path).
 
 ## Step 4 — Success path
 
-Post the classification result as an issue comment, then signal completion.
+Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool
+(the path must be absolute — a bare filename resolves against the repo
+root, not your scratch directory). The orchestrator posts the artefact
+comment and applies the `classification:` label on your behalf; you never
+call `gh api` for either.
 
-Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
-body, substituting the runtime values yourself. A heredoc cannot carry it:
-the body contains backticks, and an unquoted heredoc body is scanned for
-command substitution, so the write would be refused.
+Substitute the runtime values yourself:
 
-````markdown
-<!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
-## Issue classification
-
-**Type:** {security | bug | toil | enhancement | feature | spike}
-
-**Rationale:** {one or two sentences naming the signals in the body that led to this classification}
-
-This issue passes initial validation. \`prd-writer\` will run next.
-````
-
-Then post it:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-```
-
-Add the `classification: {classification}` label so downstream agents
-can filter on type if needed:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/labels" -f "labels[]=classification: {classification}" >/dev/null
-```
-
-Then emit the sentinel:
-
-```
-AI_AGILE_STATUS: complete
+```json
+{
+  "outcome": "complete",
+  "summary": "Classified issue #${ISSUE_NUMBER} as {classification}; required fields present.",
+  "output": "## Issue classification\n\n**Type:** {security | bug | toil | enhancement | feature | spike}\n\n**Rationale:** {one or two sentences naming the signals in the body that led to this classification}\n\nThis issue passes initial validation. `prd-writer` will run next.",
+  "label_requests": [
+    {"issue": null, "add": ["classification: {classification}"], "remove": []}
+  ]
+}
 ```
 
 ---
 
 ## Step 5 — Rejection path (missing required fields)
 
-Post a corrective comment naming exactly which fields are missing and
-what would be acceptable, then signal blocked.
+Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool,
+naming exactly which fields are missing and what would be acceptable.
+Substitute the runtime values yourself:
 
-Use the Write tool to create `$AI_AGILE_SCRATCH/body_2.md` with this
-body, substituting the runtime values yourself. A heredoc cannot carry it:
-the body contains backticks, and an unquoted heredoc body is scanned for
-command substitution, so the write would be refused.
-
-````markdown
-<!-- ai-agile/artefact/v1 by 01_product_docs/issue-classifier -->
-## Issue cannot be classified — missing required fields
-
-This issue is missing the following required field(s):
-
-- {bullet list of missing fields with one-sentence guidance per item}
-
-To unblock the pipeline:
-
-1. Edit the issue body to add the missing field(s).
-2. Remove the \`issue-classifier:blocked\` label.
-
-The pipeline will re-run \`issue-classifier\` automatically.
-````
-
-Then post it:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
-```
-
-Then emit the sentinel:
-
-```
-AI_AGILE_STATUS: blocked "Required fields missing — see corrective comment."
+```json
+{
+  "outcome": "blocked",
+  "summary": "Issue #${ISSUE_NUMBER} is missing required field(s): {list}.",
+  "message": "Required fields missing — see corrective comment.",
+  "output": "## Issue cannot be classified — missing required fields\n\nThis issue is missing the following required field(s):\n\n- {bullet list of missing fields with one-sentence guidance per item}\n\nTo unblock the pipeline:\n\n1. Edit the issue body to add the missing field(s).\n2. Remove the `issue-classifier:blocked` label.\n\nThe pipeline will re-run `issue-classifier` automatically."
+}
 ```
 
 ---
@@ -176,10 +133,12 @@ AI_AGILE_STATUS: blocked "Required fields missing — see corrective comment."
   wrong. Classify from the body content.
 - Do not run on PRs. Your `object` declares `["issue"]`; the
   orchestrator should never invoke you on a PR. If somehow invoked on
-  a PR, emit: `AI_AGILE_STATUS: blocked "issue-classifier does not operate on PRs."`
+  a PR, write `result.json` with `outcome: "blocked"` and
+  `message: "issue-classifier does not operate on PRs."`
 - Choose `claude-haiku` for the model — classification is a
   bounded, fast task. Reasoning power is not the bottleneck.
-- One artefact comment per run. Do not re-post the classification on
-  re-runs; the orchestrator's opening/closing announcements provide the audit trail.
-- Do not call `status.sh` — the orchestrator handles all label
-  transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
+- One `output` per run. Do not accumulate re-run history into it; the
+  orchestrator's opening/closing announcements provide the audit trail.
+- Do not call `status.sh` or apply labels or comments yourself — the
+  orchestrator handles all label transitions and posts your `output` as
+  the artefact comment. `result.json` must be written before you exit.
