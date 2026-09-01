@@ -904,11 +904,11 @@ class TestPrReviewerArtefactsAreAppendOnly:
 
     The finding was that Step 11 always POSTed while AGENTS.md said to edit the
     artefact in place. Both could not stand -- but the authority is
-    02-principles.md, and its P-11 tradeoff says only that "re-runs produce the
-    same artefact, not duplicates", meaning duplicated *effects*: no second PR,
-    no second branch, no re-applied label. AGENTS.md had turned that into "one
-    comment, edited in place", a rule the principle never stated, and P-12
-    directly below it accepts comment noise in as many words.
+    PRODUCT.md, and its re-run obligation says only that a re-run must not
+    duplicate *effects*: no second PR, no second branch, no re-applied label.
+    AGENTS.md had turned that into "one comment, edited in place", a rule the
+    source never stated, and the surrounding text directly accepts comment
+    noise in as many words.
 
     So the distillation was wrong, not the agent. Artefacts are append-only:
     each round's findings are the record of what was wrong at that head, and
@@ -918,7 +918,7 @@ class TestPrReviewerArtefactsAreAppendOnly:
     PROMPT = AGENTS_DIR / "03_execute" / "pr-reviewer.md"
     CONTEXT = AGENTS_MD
     PRINCIPLES = (Path(__file__).parent.parent / "docs" / "product"
-                  / "orchestrator" / "02-principles.md")
+                  / "orchestrator" / "PRODUCT.md")
 
     def test_the_artefact_is_always_posted(self):
         text = self.PROMPT.read_text()
@@ -953,11 +953,13 @@ class TestPrReviewerArtefactsAreAppendOnly:
         assert "instead of editing in place" not in text
 
     def test_the_principle_and_its_distillation_agree(self):
-        """P-2: one source per concern. AGENTS.md is the distilled version of
-        02-principles.md and must not invent a consequence the principle does
-        not carry -- which is exactly how this defect arose."""
-        principles = self.PRINCIPLES.read_text()
-        assert "does not mean one" in principles and "edited in place" in principles, (
-            "02-principles.md must say what 'not duplicates' means, or the "
-            "distillation is free to re-invent the stricter reading"
+        """One source per concern. AGENTS.md is the distilled version of
+        PRODUCT.md and must not invent a consequence the source does not
+        carry -- which is exactly how this defect arose."""
+        source = " ".join(self.PRINCIPLES.read_text().split())
+        assert "means the effect, not the record" in source and (
+            "never an edit to the previous comment in place" in source
+        ), (
+            "PRODUCT.md must say what 'afresh' means for a re-run's artefact, "
+            "or the distillation is free to re-invent the stricter reading"
         )

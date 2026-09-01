@@ -16,8 +16,8 @@ is the **distilled** version every agent reads at runtime.
 
 ## Core principles you must follow
 
-Distilled from
-[`docs/product/orchestrator/02-principles.md`](../docs/product/orchestrator/02-principles.md);
+Distilled from the promises in
+[`docs/product/orchestrator/PRODUCT.md`](../docs/product/orchestrator/PRODUCT.md#the-promises);
 full statements and rationale live there.
 
 | ID | What it means for you |
@@ -26,13 +26,13 @@ full statements and rationale live there.
 | **P-2** One source per concern | Standards live in JSON, the pipeline lives in `pipeline.json`. Don't duplicate facts; reference them by ID. |
 | **P-4** `:wip` is the mutex | If `{your-agent}:wip` is already on the work item when you start, another runner has it — abort. |
 | **P-5** One shippable unit, one PR | Don't open multiple PRs for one issue. Don't conflate two issues into one PR. |
-| **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. Use it in announcements and Question Cards. |
+| **P-7** Stable session per (scope, agent) | Your session ID is in `$SESSION_ID`. Use it in announcements. |
 | **P-9** Cross-issue parallel, intra-issue serial | You are not racing other agents on the same issue. Assume nothing about sibling agents on other issues. |
 | **P-10** Agents draft, humans decide | Never approve a gate. Never apply a `*:approved` label. Humans do that; the orchestrator promotes you afterward. |
 | **P-11** Resumable by default | Be idempotent: a re-run must not double-apply an effect — no second PR, no second branch, no re-applied label. Artefacts are append-only: post a new artefact each run, headed `(Re-run)`, and never rewrite a previous one. |
 | **P-12** Transparent over clever | Post a comment when something halts. Use the named markers. Don't infer state silently. |
 | **P-14** Deterministic Python orchestrator | The orchestrator decides who runs next. **You do not invoke other agents.** Do your one job and exit. |
-| **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`02-principles.md#p-15`](../docs/product/orchestrator/02-principles.md#p-15). |
+| **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`lifecycle.md`](../docs/product/orchestrator/lifecycle.md#issue-classification-taxonomy). |
 
 ---
 
@@ -42,7 +42,7 @@ full statements and rationale live there.
 |---|---|
 | Issue / PR body | `gh issue view $ISSUE_NUMBER --repo $REPO --json title,body,labels,author` |
 | Upstream agent's artefact | `gh issue view $ISSUE_NUMBER --repo $REPO --json comments --jq '.comments[] \| select(.body \| contains("ai-agile/artefact/v1 by {upstream-agent}")) \| .body' \| head -1` |
-| Standards | JSON under `standards/*.json` (see [`05-pipeline-config.md`](../docs/product/orchestrator/05-pipeline-config.md)) |
+| Standards | JSON under `standards/*.json` (see [`14-standards.md`](../docs/product/standards/14-standards.md)) |
 | Pipeline graph | Don't read it. The orchestrator routes work; focus on your task. |
 | Prior runs of yourself | Read them, don't rewrite them. Find your prior artefact to head this run `(Re-run)` and to see what you said last time; post a new one (P-11). |
 
@@ -73,13 +73,12 @@ identity:
 <!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
 ```
 
-Five marker types:
+Four marker types:
 
 | Marker | Use for |
 |---|---|
 | `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
 | `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
-| `question/v1` | A structured question to a human or another role (Question Card schema in [`09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2) |
 | `claim/v1` | The mutex claim you post during P-4 acquisition |
 | `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
 
@@ -138,16 +137,34 @@ Two rules, and nothing else to remember:
 Use the `TodoWrite` tool freely during your run to keep a working list of
 steps. It is internal to your session -- not visible on GitHub, does not
 survive the run -- and is not a substitute for GitHub artefacts. Persistent
-todos in issue/PR bodies (build plans, acceptance criteria, open questions)
-are different: they live **in the body of the issue or PR they belong to** --
-never in a comment, a file, or a sub-issue -- and you only write them if your
-specific prompt instructs you to. The body is the single, visible,
-edited-in-place source of truth for what work remains.
+todos in issue/PR bodies (build plans, acceptance criteria, standards
+remediations, test scenarios) are different: they live **in the body of the
+issue or PR they belong to** -- never in a comment, a file, or a sub-issue --
+and you only write them if your specific prompt instructs you to. The body is
+the single, visible, edited-in-place source of truth for what work remains.
+
+The block sits below any human-authored prose, wrapped in an outer marker
+pair (`<!-- ai-agile/todos/v1 START -->` / `END`) under a
+`## AI Agile — Tasks` heading, with each subsection independently wrapped in
+its own marker pair (`<!-- ai-agile/todos/{name}/v1 START -->` / `END`) so
+one agent can update its subsection without touching another's:
+
+| Subsection | On issue | On PR | Owner |
+|---|---|---|---|
+| `build-plan` | yes | yes (mirrored) | `task-decomposer` (issue), `coder` (PR -- ticks boxes as commits land) |
+| `acceptance-criteria` | yes | no | `prd-writer` |
+| `standards-remediations` | no | yes | `standards-compliance-reviewer` |
+| `test-scenarios` | no | yes | `test-spec-writer` (populates), `test-runner` (ticks off) |
+
+Checkbox state is `- [ ]` (pending) or `- [x]` (done). Every entry carries
+the timestamp and actor for each state change as `(raised <ISO-8601-UTC> by
+<actor>)`, with `done`, `blocked: <reason>`, or `skipped: <reason>` events
+appended the same way, comma-separated when more than one applies. An actor
+is a bare agent name matching `pipeline.json`, a `@github-login` for a
+human, or the literal `orchestrator`.
 
 **Only rewrite the subsection you own**, leaving the others untouched, and
-**never remove a checked item** -- they are the audit trail. Marker format,
-subsection owners, and checkbox syntax:
-[`13-todos.md`](../docs/product/orchestrator/13-todos.md).
+**never remove a checked item** -- they are the audit trail.
 
 ---
 
@@ -194,13 +211,11 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 
 | Topic | Location |
 |---|---|
-| Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, todos, roadmap, orchestrator design, agent spec) | [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md) — start with the README |
+| Full design (vision, principles, lifecycle, status model, gates, audit log, interaction protocol, orchestrator design, agent spec) | [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md) — start with the README |
 | Pipeline graph (who runs after whom, gates, triggers) | [`pipeline/pipeline.json`](pipeline/pipeline.json) — the orchestrator reads this; you don't |
 | Status definitions (colours, semantics, transitions) | [`pipeline/statuses.json`](pipeline/statuses.json) |
 | Architecture & product standards (load + apply by `STD` ID) | `standards/*.json` |
 | ADRs (architecture decisions of record) | `adrs/adrs.json` (repo-local; `standards/` holds the universal standards and never ADRs) |
-| Question Card schema | [`docs/product/orchestrator/09-human-interaction.md`](../docs/product/orchestrator/09-human-interaction.md) §2 |
-| Todos in issue/PR bodies (read protocol, write protocol, marker conventions) | [`docs/product/orchestrator/13-todos.md`](../docs/product/orchestrator/13-todos.md) |
 
 When referencing a standard in a comment or commit, use its stable
 `STD` ID, not the prose:
@@ -215,6 +230,6 @@ When referencing a standard in a comment or commit, use its stable
 
 | Situation | Action |
 |---|---|
-| Input is ambiguous and you would have to guess | Emit `AI_AGILE_STATUS: blocked` with a Question Card naming the ambiguity |
+| Input is ambiguous and you would have to guess | Emit `AI_AGILE_STATUS: blocked "reason"` naming the ambiguity |
 | Issue is too large for one phase artefact | Emit `AI_AGILE_STATUS: blocked` with a decomposition recommendation |
 | You hit an error you cannot describe | Exit non-zero; the orchestrator will apply `:failed` with your tail of output |

@@ -1,8 +1,8 @@
 # Quick Start
 
 The fastest path to a first successful pipeline run, in either operating
-mode. For the concept, comparison, and current limitations, see
-[17-operating-modes.md](17-operating-modes.md).
+mode. For the concept and comparison, see
+[Headless and interactive](PRODUCT.md#headless-and-interactive) in `PRODUCT.md`.
 
 ---
 
@@ -46,6 +46,6 @@ mode. For the concept, comparison, and current limitations, see
 
 ## See also
 
-- **Concept, comparison, and limitations:** [17-operating-modes.md](17-operating-modes.md)
+- **Concept and comparison:** [Headless and interactive](PRODUCT.md#headless-and-interactive) in `PRODUCT.md`
 - **Mechanism** (how `/maos-run` drives the orchestrator step by step): [`.claude/commands/maos-run.md`](../../../.claude/commands/maos-run.md)
 - **Scheduled mode setup** (secrets, bootstrap, platform behaviour): [16-onboarding.md](16-onboarding.md) and [README.md](../../../README.md)

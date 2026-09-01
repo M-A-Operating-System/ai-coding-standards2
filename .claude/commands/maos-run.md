@@ -176,7 +176,7 @@ machine to get past a halt.
 
 ## See also
 
-- **Operating modes** (concept, comparison, and current limitations for scheduled
-  vs. in-session): [`docs/product/orchestrator/17-operating-modes.md`](../../docs/product/orchestrator/17-operating-modes.md)
+- **Headless and interactive** (concept and comparison for scheduled vs.
+  in-session): [`docs/product/orchestrator/PRODUCT.md`](../../docs/product/orchestrator/PRODUCT.md#headless-and-interactive)
 - **Quick Start** (shortest path to a first run in either mode, prerequisites
   listed): [`docs/product/orchestrator/quick-start.md`](../../docs/product/orchestrator/quick-start.md)

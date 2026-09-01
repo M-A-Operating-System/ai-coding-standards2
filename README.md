@@ -15,7 +15,7 @@ orchestrator, the agents, the gates, and the standards. Standards are
 defined centrally here; the only thing a project owns locally is its **ADRs**
 — the architecture decisions and standard-exceptions it records in its own
 `adrs/adrs.json`, seeded once and never overwritten (see
-[14-standards.md](docs/product/orchestrator/14-standards.md)).
+[14-standards.md](docs/product/standards/14-standards.md)).
 
 Software teams spend a disproportionate share of their time on the
 connective tissue around code: writing PRDs, translating them into designs,
@@ -46,8 +46,7 @@ The full design is in [`docs/product/orchestrator/`](docs/product/orchestrator/R
 start with its 60-second summary and reading order.
 
 The authoritative list of agents and their dependencies is
-`pipeline/pipeline.json`; delivery sequencing lives in
-[`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md).
+`pipeline/pipeline.json`.
 
 ---
 
@@ -160,7 +159,7 @@ Both secrets are repo-scoped. Neither leaves the workflow runner.
 > A dedicated bot user gives the AI Agile pipeline its own avatar
 > and login so reviewers can see at a glance which actions are
 > agent-driven vs human-driven. See
-> [`docs/product/orchestrator/09-human-interaction.md`](docs/product/orchestrator/09-human-interaction.md#4-agent-identity)
+> [`docs/product/orchestrator/PRODUCT.md`](docs/product/orchestrator/PRODUCT.md#how-a-non-human-actor-is-recognised)
 > for the full rationale.
 
 ### 5. Run the Onboard job
@@ -198,9 +197,9 @@ The pipeline runs in two modes and both can be active on the same repo:
   pauses at gates for approval in the same conversation. Auth is the session's
   own Claude subscription/OAuth rather than an API key secret.
 
-For a side-by-side comparison and current limitations, see
-[`docs/product/orchestrator/17-operating-modes.md`](docs/product/orchestrator/17-operating-modes.md).
-To get a first run working in either mode, see
+For a side-by-side comparison, see
+[Headless and interactive](docs/product/orchestrator/PRODUCT.md#headless-and-interactive)
+in `PRODUCT.md`. To get a first run working in either mode, see
 [`docs/product/orchestrator/quick-start.md`](docs/product/orchestrator/quick-start.md).
 
 ---
@@ -323,9 +322,6 @@ repos.
 ## Documentation
 
 - [`docs/product/orchestrator/README.md`](docs/product/orchestrator/README.md) — the full design index and reading order
-- [`docs/product/orchestrator/10-roadmap.md`](docs/product/orchestrator/10-roadmap.md) — MVP scope and rollout phases
-- [`docs/product/orchestrator/11-orchestrator.md`](docs/product/orchestrator/11-orchestrator.md) — orchestrator technical design
-- [`docs/product/orchestrator/12-agent-spec.md`](docs/product/orchestrator/12-agent-spec.md) — agent prompt-file spec
 - [`docs/product/orchestrator/16-onboarding.md`](docs/product/orchestrator/16-onboarding.md) — onboarding a consuming repo, platform behaviour, path resolution
 
 ## Contributing

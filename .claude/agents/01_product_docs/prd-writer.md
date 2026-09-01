@@ -229,9 +229,9 @@ One story per distinct user-visible capability:
 
 - **As a** {persona}, **I want** {capability}, **so that** {outcome}.
 
-Pick personas from `docs/product/orchestrator/03-personas.md`. "As a
-developer" stories are suspect — if there is no user-observable
-benefit, it is technical-intermediate work, not a feature PRD.
+Pick personas from `standards/personas.json`. "As a developer" stories
+are suspect — if there is no user-observable benefit, it is
+technical-intermediate work, not a feature PRD.
 
 **Do not write multiple stories that re-state the same capability from
 different personas' viewpoints.** If two stories share the same

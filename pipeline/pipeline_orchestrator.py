@@ -665,7 +665,7 @@ def _make_audit_event(
     outcome_detail: Optional[str] = None,
     duration_ms: Optional[int] = None,
 ) -> dict:
-    """Build one audit event per the schema in docs/product/orchestrator/08-audit-log.md."""
+    """Build one audit event per the schema in docs/product/orchestrator/PRODUCT.md, MI-6 'The shape of one record'."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     obj: Optional[dict] = None
     if work_item is not None:
@@ -2614,7 +2614,7 @@ def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
     post_steps, and the only one that is not a process step in its own right:
     these wrap an agent invocation, emit no `AI_AGILE_STATUS:` sentinel, take no
     label, and cannot fail a run. See
-    docs/product/orchestrator/11-orchestrator.md, "Agent-lifecycle scripts".
+    docs/product/orchestrator/PRODUCT.md, "Every step has the same four parts".
 
     The work lives in .github/scripts/ and the list lives in pipeline.json, so
     the orchestrator neither performs the work nor names the scripts (P-14,

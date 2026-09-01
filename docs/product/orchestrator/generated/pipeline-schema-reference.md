@@ -5,11 +5,11 @@
 
 # Target Pipeline Schema
 
-The target shape of a COMPLETE pipeline definition, as decided in docs/product/orchestrator/PRODUCT.md (issue #393). Not yet live: pipeline/schemas/pipeline.schema.json governs the current pipeline.json and is unaffected by this file. This schema's required-ness (flows present and non-empty, budgets present and complete) describes the framework's shipped pipeline/pipeline.json, and the EFFECTIVE result of composing a repository's own pipeline/pipeline.json over it. A repository's file is a fragment by design (PRODUCT.md, 'A repository may have its own') and is not expected to satisfy this schema's required-ness on its own -- how a bare fragment is validated before composition, as opposed to after, is not yet decided; see gap_analysis.md.
+The target shape of a COMPLETE pipeline definition, as decided in docs/product/orchestrator/PRODUCT.md (issue #393). Not yet live: pipeline/schemas/pipeline.schema.json governs the current pipeline.json and is unaffected by this file. This schema's required-ness (flows present and non-empty, budgets present and complete) describes the framework's shipped pipeline/pipeline.json, and the EFFECTIVE result of composing a repository's own pipeline/pipeline.json over it. A repository's file is a fragment by design (PRODUCT.md, 'A repository may have its own') and is not expected to satisfy this schema's required-ness on its own -- how a bare fragment is validated before composition, as opposed to after, is not yet decided; tracked on issue #393.
 
 This is the target. `pipeline/schemas/pipeline.schema.json` governs
-the pipeline.json that exists today; see
-[`gap_analysis.md`](../gap_analysis.md) for the distance between them.
+the pipeline.json that exists today; the build plan closing that
+distance is sequenced on issue #393.
 
 ## Top level
 
@@ -20,18 +20,46 @@ the pipeline.json that exists today; see
 | `budgets` | object | yes | Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level equivalent, and the default turn/wall-clock budget every step gets unless it declares its own -- the same two-level shape as extra_allowedTools (a global value declared once and visible, overridable per step where a step genuinely needs to differ), applied to budgets instead of entitlements. max_turns and max_wall_seconds are required so every step has an effective budget even when it declares none itself; a hidden constant asserted to fit every step alike is exactly what this replaces (AS-1). |
 | `flows` | object | yes | Every flow the pipeline runs, keyed by a stable flow name. A repository's own pipeline/pipeline.json names the flows it adds or replaces; a flow it does not name is inherited from the shipped default unchanged. Precedence is per flow, not per file (PRODUCT.md, AS-1): a named flow replaces the shipped one wholesale, everything else keeps tracking the default. |
 
+### Top level -- `defaults`
+
+Pipeline-wide entitlement and lifecycle defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema. Step budgets are a separate, sibling concern -- see the top-level budgets key -- so a repository overriding one does not have to restate the other.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `extra_allowedTools` | array of string | no | Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- nothing else contributes. |
+| `agent_lifecycle` | object | no | Scripts the orchestrator runs around every agent-type step to prepare and tear down its environment. Not steps themselves: no outcome, no label, and a non-zero exit is logged rather than failing the run. |
+
+#### Top level -- `defaults` -- `agent_lifecycle`
+
+Scripts the orchestrator runs around every agent-type step to prepare and tear down its environment. Not steps themselves: no outcome, no label, and a non-zero exit is logged rather than failing the run.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `before` | array of string | no | Run immediately before each invocation, including retries. Must be idempotent: a run killed mid-flight leaves state behind, and re-running setup is what clears it. |
+| `after` | array of string | no | Run once after the final retry, on every outcome. |
+
+### Top level -- `budgets`
+
+Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level equivalent, and the default turn/wall-clock budget every step gets unless it declares its own -- the same two-level shape as extra_allowedTools (a global value declared once and visible, overridable per step where a step genuinely needs to differ), applied to budgets instead of entitlements. max_turns and max_wall_seconds are required so every step has an effective budget even when it declares none itself; a hidden constant asserted to fit every step alike is exactly what this replaces (AS-1).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `max_turns` | integer | yes | Default turn budget for every agent-type step, unless the step declares its own. A person's starting judgement, not a formula -- a wrong number is not silently wrong: it surfaces as exhausted, naming the wall a step hit, and gets revised the same way any other config value is revised when the evidence says so. |
+| `max_wall_seconds` | integer | yes | Default wall-clock budget for every step, agent or script, unless the step declares its own. |
+| `max_launches_per_tick` | integer | no | How much work a single tick will start before it stops, so a burst of eligible work (a hundred issues becoming eligible at once) does not consume everything available in one pass. Not a concurrency limit -- concurrent execution is governed by component: label claiming, the decided target design (PRODUCT.md, 'Working on several things at once'), independently of how many of those starts can run together. This is the target-schema name for the current PIPELINE_MAX_CONCURRENT constant, moved out of orchestrator code and given its true meaning. Pipeline-wide only -- no per-step equivalent, since it bounds a tick rather than an invocation. |
+
 ## A flow
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `description` | string | yes | What kind of work this is and why it is its own flow. |
-| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and label) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
-| `naming` | object | no | What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (04-lifecycle.md) that need it. Absent for a flow whose steps never commit. |
+| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
+| `naming` | object | no | What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit. |
 | `steps` | array of object | yes | This flow's steps, in execution order. |
 
 ### A flow -- `trigger`
 
-What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and label) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
+What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
 
 Exactly one of the following shapes:
 
@@ -40,8 +68,8 @@ Exactly one of the following shapes:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `kind` | string | yes | Which GitHub object kind this flow processes. One of: `issue`, `pr`. |
-| `classification` | array of string | no | Restrict this flow to these classifications. Absent means every classification -- this is the one place classification is allowed to change what runs; see AS-1, 'Selection by classification'. |
-| `label` | string | no | Restrict this flow to items carrying this label (e.g. 'epic'). Absent means no label restriction. |
+| `type` | array of string | no | Restrict this flow to work items carrying any one of these type: labels (OR within the dimension -- a work item carries exactly one type, never two, so this is 'any of', never 'all of'). Absent means every type. See AS-1, 'Selection by classification'. |
+| `labels` | array of string | no | Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['type: enhancement', 'priority: high'] if a flow ever needed to key off more than type and size). Combines with `type` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority'). |
 
 **Shape 2:**
 
@@ -51,7 +79,7 @@ Exactly one of the following shapes:
 
 ### A flow -- `naming`
 
-What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (04-lifecycle.md) that need it. Absent for a flow whose steps never commit.
+What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -74,6 +102,7 @@ What this flow's branches and pull requests are called. Declared here, never com
 | `expected_effect` | object | yes | What this step is supposed to change, declared explicitly so the orchestrator can compare it against what actually changed (MI-6). A step declaring no commits that produces one disagrees with itself, and the disagreement is surfaced, not buried -- this is also how a read-only step's constraint (PRODUCT.md, 'What a scheduled step may do is declared') becomes checkable rather than a claim in a prompt. |
 | `budgets` | object | no | Overrides the top-level budgets default for this step only, field by field: a step declaring only max_turns still inherits max_wall_seconds from the default, and vice versa. Absent entirely means this step uses the default for both. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion) -- which is why an override can target one wall without touching the other. |
 | `extra_allowedTools` | array of string | no | Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged. |
+| `allowed_labels` | object | no | Which labels this step may ask the orchestrator to add or remove, as part of its returned result (PRODUCT.md, 'What a step must return'). A step never writes to GitHub itself; it requests, and the orchestrator applies only what this declares, silently dropping the rest -- the same enforced-not-discouraged relationship extra_allowedTools has with commands. Absent means the step may request no label changes beyond its own lifecycle labels, which it never requests directly (those are computed from its outcome, not chosen). Patterns follow the same glob convention as extra_allowedTools (e.g. 'blockedby:*'). |
 | `git_ops` | object | no | Declares that this step produces file output the orchestrator commits. Absent means it does not. |
 | `human_gate_after` | boolean | yes | Whether a named gate label is required before downstream steps see this one as satisfied. |
 | `human_gate_label` | string | no | Required when human_gate_after is true. |
@@ -101,6 +130,7 @@ What makes this step eligible, within a flow its item has already entered. Seque
 | `event` | string | no | Fires on a raw GitHub event, for a flow's entry step. |
 | `path_filter` | string | no | Glob; modifier on an event trigger. |
 | `children` | string | no | all_closed: eligible once every child of this item is closed (the epic wait). any_open: eligible while at least one child remains open (a step re-invoked once per remaining piece, e.g. coder). Both read the same underlying fact about the item's children; which direction a given step needs is the only difference. One of: `all_closed`, `any_open`. |
+| `labels` | array of string | no | Additional labels that must all be present for this step to be eligible, beyond whatever fires it (label/event) and whatever its dependencies require -- an AND combination, general to any dimension. This is what lets steps inside one flow vary by a dimension like size without becoming a separate flow: architect declares labels: ['size: L'] so it is eligible only on a large item, even though large-decomposer, the combiner, and every M-only step share the same flow and the same sequencing. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority'). |
 
 ### A step -- `expected_effect`
 
@@ -119,6 +149,15 @@ Overrides the top-level budgets default for this step only, field by field: a st
 |---|---|---|---|
 | `max_turns` | integer | no | Bounds how much back-and-forth this step's invocation is allowed, regardless of how long any of it takes. Agent-type steps only. |
 | `max_wall_seconds` | integer | no | Bounds how long this step's invocation may hold the pipeline, regardless of how many turns it took. Reclaims a stranded :wip: a lock older than this cannot still be legitimately running, so the orchestrator takes it back and records failed (PRODUCT.md, 'A step can vanish'). |
+
+### A step -- `allowed_labels`
+
+Which labels this step may ask the orchestrator to add or remove, as part of its returned result (PRODUCT.md, 'What a step must return'). A step never writes to GitHub itself; it requests, and the orchestrator applies only what this declares, silently dropping the rest -- the same enforced-not-discouraged relationship extra_allowedTools has with commands. Absent means the step may request no label changes beyond its own lifecycle labels, which it never requests directly (those are computed from its outcome, not chosen). Patterns follow the same glob convention as extra_allowedTools (e.g. 'blockedby:*').
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `add` | array of string | no | Label patterns this step may request be added, to its own item or another named in the request. |
+| `remove` | array of string | no | Label patterns this step may request be removed, to its own item or another named in the request. |
 
 ### A step -- `git_ops`
 
@@ -145,5 +184,5 @@ Session management for an agent-type step.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `scope` | string | yes | One of: `per_issue`, `global`. |
-| `id_pattern` | string | no | Optional token pattern for the session ID; the built-in default for the chosen scope is used when omitted. |
+| `scope` | string | yes | per_issue -- a distinct session for each work item; default ID ais-v1-{safe_agent}-issue-{number}. global -- one persistent session shared across every invocation of this agent; default ID ais-v1-{safe_agent}. Use global for agents that benefit from context accumulated across issues (e.g. a doc reviewer). One of: `per_issue`, `global`. |
+| `id_pattern` | string | no | Optional token pattern for the session ID; the built-in default for the chosen scope is used when omitted. Available tokens: {agent}, {safe_agent}, {phase}, {safe_phase}, {number}, {kind}, {owner}, {repo_name}, {safe_repo} -- only bare {identifier} placeholders are accepted, not attribute or index access. {title} and {url} are deliberately excluded: titles are human-authored and change over time, and both contain characters unsafe in a session ID. On a retry the orchestrator appends -r{attempt} to the seed before deriving the session's UUID, giving each retry attempt a distinct session. |

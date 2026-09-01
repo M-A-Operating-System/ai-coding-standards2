@@ -16,7 +16,7 @@ The calling agent is responsible for constructing the title. It MUST match this 
 [<agent-name>] - <KEY> - <short description>
 ```
 
-Where `<KEY>` follows the Issue Key Standard from `docs/product/orchestrator/13-todos.md`:
+Where `<KEY>` follows the Issue Key Standard:
 - Format: `<AGENT>-<CATEGORY>-<HASH>`
 - `<AGENT>`: uppercase short agent name (e.g., `REVDOC`, `FACTORY`, `USER`)
 - `<CATEGORY>`: one of `DEAD`, `BUG`, `SEC`, `PERF`, `TYPE`, `STYLE`, `MISS`, `STALE`, `GEN`
@@ -50,7 +50,6 @@ Examples of valid titles:
    Received: <the invalid title>
 
    The calling agent is responsible for constructing a valid title.
-   See docs/product/orchestrator/13-todos.md for the Issue Key Standard.
    ```
    **Do NOT create the issue. Stop here.**
 

@@ -19,10 +19,10 @@ Read these four, in this order, and you will understand the system:
 
 1. **[The 60-second summary](#the-60-second-summary)** below — the whole
    loop in one paragraph.
-2. **[01-vision.md](01-vision.md)** — the problem this solves and what
-   success looks like (the *why*).
-3. **[04-lifecycle.md](04-lifecycle.md)** — the five phases, then its
-   [End-to-end happy path](04-lifecycle.md#end-to-end-happy-path) section,
+2. **[PRODUCT.md](PRODUCT.md#vision)** — the problem this solves and what
+   the orchestrator promises (the *why* and the *what*).
+3. **[lifecycle.md](lifecycle.md)** — the five phases, then its
+   [End-to-end happy path](lifecycle.md#end-to-end-happy-path) section,
    which walks one ticket from issue to merged PR (the *how*).
 4. **[glossary.md](glossary.md)** — keep it open; the other docs assume the
    terms it defines (gate, sentinel, work item, `:wip`, session, …).
@@ -30,9 +30,9 @@ Read these four, in this order, and you will understand the system:
 Want to skip straight to running something? See **[quick-start.md](quick-start.md)**
 for the shortest path to a first pipeline run.
 
-Then read **[03-personas.md](03-personas.md)** to find your own role, and
+Then read **[PRODUCT.md](PRODUCT.md#personas)** to find your own role, and
 dip into the reference docs below as you need them. You do **not** need to
-read all 16 documents in order to get started.
+read all of them in order to get started.
 
 ---
 
@@ -62,38 +62,29 @@ rest as reference you consult when a question comes up.
 
 | # | Document | What it tells you |
 |---|---|---|
-| 01 | [Vision](01-vision.md) | The problem, and what success looks like |
-| 02 | [Principles](02-principles.md) | The 16 rules the system is built on (P-1…P-16), cited by ID everywhere else |
-| 03 | [Personas](03-personas.md) | Who uses AI Agile and what each needs from it |
-| 04 | [Lifecycle](04-lifecycle.md) | The five phases (four per-ticket + one continuous) plus on-demand agents, with an end-to-end walkthrough |
+| — | [Vision](PRODUCT.md#vision) | The problem, and what the orchestrator promises |
+| — | [The promises](PRODUCT.md#the-promises) | The architectural-separation guarantees (AS-1 to AS-3) and mode invariants (MI-1 to MI-8) the system is built on, cited by ID everywhere else |
+| — | [Personas](PRODUCT.md#personas) | Who uses AI Agile; the enforced vocabulary lives in [`standards/personas.json`](../../../standards/personas.json) |
+| 04 | [Lifecycle](lifecycle.md) | The five phases (four per-ticket + one continuous) plus on-demand agents, with an end-to-end walkthrough |
 
 ### How the machine works — reference
 
 | # | Document | What it tells you |
 |---|---|---|
-| 05 | [Pipeline configuration](05-pipeline-config.md) | `pipeline.json`: the single file that declares the agent graph |
-| 06 | [Status model](06-status-model.md) | The label-driven state machine and who may change what |
-| 07 | [Human gates](07-human-gates.md) | Every gate: who approves and what they are signing off |
-| 08 | [Audit log](08-audit-log.md) | The immutable JSONL event timeline |
-| 09 | [Human interaction](09-human-interaction.md) | How agents and humans communicate; the Question Card protocol |
+| — | [Audit log](PRODUCT.md#mi-6----you-can-believe-what-the-system-tells-you) | The immutable JSONL event timeline: where it lives, and the shape of one record |
 
 ### Building & operating
 
 | # | Document | What it tells you |
 |---|---|---|
-| 11 | [Orchestrator](11-orchestrator.md) | The Python orchestrator's internal design and GitHub Actions workflows |
-| 12 | [Agent specification](12-agent-spec.md) | How to write an agent prompt file: frontmatter, body, tool allowlist |
-| 13 | [Todos](13-todos.md) | How task lists are stored in issue/PR bodies |
-| 14 | [Standards](14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping |
 | 16 | [Onboarding](16-onboarding.md) | How `get_started.py` wires this repo into a consuming repo |
-| 17 | [Operating modes](17-operating-modes.md) | Scheduled (GitHub Actions) vs. in-session (`/maos-run`) — comparison and current limitations |
 | — | [Quick Start](quick-start.md) | Shortest path to a first pipeline run, in either operating mode |
+| — | [Standards](../standards/14-standards.md) | The two-tier standards system, taxonomy, and ADR scoping -- lives in its own `docs/product/standards/` area, not this one; standards enforcement is agent behaviour, not orchestrator mechanism |
 
 ### Planning & status
 
 | # | Document | What it tells you |
 |---|---|---|
-| 10 | [Roadmap](10-roadmap.md) | What ships now versus later; MVP scope and rollout phases |
 | 15 | [Backlog](15-backlog.md) | Point-in-time snapshot of open issues (GitHub is authoritative) |
 | — | [Glossary](glossary.md) | Plain-language definitions of every term used above |
 
@@ -105,7 +96,7 @@ Authoritative facts about the pipeline are declared once in
 `pipeline/pipeline.json` and rendered for human reading by
 `pipeline/generators/generate_phase_mermaid.py`. These files are never
 hand-edited and are committed in the same PR as any change to the source
-JSON (see [P-2](02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated)).
+JSON (see [P-2](PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does)).
 The generated views are listed in
 [`generated/README.md`](generated/README.md); whole-pipeline catalogues
 (agents, gates) are tracked in [`backlog.md`](15-backlog.md).

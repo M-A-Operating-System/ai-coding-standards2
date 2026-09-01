@@ -6,7 +6,7 @@ Every file here is produced by a generator from a single machine-readable
 source. Editing the generated file directly will be overwritten on the
 next regeneration and rejected by CI.
 
-This directory implements [P-2](../02-principles.md#p-2--one-machine-readable-source-per-concern-human-views-are-generated):
+This directory implements [P-2](../PRODUCT.md#as-1----one-file-tells-you-what-the-pipeline-does):
 human-readable views are generated from machine-readable sources.
 
 ---
@@ -26,8 +26,8 @@ human-readable views are generated from machine-readable sources.
 The last row is a different kind of source. Every other row describes
 `pipeline/pipeline.json` as it exists today; `pipeline-schema-reference.md`
 describes the **target** shape (issue #393) -- what `pipeline.json` is meant
-to become, not what it currently is. See
-[`gap_analysis.md`](../gap_analysis.md) for the distance between them.
+to become, not what it currently is. The build plan closing that distance is
+sequenced on [issue #393](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/393).
 
 ---
 

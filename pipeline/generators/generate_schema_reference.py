@@ -9,9 +9,9 @@ beside it. If a fact is not in the schema's own type/required/description,
 it does not appear here.
 
 This is the TARGET schema. It does not describe pipeline/pipeline.json as it
-exists today -- see docs/product/orchestrator/gap_analysis.md for that
-distance. pipeline/schemas/pipeline.schema.json (the live schema) is
-untouched by this generator.
+exists today -- the build plan closing that distance is sequenced on issue
+#393. pipeline/schemas/pipeline.schema.json (the live schema) is untouched
+by this generator.
 
 Idempotent by construction -- output depends only on the schema file, so
 running twice produces byte-identical output. CI regenerates and fails the
@@ -180,8 +180,8 @@ def render(schema):
         (schema.get("description") or "").strip(),
         "",
         "This is the target. `pipeline/schemas/pipeline.schema.json` governs",
-        "the pipeline.json that exists today; see",
-        "[`gap_analysis.md`](../gap_analysis.md) for the distance between them.",
+        "the pipeline.json that exists today; the build plan closing that",
+        "distance is sequenced on issue #393.",
         "",
         "## Top level",
         "",
@@ -191,6 +191,15 @@ def render(schema):
     lines += ["| Field | Type | Required | Description |", "|---|---|---|---|"]
     lines += [f"| {f} | {t} | {r} | {d} |" for f, t, r, d in rows]
     lines += [""]
+
+    # Expand every top-level object-typed field (defaults, budgets) into its
+    # own subsection, the same way flow/step fields recurse below -- without
+    # this, a field like budgets.max_launches_per_tick has no type/required/
+    # description anywhere in the generated output.
+    for name, prop in schema.get("properties", {}).items():
+        prop = _resolve(schema, prop)
+        if prop.get("type") == "object" and ("properties" in prop or "oneOf" in prop):
+            lines += _render_object_section(schema, f"Top level -- `{name}`", prop, level=3)
 
     flow = schema["definitions"]["flow"]
     lines += _render_object_section(schema, "A flow", flow, level=2)

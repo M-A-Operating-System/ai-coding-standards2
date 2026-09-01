@@ -64,6 +64,25 @@ the file header and is part of the STD ID.
 
 ---
 
+## Personas — not a category, a closed vocabulary
+
+`standards/personas.json` lives beside the seven category files above but is
+not one of them: it carries no `STD` IDs, no `acceptance_criteria`, no
+`anti_patterns`, and enforces nothing about code. It is the closed vocabulary
+of personas a PRD user story may name -- `prd-writer` validates every
+`As the {persona} ...` story against it, the same way `coder` validates a diff
+against a category file. One machine-readable source, one enforced vocabulary
+(P-2) -- see
+[`PRODUCT.md`](../orchestrator/PRODUCT.md#personas) for what each persona is
+and why it exists.
+
+The one persona whose primary actor is genuinely automation (`automated:
+true`) also carries a `qualifying_test`: criteria a story must meet before it
+may legitimately name that persona, so a technical-implementation detail
+cannot be smuggled in disguised as a product actor.
+
+---
+
 ## Standard object fields
 
 Every entry in a `standards` array must conform to this shape:
