@@ -2,11 +2,6 @@
   "env": {
     "AI_AGILE_ROOT": "."
   },
-  "permissions": {
-    "allow": [
-      "Edit(.claude/agents/**)"
-    ]
-  },
   "hooks": {
     "PreToolUse": [
       {

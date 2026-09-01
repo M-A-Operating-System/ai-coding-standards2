@@ -8,10 +8,6 @@ description: >
   instructions. Triggered by the codebase-reviewer:requested label on any
   issue. Cross-references docs/product/ only to understand original intent
   when code is ambiguous.
-tools: [Bash, Read, Grep]
-model: claude-sonnet-4-6
-max_turns: 80
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 00_ondemand/codebase-reviewer

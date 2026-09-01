@@ -12,10 +12,6 @@ description: >
   with no unresolved human reviews, marks the PR ready for human review.
   No human gate on this step -- human sign-off is required only after three
   failed review cycles.
-tools: [Bash, Read, Glob, Grep]
-model: claude-sonnet-4-6
-max_turns: 80
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 03_execute/pr-reviewer

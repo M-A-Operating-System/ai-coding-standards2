@@ -15,10 +15,6 @@ description: >
   The orchestrator owns all git operations (branch, commit, push) and the
   PR lifecycle (create, ready, labels). Triggered by create-pr:complete
   (Mode A); re-invoked via review-cycle:N / human-review-pending (Mode B).
-tools: [Bash, Read, Edit, Write, Grep, Glob]
-model: claude-sonnet-4-6
-max_turns: 60
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 # Network egress (curl, wget, nc, ssh, rsync) and secret-printing commands
 # (env, printenv, base64) are intentionally absent to raise the bar against
 # prompt-injection exfiltration.

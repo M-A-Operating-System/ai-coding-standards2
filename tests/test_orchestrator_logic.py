@@ -378,6 +378,7 @@ class TestDefaultMaxConcurrentIsOne:
         """Pipeline entries without max_concurrent field default to 1."""
         import json
         pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
             "pipeline": [{
                 "agent": "01_product_docs/issue-classifier",
                 "phase": "01_product_docs",
@@ -398,6 +399,7 @@ class TestDefaultMaxConcurrentIsOne:
         """max_concurrent: null in pipeline.json defaults to 1."""
         import json
         pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
             "pipeline": [{
                 "agent": "01_product_docs/issue-classifier",
                 "phase": "01_product_docs",
@@ -418,6 +420,7 @@ class TestDefaultMaxConcurrentIsOne:
     def test_load_pipeline_loads_review_gate(self, tmp_path):
         import json
         pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
             "pipeline": [{
                 "agent": "03_execute/pr-reviewer",
                 "phase": "03_execute",
@@ -438,6 +441,7 @@ class TestDefaultMaxConcurrentIsOne:
     def test_load_pipeline_review_gate_defaults_false(self, tmp_path):
         import json
         pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
             "pipeline": [{
                 "agent": "01_product_docs/issue-classifier",
                 "phase": "01_product_docs",
@@ -458,6 +462,7 @@ class TestDefaultMaxConcurrentIsOne:
         import json
         import logging
         pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
             "pipeline": [{
                 "agent": "03_execute/pr-reviewer",
                 "phase": "03_execute",
@@ -1632,6 +1637,7 @@ class TestSelfGates:
     def test_load_pipeline_loads_self_gates(self, tmp_path):
         import json
         pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
             "pipeline": [{
                 "agent": "01_product_docs/prd-docs-updater",
                 "phase": "01_product_docs",
@@ -1652,6 +1658,7 @@ class TestSelfGates:
     def test_load_pipeline_self_gates_defaults_false(self, tmp_path):
         import json
         pipeline_data = {
+            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
             "pipeline": [{
                 "agent": "01_product_docs/issue-classifier",
                 "phase": "01_product_docs",

@@ -7,10 +7,6 @@ description: >
   are found, posts a prioritised resolution plan as PR comments and signals
   review — the pipeline pauses at the merge-conflict:approved gate until a human
   approves the plan. Gates on merge-conflict:approved.
-tools: [Bash, Read, Glob, Grep]
-model: claude-haiku-4-5-20251001
-max_turns: 60
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 03_execute/merge-conflict

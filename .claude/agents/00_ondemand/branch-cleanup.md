@@ -7,10 +7,6 @@ description: >
   On re-invocation after a human approves specific branches in a reply
   comment, deletes exactly those branches and posts a summary. Triggered by
   applying the branch-cleanup:requested label to any issue.
-tools: [Bash, Read, Grep]
-model: claude-sonnet-4-6
-max_turns: 60
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 00_ondemand/branch-cleanup

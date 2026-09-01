@@ -10,10 +10,6 @@ description: >
   writing — the user decides which rules become enforceable standards. Current
   codebase defects and cross-source conflicts it discovers are surfaced as git
   issues, never encoded as standards.
-tools: [Bash, Read, Write, Grep, Glob]
-model: claude-sonnet-4-6
-max_turns: 200
-# Tool allowlist is managed in pipeline.json extra_allowedTools for this agent.
 ---
 
 # 00_ondemand/standards-migrator

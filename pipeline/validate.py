@@ -124,46 +124,20 @@ def validate_agent_phase_prefix(pipeline: dict) -> list[str]:
     return errors
 
 
-def _parse_frontmatter(text: str) -> dict:
-    """Parse YAML-like frontmatter between --- delimiters (scalars + inline lists)."""
-    lines = text.splitlines()
-    if not lines or lines[0].strip() != "---":
-        return {}
-    end = None
-    for i, line in enumerate(lines[1:], start=1):
-        if line.strip() == "---":
-            end = i
-            break
-    if end is None:
-        return {}
-    result: dict = {}
-    for line in lines[1:end]:
-        if ":" not in line or line.startswith(" "):
-            continue
-        key, _, raw = line.partition(":")
-        key = key.strip()
-        raw = raw.strip()
-        if not key or not raw or raw == ">":
-            continue
-        if raw.startswith("[") and raw.endswith("]"):
-            result[key] = [x.strip() for x in raw[1:-1].split(",") if x.strip()]
-        else:
-            result[key] = raw
-    return result
-
-
 def validate_agent_files(pipeline: dict, agents_dir: Path) -> list[str]:
     """For each agent in the pipeline, verify the prompt file exists and
-    declares a valid model in its frontmatter.
+    pipeline.json declares a valid model for it.
 
-    Only runs when agents_dir exists on disk; silently passes when the
-    directory is absent (e.g. consuming repos that haven't synced yet).
+    Model lives in pipeline.json, not the agent's frontmatter (AS-1: a step
+    does not choose its own model, and the frontmatter declares only name and
+    description). Only runs when agents_dir exists on disk; silently passes
+    when the directory is absent (e.g. consuming repos that haven't synced yet).
     """
     if not agents_dir.is_dir():
         return []
     errors = []
     for entry in pipeline["pipeline"]:
-        # Script steps run a bash script directly — no agent prompt file.
+        # Script steps run a bash script directly — no agent prompt file, no model.
         if entry.get("type") == "script":
             continue
         agent_name = entry["agent"]
@@ -173,11 +147,10 @@ def validate_agent_files(pipeline: dict, agents_dir: Path) -> list[str]:
                 f"agent '{agent_name}': prompt file not found at {agent_file.relative_to(agents_dir.parent.parent)}"
             )
             continue
-        fm = _parse_frontmatter(agent_file.read_text())
-        model = fm.get("model")
+        model = entry.get("model")
         if not model:
             errors.append(
-                f"agent '{agent_name}': missing 'model' field in frontmatter"
+                f"agent '{agent_name}': missing 'model' field in pipeline.json"
             )
         elif model not in VALID_MODELS:
             errors.append(

@@ -4,10 +4,33 @@
   "title": "AI Agile Pipeline",
   "description": "The agent dependency graph that the orchestrator uses to decide which agent runs next. See docs/product/orchestrator/05-pipeline-config.md.",
   "type": "object",
-  "required": ["pipeline"],
+  "required": ["pipeline", "budgets"],
   "additionalProperties": true,
   "properties": {
     "$schema": { "type": "string" },
+    "budgets": {
+      "type": "object",
+      "description": "Consumption limits: a default turn/wall-clock budget every agent-type step gets unless it declares its own override, and a pipeline-wide cap on how much work one tick starts. Moves AGENT_TIMEOUT_SECONDS, DEFAULT_MAX_TURNS and PIPELINE_MAX_CONCURRENT out of pipeline_orchestrator.py and into config (AS-1).",
+      "additionalProperties": false,
+      "required": ["max_turns", "max_wall_seconds"],
+      "properties": {
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default turn budget for every agent-type step, unless the step declares its own via its own budgets.max_turns."
+        },
+        "max_wall_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default wall-clock budget for every agent-type step, unless the step declares its own via its own budgets.max_wall_seconds. Script-type steps use script_timeout_seconds instead, unaffected by this field."
+        },
+        "max_launches_per_tick": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How much work a single tick will start before it stops, so a burst of eligible work does not consume everything available in one pass. Pipeline-wide only -- no per-step equivalent."
+        }
+      }
+    },
     "defaults": {
       "type": "object",
       "description": "Pipeline-level defaults merged into every agent invocation.",
@@ -148,6 +171,61 @@
           "maximum": 10,
           "default": 0,
           "description": "How many times the orchestrator will re-invoke this step after a :failed outcome before giving up. 0 means no retries (fail immediately)."
+        },
+        "model": {
+          "type": "string",
+          "description": "Which model this agent-type step runs on, chosen when the step was declared -- a step does not choose its own model (AS-1). Not a frontmatter field; the prompt file at .claude/agents/{agent}.md declares only name and description."
+        },
+        "budgets": {
+          "type": "object",
+          "description": "Overrides the top-level budgets default for this agent-type step only, field by field: a step declaring only max_turns still inherits max_wall_seconds from the default, and vice versa. Absent entirely means this step uses the default for both.",
+          "additionalProperties": false,
+          "properties": {
+            "max_turns": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Bounds how much back-and-forth this step's invocation is allowed."
+            },
+            "max_wall_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Bounds how long this step's invocation may hold the pipeline. A :wip older than this cannot still be legitimately running and is reclaimed."
+            }
+          }
+        },
+        "expected_effect": {
+          "type": "object",
+          "description": "What this step is supposed to change, declared explicitly so the orchestrator can compare it against what actually changed (MI-6). A step declaring no commits that produces one disagrees with itself.",
+          "required": ["commits"],
+          "additionalProperties": false,
+          "properties": {
+            "commits": {
+              "type": "boolean",
+              "description": "Whether this step is expected to change tracked files."
+            },
+            "creates_issues": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether this step is expected to raise a new work item."
+            }
+          }
+        },
+        "allowed_labels": {
+          "type": "object",
+          "description": "Which labels this step may ask the orchestrator to add or remove, as part of its returned result. A step never writes to GitHub itself; it requests, and the orchestrator applies only what this declares, silently dropping the rest. Absent means the step may request no label changes. Patterns follow the same glob convention as extra_allowedTools.",
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Label patterns this step may request be added, to its own item or another named in the request."
+            },
+            "remove": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Label patterns this step may request be removed, to its own item or another named in the request."
+            }
+          }
         },
         "max_concurrent": {
           "type": ["integer", "null"],

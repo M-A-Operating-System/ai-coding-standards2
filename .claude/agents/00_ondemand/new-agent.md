@@ -7,9 +7,6 @@ description: >
   pipeline.json. Enforces clean sequential step numbering and simple step
   structure in every agent it creates. Triggered by applying the
   new-agent:requested label to an issue.
-tools: [Bash, Read, Write, Edit, Grep]
-model: claude-sonnet-4-6
-max_turns: 20
 ---
 
 # 00_ondemand/new-agent

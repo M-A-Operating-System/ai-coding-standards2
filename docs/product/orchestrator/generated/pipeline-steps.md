@@ -56,7 +56,7 @@ authoritative and this table is a view of it.
 What each step is permitted to do. Under AS-1 this table must be
 complete: an entitlement that does not appear here is not granted.
 
-**Granted to every step:** `Write`, `Edit`
+**Granted to every step:** `Write`, `Edit`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue edit *)`, `Bash(gh issue list *)`, `Bash(gh pr view *)`, `Bash(gh pr comment *)`, `Bash(gh pr list *)`, `Bash(gh pr diff *)`, `Bash(gh api repos/*/issues/*)`, `Bash(gh api repos/*/pulls/*)`, `Bash(gh api repos/*/issues*)`, `Bash(gh api repos/*/pulls*)`, `Bash(gh api "repos/*/issues/*)`, `Bash(gh api "repos/*/pulls/*)`, `Bash(gh api "repos/*/issues*)`, `Bash(gh api "repos/*/pulls*)`, `Bash(gh api --method * repos/*/issues*)`, `Bash(gh api --method * "repos/*/issues*)`, `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`, `Bash(cd *)`, `Read`, `Glob`, `Grep`
 
 | Step | Additional entitlements | Git operations |
 |---|---|---|
@@ -72,13 +72,7 @@ complete: an entitlement that does not appear here is not granted.
 | `03_execute/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | `commit_after=false` |
 | `00_ondemand/codebase-reviewer` | `Bash(gh issue create *)`, `Bash(git log *)` | -- |
 | `00_ondemand/sizer` | `Bash(gh issue create *)`, `Bash(gh api *)` | -- |
-| `00_ondemand/new-agent` | -- | `commit_after=true` |
+| `00_ondemand/new-agent` | `Edit(.claude/agents/**)` | `commit_after=true` |
 | `00_ondemand/standards-migrator` | `Bash(gh issue create *)`, `Bash(python3 *)` | -- |
 | `00_ondemand/branch-cleanup` | `Bash(gh api *)`, `Bash(gh pr list *)`, `Bash(gh issue comment *)`, `Bash(gh issue view *)` | -- |
 | `00_ondemand/issue-cleanup` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue close *)`, `Bash(gh pr list *)` | -- |
-
-> **Known gap.** Entitlements are not yet defined by `pipeline.json`
-> alone. `BASE_AGENT_TOOLS` in `pipeline/pipeline_orchestrator.py`, each
-> agent's `tools:` frontmatter, and `.claude/settings.json` also grant
-> capability, so this table is incomplete by construction. See AS-1 in
-> [`../PRODUCT.md`](../PRODUCT.md) and issue #357.
