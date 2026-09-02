@@ -341,7 +341,7 @@ class TestCheckControls:
 
     def test_process_work_item_returns_zero_when_stopped(self, tmp_path, monkeypatch):
         """process_work_item returns 0 immediately when _check_controls detects stop (headless)."""
-        from pipeline_orchestrator import process_work_item, AgentDef, WorkItem, ConcurrencyState
+        from pipeline_orchestrator import process_work_item, AgentDef, WorkItem
         stop_path = tmp_path / ".pipeline-stop"
         stop_path.write_text(json.dumps({"reason": "test stop", "stopped_at": "2026-01-01T00:00:00Z"}))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)

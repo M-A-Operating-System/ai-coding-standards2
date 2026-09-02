@@ -235,7 +235,7 @@
 
 **Given** the workspace is checked out at `main`
 **When** the orchestrator invokes an agent whose step declares `git_ops.commit_after`
-**Then** it fetches and checks out `issue-{N}` explicitly before the invocation, so the pin does not strand the agent on the wrong branch
+**Then** it fetches `issue-{N}` and checks it out into its own isolated git worktree before the invocation, so the pin does not strand the agent on the wrong branch
 
 ## Scenario: An agent's working files go to the scratch directory, not the repo
 
@@ -256,4 +256,71 @@
 **Given** an untracked file exists at the repository root before an agent is invoked
 **When** the agent finishes without touching it
 **Then** the orchestrator leaves it in place, because it compares against a snapshot taken before the run
+
+## Scenario: An untagged item claims everything
+
+**Given** an issue carries no `component:` label
+**When** the orchestrator evaluates whether it can claim the item's components before starting it
+**Then** it claims everything -- no other item, tagged or untagged, may claim anything while it runs, exactly as sequential as the pipeline was before component claims existed
+
+## Scenario: Two items with disjoint components run at once
+
+**Given** issue A carries only `component:frontend` and issue B carries only `component:backend`, and neither is currently claimed
+**When** the orchestrator evaluates both in the same tick
+**Then** it claims `component:frontend` for A and `component:backend` for B and starts both, since neither claim overlaps the other
+
+## Scenario: An item waits when it cannot claim every component it names at once
+
+**Given** issue A carries `component:frontend` and `component:backend`, and another in-flight item already holds `component:backend`
+**When** the orchestrator evaluates issue A
+**Then** it does not start A, and does not partially claim `component:frontend` while waiting for `component:backend` -- an item only ever claims all of what it names or none of it
+
+## Scenario: Headless answers from its own settled state
+
+**Given** a headless tick already fetched all work items and their labels at tick start
+**When** it evaluates whether a later item in the same tick can claim its components
+**Then** it decides from that in-memory snapshot, updated as this tick launches agents, without a further GitHub call
+
+## Scenario: Interactive reads component claims fresh, not from a stale snapshot
+
+**Given** two people each run `/maos-{agent}` in their own chat session at roughly the same time, against different issues
+**When** either instance evaluates whether it can claim its issue's components
+**Then** it reads every other in-flight item's `component:` labels from GitHub directly, rather than trusting only the single work item it fetched for itself, since the other instance is a genuinely separate, unserialised process it cannot otherwise see
+
+## Scenario: A fresh component-claim check fails closed on a GitHub error
+
+**Given** interactive mode cannot fetch the current in-flight items because the GitHub API call fails
+**When** the orchestrator evaluates whether an item can claim its components
+**Then** it refuses the claim (treats everything as claimed) rather than proceeding as if nothing were in flight, and logs a warning
+
+## Scenario: Each cleared item runs in its own git worktree
+
+**Given** two commit_after runs are cleared to start at once, on different issues with non-overlapping components
+**When** each is dispatched
+**Then** each checks out its own issue branch into its own git worktree, so neither run's checkout can move the other's `HEAD`
+
+## Scenario: A failed worktree checkout fails the run loudly
+
+**Given** `git worktree add` (or the preceding fetch) fails for a commit_after run
+**When** the orchestrator would otherwise invoke the agent
+**Then** it does not fall back to running on whatever branch the orchestrator's own working directory happens to be on -- it fails the run, applying `:failed` with the failure reason, exactly as a crashed subprocess would
+
+## Scenario: A killed run does not strand its worktree
+
+**Given** a commit_after run's worktree is checked out and the orchestrator process receives SIGTERM or SIGINT before the run finishes
+**When** the signal handler runs
+**Then** it removes the in-flight worktree, alongside clearing the in-flight `:wip` label, so the next run does not collide with debris
+
+## Scenario: AI_AGILE_ROOT matches the worktree an agent actually runs in
+
+**Given** a commit_after agent is spawned with its `cwd` set to an isolated worktree
+**When** the agent's prompt and environment are resolved
+**Then** both the prompt's `AI_AGILE_ROOT=` line and the `$AI_AGILE_ROOT` env var point at that same worktree, not the orchestrator's own shared checkout
+**And** the documented `cd $AI_AGILE_ROOT && <command>` idiom therefore stays inside the isolated worktree instead of escaping back onto the shared tree
+
+## Scenario: Applying an interactive result still never touches the worktree mechanism
+
+**Given** `--interactive-result` is applying a person-produced result.json for a commit_after step
+**When** `_run_agent` runs
+**Then** it does not create a worktree or check out the issue branch at all, exactly as it already skips the pre-agent checkout under `--interactive-result`
 
