@@ -391,7 +391,7 @@ is load-bearing, not cosmetic.
 
 ```json
 {
-  "outcome": "complete",           // or "review" when $VERDICT == "REQUEST CHANGES"
+  "outcome": "complete",
   "summary": "Verdict: $VERDICT. $N_CRITICAL Critical, $N_HIGH High, $N_MEDIUM Medium, $N_LOW Low, $N_INFO Informational.",
   "message": "Verdict: $VERDICT.",
   "output": "<the review body composed above>"
