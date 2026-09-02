@@ -639,8 +639,8 @@ class TestInteractivePathGetsARealScratchDirectory:
     def test_resolve_only_prints_the_scratch_path(self):
         from pipeline_orchestrator import PRINT_PROMPT_ENV_KEYS
         assert "AI_AGILE_SCRATCH" in PRINT_PROMPT_ENV_KEYS, (
-            "/run-agent reads the agent's env from --print-prompt; a key absent "
-            "from this list cannot reach the agent"
+            "/maos-{agent}-i reads the agent's env from --print-prompt; a key "
+            "absent from this list cannot reach the agent"
         )
 
     def test_the_printed_scratch_path_is_per_session_not_bare_tmp(self):
@@ -664,20 +664,22 @@ class TestInteractivePathGetsARealScratchDirectory:
                 marker in key for marker in ("TOKEN", "KEY", "SECRET", "PASSWORD")
             ), f"{key} looks like a credential and must not be printed"
 
-    def test_run_agent_creates_the_directory_before_writing_the_scope_file(self):
-        """Order matters: once the scope file exists the hook denies `bash` to
-        every agent that lacks the grant, which is most of them."""
+    def test_maos_agent_i_creates_the_directory_before_the_interactive_work(self):
+        """Order matters: the scratch directory must exist before the session
+        starts following the step's instructions (issue #402 -- /maos-{agent}-i
+        replaces /run-agent; there is no scope file any more, so the ordering
+        concern is scratch-setup.sh before the interactive work begins)."""
         text = (Path(__file__).parent.parent / ".claude" / "commands"
-                / "run-agent.md").read_text()
+                / "maos-coder-i.md").read_text()
         setup_at = text.index("scratch-setup.sh")
-        scope_at = text.index(".run-agent-scope.")
-        assert setup_at < scope_at, (
-            "scratch-setup.sh must run before the scope file is written"
+        work_at = text.index("Follow the printed prompt")
+        assert setup_at < work_at, (
+            "scratch-setup.sh must run before the interactive work begins"
         )
 
-    def test_run_agent_removes_the_directory_at_the_end(self):
+    def test_maos_agent_i_removes_the_directory_at_the_end(self):
         text = (Path(__file__).parent.parent / ".claude" / "commands"
-                / "run-agent.md").read_text()
+                / "maos-coder-i.md").read_text()
         assert "scratch-teardown.sh" in text
 
 

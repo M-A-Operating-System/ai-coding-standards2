@@ -18,7 +18,6 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent
 QUICK_START = REPO_ROOT / "docs" / "product" / "orchestrator" / "quick-start.md"
 CLAUDE_MD = REPO_ROOT / ".claude" / "CLAUDE.md"
-RUN_AGENT = REPO_ROOT / ".claude" / "commands" / "run-agent.md"
 
 
 # ---------------------------------------------------------------------------
@@ -149,54 +148,3 @@ def test_the_affected_paths_are_named_error_path_incomplete_guidance(
     monkeypatch.setattr(sys.modules[__name__], "CLAUDE_MD", fake)
     with pytest.raises(AssertionError, match=r"\.claude/"):
         test_the_affected_paths_are_named_explicitly()
-
-
-# ---------------------------------------------------------------------------
-# Scenario: An interactively-run agent is scoped to its declared tool allowlist
-# ---------------------------------------------------------------------------
-
-def test_an_interactively_run_agent_is_scoped_to_its_declared_tool_allowlist():
-    """.claude/commands/run-agent.md constrains the session to the agent's allowed_tools list.
-
-    Since issue #316, run-agent uses the orchestrator's resolve-only mode
-    (--print-prompt) as the single source of truth instead of hand-parsing
-    the agent file's frontmatter directly.
-    """
-    assert RUN_AGENT.exists(), ".claude/commands/run-agent.md must exist"
-    text = RUN_AGENT.read_text()
-
-    # Must obtain the allowlist from the orchestrator's resolve-only mode, not hand-parse
-    assert "allowed_tools" in text or "--print-prompt" in text, \
-        "run-agent.md must obtain the tool allowlist via the orchestrator's resolve-only mode"
-
-    # Must warn or constrain before using tools outside the declared allowlist
-    assert "allowlist" in text.lower() or "allowed" in text.lower(), \
-        "run-agent.md must reference constraining to or warning about the tool allowlist"
-
-    # Must call out Glob specifically (the concrete symptom that triggered this issue)
-    assert "Glob" in text, \
-        "run-agent.md must mention Glob as an example of a tool that may not be in the allowlist"
-
-    # Must reference the real orchestrator's behaviour for framing
-    assert "orchestrator" in text.lower(), \
-        "run-agent.md must explain the constraint in terms of what the real orchestrator enforces"
-
-
-def test_an_interactively_run_agent_is_scoped_error_path_missing_tools_field(
-        tmp_path, monkeypatch):
-    """When run-agent.md does not reference the orchestrator allowlist the test surfaces the gap."""
-    fake = tmp_path / "run-agent.md"
-    fake.write_text(
-        "# Run Agent\n\nRead the agent file. Note the model: and max_turns: values.\n"
-    )
-    monkeypatch.setattr(sys.modules[__name__], "RUN_AGENT", fake)
-    with pytest.raises(AssertionError, match="allowed_tools|print-prompt"):
-        test_an_interactively_run_agent_is_scoped_to_its_declared_tool_allowlist()
-
-
-def test_an_interactively_run_agent_is_scoped_idempotent():
-    """Tool-scope check is stable on repeated reads."""
-    for _ in range(2):
-        text = RUN_AGENT.read_text()
-        assert "allowed_tools" in text or "--print-prompt" in text
-        assert "allowlist" in text.lower() or "allowed" in text.lower()

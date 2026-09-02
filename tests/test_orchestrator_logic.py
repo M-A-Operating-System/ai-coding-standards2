@@ -1890,7 +1890,7 @@ class TestPhasesFilter:
             verbose=False, clear_pause=False, clear_stop=False, repo="test/repo",
             pipeline="pipeline.json", phases="01_product_docs",
             issue=None, kind=None, dry_run=True,
-            headless=False, print_prompt=False,
+            headless=False, print_prompt=False, interactive_result=False,
         )
 
         wi = _make_work_item_with_labels(1, set())
@@ -3939,6 +3939,7 @@ class TestPriorityScheduling:
         args_mock.dry_run = False
         args_mock.pipeline = MagicMock()
         args_mock.phases = None
+        args_mock.interactive_result = False
         mock_parse_args.return_value = args_mock
 
         agent_def = self._make_agent_for_priority()
@@ -4002,6 +4003,7 @@ class TestPriorityScheduling:
         args_mock.dry_run = False
         args_mock.pipeline = MagicMock()
         args_mock.phases = None
+        args_mock.interactive_result = False
         mock_parse_args.return_value = args_mock
 
         agent_def = self._make_agent_for_priority()

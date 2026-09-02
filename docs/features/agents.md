@@ -46,10 +46,10 @@
 
 ## Scenario: An interactively-run agent gets the same scratch directory as an orchestrated one
 
-**Given** an agent is run by hand through `/run-agent` rather than by the orchestrator
+**Given** a step is worked through by hand via `/maos-{agent}-i` rather than by the orchestrator spawning a subprocess
 **When** the invocation is resolved
-**Then** `--print-prompt` returns `AI_AGILE_SCRATCH` in its env, and `/run-agent` creates that directory with `scratch-setup.sh` before the agent starts and removes it with `scratch-teardown.sh` at the end
-**And** the agent therefore does not fall back to a shared `/tmp` where two concurrent runs would collide on the same filenames
+**Then** `--print-prompt` returns `AI_AGILE_SCRATCH` in its env, and `/maos-{agent}-i` creates that directory with `scratch-setup.sh` before the interactive work starts and removes it with `scratch-teardown.sh` at the end
+**And** the step therefore does not fall back to a shared `/tmp` where two concurrent runs would collide on the same filenames
 
 ## Scenario: Only steps that were given a scratch directory are torn down
 

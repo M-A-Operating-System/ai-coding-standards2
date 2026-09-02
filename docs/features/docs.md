@@ -24,12 +24,6 @@
 **When** a reader wants to know which paths this actually affects
 **Then** `standards/` and `.claude/` are named as the whole-folder symlinks every consuming repo installs, per `16-onboarding.md`
 
-## Scenario: An interactively-run agent is scoped to its declared tool allowlist
-
-**Given** `/run-agent` invoked on an agent whose frontmatter declares `tools: [Bash, Read, Grep]` (no `Glob`)
-**When** the interactive session follows that agent's instructions
-**Then** it is constrained to (or explicitly warned before stepping outside) the same tool set the real orchestrator-spawned subprocess would have -- `Glob` is not silently available just because the ambient session happens to have it
-
 ## Scenario: Sections 1-4 are preserved verbatim
 
 **Given** the restructured `.claude/CLAUDE.md`

@@ -1,18 +1,5 @@
 {
   "env": {
     "AI_AGILE_ROOT": "."
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/run-agent-scope.sh"
-          }
-        ]
-      }
-    ]
   }
 }

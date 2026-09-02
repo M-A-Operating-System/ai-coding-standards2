@@ -2954,7 +2954,7 @@ AGENT_ENV_PASSTHROUGH = (
 )
 
 # The env keys resolve-only mode (--print-prompt) may print. That output goes to
-# stdout and /run-agent captures it inside an interactive session, so it is built
+# stdout and /maos-{agent}-i captures it inside an interactive session, so it is built
 # by naming exactly what may be exported -- never by subtracting known-bad keys
 # from the full env. A denylist would start leaking the moment a new credential
 # joined AGENT_ENV_PASSTHROUGH; this list stays silent about anything it does not
@@ -2975,10 +2975,10 @@ PRINT_PROMPT_ENV_KEYS = (
     "ISSUE_NUMBER",
     "PR_NUMBER",
     # Derived from SESSION_ID, which is already here -- a path, not a secret.
-    # Without it /run-agent has nothing to export and every hand-run agent
+    # Without it /maos-{agent}-i has nothing to export and every hand-run agent
     # falls through ${AI_AGILE_SCRATCH:-/tmp} to a shared directory with fixed
     # filenames, so the isolation the orchestrator path guarantees is absent
-    # exactly where a human is watching (issue #321). /run-agent runs
+    # exactly where a human is watching (issue #321). /maos-{agent}-i runs
     # scratch-setup.sh on this path before the agent starts; the two changes
     # only work together -- exporting a directory nothing creates is worse than
     # not exporting one, because the agent is told not to create it itself.
@@ -3003,7 +3003,7 @@ def _warn_if_grants_dropped() -> int:
 
     Headless runs are largely insulated because the orchestrator grants
     `Edit`/`Write` outright through `--allowedTools`, which is not subject to
-    the trust gate. The `/run-agent` path is not: it has no `--allowedTools`
+    the trust gate. The `/maos-{agent}-i` path is not: it has no `--allowedTools`
     of its own and leans on the session's resolved permissions. Either way the
     drop is a fact about the run, so name it once instead of letting it scroll
     past in a subprocess's stderr.
@@ -3279,7 +3279,7 @@ class ResolvedInvocation:
 
     env is not included: callers build it via _build_agent_env and set
     AI_AGILE_EXECUTION_MODE according to their context (headless for real
-    subprocess spawns, interactive for the resolve-only /run-agent path).
+    subprocess spawns, interactive for the resolve-only /maos-{agent}-i path).
     """
     prompt: str
     allowed_tools: list[str]
@@ -3469,7 +3469,7 @@ def invoke_agent(
         # NOT spawn sub-agents or invoke skills/slash-commands. In a trusted
         # workspace the CLI exposes Task/Agent/Skill even though they are absent
         # from --allowedTools, which let prd-writer recursively re-invoke itself
-        # via the run-agent skill (a ~440s nested sub-agent). Deny them explicitly.
+        # via the maos-{agent}-i command (a ~440s nested sub-agent). Deny them explicitly.
         "--disallowedTools", "Task,Agent,Skill",
         "--output-format", "stream-json",
         "--verbose",                    # required alongside stream-json in --print mode
@@ -4233,6 +4233,8 @@ def _run_agent(
     concurrency: Optional[ConcurrencyState],
     gh: "GitHubClient",
     pipeline_map: dict,
+    *,
+    interactive_result: bool = False,
 ) -> tuple:
     """Pre-invocation ceremony, agent/script dispatch, and retry loop.
 
@@ -4246,6 +4248,18 @@ def _run_agent(
     orchestrator, before returning. Script-type steps are unaffected and
     still resolve via the AI_AGILE_STATUS stdout sentinel (out of scope for
     #400 — see _read_step_result's module comment).
+
+    interactive_result (issue #402) applies to agent-type steps only: instead
+    of spawning a subprocess, read the already-written result.json from the
+    same scratch path a real run would use — produced by a person and the
+    chat-AI working through the step's instructions under --print-prompt.
+    A missing or invalid file resolves exactly like a crashed subprocess
+    (step_result is None -> :failed at _apply_result, never silently
+    skipped). The commit_after pre-dispatch branch checkout below is skipped
+    in this mode: it exists to stage a subprocess onto the right branch
+    before it starts editing, and running it here — after a person has
+    already made their edits directly in their own session — would fetch and
+    hard-reset onto origin's copy of the branch, discarding that work.
 
     Modifies labels and work_item.labels in-place (review-cycle tracking).
 
@@ -4284,8 +4298,9 @@ def _run_agent(
     # For commit_after agents, check out the issue branch before invoking so
     # the agent reads accumulated state. commit-agent-work.sh handles staging,
     # commit, and push. Guard: only for issue work items (ISSUE_NUMBER required).
+    # Skipped under interactive_result — see this function's docstring.
     _pre_agent_branch: str = ""
-    if not dry_run and agent_def.commit_after and work_item.kind == "issue":
+    if not dry_run and agent_def.commit_after and work_item.kind == "issue" and not interactive_result:
         try:
             _pre_agent_branch = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -4319,6 +4334,35 @@ def _run_agent(
         result = invoke_script(agent_def, work_item, dry_run, repo)
         if not dry_run:
             sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
+    elif interactive_result:
+        # No subprocess: read the result a person and the chat-AI already
+        # wrote to the same scratch path a real run would use. A missing or
+        # invalid file is not a silent no-op — step_result stays None and
+        # _apply_result's existing "no valid result file" path applies
+        # :failed, exactly as a crashed subprocess would.
+        _scratch_dir = _scratch_path(_compute_agent_session_id(agent_def, work_item, repo))
+        step_result, _read_err = _read_step_result(_scratch_dir)
+        if step_result is None:
+            log.error(
+                "  interactive-result: no valid result.json for %s on #%d (%s): %s",
+                agent_def.agent, work_item.number, _scratch_dir, _read_err,
+            )
+        result = AgentRunResult(
+            success=step_result is not None,
+            # Surfaces in the :failed diagnostic comment's "Last output" --
+            # otherwise the actual reason only ever reaches this log line,
+            # and the person who needs to fix result.json never sees it.
+            captured_tail=(
+                "" if step_result is not None
+                else f"result.json at {_scratch_dir}: {_read_err}"
+            ),
+        )
+        # _attempt stays at its initial 0 (set above): there is no retry loop
+        # here, so a non-zero value would make _finalize_run_failure post a
+        # false "retry limit exhausted -- failed N time(s)" message.
+        if step_result is not None:
+            sentinel_status, sentinel_message = step_result.outcome, step_result.message
+        _post_artefact_if_present(gh, agent_def, work_item, step_result)
     else:
         result, step_result, exhausted, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
@@ -4934,8 +4978,17 @@ def _emit_terminal_audit(
     invoked_at: float,
     session_id: str,
     repo: str,
+    *,
+    performed_by: str = "agent",
 ) -> None:
-    """Emit the terminal agent.* audit event for the applied status."""
+    """Emit the terminal agent.* audit event for the applied status.
+
+    performed_by distinguishes a spawned-agent run from a person's own work
+    applied via --interactive-result (PRODUCT.md, "Headless and interactive":
+    "the orchestrator records that a person performed the activity rather
+    than a spawned agent") — the mechanism that applies the result is
+    otherwise identical either way (MI-3).
+    """
     if not (session_id and applied_status):
         return
     _et_map = {
@@ -4948,7 +5001,7 @@ def _emit_terminal_audit(
         session_id, _et_map.get(applied_status, "agent.complete"), repo,
         work_item=work_item, agent=agent_def.agent,
         outcome_status=applied_status,
-        outcome_detail=f"mode={agent_def.step_type}",
+        outcome_detail=f"mode={agent_def.step_type} performed_by={performed_by}",
         duration_ms=int((time.monotonic() - invoked_at) * 1000),
     ))
 
@@ -5018,6 +5071,7 @@ def _apply_result(
     timestamp_end: str = "",
     exhausted: bool = False,
     step_result: Optional[StepResult] = None,
+    performed_by: str = "agent",
 ) -> bool:
     """Apply GitHub side-effects for a completed agent run.
 
@@ -5136,7 +5190,10 @@ def _apply_result(
 
     log.info("  %-6s  %-38s", (applied_status or "?").upper(), agent_def.agent)
 
-    _emit_terminal_audit(agent_def, work_item, applied_status, invoked_at, session_id, repo)
+    _emit_terminal_audit(
+        agent_def, work_item, applied_status, invoked_at, session_id, repo,
+        performed_by=performed_by,
+    )
 
     _metrics_record = _build_step_metrics(
         agent_def, work_item, result,
@@ -5201,6 +5258,7 @@ def process_work_item(
     session_id: str = "",
     default_extra_tools: Optional[list[str]] = None,
     concurrency: Optional[ConcurrencyState] = None,
+    interactive_result: bool = False,
 ) -> int:
     """Evaluate all agents against a single issue or PR.
 
@@ -5257,6 +5315,7 @@ def process_work_item(
         ) = _run_agent(
             agent_def, work_item, dry_run, repo, labels,
             session_id, default_extra_tools, concurrency, gh, pipeline_map,
+            interactive_result=interactive_result,
         )
 
         _timestamp_end = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -5293,6 +5352,7 @@ def process_work_item(
                 dry_run=dry_run, cycle_id=_cycle_id,
                 timestamp_start=_timestamp_start, timestamp_end=_timestamp_end,
                 exhausted=exhausted, step_result=step_result,
+                performed_by="human" if interactive_result else "agent",
             )
             labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
             if stop:
@@ -5467,11 +5527,31 @@ def parse_args() -> argparse.Namespace:
             "Resolve-only mode: print the named agent's prompt text, tool "
             "allowlist, and env as JSON without spawning a subprocess or "
             "mutating any GitHub state (no label writes, no :wip). "
-            "Used by /run-agent to obtain authoritative invocation parameters. "
+            "Used by /maos-{agent}-i to obtain the step's own instructions "
+            "for a person and the chat-AI to work through directly. "
             "The printed env carries only the agent-facing context vars; every "
             "other key, credentials included, is omitted by name only under "
             "env_omitted_keys. "
             "Requires --agent and --issue (or --repo + --issue)."
+        ),
+    )
+    p.add_argument(
+        "--interactive-result",
+        action="store_true",
+        help=(
+            "Apply mode: instead of spawning --agent as a subprocess, read its "
+            "already-written $AI_AGILE_SCRATCH/result.json (produced by a "
+            "person and the chat-AI working through the step's instructions "
+            "under --print-prompt) and apply it exactly as a real run's "
+            "result would be applied -- same eligibility check (including the "
+            "dependencies_complete gate), same :wip/announcement/artefact/"
+            "label/body-write/post_steps handling, so the audit trail and "
+            "GitHub state cannot drift between the two paths (MI-3). The only "
+            "difference recorded is attribution: the audit event's "
+            "performed_by is 'human', not 'agent'. Requires --agent and "
+            "--issue (or --repo + --issue). Second phase of /maos-{agent}-i, "
+            "run after --print-prompt's first phase and the interactive work "
+            "it enables."
         ),
     )
     return p.parse_args()
@@ -5494,6 +5574,7 @@ class RunContext:
     session_id: str
     dry_run: bool
     default_extra_tools: Optional[list]
+    interactive_result: bool = False
 
 
 def _read_pr_event_action() -> str:
@@ -5599,9 +5680,9 @@ def _run_print_prompt(args) -> None:
     """Resolve-only mode: resolve the named agent's prompt/tools/env and print as JSON.
 
     No labels are changed, no :wip is applied, and no GitHub API write calls
-    are made. Called when --print-prompt is passed; used by /run-agent to obtain
-    authoritative invocation parameters from the orchestrator's own resolution
-    logic instead of hand-parsing the agent file.
+    are made. Called when --print-prompt is passed; used by /maos-{agent}-i to
+    obtain authoritative invocation parameters from the orchestrator's own
+    resolution logic instead of hand-parsing the agent file.
 
     The printed env is built by naming exactly the keys that may be exported
     (PRINT_PROMPT_ENV_KEYS), not by removing known-bad ones: this output is
@@ -5630,7 +5711,7 @@ def _run_print_prompt(args) -> None:
     # --agent 03_execute/coder --issue 360` resolve a PR number as an issue and
     # export WORK_ITEM_KIND=issue, so the agent read the wrong object with no
     # error anywhere (issue #356). The --issue path in main() already probes;
-    # resolve-only must agree with it or /run-agent silently diverges.
+    # resolve-only must agree with it or /maos-{agent}-i silently diverges.
     kind = args.kind or _probe_kind(gh, args.issue)
     try:
         if kind == "pr":
@@ -5652,10 +5733,11 @@ def _run_print_prompt(args) -> None:
     # which is where essentially all tool grants live. Building a minimal
     # AgentDef from the agent file's frontmatter instead dropped
     # defaults.extra_allowedTools and the per-agent extra_allowedTools, so
-    # resolve-only returned 24 tools where the real spawn gets 93 -- and
-    # /run-agent wrote that wrong list to the scope file the hook enforces
-    # (issue #356). --print-prompt already requires --repo and --issue, so
-    # loading the pipeline spec adds no new inputs.
+    # resolve-only returned 24 tools where the real spawn gets 93 -- and the
+    # predecessor of /maos-{agent}-i wrote that wrong list to the scope file
+    # its (since-deleted, issue #402) enforcement hook read (issue #356).
+    # --print-prompt already requires --repo and --issue, so loading the
+    # pipeline spec adds no new inputs.
     agent_name = args.agent
     agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_name}.md"
     if not agent_file.exists():
@@ -5701,8 +5783,8 @@ def _run_print_prompt(args) -> None:
         log.error("Could not resolve invocation for agent %s", agent_name)
         sys.exit(1)
 
-    # Build env with interactive mode -- this path is used by /run-agent, not
-    # by a real orchestrator subprocess spawn.
+    # Build env with interactive mode -- this path is used by /maos-{agent}-i,
+    # not by a real orchestrator subprocess spawn.
     env = _build_agent_env(os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope)
     env["AI_AGILE_EXECUTION_MODE"] = "interactive"
 
@@ -5870,7 +5952,28 @@ def _wake(args) -> "Optional[RunContext]":
             ", ".join(sorted(allowed_phases)), len(agents), before_count,
         )
 
+    # pipeline_map is built from the full (phase-filtered) agent set so
+    # dependency lookups always resolve, even when --interactive-result below
+    # narrows the *iteration* list to one agent.
     pipeline_map = pipeline_by_name(agents)
+
+    # --interactive-result: apply mode for /maos-{agent}-i's second phase.
+    # Scope this tick's iteration to exactly the named agent so applying one
+    # person-produced result never also spawns a real subprocess for some
+    # other, unrelated eligible step (MI-3 — one mechanism, not a second one
+    # that happens to run alongside the first). pipeline_map above stays full.
+    if args.interactive_result:
+        if not args.agent:
+            log.error("--interactive-result requires --agent")
+            sys.exit(1)
+        if not args.issue:
+            log.error("--interactive-result requires --issue")
+            sys.exit(1)
+        agents = [a for a in agents if a.agent == args.agent]
+        if not agents:
+            log.error("--interactive-result: unknown --agent %r", args.agent)
+            sys.exit(1)
+
     gh = GitHubClient(repo=args.repo, token=token)
 
     session_id = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
@@ -5949,6 +6052,7 @@ def _wake(args) -> "Optional[RunContext]":
         gh=gh, agents=agents, pipeline_map=pipeline_map, work_items=work_items,
         concurrency=conc, repo=args.repo, session_id=session_id,
         dry_run=args.dry_run, default_extra_tools=default_extra_tools,
+        interactive_result=args.interactive_result,
     )
 
 
@@ -6067,6 +6171,7 @@ def _do_work(ctx: "RunContext") -> int:
             session_id=ctx.session_id,
             default_extra_tools=ctx.default_extra_tools,
             concurrency=ctx.concurrency,
+            interactive_result=ctx.interactive_result,
         )
         total_triggered += n
         if n > 0:
