@@ -6,7 +6,8 @@ every agent must follow, regardless of what your specific prompt says.
 
 If anything in your specific prompt contradicts this document, this
 document wins. If anything you are about to do violates one of the
-rules below, stop and emit `AI_AGILE_STATUS: blocked` with the reason.
+rules below, stop and write `outcome: "blocked"` to your result file
+with the reason.
 
 The full design lives in
 [`docs/product/orchestrator/`](../docs/product/orchestrator/README.md). This file
@@ -66,69 +67,68 @@ Environment variables the orchestrator exports for you:
 
 ## How you communicate
 
-Every comment you post starts with a stable marker carrying your
-identity:
+You do not post comments, apply labels, or edit the issue/PR body yourself
+(issue #400). You write **one result** to `$AI_AGILE_SCRATCH/result.json`
+before you exit, and the orchestrator turns that into whatever GitHub side
+effects it implies — comments, label changes — on your behalf. This mirrors
+how any process returns a value: you write it to the path you were given,
+the caller reads it.
 
-```
-<!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
-```
+**Create the file at that absolute path with the `Write` tool** — it needs
+no shell quoting, so it is the right choice for JSON or any content
+containing backticks. `Write` reaches every agent through
+`defaults.extra_allowedTools` in `pipeline.json`, not through each agent's
+own `tools:` frontmatter.
 
-Four marker types:
+`$AI_AGILE_SCRATCH/result.json` is a JSON object with these fields:
 
-| Marker | Use for |
-|---|---|
-| `announcement/v1` | Opening (post immediately after `set-wip`) and closing (post immediately before your terminal status call) — required on every run |
-| `artefact/v1` | The thing you produce that needs review (PRD, design, test spec, etc.) |
-| `claim/v1` | The mutex claim you post during P-4 acquisition |
-| `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
+| Field | Required | Meaning |
+|---|---|---|
+| `outcome` | yes | Exactly one of `"complete"`, `"review"`, `"blocked"` |
+| `summary` | yes | Your own account of what you did, in plain words — including when you did nothing |
+| `undone` | no (default `""`) | What you left, if anything. Empty string when you finished it all |
+| `message` | no (default `""`) | Short message for `review`/`blocked`: what a person must act on |
+| `output` | no (default `""`) | The artefact you produced (a review, a PRD, a plan). The orchestrator posts this as a structured comment; you never post it yourself |
+| `expected_effect` | no (default `{}`) | What you believe you changed this run, e.g. `{"commits": true}` |
+| `label_requests` | no (default `[]`) | `[{"issue": null, "add": [...], "remove": [...]}]` — `"issue": null` means this work item. Only requests matching your step's declared `allowed_labels` (`pipeline.json`) are applied; everything else is silently dropped |
 
-Free-text prose may sit alongside JSON; the JSON is the contract.
-If they disagree, the JSON wins.
+Any missing required field, wrong type, or an `outcome` outside the three
+values above is treated the same as a crash: `:failed`, not inferred from a
+clean exit. Writing nothing is the same as writing something malformed —
+there is no silent-success path.
 
-Working files stay out of the repo. Your scratch directory is
-`$AI_AGILE_SCRATCH`, given as an absolute path in your Runtime context below.
+A step that rewrites content a person wrote (an issue body becoming a PRD,
+a todos-block checkbox) is a different, narrower mechanism — see "Todo
+lists" below — and is unaffected by this file.
 
-**Create working files at that absolute path**, using whichever of these two
-fits -- there is no third option:
-
-- **`Write`** for a body you compose yourself. It needs no shell quoting, so it
-  is the right choice for JSON or any body containing backticks -- a heredoc
-  body with backticks is scanned for command substitution and refused.
-  `Write` reaches every agent through `defaults.extra_allowedTools` in
-  `pipeline.json`, not through each agent's own `tools:` frontmatter.
-- **`cat > "${AI_AGILE_SCRATCH:-/tmp}/name.md" <<EOF`** when the body must interpolate
-  shell variables you hold at runtime (`$SESSION_ID`, `$VERDICT`). Quote the
-  delimiter (`<<'EOF'`) to suppress expansion. Start the command with `cat` --
-  a leading variable assignment matches no allowlist pattern and is denied.
-
-### Posting a comment -- the only supported form
-
-This is the same for every agent, on both issues and PRs. Stage the body by
-either route above, then post it by path:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$WORK_ITEM_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-```
-
-A PR is an issue as far as this endpoint is concerned, so `issues/{n}/comments`
-posts to both -- use `$PR_NUMBER` in place of `$WORK_ITEM_NUMBER` when your
-step targets a PR.
-
-Two forms you will see in older prompts. Neither works; do not copy them:
-
-| Form | Why it fails |
-|---|---|
-| `gh pr comment` / `gh pr review` / `gh pr ready` | GraphQL. Returns 403 in a restricted session |
-| `--body "$(cat <<EOF ... EOF)"` | `$(` is command substitution, which scope enforcement refuses outright |
-
-Two rules, and nothing else to remember:
+Two rules for the scratch directory, and nothing else to remember:
 
 - **Never write to a relative path.** A bare filename resolves against the
   repository root, not your scratch directory.
 - **Do not create or delete the directory.** The orchestrator creates it empty
   before your run and removes it after, so it is always there and never holds a
   previous attempt's files.
+
+### Markers the orchestrator uses on your behalf
+
+The comments the orchestrator posts for you carry a stable marker with your
+identity, so you can still recognise your own history when reading prior
+runs:
+
+```
+<!-- ai-agile/{type}/v1 by {your-full-agent-name} -->
+```
+
+| Marker | What it's for |
+|---|---|
+| `announcement/v1` | Opening (posted when the orchestrator applies `:wip`, before you start) and closing (posted after it reads your result) — automatic, every run |
+| `artefact/v1` | Your `output` field, when non-empty |
+| `claim/v1` | The mutex claim posted during P-4 acquisition |
+| `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
+
+You do not construct any of these yourself — they exist so a later run of
+you (or a person) can find your prior artefact when reading GitHub, per
+"How you find your inputs" above.
 
 ---
 
@@ -170,29 +170,34 @@ human, or the literal `orchestrator`.
 
 ## The status contract
 
-Every agent run must terminate with **exactly one** of three sentinel
-lines printed to stdout:
+Every agent run must terminate having written `result.json` with exactly
+one `outcome`, from the set below. Never absent, never two, never invented:
 
+```json
+{"outcome": "complete", "summary": "..."}
+{"outcome": "review", "summary": "...", "message": "short message for stakeholder"}
+{"outcome": "blocked", "summary": "...", "message": "reason you could not proceed"}
 ```
-AI_AGILE_STATUS: complete
-AI_AGILE_STATUS: review "short message for stakeholder"
-AI_AGILE_STATUS: blocked "reason you could not proceed"
-```
 
-The orchestrator reads this sentinel, applies the matching label (and
-clears `:wip`), and posts the closing announcement. You do not call
-`status.sh` for ceremony — the orchestrator owns all label transitions.
+The orchestrator reads the file, applies the matching label (and clears
+`:wip`), and posts the closing announcement. You do not call `status.sh`
+for ceremony — the orchestrator owns all label transitions.
 
-You **must not** emit `AI_AGILE_STATUS: failed`. The orchestrator
-applies `:failed` if you exit non-zero without a sentinel (or after all
-configured retries are exhausted). If you want to halt with detail,
-emit `AI_AGILE_STATUS: blocked` instead.
+You **must not** write `outcome: "failed"` or `outcome: "exhausted"` —
+both are set only by the orchestrator, never by you: `:failed` when you
+exit without a valid result (crashed, exited with nothing written, or wrote
+something malformed) or after all configured retries are exhausted;
+`:exhausted` when you ran out of your turn or wall-clock budget first (and
+in that case you never got to write a result at all — there is nothing for
+you to do about it). If you want to halt with detail, write
+`outcome: "blocked"` instead.
 
 For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 `human_gate_label`):
 
-- Emit `AI_AGILE_STATUS: review "message"` after posting your artefact.
-- Do **not** emit `AI_AGILE_STATUS: complete` directly. The orchestrator
+- Write `outcome: "review"` with a `message` after producing your artefact
+  (in `output`).
+- Do **not** write `outcome: "complete"` directly. The orchestrator
   promotes `:review` to `:complete` automatically when the human applies
   the gate label. Bypassing `:review` skips the gate — that is a P-10 violation.
 
@@ -201,6 +206,7 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 ## What you must not do
 
 - **Don't edit human-authored content** — issue bodies written by the stakeholder, review comments, ADRs after acceptance.
+- **Don't post your own comments or apply your own labels.** Return them in `result.json`'s `output`/`label_requests` fields; the orchestrator posts and applies them.
 - **Don't keep state outside GitHub** — no sidecar files in the repo, no external DBs, nothing carried from one run to the next. Working files during a run belong in the scratch directory (see "How you communicate") and nowhere else.
 - **Don't use `WebFetch` or `WebSearch`** unless your tool allowlist explicitly includes them (it doesn't, by default).
 - **Don't assume earlier runs left state in your environment.** Read GitHub fresh on every invocation.
@@ -230,6 +236,6 @@ When referencing a standard in a comment or commit, use its stable
 
 | Situation | Action |
 |---|---|
-| Input is ambiguous and you would have to guess | Emit `AI_AGILE_STATUS: blocked "reason"` naming the ambiguity |
-| Issue is too large for one phase artefact | Emit `AI_AGILE_STATUS: blocked` with a decomposition recommendation |
-| You hit an error you cannot describe | Exit non-zero; the orchestrator will apply `:failed` with your tail of output |
+| Input is ambiguous and you would have to guess | Write `outcome: "blocked"` with `message: "reason"` naming the ambiguity |
+| Issue is too large for one phase artefact | Write `outcome: "blocked"` with a decomposition recommendation as `message`/`output` |
+| You hit an error you cannot describe | Exit non-zero without writing a result; the orchestrator will apply `:failed` with your tail of output |

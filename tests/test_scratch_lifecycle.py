@@ -105,14 +105,11 @@ class TestAgentsMdScratchConvention:
         orchestrator sweeps the root regardless (ADR-001).
         """
         text = AGENTS_MD.read_text()
-        # Two staging routes, both naming a tool the agent holds -- not a
-        # recipe to paraphrase. `Write` for composed bodies, `cat` heredoc
-        # where the body must interpolate runtime shell variables.
-        assert "**`Write`**" in text, "the rule must name the tool, not only an idiom"
-        assert 'cat > "${AI_AGILE_SCRATCH:-/tmp}/' in text, (
-            'the :-/tmp fallback is load-bearing: with the variable unset, '
-            '"$AI_AGILE_SCRATCH/body.md" expands to "/body.md"'
-        )
+        # A single staging route since issue #400: agents write one result
+        # file (never a comment body) and the `Write` tool is the only way
+        # to create it -- there is no longer a second, bash-heredoc route,
+        # because agents no longer compose+post comment bodies at all.
+        assert "`Write` tool" in text, "the rule must name the tool, not only an idiom"
         assert "Never write to a relative path" in text
         assert "Do not create or delete the directory" in text
         # No preamble the agent has to execute before it can write, and no
@@ -122,17 +119,19 @@ class TestAgentsMdScratchConvention:
         assert 'SCRATCH="${AI_AGILE_SCRATCH' not in text
 
     def test_agents_md_names_the_one_posting_form(self):
-        """Agents used three different posting mechanisms; two do not work.
-        `gh pr comment` is GraphQL (403 in a restricted session) and
-        `--body "$(cat <<EOF ...)"` is refused outright, because `$(` is
-        command substitution. AGENTS.md states the working form once so no
-        agent has to restate it.
+        """Since issue #400, agents do not post comments at all -- they write
+        one result to $AI_AGILE_SCRATCH/result.json and the orchestrator posts
+        on their behalf. AGENTS.md states this contract once so no agent has
+        to restate it, and no longer prescribes any `gh api`/`gh pr comment`
+        posting recipe for agents to follow (or misfollow).
         """
         text = AGENTS_MD.read_text()
-        assert "gh api --method POST" in text
-        assert "-F body=@" in text
-        assert "gh pr comment" in text, "the broken forms must be named as broken"
-        assert "GraphQL" in text
+        assert "result.json" in text
+        assert "You do not post comments" in text
+        assert "gh api --method POST" not in text, (
+            "agents no longer post comments themselves -- this recipe should "
+            "not appear as an instruction for them to follow"
+        )
 
     def test_no_agent_posts_with_a_broken_form(self):
         """The two forms that cannot work must not appear as instructions in
@@ -162,22 +161,18 @@ class TestAgentsMdScratchConvention:
             f"unguarded $AI_AGILE_SCRATCH expansion in: {offenders}"
         )
 
-    def test_pr_reviewer_posts_every_body_from_scratch(self):
+    def test_pr_reviewer_writes_its_result_into_scratch(self):
         """pr-reviewer is the agent that leaked -- three files per run, twice
-        running. Its three posting steps must write into the scratch directory
-        and post from there, using tools it is actually granted.
+        running, back when it posted its own comments. Since issue #400 it
+        posts nothing itself: it writes one result into the scratch
+        directory using the tool it is actually granted, and the
+        orchestrator does the posting.
         """
         text = (AGENTS_DIR / "03_execute" / "pr-reviewer.md").read_text()
-        # Bodies containing markdown fences are staged with the Write tool:
-        # a backtick in an unquoted heredoc body is read as command
-        # substitution and the whole block is refused (issue #376). Only the
-        # backtick-free body still uses a heredoc.
-        assert text.count('cat > "${AI_AGILE_SCRATCH:-/tmp}/') >= 1
-        assert text.count("Use the Write tool to create") == 2
-        # REST, not `gh pr comment`: the latter is GraphQL and 403s in a
-        # restricted session. Bash(gh api --method * repos/*/issues*) is granted
-        # to every agent, so this form works on both paths.
-        assert text.count('gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments"') == 3
+        assert text.count("Use the Write tool to create") == 1
+        assert "$AI_AGILE_SCRATCH/result.json" in text
+        # No leftover comment-posting recipe from before #400.
+        assert "gh api --method POST" not in text
         assert "mkdir -p" not in text
         assert 'SCRATCH="${AI_AGILE_SCRATCH' not in text
 
@@ -921,8 +916,12 @@ class TestPrReviewerArtefactsAreAppendOnly:
                   / "orchestrator" / "PRODUCT.md")
 
     def test_the_artefact_is_always_posted(self):
+        """Since issue #400, pr-reviewer writes its result (including the
+        review body, in `output`) unconditionally at Step 11; the
+        orchestrator is the one that posts it, fresh, every run.
+        """
         text = self.PROMPT.read_text()
-        assert 'gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments"' in text
+        assert "$AI_AGILE_SCRATCH/result.json" in text
         assert "issues/comments/$PRIOR" not in text, (
             "the artefact must never be rewritten -- the trail is the record"
         )

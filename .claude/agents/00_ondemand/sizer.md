@@ -92,23 +92,15 @@ If it meets two or more, go to **Step 4 — Decomposition path**.
 
 ## Step 3 — Pass-through path (fits one cycle)
 
-Post a brief sizing note and emit complete.
+Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json` with a brief
+sizing note:
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
-<!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
-## Sizing: fits one development cycle
-
-This issue is appropriately sized for a single development cycle.
-EOF
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-```
-
-Then emit the sentinel:
-
-```
-AI_AGILE_STATUS: complete
+```json
+{
+  "outcome": "complete",
+  "summary": "Issue is appropriately sized for a single development cycle; no decomposition needed.",
+  "output": "## Sizing: fits one development cycle\n\nThis issue is appropriately sized for a single development cycle."
+}
 ```
 
 ---
@@ -221,8 +213,12 @@ SUB_NODE_ID=$(gh issue view "$SUB_ISSUE_N" --repo "$REPO" \
 
 ### 4d — Label the parent as epic and blocked
 
-```bash
-gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "epic,blocked"
+Record a `label_requests` entry to add `epic` and `blocked` to the parent
+issue — you do not apply labels yourself; include this in the `result.json`
+you write in Step 4f:
+
+```json
+{"issue": null, "add": ["epic", "blocked"], "remove": []}
 ```
 
 `epic` and `blocked` together cause the orchestrator to skip all pipeline
@@ -233,7 +229,7 @@ when all sub-issues are closed.
 The structural dependency is already established in Step 4c via GitHub's
 native sub-issue relationship. The tracking table (Step 4e) and the
 decomposition comment (Step 4f) make the blocking relationship visible
-to humans. No additional API call is needed here.
+to humans. No additional label request is needed here.
 
 ### 4e — Update the parent issue body with a live tracking table
 
@@ -280,11 +276,11 @@ BODY
 gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body-file "$BODY_FILE"
 ```
 
-### 4f — Post the decomposition plan
+### 4f — Write the decomposition result
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<'EOF'
-<!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
+Compose the decomposition plan body:
+
+```text
 ## Sizing: decomposed into {TOTAL} sub-issues
 
 This issue is too large for a single development cycle. It has been
@@ -312,16 +308,20 @@ This parent issue is now blocked by its sub-issues. It will close
 automatically when all sub-issues are closed. Each sub-issue runs its
 own full pipeline — this parent will not proceed through `prd-writer`
 or `coder`.
-EOF
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
 ```
 
-Then emit the review sentinel so the pipeline halts until the human
-confirms the breakdown:
+Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json`, including
+the `label_requests` entry from Step 4d so the pipeline halts until the
+human confirms the breakdown:
 
-```
-AI_AGILE_STATUS: review "Decomposition plan posted — review sub-issues and remove sizer:review to confirm."
+```json
+{
+  "outcome": "review",
+  "summary": "Decomposed issue into {TOTAL} sub-issues; parent labeled epic and blocked.",
+  "message": "Decomposition plan posted — review sub-issues and remove sizer:review to confirm.",
+  "output": "{the decomposition plan body above}",
+  "label_requests": [{"issue": null, "add": ["epic", "blocked"], "remove": []}]
+}
 ```
 
 ---
@@ -336,26 +336,14 @@ The sub-issue relationships created in Step 4c and the tracking table
 in the parent body accurately describe the parent's state. No further
 changes are needed to the parent body.
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body_3.md" <<'EOF'
-<!-- ai-agile/artefact/v1 by 00_ondemand/sizer -->
-## Sizing: decomposition confirmed
+Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json`:
 
-Sub-issue breakdown accepted. Each sub-issue will run its own full
-pipeline (classifier → prd-writer → coder → review → merge).
-
-This parent epic (#${ISSUE_NUMBER}) remains open and blocked by its
-sub-issues. It will be closed automatically once all sub-issues are
-closed.
-EOF
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_3.md"
-```
-
-Then emit:
-
-```
-AI_AGILE_STATUS: complete
+```json
+{
+  "outcome": "complete",
+  "summary": "Decomposition confirmed by the human; sub-issues will each run their own pipeline.",
+  "output": "## Sizing: decomposition confirmed\n\nSub-issue breakdown accepted. Each sub-issue will run its own full pipeline (classifier -> prd-writer -> coder -> review -> merge).\n\nThis parent epic (#${ISSUE_NUMBER}) remains open and blocked by its sub-issues. It will be closed automatically once all sub-issues are closed."
+}
 ```
 
 ---
@@ -374,8 +362,10 @@ AI_AGILE_STATUS: complete
   be `classification: enhancement`. The `issue-classifier` will
   verify this on each sub-issue's first run.
 - **Never create more than 8 sub-issues.** If the issue would require
-  more than 8 parts, post a comment asking the human to narrow the
-  scope, then emit `AI_AGILE_STATUS: blocked "Issue scope too large even for decomposition — needs human narrowing."`.
+  more than 8 parts, write `$AI_AGILE_SCRATCH/result.json` with
+  `outcome: "blocked"` and `message: "Issue scope too large even for
+  decomposition — needs human narrowing."` instead of creating any
+  sub-issues.
 - **Do not close the parent issue.** It becomes a live tracking epic
   that provides context for all sub-issues.
 - **Spike issues pass through unconditionally.** A spike produces

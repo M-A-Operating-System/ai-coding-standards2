@@ -165,80 +165,34 @@ Use the `Write` tool to update each doc file that needs changing. Make
 focused edits — add or revise only the sections the PRD affects. Do not
 reformat, reorder, or clean up text unrelated to this issue.
 
-After writing all files, comment on the issue:
+After writing all files, write your result to `$AI_AGILE_SCRATCH/result.json`
+using the Write tool. This path changed `docs/product/` prose — a judgment
+call — so it gates on human review. Substitute the runtime values yourself:
 
-Use the Write tool to create `$AI_AGILE_SCRATCH/body.md` with this
-body, substituting the runtime values yourself. A heredoc cannot carry it:
-the body contains backticks, and an unquoted heredoc body is scanned for
-command substitution, so the write would be refused.
-
-````markdown
-<!-- ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater -->
-## Product docs update
-
-Documentation changes have been written and will be committed to the
-design branch (`issue-{N}-docs`) by the orchestrator, appearing in the
-design PR, which merges to main at the prd-docs-updater:approved gate
-ahead of the build phase.
-
-### Files updated
-
-{one bullet per file changed — what changed and why, in user-observable terms}
-
-### Feature file (docs/features/)
-
-{one line per scenario from Step 2: created file / appended / replaced, or
-"no Gherkin scenarios in this PRD" if Step 2 had nothing to copy}
-````
-
-Then post it:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-```
-
-This path changed `docs/product/` prose — a judgment call — so it gates on
-human review. Emit:
-
-```
-AI_AGILE_STATUS: review "docs/product/ updated — please review before code work begins."
+```json
+{
+  "outcome": "review",
+  "summary": "Updated docs/product/ to match the approved PRD; copied Gherkin scenarios into docs/features/.",
+  "message": "docs/product/ updated — please review before code work begins.",
+  "output": "## Product docs update\n\nDocumentation changes have been written and will be committed to the design branch (`issue-{N}-docs`) by the orchestrator, appearing in the design PR, which merges to main at the prd-docs-updater:approved gate ahead of the build phase.\n\n### Files updated\n\n{one bullet per file changed — what changed and why, in user-observable terms}\n\n### Feature file (docs/features/)\n\n{one line per scenario from Step 2: created file / appended / replaced, or \"no Gherkin scenarios in this PRD\" if Step 2 had nothing to copy}"
+}
 ```
 
 ---
 
 ## Step 5 — No docs/product/ update needed
 
-Use the Write tool to create `$AI_AGILE_SCRATCH/body_2.md` with this
-body, substituting the runtime values yourself. A heredoc cannot carry it:
-the body contains backticks, and an unquoted heredoc body is scanned for
-command substitution, so the write would be refused.
-
-````markdown
-<!-- ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater -->
-## Product docs check — no updates required
-
-Reviewed \`docs/product/\` against the approved PRD. {One sentence
-explaining which files were checked and why no changes are needed.}
-
-### Feature file (docs/features/)
-
-{one line per scenario from Step 2: created file / appended / replaced, or
-"no Gherkin scenarios in this PRD" if Step 2 had nothing to copy}
-````
-
-Then post it:
-
-```bash
-gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
-```
-
+Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool.
 This path made no `docs/product/` prose changes — Step 2's feature-file copy
-(if any) is mechanical and does not require its own review. Emit:
+(if any) is mechanical and does not require its own review. Substitute the
+runtime values yourself:
 
-```
-AI_AGILE_STATUS: complete
+```json
+{
+  "outcome": "complete",
+  "summary": "Reviewed docs/product/ against the approved PRD; no changes needed. {one sentence explaining which files were checked and why no changes are needed.}",
+  "output": "## Product docs check — no updates required\n\nReviewed `docs/product/` against the approved PRD. {One sentence explaining which files were checked and why no changes are needed.}\n\n### Feature file (docs/features/)\n\n{one line per scenario from Step 2: created file / appended / replaced, or \"no Gherkin scenarios in this PRD\" if Step 2 had nothing to copy}"
+}
 ```
 
 ---
@@ -255,18 +209,20 @@ AI_AGILE_STATUS: complete
 - Never update `docs/product/orchestrator/` pipeline system files
   (`PRODUCT.md` and the rest of that directory) on the basis of a consuming-
   repo feature PRD. Those files describe the AI Agile pipeline itself.
-- If `docs/product/` does not exist, post a comment noting the
-  directory is absent and emit `AI_AGILE_STATUS: complete`.
-- **Only Step 4 (docs/product/ prose changed) emits `review`.** Every other
-  path — Step 2's mechanical copy alone, or Step 5's no-update path — emits
-  `AI_AGILE_STATUS: complete`. Requesting review for a mechanical-only run
-  makes reviewers rubber-stamp things nobody needs to check.
+- If `docs/product/` does not exist, note in `result.json`'s `summary`/`output`
+  that the directory is absent and write `outcome: "complete"`.
+- **Only Step 4 (docs/product/ prose changed) writes `outcome: "review"`.**
+  Every other path — Step 2's mechanical copy alone, or Step 5's no-update
+  path — writes `outcome: "complete"`. Requesting review for a
+  mechanical-only run makes reviewers rubber-stamp things nobody needs to
+  check.
 - `set-blocked` only when a genuine ambiguity makes it impossible to
   determine whether docs need updating. For small judgment calls, write
   the conservative update.
-- Do not call `status.sh` — the orchestrator handles all label
-  transitions. Signal outcome via `AI_AGILE_STATUS:` sentinel only.
+- Do not call `status.sh` or post comments yourself — the orchestrator
+  handles all label transitions and posts your `output` as the artefact
+  comment. `result.json` must be written before you exit.
 - Do not run any git commands — the orchestrator stages, commits, and
-  pushes your file changes after you emit your closing `AI_AGILE_STATUS:`
-  sentinel. Only create new branches or open new PRs is forbidden; the
-  orchestrator owns the PR lifecycle.
+  pushes your file changes after you write `result.json`. Only create
+  new branches or open new PRs is forbidden; the orchestrator owns the
+  PR lifecycle.

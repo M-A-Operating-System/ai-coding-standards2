@@ -55,6 +55,7 @@
       "model": "claude-haiku-4-5-20251001",
       "budgets": { "max_turns": 8 },
       "expected_effect": { "commits": false },
+      "allowed_labels": { "add": ["classification: *"] },
       "description": "Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment."
     },
 
@@ -328,6 +329,7 @@
       ],
       "model": "claude-sonnet-4-6",
       "expected_effect": { "commits": false, "creates_issues": true },
+      "allowed_labels": { "add": ["epic", "blocked"] },
       "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete -- auto-approved). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
     },
 

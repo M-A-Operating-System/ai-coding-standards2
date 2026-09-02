@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 import pytest
+import pipeline_orchestrator as orch
 from pipeline_orchestrator import (
     ALL_STATUSES,
     STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED,
@@ -297,6 +298,59 @@ def _make_gh_mock() -> MagicMock:
     return gh
 
 
+def _invoke_agent_writing_result(outcome, *, message="", summary=None, output="",
+                                  undone="", expected_effect=None, label_requests=None,
+                                  agent_run_result=None):
+    """side_effect for a mocked invoke_agent: writes a real result.json to the
+    real scratch dir (computed the same way production code computes it) so
+    the unmocked _read_step_result finds it, then returns the AgentRunResult.
+    Matches invoke_agent's call signature.
+    """
+    def _effect(agent_def, work_item, dry_run, repo, attempt=0,
+                agent_text_override=None, default_extra_tools=None):
+        result = agent_run_result if agent_run_result is not None else AgentRunResult(success=True)
+        if not dry_run:
+            session_id = orch._compute_agent_session_id(agent_def, work_item, repo)
+            scratch = orch._scratch_path(session_id)
+            os.makedirs(scratch, exist_ok=True)
+            payload = {
+                "outcome": outcome,
+                "summary": summary if summary is not None else (message or "done"),
+                "undone": undone,
+                "message": message,
+                "output": output,
+                "expected_effect": expected_effect or {},
+                "label_requests": label_requests or [],
+            }
+            with open(orch._result_file_path(scratch), "w") as f:
+                json.dump(payload, f)
+        return result
+    return _effect
+
+
+def _invoke_agent_fail_then_succeed(outcome, *, message="", summary=None, output=""):
+    """side_effect for a mocked invoke_agent across a retry sequence: attempt 0
+    crashes with no result.json (malformed under the new #400 contract,
+    triggering a retry); attempt >= 1 writes a real result.json and succeeds.
+    Matches invoke_agent's call signature. Retries reuse the same deterministic
+    scratch dir (see _compute_agent_session_id), so writing only on the later
+    attempt correctly simulates "first attempt failed, second succeeded".
+    """
+    _write = _invoke_agent_writing_result(
+        outcome, message=message, summary=summary, output=output,
+        agent_run_result=AgentRunResult(success=True, returncode=0),
+    )
+
+    def _effect(agent_def, work_item, dry_run, repo, attempt=0,
+                agent_text_override=None, default_extra_tools=None):
+        if attempt == 0:
+            return AgentRunResult(success=False, returncode=1, captured_tail="error")
+        return _write(agent_def, work_item, dry_run, repo, attempt=attempt,
+                      agent_text_override=agent_text_override,
+                      default_extra_tools=default_extra_tools)
+    return _effect
+
+
 # ---------------------------------------------------------------------------
 # TestCountRunning
 # ---------------------------------------------------------------------------
@@ -502,9 +556,7 @@ class TestPerAgentConcurrencyCeiling:
         When process_work_item is called for each
         Then exactly 3 are launched, 2 remain pending.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -542,9 +594,7 @@ class TestPerAgentConcurrencyCeiling:
         And 4 additional issues are eligible
         Then exactly 1 additional instance is launched (2 + 1 = 3 ceiling).
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -584,9 +634,7 @@ class TestPerAgentConcurrencyCeiling:
         And 3 issues are eligible
         Then exactly 1 instance is launched.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -632,9 +680,7 @@ class TestAggregatePipelineCeiling:
         When the orchestrator processes all eligible work items
         Then no more than PIPELINE_MAX_CONCURRENT agents are launched in that tick.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         # One agent type with a high per-agent ceiling — not the limiting factor
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
@@ -690,9 +736,7 @@ class TestAggregatePipelineCeiling:
         And tick_launch_count equals PIPELINE_MAX_CONCURRENT
         And the second agent type is never invoked — confirming the inner break fired.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_one = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -868,9 +912,7 @@ class TestWipLabelFailureDoesNotInflateCount:
         When process_work_item is called for a second new eligible item
         Then the second item is launched (phantom count didn't block it)
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -1199,6 +1241,10 @@ class TestInvokeAgentTimeout:
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 0.1)
+        # invoke_agent's real auth preflight spawns the actual `claude` CLI to
+        # probe authentication; bypass it here so the (unrelated) timeout
+        # behaviour under test is reached regardless of the sandbox's auth state.
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
 
         # Stdout yields lines until the process is killed, then stops.
         _killed = threading.Event()
@@ -1311,6 +1357,10 @@ class TestInvokeAgentRuntimeContext:
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        # invoke_agent's real auth preflight spawns the actual `claude` CLI to
+        # probe authentication; bypass it here since this class tests prompt/
+        # env construction, not auth, and should not depend on sandbox auth state.
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
         captured_cmd: list = []
 
         with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_cmd(captured_cmd)):
@@ -1336,6 +1386,10 @@ class TestInvokeAgentRuntimeContext:
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        # invoke_agent's real auth preflight spawns the actual `claude` CLI to
+        # probe authentication; bypass it here since this class tests prompt/
+        # env construction, not auth, and should not depend on sandbox auth state.
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
         captured_cmd: list = []
 
         with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_cmd(captured_cmd)):
@@ -1358,6 +1412,10 @@ class TestInvokeAgentRuntimeContext:
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        # invoke_agent's real auth preflight spawns the actual `claude` CLI to
+        # probe authentication; bypass it here since this class tests prompt/
+        # env construction, not auth, and should not depend on sandbox auth state.
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
         monkeypatch.setenv("AI_AGILE_ROOT", "  /padded/path  ")
         captured_cmd: list = []
 
@@ -1381,6 +1439,10 @@ class TestInvokeAgentRuntimeContext:
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        # invoke_agent's real auth preflight spawns the actual `claude` CLI to
+        # probe authentication; bypass it here since this class tests prompt/
+        # env construction, not auth, and should not depend on sandbox auth state.
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
         captured_env: dict = {}
 
         with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_env(captured_env)):
@@ -1403,6 +1465,10 @@ class TestInvokeAgentRuntimeContext:
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        # invoke_agent's real auth preflight spawns the actual `claude` CLI to
+        # probe authentication; bypass it here since this class tests prompt/
+        # env construction, not auth, and should not depend on sandbox auth state.
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
         captured_cmd: list = []
         captured_env: dict = {}
 
@@ -2384,6 +2450,24 @@ class TestRetryPolicy:
         gh.get_issue_labels.return_value = set()
         return gh
 
+    @pytest.fixture(autouse=True)
+    def _clean_scratch(self):
+        """Every test in this class shares the same (agent, work item #42, repo)
+        triple, so they all resolve to the identical real scratch dir (issue
+        #400's result.json lives on disk, keyed deterministically). Without
+        cleanup, a result.json a test writes would leak into and be read by
+        a later test in the class that expects invoke_agent to keep returning
+        a crashed/malformed result. Clear it before and after each test."""
+        import shutil
+        scratch = orch._scratch_path(
+            orch._compute_agent_session_id(self._make_agent(), WorkItem(
+                number=42, kind="issue", title="T", labels=set(), url="http://x",
+            ), "test/repo")
+        )
+        shutil.rmtree(scratch, ignore_errors=True)
+        yield
+        shutil.rmtree(scratch, ignore_errors=True)
+
     @patch("pipeline_orchestrator.time.sleep")
     @patch("pipeline_orchestrator.invoke_agent")
     def test_retries_within_limit_posts_comment_and_succeeds(self, mock_invoke, mock_sleep):
@@ -2394,10 +2478,7 @@ class TestRetryPolicy:
         Then the orchestrator restarts the agent without applying :failed
         And a comment is posted on the work item recording the retry attempt number
         """
-        mock_invoke.side_effect = [
-            AgentRunResult(success=False, returncode=1, captured_tail="error"),
-            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
-        ]
+        mock_invoke.side_effect = _invoke_agent_fail_then_succeed("complete")
         agent_def = self._make_agent(max_retries=3)
         gh = self._make_gh()
         work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
@@ -2501,10 +2582,7 @@ class TestRetryPolicy:
         Then the orchestrator applies the normal success label
         And does not retain or display a retry count in the final state
         """
-        mock_invoke.side_effect = [
-            AgentRunResult(success=False, returncode=1, captured_tail="error"),
-            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
-        ]
+        mock_invoke.side_effect = _invoke_agent_fail_then_succeed("complete")
         agent_def = self._make_agent(max_retries=3)
         gh = self._make_gh()
         work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
@@ -2549,10 +2627,7 @@ class TestRetryPolicy:
     @patch("pipeline_orchestrator.invoke_agent")
     def test_max_retries_one_fail_then_succeed_applies_complete(self, mock_invoke, mock_sleep):
         """Boundary: max_retries=1 — first fails, second succeeds → :complete applied."""
-        mock_invoke.side_effect = [
-            AgentRunResult(success=False, returncode=1, captured_tail="error"),
-            AgentRunResult(success=True, returncode=0, captured_tail="AI_AGILE_STATUS: complete"),
-        ]
+        mock_invoke.side_effect = _invoke_agent_fail_then_succeed("complete")
         agent_def = self._make_agent(max_retries=1)
         gh = self._make_gh()
         work_item = WorkItem(number=42, kind="issue", title="T", labels=set(), url="http://x")
@@ -2789,9 +2864,7 @@ class TestExcludeClassifications:
     @patch("pipeline_orchestrator.invoke_agent")
     def test_non_excluded_classification_still_dispatches(self, mock_invoke):
         """classification 'feature' is NOT excluded → agent dispatches normally."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent = self._agent(exclude=["bug"])
         agents = [agent]
         pipeline_map = {agent.agent: agent}
@@ -2816,9 +2889,7 @@ class TestManualRequestedOverride:
 
     @patch("pipeline_orchestrator.invoke_agent")
     def test_requested_dispatches_without_trigger_label(self, mock_invoke):
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent = AgentDef(
             agent="03_execute/coder",
             phase="03_execute",
@@ -2910,9 +2981,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator.invoke_agent")
     def test_post_steps_script_runs_on_complete(self, mock_invoke):
         """post_steps script is invoked via subprocess.run when the agent signals :complete."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_ok = MagicMock()
         bash_ok.returncode = 0
         bash_ok.stdout = ""
@@ -2974,9 +3043,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_nonzero_exit_posts_warning_keeps_complete(self, mock_failed, mock_invoke):
         """When a post_steps script exits non-zero, :complete is preserved and a warning comment is posted."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_fail = MagicMock()
         bash_fail.returncode = 1
         bash_fail.stdout = "error output"
@@ -3001,9 +3068,7 @@ class TestPostSteps:
         """When a post_steps script times out, :complete is preserved and a warning comment is posted."""
         import subprocess as _sp
 
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
 
         def _timeout_side_effect(cmd, **kwargs):
             if isinstance(cmd, list) and cmd and cmd[0] == "git":
@@ -3028,9 +3093,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_script_not_found_posts_warning_keeps_complete(self, mock_failed, mock_invoke):
         """When a post_steps script does not exist on disk, :complete is preserved and a warning comment is posted."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         import subprocess as _sp
 
         def _git_fail(cmd, **kwargs):
@@ -3056,9 +3119,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator.invoke_agent")
     def test_post_steps_all_succeed_in_order(self, mock_invoke):
         """All post_steps scripts run in sequence when each exits 0."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_ok = MagicMock()
         bash_ok.returncode = 0
         bash_ok.stdout = ""
@@ -3103,9 +3164,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_breaks_on_first_failure(self, mock_failed, mock_invoke):
         """When the first post_steps script fails, subsequent scripts do NOT run; :complete is preserved."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         import subprocess as _sp
 
         call_count = {"n": 0}
@@ -3163,9 +3222,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_path_traversal_blocked(self, mock_failed, mock_invoke):
         """A post_steps path that resolves outside the repo root is blocked; :complete is preserved."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent = AgentDef(
             agent="03_execute/pr-reviewer",
             phase="03_execute",
@@ -3201,9 +3258,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator.invoke_agent")
     def test_post_steps_issue_kind_sets_issue_number_env(self, mock_invoke):
         """When work item kind is 'issue', ISSUE_NUMBER is set in _ps_env (not PR_NUMBER)."""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_ok = MagicMock()
         bash_ok.returncode = 0
         bash_ok.stdout = ""
@@ -3292,9 +3347,7 @@ class TestPostStepFailureDecoupling:
         When a subsequent post_steps script for that same pipeline entry fails
         Then the issue does not end up labeled {agent}:failed
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_fail = MagicMock()
         bash_fail.returncode = 1
         bash_fail.stdout = "gh pr ready: GraphQL error"
@@ -3344,9 +3397,7 @@ class TestPostStepFailureDecoupling:
         bash_ok.returncode = 0
         bash_ok.stdout = ""
         bash_ok.stderr = ""
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent = self._pr_reviewer_agent()
         gh = _make_gh_mock()
         wi = WorkItem(
@@ -3536,9 +3587,7 @@ class TestCommitAgentWorkScript:
         When commit-agent-work.sh exits 0
         Then _apply_failed is not called.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_ok = MagicMock()
         bash_ok.returncode = 0
         bash_ok.stdout = ""
@@ -3697,9 +3746,7 @@ class TestPriorityScheduling:
         When the orchestrator selects the next work item to start
         Then the priority-labeled issue receives :wip before the non-priority issue.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = self._make_agent_for_priority()
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
@@ -3770,9 +3817,7 @@ class TestPriorityScheduling:
         When the orchestrator selects the next work item
         Then a non-priority issue is selected using normal selection logic.
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = self._make_agent_for_priority()
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
@@ -4124,9 +4169,7 @@ class TestProcessWorkItemDecomposition:
         When process_work_item() is called
         Then the agent is triggered exactly once (behaviour preserved).
         """
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -4281,14 +4324,12 @@ class TestRunAgentBehaviour:
 
     @patch("pipeline_orchestrator.invoke_agent")
     def test_returns_parsed_sentinel_and_applies_wip(self, mock_invoke):
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail='AI_AGILE_STATUS: complete "all done"'
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", message="all done")
         agent = _make_agent_def("03_execute/coder")
         gh = _make_gh_mock()
         wi = _make_work_item_with_labels(42, {"issue-classifier:complete"})
         with patch("subprocess.run", side_effect=self._git_side_effect()):
-            result, sentinel_status, sentinel_message, _pre, _at, attempt = _run_agent(
+            result, sentinel_status, sentinel_message, _pre, _at, attempt, _exhausted, _step_result = _run_agent(
                 agent, wi, False, "test/repo", set(wi.labels), "",
                 None, None, gh, {agent.agent: agent},
             )
@@ -4330,9 +4371,7 @@ class TestCommitAfterExactlyOnce:
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
     def test_commit_after_runs_exactly_once(self, mock_failed, mock_invoke):
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
-        )
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_ok = MagicMock(returncode=0, stdout="", stderr="")
         agent = self._agent()
         with patch("subprocess.run", side_effect=self._side_effect(bash_ok)) as mock_sub:

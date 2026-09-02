@@ -10,11 +10,13 @@ Covers the five Gherkin acceptance criteria from issue #79:
 
 import sys
 import os
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
+import pipeline_orchestrator as orch
 from pipeline_orchestrator import (
     AgentDef,
     AgentRunResult,
@@ -521,15 +523,27 @@ class TestAutoApproveOnCompleteDrivesProcessWorkItem:
         # its single dependency (03_execute/ci-gate, no human gate) is complete.
         work_item = _make_work_item(labels={"ci-gate:complete"})
 
-        complete_result = AgentRunResult(
-            success=True,
-            returncode=0,
-            captured_tail="No merge conflicts found. Branch is clean.\nAI_AGILE_STATUS: complete",
-        )
+        complete_result = AgentRunResult(success=True, returncode=0)
+
+        def _invoke_writing_result(agent_def, work_item, dry_run, repo, attempt=0,
+                                    agent_text_override=None, default_extra_tools=None):
+            # merge-conflict is an agent-type step (issue #400): it signals
+            # outcome via a real result.json in its scratch dir, not a stdout
+            # sentinel. Write one so the unmocked _read_step_result finds it.
+            session_id = orch._compute_agent_session_id(agent_def, work_item, repo)
+            scratch = orch._scratch_path(session_id)
+            os.makedirs(scratch, exist_ok=True)
+            payload = {
+                "outcome": "complete",
+                "summary": "No merge conflicts found. Branch is clean.",
+            }
+            with open(orch._result_file_path(scratch), "w") as f:
+                json.dump(payload, f)
+            return complete_result
 
         # Pass only the merge-conflict agent in the eligibility loop so no other
         # agent is invoked; pipeline_map stays complete for dependency lookups.
-        with patch("pipeline_orchestrator.invoke_agent", return_value=complete_result) as mock_invoke:
+        with patch("pipeline_orchestrator.invoke_agent", side_effect=_invoke_writing_result) as mock_invoke:
             process_work_item(
                 work_item,
                 [merge_conflict],

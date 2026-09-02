@@ -29,11 +29,22 @@ PR_NUMBER=$(gh api \
   --jq '.[0].number // empty')
 ```
 
-If no open PR exists, complete immediately — there is nothing to check:
+If no open PR exists, there is nothing to check. Detect this first:
 
 ```bash
-[[ -z "$PR_NUMBER" ]] && { echo "No open PR for issue-${ISSUE_NUMBER} — skipping." >&2
-  echo "AI_AGILE_STATUS: complete"; exit 0; }
+if [[ -z "$PR_NUMBER" ]]; then
+  echo "NO_PR: No open PR for issue-${ISSUE_NUMBER} — skipping."
+fi
+```
+
+If the block above printed a `NO_PR: ...` line, write `$AI_AGILE_SCRATCH/result.json`
+using the Write tool now and stop — do not continue to Step 1:
+
+```json
+{
+  "outcome": "complete",
+  "summary": "No open PR for issue-${ISSUE_NUMBER} — nothing to check."
+}
 ```
 
 ---
@@ -60,25 +71,27 @@ fi
 ```
 
 **If not `dirty` or `unknown` (e.g. `clean`):**
-Post no comment (clean PRs advance silently) and exit:
-```
-AI_AGILE_STATUS: complete
+Write `$AI_AGILE_SCRATCH/result.json` using the Write tool — no `output`
+(clean PRs advance silently) — and stop:
+
+```json
+{
+  "outcome": "complete",
+  "summary": "PR #${PR_NUMBER} mergeable_state is ${MERGEABLE} — no conflicts."
+}
 ```
 
 **If `unknown` after the retry:**
-Post a brief warning that mergeability could not be determined, then exit
-`complete` — the pr-reviewer will flag persistent conflicts as Critical:
+Write `$AI_AGILE_SCRATCH/result.json` with a brief warning that mergeability
+could not be determined, then stop — the pr-reviewer will flag persistent
+conflicts as Critical:
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<'EOF'
-<!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
-> **merge-conflict:** GitHub mergeability check returned UNKNOWN after retry.
-> Advancing to pr-reviewer — any conflicts will be flagged there.
-EOF
-gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-echo "AI_AGILE_STATUS: complete"
-exit 0
+```json
+{
+  "outcome": "complete",
+  "summary": "GitHub mergeability check returned UNKNOWN after retry for PR #${PR_NUMBER}.",
+  "output": "> **merge-conflict:** GitHub mergeability check returned UNKNOWN after retry.\n> Advancing to pr-reviewer — any conflicts will be flagged there."
+}
 ```
 
 **If `dirty`:** continue to Step 2.
@@ -107,14 +120,7 @@ if git rebase "origin/${BASE_BRANCH}"; then
     git push --force-with-lease origin "_rebase_attempt:${HEAD_BRANCH}"
     git checkout - 2>/dev/null || true
     git branch -D _rebase_attempt 2>/dev/null || true
-
-    cat > "${AI_AGILE_SCRATCH:-/tmp}/body_2.md" <<EOF
-<!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
-> **merge-conflict:** PR branch rebased onto \`${BASE_BRANCH}\` automatically — no conflicts remain. Advancing to pr-reviewer.
-EOF
-    gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
-      -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_2.md"
-    echo "AI_AGILE_STATUS: complete"
+    echo "REBASED: PR branch rebased onto ${BASE_BRANCH} automatically — no conflicts remain."
     exit 0
 fi
 
@@ -122,6 +128,18 @@ fi
 git rebase --abort 2>/dev/null || true
 git checkout - 2>/dev/null || true
 git branch -D _rebase_attempt 2>/dev/null || true
+```
+
+If the block above printed a `REBASED: ...` line, write
+`$AI_AGILE_SCRATCH/result.json` using the Write tool now and stop — do not
+continue to Step 3:
+
+```json
+{
+  "outcome": "complete",
+  "summary": "PR branch rebased onto ${BASE_BRANCH} automatically — no conflicts remain.",
+  "output": "> **merge-conflict:** PR branch rebased onto `${BASE_BRANCH}` automatically — no conflicts remain. Advancing to pr-reviewer."
+}
 ```
 
 If the rebase itself conflicted, continue to Step 3 for manual conflict analysis.
@@ -206,71 +224,21 @@ Assign a **priority** to each conflict:
 
 ---
 
-## Step 5 — Post resolution plan
+## Step 5 — Write result and exit
 
-Post a single structured assessment comment on the PR. Include a table summary
-and a detailed section per conflict:
+Write `$AI_AGILE_SCRATCH/result.json` using the Write tool. The `output`
+field carries the structured assessment (table summary and a detailed
+section per conflict) that the orchestrator posts as the artefact comment;
+substitute the runtime values yourself and replace every `_PLACEHOLDER`
+token before writing:
 
-```bash
-cat > "${AI_AGILE_SCRATCH:-/tmp}/body_3.md" <<'EOF'
-<!-- ai-agile/artefact/v1 by 03_execute/merge-conflict -->
-## Merge Conflict Assessment
-
-**PR:** #PR_NUMBER_PLACEHOLDER | **Issue:** #ISSUE_NUMBER_PLACEHOLDER
-
-The PR branch has merge conflicts that must be resolved before this PR can be
-merged. The table below summarises each conflict; the detailed sections below
-explain the recommended resolution approach.
-
-### Conflict Summary
-
-| Priority | File | Conflict scope | Recommended resolution |
-|----------|------|----------------|------------------------|
-| ... | ... | ... | ... |
-
-### Detailed Recommendations
-
-#### `path/to/file.py`
-
-**Priority:** High
-
-**Ours (PR branch):** `[description of what the PR changed]`
-
-**Theirs (base branch):** `[description of what the base changed]`
-
-**Recommended resolution:** `[Accept Ours / Accept Theirs / Manual merge]`
-
-**Rationale:** `[why this resolution is correct]`
-
-**Suggested merged form** (if Manual merge):
-```python
-# paste the correctly merged hunk here
-```
-
----
-
-**To proceed:**
-1. Review each recommendation above.
-2. If the resolution plan is acceptable, apply `merge-conflict:approved`
-   to issue #ISSUE_NUMBER_PLACEHOLDER. The orchestrator will re-invoke the
-   coding agent to apply the resolutions automatically.
-3. If a recommendation is wrong, add a comment explaining the correction
-   before approving.
-
-*Posted by the orchestrator — 03_execute/merge-conflict*
-EOF
-gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
-  -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body_3.md"
-```
-
-Replace all `_PLACEHOLDER` tokens with the actual values before posting.
-
----
-
-## Step 6 — Signal the review gate
-
-```
-AI_AGILE_STATUS: review
+```json
+{
+  "outcome": "review",
+  "summary": "Found merge conflicts on PR #${PR_NUMBER}; posted a prioritised resolution plan.",
+  "message": "Merge conflicts found — review the resolution plan and apply merge-conflict:approved to proceed.",
+  "output": "## Merge Conflict Assessment\n\n**PR:** #PR_NUMBER_PLACEHOLDER | **Issue:** #ISSUE_NUMBER_PLACEHOLDER\n\nThe PR branch has merge conflicts that must be resolved before this PR can be merged. The table below summarises each conflict; the detailed sections below explain the recommended resolution approach.\n\n### Conflict Summary\n\n| Priority | File | Conflict scope | Recommended resolution |\n|----------|------|----------------|------------------------|\n| ... | ... | ... | ... |\n\n### Detailed Recommendations\n\n#### `path/to/file.py`\n\n**Priority:** High\n\n**Ours (PR branch):** `[description of what the PR changed]`\n\n**Theirs (base branch):** `[description of what the base changed]`\n\n**Recommended resolution:** `[Accept Ours / Accept Theirs / Manual merge]`\n\n**Rationale:** `[why this resolution is correct]`\n\n**Suggested merged form** (if Manual merge):\n```python\n# paste the correctly merged hunk here\n```\n\n---\n\n**To proceed:**\n1. Review each recommendation above.\n2. If the resolution plan is acceptable, apply `merge-conflict:approved` to issue #ISSUE_NUMBER_PLACEHOLDER. The orchestrator will re-invoke the coding agent to apply the resolutions automatically.\n3. If a recommendation is wrong, add a comment explaining the correction before approving."
+}
 ```
 
 The pipeline pauses here. A human must apply the `merge-conflict:approved`
