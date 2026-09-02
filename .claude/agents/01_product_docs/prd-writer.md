@@ -6,7 +6,7 @@ description: >
   complete specification (Gherkin, acceptance criteria, user stories, problem
   statement) -- if so, preserves it and appends missing governance elements
   (header comment, title prefix, standards check) plus any missing Gherkin
-  coverage (Step 6e: derives scenarios from existing requirements to satisfy
+  coverage (Step 6d: derives scenarios from existing requirements to satisfy
   the classification band's minimum, never inventing new requirements). If no
   pre-existing spec is found, rewrites the issue body with a full PRD in
   user-story and Gherkin format. Waits for the prd-writer:approved gate.
@@ -104,14 +104,14 @@ This content is the source of truth — do **not** overwrite it.
 1. Skip Steps 3, 4, 5, and 7 entirely.
 2. Go directly to **Step 6 (Augmentation mode)**, treating the existing body
    as fully pre-specified.
-3. In Step 6d (rewrite title and body): **do not change the title** -- the
+3. In Step 6c (compute the new title): **do not change the title** -- the
    sizer already set a canonical title in the form `[#PARENT - N/TOTAL] scope`.
    Only add the governance header comment to the body.
-4. **Step 6e (Gherkin backfill) still applies.** Sizer templates do not
-   generate Gherkin, so Step 6e is the only point in the pipeline where a
-   sub-issue's acceptance criteria get translated into scenarios. Run Step 6e
+4. **Step 6d (Gherkin backfill) still applies.** Sizer templates do not
+   generate Gherkin, so Step 6d is the only point in the pipeline where a
+   sub-issue's acceptance criteria get translated into scenarios. Run Step 6d
    on the sub-issue body exactly as for any augmentation-mode issue.
-5. After Step 6e, go to **Step 8** to signal review.
+5. After Step 6d, go to **Step 8** to signal review.
 
 **Rationale:** Sub-issues exist because a human approved a sizer decomposition.
 Their scope and acceptance criteria were explicitly reviewed. Rewriting them
@@ -143,10 +143,10 @@ Score the following signals against the current issue body:
 
 - **≥4 signals present** → the issue is **pre-specified**. Go to
   **Step 6 (Augmentation mode)** — skip Steps 4 and 5. The existing
-  specification is preserved; governance elements are added, and Step 6e
+  specification is preserved; governance elements are added, and Step 6d
   backfills any missing Gherkin coverage. Note: "pre-specified" is a statement
   about completeness, not notation — the classification band's Gherkin minimum
-  from Step 5a still applies via Step 6e even when the body uses a
+  from Step 5a still applies via Step 6d even when the body uses a
   numbered-requirements or checklist format.
 - **<4 signals present** → the issue needs a full PRD. Continue to
   **Step 4 (Sanity-check)** and **Step 5 (Draft)** as normal.
@@ -292,14 +292,9 @@ Check the body for:
   (only relevant if product-layer standards files exist in
   `${AI_AGILE_ROOT}/standards/`)
 - **Correct title prefix** — `[BUG]`, `[FEATURE]`, `[ENHANCEMENT]`, etc.
-  (see 7b prefix table)
+  (see 7a prefix table)
 
-### 6b — Snapshot the original body
-
-Run the snapshot block from 7a (below) — the same idempotent check
-applies. If a snapshot already exists, this is a no-op.
-
-### 6c — Build the augmented body
+### 6b — Build the augmented body
 
 Construct the new body by:
 
@@ -323,34 +318,26 @@ BODY_EOF
 # NEW_BODY="${NEW_BODY}\n\n**Standards check:** STD-SEC-001 ..."
 ```
 
-### 6d — Rewrite title (prefix only) and body
+### 6c — Compute the new title (prefix only)
 
-Apply the title prefix from the 7b table. Do **not** rephrase the
+Apply the title prefix from the 7a table. Do **not** rephrase the
 existing title text — only prepend the `[CATEGORY]` prefix if absent.
+Hold the result in `$NEW_TITLE` — you write neither title nor body here;
+Step 8 returns both together.
 
 **Exception — sub-issues:** If this is a sub-issue (detected in Step 2),
-skip the title change entirely. The sizer-assigned title `[#PARENT - N/TOTAL]
-scope` is canonical and must not be altered. Only update the body.
+skip the title change entirely — leave `$NEW_TITLE` unset. The
+sizer-assigned title `[#PARENT - N/TOTAL] scope` is canonical and must
+not be altered. Only `$NEW_BODY` (from 6b) changes.
 
-```bash
-# For standalone issues: update both title and body
-gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
-  -f title="${NEW_TITLE}" \
-  -f body="${NEW_BODY}"
-
-# For sub-issues: body only
-gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
-  -f body="${NEW_BODY}"
-```
-
-Then go directly to **Step 6e** — Backfill Gherkin coverage.
+Then go directly to **Step 6d** — Backfill Gherkin coverage.
 
 ---
 
-### 6e — Backfill Gherkin coverage
+### 6d — Backfill Gherkin coverage
 
 **Guard — already-approved issues:** Check whether the issue already carries
-the `prd-writer:approved` label. If so, Step 6e is a no-op — backfill only
+the `prd-writer:approved` label. If so, Step 6d is a no-op — backfill only
 applies on prd-writer's first pass and must not retroactively rewrite an
 already-approved spec.
 
@@ -375,7 +362,7 @@ band minimum from Step 5a:
 | `enhancement` | 2 |
 | `feature` | 3 |
 
-If the existing count meets or exceeds the minimum, Step 6e is a no-op —
+If the existing count meets or exceeds the minimum, Step 6d is a no-op —
 go directly to **Step 8**.
 
 **Derivation algorithm (only runs when count is below minimum):**
@@ -424,44 +411,14 @@ Then go to **Step 8** — signal review.
 
 ---
 
-## Step 7 — Snapshot the original, then rewrite title and body
+## Step 7 — Compute the new title and body
 
-The PRD lives in the **issue body**, not a comment. The stakeholder's
-original title and body are preserved as a one-off snapshot comment.
+The PRD lives in the **issue body**, not a comment. The orchestrator
+snapshots the stakeholder's original title and body as a one-off comment
+the first time it applies a body replace for this agent on this issue
+(idempotent — a re-run never re-snapshots); you don't do this yourself.
 
-### 7a — Snapshot (first run only)
-
-Check whether a snapshot exists and post it if not — all in one shell block
-so no state crosses tool-call boundaries:
-
-```bash
-SNAPSHOT_ID=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate \
-  --jq '.[]
-        | select(.body | contains("ai-agile/snapshot/v1 by 01_product_docs/prd-writer"))
-        | .id' \
-  | head -1)
-
-if [ -z "$SNAPSHOT_ID" ]; then
-  ORIG_TITLE=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.title')
-  ORIG_BODY=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.body')
-
-  cat > "${AI_AGILE_SCRATCH:-/tmp}/body.md" <<EOF
-<!-- ai-agile/snapshot/v1 by 01_product_docs/prd-writer -->
-## Original issue (snapshot before PRD rewrite)
-
-**Original title:** ${ORIG_TITLE}
-
-**Original body:**
-
-${ORIG_BODY}
-EOF
-  gh api --method POST "repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-    -F body=@"${AI_AGILE_SCRATCH:-/tmp}/body.md"
-fi
-# If SNAPSHOT_ID is non-empty this block is a no-op — snapshot is immutable.
-```
-
-### 7b — Build the new title
+### 7a — Build the new title
 
 Map classification to prefix:
 
@@ -482,37 +439,49 @@ subject. **Don't fabricate a module.**
 - With module: `[CATEGORY] - {module} - {concise title}`
 - Without module: `[CATEGORY] - {concise title}`
 
-### 7c — Rewrite the issue title and body
+### 7b — Compute the new issue body
 
-```bash
-NEW_BODY=$(cat <<EOF
+Hold this in `$NEW_BODY` — you write neither title nor body here; Step 8
+returns both together.
+
+```
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
 
 {PRD content from Step 5}
 
 ---
 *This is the live target spec. The original title and body are in the snapshot comment above.*
-EOF
-)
-
-gh api --method PATCH "repos/$REPO/issues/$ISSUE_NUMBER" \
-  -f title="${NEW_TITLE}" \
-  -f body="${NEW_BODY}"
 ```
 
 ---
 
-## Step 8 — Signal outcome
+## Step 8 — Write the result
 
-Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool:
+Use the Write tool to create `$AI_AGILE_SCRATCH/result.json`. `body_write`
+carries the title/body computed in Step 6 (augmentation mode) or Step 7
+(full-draft mode) — the orchestrator applies it (and posts the one-off
+snapshot first, if this is the first replace), never you. `output` is a
+short note, not the PRD itself, so a later run's revision-detection (Step 0)
+has something to find in the comment thread.
 
 ```json
 {
   "outcome": "review",
   "summary": "PRD written into the issue body.",
-  "message": "PRD written into issue body; awaiting prd-writer:approved."
+  "message": "PRD written into issue body; awaiting prd-writer:approved.",
+  "output": "PRD drafted for issue #${ISSUE_NUMBER}. See the issue body for the full spec.",
+  "body_write": {
+    "target": "issue",
+    "mode": "replace",
+    "body": "${NEW_BODY}",
+    "title": "${NEW_TITLE}"
+  }
 }
 ```
+
+Omit `title` from `body_write` entirely (not just empty) when this is a
+sub-issue whose title must not change (Step 2), or when Step 6d's
+already-approved guard skipped straight here with no title recomputed.
 
 The orchestrator applies `:review`, posts the closing announcement, and
 prompts the stakeholder to apply `prd-writer:approved`.
@@ -541,10 +510,12 @@ runtime values yourself:
 - **Detect before drafting.** Always run Step 3 before writing anything.
   A pre-existing spec (≥4 signals) goes through augmentation (Step 6),
   not the full draft path. Never discard a detailed existing specification.
-- **The snapshot is immutable.** Once posted, never edit it, even if
-  the PRD is rewritten after rejection.
+- **The snapshot is immutable.** The orchestrator posts it once,
+  automatically, before your first body replace; you never touch it,
+  even across a re-run after rejection.
 - **PRD lives in the issue body, not a comment.** Re-runs overwrite
-  the body with the revised PRD. GitHub keeps the full edit history.
+  the body with the revised PRD via `body_write` (Step 8) — never a
+  direct API call. GitHub keeps the full edit history.
 - Do not invent acceptance criteria the stakeholder didn't imply. If
   their problem statement is too vague for Gherkin, post a Question
   Card rather than guessing.

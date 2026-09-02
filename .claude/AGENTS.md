@@ -91,15 +91,18 @@ own `tools:` frontmatter.
 | `output` | no (default `""`) | The artefact you produced (a review, a PRD, a plan). The orchestrator posts this as a structured comment; you never post it yourself |
 | `expected_effect` | no (default `{}`) | What you believe you changed this run, e.g. `{"commits": true}` |
 | `label_requests` | no (default `[]`) | `[{"issue": null, "add": [...], "remove": [...]}]` — `"issue": null` means this work item. Only requests matching your step's declared `allowed_labels` (`pipeline.json`) are applied; everything else is silently dropped |
+| `body_write` | no (default `{}`) | A full-body rewrite or a todos-block subsection patch (issue #401) — see "Todo lists" below for the patch shape. `{"target": "issue"\|"pr", "mode": "replace", "body": "...", "title": "..."}` (title optional) for a full rewrite. You never edit the body yourself; the orchestrator applies this and snapshots the pre-write body first, once, the first time you replace it |
 
 Any missing required field, wrong type, or an `outcome` outside the three
 values above is treated the same as a crash: `:failed`, not inferred from a
 clean exit. Writing nothing is the same as writing something malformed —
 there is no silent-success path.
 
-A step that rewrites content a person wrote (an issue body becoming a PRD,
-a todos-block checkbox) is a different, narrower mechanism — see "Todo
-lists" below — and is unaffected by this file.
+A step that rewrites an issue/PR body (a PRD rewrite, a todos-block
+checkbox) returns that change the same way, in `result.json`'s
+`body_write` field (issue #401) — see "Todo lists" below for the
+todos-block patch shape. You never edit a body directly, the same as
+you never post a comment or apply a label directly.
 
 Two rules for the scratch directory, and nothing else to remember:
 
@@ -125,6 +128,7 @@ runs:
 | `artefact/v1` | Your `output` field, when non-empty |
 | `claim/v1` | The mutex claim posted during P-4 acquisition |
 | `session/v1` | Per-(object, agent) session metadata; one comment, edited in place |
+| `snapshot/v1` | The pre-write body, posted once before your first `body_write` replace on a given target (issue #401) |
 
 You do not construct any of these yourself — they exist so a later run of
 you (or a person) can find your prior artefact when reading GitHub, per
@@ -145,16 +149,16 @@ the single, visible, edited-in-place source of truth for what work remains.
 
 The block sits below any human-authored prose, wrapped in an outer marker
 pair (`<!-- ai-agile/todos/v1 START -->` / `END`) under a
-`## AI Agile — Tasks` heading, with each subsection independently wrapped in
+`## AI Agile -- Tasks` heading, with each subsection independently wrapped in
 its own marker pair (`<!-- ai-agile/todos/{name}/v1 START -->` / `END`) so
 one agent can update its subsection without touching another's:
 
 | Subsection | On issue | On PR | Owner |
 |---|---|---|---|
-| `build-plan` | yes | yes (mirrored) | `task-decomposer` (issue), `coder` (PR -- ticks boxes as commits land) |
+| `build-plan` | yes | yes (mirrored) | the step that turns the issue into a plan (issue) -- not built yet; `coder` (PR -- ticks boxes as commits land) |
 | `acceptance-criteria` | yes | no | `prd-writer` |
-| `standards-remediations` | no | yes | `standards-compliance-reviewer` |
-| `test-scenarios` | no | yes | `test-spec-writer` (populates), `test-runner` (ticks off) |
+| `standards-remediations` | no | yes | the step that reviews standards compliance -- not built yet |
+| `test-scenarios` | no | yes | the step that writes the scenarios (populates), the step that runs them (ticks off) -- neither built yet |
 
 Checkbox state is `- [ ]` (pending) or `- [x]` (done). Every entry carries
 the timestamp and actor for each state change as `(raised <ISO-8601-UTC> by
@@ -165,6 +169,23 @@ human, or the literal `orchestrator`.
 
 **Only rewrite the subsection you own**, leaving the others untouched, and
 **never remove a checked item** -- they are the audit trail.
+
+You never edit the body yourself (issue #401, same as any other body write
+-- see "How you communicate"). To create or update your subsection, return
+it in `result.json`'s `body_write` field:
+
+```json
+{"target": "issue", "mode": "patch", "subsection": "acceptance-criteria", "content": "- [x] ..."}
+```
+
+`content` is the subsection's entire new content, not a diff -- the
+orchestrator creates the heading and marker pairs the first time any
+subsection is written, and creates a new subsection's markers the first
+time that subsection is written, leaving every other subsection's content
+untouched. It refuses (and keeps the old content) if your `content` would
+un-check or drop a line that was previously `- [x]`, and retries a few
+times if another write lands in between your read and your write --
+either way, you never see the retry; you just write `content` once.
 
 ---
 
@@ -206,7 +227,7 @@ For gated agents (your prompt's frontmatter or `pipeline.json` lists a
 ## What you must not do
 
 - **Don't edit human-authored content** — issue bodies written by the stakeholder, review comments, ADRs after acceptance.
-- **Don't post your own comments or apply your own labels.** Return them in `result.json`'s `output`/`label_requests` fields; the orchestrator posts and applies them.
+- **Don't post your own comments, apply your own labels, or edit an issue/PR body yourself.** Return them in `result.json`'s `output`/`label_requests`/`body_write` fields; the orchestrator posts, applies, and writes them.
 - **Don't keep state outside GitHub** — no sidecar files in the repo, no external DBs, nothing carried from one run to the next. Working files during a run belong in the scratch directory (see "How you communicate") and nowhere else.
 - **Don't use `WebFetch` or `WebSearch`** unless your tool allowlist explicitly includes them (it doesn't, by default).
 - **Don't assume earlier runs left state in your environment.** Read GitHub fresh on every invocation.

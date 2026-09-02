@@ -651,6 +651,44 @@ class GitHubClient:
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
 
+    def list_comment_bodies(self, number: int) -> list[str]:
+        """Return every comment body on an issue or PR, oldest first, paginated."""
+        bodies: list[str] = []
+        page = 1
+        while True:
+            data = self._get(
+                f"/repos/{self.repo}/issues/{number}/comments",
+                params={"per_page": 100, "page": page},
+            )
+            if not data:
+                break
+            bodies.extend(c.get("body") or "" for c in data)
+            page += 1
+        return bodies
+
+    def get_body(self, number: int) -> str:
+        """Return the current body text of an issue or PR.
+
+        A PR is an issue as far as this endpoint is concerned (same as
+        post_comment above), so one method covers both. Never None -- an
+        issue/PR with no body returns "".
+        """
+        data = self._get(f"/repos/{self.repo}/issues/{number}")
+        return data.get("body") or ""
+
+    def update_body(self, number: int, body: str, title: Optional[str] = None) -> None:
+        """Replace an issue's or PR's body, and optionally its title.
+
+        Full replace only -- callers that need a partial update (issue #401's
+        section-scoped todos patch) read the current body via get_body,
+        compute the new full body themselves, and pass that here.
+        """
+        payload: dict = {"body": body}
+        if title is not None:
+            payload["title"] = title
+        r = self._request("PATCH", f"/repos/{self.repo}/issues/{number}", json_body=payload)
+        r.raise_for_status()
+
     def close_issue(self, number: int) -> None:
         r = self._request(
             "PATCH",
@@ -2012,6 +2050,14 @@ class StepResult:
     undone are required; message/output/expected_effect/label_requests
     default to empty when the step omits them (e.g. a `complete` outcome
     with nothing to report beyond the summary).
+
+    body_write (issue #401) is one of two shapes, or {} for no body write:
+      {"target": "issue"|"pr", "mode": "replace", "body": str, "title": str?}
+      {"target": "issue"|"pr", "mode": "patch", "subsection": str, "content": str}
+    A step never writes the body itself (PRODUCT.md, "What a step must
+    return"): "replace" is a full-body rewrite (prd-writer); "patch" is a
+    section-scoped update inside the todos block (see _apply_todos_patch),
+    retried on conflict by the orchestrator.
     """
     outcome: str                    # complete | review | blocked
     summary: str                    # the step's own account, including "did nothing"
@@ -2020,6 +2066,7 @@ class StepResult:
     output: str = ""                # artefact content; the orchestrator posts this, the step doesn't
     expected_effect: dict = field(default_factory=dict)   # the step's own belief about what it changed this run
     label_requests: list = field(default_factory=list)    # [{"issue": int|None, "add": [...], "remove": [...]}]
+    body_write: dict = field(default_factory=dict)        # {} = none; see _read_step_result for the two shapes
 
 
 def _result_file_path(scratch_dir: str) -> Path:
@@ -2081,6 +2128,27 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
             if not isinstance(_labels, list) or not all(isinstance(x, str) for x in _labels):
                 return None, f"result.label_requests[].{_key} must be an array of strings"
 
+    body_write = raw.get("body_write", {})
+    if not isinstance(body_write, dict):
+        return None, "result.body_write must be an object"
+    if body_write:
+        if body_write.get("target") not in ("issue", "pr"):
+            return None, 'result.body_write.target must be "issue" or "pr"'
+        _mode = body_write.get("mode")
+        if _mode == "replace":
+            if not isinstance(body_write.get("body"), str):
+                return None, "result.body_write.body must be a string when mode is \"replace\""
+            _title = body_write.get("title")
+            if _title is not None and not isinstance(_title, str):
+                return None, "result.body_write.title must be a string or absent"
+        elif _mode == "patch":
+            if not isinstance(body_write.get("subsection"), str) or not body_write.get("subsection"):
+                return None, "result.body_write.subsection must be a non-empty string when mode is \"patch\""
+            if not isinstance(body_write.get("content"), str):
+                return None, "result.body_write.content must be a string when mode is \"patch\""
+        else:
+            return None, 'result.body_write.mode must be "replace" or "patch"'
+
     return StepResult(
         outcome=outcome,
         summary=summary,
@@ -2089,6 +2157,7 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         output=raw.get("output", ""),
         expected_effect=expected_effect,
         label_requests=label_requests,
+        body_write=body_write,
     ), ""
 
 
@@ -2171,6 +2240,214 @@ def _post_artefact_if_present(
             "  could not post artefact comment for %s on #%d: %s",
             agent_def.agent, work_item.number, exc,
         )
+
+
+# ---------------------------------------------------------------------------
+# Body writes (issue #401) — a step never writes an issue/PR body itself
+# (PRODUCT.md, "What a step must return" / "What a step must never do");
+# it returns what the new body or section should say, in StepResult's
+# body_write field, and the orchestrator applies it here.
+# ---------------------------------------------------------------------------
+
+_TODOS_HEADING = "## AI Agile -- Tasks"
+_TODOS_OUTER_START = "<!-- ai-agile/todos/v1 START -->"
+_TODOS_OUTER_END = "<!-- ai-agile/todos/v1 END -->"
+
+_BODY_WRITE_MAX_ATTEMPTS = 3
+
+
+def _todos_subsection_markers(subsection: str) -> tuple[str, str]:
+    return (
+        f"<!-- ai-agile/todos/{subsection}/v1 START -->",
+        f"<!-- ai-agile/todos/{subsection}/v1 END -->",
+    )
+
+
+_CHECKED_ITEM_RE = re.compile(r"^[ \t]*-\s*\[x\]\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _checked_items_would_be_lost(old_content: str, new_content: str) -> str:
+    """Return a non-empty refusal reason if any `- [x]` line in old_content
+    is missing, or no longer checked, in new_content -- comparing by the
+    checkbox's own text, so a step that only appends new entries or ticks
+    more boxes never trips this. A checked item's text is terminal (AGENTS.md:
+    a `done`/`blocked`/`skipped` event is appended once and it never changes
+    again), so an exact-text comparison is the whole check.
+    """
+    old_checked = set(_CHECKED_ITEM_RE.findall(old_content))
+    if not old_checked:
+        return ""
+    lost = old_checked - set(_CHECKED_ITEM_RE.findall(new_content))
+    if not lost:
+        return ""
+    shown = sorted(lost)[:3]
+    return (
+        f"patch would un-check or drop {len(lost)} previously checked item(s): "
+        + "; ".join(shown) + ("; ..." if len(lost) > len(shown) else "")
+    )
+
+
+def _apply_todos_patch(body: str, subsection: str, content: str) -> tuple[Optional[str], str]:
+    """Compute a new body with `subsection`'s todos-block content replaced by
+    `content`, creating the outer/subsection marker blocks if either is
+    absent yet (PRODUCT.md, "What lands on the issue"). Returns (new_body,
+    "") on success, or (None, reason) when the patch would silently drop a
+    previously checked item -- the caller keeps the old body unchanged.
+
+    Touches only the named subsection; every other subsection's content,
+    and everything outside the outer block, passes through byte-for-byte.
+    """
+    sub_start, sub_end = _todos_subsection_markers(subsection)
+
+    outer_start_idx = body.find(_TODOS_OUTER_START)
+    if outer_start_idx == -1:
+        # No todos block at all yet -- create it, with just this subsection.
+        block = (
+            f"\n\n{_TODOS_HEADING}\n\n{_TODOS_OUTER_START}\n"
+            f"{sub_start}\n{content}\n{sub_end}\n"
+            f"{_TODOS_OUTER_END}\n"
+        )
+        return body.rstrip("\n") + block, ""
+
+    outer_end_idx = body.find(_TODOS_OUTER_END, outer_start_idx)
+    if outer_end_idx == -1:
+        return None, "found an unterminated todos block (START with no matching END)"
+
+    outer_inner_start = outer_start_idx + len(_TODOS_OUTER_START)
+    outer_content = body[outer_inner_start:outer_end_idx]
+
+    sub_start_idx = outer_content.find(sub_start)
+    if sub_start_idx == -1:
+        # Subsection doesn't exist yet within the outer block -- append it,
+        # leaving every existing subsection untouched.
+        new_outer_content = outer_content.rstrip("\n") + f"\n{sub_start}\n{content}\n{sub_end}\n"
+        return body[:outer_inner_start] + new_outer_content + body[outer_end_idx:], ""
+
+    sub_end_idx = outer_content.find(sub_end, sub_start_idx)
+    if sub_end_idx == -1:
+        return None, f"found an unterminated {subsection} subsection (START with no matching END)"
+
+    sub_inner_start = sub_start_idx + len(sub_start)
+    old_content = outer_content[sub_inner_start:sub_end_idx]
+
+    refusal = _checked_items_would_be_lost(old_content, content)
+    if refusal:
+        return None, refusal
+
+    # Same "\n{content}\n" wrapping as the create-from-scratch and
+    # new-subsection paths above, so a subsection's on-disk shape doesn't
+    # depend on whether this is its first patch or a later one.
+    new_outer_content = outer_content[:sub_inner_start] + f"\n{content}\n" + outer_content[sub_end_idx:]
+    return body[:outer_inner_start] + new_outer_content + body[outer_end_idx:], ""
+
+
+def _resolve_body_write_target(
+    gh: "GitHubClient", work_item: "WorkItem", target: str,
+) -> Optional[int]:
+    """Resolve body_write's declared target ("issue" or "pr") to a real
+    number. Mirrors _mark_pr_ready_if_requested's PR lookup: a step running
+    against an issue work item but targeting "pr" (e.g. coder ticking a PR's
+    build-plan) needs the PR found by branch/label the same way review-gate
+    promotion does.
+    """
+    if target == "issue":
+        return work_item.number if work_item.kind == "issue" else None
+    if work_item.kind == "pr":
+        return work_item.number
+    try:
+        pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+        if pr_number is None:
+            pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
+        return pr_number
+    except Exception:
+        return None
+
+
+def _snapshot_body_if_first_replace(gh: "GitHubClient", agent_def: "AgentDef", number: int) -> None:
+    """Post the pre-write body as a snapshot comment, once, before the first
+    full-body replace this agent makes on this target (PRODUCT.md: "snapshot
+    ... Human-authored content preserved verbatim before a step rewrote it").
+    Idempotent -- checks for a prior `ai-agile/snapshot/v1 by {agent}`
+    comment first, so a re-run never re-snapshots (P-11).
+    """
+    marker = f"<!-- ai-agile/snapshot/v1 by {agent_def.agent} -->"
+    if any(marker in existing for existing in gh.list_comment_bodies(number)):
+        return
+    current_body = gh.get_body(number)
+    gh.post_comment(number, f"{marker}\n\n{current_body}")
+
+
+def _apply_body_write(
+    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", step_result: Optional[StepResult],
+) -> None:
+    """Apply the step's requested body write (issue #401), if any. Never raises.
+
+    "replace": a full-body rewrite, snapshotted first (see
+    _snapshot_body_if_first_replace).
+
+    "patch": a section-scoped todos-block update, retried up to
+    _BODY_WRITE_MAX_ATTEMPTS times on a verified conflict -- read the
+    current body, compute the patch, write it, then re-read to confirm the
+    write landed as intended. The Issues API has no ETag/If-Match for body
+    PATCHes, so this is an application-level optimistic-retry loop, not a
+    server-enforced one (PRODUCT.md: "retrying if another write landed
+    first is post-action plumbing").
+    """
+    if not step_result or not step_result.body_write:
+        return
+    bw = step_result.body_write
+    target_number = _resolve_body_write_target(gh, work_item, bw["target"])
+    if target_number is None:
+        log.warning(
+            "  could not resolve body_write target (%s) for %s on #%d",
+            bw["target"], agent_def.agent, work_item.number,
+        )
+        return
+
+    if bw["mode"] == "replace":
+        try:
+            _snapshot_body_if_first_replace(gh, agent_def, target_number)
+            gh.update_body(target_number, bw["body"], title=bw.get("title"))
+            log.info("  BODY    %-38s  replaced #%d", agent_def.agent, target_number)
+        except Exception as exc:
+            log.warning(
+                "  could not replace body for %s on #%d: %s",
+                agent_def.agent, target_number, exc,
+            )
+        return
+
+    # mode == "patch"
+    subsection, content = bw["subsection"], bw["content"]
+    sub_start, sub_end = _todos_subsection_markers(subsection)
+    expected_fragment = f"{sub_start}\n{content}\n{sub_end}"
+    for attempt in range(1, _BODY_WRITE_MAX_ATTEMPTS + 1):
+        try:
+            current_body = gh.get_body(target_number)
+            new_body, refusal = _apply_todos_patch(current_body, subsection, content)
+            if refusal:
+                log.warning(
+                    "  refused body_write patch for %s on #%d: %s",
+                    agent_def.agent, target_number, refusal,
+                )
+                return
+            gh.update_body(target_number, new_body)
+            # Verify the write landed as intended -- a concurrent write
+            # between our read and our write would otherwise go undetected.
+            if expected_fragment in gh.get_body(target_number):
+                log.info(
+                    "  BODY    %-38s  patched %s on #%d (attempt %d)",
+                    agent_def.agent, subsection, target_number, attempt,
+                )
+                return
+        except Exception as exc:
+            log.warning(
+                "  body_write patch attempt %d for %s on #%d failed: %s",
+                attempt, agent_def.agent, target_number, exc,
+            )
+    log.warning(
+        "  could not apply body_write patch for %s on #%d after %d attempt(s) -- conflicting writes",
+        agent_def.agent, target_number, _BODY_WRITE_MAX_ATTEMPTS,
+    )
 
 
 def _should_emit_stream_line(line: str, verbose: bool) -> bool:
@@ -4848,6 +5125,10 @@ def _apply_result(
     # itself; this is the orchestrator applying only what clears.
     if step_result and step_result.label_requests:
         _apply_label_requests(gh, agent_def, work_item, step_result.label_requests)
+
+    # Apply the step's requested body write, if any (issue #401) — a step
+    # never writes the issue/PR body itself.
+    _apply_body_write(gh, agent_def, work_item, step_result)
 
     # Refresh label set from GitHub after our writes.
     labels_refreshed = gh.get_issue_labels(work_item.number)
