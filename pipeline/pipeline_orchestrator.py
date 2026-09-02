@@ -1690,7 +1690,7 @@ def normalize_skipped_labels(
 
 
 def _gate_label_human_applied(gh, repo, work_item_number, gate_label) -> bool:
-    """Return True unless the gate label was verifiably applied by a bot.
+    """Return True only if the gate label was verifiably applied by a human.
 
     A prompt-injected agent can self-approve its own gate by applying its
     ``{agent}:approved`` label. Since PR #262 agents run with the repo-scoped
@@ -1698,29 +1698,53 @@ def _gate_label_human_applied(gh, repo, work_item_number, gate_label) -> bool:
     (``actor.type == "Bot"`` and/or a login ending in ``[bot]``). A genuine
     human approval is authored by a real user login.
 
-    This inspects the issue's ``labeled`` events, finds the most recent one for
-    ``gate_label``, and returns False only when that actor is determinably a
-    bot. It is FAIL-OPEN: if the events call raises, no matching labeled event
-    is found, or the actor cannot be determined, it logs a warning and returns
-    True (allow) so a transient API error never halts the pipeline. The only
-    case it blocks is the determinable bot-self-approval.
+    This inspects the issue's ``labeled`` events (paginated -- see below),
+    finds the most recent one for ``gate_label``, and returns True only when
+    that actor is positively a human (``actor.type == "User"``, login not
+    ``[bot]``-suffixed).
+
+    FAIL-CLOSED (STD-ARCH-014; PRODUCT.md MI-7 -- "An approval the
+    orchestrator cannot establish a person stood behind is refused"): every
+    inconclusive case -- an API error, an unexpected payload shape, no
+    matching labeled event found, or an actor that isn't determinably human
+    -- refuses (returns False). A transient API error now halts the gate
+    rather than silently admitting an unverified approval; that tradeoff is
+    the point (MI-7's "no amount of actor-checking" note is about interactive
+    mode's transcription path, not about weakening this check).
+
+    Paginated: an issue with many label transitions can have its gate's
+    ``labeled`` event beyond the API's default single page, which would
+    silently read as "no matching event" -- harmless under the old fail-open
+    behaviour, but a false refusal of a genuine approval under fail-closed.
     """
+    events: list = []
+    page = 1
     try:
-        events = gh._get(f"/repos/{repo}/issues/{work_item_number}/events")
+        while True:
+            batch = gh._get(
+                f"/repos/{repo}/issues/{work_item_number}/events",
+                params={"per_page": 100, "page": page},
+            )
+            if not isinstance(batch, list):
+                log.warning(
+                    "  unexpected events payload for #%s verifying gate '%s' -"
+                    " refusing (fail-closed)",
+                    work_item_number, gate_label,
+                )
+                return False
+            if not batch:
+                break
+            events.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
     except Exception as exc:
         log.warning(
             "  could not fetch events for #%s to verify gate '%s' applier: %s"
-            " - allowing (fail-open)",
+            " - refusing (fail-closed)",
             work_item_number, gate_label, exc,
         )
-        return True
-
-    if not isinstance(events, list):
-        log.warning(
-            "  unexpected events payload for #%s verifying gate '%s' - allowing (fail-open)",
-            work_item_number, gate_label,
-        )
-        return True
+        return False
 
     labeled = [
         e for e in events
@@ -1731,30 +1755,30 @@ def _gate_label_human_applied(gh, repo, work_item_number, gate_label) -> bool:
     ]
     if not labeled:
         log.warning(
-            "  no 'labeled' event found for gate '%s' on #%s - allowing (fail-open)",
+            "  no 'labeled' event found for gate '%s' on #%s - refusing (fail-closed)",
             gate_label, work_item_number,
         )
-        return True
+        return False
 
     actor = labeled[-1].get("actor")
     if not isinstance(actor, dict):
         log.warning(
-            "  could not determine actor for gate '%s' on #%s - allowing (fail-open)",
+            "  could not determine actor for gate '%s' on #%s - refusing (fail-closed)",
             gate_label, work_item_number,
-        )
-        return True
-
-    actor_type = actor.get("type")
-    actor_login = actor.get("login") or ""
-    if actor_type == "Bot" or actor_login.endswith("[bot]"):
-        log.warning(
-            "  gate '%s' on #%s was applied by bot '%s' - NOT treating gate as"
-            " satisfied (self-approval guard)",
-            gate_label, work_item_number, actor_login or actor_type,
         )
         return False
 
-    return True
+    actor_type = actor.get("type")
+    actor_login = actor.get("login") or ""
+    if actor_type == "User" and not actor_login.endswith("[bot]"):
+        return True
+
+    log.warning(
+        "  gate '%s' on #%s was applied by non-human actor '%s' (type=%s) -"
+        " NOT treating gate as satisfied (self-approval guard, fail-closed)",
+        gate_label, work_item_number, actor_login or "?", actor_type,
+    )
+    return False
 
 
 def dependencies_complete(
@@ -3706,9 +3730,10 @@ def promote_gated_agents(
 
         # A gate label only counts when a human applied it. A prompt-injected
         # agent that self-applied its own {agent}:approved label (a bot actor
-        # since PR #262) must NOT promote itself past the gate. Fail-open on any
-        # API error (see _gate_label_human_applied). Short-circuit avoids the
-        # events lookup entirely when the label is absent.
+        # since PR #262) must NOT promote itself past the gate. Fail-closed on
+        # any API error or inconclusive check (see _gate_label_human_applied,
+        # MI-7). Short-circuit avoids the events lookup entirely when the
+        # label is absent.
         gate_present = gate_label in updated and _gate_label_human_applied(
             gh, repo or gh.repo, work_item.number, gate_label,
         )
@@ -5554,6 +5579,20 @@ def parse_args() -> argparse.Namespace:
             "it enables."
         ),
     )
+    p.add_argument(
+        "--confirm-gate",
+        action="store_true",
+        help=(
+            "Interactive gate-crossing (issue #403; PRODUCT.md MI-7): the "
+            "orchestrator itself applies --agent's human_gate_label to "
+            "--issue, having been told by the driver that a person "
+            "confirmed the approval -- the driver never writes the gate "
+            "label directly. Refuses if --agent has no human_gate_label, or "
+            "if the label is already present (re-applying is a no-op that "
+            "would not generate a fresh, attributable labeled event). "
+            "Requires --agent and --issue (or --repo + --issue)."
+        ),
+    )
     return p.parse_args()
 
 
@@ -5805,6 +5844,88 @@ def _run_print_prompt(args) -> None:
         "prompt": resolved.prompt,
     }
     print(json.dumps(output, indent=2))
+
+
+def _run_confirm_gate(args) -> None:
+    """Interactive gate-crossing (issue #403; PRODUCT.md MI-7).
+
+    The orchestrator -- never the driver -- writes the human-gate label,
+    having been told by the driver that a person confirmed the approval.
+    Because this runs inside the person's own interactive session, the
+    label's GitHub-recorded actor is their own account, so it satisfies
+    _gate_label_human_applied exactly the way a headless human-applied label
+    does -- one mechanism, not two (MI-3/MI-7).
+
+    Refuses (never silently no-ops) when:
+    - --agent has no human_gate_label: nothing for this mode to confirm.
+    - the label is already present: gh.add_label on an already-present label
+      is a GitHub no-op that generates no new labeled event, so re-adding it
+      would silently leave a prior bot-authored event as the most recent one
+      -- exactly the trap issue #377 named ("re-applying an existing label is
+      a no-op"). If that prior application was already human-verified there
+      is nothing to do; if not, the fix is removing it first, not papering
+      over it here.
+    """
+    if not args.agent:
+        log.error("--confirm-gate requires --agent <agent-name>")
+        sys.exit(1)
+    if not args.issue:
+        log.error("--confirm-gate requires --issue <number>")
+        sys.exit(1)
+    if not args.repo:
+        log.error("--confirm-gate requires --repo <owner/repo>")
+        sys.exit(1)
+
+    token = _discover_github_token()
+    if not token:
+        log.error("No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`.")
+        sys.exit(1)
+
+    agents, _default_extra_tools = load_pipeline(args.pipeline)
+    agent_def = pipeline_by_name(agents).get(args.agent)
+    if agent_def is None:
+        log.error("--confirm-gate: unknown --agent %r in %s", args.agent, args.pipeline)
+        sys.exit(1)
+    if not agent_def.human_gate_label:
+        log.error(
+            "--confirm-gate: %s declares no human_gate_label -- there is no gate to confirm",
+            args.agent,
+        )
+        sys.exit(1)
+
+    gh = GitHubClient(args.repo, token)
+    gate_label = agent_def.human_gate_label
+    current_labels = gh.get_issue_labels(args.issue)
+
+    if gate_label in current_labels:
+        if _gate_label_human_applied(gh, args.repo, args.issue, gate_label):
+            log.info(
+                "  %s is already present on #%s and was human-applied -- nothing to confirm",
+                gate_label, args.issue,
+            )
+            return
+        log.error(
+            "  %s is already present on #%s but was not verifiably human-applied. "
+            "Re-adding it would not change that -- remove it first "
+            "(gh issue edit %s --repo %s --remove-label %r), then re-run --confirm-gate "
+            "so a fresh, attributable labeled event is recorded.",
+            gate_label, args.issue, args.issue, args.repo, gate_label,
+        )
+        sys.exit(1)
+
+    gh.add_label(args.issue, gate_label)
+    log.info("  CONFIRM %-38s  %s applied to #%s (relayed human confirmation)",
+              args.agent, gate_label, args.issue)
+
+    session_id = f"ais-v1-orch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    kind = args.kind or _probe_kind(gh, args.issue)
+    _emit_audit_event(_make_audit_event(
+        session_id, "gate.confirmed", args.repo,
+        work_item=WorkItem(number=args.issue, kind=kind, title="", labels=set(), url=""),
+        agent=args.agent,
+        outcome_status="confirmed",
+        outcome_detail=f"{gate_label} applied by orchestrator on a relayed human confirmation",
+    ))
 
 
 def _wake(args) -> "Optional[RunContext]":
@@ -6237,6 +6358,10 @@ def main() -> None:
 
     if args.print_prompt:
         _run_print_prompt(args)
+        return
+
+    if args.confirm_gate:
+        _run_confirm_gate(args)
         return
 
     ctx = _wake(args)

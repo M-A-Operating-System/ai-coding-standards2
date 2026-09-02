@@ -35,6 +35,7 @@ def _make_args(**kwargs):
     args.agent = None
     args.kind = None
     args.interactive_result = False
+    args.confirm_gate = False
     for k, v in kwargs.items():
         setattr(args, k, v)
     return args

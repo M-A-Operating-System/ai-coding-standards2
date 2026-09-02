@@ -1,4 +1,5 @@
-"""Tests for the human-applied gate-label guard (issue #263 / CR-02).
+"""Tests for the human-applied gate-label guard (issue #263 / CR-02, made
+fail-closed by issue #403 / PRODUCT.md MI-7).
 
 Threat: a prompt-injected agent runs
 ``gh issue edit N --add-label "prd-writer:approved"`` to self-approve its OWN
@@ -8,9 +9,12 @@ agent-applied label is authored by a bot account
 approval is authored by a real user login.
 
 The guard (:func:`_gate_label_human_applied`) inspects the issue's ``labeled``
-events, finds the most recent one for the gate label, and returns False only
-when that actor is determinably a bot. It is fail-open: on any API error,
-missing event, or indeterminate actor it logs a warning and returns True.
+events (paginated), finds the most recent one for the gate label, and returns
+True only when that actor is positively human (``actor.type == "User"``,
+login not ``[bot]``-suffixed). It is FAIL-CLOSED (STD-ARCH-014; MI-7 "An
+approval the orchestrator cannot establish a person stood behind is
+refused"): any API error, unexpected payload, missing matching event, or
+indeterminate actor refuses (returns False) and logs a warning.
 """
 
 import logging
@@ -32,8 +36,20 @@ ISSUE = 263
 
 
 def _gh_returning(events):
+    """A gh whose events call always returns `events`. Safe for every test
+    here: none uses 100+ items, so _gate_label_human_applied's pagination
+    loop calls _get exactly once (a batch shorter than per_page=100 stops
+    the loop) and the repeated return_value is never observed a second time."""
     gh = MagicMock()
     gh._get = MagicMock(return_value=events)
+    return gh
+
+
+def _gh_paginated(*pages):
+    """A gh whose events call returns each of `pages` in order -- used to
+    exercise pagination explicitly."""
+    gh = MagicMock()
+    gh._get = MagicMock(side_effect=list(pages))
     return gh
 
 
@@ -56,7 +72,10 @@ class TestGateLabelHumanApplied:
             _labeled_event(GATE, "github-actions[bot]", "Bot"),
         ])
         assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is False
-        gh._get.assert_called_once_with(f"/repos/{REPO}/issues/{ISSUE}/events")
+        gh._get.assert_called_once_with(
+            f"/repos/{REPO}/issues/{ISSUE}/events",
+            params={"per_page": 100, "page": 1},
+        )
 
     def test_bot_login_suffix_returns_false(self):
         """A [bot] login suffix is treated as a bot even without type == Bot."""
@@ -66,11 +85,19 @@ class TestGateLabelHumanApplied:
         assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is False
 
     def test_human_actor_returns_true(self):
-        """Human (actor.type 'User') applied the gate -> satisfied."""
+        """Human (actor.type 'User', no [bot] suffix) applied the gate -> satisfied."""
         gh = _gh_returning([
             _labeled_event(GATE, "andrew", "User"),
         ])
         assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
+
+    def test_non_user_actor_type_returns_false(self):
+        """An actor type that is neither 'User' nor determinably 'Bot' (e.g.
+        'Organization') is not positively human -> refused, not admitted."""
+        gh = _gh_returning([
+            _labeled_event(GATE, "some-org", "Organization"),
+        ])
+        assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is False
 
     def test_most_recent_labeled_event_wins(self):
         """When both a human and a later bot labeled the gate, the last one decides."""
@@ -96,36 +123,52 @@ class TestGateLabelHumanApplied:
         ])
         assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
 
-    def test_events_call_raises_fails_open(self, caplog):
-        """A transient API error must not halt the pipeline: fail-open (True) + warn."""
+    def test_events_call_raises_fails_closed(self, caplog):
+        """A transient API error must not admit an unverified approval:
+        fail-closed (False) + warn (MI-7, STD-ARCH-014)."""
         gh = MagicMock()
         gh._get = MagicMock(side_effect=RuntimeError("boom"))
         with caplog.at_level(logging.WARNING):
-            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
-        assert any("fail-open" in r.message for r in caplog.records)
+            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is False
+        assert any("fail-closed" in r.message for r in caplog.records)
 
-    def test_empty_events_fails_open(self, caplog):
-        """No matching labeled event -> allow (fail-open) + warn."""
+    def test_empty_events_fails_closed(self, caplog):
+        """No matching labeled event -> refuse (fail-closed) + warn."""
         gh = _gh_returning([])
         with caplog.at_level(logging.WARNING):
-            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
-        assert any("fail-open" in r.message for r in caplog.records)
+            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is False
+        assert any("fail-closed" in r.message for r in caplog.records)
 
-    def test_non_list_payload_fails_open(self, caplog):
-        """An unexpected (non-list) payload is treated as indeterminate -> allow."""
+    def test_non_list_payload_fails_closed(self, caplog):
+        """An unexpected (non-list) payload is treated as indeterminate -> refuse."""
         gh = _gh_returning({"unexpected": "shape"})
         with caplog.at_level(logging.WARNING):
-            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
-        assert any("fail-open" in r.message for r in caplog.records)
+            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is False
+        assert any("fail-closed" in r.message for r in caplog.records)
 
-    def test_indeterminate_actor_fails_open(self, caplog):
-        """A labeled event without a usable actor -> allow (fail-open) + warn."""
+    def test_indeterminate_actor_fails_closed(self, caplog):
+        """A labeled event without a usable actor -> refuse (fail-closed) + warn."""
         gh = _gh_returning([
             {"event": "labeled", "label": {"name": GATE}, "actor": None},
         ])
         with caplog.at_level(logging.WARNING):
-            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
-        assert any("fail-open" in r.message for r in caplog.records)
+            assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is False
+        assert any("fail-closed" in r.message for r in caplog.records)
+
+    def test_paginates_to_find_an_event_beyond_the_first_page(self):
+        """A gate's labeled event that falls on a later page must still be
+        found -- otherwise fail-closed would wrongly refuse a genuine human
+        approval on any issue with 100+ prior events."""
+        page1 = [_labeled_event("unrelated:label", "andrew", "User")] * 100
+        page2 = [_labeled_event(GATE, "andrew", "User")]
+        gh = _gh_paginated(page1, page2)
+        assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
+        assert gh._get.call_count == 2
+
+    def test_stops_paginating_once_a_short_page_is_seen(self):
+        gh = _gh_paginated([_labeled_event(GATE, "andrew", "User")])
+        assert _gate_label_human_applied(gh, REPO, ISSUE, GATE) is True
+        assert gh._get.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -192,12 +235,13 @@ class TestDependenciesCompleteGuard:
             self._labels(), _downstream(), pipeline_map,
         ) is True
 
-    def test_bot_gate_fails_open_on_api_error(self):
-        """Even with gh wired, an events API error must not block the pipeline."""
+    def test_bot_gate_fails_closed_on_api_error(self):
+        """With gh wired, an events API error refuses rather than admits --
+        an unverifiable gate is treated as unmet (MI-7, STD-ARCH-014)."""
         pipeline_map = {"01_product_docs/prd-writer": _gated_dep()}
         gh = MagicMock()
         gh._get = MagicMock(side_effect=RuntimeError("boom"))
         assert dependencies_complete(
             self._labels(), _downstream(), pipeline_map,
             gh=gh, repo=REPO, work_item_number=ISSUE,
-        ) is True
+        ) is False
