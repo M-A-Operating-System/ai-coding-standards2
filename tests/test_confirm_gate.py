@@ -126,3 +126,24 @@ class TestConfirmGateApplication:
             "--remove-label" in r.message and GATE_LABEL in r.message
             for r in caplog.records
         ), "must name the exact remove-label command to run first"
+
+    def test_get_issue_labels_failure_exits_cleanly(self):
+        """A GitHub API failure must surface as a clean error, not a raw
+        traceback -- matching --print-prompt's identical-purpose fetch."""
+        gh = MagicMock()
+        gh.get_issue_labels.side_effect = RuntimeError("network blip")
+        with patch.object(po, "_discover_github_token", return_value="t"), \
+             patch.object(po, "GitHubClient", return_value=gh):
+            with pytest.raises(SystemExit) as excinfo:
+                po._run_confirm_gate(_args())
+        assert excinfo.value.code == 1
+        gh.add_label.assert_not_called()
+
+    def test_add_label_failure_exits_cleanly(self):
+        gh = _gh_with_labels(labels=set())
+        gh.add_label.side_effect = RuntimeError("network blip")
+        with patch.object(po, "_discover_github_token", return_value="t"), \
+             patch.object(po, "GitHubClient", return_value=gh):
+            with pytest.raises(SystemExit) as excinfo:
+                po._run_confirm_gate(_args())
+        assert excinfo.value.code == 1

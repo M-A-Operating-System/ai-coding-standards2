@@ -5895,7 +5895,11 @@ def _run_confirm_gate(args) -> None:
 
     gh = GitHubClient(args.repo, token)
     gate_label = agent_def.human_gate_label
-    current_labels = gh.get_issue_labels(args.issue)
+    try:
+        current_labels = gh.get_issue_labels(args.issue)
+    except Exception as exc:
+        log.error("Could not read labels for #%s: %s", args.issue, exc)
+        sys.exit(1)
 
     if gate_label in current_labels:
         if _gate_label_human_applied(gh, args.repo, args.issue, gate_label):
@@ -5913,7 +5917,11 @@ def _run_confirm_gate(args) -> None:
         )
         sys.exit(1)
 
-    gh.add_label(args.issue, gate_label)
+    try:
+        gh.add_label(args.issue, gate_label)
+    except Exception as exc:
+        log.error("Could not apply %s to #%s: %s", gate_label, args.issue, exc)
+        sys.exit(1)
     log.info("  CONFIRM %-38s  %s applied to #%s (relayed human confirmation)",
               args.agent, gate_label, args.issue)
 
