@@ -104,7 +104,7 @@ nothing to copy.
 **Determine the feature slug.** If the issue carries an explicit `feature:`
 label (only present when the project has nominated a label vocabulary per
 STD-PROC-007), use it. Otherwise derive it from the issue title's module
-segment (`[CATEGORY] - {module} - {title}` — see prd-writer Step 7b),
+segment (`[CATEGORY] - {module} - {title}` — see prd-writer Step 7a),
 slugified: lowercase, non-alphanumeric characters become hyphens, repeats
 collapsed, leading/trailing hyphens stripped. If neither is available,
 slugify the issue title itself (minus its `[CATEGORY]` prefix). The target
