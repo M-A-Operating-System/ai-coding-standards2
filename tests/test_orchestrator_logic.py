@@ -4,6 +4,7 @@ import subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import json
+import logging
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -1427,6 +1428,72 @@ class TestInvokeAgentRuntimeContext:
         assert "REPO=test-org/test-repo\n" in prompt, "REPO value must be stripped of whitespace"
         assert "AI_AGILE_ROOT=/padded/path\n" in prompt, "AI_AGILE_ROOT must be stripped"
         assert "REPO=  test-org/test-repo  " not in prompt, "Unstripped REPO must not appear"
+
+    def test_cwd_overrides_ai_agile_root_in_prompt_and_env(self, monkeypatch):
+        """issue #373: a commit_after agent's cwd (its isolated worktree) must
+        drive AI_AGILE_ROOT in both the prompt text and the subprocess env --
+        otherwise the documented `cd $AI_AGILE_ROOT && <command>` idiom would
+        `cd` an agent straight back onto the orchestrator's own shared
+        checkout, defeating the isolation."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+        monkeypatch.setenv("AI_AGILE_ROOT", "/shared/checkout")
+        captured_cmd: list = []
+        captured_env: dict = {}
+
+        def fake_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            captured_env.update(kwargs.get("env") or {})
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=6),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+                cwd="/isolated/worktree/issue-6",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        assert "AI_AGILE_ROOT=/isolated/worktree/issue-6\n" in prompt, (
+            "prompt's AI_AGILE_ROOT must reflect cwd, not the shared checkout"
+        )
+        assert captured_env.get("AI_AGILE_ROOT") == "/isolated/worktree/issue-6", (
+            "subprocess env's AI_AGILE_ROOT must reflect cwd, not the shared checkout"
+        )
+
+    def test_no_cwd_falls_back_to_ambient_ai_agile_root(self, monkeypatch):
+        """Every non-commit_after step passes cwd=None -- AI_AGILE_ROOT must
+        keep resolving from the ambient env exactly as before #373."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+        monkeypatch.setenv("AI_AGILE_ROOT", "/shared/checkout")
+        captured_cmd: list = []
+
+        with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_cmd(captured_cmd)):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=7),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        assert "AI_AGILE_ROOT=/shared/checkout\n" in prompt
 
     def test_subprocess_env_still_exports_vars_for_bash_snippet_compatibility(self, monkeypatch):
         """Subprocess env must still carry REPO, ISSUE_NUMBER, WORK_ITEM_KIND, SESSION_ID."""
@@ -4462,6 +4529,32 @@ class TestRunAgentWorktreeIsolation:
         with patch("subprocess.run") as mock_sub:
             _remove_run_worktree("")
         mock_sub.assert_not_called()
+
+    def test_remove_run_worktree_logs_on_failure(self, caplog):
+        """A cleanup failure must be recorded (STD-ARCH-014), not silently
+        swallowed -- an operator otherwise has zero signal a worktree was
+        never removed."""
+        with patch("subprocess.run", side_effect=OSError("boom")):
+            with caplog.at_level(logging.WARNING):
+                _remove_run_worktree("/some/worktree/path")
+        assert any("could not remove worktree" in r.message for r in caplog.records)
+
+    def test_create_run_worktree_error_includes_git_stderr(self, monkeypatch, tmp_path):
+        """str(subprocess.CalledProcessError) omits stderr even though
+        capture_output=True captured it -- the raised error must include the
+        actual git failure text so the :failed diagnostic comment is useful."""
+        monkeypatch.setattr(orch, "_WORKTREE_ROOT", tmp_path / "worktrees")
+
+        def _fake_run(cmd, **kwargs):
+            if cmd[:2] == ["git", "fetch"]:
+                raise subprocess.CalledProcessError(
+                    128, cmd, output="", stderr="fatal: couldn't find remote ref issue-999\n",
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        with patch("subprocess.run", side_effect=_fake_run):
+            with pytest.raises(RuntimeError, match="couldn't find remote ref issue-999"):
+                _create_run_worktree("issue-999")
 
     def test_run_agent_fails_loud_when_worktree_setup_fails(self, monkeypatch):
         """Scenario (#373 AC): pre-agent worktree setup failing must fail the

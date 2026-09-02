@@ -4137,14 +4137,20 @@ def _create_run_worktree(issue_branch: str) -> str:
         )
         shutil.rmtree(path, ignore_errors=True)
     subprocess.run(["git", "worktree", "prune"], check=False, capture_output=True)
-    subprocess.run(
-        ["git", "fetch", "origin", issue_branch],
-        check=True, capture_output=True, text=True,
-    )
-    subprocess.run(
-        ["git", "worktree", "add", "--force", "-B", issue_branch, str(path), f"origin/{issue_branch}"],
-        check=True, capture_output=True, text=True,
-    )
+    try:
+        subprocess.run(
+            ["git", "fetch", "origin", issue_branch],
+            check=True, capture_output=True, text=True,
+        )
+        subprocess.run(
+            ["git", "worktree", "add", "--force", "-B", issue_branch, str(path), f"origin/{issue_branch}"],
+            check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        # str(CalledProcessError) omits stderr even though capture_output=True
+        # captured it -- without this, the :failed diagnostic comment a human
+        # reads never shows the actual git error.
+        raise RuntimeError(f"{exc}: {(exc.stderr or '').strip()}") from exc
     global _CURRENT_WORKTREE
     _CURRENT_WORKTREE = str(path)
     return str(path)
@@ -4163,8 +4169,8 @@ def _remove_run_worktree(path: str) -> None:
             check=False, capture_output=True,
         )
         shutil.rmtree(path, ignore_errors=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("could not remove worktree %s: %s", path, exc)
     if _CURRENT_WORKTREE == path:
         _CURRENT_WORKTREE = None
 
