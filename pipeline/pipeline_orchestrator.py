@@ -4347,8 +4347,19 @@ def _run_agent(
                 "  interactive-result: no valid result.json for %s on #%d (%s): %s",
                 agent_def.agent, work_item.number, _scratch_dir, _read_err,
             )
-        result = AgentRunResult(success=step_result is not None)
-        _attempt = 1
+        result = AgentRunResult(
+            success=step_result is not None,
+            # Surfaces in the :failed diagnostic comment's "Last output" --
+            # otherwise the actual reason only ever reaches this log line,
+            # and the person who needs to fix result.json never sees it.
+            captured_tail=(
+                "" if step_result is not None
+                else f"result.json at {_scratch_dir}: {_read_err}"
+            ),
+        )
+        # _attempt stays at its initial 0 (set above): there is no retry loop
+        # here, so a non-zero value would make _finalize_run_failure post a
+        # false "retry limit exhausted -- failed N time(s)" message.
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
         _post_artefact_if_present(gh, agent_def, work_item, step_result)
@@ -5954,6 +5965,9 @@ def _wake(args) -> "Optional[RunContext]":
     if args.interactive_result:
         if not args.agent:
             log.error("--interactive-result requires --agent")
+            sys.exit(1)
+        if not args.issue:
+            log.error("--interactive-result requires --issue")
             sys.exit(1)
         agents = [a for a in agents if a.agent == args.agent]
         if not agents:

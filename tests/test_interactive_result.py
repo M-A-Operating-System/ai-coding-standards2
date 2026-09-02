@@ -56,6 +56,68 @@ def _no_stray_audit_output(monkeypatch, capsys):
     monkeypatch.setattr(orch, "_emit_audit_event", lambda *a, **k: None)
 
 
+def _make_wake_args(**overrides):
+    args = MagicMock()
+    args.clear_pause = False
+    args.clear_stop = False
+    args.repo = "test/repo"
+    args.verbose = False
+    args.dry_run = False
+    args.issue = None
+    args.kind = None
+    args.pipeline = Path("pipeline/pipeline.json")
+    args.headless = False
+    args.print_prompt = False
+    args.agent = "03_execute/coder"
+    args.interactive_result = True
+    args.phases = None
+    for k, v in overrides.items():
+        setattr(args, k, v)
+    return args
+
+
+# ---------------------------------------------------------------------------
+# _wake(): --interactive-result requires --issue, not just --agent
+# ---------------------------------------------------------------------------
+
+class TestInteractiveResultRequiresIssue:
+    def test_missing_issue_exits_rather_than_scanning_every_open_item(self, monkeypatch):
+        """Without --issue, _wake's own list_open_issues(kind='all') fallback
+        would otherwise run -- scoping the apply to every open issue/PR
+        instead of the one the person actually worked on, risking a
+        misapplied :failed on unrelated work items that happen to also be
+        eligible for the same agent."""
+        monkeypatch.setattr(orch, "_ensure_gh_cli", lambda: None)
+        monkeypatch.setattr(orch, "_discover_github_token", lambda: "t")
+        monkeypatch.setattr(orch, "is_pipeline_paused", lambda: (False, None, None))
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, None))
+        gh = MagicMock()
+        gh.list_open_issues.side_effect = AssertionError(
+            "must not scan all open issues under --interactive-result"
+        )
+        monkeypatch.setattr(orch, "GitHubClient", lambda **k: gh)
+
+        args = _make_wake_args(issue=None)
+        with pytest.raises(SystemExit) as excinfo:
+            orch._wake(args)
+        assert excinfo.value.code == 1
+
+    def test_present_issue_and_agent_proceed_past_validation(self, monkeypatch):
+        monkeypatch.setattr(orch, "_ensure_gh_cli", lambda: None)
+        monkeypatch.setattr(orch, "_discover_github_token", lambda: "t")
+        monkeypatch.setattr(orch, "is_pipeline_paused", lambda: (False, None, None))
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, None))
+        gh = MagicMock()
+        gh.get_issue_labels.return_value = set()
+        monkeypatch.setattr(orch, "GitHubClient", lambda **k: gh)
+
+        args = _make_wake_args(issue=9, kind="issue", agent="03_execute/coder")
+        ctx = orch._wake(args)
+        assert ctx is not None
+        assert ctx.interactive_result is True
+        assert [a.agent for a in ctx.agents] == ["03_execute/coder"]
+
+
 # ---------------------------------------------------------------------------
 # _run_agent(interactive_result=True): reads the file, never spawns
 # ---------------------------------------------------------------------------
@@ -111,6 +173,13 @@ class TestRunAgentInteractiveResultDispatch:
         assert step_result is None
         assert sentinel_status is None
         assert result.success is False
+        # attempt must stay 0 -- there is no retry loop in this mode, so a
+        # non-zero value would make _finalize_run_failure post a false
+        # "retry limit exhausted -- failed N time(s)" message downstream.
+        assert attempt == 0
+        # The read error must reach the diagnostic comment _apply_failed
+        # posts (via result.captured_tail), not just the orchestrator's log.
+        assert str(scratch) in result.captured_tail
 
     def test_invalid_result_file_also_resolves_as_no_step_result(self, monkeypatch):
         agent_def = _make_agent_def(commit_after=False)
@@ -125,6 +194,24 @@ class TestRunAgentInteractiveResultDispatch:
             )
             assert step_result is None
             assert result.success is False
+            assert attempt == 0
+            assert result.captured_tail  # the JSON parse error, not blank
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_successful_result_carries_no_spurious_captured_tail(self, monkeypatch):
+        """Guard the guard: the diagnostic-detail fix above must not leak
+        placeholder text into a successful run's result."""
+        agent_def = _make_agent_def(commit_after=False)
+        work_item = _make_work_item(number=782)
+        scratch = _scratch_for(agent_def, work_item)
+        scratch.mkdir(parents=True, exist_ok=True)
+        (scratch / "result.json").write_text(json.dumps({
+            "outcome": "complete", "summary": "ok",
+        }))
+        try:
+            (result, *_rest) = self._run(monkeypatch, agent_def, work_item)
+            assert result.captured_tail == ""
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
