@@ -1522,11 +1522,22 @@ class TestPromoteGatedAgents:
         wi.kind = "issue"
         return wi
 
+    def _gh(self, gate_label: str = "prd-writer:approved") -> MagicMock:
+        """A gh whose events call reports gate_label as genuinely
+        human-applied -- _gate_label_human_applied (issue #403, fail-closed)
+        needs this before promote_gated_agents will treat the gate as met."""
+        gh = MagicMock()
+        gh._get = MagicMock(return_value=[
+            {"event": "labeled", "label": {"name": gate_label},
+             "actor": {"login": "andrew", "type": "User"}},
+        ])
+        return gh
+
     def test_promotion_adds_complete_and_removes_review(self):
         """Gate label + :review present → :complete added, :review removed."""
         agent = self._gated_agent()
         wi = self._work_item()
-        gh = MagicMock()
+        gh = self._gh(agent.human_gate_label)
         labels = {agent.review_label, agent.human_gate_label}
 
         result = promote_gated_agents(labels, [agent], wi, gh)
@@ -1554,7 +1565,7 @@ class TestPromoteGatedAgents:
         """Both :approved and :requested arrive — promotion wins, :requested cleaned up."""
         agent = self._gated_agent()
         wi = self._work_item()
-        gh = MagicMock()
+        gh = self._gh(agent.human_gate_label)
         labels = {
             agent.review_label,
             agent.human_gate_label,
@@ -1609,7 +1620,7 @@ class TestPromoteGatedAgents:
         """Crash-recovery: :complete already there from prior tick — remove stale :review."""
         agent = self._gated_agent()
         wi = self._work_item()
-        gh = MagicMock()
+        gh = self._gh(agent.human_gate_label)
         labels = {agent.review_label, agent.human_gate_label, agent.complete_label}
 
         result = promote_gated_agents(labels, [agent], wi, gh)
@@ -1890,7 +1901,7 @@ class TestPhasesFilter:
             verbose=False, clear_pause=False, clear_stop=False, repo="test/repo",
             pipeline="pipeline.json", phases="01_product_docs",
             issue=None, kind=None, dry_run=True,
-            headless=False, print_prompt=False, interactive_result=False,
+            headless=False, print_prompt=False, interactive_result=False, confirm_gate=False,
         )
 
         wi = _make_work_item_with_labels(1, set())
@@ -3940,6 +3951,7 @@ class TestPriorityScheduling:
         args_mock.pipeline = MagicMock()
         args_mock.phases = None
         args_mock.interactive_result = False
+        args_mock.confirm_gate = False
         mock_parse_args.return_value = args_mock
 
         agent_def = self._make_agent_for_priority()
@@ -4004,6 +4016,7 @@ class TestPriorityScheduling:
         args_mock.pipeline = MagicMock()
         args_mock.phases = None
         args_mock.interactive_result = False
+        args_mock.confirm_gate = False
         mock_parse_args.return_value = args_mock
 
         agent_def = self._make_agent_for_priority()

@@ -19,15 +19,20 @@ comment, `post_steps`, and `git_ops` commit/push is performed by the
 orchestrator's own code when you invoke it. Driving through the orchestrator is
 the only thing that guarantees the labels, artefact placement, and updates match
 a real run. This command MUST NOT hand-apply `:wip`/`:complete`/`:review`
-labels, post artefacts, or run agent prompts by hand -- that hand-mirroring
-drifts state (misplaced artefacts, missing downstream labels, orphaned
-branches). There are only two things `/maos-run` does itself: apply the
-human-gate `{agent}:approved` label (your decision, step 4c), and mark a PR
-ready for review via the GitHub MCP tool when the orchestrator cannot
-(step 4d) -- a restricted interactive session blocks the GraphQL
-`markPullRequestReadyForReview` op `gh pr ready` uses, and REST has no
-draft->ready endpoint, so that one op falls to the driver's MCP tool. On the
-GitHub Actions runner (full API) even that runs natively.
+labels, gate labels (`{agent}:approved`), post artefacts, or run agent prompts
+by hand -- that hand-mirroring drifts state (misplaced artefacts, missing
+downstream labels, orphaned branches), and for a gate label specifically it is
+also a P-10/MI-7 violation the orchestrator's own self-approval guard rejects
+in a bot-attributed session (issue #377) and silently mis-attributes in any
+other (PRODUCT.md MI-7: "the driver never writes the gate label itself").
+There is only one thing `/maos-run` does itself: mark a PR ready for review via
+the GitHub MCP tool when the orchestrator cannot (step 4d) -- a restricted
+interactive session blocks the GraphQL `markPullRequestReadyForReview` op
+`gh pr ready` uses, and REST has no draft->ready endpoint, so that one op falls
+to the driver's MCP tool. On the GitHub Actions runner (full API) even that
+runs natively. A human gate (step 4c) is instead crossed by telling the
+orchestrator you have the person's confirmation and letting it write the
+label itself (`--confirm-gate`) -- see step 4c.
 
 ## Input
 
@@ -123,10 +128,21 @@ step(s) and stops; it does not cross a human gate.
 **c. Human gate -- pause and prompt the human** with two choices; never
 self-approve (P-10):
 
-- **Approve** -> apply the step's `{agent}:approved` gate label. This is the
-  ONE label `/maos-run` applies itself -- it encodes your decision, not a state
-  transition the orchestrator can make. Then loop to (a); the next tick advances
-  past the gate.
+- **Approve** -> tell the orchestrator you have the person's confirmation and
+  let it write the gate label itself (PRODUCT.md MI-7 -- the driver never
+  writes a gate label directly):
+  ```bash
+  python3 "$SCRIPT" --repo "$REPO" --agent {agent} --issue $ARGUMENTS --confirm-gate
+  ```
+  where `{agent}` is the gated step's name (e.g. `01_product_docs/prd-writer`)
+  from the labels you read in step 3. Because this runs inside your own
+  session, the label's recorded GitHub actor is your account -- the same
+  self-approval guard that would reject a bot-attributed application accepts
+  it exactly the way a headless human-applied label is accepted (one
+  mechanism, not two). If it refuses because the gate label is already
+  present from an earlier, non-human application, it names the exact
+  `gh issue edit --remove-label` command to run first, then re-run
+  `--confirm-gate`. Then loop to (a); the next tick advances past the gate.
 - **Request changes** (with feedback) -> post the feedback as an issue/PR
   comment or a `REQUEST_CHANGES` review, then run the next tick (a). The
   orchestrator applies the review-loop labels (`review-cycle:N` /
@@ -138,8 +154,9 @@ and the session blocks `gh pr ready` (GraphQL 403), the orchestrator logs the
 failure and the PR stays draft. Detect this (the PR is still `draft` when the
 step expected it ready) and mark it ready via
 `mcp__github__update_pull_request(pullNumber, draft:false)` -- the only
-in-session path that un-drafts. This plus the gate label are the only actions
-the driver takes. On the CI runner the step does it itself; no assist needed.
+in-session path that un-drafts. This is the only action the driver takes
+directly (step 4c's `--confirm-gate` hands the gate label's own write to the
+orchestrator). On the CI runner the step does it itself; no assist needed.
 
 **e. Review loop.** `pr-reviewer` REQUEST CHANGES and the coder re-invoke are
 handled by the orchestrator via `review_loop` (up to `review_loop.max_cycles`).

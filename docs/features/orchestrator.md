@@ -162,6 +162,54 @@
 **When** `--interactive-result` applies the written result
 **Then** the orchestrator does not fetch and hard-reset onto `origin/issue-{N}` before committing -- that checkout exists to stage a fresh subprocess onto the right branch, and running it here would discard the person's own edits
 
+## Scenario: A bot-applied gate label does not satisfy the gate
+
+**Given** an agent's `human_gate_label` is present on a work item, applied by a bot actor (`actor.type == "Bot"` or a `[bot]`-suffixed login)
+**When** `_gate_label_human_applied` verifies it
+**Then** it returns False -- the gate is not treated as satisfied, and `promote_gated_agents` leaves the step in `:review`
+
+## Scenario: An inconclusive gate check refuses, it does not admit
+
+**Given** any of: the issue-events API call raises, returns an unexpected (non-list) payload, has no `labeled` event for the gate label, or that event's actor cannot be determined as `type == "User"`
+**When** `_gate_label_human_applied` evaluates the gate
+**Then** it returns False and logs a fail-closed warning naming the reason -- a transient API error or ambiguous actor never admits an unverified approval (MI-7, STD-ARCH-014)
+
+## Scenario: A genuinely human-applied gate label satisfies the gate even on an issue with many prior label events
+
+**Given** an issue whose gate label's `labeled` event falls beyond the GitHub events API's first page
+**When** `_gate_label_human_applied` verifies it
+**Then** it paginates through the issue's events until it finds the gate label's most recent `labeled` event, rather than treating a first-page miss as "no matching event"
+
+## Scenario: Headless gate-crossing accepts only a label a person applied from their own account
+
+**Given** a headless (scheduled) tick evaluating a work item whose gated step is in `:review`
+**When** the human-gate label is present
+**Then** promotion to `:complete` happens only if `_gate_label_human_applied` verifies a human account applied it -- the pipeline itself never crosses the gate, because no human is present during a headless tick
+
+## Scenario: Interactive gate-crossing is the orchestrator recording a relayed confirmation, never the driver writing the label itself
+
+**Given** a person confirms a gate approval to the chat-AI driving `/maos-run` or `/approve-prd`
+**When** the driver runs `pipeline_orchestrator.py --repo R --agent {agent} --issue N --confirm-gate`
+**Then** the orchestrator itself calls `gh.add_label` for the gate label -- the driver never calls `gh issue edit --add-label` or an equivalent MCP write itself -- and the label's GitHub-recorded actor is the person's own account, satisfying the same `_gate_label_human_applied` check a headless human-applied label would (one mechanism, not two)
+
+## Scenario: --confirm-gate refuses when the named agent has no gate to confirm
+
+**Given** `--agent` names a step whose `human_gate_label` is unset (e.g. `03_execute/coder`)
+**When** `--confirm-gate` is invoked
+**Then** it refuses with an error naming the agent, rather than silently doing nothing
+
+## Scenario: --confirm-gate refuses to paper over an already-present non-human label
+
+**Given** the gate label is already present on the work item but was not verifiably applied by a human (e.g. a stale bot-applied label from before this mechanism existed)
+**When** `--confirm-gate` is invoked
+**Then** it refuses rather than re-adding the label -- `gh.add_label` on an already-present label is a GitHub no-op that generates no new `labeled` event, so silently proceeding would leave the prior bot-authored event as the most recent one -- and it names the exact `gh issue edit --remove-label` command to run first
+
+## Scenario: --confirm-gate is a genuine no-op when the label is already present and was human-applied
+
+**Given** the gate label is already present and `_gate_label_human_applied` verifies it as human-applied
+**When** `--confirm-gate` is invoked again
+**Then** it reports the gate as already confirmed and does not call `gh.add_label` a second time
+
 ## Scenario: A dropped permissions grant is surfaced, not swallowed
 
 **Given** `.claude/settings.json` declares `permissions.allow` entries and the workspace is not marked trusted in the Claude CLI's config

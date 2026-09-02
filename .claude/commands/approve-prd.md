@@ -34,10 +34,18 @@ Examples:
    current prd-writer status and stop — the gate should only be applied
    when the agent is actually awaiting review.
 
-4. Apply the gate label:
+4. Tell the orchestrator you have the person's confirmation and let it write
+   the gate label itself (PRODUCT.md MI-7 -- this command never writes a gate
+   label directly; re-applying an already-present bot-authored label would be
+   a silent no-op, per issue #377):
    ```bash
-   gh issue edit $ISSUE_NUMBER --repo $REPO --add-label "01_product_docs/prd-writer:approved"
+   SCRIPT=pipeline/pipeline_orchestrator.py
+   [ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/pipeline/pipeline_orchestrator.py
+   python3 "$SCRIPT" --repo "$REPO" --agent 01_product_docs/prd-writer --issue $ISSUE_NUMBER --confirm-gate
    ```
+   If it refuses because the label is already present from a non-human
+   application, it names the exact `gh issue edit --remove-label` command to
+   run first, then re-run this step.
 
 5. Confirm:
    ```

@@ -112,6 +112,14 @@ def _make_gh() -> MagicMock:
     gh.add_label = MagicMock()
     gh.remove_label = MagicMock()
     gh.post_comment = MagicMock()
+    # _gate_label_human_applied (issue #403, fail-closed) needs a genuine
+    # human-authored 'labeled' event for merge-conflict:approved, the only
+    # gate label this file exercises, so promotion tests don't each have to
+    # configure gh._get themselves.
+    gh._get = MagicMock(return_value=[
+        {"event": "labeled", "label": {"name": "merge-conflict:approved"},
+         "actor": {"login": "andrew", "type": "User"}},
+    ])
     return gh
 
 
