@@ -34,6 +34,7 @@ def _make_args(**kwargs):
     args.print_prompt = False
     args.agent = None
     args.kind = None
+    args.interactive_result = False
     for k, v in kwargs.items():
         setattr(args, k, v)
     return args
@@ -216,7 +217,7 @@ class TestStopMarkerHeadlessGating:
 # ---------------------------------------------------------------------------
 
 class TestResolveAgentInvocation:
-    """/run-agent obtains tool allowlist from orchestrator, not hand-parsing."""
+    """/maos-{agent}-i obtains tool allowlist from orchestrator, not hand-parsing."""
 
     def test_run_agent_obtains_its_tool_allowlist_from_the_orchestrator_instead_of_hand_parsing_frontmatter(self):
         """_resolve_agent_invocation is the authoritative source for allowed_tools:

@@ -109,6 +109,7 @@ class TestMainStopMarkerBehavior:
         args.pipeline = Path("pipeline/pipeline.json")
         args.headless = False
         args.print_prompt = False
+        args.interactive_result = False
         for k, v in kwargs.items():
             setattr(args, k, v)
         return args

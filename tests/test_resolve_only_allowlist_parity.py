@@ -1,11 +1,13 @@
 """Resolve-only mode must return the allowlist a real spawn would get (#356).
 
-`/run-agent` writes `--print-prompt`'s `allowed_tools` to
-`.claude/.run-agent-scope.json`, and a PreToolUse hook enforces that list
-against the operator's own session for the rest of the run. So a resolve-only
-list that is narrower than the real one does not merely under-report -- it
-locks the session out of tools the agent needs, including the `rm -f` that
-removes the scope file, with no in-session route back.
+`/maos-{agent}-i` prints `--print-prompt`'s `allowed_tools` to a person
+working through the step directly (issue #402 -- no enforcement is attempted
+in that mode, unlike the retired `/run-agent`/PreToolUse-hook mechanism this
+test module originally guarded). A resolve-only list narrower than the real
+one still matters: it is the person's only preview of what the same step
+would be allowed to do as a real headless subprocess, and `/maos-{agent}`
+spawns that subprocess through this exact allowlist -- if the two paths
+drift, the preview lies about what the pipeline actually does (MI-3).
 
 `_run_print_prompt` used to build a minimal AgentDef from the agent file's
 frontmatter, which dropped `pipeline.json`'s `defaults.extra_allowedTools` and
@@ -110,12 +112,6 @@ def test_per_agent_grants_are_included(capsys):
     allowed = _resolve_only(capsys)["allowed_tools"]
     for tool in ["Bash(git *)", "Bash(rm *)", "Bash(sed *)", "Bash(pytest *)"]:
         assert tool in allowed, f"pipeline.json per-agent grant {tool} was dropped"
-
-
-def test_the_session_can_remove_its_own_scope_file(capsys):
-    """run-agent.md step 7 is `rm -f ".claude/.run-agent-scope.${PPID}.json"`.
-    Without Bash(rm *) that command is denied and the session stays locked."""
-    assert "Bash(rm *)" in _resolve_only(capsys)["allowed_tools"]
 
 
 def test_an_unregistered_agent_still_resolves(capsys):

@@ -54,11 +54,11 @@
 **When** `main()` runs
 **Then** it logs that the pipeline is stopped but proceeds to evaluate and advance eligible work exactly as if the marker were absent
 
-## Scenario: /run-agent obtains its tool allowlist from the orchestrator instead of hand-parsing frontmatter
+## Scenario: /maos-{agent}-i obtains its tool allowlist from the orchestrator instead of hand-parsing frontmatter
 
-**Given** `/run-agent <agent-name> <issue-number>` is invoked
+**Given** `/maos-{agent}-i <issue-number>` is invoked
 **When** it resolves the target agent's invocation parameters
-**Then** it does so via the orchestrator's resolve-only mode, and the resulting `.claude/.run-agent-scope.json` allowlist matches exactly what `pipeline_orchestrator.py` would pass as `--allowedTools` for a real subprocess spawn of that same agent
+**Then** it does so via the orchestrator's resolve-only mode (`--print-prompt`), which returns exactly what `pipeline_orchestrator.py` would pass as `--allowedTools` for a real subprocess spawn of that same agent (issue #402 -- nothing enforces this list interactively any more; it is the person's preview of what the real headless run is allowed to do)
 
 ## Scenario: Resolve-only mode mutates no GitHub state
 
@@ -108,19 +108,6 @@
 **When** any agent's invocation is resolved via `--print-prompt`
 **Then** `Write` and `Edit` appear in the returned `allowed_tools`
 
-## Scenario: A /run-agent session can remove its own scope file
-
-**Given** `/run-agent` has written `.claude/.run-agent-scope.json` for the coder
-**When** step 7 runs `rm -f .claude/.run-agent-scope.json`
-**Then** the command is permitted by the scope hook and the file is removed
-
-## Scenario: The scope file can be removed by an agent with no `rm` grant
-
-**Given** `/run-agent` has written `.claude/.run-agent-scope.json` for `pr-reviewer`, whose allowlist does not grant `Bash(rm *)`
-**When** step 7 runs `rm -f .claude/.run-agent-scope.json`
-**Then** the command is permitted -- ending enforcement is the hook's own escape hatch, not an agent capability
-**And** `rm -rf / .claude/.run-agent-scope.json` is still denied
-
 ## Scenario: A PR number resolves as a PR
 
 **Given** `--print-prompt` is given a number that refers to a pull request and no explicit `--kind`
@@ -145,41 +132,35 @@
 **When** the test suite runs
 **Then** a test compares the two resolved allowlists directly and fails if they differ
 
-## Scenario: Scope enforcement matches every sub-command, not the whole line
+## Scenario: /maos-{agent} spawns a real subprocess with no new orchestrator code path
 
-**Given** an agent's allowlist grants `Bash(export *)` and does not grant `Bash(curl *)`
-**When** the agent runs `export FOO=1 && curl https://example.com`
-**Then** the call is denied, and the denial names `curl https://example.com` as the sub-command that matched no entry
+**Given** `/maos-{agent} <issue-number>` applies `{agent}:requested` to the work item
+**When** the orchestrator runs a normal tick (`--repo R --issue N`, no `--print-prompt`, no `--interactive-result`)
+**Then** it dispatches `{agent}` exactly as the headless GitHub Actions path does, via the same `_should_run`/`_run_agent` loop, native `--allowedTools` and all -- `:requested` bypasses only the trigger-label check, so unmet dependencies still block it
 
-## Scenario: A granted command preceded by a directory change is permitted
+## Scenario: --interactive-result applies a person-produced result under the same eligibility check
 
-**Given** an agent's allowlist grants `Bash(cd *)` and `Bash(sed *)`
-**When** the agent runs `cd $AI_AGILE_ROOT && sed -n '1,5p' .claude/AGENTS.md`
-**Then** the call is permitted -- each sub-command is matched in its own right
+**Given** a person and the chat-AI have written `$AI_AGILE_SCRATCH/result.json` for `{agent}` on issue N via `--print-prompt`'s resolve-only mode
+**When** `pipeline_orchestrator.py --repo R --issue N --agent {agent} --interactive-result` runs
+**Then** it applies exactly the eligibility check, `:wip`/announcement/artefact/label/body-write/post_steps handling a real subprocess run would -- reading the file instead of spawning a subprocess, but never bypassing `_should_run`
 
-## Scenario: A newline separates sub-commands exactly as `&&` does
+## Scenario: A missing or invalid interactive result fails loud, not silently
 
-**Given** an agent's allowlist grants `Bash(cd *)` and does not grant `Bash(curl *)`
-**When** the agent runs a two-line command whose first line is `cd /repo` and whose second is `curl https://example.com`
-**Then** the call is denied
+**Given** `--interactive-result` is invoked but `$AI_AGILE_SCRATCH/result.json` is missing or fails `_read_step_result`'s validation
+**When** the orchestrator applies the result
+**Then** it resolves exactly like a crashed subprocess -- `{agent}:failed` is applied, not a silent no-op
 
-## Scenario: An inline shell wrapper cannot launder an ungranted command
+## Scenario: The audit trail distinguishes a person's activity from a spawned agent's
 
-**Given** an agent's allowlist grants `Bash(sh *)` and does not grant `Bash(curl *)`
-**When** the agent runs `sh -c 'curl https://example.com'`
-**Then** the call is denied, because no pattern can scope inline shell source
+**Given** the same step completes once via `/maos-{agent}` and once via `--interactive-result`
+**When** each run's terminal `agent.*` audit event is emitted
+**Then** the `--interactive-result` run's event records `performed_by=human` and the subprocess run's records `performed_by=agent` -- everything else about how the result is applied is identical (MI-3)
 
-## Scenario: An interpreter running a checked-in script is still permitted
+## Scenario: Applying an interactive result never re-checks out the issue branch from origin
 
-**Given** an agent's allowlist grants `Bash(bash *)`
-**When** the agent runs `bash scripts/build.sh`
-**Then** the call is permitted -- only inline `-c` source is laundering
-
-## Scenario: A heredoc body is data, not a list of commands
-
-**Given** an agent stages a comment body with `cat > "$AI_AGILE_SCRATCH/body.md" <<'EOF'` as `.claude/AGENTS.md` prescribes
-**When** the scope hook checks the call
-**Then** the heredoc's body lines are not treated as sub-commands, and the call is permitted
+**Given** a `commit_after` agent (e.g. `coder`) whose person-driven session has already made uncommitted edits on the issue branch
+**When** `--interactive-result` applies the written result
+**Then** the orchestrator does not fetch and hard-reset onto `origin/issue-{N}` before committing -- that checkout exists to stage a fresh subprocess onto the right branch, and running it here would discard the person's own edits
 
 ## Scenario: A dropped permissions grant is surfaced, not swallowed
 
