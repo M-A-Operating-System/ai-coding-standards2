@@ -4,6 +4,7 @@ import subprocess
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import json
+import logging
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -13,19 +14,25 @@ from pipeline_orchestrator import (
     ALL_STATUSES,
     STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED,
     STATUS_REVIEW, STATUS_BLOCKED, STATUS_WIP, STATUS_REQUESTED,
-    PIPELINE_MAX_CONCURRENT,
+    MAX_LAUNCHES_PER_TICK,
+    COMPONENT_LABEL_PREFIX,
     agent_status,
     _apply_failed,
     _apply_result,
-    _count_running,
+    _seed_component_claims,
+    _fresh_component_claims,
+    _work_item_components,
+    _is_in_flight,
     _handle_review_loop,
     normalize_skipped_labels,
     _make_audit_event,
     _emit_audit_event,
     _run_agent,
     _should_run,
+    _create_run_worktree,
+    _remove_run_worktree,
     promote_gated_agents,
-    AgentDef, AgentRunResult, ConcurrencyState, WorkItem,
+    AgentDef, AgentRunResult, ComponentClaims, WorkItem,
     parse_frontmatter,
     process_work_item,
     _compute_agent_session_id,
@@ -263,8 +270,8 @@ class TestParseFrontmatter:
 # Concurrency helpers
 # ---------------------------------------------------------------------------
 
-def _make_agent_def_concurrent(name: str, max_concurrent: int = 1) -> AgentDef:
-    """Build a minimal AgentDef with a configurable max_concurrent."""
+def _make_agent_def_concurrent(name: str) -> AgentDef:
+    """Build a minimal AgentDef (name kept for call-site continuity)."""
     parts = name.split("/")
     return AgentDef(
         agent=name,
@@ -275,7 +282,6 @@ def _make_agent_def_concurrent(name: str, max_concurrent: int = 1) -> AgentDef:
         human_gate_after=False,
         human_gate_label=None,
         description="test agent",
-        max_concurrent=max_concurrent,
     )
 
 
@@ -307,7 +313,7 @@ def _invoke_agent_writing_result(outcome, *, message="", summary=None, output=""
     Matches invoke_agent's call signature.
     """
     def _effect(agent_def, work_item, dry_run, repo, attempt=0,
-                agent_text_override=None, default_extra_tools=None):
+                agent_text_override=None, default_extra_tools=None, cwd=None):
         result = agent_run_result if agent_run_result is not None else AgentRunResult(success=True)
         if not dry_run:
             session_id = orch._compute_agent_session_id(agent_def, work_item, repo)
@@ -342,135 +348,123 @@ def _invoke_agent_fail_then_succeed(outcome, *, message="", summary=None, output
     )
 
     def _effect(agent_def, work_item, dry_run, repo, attempt=0,
-                agent_text_override=None, default_extra_tools=None):
+                agent_text_override=None, default_extra_tools=None, cwd=None):
         if attempt == 0:
             return AgentRunResult(success=False, returncode=1, captured_tail="error")
         return _write(agent_def, work_item, dry_run, repo, attempt=attempt,
                       agent_text_override=agent_text_override,
-                      default_extra_tools=default_extra_tools)
+                      default_extra_tools=default_extra_tools, cwd=cwd)
     return _effect
 
 
 # ---------------------------------------------------------------------------
-# TestCountRunning
+# TestSeedComponentClaims
 # ---------------------------------------------------------------------------
 
-class TestCountRunning:
-    def test_returns_zero_when_no_wip(self):
-        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
+class TestSeedComponentClaims:
+    def test_no_wip_contributes_nothing(self):
         work_items = [_make_work_item_with_labels(i, set()) for i in range(3)]
-        counts = _count_running(work_items, agents)
-        assert counts["prd-writer"] == 0
+        claims = _seed_component_claims(work_items)
+        assert claims.claimed == set()
+        assert claims.claims_everything is False
 
-    def test_counts_wip_labels_across_work_items(self):
-        """Prior-tick :wip labels are correctly tallied per agent."""
-        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
+    def test_wip_with_no_component_label_claims_everything(self):
+        """An in-flight item with no component: label blocks every other item."""
+        work_items = [_make_work_item_with_labels(1, {"prd-writer:wip"})]
+        claims = _seed_component_claims(work_items)
+        assert claims.claims_everything is True
+
+    def test_wip_with_component_label_claims_only_that_component(self):
         work_items = [
-            _make_work_item_with_labels(1, {"prd-writer:wip"}),
-            _make_work_item_with_labels(2, {"prd-writer:wip"}),
+            _make_work_item_with_labels(1, {"coder:wip", "component:api"}),
+        ]
+        claims = _seed_component_claims(work_items)
+        assert claims.claimed == {"component:api"}
+        assert claims.claims_everything is False
+
+    def test_multiple_in_flight_items_union_disjoint_claims(self):
+        work_items = [
+            _make_work_item_with_labels(1, {"prd-writer:wip", "component:api"}),
+            _make_work_item_with_labels(2, {"coder:wip", "component:ui"}),
             _make_work_item_with_labels(3, {"some-other:complete"}),
         ]
-        counts = _count_running(work_items, agents)
-        assert counts["prd-writer"] == 2
+        claims = _seed_component_claims(work_items)
+        assert claims.claimed == {"component:api", "component:ui"}
+        assert claims.claims_everything is False
 
-    def test_counts_are_independent_per_agent(self):
-        agents = [
-            _make_agent_def_concurrent("01_product_docs/prd-writer"),
-            _make_agent_def_concurrent("03_execute/coder"),
-        ]
+    def test_any_untagged_in_flight_item_sets_claims_everything(self):
         work_items = [
-            _make_work_item_with_labels(1, {"prd-writer:wip"}),
-            _make_work_item_with_labels(2, {"coder:wip"}),
-            _make_work_item_with_labels(3, {"coder:wip"}),
+            _make_work_item_with_labels(1, {"prd-writer:wip", "component:api"}),
+            _make_work_item_with_labels(2, {"coder:wip"}),  # untagged, in flight
         ]
-        counts = _count_running(work_items, agents)
-        assert counts["prd-writer"] == 1
-        assert counts["coder"] == 2
+        claims = _seed_component_claims(work_items)
+        assert claims.claims_everything is True
 
-    def test_empty_work_items_returns_zeros(self):
-        agents = [_make_agent_def_concurrent("01_product_docs/prd-writer")]
-        counts = _count_running([], agents)
-        assert counts["prd-writer"] == 0
+    def test_empty_work_items_returns_empty_claims(self):
+        claims = _seed_component_claims([])
+        assert claims.claimed == set()
+        assert claims.claims_everything is False
+        assert claims.tick_launch_count == 0
 
 
 # ---------------------------------------------------------------------------
-# TestConcurrencyState
+# TestComponentClaims
 # ---------------------------------------------------------------------------
 
-class TestConcurrencyState:
+class TestComponentClaims:
     def test_initial_tick_launch_count_is_zero(self):
-        conc = ConcurrencyState(running_counts={})
+        conc = ComponentClaims()
         assert conc.tick_launch_count == 0
 
-    def test_running_counts_initialised_from_dict(self):
-        conc = ConcurrencyState(running_counts={"prd-writer": 2, "coder": 0})
-        assert conc.running_counts["prd-writer"] == 2
-        assert conc.running_counts["coder"] == 0
+    def test_empty_claims_can_claim_anything(self):
+        conc = ComponentClaims()
+        assert conc.can_claim({"component:a"}) is True
+        assert conc.can_claim(set()) is True
+
+    def test_disjoint_components_can_both_be_claimed(self):
+        conc = ComponentClaims()
+        conc.claim({"component:a"})
+        assert conc.can_claim({"component:b"}) is True
+        conc.claim({"component:b"})
+        assert conc.claimed == {"component:a", "component:b"}
+
+    def test_overlapping_component_cannot_be_claimed(self):
+        conc = ComponentClaims()
+        conc.claim({"component:a"})
+        assert conc.can_claim({"component:a"}) is False
+        assert conc.can_claim({"component:a", "component:b"}) is False
+
+    def test_claiming_empty_set_blocks_everything(self):
+        conc = ComponentClaims()
+        conc.claim(set())
+        assert conc.claims_everything is True
+        assert conc.can_claim({"component:a"}) is False
+        assert conc.can_claim(set()) is False
+        conc.unclaim(set())
+        assert conc.claims_everything is False
+        assert conc.can_claim({"component:a"}) is True
+
+    def test_unclaim_specific_component_frees_only_that_one(self):
+        conc = ComponentClaims()
+        conc.claim({"component:a", "component:b"})
+        conc.unclaim({"component:a"})
+        assert conc.claimed == {"component:b"}
+        assert conc.can_claim({"component:a"}) is True
+        assert conc.can_claim({"component:b"}) is False
 
     def test_increment_updates_both_counters(self):
-        conc = ConcurrencyState(running_counts={"prd-writer": 1})
-        conc.running_counts["prd-writer"] += 1
+        conc = ComponentClaims()
+        conc.claim({"component:a"})
         conc.tick_launch_count += 1
-        assert conc.running_counts["prd-writer"] == 2
+        assert conc.claimed == {"component:a"}
         assert conc.tick_launch_count == 1
 
 
 # ---------------------------------------------------------------------------
-# TestDefaultMaxConcurrentIsOne
+# TestPipelineLoaderMisc
 # ---------------------------------------------------------------------------
 
-class TestDefaultMaxConcurrentIsOne:
-    """Scenario: Default concurrency of 1 when max_concurrent is absent."""
-
-    def test_agent_def_default_max_concurrent(self):
-        agent = _make_agent_def("03_execute/coder")
-        assert agent.max_concurrent == 1, (
-            "AgentDef.max_concurrent must default to 1 when not specified"
-        )
-
-    def test_load_pipeline_defaults_max_concurrent_to_one(self, tmp_path):
-        """Pipeline entries without max_concurrent field default to 1."""
-        import json
-        pipeline_data = {
-            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-                "agent": "01_product_docs/issue-classifier",
-                "phase": "01_product_docs",
-                "object": ["issue"],
-                "trigger": {"event": "issue.opened"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-            }]
-        }
-        path = tmp_path / "pipeline.json"
-        path.write_text(json.dumps(pipeline_data))
-        from pipeline_orchestrator import load_pipeline
-        agents, _ = load_pipeline(path)
-        assert agents[0].max_concurrent == 1
-
-    def test_load_pipeline_null_max_concurrent_defaults_to_one(self, tmp_path):
-        """max_concurrent: null in pipeline.json defaults to 1."""
-        import json
-        pipeline_data = {
-            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-                "agent": "01_product_docs/issue-classifier",
-                "phase": "01_product_docs",
-                "object": ["issue"],
-                "trigger": {"event": "issue.opened"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-                "max_concurrent": None,
-            }]
-        }
-        path = tmp_path / "pipeline.json"
-        path.write_text(json.dumps(pipeline_data))
-        from pipeline_orchestrator import load_pipeline
-        agents, _ = load_pipeline(path)
-        assert agents[0].max_concurrent == 1
-
+class TestPipelineLoaderMisc:
     def test_load_pipeline_loads_review_gate(self, tmp_path):
         import json
         pipeline_data = {
@@ -543,21 +537,17 @@ class TestDefaultMaxConcurrentIsOne:
 # ---------------------------------------------------------------------------
 
 class TestPerAgentConcurrencyCeiling:
-    """Scenario: Per-agent concurrency ceiling respected."""
+    """Scenario: _should_run's component-claim gating (replaces the old
+    per-agent max_concurrent ceiling — components are now the unit of
+    exclusion, not agent type)."""
 
-    def _make_eligible_work_item(self, number: int) -> WorkItem:
-        return _make_work_item_with_labels(number, {"issue-classifier:complete"})
+    def _make_eligible_work_item(self, number: int, extra_labels: set = frozenset()) -> WorkItem:
+        return _make_work_item_with_labels(
+            number, {"issue-classifier:complete"} | set(extra_labels),
+        )
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_ceiling_respected_exactly_max_concurrent_launched(self, mock_invoke):
-        """
-        Given max_concurrent: 3 for prd-writer
-        And 5 issues are eligible (no :wip)
-        When process_work_item is called for each
-        Then exactly 3 are launched, 2 remain pending.
-        """
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
-        agent_def = AgentDef(
+    def _make_agent_def(self) -> AgentDef:
+        return AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
             objects=["issue"],
@@ -566,103 +556,60 @@ class TestPerAgentConcurrencyCeiling:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=3,
         )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-        work_items = [self._make_eligible_work_item(i) for i in range(1, 6)]
 
-        launched = 0
-        for wi in work_items:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            launched += n
+    def test_overlapping_component_claim_skips(self, monkeypatch):
+        """A work item whose component is already claimed is skipped (False)."""
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        agent_def = self._make_agent_def()
+        pipeline_map = {agent_def.agent: agent_def}
+        conc = ComponentClaims()
+        conc.claim({"component:api"})
+        wi = self._make_eligible_work_item(1, {"component:api"})
 
-        assert launched == 3, f"Expected exactly 3 launches, got {launched}"
-        assert conc.tick_launch_count == 3
-        assert conc.running_counts["prd-writer"] == 3
+        result = _should_run(agent_def, wi, wi.labels, pipeline_map, conc)
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_already_running_instances_count_against_ceiling(self, mock_invoke):
-        """
-        Given max_concurrent: 3
-        And 2 issues already carry prd-writer:wip (prior tick)
-        And 4 additional issues are eligible
-        Then exactly 1 additional instance is launched (2 + 1 = 3 ceiling).
-        """
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            max_concurrent=3,
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        # 2 already running from prior tick
-        conc = ConcurrencyState(running_counts={"prd-writer": 2})
-        work_items = [self._make_eligible_work_item(i) for i in range(10, 14)]  # 4 eligible
+        assert result is False
 
-        launched = 0
-        for wi in work_items:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            launched += n
+    def test_disjoint_or_untagged_component_may_run(self, monkeypatch):
+        """A work item with no overlapping component claim is eligible (True)."""
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        agent_def = self._make_agent_def()
+        pipeline_map = {agent_def.agent: agent_def}
+        conc = ComponentClaims()
+        conc.claim({"component:api"})
+        wi = self._make_eligible_work_item(2, {"component:ui"})
 
-        assert launched == 1, (
-            f"With 2 already running and max_concurrent=3, expected 1 new launch, got {launched}"
-        )
-        assert conc.running_counts["prd-writer"] == 3
-        assert conc.tick_launch_count == 1
+        result = _should_run(agent_def, wi, wi.labels, pipeline_map, conc)
 
-    @patch("pipeline_orchestrator.invoke_agent")
-    def test_default_max_concurrent_one_allows_single_launch(self, mock_invoke):
-        """
-        Given an agent with no max_concurrent field (defaults to 1)
-        And 3 issues are eligible
-        Then exactly 1 instance is launched.
-        """
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
-        agent_def = AgentDef(
-            agent="01_product_docs/prd-writer",
-            phase="01_product_docs",
-            objects=["issue"],
-            trigger={"label": "issue-classifier:complete"},
-            dependencies=[],
-            human_gate_after=False,
-            human_gate_label=None,
-            description="test",
-            # max_concurrent intentionally omitted — should default to 1
-        )
-        agents = [agent_def]
-        pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
-        work_items = [self._make_eligible_work_item(i) for i in range(1, 4)]
+        assert result is True
 
-        launched = 0
-        for wi in work_items:
-            gh = _make_gh_mock()
-            n = process_work_item(
-                wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
-                concurrency=conc,
-            )
-            launched += n
+    def test_untagged_work_item_blocked_when_anything_claimed(self, monkeypatch):
+        """An untagged item claims/needs everything, so it waits while any
+        component is held."""
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        agent_def = self._make_agent_def()
+        pipeline_map = {agent_def.agent: agent_def}
+        conc = ComponentClaims()
+        conc.claim({"component:api"})
+        wi = self._make_eligible_work_item(3)
 
-        assert launched == 1, (
-            f"Default max_concurrent=1 should limit to 1 launch; got {launched}"
-        )
+        result = _should_run(agent_def, wi, wi.labels, pipeline_map, conc)
+
+        assert result is False
+
+    def test_launch_budget_hit_returns_none_distinct_from_claim_skip(self, monkeypatch):
+        """Hitting the per-tick launch budget returns None (stop the loop),
+        not False (skip this agent) — the two must stay distinguishable."""
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        agent_def = self._make_agent_def()
+        pipeline_map = {agent_def.agent: agent_def}
+        conc = ComponentClaims(tick_launch_count=MAX_LAUNCHES_PER_TICK)
+        wi = self._make_eligible_work_item(4)
+
+        result = _should_run(agent_def, wi, wi.labels, pipeline_map, conc)
+
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -673,15 +620,16 @@ class TestAggregatePipelineCeiling:
     """Scenario: Aggregate pipeline ceiling caps total launches per tick."""
 
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_aggregate_ceiling_caps_total_launches(self, mock_invoke):
+    def test_aggregate_ceiling_caps_total_launches(self, mock_invoke, monkeypatch):
         """
-        Given per-agent max_concurrent values that would permit >20 total launches
-        And the pipeline-level aggregate maximum is PIPELINE_MAX_CONCURRENT (20)
+        Given the pipeline-level aggregate maximum is MAX_LAUNCHES_PER_TICK (20)
+        And 25 eligible, disjointly-tagged-or-untagged work items exist
         When the orchestrator processes all eligible work items
-        Then no more than PIPELINE_MAX_CONCURRENT agents are launched in that tick.
+        Then no more than MAX_LAUNCHES_PER_TICK agents are launched in that tick.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
-        # One agent type with a high per-agent ceiling — not the limiting factor
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -691,21 +639,23 @@ class TestAggregatePipelineCeiling:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=100,  # per-agent ceiling not the constraint
         )
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        conc = ComponentClaims()
 
-        # 25 eligible work items — more than the aggregate ceiling
+        # 25 eligible work items, each with its own component so component
+        # claims are never the limiting factor — only the aggregate budget is.
         work_items = [
-            _make_work_item_with_labels(i, {"issue-classifier:complete"})
+            _make_work_item_with_labels(
+                i, {"issue-classifier:complete", f"component:c{i}"},
+            )
             for i in range(1, 26)
         ]
 
         launched = 0
         for wi in work_items:
-            if conc.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+            if conc.tick_launch_count >= MAX_LAUNCHES_PER_TICK:
                 break
             gh = _make_gh_mock()
             n = process_work_item(
@@ -714,28 +664,30 @@ class TestAggregatePipelineCeiling:
             )
             launched += n
 
-        assert launched == PIPELINE_MAX_CONCURRENT, (
-            f"Expected exactly PIPELINE_MAX_CONCURRENT={PIPELINE_MAX_CONCURRENT} launches, got {launched}"
+        assert launched == MAX_LAUNCHES_PER_TICK, (
+            f"Expected exactly MAX_LAUNCHES_PER_TICK={MAX_LAUNCHES_PER_TICK} launches, got {launched}"
         )
-        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT
+        assert conc.tick_launch_count == MAX_LAUNCHES_PER_TICK
 
-    def test_pipeline_max_concurrent_constant_value(self):
+    def test_max_launches_per_tick_constant_value(self):
         """Pipeline-wide aggregate ceiling is set to 20."""
-        assert PIPELINE_MAX_CONCURRENT == 20, (
-            f"PIPELINE_MAX_CONCURRENT must be 20 per spec, got {PIPELINE_MAX_CONCURRENT}"
+        assert MAX_LAUNCHES_PER_TICK == 20, (
+            f"MAX_LAUNCHES_PER_TICK must be 20 per spec, got {MAX_LAUNCHES_PER_TICK}"
         )
 
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_inner_break_fires_mid_agent_loop_at_aggregate_ceiling(self, mock_invoke):
+    def test_inner_break_fires_mid_agent_loop_at_aggregate_ceiling(self, mock_invoke, monkeypatch):
         """
-        Given two distinct agent types, both with per-agent max_concurrent=100
-        And ConcurrencyState.tick_launch_count starts at PIPELINE_MAX_CONCURRENT - 1
+        Given two distinct agent types
+        And ComponentClaims.tick_launch_count starts at MAX_LAUNCHES_PER_TICK - 1
         And a single work item is eligible for both agent types
         When process_work_item is called
         Then exactly 1 agent is launched (the first in the agents list)
-        And tick_launch_count equals PIPELINE_MAX_CONCURRENT
+        And tick_launch_count equals MAX_LAUNCHES_PER_TICK
         And the second agent type is never invoked — confirming the inner break fired.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_one = AgentDef(
             agent="01_product_docs/prd-writer",
@@ -746,7 +698,6 @@ class TestAggregatePipelineCeiling:
             human_gate_after=False,
             human_gate_label=None,
             description="test agent one",
-            max_concurrent=100,
         )
         agent_two = AgentDef(
             agent="03_execute/coder",
@@ -757,7 +708,6 @@ class TestAggregatePipelineCeiling:
             human_gate_after=False,
             human_gate_label=None,
             description="test agent two",
-            max_concurrent=100,
         )
         agents = [agent_one, agent_two]
         pipeline_map = {
@@ -765,10 +715,7 @@ class TestAggregatePipelineCeiling:
             "03_execute/coder": agent_two,
         }
         # One below the aggregate ceiling — first agent launch will hit it exactly.
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 0, "coder": 0},
-            tick_launch_count=PIPELINE_MAX_CONCURRENT - 1,
-        )
+        conc = ComponentClaims(tick_launch_count=MAX_LAUNCHES_PER_TICK - 1)
         work_item = _make_work_item_with_labels(99, {"issue-classifier:complete"})
 
         gh = _make_gh_mock()
@@ -780,8 +727,8 @@ class TestAggregatePipelineCeiling:
         assert n == 1, (
             f"Expected exactly 1 agent launched before inner break; got {n}"
         )
-        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT, (
-            f"tick_launch_count should equal PIPELINE_MAX_CONCURRENT after first launch; "
+        assert conc.tick_launch_count == MAX_LAUNCHES_PER_TICK, (
+            f"tick_launch_count should equal MAX_LAUNCHES_PER_TICK after first launch; "
             f"got {conc.tick_launch_count}"
         )
         assert mock_invoke.call_count == 1, (
@@ -800,25 +747,24 @@ class TestAggregatePipelineCeiling:
 # ---------------------------------------------------------------------------
 
 class TestRateLimitCounterRollback:
-    """Regression: rate-limited agent must roll back concurrency counters."""
+    """Regression: rate-limited agent must roll back concurrency claim state."""
 
-    @patch("pipeline_orchestrator._restore_pre_agent_branch")
     @patch("pipeline_orchestrator.is_pipeline_paused")
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_rate_limited_agent_rolls_back_concurrency_counts(
-        self, mock_invoke, mock_paused, mock_restore
+    def test_rate_limited_agent_rolls_back_untagged_claim(
+        self, mock_invoke, mock_paused, monkeypatch
     ):
         """
-        Given a work item eligible for prd-writer (max_concurrent=5)
-        And the current running_counts for prd-writer is 1
-        And tick_launch_count is 3
+        Given an untagged work item eligible for prd-writer
+        And tick_launch_count is 3 beforehand
         When invoke_agent returns rate_limited=True
-        Then concurrency.running_counts[prd-writer] is rolled back to 1
+        Then the claim it took (claims_everything) is rolled back
         And concurrency.tick_launch_count is rolled back to 3
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.return_value = AgentRunResult(success=False, rate_limited=True)
         mock_paused.return_value = (False, None, None)
-        mock_restore.return_value = None
 
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
@@ -829,14 +775,10 @@ class TestRateLimitCounterRollback:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=5,
         )
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 1},
-            tick_launch_count=3,
-        )
+        conc = ComponentClaims(tick_launch_count=3)
         work_item = _make_work_item_with_labels(42, {"issue-classifier:complete"})
 
         gh = _make_gh_mock()
@@ -845,14 +787,55 @@ class TestRateLimitCounterRollback:
             concurrency=conc,
         )
 
-        assert conc.running_counts.get("prd-writer", 0) == 1, (
-            f"running_counts should roll back to 1 after rate-limited abort; "
-            f"got {conc.running_counts.get('prd-writer', 0)}"
+        mock_invoke.assert_called_once()  # confirms the run actually happened
+        assert conc.claims_everything is False, (
+            "claims_everything should roll back to False after rate-limited abort"
         )
         assert conc.tick_launch_count == 3, (
             f"tick_launch_count should roll back to 3 after rate-limited abort; "
             f"got {conc.tick_launch_count}"
         )
+
+    @patch("pipeline_orchestrator.is_pipeline_paused")
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_rate_limited_agent_rolls_back_tagged_claim(
+        self, mock_invoke, mock_paused, monkeypatch
+    ):
+        """Same as above, but for a work item carrying a component: label —
+        the specific component is unclaimed, not claims_everything."""
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
+        mock_invoke.return_value = AgentRunResult(success=False, rate_limited=True)
+        mock_paused.return_value = (False, None, None)
+
+        agent_def = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+        )
+        agents = [agent_def]
+        pipeline_map = {"01_product_docs/prd-writer": agent_def}
+        conc = ComponentClaims(tick_launch_count=3)
+        work_item = _make_work_item_with_labels(
+            43, {"issue-classifier:complete", "component:api"},
+        )
+
+        gh = _make_gh_mock()
+        process_work_item(
+            work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
+            concurrency=conc,
+        )
+
+        mock_invoke.assert_called_once()  # confirms the run actually happened
+        assert "component:api" not in conc.claimed, (
+            "component:api should be unclaimed after rate-limited abort"
+        )
+        assert conc.tick_launch_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -863,13 +846,15 @@ class TestWipLabelFailureDoesNotInflateCount:
     """Regression: concurrency counter must not increment when :wip label fails."""
 
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_counter_unchanged_when_add_label_raises(self, mock_invoke):
+    def test_counter_unchanged_when_add_label_raises(self, mock_invoke, monkeypatch):
         """
         Given add_label raises for the :wip application
         When process_work_item is called
-        Then running_counts is unchanged (no phantom slot consumed)
+        Then no claim is taken (no phantom claim held)
         And tick_launch_count is unchanged
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.return_value = AgentRunResult(success=True)
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
@@ -880,38 +865,40 @@ class TestWipLabelFailureDoesNotInflateCount:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=5,
         )
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 2}, tick_launch_count=4)
+        conc = ComponentClaims(tick_launch_count=4)
 
         gh = _make_gh_mock()
         gh.add_label.side_effect = Exception("GitHub 500 error")
 
-        work_item = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        work_item = _make_work_item_with_labels(
+            1, {"issue-classifier:complete", "component:api"},
+        )
         process_work_item(
             work_item, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
             concurrency=conc,
         )
 
-        assert conc.running_counts.get("prd-writer", 0) == 2, (
-            f"running_counts must stay at 2 when :wip label fails; "
-            f"got {conc.running_counts.get('prd-writer', 0)}"
+        assert conc.claimed == set(), (
+            f"no component should be claimed when :wip label fails; got {conc.claimed}"
         )
+        assert conc.claims_everything is False
         assert conc.tick_launch_count == 4, (
             f"tick_launch_count must stay at 4 when :wip label fails; "
             f"got {conc.tick_launch_count}"
         )
 
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_second_item_not_blocked_by_phantom_count(self, mock_invoke):
+    def test_second_item_not_blocked_by_phantom_claim(self, mock_invoke, monkeypatch):
         """
-        Given max_concurrent=2 and 1 item already running (running_counts=1)
-        And add_label raises for the first new eligible item
-        When process_work_item is called for a second new eligible item
-        Then the second item is launched (phantom count didn't block it)
+        Given add_label raises for the first item carrying component:api
+        When process_work_item is called for a second, same-component item
+        Then the second item is launched (no phantom claim blocked it)
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
@@ -922,32 +909,35 @@ class TestWipLabelFailureDoesNotInflateCount:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=2,
         )
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 1}, tick_launch_count=1)
+        conc = ComponentClaims()
 
         gh_fail = _make_gh_mock()
         gh_fail.add_label.side_effect = Exception("GitHub 500 error")
-        wi_fail = _make_work_item_with_labels(1, {"issue-classifier:complete"})
+        wi_fail = _make_work_item_with_labels(
+            1, {"issue-classifier:complete", "component:api"},
+        )
         process_work_item(
             wi_fail, agents, pipeline_map, gh_fail, dry_run=False, repo="test/repo",
             concurrency=conc,
         )
 
-        # No phantom count; slot still free for item 2
+        # No phantom claim; component:api still free for item 2
         gh_ok = _make_gh_mock()
-        wi_ok = _make_work_item_with_labels(2, {"issue-classifier:complete"})
+        wi_ok = _make_work_item_with_labels(
+            2, {"issue-classifier:complete", "component:api"},
+        )
         launched = process_work_item(
             wi_ok, agents, pipeline_map, gh_ok, dry_run=False, repo="test/repo",
             concurrency=conc,
         )
 
         assert launched == 1, (
-            f"Second item should launch (1 running + 1 new = 2 ceiling); got {launched}"
+            f"Second item should launch (no phantom claim blocking it); got {launched}"
         )
-        assert conc.running_counts.get("prd-writer", 0) == 2
+        assert "component:api" in conc.claimed
 
 
 # ---------------------------------------------------------------------------
@@ -957,13 +947,16 @@ class TestWipLabelFailureDoesNotInflateCount:
 class TestDryRunConcurrency:
     """Regression: dry-run mode must enforce concurrency ceilings."""
 
-    def test_dry_run_increments_tick_count(self):
+    def test_dry_run_increments_tick_count(self, monkeypatch):
         """
-        Given dry_run=True and 3 eligible items with max_concurrent=1
+        Given dry_run=True and 3 eligible, untagged items
         When process_work_item is called for each
-        Then only the first shows as launched (ceiling enforced in simulation)
-        And concurrency.running_counts reflects 1 counted instance
+        Then only the first shows as launched (an untagged item claims
+        everything, so the ceiling is enforced in simulation too)
+        And concurrency.claims_everything reflects the one claimed instance
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -973,11 +966,10 @@ class TestDryRunConcurrency:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=1,
         )
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        conc = ComponentClaims()
 
         total_launched = 0
         for i in range(1, 4):
@@ -990,20 +982,24 @@ class TestDryRunConcurrency:
             total_launched += n
 
         assert total_launched == 1, (
-            f"dry_run must respect per-agent ceiling of 1; got {total_launched}"
+            f"dry_run must respect the claim: an untagged item claims "
+            f"everything, blocking the other two; got {total_launched}"
         )
-        assert conc.running_counts.get("prd-writer", 0) == 1, (
-            f"running_counts must be 1 after dry-run of 3 items (ceiling=1); "
-            f"got {conc.running_counts.get('prd-writer', 0)}"
+        assert conc.claims_everything is True, (
+            "claims_everything must be True after dry-run of 3 untagged items"
         )
 
-    def test_dry_run_respects_aggregate_ceiling(self):
+    def test_dry_run_respects_aggregate_ceiling(self, monkeypatch):
         """
-        Given PIPELINE_MAX_CONCURRENT and 5 items eligible across two agents
+        Given MAX_LAUNCHES_PER_TICK and 2 eligible items across two agents,
+        each with its own component (so the launch budget, not a claim
+        collision, is the constraint)
         And dry_run=True
         When process_work_item processes all items
-        Then no more than PIPELINE_MAX_CONCURRENT total are reported as launched
+        Then no more than MAX_LAUNCHES_PER_TICK total are reported as launched
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         agent_a = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -1013,7 +1009,6 @@ class TestDryRunConcurrency:
             human_gate_after=False,
             human_gate_label=None,
             description="a",
-            max_concurrent=100,
         )
         agent_b = AgentDef(
             agent="03_execute/coder",
@@ -1024,21 +1019,22 @@ class TestDryRunConcurrency:
             human_gate_after=False,
             human_gate_label=None,
             description="b",
-            max_concurrent=100,
         )
         agents = [agent_a, agent_b]
         pipeline_map = {
             "01_product_docs/prd-writer": agent_a,
             "03_execute/coder": agent_b,
         }
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 0, "coder": 0},
-            tick_launch_count=PIPELINE_MAX_CONCURRENT - 1,
-        )
+        conc = ComponentClaims(tick_launch_count=MAX_LAUNCHES_PER_TICK - 1)
 
-        # One item eligible only for agent_a, one eligible only for agent_b
-        wi_a = _make_work_item_with_labels(1, {"issue-classifier:complete"})
-        wi_b = _make_work_item_with_labels(2, {"prd-docs-updater:complete"})
+        # One item eligible only for agent_a, one eligible only for agent_b,
+        # each carrying its own component so the claim never collides.
+        wi_a = _make_work_item_with_labels(
+            1, {"issue-classifier:complete", "component:a"},
+        )
+        wi_b = _make_work_item_with_labels(
+            2, {"prd-docs-updater:complete", "component:b"},
+        )
 
         gh = _make_gh_mock()
         n_a = process_work_item(
@@ -1054,7 +1050,7 @@ class TestDryRunConcurrency:
         # Only the first item should launch — aggregate ceiling is reached after it
         assert n_a == 1, f"First item should launch; got {n_a}"
         assert n_b == 0, f"Second item must be deferred by aggregate ceiling; got {n_b}"
-        assert conc.tick_launch_count == PIPELINE_MAX_CONCURRENT
+        assert conc.tick_launch_count == MAX_LAUNCHES_PER_TICK
 
 
 # ---------------------------------------------------------------------------
@@ -1432,6 +1428,72 @@ class TestInvokeAgentRuntimeContext:
         assert "REPO=test-org/test-repo\n" in prompt, "REPO value must be stripped of whitespace"
         assert "AI_AGILE_ROOT=/padded/path\n" in prompt, "AI_AGILE_ROOT must be stripped"
         assert "REPO=  test-org/test-repo  " not in prompt, "Unstripped REPO must not appear"
+
+    def test_cwd_overrides_ai_agile_root_in_prompt_and_env(self, monkeypatch):
+        """issue #373: a commit_after agent's cwd (its isolated worktree) must
+        drive AI_AGILE_ROOT in both the prompt text and the subprocess env --
+        otherwise the documented `cd $AI_AGILE_ROOT && <command>` idiom would
+        `cd` an agent straight back onto the orchestrator's own shared
+        checkout, defeating the isolation."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+        monkeypatch.setenv("AI_AGILE_ROOT", "/shared/checkout")
+        captured_cmd: list = []
+        captured_env: dict = {}
+
+        def fake_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            captured_env.update(kwargs.get("env") or {})
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=6),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+                cwd="/isolated/worktree/issue-6",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        assert "AI_AGILE_ROOT=/isolated/worktree/issue-6\n" in prompt, (
+            "prompt's AI_AGILE_ROOT must reflect cwd, not the shared checkout"
+        )
+        assert captured_env.get("AI_AGILE_ROOT") == "/isolated/worktree/issue-6", (
+            "subprocess env's AI_AGILE_ROOT must reflect cwd, not the shared checkout"
+        )
+
+    def test_no_cwd_falls_back_to_ambient_ai_agile_root(self, monkeypatch):
+        """Every non-commit_after step passes cwd=None -- AI_AGILE_ROOT must
+        keep resolving from the ambient env exactly as before #373."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+        monkeypatch.setenv("AI_AGILE_ROOT", "/shared/checkout")
+        captured_cmd: list = []
+
+        with patch("subprocess.Popen", side_effect=self._fake_popen_capturing_cmd(captured_cmd)):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=7),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        assert "AI_AGILE_ROOT=/shared/checkout\n" in prompt
 
     def test_subprocess_env_still_exports_vars_for_bash_snippet_compatibility(self, monkeypatch):
         """Subprocess env must still carry REPO, ISSUE_NUMBER, WORK_ITEM_KIND, SESSION_ID."""
@@ -3565,7 +3627,6 @@ class TestCommitAgentWorkScript:
             human_gate_label=None,
             description="test coder",
             commit_after=True,
-            max_concurrent=10,
         )
 
     def _make_issue_wi(self) -> WorkItem:
@@ -3575,36 +3636,37 @@ class TestCommitAgentWorkScript:
             url="https://github.com/test/repo/issues/42",
         )
 
-    def _sub_side_effect_factory(self, bash_result):
-        """Return a subprocess.run side_effect that:
-        - raises CalledProcessError for git calls (pre-agent checkout fails silently)
-        - returns bash_result for bash (commit-agent-work.sh) calls
-        """
-        import subprocess as _sp
+    # Note (#373): _run_agent now creates a real isolated git worktree for a
+    # commit_after agent before invoking it, and fails the whole run loudly if
+    # that setup fails (no more silent fall-back onto the shared tree — see
+    # TestRunAgentWorktreeIsolation below for that path). These tests are
+    # about commit-agent-work.sh's own outcome handling, so _create_run_worktree
+    # and _remove_run_worktree are mocked out here rather than exercised for
+    # real, and subprocess.run is left to cover only the bash invocation.
 
-        def _side_effect(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd and cmd[0] == "git":
-                raise _sp.CalledProcessError(1, cmd)
-            return bash_result
-
-        return _side_effect
-
+    @patch("pipeline_orchestrator._remove_run_worktree")
+    @patch("pipeline_orchestrator._create_run_worktree")
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_success_keeps_complete_status(self, mock_failed, mock_invoke):
+    def test_commit_after_success_keeps_complete_status(
+        self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
+    ):
         """Scenario: commit-agent-work.sh exits 0 — agent stays complete.
 
         Given an agent with commit_after: true that completes successfully
         When commit-agent-work.sh exits 0
         Then _apply_failed is not called.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
+        mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_ok = MagicMock()
         bash_ok.returncode = 0
         bash_ok.stdout = ""
         bash_ok.stderr = ""
 
-        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_ok)):
+        with patch("subprocess.run", return_value=bash_ok):
             process_work_item(
                 self._make_issue_wi(),
                 [self._make_commit_after_agent()],
@@ -3612,20 +3674,27 @@ class TestCommitAgentWorkScript:
                 _make_gh_mock(),
                 dry_run=False,
                 repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+                concurrency=ComponentClaims(),
             )
 
         mock_failed.assert_not_called()
 
+    @patch("pipeline_orchestrator._remove_run_worktree")
+    @patch("pipeline_orchestrator._create_run_worktree")
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_nonzero_exit_applies_failed(self, mock_failed, mock_invoke):
+    def test_commit_after_nonzero_exit_applies_failed(
+        self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
+    ):
         """Scenario: commit-agent-work.sh exits non-zero — _apply_failed is called.
 
         Given an agent with commit_after: true that completes successfully
         When commit-agent-work.sh exits 1
         Then _apply_failed is called.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
+        mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -3634,7 +3703,7 @@ class TestCommitAgentWorkScript:
         bash_fail.stdout = "push failed"
         bash_fail.stderr = "error: failed to push"
 
-        with patch("subprocess.run", side_effect=self._sub_side_effect_factory(bash_fail)):
+        with patch("subprocess.run", return_value=bash_fail):
             process_work_item(
                 self._make_issue_wi(),
                 [self._make_commit_after_agent()],
@@ -3642,14 +3711,18 @@ class TestCommitAgentWorkScript:
                 _make_gh_mock(),
                 dry_run=False,
                 repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+                concurrency=ComponentClaims(),
             )
 
         mock_failed.assert_called_once()
 
+    @patch("pipeline_orchestrator._remove_run_worktree")
+    @patch("pipeline_orchestrator._create_run_worktree")
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_timeout_applies_failed(self, mock_failed, mock_invoke):
+    def test_commit_after_timeout_applies_failed(
+        self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
+    ):
         """Scenario: commit-agent-work.sh times out — _apply_failed is called.
 
         Given an agent with commit_after: true that completes successfully
@@ -3658,13 +3731,14 @@ class TestCommitAgentWorkScript:
         """
         import subprocess as _sp
 
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
+        mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
 
         def _timeout_side_effect(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd and cmd[0] == "git":
-                raise _sp.CalledProcessError(1, cmd)
             raise _sp.TimeoutExpired(cmd, 300)
 
         with patch("subprocess.run", side_effect=_timeout_side_effect):
@@ -3675,20 +3749,27 @@ class TestCommitAgentWorkScript:
                 _make_gh_mock(),
                 dry_run=False,
                 repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+                concurrency=ComponentClaims(),
             )
 
         mock_failed.assert_called_once()
 
+    @patch("pipeline_orchestrator._remove_run_worktree")
+    @patch("pipeline_orchestrator._create_run_worktree")
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_script_not_found_applies_failed(self, mock_failed, mock_invoke):
+    def test_commit_after_script_not_found_applies_failed(
+        self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
+    ):
         """Scenario: commit-agent-work.sh does not exist — _apply_failed is called.
 
         Given an agent with commit_after: true that completes successfully
         When the commit-agent-work.sh script does not exist
         Then _apply_failed is called.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
+        mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -3709,7 +3790,7 @@ class TestCommitAgentWorkScript:
                 _make_gh_mock(),
                 dry_run=False,
                 repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+                concurrency=ComponentClaims(),
             )
 
         mock_failed.assert_called_once()
@@ -3735,7 +3816,6 @@ class TestPriorityScheduling:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=10,
         )
 
     def _eligible_wi(self, number: int, *, priority: bool = False) -> WorkItem:
@@ -3752,11 +3832,13 @@ class TestPriorityScheduling:
 
     # Scenario: Priority issue is started before a non-priority issue
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_priority_issue_receives_wip_before_non_priority(self, mock_invoke):
+    def test_priority_issue_receives_wip_before_non_priority(self, mock_invoke, monkeypatch):
         """Given a priority issue and a non-priority issue both eligible to start
         When the orchestrator selects the next work item to start
         Then the priority-labeled issue receives :wip before the non-priority issue.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = self._make_agent_for_priority()
         agents = [agent_def]
@@ -3772,7 +3854,7 @@ class TestPriorityScheduling:
         _other    = [wi for wi in [non_priority_wi, priority_wi] if "priority" not in wi.labels]
         ordered = _priority + _other
 
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        conc = ComponentClaims()
         dispatched_numbers = []
         for wi in ordered:
             gh = _make_gh_mock()
@@ -3789,12 +3871,16 @@ class TestPriorityScheduling:
 
     # Scenario: Concurrency limit is respected for priority items
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_concurrency_limit_respected_for_priority_items(self, mock_invoke):
-        """Given the orchestrator is at the max concurrent limit
+    def test_concurrency_limit_respected_for_priority_items(self, mock_invoke, monkeypatch):
+        """Given the orchestrator has something else in flight holding every
+        component claim (the component-claim analogue of "at the concurrency
+        ceiling")
         And a priority-labeled issue exists
         When the orchestrator evaluates the next selection cycle
-        Then no new work item is started until a concurrency slot becomes available.
+        Then no new work item is started until a claim becomes available.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.return_value = AgentRunResult(
             success=True, captured_tail="AI_AGILE_STATUS: complete"
         )
@@ -3802,10 +3888,8 @@ class TestPriorityScheduling:
         agents = [agent_def]
         pipeline_map = {"01_product_docs/prd-writer": agent_def}
 
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 10},  # at max_concurrent ceiling
-            tick_launch_count=0,
-        )
+        conc = ComponentClaims()
+        conc.claim(set())  # another untagged item is in flight, claiming everything
         priority_wi = self._eligible_wi(1, priority=True)
 
         gh = _make_gh_mock()
@@ -3822,12 +3906,14 @@ class TestPriorityScheduling:
 
     # Scenario: Normal selection resumes when no priority items are open
     @patch("pipeline_orchestrator.invoke_agent")
-    def test_normal_selection_resumes_when_no_priority_items(self, mock_invoke):
+    def test_normal_selection_resumes_when_no_priority_items(self, mock_invoke, monkeypatch):
         """Given there are no open priority-labeled issues
         And non-priority issues are eligible
         When the orchestrator selects the next work item
         Then a non-priority issue is selected using normal selection logic.
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent_def = self._make_agent_for_priority()
         agents = [agent_def]
@@ -3840,7 +3926,7 @@ class TestPriorityScheduling:
         _other    = [wi for wi in regular_items if "priority" not in wi.labels]
         ordered = _priority + _other  # same order as input when no priority items
 
-        conc = ConcurrencyState(running_counts={"prd-writer": 0})
+        conc = ComponentClaims()
         dispatched = []
         for wi in ordered:
             gh = _make_gh_mock()
@@ -3880,7 +3966,7 @@ class TestPriorityScheduling:
         )
 
         gh = _make_gh_mock()
-        conc = ConcurrencyState(running_counts={"prd-writer": 1})
+        conc = ComponentClaims()
         n = process_work_item(
             in_progress_priority_wi, agents, pipeline_map, gh,
             dry_run=False, repo="test/repo", concurrency=conc,
@@ -4194,7 +4280,6 @@ class TestProcessWorkItemDecomposition:
             human_gate_after=False,
             human_gate_label=None,
             description="test agent",
-            max_concurrent=10,
         )
         wi = _make_work_item_with_labels(1, {"issue-classifier:complete"})
         gh = _make_gh_mock()
@@ -4218,12 +4303,13 @@ class TestProcessWorkItemDecomposition:
             f"_should_run must return False for a terminal :complete status; got {result!r}"
         )
 
-    def test_should_run_returns_none_at_aggregate_ceiling(self):
+    def test_should_run_returns_none_at_aggregate_ceiling(self, monkeypatch):
         """
         Given the aggregate concurrency ceiling is already reached
         When _should_run() is called for an otherwise-eligible agent
         Then it returns None (stop the agent loop).
         """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
         agent_def = AgentDef(
             agent="01_product_docs/prd-writer",
             phase="01_product_docs",
@@ -4233,13 +4319,9 @@ class TestProcessWorkItemDecomposition:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=100,
         )
         wi = _make_work_item_with_labels(1, set())
-        conc = ConcurrencyState(
-            running_counts={"prd-writer": 0},
-            tick_launch_count=PIPELINE_MAX_CONCURRENT,
-        )
+        conc = ComponentClaims(tick_launch_count=MAX_LAUNCHES_PER_TICK)
         result = _should_run(agent_def, wi, wi.labels, {}, conc)
         assert result is None, (
             f"_should_run must return None when the aggregate ceiling is hit; got {result!r}"
@@ -4260,7 +4342,6 @@ class TestProcessWorkItemDecomposition:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            max_concurrent=10,
         )
         wi = _make_work_item_with_labels(1, {"issue-classifier:complete"})
         result = _should_run(agent_def, wi, wi.labels, {agent_def.agent: agent_def}, None)
@@ -4364,7 +4445,7 @@ class TestCommitAfterExactlyOnce:
             agent="03_execute/coder", phase="03_execute", objects=["issue"],
             trigger={"label": "issue-classifier:complete"}, dependencies=[],
             human_gate_after=False, human_gate_label=None, description="test coder",
-            commit_after=True, max_concurrent=10,
+            commit_after=True,
         )
 
     def _wi(self) -> WorkItem:
@@ -4374,26 +4455,28 @@ class TestCommitAfterExactlyOnce:
             url="https://github.com/test/repo/issues/42",
         )
 
-    def _side_effect(self, bash_result):
-        import subprocess as _sp
-
-        def _se(cmd, **kw):
-            if isinstance(cmd, list) and cmd and cmd[0] == "git":
-                raise _sp.CalledProcessError(1, cmd)
-            return bash_result
-        return _se
-
+    @patch("pipeline_orchestrator._remove_run_worktree")
+    @patch("pipeline_orchestrator._create_run_worktree")
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_runs_exactly_once(self, mock_failed, mock_invoke):
+    def test_commit_after_runs_exactly_once(
+        self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
+    ):
+        # (#373) The pre-agent worktree setup is mocked out here so this test
+        # stays focused on its own regression: commit-agent-work.sh running
+        # exactly once. Worktree creation itself is covered separately by
+        # TestRunAgentWorktreeIsolation below.
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
+        mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         bash_ok = MagicMock(returncode=0, stdout="", stderr="")
         agent = self._agent()
-        with patch("subprocess.run", side_effect=self._side_effect(bash_ok)) as mock_sub:
+        with patch("subprocess.run", return_value=bash_ok) as mock_sub:
             process_work_item(
                 self._wi(), [agent], {agent.agent: agent}, _make_gh_mock(),
                 dry_run=False, repo="test/repo",
-                concurrency=ConcurrencyState(running_counts={"coder": 0}),
+                concurrency=ComponentClaims(),
             )
         commit_calls = [
             c for c in mock_sub.call_args_list
@@ -4405,6 +4488,183 @@ class TestCommitAfterExactlyOnce:
             f"ran {len(commit_calls)}x (double-execution regression)"
         )
         mock_failed.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestRunAgentWorktreeIsolation (issue #373)
+#
+# A commit_after run happens in its own isolated git worktree, not the
+# orchestrator's own shared checkout, so two concurrent runs on different
+# issues cannot move each other's HEAD. Worktree setup failure fails the
+# whole run loudly rather than silently falling back to the shared tree.
+# ---------------------------------------------------------------------------
+
+class TestRunAgentWorktreeIsolation:
+    def test_create_run_worktree_gives_each_branch_its_own_path(self, monkeypatch, tmp_path):
+        """Two commit_after runs on different issues each get their own
+        worktree path, sanitized from their own branch name."""
+        monkeypatch.setattr(orch, "_WORKTREE_ROOT", tmp_path / "worktrees")
+        calls = []
+
+        def _fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        with patch("subprocess.run", side_effect=_fake_run):
+            path1 = _create_run_worktree("issue-1")
+            path2 = _create_run_worktree("issue-2")
+
+        assert path1 != path2, "each branch must get its own worktree path"
+        assert path1.endswith("issue-1")
+        assert path2.endswith("issue-2")
+        add_calls = [c for c in calls if c[:3] == ["git", "worktree", "add"]]
+        assert len(add_calls) == 2, (
+            f"expected one 'git worktree add' per branch; got {len(add_calls)}"
+        )
+
+    def test_remove_run_worktree_is_noop_for_empty_path(self):
+        """_remove_run_worktree('') must not touch git or the filesystem —
+        '' means there is nothing to clean up (e.g. a non-commit_after step,
+        or a step that never got as far as creating a worktree)."""
+        with patch("subprocess.run") as mock_sub:
+            _remove_run_worktree("")
+        mock_sub.assert_not_called()
+
+    def test_remove_run_worktree_logs_on_failure(self, caplog):
+        """A cleanup failure must be recorded (STD-ARCH-014), not silently
+        swallowed -- an operator otherwise has zero signal a worktree was
+        never removed."""
+        with patch("subprocess.run", side_effect=OSError("boom")):
+            with caplog.at_level(logging.WARNING):
+                _remove_run_worktree("/some/worktree/path")
+        assert any("could not remove worktree" in r.message for r in caplog.records)
+
+    def test_create_run_worktree_error_includes_git_stderr(self, monkeypatch, tmp_path):
+        """str(subprocess.CalledProcessError) omits stderr even though
+        capture_output=True captured it -- the raised error must include the
+        actual git failure text so the :failed diagnostic comment is useful."""
+        monkeypatch.setattr(orch, "_WORKTREE_ROOT", tmp_path / "worktrees")
+
+        def _fake_run(cmd, **kwargs):
+            if cmd[:2] == ["git", "fetch"]:
+                raise subprocess.CalledProcessError(
+                    128, cmd, output="", stderr="fatal: couldn't find remote ref issue-999\n",
+                )
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        with patch("subprocess.run", side_effect=_fake_run):
+            with pytest.raises(RuntimeError, match="couldn't find remote ref issue-999"):
+                _create_run_worktree("issue-999")
+
+    def test_run_agent_fails_loud_when_worktree_setup_fails(self, monkeypatch):
+        """Scenario (#373 AC): pre-agent worktree setup failing must fail the
+        run loudly — no more silent fall-back onto the shared working tree.
+        """
+        monkeypatch.setattr(
+            orch, "_create_run_worktree",
+            MagicMock(side_effect=RuntimeError("git fetch failed")),
+        )
+        agent = AgentDef(
+            agent="03_execute/coder", phase="03_execute", objects=["issue"],
+            trigger={"label": "issue-classifier:complete"}, dependencies=[],
+            human_gate_after=False, human_gate_label=None, description="test coder",
+            commit_after=True,
+        )
+        wi = _make_work_item_with_labels(7, {"issue-classifier:complete"})
+        gh = _make_gh_mock()
+
+        (
+            result, sentinel_status, sentinel_message, pre_agent_worktree,
+            _invoked_at, _attempt, _exhausted, step_result,
+        ) = _run_agent(
+            agent, wi, False, "test/repo", set(wi.labels), "",
+            None, None, gh, {agent.agent: agent},
+        )
+
+        assert result.success is False, "a failed worktree setup must fail the run"
+        assert "worktree setup failed" in result.captured_tail
+        assert sentinel_status is None, (
+            "no sentinel — _apply_result must resolve this via its normal "
+            "'no valid result file' path (:failed)"
+        )
+        assert pre_agent_worktree == "", (
+            "nothing was created, so there is nothing for the caller to clean up"
+        )
+        assert step_result is None
+
+
+# ---------------------------------------------------------------------------
+# TestWorktreeIsolationPreventsCorruption (issue #373)
+#
+# Real-git integration test (no mocked subprocess): proves the actual
+# corruption scenario #373 describes -- two runs on different issue branches,
+# sharing one working tree, can clobber each other's HEAD -- cannot happen
+# once each run gets its own git worktree.
+# ---------------------------------------------------------------------------
+
+class TestWorktreeIsolationPreventsCorruption:
+    def _git(self, cwd, *args):
+        subprocess.run(
+            ["git", *args], cwd=str(cwd), check=True,
+            capture_output=True, text=True,
+        )
+
+    def test_two_worktrees_on_different_branches_never_share_head(self, tmp_path, monkeypatch):
+        """Given issue-501 and issue-502 both exist on origin, when each is
+        checked out into its own _create_run_worktree, then writing and
+        committing distinct content in each and pushing lands exactly that
+        content on its own branch -- neither worktree's HEAD ever moves the
+        other's, unlike the old shared-checkout `git checkout -B` race."""
+        origin = tmp_path / "origin.git"
+        self._git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+        main_clone = tmp_path / "main_clone"
+        self._git(tmp_path, "clone", str(origin), str(main_clone))
+        self._git(main_clone, "config", "user.email", "t@t")
+        self._git(main_clone, "config", "user.name", "t")
+        (main_clone / "README.md").write_text("base\n")
+        self._git(main_clone, "add", "-A")
+        self._git(main_clone, "commit", "-m", "initial")
+        self._git(main_clone, "push", "origin", "main")
+        self._git(main_clone, "checkout", "-b", "issue-501")
+        self._git(main_clone, "push", "origin", "issue-501")
+        self._git(main_clone, "checkout", "main")
+        self._git(main_clone, "checkout", "-b", "issue-502")
+        self._git(main_clone, "push", "origin", "issue-502")
+        self._git(main_clone, "checkout", "main")
+
+        monkeypatch.chdir(main_clone)
+        monkeypatch.setattr(orch, "_WORKTREE_ROOT", tmp_path / "worktrees")
+
+        path501 = _create_run_worktree("issue-501")
+        path502 = _create_run_worktree("issue-502")
+        try:
+            (Path(path501) / "A.txt").write_text("from issue-501\n")
+            self._git(path501, "add", "-A")
+            self._git(path501, "commit", "-m", "issue-501 change")
+            self._git(path501, "push", "origin", "issue-501")
+
+            (Path(path502) / "B.txt").write_text("from issue-502\n")
+            self._git(path502, "add", "-A")
+            self._git(path502, "commit", "-m", "issue-502 change")
+            self._git(path502, "push", "origin", "issue-502")
+
+            check = tmp_path / "check"
+            self._git(tmp_path, "clone", "--branch", "issue-501", str(origin), str(check / "501"))
+            self._git(tmp_path, "clone", "--branch", "issue-502", str(origin), str(check / "502"))
+
+            assert (check / "501" / "A.txt").exists()
+            assert not (check / "501" / "B.txt").exists(), (
+                "issue-502's change leaked onto issue-501's branch -- the "
+                "corruption #373 exists to prevent"
+            )
+            assert (check / "502" / "B.txt").exists()
+            assert not (check / "502" / "A.txt").exists(), (
+                "issue-501's change leaked onto issue-502's branch -- the "
+                "corruption #373 exists to prevent"
+            )
+        finally:
+            _remove_run_worktree(path501)
+            _remove_run_worktree(path502)
 
 
 # ---------------------------------------------------------------------------

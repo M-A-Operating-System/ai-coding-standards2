@@ -534,7 +534,7 @@ class TestAutoApproveOnCompleteDrivesProcessWorkItem:
         complete_result = AgentRunResult(success=True, returncode=0)
 
         def _invoke_writing_result(agent_def, work_item, dry_run, repo, attempt=0,
-                                    agent_text_override=None, default_extra_tools=None):
+                                    agent_text_override=None, default_extra_tools=None, cwd=None):
             # merge-conflict is an agent-type step (issue #400): it signals
             # outcome via a real result.json in its scratch dir, not a stdout
             # sentinel. Write one so the unmocked _read_step_result finds it.

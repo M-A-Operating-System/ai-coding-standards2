@@ -10,7 +10,7 @@
     "$schema": { "type": "string" },
     "budgets": {
       "type": "object",
-      "description": "Consumption limits: a default turn/wall-clock budget every agent-type step gets unless it declares its own override, and a pipeline-wide cap on how much work one tick starts. Moves AGENT_TIMEOUT_SECONDS, DEFAULT_MAX_TURNS and PIPELINE_MAX_CONCURRENT out of pipeline_orchestrator.py and into config (AS-1).",
+      "description": "Consumption limits: a default turn/wall-clock budget every agent-type step gets unless it declares its own override, and a pipeline-wide cap on how much work one tick starts. Moves AGENT_TIMEOUT_SECONDS, DEFAULT_MAX_TURNS and MAX_LAUNCHES_PER_TICK out of pipeline_orchestrator.py and into config (AS-1). max_launches_per_tick is a budget only -- concurrency safety is governed by component: label claiming (docs/product/orchestrator/PRODUCT.md, 'A component label lets unrelated work run at once'), not by this cap.",
       "additionalProperties": false,
       "required": ["max_turns", "max_wall_seconds"],
       "properties": {
@@ -226,12 +226,6 @@
               "description": "Label patterns this step may request be removed, to its own item or another named in the request."
             }
           }
-        },
-        "max_concurrent": {
-          "type": ["integer", "null"],
-          "minimum": 1,
-          "default": 1,
-          "description": "Maximum concurrent instances of this agent type across all work items in a single orchestrator tick. The orchestrator counts :wip labels before launching and skips eligible work items once this ceiling is reached. Null or absent means 1 (default). A pipeline-wide aggregate ceiling (see PIPELINE_MAX_CONCURRENT in pipeline_orchestrator.py for the authoritative value) applies across all agent types regardless of per-agent values."
         },
         "git_ops": {
           "type": "object",

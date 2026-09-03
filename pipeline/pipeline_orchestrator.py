@@ -83,6 +83,12 @@ STATUS_REQUESTED   = "requested"
 # Alias kept for internal use
 STATUS_IN_PROGRESS = STATUS_WIP
 
+# Prefix identifying a component-claim label on an issue (e.g. "component:auth").
+# Deliberately unvalidated -- no register of valid components anywhere; the
+# orchestrator only compares these labels for equality (PRODUCT.md, "A
+# component label lets unrelated work run at once").
+COMPONENT_LABEL_PREFIX = "component:"
+
 ALL_STATUSES: list[str] = [
     STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED,  # terminal — highest priority
     STATUS_REVIEW, STATUS_BLOCKED,                     # halt
@@ -139,13 +145,15 @@ STANDALONE_LABEL_COLOURS = {sl["label"]: sl["colour"] for sl in STANDALONE_LABEL
 # Maximum wall-clock time for a single script invocation.
 SCRIPT_TIMEOUT_SECONDS = 300
 
-# Maximum agent instances launched across ALL agent types in a single tick.
-# Prevents unbounded resource consumption when many issues become eligible
-# simultaneously. Per-agent max_concurrent values may permit more in total,
-# but this aggregate cap is the backstop.
+# How much work a single tick will start before it stops, so a burst of
+# eligible work (a hundred issues becoming eligible at once) does not consume
+# everything available in one pass. A budget, not a concurrency-safety
+# mechanism -- concurrent execution is governed by component-label claiming
+# (ComponentClaims, below), independently of how many of those starts can run
+# together (PRODUCT.md, "A component label lets unrelated work run at once").
 # Default only -- load_pipeline() overwrites this from pipeline.json's
 # budgets.max_launches_per_tick once the pipeline definition is loaded (AS-1).
-PIPELINE_MAX_CONCURRENT = 20
+MAX_LAUNCHES_PER_TICK = 20
 
 # Maximum wall-clock time for a single agent invocation, unless the step
 # declares its own override (AgentDef.max_wall_seconds).
@@ -192,7 +200,6 @@ class AgentDef:
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
-    max_concurrent: int = 1             # max concurrent instances across work items; null/absent in pipeline.json defaults to 1
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
     self_gates: bool = False  # if True, the agent's own AI_AGILE_STATUS (review vs complete) decides whether the gate fires -- :complete is NOT force-overridden to :review. human_gate_after/human_gate_label still apply for promotion when the agent itself emits :review.
@@ -295,17 +302,50 @@ class AgentRunResult:
 
 
 @dataclass
-class ConcurrencyState:
-    """Mutable concurrency accounting for one orchestrator tick.
+class ComponentClaims:
+    """Tracks which `component:` labels are currently claimed.
 
-    running_counts maps each agent label_key to the number of work items
-    currently carrying that agent's :wip label — initialised from work_items
-    fetched at the start of the tick, then incremented as agents are launched
-    within the tick. tick_launch_count tracks the total agents launched in this
-    tick against the pipeline-wide aggregate ceiling (PIPELINE_MAX_CONCURRENT).
+    PRODUCT.md, "A component label lets unrelated work run at once": before
+    starting an item, an orchestrator instance claims every `component:`
+    label the item names, all at once, and starts only if it can claim them
+    all -- an item never holds part of what it needs while waiting for the
+    rest, which is what keeps this from deadlocking. An untagged item claims
+    everything, so it runs exactly as sequentially as the pipeline did before
+    component claims existed.
+
+    `claimed` holds the individual component labels currently held by some
+    in-flight (or already-launched-this-tick) item; claims are disjoint by
+    construction, since an item only ever claims components nothing else
+    currently holds. `claims_everything` is True while an untagged item is
+    in flight -- nothing else may claim anything until it finishes, and it
+    itself may only start when nothing else is claimed.
+
+    tick_launch_count tracks agents launched in this tick against the
+    pipeline-wide per-tick budget (MAX_LAUNCHES_PER_TICK) -- unrelated to
+    claiming; it exists purely to bound how much one tick starts.
     """
-    running_counts: dict  # label_key → int
+    claimed: set = field(default_factory=set)
+    claims_everything: bool = False
     tick_launch_count: int = 0
+
+    def can_claim(self, components: "frozenset[str] | set[str]") -> bool:
+        if self.claims_everything:
+            return False
+        if not components:
+            return not self.claimed
+        return not (set(components) & self.claimed)
+
+    def claim(self, components: "frozenset[str] | set[str]") -> None:
+        if not components:
+            self.claims_everything = True
+        else:
+            self.claimed |= set(components)
+
+    def unclaim(self, components: "frozenset[str] | set[str]") -> None:
+        if not components:
+            self.claims_everything = False
+        else:
+            self.claimed -= set(components)
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +407,6 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
                 review_loop=entry.get("review_loop"),
-                max_concurrent=int(entry.get("max_concurrent") or 1),
                 script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
                 self_gates=bool(entry.get("self_gates", False)),
@@ -409,13 +448,13 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
         # values -- they used to be hardcoded module constants. Mutating the
         # globals here (rather than threading a return value through every
         # caller) keeps every existing reference to DEFAULT_MAX_TURNS /
-        # AGENT_TIMEOUT_SECONDS / PIPELINE_MAX_CONCURRENT unchanged; only their
+        # AGENT_TIMEOUT_SECONDS / MAX_LAUNCHES_PER_TICK unchanged; only their
         # source of truth moves.
-        global DEFAULT_MAX_TURNS, AGENT_TIMEOUT_SECONDS, PIPELINE_MAX_CONCURRENT
+        global DEFAULT_MAX_TURNS, AGENT_TIMEOUT_SECONDS, MAX_LAUNCHES_PER_TICK
         _budgets = raw["budgets"]
         DEFAULT_MAX_TURNS = int(_budgets["max_turns"])
         AGENT_TIMEOUT_SECONDS = int(_budgets["max_wall_seconds"])
-        PIPELINE_MAX_CONCURRENT = int(_budgets.get("max_launches_per_tick", PIPELINE_MAX_CONCURRENT))
+        MAX_LAUNCHES_PER_TICK = int(_budgets.get("max_launches_per_tick", MAX_LAUNCHES_PER_TICK))
 
         return agents, default_extra_tools
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -427,21 +466,65 @@ def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
     return {a.agent: a for a in agents}
 
 
-def _count_running(work_items: list[WorkItem], agents: list[AgentDef]) -> dict[str, int]:
-    """Count work items carrying each agent's :wip label at tick start.
+def _work_item_components(work_item: WorkItem) -> frozenset[str]:
+    """The `component:` labels a work item carries.
 
-    Returns a dict from agent label_key to count. Used to initialise
-    ConcurrencyState so the per-agent ceiling accounts for instances already
-    running from a prior orchestrator tick before this one started.
+    Empty means untagged -- PRODUCT.md: an untagged item claims everything.
     """
-    counts: dict[str, int] = {}
-    for agent_def in agents:
-        key = agent_def.label_key
-        counts[key] = sum(
-            1 for wi in work_items
-            if agent_def.in_progress_label in wi.labels
+    return frozenset(lbl for lbl in work_item.labels if lbl.startswith(COMPONENT_LABEL_PREFIX))
+
+
+def _is_in_flight(work_item: WorkItem) -> bool:
+    """True if the item carries any agent's :wip status label."""
+    return any(lbl.endswith(f":{STATUS_WIP}") for lbl in work_item.labels)
+
+
+def _seed_component_claims(work_items: list[WorkItem]) -> ComponentClaims:
+    """Settled component-claim state at headless tick start.
+
+    Every item already carrying some agent's :wip label (left running by a
+    prior tick) has its components claimed, so this tick's eligibility checks
+    account for them from the first item evaluated.
+    """
+    claims = ComponentClaims()
+    for wi in work_items:
+        if _is_in_flight(wi):
+            claims.claim(_work_item_components(wi))
+    return claims
+
+
+def _fresh_component_claims(gh: "GitHubClient", exclude_number: int) -> ComponentClaims:
+    """Interactive mode: read every OTHER in-flight item's component labels
+    fresh from GitHub.
+
+    Interactive is genuinely several unserialised processes (PRODUCT.md, "A
+    component label lets unrelated work run at once") -- a settled in-memory
+    snapshot from this process's own tick start could miss a sibling
+    `/maos-{agent}` invocation that started after that snapshot was taken, so
+    this reads the current label state directly instead of trusting it.
+
+    Fail-closed (STD-ARCH-014, MI-7 pattern): an API error refuses every
+    claim (claims_everything=True) rather than silently proceeding as if
+    nothing were in flight, since the latter could commit two runs onto the
+    same component. The caller sees "no claim available" and the item is
+    simply re-checked next time.
+    """
+    claims = ComponentClaims()
+    try:
+        items = gh.list_open_issues(kind="all")
+    except Exception as exc:
+        log.warning(
+            "could not fetch fresh component claims (%s) — refusing to claim "
+            "(fail-closed)", exc,
         )
-    return counts
+        claims.claims_everything = True
+        return claims
+    for item in items:
+        if item.number == exclude_number:
+            continue
+        if _is_in_flight(item):
+            claims.claim(_work_item_components(item))
+    return claims
 
 
 # ---------------------------------------------------------------------------
@@ -2781,6 +2864,8 @@ def invoke_script(
     work_item: WorkItem,
     dry_run: bool,
     repo: str,
+    *,
+    cwd: Optional[str] = None,
 ) -> AgentRunResult:
     """Invoke a script-type pipeline step directly via bash.
 
@@ -2788,6 +2873,10 @@ def invoke_script(
     ($REPO, $ISSUE_NUMBER / $PR_NUMBER, $WORK_ITEM_KIND, etc.) and must
     emit AI_AGILE_STATUS: complete|review|blocked as the last output line.
     The orchestrator reads the sentinel and applies the matching label.
+
+    cwd (#373): for a commit_after step, the isolated worktree the script
+    should run in instead of the orchestrator's own working directory. None
+    for every other step.
 
     No Claude CLI is invoked. Rate-limit detection is not applicable.
     """
@@ -2820,7 +2909,10 @@ def invoke_script(
     agent_env = {  # STD-SEC-022
         **{k: os.environ[k] for k in _step_env_vars if k in os.environ},
         "STATUS_SH":        str(STATUS_SH),
-        "AI_AGILE_ROOT":    os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
+        # cwd (#373): a commit_after script step's isolated worktree, so a
+        # script that reads AI_AGILE_ROOT operates on the same tree it was
+        # actually spawned in rather than the orchestrator's own checkout.
+        "AI_AGILE_ROOT":    cwd or os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO":             repo,
         "WORK_ITEM_KIND":   work_item.kind,
@@ -2847,6 +2939,7 @@ def invoke_script(
             stderr=subprocess.STDOUT,
             text=True,
             env=agent_env,
+            cwd=cwd,
         )
         deadline = time.monotonic() + agent_def.script_timeout_seconds
         try:
@@ -3182,6 +3275,8 @@ def _build_agent_env(
     work_item: WorkItem,
     agent_session_id: str,
     session_scope: str,
+    *,
+    ai_agile_root: Optional[str] = None,
 ) -> dict[str, str]:
     """Build the environment for a Claude agent subprocess.
 
@@ -3190,13 +3285,22 @@ def _build_agent_env(
     (AI_AGILE_BOT_TOKEN, GIT_CONFIG_* git-auth header) are never inherited by a
     potentially prompt-injected agent. The work-item context vars are then set
     explicitly, matching what agents document in AGENTS.md.
+
+    ai_agile_root (#373): for a commit_after step, the isolated worktree the
+    agent should treat as its repo root -- agent prompts document `cd
+    $AI_AGILE_ROOT && <command>` as the idiom for a granted Bash command that
+    needs to run repo-relative, so this must point at the same directory the
+    subprocess itself is spawned in (its `cwd`); otherwise that idiom would
+    `cd` an agent straight out of its isolated worktree and back onto the
+    orchestrator's own shared checkout, defeating the isolation. None for
+    every other step (falls back to base_env's AI_AGILE_ROOT / SUBMODULE_ROOT).
     """
     agent_env = {k: base_env[k] for k in AGENT_ENV_PASSTHROUGH if k in base_env}
     # Export resolved paths so the agent prompt's bash snippets work regardless
     # of CWD or where this repo is mounted in the consuming repo. Only one of
     # ISSUE_NUMBER / PR_NUMBER is set, matching the work item's kind, so the
     # agent's prompt cannot get them confused.
-    agent_env["AI_AGILE_ROOT"] = base_env.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
+    agent_env["AI_AGILE_ROOT"] = ai_agile_root or base_env.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
     agent_env["AI_AGILE_CONTEXT"] = str(AI_AGILE_CONTEXT)
     agent_env["REPO"] = repo
     agent_env["WORK_ITEM_KIND"] = work_item.kind
@@ -3318,6 +3422,8 @@ def _resolve_agent_invocation(
     repo: str,
     agent_text_override: Optional[str] = None,
     default_extra_tools: Optional[list[str]] = None,
+    *,
+    cwd: Optional[str] = None,
 ) -> Optional["ResolvedInvocation"]:
     """Resolve an agent invocation's prompt and tool allowlist without spawning.
 
@@ -3325,6 +3431,11 @@ def _resolve_agent_invocation(
     This is the single source of truth for prompt assembly and tool allowlist
     construction -- both invoke_agent (real spawn) and the resolve-only
     --print-prompt path call this so the two can never drift apart.
+
+    cwd (#373): for a commit_after step, the isolated worktree this
+    invocation will run in -- the prompt's own `AI_AGILE_ROOT=` line must
+    match it (see _build_agent_env's ai_agile_root docstring for why). None
+    for every other step.
     """
     agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
 
@@ -3367,7 +3478,7 @@ def _resolve_agent_invocation(
         f"WORK_ITEM_KIND={work_item.kind}\n"
         f"SESSION_ID={agent_session_id.strip()}\n"
         f"SESSION_SCOPE={agent_def.session_scope.strip()}\n"
-        f"AI_AGILE_ROOT={os.environ.get('AI_AGILE_ROOT', str(SUBMODULE_ROOT)).strip()}\n"
+        f"AI_AGILE_ROOT={(cwd or os.environ.get('AI_AGILE_ROOT', str(SUBMODULE_ROOT))).strip()}\n"
         f"AI_AGILE_CONTEXT={str(AI_AGILE_CONTEXT).strip()}\n\n"
         f"Before exiting, write your result to $AI_AGILE_SCRATCH/{_RESULT_FILENAME} "
         f"(use the Write tool — see AGENTS.md's \"How you communicate\" for why). "
@@ -3405,9 +3516,15 @@ def invoke_agent(
     attempt: int = 0,
     agent_text_override: Optional[str] = None,
     default_extra_tools: Optional[list[str]] = None,
+    *,
+    cwd: Optional[str] = None,
 ) -> AgentRunResult:
     """
     Invoke the agent via claude CLI.
+
+    cwd (#373): for a commit_after step, the isolated worktree the agent
+    should run in instead of the orchestrator's own working directory. None
+    for every other step.
 
     Agents signal their outcome by writing one structured result to
     $AI_AGILE_SCRATCH/result.json (issue #400) -- see _read_step_result and
@@ -3427,7 +3544,8 @@ def invoke_agent(
     run.
     """
     resolved = _resolve_agent_invocation(
-        agent_def, work_item, repo, agent_text_override, default_extra_tools
+        agent_def, work_item, repo, agent_text_override, default_extra_tools,
+        cwd=cwd,
     )
     if resolved is None:
         agent_file = SUBMODULE_ROOT / ".claude/agents" / f"{agent_def.agent}.md"
@@ -3443,8 +3561,11 @@ def invoke_agent(
     # Build env with headless execution mode -- every orchestrator-spawned
     # subprocess is axis-B headless regardless of the tick's trigger source.
     # _build_agent_env already sets AI_AGILE_EXECUTION_MODE="headless".
+    # ai_agile_root=cwd keeps AI_AGILE_ROOT consistent with the subprocess's
+    # actual working directory (#373) -- see _build_agent_env's docstring.
     agent_env = _build_agent_env(
-        os.environ, repo, work_item, agent_session_id, agent_def.session_scope
+        os.environ, repo, work_item, agent_session_id, agent_def.session_scope,
+        ai_agile_root=cwd,
     )
 
     # Run the declared "before" scripts. Inside invoke_agent, so each retry gets
@@ -3550,6 +3671,7 @@ def invoke_agent(
             stderr=subprocess.STDOUT,
             text=True,
             env=agent_env,
+            cwd=cwd,
         )
         deadline = time.monotonic() + wall_seconds
         # Wall-clock timer fires unconditionally — unlike the per-line check
@@ -3977,14 +4099,80 @@ def _apply_exhausted(gh: "GitHubClient", agent_def: AgentDef, work_item: WorkIte
 # Core orchestration logic
 # ---------------------------------------------------------------------------
 
-def _restore_pre_agent_branch(branch: str) -> None:
-    """Restore the git branch saved before a pre-agent checkout, if any."""
-    if not branch:
-        return
+# Per-run git worktree isolation (issue #373, #404). Each commit_after run
+# checks out its issue branch into its own worktree here rather than the
+# orchestrator's own shared checkout, so a concurrent run on a different
+# issue cannot move this run's HEAD out from under it. Nested under
+# .claude/worktrees/ (already gitignored for Claude Code's own background-
+# agent worktrees) with an "orchestrator" subdirectory so the two unrelated
+# mechanisms never collide on the same path.
+_WORKTREE_ROOT = SUBMODULE_ROOT / ".claude" / "worktrees" / "orchestrator"
+
+
+def _run_worktree_path(issue_branch: str) -> Path:
+    """Deterministic worktree directory for one issue branch."""
+    _safe = re.sub(r"[^A-Za-z0-9._-]", "-", issue_branch)
+    return _WORKTREE_ROOT / _safe
+
+
+def _create_run_worktree(issue_branch: str) -> str:
+    """Create an isolated git worktree checked out to `issue_branch`.
+
+    Fetches the branch, then `git worktree add`s it into its own directory
+    (rather than checking it out in the orchestrator's own shared working
+    tree) so a concurrent run on a different issue cannot move this run's
+    HEAD (#373). Raises on any failure -- the caller must fail the run
+    loudly rather than fall back to the shared working tree.
+    """
+    _WORKTREE_ROOT.mkdir(parents=True, exist_ok=True)
+    path = _run_worktree_path(issue_branch)
+    if path.exists():
+        # Debris from a run killed mid-flight -- SIGTERM cleanup
+        # (_clear_inflight_wip_on_signal) is best-effort, so a prior worktree
+        # may still be registered here. Clear it before adding a fresh one
+        # rather than colliding with it.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(path)],
+            check=False, capture_output=True,
+        )
+        shutil.rmtree(path, ignore_errors=True)
+    subprocess.run(["git", "worktree", "prune"], check=False, capture_output=True)
     try:
-        subprocess.run(["git", "checkout", branch], check=False, capture_output=True)
-    except Exception:
-        pass
+        subprocess.run(
+            ["git", "fetch", "origin", issue_branch],
+            check=True, capture_output=True, text=True,
+        )
+        subprocess.run(
+            ["git", "worktree", "add", "--force", "-B", issue_branch, str(path), f"origin/{issue_branch}"],
+            check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        # str(CalledProcessError) omits stderr even though capture_output=True
+        # captured it -- without this, the :failed diagnostic comment a human
+        # reads never shows the actual git error.
+        raise RuntimeError(f"{exc}: {(exc.stderr or '').strip()}") from exc
+    global _CURRENT_WORKTREE
+    _CURRENT_WORKTREE = str(path)
+    return str(path)
+
+
+def _remove_run_worktree(path: str) -> None:
+    """Tear down a worktree created by _create_run_worktree. Best-effort --
+    cleanup must never raise, since it runs on every break path after the
+    run's own outcome has already been decided."""
+    if not path:
+        return
+    global _CURRENT_WORKTREE
+    try:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", path],
+            check=False, capture_output=True,
+        )
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception as exc:
+        log.warning("could not remove worktree %s: %s", path, exc)
+    if _CURRENT_WORKTREE == path:
+        _CURRENT_WORKTREE = None
 
 
 def _should_run(
@@ -3992,14 +4180,15 @@ def _should_run(
     work_item: WorkItem,
     labels: set,
     pipeline_map: dict,
-    concurrency: Optional[ConcurrencyState],
+    concurrency: Optional[ComponentClaims],
     gh=None,
     repo: str = "",
 ) -> Optional[bool]:
     """Evaluate whether an agent should be dispatched for a work item.
 
     Returns True to dispatch, False to skip (continue to next agent),
-    or None to stop processing agents for this work item (aggregate ceiling hit).
+    or None to stop processing agents for this work item (per-tick launch
+    budget hit).
     """
     if work_item.kind not in agent_def.objects:
         return False
@@ -4060,18 +4249,24 @@ def _should_run(
         return False
 
     if concurrency is not None:
-        _running = concurrency.running_counts.get(agent_def.label_key, 0)
-        if _running >= agent_def.max_concurrent:
+        _components = _work_item_components(work_item)
+        # Headless is one process at a time (only one tick ever runs, per
+        # PRODUCT.md's own concurrency guarantee), so its settled in-memory
+        # claims are trustworthy. Interactive is genuinely several
+        # unserialised processes, so it reads GitHub's labels fresh instead
+        # of trusting this process's own possibly-stale snapshot.
+        _claims = concurrency if _HEADLESS else _fresh_component_claims(gh, work_item.number)
+        if not _claims.can_claim(_components):
             log.info(
-                "  skip %-40s  [per-agent concurrency: %d/%d running]",
-                agent_def.agent, _running, agent_def.max_concurrent,
+                "  wait %-40s  [component claim unavailable: %s]",
+                agent_def.agent, ", ".join(sorted(_components)) or "untagged (claims everything)",
             )
             return False
-        # Aggregate pipeline ceiling: stop the loop when hit.
-        if concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+        # Per-tick launch budget: stop the loop when hit.
+        if concurrency.tick_launch_count >= MAX_LAUNCHES_PER_TICK:
             log.info(
-                "  ceiling %-38s  [pipeline max-concurrent: %d/%d launched this tick]",
-                agent_def.agent, concurrency.tick_launch_count, PIPELINE_MAX_CONCURRENT,
+                "  ceiling %-38s  [max launches per tick: %d/%d launched this tick]",
+                agent_def.agent, concurrency.tick_launch_count, MAX_LAUNCHES_PER_TICK,
             )
             return None
 
@@ -4085,15 +4280,15 @@ def _acquire_wip_and_announce(
     manual_trigger: bool,
     repo: str,
     labels: set,
-    concurrency: Optional[ConcurrencyState],
+    concurrency: Optional[ComponentClaims],
     gh: "GitHubClient",
     pipeline_map: dict,
 ) -> None:
     """Pre-invocation ceremony: remove :requested, apply :wip, announce, cycle++.
 
-    Applies the :wip status label and bumps concurrency counters (live or dry-run),
-    posts the opening announcement, and increments review-cycle:N for re_invoke
-    targets. Mutates labels and work_item.labels in-place.
+    Applies the :wip status label and claims the item's components (live or
+    dry-run), posts the opening announcement, and increments review-cycle:N
+    for re_invoke targets. Mutates labels and work_item.labels in-place.
     """
     if not dry_run:
         # Remove :requested before applying :wip so the work item never
@@ -4115,12 +4310,10 @@ def _acquire_wip_and_announce(
             # rather than stranding the mutex (see _clear_inflight_wip_on_signal).
             global _CURRENT_WIP
             _CURRENT_WIP = (gh, work_item.number, agent_def.status_label(STATUS_WIP))
-            # Increment only on successful label application — a failed
-            # add_label means no :wip was set so no slot is consumed.
+            # Claim only on successful label application — a failed
+            # add_label means no :wip was set so nothing is actually running.
             if concurrency is not None:
-                concurrency.running_counts[agent_def.label_key] = (
-                    concurrency.running_counts.get(agent_def.label_key, 0) + 1
-                )
+                concurrency.claim(_work_item_components(work_item))
                 concurrency.tick_launch_count += 1
         except Exception as exc:
             log.error(
@@ -4172,12 +4365,10 @@ def _acquire_wip_and_announce(
                 )
 
     else:
-        # dry_run: skip :wip ceremony but advance counters so simulated output
-        # respects per-agent and aggregate ceilings.
+        # dry_run: skip :wip ceremony but advance claims so simulated output
+        # respects component-claim exclusion and the per-tick launch budget.
         if concurrency is not None:
-            concurrency.running_counts[agent_def.label_key] = (
-                concurrency.running_counts.get(agent_def.label_key, 0) + 1
-            )
+            concurrency.claim(_work_item_components(work_item))
             concurrency.tick_launch_count += 1
 
 
@@ -4189,6 +4380,8 @@ def _invoke_with_retries(
     gh: "GitHubClient",
     default_extra_tools: Optional[list],
     agent_text_snapshot: Optional[str],
+    *,
+    cwd: Optional[str] = None,
 ) -> tuple:
     """Invoke an agent, retrying on a crashed/malformed result up to max_retries.
 
@@ -4199,6 +4392,10 @@ def _invoke_with_retries(
     events also break immediately without applying :failed or :exhausted;
     the run never got a fair try. Reads the step's result file after every
     attempt. Returns (result, step_result, exhausted, attempt).
+
+    cwd (#373): for a commit_after step, the isolated worktree the agent
+    should run in instead of the orchestrator's own working directory. None
+    for every other step.
     """
     scratch_dir = _scratch_path(_compute_agent_session_id(agent_def, work_item, repo))
     step_result: Optional[StepResult] = None
@@ -4210,6 +4407,7 @@ def _invoke_with_retries(
         agent_def, work_item, dry_run, repo, attempt=0,
         agent_text_override=agent_text_snapshot,
         default_extra_tools=default_extra_tools,
+        cwd=cwd,
     )
     while not dry_run:
         if result.rate_limited:
@@ -4240,6 +4438,7 @@ def _invoke_with_retries(
             agent_def, work_item, dry_run, repo, attempt=_attempt,
             agent_text_override=agent_text_snapshot,
             default_extra_tools=default_extra_tools,
+            cwd=cwd,
         )
         if result.rate_limited:
             break
@@ -4255,7 +4454,7 @@ def _run_agent(
     labels: set,
     session_id: str,
     default_extra_tools: Optional[list],
-    concurrency: Optional[ConcurrencyState],
+    concurrency: Optional[ComponentClaims],
     gh: "GitHubClient",
     pipeline_map: dict,
     *,
@@ -4280,16 +4479,25 @@ def _run_agent(
     chat-AI working through the step's instructions under --print-prompt.
     A missing or invalid file resolves exactly like a crashed subprocess
     (step_result is None -> :failed at _apply_result, never silently
-    skipped). The commit_after pre-dispatch branch checkout below is skipped
-    in this mode: it exists to stage a subprocess onto the right branch
-    before it starts editing, and running it here — after a person has
-    already made their edits directly in their own session — would fetch and
-    hard-reset onto origin's copy of the branch, discarding that work.
+    skipped). The commit_after pre-dispatch worktree setup below is skipped
+    in this mode: it exists to stage a subprocess onto the right branch, in
+    its own isolated tree, before it starts editing, and running it here —
+    after a person has already made their edits directly in their own
+    session — would fetch and hard-reset onto origin's copy of the branch,
+    discarding that work.
+
+    A commit_after run operates in its own git worktree, not the
+    orchestrator's own shared checkout (#373): two concurrent runs on
+    different issues each get their own working directory, so neither can
+    move the other's HEAD. Worktree setup failure fails the run loudly
+    (returns a failure result with no sentinel, which _apply_result resolves
+    as :failed) rather than falling back to running on whatever branch the
+    orchestrator's own tree happens to be on.
 
     Modifies labels and work_item.labels in-place (review-cycle tracking).
 
     Returns: (result, sentinel_status, sentinel_message,
-              pre_agent_branch, invoked_at, attempt, exhausted, step_result)
+              pre_agent_worktree, invoked_at, attempt, exhausted, step_result)
     """
     log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
 
@@ -4320,30 +4528,38 @@ def _run_agent(
         _agent_file_path.read_text() if _agent_file_path.exists() else None
     )
 
-    # For commit_after agents, check out the issue branch before invoking so
-    # the agent reads accumulated state. commit-agent-work.sh handles staging,
-    # commit, and push. Guard: only for issue work items (ISSUE_NUMBER required).
-    # Skipped under interactive_result — see this function's docstring.
-    _pre_agent_branch: str = ""
+    # For commit_after agents, check out the issue branch into its own
+    # isolated worktree before invoking, so the agent reads accumulated state
+    # without disturbing (or being disturbed by) a concurrent run on a
+    # different issue (#373). commit-agent-work.sh handles staging, commit,
+    # and push, run from that same worktree. Guard: only for issue work items
+    # (ISSUE_NUMBER required). Skipped under interactive_result — see this
+    # function's docstring.
+    _pre_agent_worktree: str = ""
+    _agent_cwd: Optional[str] = None
     if not dry_run and agent_def.commit_after and work_item.kind == "issue" and not interactive_result:
+        _issue_branch = f"issue-{work_item.number}{agent_def.branch_suffix}"
         try:
-            _pre_agent_branch = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True, check=True,
-            ).stdout.strip()
-            _issue_branch = f"issue-{work_item.number}{agent_def.branch_suffix}"
-            subprocess.run(["git", "fetch", "origin", _issue_branch], check=True)
-            subprocess.run(
-                ["git", "checkout", "-B", _issue_branch, f"origin/{_issue_branch}"],
-                check=True,
+            _pre_agent_worktree = _create_run_worktree(_issue_branch)
+            _agent_cwd = _pre_agent_worktree
+            log.info(
+                "  pre-agent: worktree for %s checked out at %s for %s",
+                _issue_branch, _pre_agent_worktree, agent_def.agent,
             )
-            log.info("  pre-agent: checked out %s for %s", _issue_branch, agent_def.agent)
         except Exception as _pre_exc:
-            log.warning(
-                "  pre-agent branch checkout failed for %s: %s — running on current branch",
-                agent_def.agent, _pre_exc,
+            log.error(
+                "  pre-agent worktree setup failed for %s on #%d: %s — "
+                "failing the run rather than falling back to the shared "
+                "working tree (#373)",
+                agent_def.agent, work_item.number, _pre_exc,
             )
-            _pre_agent_branch = ""  # don't attempt restoration if checkout failed
+            return (
+                AgentRunResult(
+                    success=False,
+                    captured_tail=f"pre-agent worktree setup failed: {_pre_exc}",
+                ),
+                None, "", "", _invoked_at, 0, False, None,
+            )
 
     # Snapshot repo-root untracked files so anything the agent adds there
     # can be swept afterwards (issue #376).
@@ -4356,7 +4572,7 @@ def _run_agent(
     _attempt = 0
 
     if agent_def.step_type == "script":
-        result = invoke_script(agent_def, work_item, dry_run, repo)
+        result = invoke_script(agent_def, work_item, dry_run, repo, cwd=_agent_cwd)
         if not dry_run:
             sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
     elif interactive_result:
@@ -4391,7 +4607,7 @@ def _run_agent(
     else:
         result, step_result, exhausted, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
-            default_extra_tools, _agent_text_snapshot,
+            default_extra_tools, _agent_text_snapshot, cwd=_agent_cwd,
         )
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
@@ -4411,7 +4627,7 @@ def _run_agent(
         )
 
     return (
-        result, sentinel_status, sentinel_message, _pre_agent_branch,
+        result, sentinel_status, sentinel_message, _pre_agent_worktree,
         _invoked_at, _attempt, exhausted, step_result,
     )
 
@@ -4589,8 +4805,13 @@ _COMMIT_AFTER_ENV_VARS = (
 )
 
 
-def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[str]:
+def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional[str] = None) -> Optional[str]:
     """Run commit-agent-work.sh for a `commit_after` agent.
+
+    cwd (#373): the isolated worktree this run's agent invocation used, so
+    commit-agent-work.sh stages and commits the files that were actually
+    edited there rather than whatever the orchestrator's own working
+    directory happens to hold.
 
     Returns a human-readable failure reason, or None on success. The caller
     owns the label/branch side-effects on failure.
@@ -4615,7 +4836,7 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem) -> Optional[s
     try:
         _commit_result = subprocess.run(
             ["bash", str(_commit_script)],
-            env=_commit_env, capture_output=True, text=True, timeout=300,
+            env=_commit_env, capture_output=True, text=True, timeout=300, cwd=cwd,
         )
     except subprocess.TimeoutExpired:
         log.error(
@@ -4769,8 +4990,8 @@ def _finalize_run_failure(
 ) -> None:
     """Apply :failed for a non-zero exit with no sentinel, and emit agent.failed.
 
-    Covers the retry-exhausted and never-retried cases. The caller owns branch
-    restoration and the early return.
+    Covers the retry-exhausted and never-retried cases. The caller owns
+    worktree cleanup and the early return.
     """
     # Non-zero exit, no sentinel — retries exhausted (or not configured).
     if attempt > 0:
@@ -5080,11 +5301,11 @@ def _apply_result(
     result: AgentRunResult,
     sentinel_status: Optional[str],
     sentinel_message: str,
-    pre_agent_branch: str,
+    pre_agent_worktree: str,
     invoked_at: float,
     attempt: int,
     labels: set,
-    concurrency: Optional[ConcurrencyState],
+    concurrency: Optional[ComponentClaims],
     gh: "GitHubClient",
     session_id: str,
     repo: str,
@@ -5105,8 +5326,8 @@ def _apply_result(
     announcement, gate prompt, requested label-change application, label
     refresh, audit event, PR ready promotion, and per-cycle metrics (issue #121).
 
-    Calls _restore_pre_agent_branch on every break path before returning True.
-    The caller (process_work_item) calls _restore_pre_agent_branch on the
+    Calls _remove_run_worktree on every break path before returning True.
+    The caller (process_work_item) calls _remove_run_worktree on the
     non-break path after this function returns False.
 
     Returns True if the agent loop should stop (break), False to continue.
@@ -5126,7 +5347,7 @@ def _apply_result(
             is_error_override=True,
         )
         _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
-        _restore_pre_agent_branch(pre_agent_branch)
+        _remove_run_worktree(pre_agent_worktree)
         return True
     elif agent_def.step_type == "script" and result.success:
         # Script-type steps are unaffected by issue #400 — they meet the
@@ -5148,13 +5369,13 @@ def _apply_result(
             is_error_override=True,
         )
         _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
-        _restore_pre_agent_branch(pre_agent_branch)
+        _remove_run_worktree(pre_agent_worktree)
         return True
 
     # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
     # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
     if final_status == STATUS_COMPLETE and agent_def.commit_after and work_item.kind == "issue":
-        _commit_fail_reason = _invoke_commit_after(agent_def, work_item)
+        _commit_fail_reason = _invoke_commit_after(agent_def, work_item, cwd=pre_agent_worktree or None)
         if _commit_fail_reason:
             _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
             final_status = STATUS_FAILED
@@ -5168,7 +5389,7 @@ def _apply_result(
                 is_error_override=True,
             )
             _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
-            _restore_pre_agent_branch(pre_agent_branch)
+            _remove_run_worktree(pre_agent_worktree)
             return True
 
     # Edge case (issue #100): pr-reviewer APPROVEs (STATUS_COMPLETE) but
@@ -5266,7 +5487,7 @@ def _apply_result(
                 human_reviews=_human_review_list if _human_review_override else None,
             )
             work_item.labels = labels_refreshed
-        _restore_pre_agent_branch(pre_agent_branch)
+        _remove_run_worktree(pre_agent_worktree)
         return True
 
     return False
@@ -5282,7 +5503,7 @@ def process_work_item(
     *,
     session_id: str = "",
     default_extra_tools: Optional[list[str]] = None,
-    concurrency: Optional[ConcurrencyState] = None,
+    concurrency: Optional[ComponentClaims] = None,
     interactive_result: bool = False,
 ) -> int:
     """Evaluate all agents against a single issue or PR.
@@ -5335,7 +5556,7 @@ def process_work_item(
         _timestamp_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         (
-            result, sentinel_status, sentinel_message, pre_branch, invoked_at,
+            result, sentinel_status, sentinel_message, pre_worktree, invoked_at,
             attempt, exhausted, step_result,
         ) = _run_agent(
             agent_def, work_item, dry_run, repo, labels,
@@ -5359,20 +5580,18 @@ def process_work_item(
                     gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
                 except Exception:
                     pass
-                # Roll back in-memory concurrency counts: the :wip was removed,
-                # so the slot is free again. Without this the per-agent and
-                # aggregate ceilings would over-count for the rest of the tick.
+                # Roll back the in-memory claim: the :wip was removed, so the
+                # component is free again. Without this the claim and the
+                # per-tick launch budget would over-count for the rest of the tick.
                 if concurrency is not None:
-                    concurrency.running_counts[agent_def.label_key] = max(
-                        0, concurrency.running_counts.get(agent_def.label_key, 0) - 1
-                    )
+                    concurrency.unclaim(_work_item_components(work_item))
                     concurrency.tick_launch_count = max(0, concurrency.tick_launch_count - 1)
-                _restore_pre_agent_branch(pre_branch)
+                _remove_run_worktree(pre_worktree)
                 break
 
             stop = _apply_result(
                 agent_def, work_item, result, sentinel_status, sentinel_message,
-                pre_branch, invoked_at, attempt, labels, concurrency,
+                pre_worktree, invoked_at, attempt, labels, concurrency,
                 gh, session_id, repo, pipeline_map,
                 dry_run=dry_run, cycle_id=_cycle_id,
                 timestamp_start=_timestamp_start, timestamp_end=_timestamp_end,
@@ -5384,7 +5603,7 @@ def process_work_item(
                 break
                 break
 
-        _restore_pre_agent_branch(pre_branch)
+        _remove_run_worktree(pre_worktree)
         triggered += 1
 
     return triggered
@@ -5608,7 +5827,7 @@ class RunContext:
     agents: list
     pipeline_map: dict
     work_items: list
-    concurrency: ConcurrencyState
+    concurrency: ComponentClaims
     repo: str
     session_id: str
     dry_run: bool
@@ -6169,13 +6388,17 @@ def _wake(args) -> "Optional[RunContext]":
             outcome_detail=f"evaluating {len(work_items)} work item(s)",
         ))
 
-    # Build concurrency state from labels fetched above. running_counts reflects
-    # agents started in prior ticks that are still :wip; tick_launch_count will
-    # accumulate launches within this tick against PIPELINE_MAX_CONCURRENT.
-    conc = ConcurrencyState(running_counts=_count_running(work_items, agents))
-    _active = {k: v for k, v in conc.running_counts.items() if v > 0}
-    if _active:
-        log.info("Running at tick start (prior-tick :wip): %s", _active)
+    # Seed component claims from labels fetched above: items already carrying
+    # some agent's :wip label (left running by a prior tick) have their
+    # components claimed before this tick evaluates anything. tick_launch_count
+    # starts at 0 and accumulates launches within this tick against
+    # MAX_LAUNCHES_PER_TICK.
+    conc = _seed_component_claims(work_items)
+    if conc.claimed or conc.claims_everything:
+        log.info(
+            "Running at tick start (prior-tick :wip): claimed=%s claims_everything=%s",
+            sorted(conc.claimed), conc.claims_everything,
+        )
 
     return RunContext(
         gh=gh, agents=agents, pipeline_map=pipeline_map, work_items=work_items,
@@ -6286,13 +6509,13 @@ def _check_epic_completions(ctx: "RunContext") -> None:
 
 def _do_work(ctx: "RunContext") -> int:
     """Do the work: evaluate each work item, honouring the pipeline-wide
-    aggregate concurrency ceiling. Returns the number of agents triggered."""
+    per-tick launch budget. Returns the number of agents triggered."""
     total_triggered = 0
     for item in ctx.work_items:
-        if not ctx.dry_run and ctx.concurrency.tick_launch_count >= PIPELINE_MAX_CONCURRENT:
+        if not ctx.dry_run and ctx.concurrency.tick_launch_count >= MAX_LAUNCHES_PER_TICK:
             log.info(
-                "Pipeline aggregate ceiling (%d) reached — deferring remaining work items to next tick.",
-                PIPELINE_MAX_CONCURRENT,
+                "Per-tick launch budget (%d) reached — deferring remaining work items to next tick.",
+                MAX_LAUNCHES_PER_TICK,
             )
             break
         n = process_work_item(
@@ -6327,13 +6550,23 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
 # clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
 _CURRENT_WIP = None
 
+# Set to the absolute path of the isolated worktree (see _create_run_worktree)
+# while a commit_after run is mid-flight, so a termination signal can remove
+# it rather than leaving debris and a stale registration behind. Cleared by
+# _remove_run_worktree once the run's own cleanup runs normally.
+_CURRENT_WORKTREE = None
+
 
 def _clear_inflight_wip_on_signal(signum, _frame) -> None:
-    """Best-effort: drop the in-flight :wip label, then exit.
+    """Best-effort: drop the in-flight :wip label and worktree, then exit.
 
     A killed tick (SIGTERM/SIGINT) otherwise leaves the work item stuck at :wip
     -- the mutex blocks the next tick from re-triggering the agent. Clearing that
-    one label makes the item immediately retryable.
+    one label makes the item immediately retryable. Similarly, an isolated
+    worktree left behind by a kill would otherwise strand disk and a stale
+    `git worktree` registration; _create_run_worktree already clears debris
+    from a prior kill on its next use, but removing it here means a killed
+    run leaves nothing behind at all when the kill is clean.
     """
     wip = _CURRENT_WIP
     if wip is not None:
@@ -6343,6 +6576,14 @@ def _clear_inflight_wip_on_signal(signum, _frame) -> None:
             log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
         except Exception as exc:
             log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
+    worktree = _CURRENT_WORKTREE
+    if worktree:
+        try:
+            subprocess.run(["git", "worktree", "remove", "--force", worktree],
+                            check=False, capture_output=True)
+            log.warning("signal %d: removed in-flight worktree %s before exit", signum, worktree)
+        except Exception as exc:
+            log.warning("signal %d: could not remove in-flight worktree %s: %s", signum, worktree, exc)
     # No scratch cleanup here: scratch-setup.sh clears the directory at the
     # start of every run, so a killed tick self-heals on the next one.
     sys.exit(128 + signum)

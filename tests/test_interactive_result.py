@@ -252,9 +252,9 @@ class TestCommitAfterCheckoutSkippedUnderInteractiveResult:
 
     def test_real_spawn_path_is_unaffected_still_checks_out(self, monkeypatch):
         """Guard the guard: interactive_result=False (the default, a real
-        subprocess spawn) must still attempt the branch checkout -- this test
-        fails if the interactive_result skip is accidentally made the default
-        for every commit_after agent."""
+        subprocess spawn) must still attempt the worktree checkout (#373) --
+        this test fails if the interactive_result skip is accidentally made
+        the default for every commit_after agent."""
         agent_def = _make_agent_def(name="03_execute/coder", commit_after=True)
         work_item = _make_work_item(number=781, kind="issue")
 
@@ -267,15 +267,18 @@ class TestCommitAfterCheckoutSkippedUnderInteractiveResult:
         gh = MagicMock()
         monkeypatch.setattr(orch, "_acquire_wip_and_announce", lambda *a, **k: None)
         monkeypatch.setattr(orch.subprocess, "run", _record_subprocess)
-        # invoke_agent path would run next; not reached because the checkout
-        # itself raises first, which _run_agent catches and logs (see its
-        # try/except around the checkout).
-        _run_agent(
+        # invoke_agent path would run next; not reached because worktree
+        # setup itself raises first, which _run_agent's own try/except turns
+        # into a failed-run return rather than falling back to the shared
+        # working tree (#373's fail-loud requirement).
+        result, sentinel_status, *_rest = _run_agent(
             agent_def, work_item, dry_run=False, repo="test/repo", labels=set(),
             session_id="sess", default_extra_tools=None, concurrency=None,
             gh=gh, pipeline_map={}, interactive_result=False,
         )
         assert checkout_attempted, "real spawn path must still attempt the commit_after checkout"
+        assert result.success is False
+        assert sentinel_status is None
 
 
 # ---------------------------------------------------------------------------
