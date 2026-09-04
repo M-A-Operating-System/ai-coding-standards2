@@ -403,9 +403,9 @@ def repo_pipeline_override_path(shipped: Path) -> Optional[Path]:
     the same tree that carries the symlinked standards/ and .claude/.
     AI_AGILE_ROOT is the consuming repo root (see SUBMODULE_ROOT's comment).
 
-    Returns None when there is no override to compose: no AI_AGILE_ROOT, no
-    such file, or -- in source mode, where the consuming repo IS this repo --
-    when the candidate resolves to the shipped file itself. Composition also
+    Returns None when there is no replacement: no AI_AGILE_ROOT, no such
+    file, or -- in source mode, where the consuming repo IS this repo -- when
+    the candidate resolves to the shipped file itself. Replacement also
     applies only to the framework's own shipped file: a pipeline pointed at
     explicitly with --pipeline is taken exactly as given, since naming a file
     is already the operator saying which definition to run.
@@ -415,7 +415,7 @@ def repo_pipeline_override_path(shipped: Path) -> Optional[Path]:
         return None
     try:
         if not Path(shipped).resolve().is_relative_to(SUBMODULE_ROOT.resolve()):
-            return None  # not the shipped pipeline; nothing to compose over
+            return None  # not the shipped pipeline; nothing it could replace
     except OSError:
         return None
     candidate = Path(root) / "pipeline" / "pipeline.json"
@@ -429,37 +429,21 @@ def repo_pipeline_override_path(shipped: Path) -> Optional[Path]:
     return candidate
 
 
-def compose_pipeline(shipped: dict, override: dict) -> dict:
-    """Compose a repository's own pipeline definition over the shipped one.
+def _validate_pipeline_definition(raw: dict, schema_path: Path, source: Path) -> None:
+    """Validate a repository's own pipeline definition against the live schema.
 
-    Precedence is per flow, not per file (PRODUCT.md, AS-1; the schema's own
-    `flows` description): a flow the repository names replaces the shipped
-    flow of that name WHOLESALE -- never field-merged -- and a flow it does
-    not name keeps tracking the shipped default unchanged. A flow the shipped
-    file does not have is added. `budgets` and `defaults` follow the same
-    wholesale rule at their own level: present in the override means it
-    replaces the shipped block entirely.
-    """
-    composed = dict(shipped)
-    for key in ("budgets", "defaults"):
-        if key in override:
-            composed[key] = override[key]
-    flows = dict(shipped.get("flows") or {})
-    flows.update(override.get("flows") or {})
-    composed["flows"] = flows
-    return composed
+    Precedence is per file, not per flow (PRODUCT.md, AS-1): the repository's
+    file is a complete definition validated on its own, never a fragment
+    composed with the shipped one, so what is checked here is exactly what
+    will be run.
 
-
-def _validate_composed_pipeline(composed: dict, schema_path: Path, source: Path) -> None:
-    """Validate a composed pipeline definition against the live schema.
-
-    Fail-closed (STD-ARCH-014): a repository override that produces an invalid
-    pipeline stops the orchestrator with the specific violations named. Running
-    on a half-understood definition -- or silently ignoring the override -- is
-    exactly the quiet wrong answer the standard exists to prevent.
+    Fail-closed (STD-ARCH-014): a repository definition that does not validate
+    stops the orchestrator with the specific violations named. Running on a
+    half-understood definition -- or silently falling back to the shipped file
+    -- is exactly the quiet wrong answer the standard exists to prevent.
     """
     try:
-        import jsonschema  # imported here: only composition needs it
+        import jsonschema  # imported here: only the override path needs it
     except ImportError:
         log.error(
             "pipeline override %s cannot be validated: jsonschema is not installed "
@@ -474,12 +458,12 @@ def _validate_composed_pipeline(composed: dict, schema_path: Path, source: Path)
         log.error("cannot read pipeline schema at %s: %s", schema_path, exc)
         sys.exit(1)
     errors = sorted(
-        jsonschema.Draft7Validator(schema).iter_errors(composed),
+        jsonschema.Draft7Validator(schema).iter_errors(raw),
         key=lambda e: list(e.absolute_path),
     )
     if errors:
         log.error(
-            "pipeline override %s produces an invalid pipeline definition — cannot start:",
+            "pipeline override %s is not a valid pipeline definition — cannot start:",
             source,
         )
         for err in errors:
@@ -577,32 +561,34 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     flows, not a flow"): every step lives inside a named flow, and the list
     returned here is those flows' steps flattened in declaration order.
 
-    A consuming repository's own pipeline/pipeline.json, when present, is
-    composed over the shipped file per flow (see compose_pipeline) and the
-    composed result is validated against the live schema before use.
+    A consuming repository's own pipeline/pipeline.json, when present, is the
+    complete definition used instead of the shipped file -- precedence is per
+    file, not per flow (PRODUCT.md, AS-1). Nothing is merged: its presence
+    means it decides everything, its absence means the shipped default
+    decides everything. It is validated against the live schema on its own
+    before use.
 
     default_extra_tools comes from defaults.extra_allowedTools and is
     prepended to every agent's own extra_allowedTools at invocation time.
     """
     try:
-        with open(path) as f:
-            raw = json.load(f)
-
         override_path = repo_pipeline_override_path(Path(path))
         if override_path is not None:
             with open(override_path) as f:
-                override_raw = json.load(f)
-            raw = compose_pipeline(raw, override_raw)
-            _validate_composed_pipeline(
+                raw = json.load(f)
+            _validate_pipeline_definition(
                 raw, Path(__file__).parent / "schemas" / "pipeline.schema.json",
                 override_path,
             )
             log.info(
-                "pipeline: composed repository override %s over shipped %s "
-                "(flows replaced: %s)",
+                "pipeline: using repository definition %s in full, in place of "
+                "shipped %s (flows: %s)",
                 override_path, path,
-                ", ".join(sorted((override_raw.get("flows") or {}).keys())) or "none",
+                ", ".join(sorted((raw.get("flows") or {}).keys())) or "none",
             )
+        else:
+            with open(path) as f:
+                raw = json.load(f)
 
         agents = _steps_from_flows(raw)
 

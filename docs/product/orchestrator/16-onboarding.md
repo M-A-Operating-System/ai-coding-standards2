@@ -271,23 +271,24 @@ the consuming repo root (`$AI_AGILE_ROOT/pipeline/pipeline.json`), outside
 the submodule. It is not a symlink and not gitignored: it is the
 repository's own file, committed like `adrs/`.
 
-Precedence is per flow, not per file (issue #406):
+Precedence is per file, not per flow (PRODUCT.md, AS-1):
 
-- a flow the repository's file names **replaces** the shipped flow of that
-  name wholesale — never a field-by-field merge, so there is no way to end
-  up with half of each;
-- a flow it does not name is inherited from the shipped default unchanged,
-  and keeps tracking it as the framework changes;
-- a flow the shipped file does not have is added.
+- the repository's file is a **complete replacement** for the shipped
+  definition — its flows, `budgets` and `defaults` are the only ones that
+  apply;
+- there is no partial override and nothing to merge: presence means the
+  repository's file decides everything, absence means the shipped default
+  decides everything;
+- a repository that goes local stops tracking the shipped default
+  entirely, the same trade a fork makes.
 
-`budgets` and `defaults` follow the same rule at their own level: present
-in the repository's file means it replaces that block entirely.
-
-The composed result is validated against
-`pipeline/schemas/pipeline.schema.json`. A repository file that composes
-into something invalid stops the run with the violations named — a broken
-override is never silently ignored (STD-ARCH-014). In non-submodule
-(source) mode the two paths are the same file, and nothing is composed.
+The repository's file is validated on its own against
+`pipeline/schemas/pipeline.schema.json` — the identical schema the shipped
+file satisfies, so it must be complete, not a fragment. A repository file
+the schema rejects stops the run with the violations named; it is never
+silently ignored, and there is no falling back to the shipped file
+(STD-ARCH-014). In non-submodule (source) mode the two paths are the same
+file, and there is nothing to replace.
 
 ---
 
