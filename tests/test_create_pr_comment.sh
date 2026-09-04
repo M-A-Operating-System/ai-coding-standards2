@@ -119,6 +119,8 @@ test_new_pr_posts_comment() {
     PATH="${MOCK_DIR}:${PATH}" \
     REPO="${TEST_REPO}" \
     ISSUE_NUMBER="${ISSUE_NUM}" \
+    AI_AGILE_BRANCH="issue-${ISSUE_NUM}" \
+    PR_CLOSES_ISSUE="true" \
     GITHUB_TOKEN="fake-token" \
     GH_TOKEN="fake-token" \
     bash "${CREATE_PR_SCRIPT}" 2>&1
@@ -152,6 +154,8 @@ test_existing_pr_comment_already_posted_no_duplicate() {
     PATH="${MOCK_DIR}:${PATH}" \
     REPO="${TEST_REPO}" \
     ISSUE_NUMBER="${ISSUE_NUM}" \
+    AI_AGILE_BRANCH="issue-${ISSUE_NUM}" \
+    PR_CLOSES_ISSUE="true" \
     GITHUB_TOKEN="fake-token" \
     GH_TOKEN="fake-token" \
     bash "${CREATE_PR_SCRIPT}" 2>&1
@@ -185,6 +189,8 @@ test_comment_failure_exits_nonzero() {
   PATH="${MOCK_DIR}:${PATH}" \
   REPO="${TEST_REPO}" \
   ISSUE_NUMBER="${ISSUE_NUM}" \
+  AI_AGILE_BRANCH="issue-${ISSUE_NUM}" \
+  PR_CLOSES_ISSUE="true" \
   GITHUB_TOKEN="fake-token" \
   GH_TOKEN="fake-token" \
   bash "${CREATE_PR_SCRIPT}" >/dev/null 2>&1 || SCRIPT_EXIT=$?
@@ -213,6 +219,8 @@ test_retry_posts_comment_when_pr_exists_but_not_commented() {
     PATH="${MOCK_DIR}:${PATH}" \
     REPO="${TEST_REPO}" \
     ISSUE_NUMBER="${ISSUE_NUM}" \
+    AI_AGILE_BRANCH="issue-${ISSUE_NUM}" \
+    PR_CLOSES_ISSUE="true" \
     GITHUB_TOKEN="fake-token" \
     GH_TOKEN="fake-token" \
     bash "${CREATE_PR_SCRIPT}" 2>&1

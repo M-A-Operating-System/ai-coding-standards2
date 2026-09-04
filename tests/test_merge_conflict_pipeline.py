@@ -495,7 +495,12 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
         from pathlib import Path
         pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
         data = json.loads(pipeline_path.read_text())
-        mc = next(e for e in data["pipeline"] if e["agent"] == "03_execute/merge-conflict")
+        steps = [
+            step
+            for flow in data["flows"].values()
+            for step in flow["steps"]
+        ]
+        mc = next(e for e in steps if e["agent"] == "03_execute/merge-conflict")
         assert mc.get("auto_approve_on_complete") is True
 
 
@@ -534,7 +539,8 @@ class TestAutoApproveOnCompleteDrivesProcessWorkItem:
         complete_result = AgentRunResult(success=True, returncode=0)
 
         def _invoke_writing_result(agent_def, work_item, dry_run, repo, attempt=0,
-                                    agent_text_override=None, default_extra_tools=None, cwd=None):
+                                    agent_text_override=None, default_extra_tools=None, cwd=None,
+                                    flow_env=None):
             # merge-conflict is an agent-type step (issue #400): it signals
             # outcome via a real result.json in its scratch dir, not a stdout
             # sentinel. Write one so the unmocked _read_step_result finds it.

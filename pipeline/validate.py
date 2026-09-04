@@ -40,6 +40,27 @@ def _load(path: Path) -> dict:
         return json.load(f)
 
 
+def steps(pipeline: dict) -> list[dict]:
+    """Every step in the file, in declaration order, across all flows.
+
+    pipeline.json declares flows, not a flow (PRODUCT.md, "The pipeline
+    defines flows, not a flow"); the checks below are about steps, so they
+    walk the flows once here rather than each knowing the file's shape.
+    """
+    out: list[dict] = []
+    for flow in (pipeline.get("flows") or {}).values():
+        out.extend(flow.get("steps") or [])
+    return out
+
+
+def flow_of(pipeline: dict, step: dict) -> str:
+    """The name of the flow a step was declared in."""
+    for name, flow in (pipeline.get("flows") or {}).items():
+        if step in (flow.get("steps") or []):
+            return name
+    return "<unknown>"
+
+
 def validate_schema(pipeline: dict, schema: dict) -> list[str]:
     """Return a list of schema-violation messages; empty if valid."""
     validator = jsonschema.Draft7Validator(schema)
@@ -50,13 +71,17 @@ def validate_schema(pipeline: dict, schema: dict) -> list[str]:
 def validate_dependency_references(pipeline: dict) -> list[str]:
     """Every dependency must reference an agent declared in the same file."""
     errors = []
-    agents = {a["agent"] for a in pipeline["pipeline"]}
-    for entry in pipeline["pipeline"]:
-        for dep in entry.get("dependencies", []):
-            if dep not in agents:
-                errors.append(
-                    f"agent '{entry['agent']}' depends on unknown agent '{dep}'"
-                )
+    for flow_name, flow in (pipeline.get("flows") or {}).items():
+        # A step depends on other steps in its OWN flow (the schema:
+        # "Other steps in this flow that must be complete first").
+        in_flow = {s["agent"] for s in (flow.get("steps") or [])}
+        for entry in flow.get("steps") or []:
+            for dep in entry.get("dependencies", []):
+                if dep not in in_flow:
+                    errors.append(
+                        f"step '{entry['agent']}' in flow '{flow_name}' depends on "
+                        f"'{dep}', which is not a step of that flow"
+                    )
     return errors
 
 
@@ -68,7 +93,7 @@ def validate_acyclic(pipeline: dict) -> list[str]:
     drain such nodes; each time we drain n, we decrement the indegree
     of every node that depends on n.
     """
-    graph = {a["agent"]: list(a.get("dependencies", [])) for a in pipeline["pipeline"]}
+    graph = {a["agent"]: list(a.get("dependencies", [])) for a in steps(pipeline)}
     # Count only deps that exist in the graph (unknown deps are caught
     # by validate_dependency_references, not here).
     indegree = {n: sum(1 for d in deps if d in graph) for n, deps in graph.items()}
@@ -91,7 +116,7 @@ def validate_acyclic(pipeline: dict) -> list[str]:
 def validate_agent_names_unique(pipeline: dict) -> list[str]:
     seen = set()
     dupes = []
-    for entry in pipeline["pipeline"]:
+    for entry in steps(pipeline):
         if entry["agent"] in seen:
             dupes.append(entry["agent"])
         seen.add(entry["agent"])
@@ -104,7 +129,7 @@ def validate_agent_phase_prefix(pipeline: dict) -> list[str]:
     e.g. agent: "product-docs/prd-writer" must have phase: "product-docs".
     """
     errors = []
-    for entry in pipeline["pipeline"]:
+    for entry in steps(pipeline):
         agent_name = entry.get("agent", "")
         phase = entry.get("phase", "")
         if "/" not in agent_name:
@@ -136,7 +161,7 @@ def validate_agent_files(pipeline: dict, agents_dir: Path) -> list[str]:
     if not agents_dir.is_dir():
         return []
     errors = []
-    for entry in pipeline["pipeline"]:
+    for entry in steps(pipeline):
         # Script steps run a bash script directly — no agent prompt file, no model.
         if entry.get("type") == "script":
             continue
@@ -157,6 +182,40 @@ def validate_agent_files(pipeline: dict, agents_dir: Path) -> list[str]:
                 f"agent '{agent_name}': model '{model}' not in approved set "
                 f"({', '.join(sorted(VALID_MODELS))})"
             )
+    return errors
+
+
+def validate_flow_naming(pipeline: dict) -> list[str]:
+    """A step's git_ops.commits_to must name a pull request its flow declares.
+
+    Branch and pull-request names are declared, never computed (AS-1), so a
+    commits_to pointing at nothing is a broken declaration, not a runtime
+    surprise -- catch it here rather than mid-flow.
+    """
+    errors = []
+    for flow_name, flow in (pipeline.get("flows") or {}).items():
+        naming = flow.get("naming") or {}
+        pr_ids = {pr["id"] for pr in naming.get("pull_requests", [])}
+        for entry in flow.get("steps") or []:
+            git_ops = entry.get("git_ops") or {}
+            commits_to = git_ops.get("commits_to")
+            if commits_to is not None and commits_to not in pr_ids:
+                errors.append(
+                    f"step '{entry['agent']}' in flow '{flow_name}' commits_to "
+                    f"'{commits_to}', which names no pull request in that flow's "
+                    f"naming.pull_requests ({sorted(pr_ids) or 'none declared'})"
+                )
+            if git_ops.get("commit_after") and not naming.get("branch"):
+                errors.append(
+                    f"step '{entry['agent']}' in flow '{flow_name}' commits but the "
+                    f"flow declares no naming.branch to commit to"
+                )
+            if git_ops.get("commit_after") and commits_to is None and len(pr_ids) > 1:
+                errors.append(
+                    f"step '{entry['agent']}' in flow '{flow_name}' commits but "
+                    f"declares no git_ops.commits_to, and the flow declares more "
+                    f"than one pull request ({sorted(pr_ids)})"
+                )
     return errors
 
 
@@ -182,6 +241,7 @@ def main() -> int:
     all_errors += validate_agent_phase_prefix(pipeline)
     all_errors += validate_dependency_references(pipeline)
     all_errors += validate_acyclic(pipeline)
+    all_errors += validate_flow_naming(pipeline)
     if args.agents_dir:
         all_errors += validate_agent_files(pipeline, args.agents_dir)
 
@@ -191,7 +251,10 @@ def main() -> int:
             print(f"  - {err}", file=sys.stderr)
         return 1
 
-    print(f"OK: {args.pipeline} ({len(pipeline['pipeline'])} agents)")
+    print(
+        f"OK: {args.pipeline} "
+        f"({len(pipeline.get('flows') or {})} flows, {len(steps(pipeline))} steps)"
+    )
     return 0
 
 

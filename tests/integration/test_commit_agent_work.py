@@ -103,7 +103,10 @@ def test_commit_agent_work_script_creates_correct_commit_message(tmp_path):
     result = subprocess.run(
         ["bash", str(_SCRIPT_PATH)],
         cwd=str(work),
-        env={**git_env, "AGENT_NAME": "03_execute/coder", "ISSUE_NUMBER": "42"},
+        env={**git_env, "AGENT_NAME": "03_execute/coder", "ISSUE_NUMBER": "42",
+               # The branch is declared by the step's flow and exported by
+               # the orchestrator (issue #406), never derived in the script.
+               "AI_AGILE_BRANCH": "issue-42"},
         capture_output=True,
         text=True,
     )
@@ -138,7 +141,10 @@ def test_clean_working_tree_exits_zero_with_no_commit(tmp_path):
     result = subprocess.run(
         ["bash", str(_SCRIPT_PATH)],
         cwd=str(work),
-        env={**git_env, "AGENT_NAME": "03_execute/coder", "ISSUE_NUMBER": "42"},
+        env={**git_env, "AGENT_NAME": "03_execute/coder", "ISSUE_NUMBER": "42",
+               # The branch is declared by the step's flow and exported by
+               # the orchestrator (issue #406), never derived in the script.
+               "AI_AGILE_BRANCH": "issue-42"},
         capture_output=True,
         text=True,
     )
@@ -181,6 +187,7 @@ def test_workflow_files_without_bot_token_exits_nonzero(tmp_path):
     }
     filtered_env["AGENT_NAME"] = "03_execute/coder"
     filtered_env["ISSUE_NUMBER"] = "42"
+    filtered_env["AI_AGILE_BRANCH"] = "issue-42"
 
     result = subprocess.run(
         ["bash", str(_SCRIPT_PATH)],
@@ -219,7 +226,10 @@ def test_a_new_root_file_is_refused_but_the_rest_of_the_work_lands(tmp_path):
     result = subprocess.run(
         ["bash", str(_SCRIPT_PATH)],
         cwd=str(work),
-        env={**git_env, "AGENT_NAME": "03_execute/coder", "ISSUE_NUMBER": "42"},
+        env={**git_env, "AGENT_NAME": "03_execute/coder", "ISSUE_NUMBER": "42",
+               # The branch is declared by the step's flow and exported by
+               # the orchestrator (issue #406), never derived in the script.
+               "AI_AGILE_BRANCH": "issue-42"},
         capture_output=True,
         text=True,
     )

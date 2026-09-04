@@ -27,7 +27,10 @@ if [[ ! "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-DOCS_BRANCH="issue-${ISSUE_NUMBER}-docs"
+# The design PR's branch, resolved by the orchestrator from this step's flow
+# naming (its git_ops.commits_to names the flow's "docs" pull request) -- never
+# derived from the issue number here (issue #406).
+DOCS_BRANCH="${AI_AGILE_BRANCH:?AI_AGILE_BRANCH is required -- the design branch declared by this step flow naming}"
 
 # Find the open design PR for this issue's docs branch.
 PR_NUMBER=$(

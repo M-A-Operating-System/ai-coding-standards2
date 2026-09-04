@@ -56,16 +56,19 @@ if [[ ! "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-# Phase parameterisation (issue #247, two-phase design->build delivery).
-# Defaults reproduce the original single-code-PR behaviour exactly, so the
-# code-PR step (create-pr) is unchanged. The design-PR step (create-docs-pr)
-# sets these to open issue-{N}-docs with a non-closing body under a distinct
-# announcement identity.
-BRANCH_SUFFIX="${BRANCH_SUFFIX:-}"                       # "" for code PR, "-docs" for design PR
-PR_CLOSES_ISSUE="${PR_CLOSES_ISSUE:-true}"              # "false" for the design PR (must not close the issue)
+# Which pull request this run opens comes from the step's flow, not from here
+# (issue #406): the orchestrator resolves the branch and the closing/non-closing
+# body from the flow's naming.pull_requests entry the step commits to, and
+# exports them. Two-phase design->build (issue #247) is one flow declaring two
+# pull requests -- the design PR (non-closing) and the code PR (closing).
+BRANCH="${AI_AGILE_BRANCH:?AI_AGILE_BRANCH is required -- the branch declared by this step flow naming}"
+PR_CLOSES_ISSUE="${PR_CLOSES_ISSUE:?PR_CLOSES_ISSUE is required -- the closes_issue declared for this pull request}"
 CREATE_PR_AGENT="${CREATE_PR_AGENT:-01_product_docs/create-pr}"  # announcement identity + idempotency marker
 
-BRANCH="issue-${ISSUE_NUMBER}${BRANCH_SUFFIX}"
+# The branch this one is cut from and merged into: the flow's naming.base when
+# it declares one and that branch exists, otherwise the repository default
+# branch (the schema's own fallback rule). Resolved after DEFAULT_BRANCH below.
+AI_AGILE_BASE_BRANCH="${AI_AGILE_BASE_BRANCH:-}"
 PLACEHOLDER_MSG="chore: open branch for ${BRANCH}"
 
 if [[ "${PR_CLOSES_ISSUE}" == "false" ]]; then
@@ -97,6 +100,17 @@ else
     gh api "repos/${REPO}" --jq '.default_branch' \
     2>/dev/null || echo "main"
   )
+  # A flow may declare its own base (e.g. a shared integration branch for a
+  # decomposed parent). Fall back to the default branch when it declares none,
+  # or when the branch it names does not exist.
+  if [[ -n "${AI_AGILE_BASE_BRANCH}" ]]; then
+    if git ls-remote --exit-code --heads origin "${AI_AGILE_BASE_BRANCH}" &>/dev/null; then
+      DEFAULT_BRANCH="${AI_AGILE_BASE_BRANCH}"
+      echo "Using this flow's declared base branch: ${DEFAULT_BRANCH}"
+    else
+      echo "Declared base branch '${AI_AGILE_BASE_BRANCH}' does not exist -- falling back to ${DEFAULT_BRANCH}." >&2
+    fi
+  fi
   echo "DEBUG: DEFAULT_BRANCH='${DEFAULT_BRANCH}' BRANCH='${BRANCH}'"
 
   # PR token setup.

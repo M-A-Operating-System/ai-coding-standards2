@@ -204,7 +204,19 @@ class AgentDef:
     lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
-    branch_suffix: str = ""               # appended to issue-{N} for the commit_after checkout (e.g. "-docs" -> issue-{N}-docs); "" means the default code branch (two-phase design->build, issue #247)
+    # --- the flow this step belongs to (issue #406) -------------------------
+    # A step is declared inside a named flow; the flow says what kind of work
+    # it is, what makes an item its own, and what its branches and pull
+    # requests are called. These fields carry that context onto the step so
+    # every branch/PR name is resolved from the declaration (flow_naming),
+    # never computed in orchestrator code.
+    flow: str = ""                        # the flow's stable name (pipeline.json's flows key)
+    flow_naming: dict = field(default_factory=dict)   # the flow's naming block: {"branch": ..., "base": ..., "pull_requests": [...]}; {} when the flow declares none
+    flow_labels: list = field(default_factory=list)   # flow trigger.labels -- every one must be present for an item to enter this flow
+    flow_types: list = field(default_factory=list)    # flow trigger.type -- item must carry one of these type: labels; [] means every type
+    flow_schedule: Optional[str] = None   # flow trigger.schedule (cron) -- this flow has no work item; it fires on cadence
+    commits_to: Optional[str] = None      # git_ops.commits_to -- which of the flow's naming.pull_requests entries this step commits to
+    unit: str = "item"                    # "item" | "sub_item" -- what one invocation of this step addresses
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
@@ -381,23 +393,141 @@ def _coerce_tools(val: object) -> list[str]:
     raise TypeError(f"extra_allowedTools must be a list or comma-separated string, got {type(val).__name__}")
 
 
-def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
-    """Parse pipeline.json once and return (agents, default_extra_tools).
+def repo_pipeline_override_path(shipped: Path) -> Optional[Path]:
+    """The consuming repository's own pipeline/pipeline.json, if it has one.
 
-    default_extra_tools comes from defaults.extra_allowedTools and is
-    prepended to every agent's own extra_allowedTools at invocation time.
+    The framework ships its pipeline at SUBMODULE_ROOT/pipeline/pipeline.json
+    (the *shipped* file, passed in as `shipped`). A repository that installs
+    this repo as a submodule keeps its own overrides at
+    {consuming repo root}/pipeline/pipeline.json -- outside the submodule, in
+    the same tree that carries the symlinked standards/ and .claude/.
+    AI_AGILE_ROOT is the consuming repo root (see SUBMODULE_ROOT's comment).
+
+    Returns None when there is no override to compose: no AI_AGILE_ROOT, no
+    such file, or -- in source mode, where the consuming repo IS this repo --
+    when the candidate resolves to the shipped file itself. Composition also
+    applies only to the framework's own shipped file: a pipeline pointed at
+    explicitly with --pipeline is taken exactly as given, since naming a file
+    is already the operator saying which definition to run.
     """
-    entry: dict = {}  # sentinel so the except block can report agent name
+    root = os.environ.get("AI_AGILE_ROOT")
+    if not root:
+        return None
     try:
-        with open(path) as f:
-            raw = json.load(f)
+        if not Path(shipped).resolve().is_relative_to(SUBMODULE_ROOT.resolve()):
+            return None  # not the shipped pipeline; nothing to compose over
+    except OSError:
+        return None
+    candidate = Path(root) / "pipeline" / "pipeline.json"
+    if not candidate.is_file():
+        return None
+    try:
+        if candidate.resolve() == Path(shipped).resolve():
+            return None  # source mode: the override candidate IS the shipped file
+    except OSError:
+        return None
+    return candidate
 
-        agents = []
-        for entry in raw["pipeline"]:
+
+def compose_pipeline(shipped: dict, override: dict) -> dict:
+    """Compose a repository's own pipeline definition over the shipped one.
+
+    Precedence is per flow, not per file (PRODUCT.md, AS-1; the schema's own
+    `flows` description): a flow the repository names replaces the shipped
+    flow of that name WHOLESALE -- never field-merged -- and a flow it does
+    not name keeps tracking the shipped default unchanged. A flow the shipped
+    file does not have is added. `budgets` and `defaults` follow the same
+    wholesale rule at their own level: present in the override means it
+    replaces the shipped block entirely.
+    """
+    composed = dict(shipped)
+    for key in ("budgets", "defaults"):
+        if key in override:
+            composed[key] = override[key]
+    flows = dict(shipped.get("flows") or {})
+    flows.update(override.get("flows") or {})
+    composed["flows"] = flows
+    return composed
+
+
+def _validate_composed_pipeline(composed: dict, schema_path: Path, source: Path) -> None:
+    """Validate a composed pipeline definition against the live schema.
+
+    Fail-closed (STD-ARCH-014): a repository override that produces an invalid
+    pipeline stops the orchestrator with the specific violations named. Running
+    on a half-understood definition -- or silently ignoring the override -- is
+    exactly the quiet wrong answer the standard exists to prevent.
+    """
+    try:
+        import jsonschema  # imported here: only composition needs it
+    except ImportError:
+        log.error(
+            "pipeline override %s cannot be validated: jsonschema is not installed "
+            "(pip install jsonschema) -- refusing to run on an unvalidated pipeline",
+            source,
+        )
+        sys.exit(1)
+    try:
+        with open(schema_path) as f:
+            schema = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        log.error("cannot read pipeline schema at %s: %s", schema_path, exc)
+        sys.exit(1)
+    errors = sorted(
+        jsonschema.Draft7Validator(schema).iter_errors(composed),
+        key=lambda e: list(e.absolute_path),
+    )
+    if errors:
+        log.error(
+            "pipeline override %s produces an invalid pipeline definition — cannot start:",
+            source,
+        )
+        for err in errors:
+            log.error("  - %s: %s", "/".join(str(p) for p in err.absolute_path), err.message)
+        sys.exit(1)
+
+
+def _steps_from_flows(raw: dict) -> list[AgentDef]:
+    """Flatten pipeline.json's flows into the ordered step list the tick walks.
+
+    Every step carries its flow's name, trigger membership and naming with it
+    (AgentDef.flow*), so eligibility and every branch/PR name are answered from
+    the declaration rather than from anything hardcoded here.
+    """
+    agents: list[AgentDef] = []
+    for flow_name, flow in (raw["flows"] or {}).items():
+        flow_trigger = flow.get("trigger") or {}
+        flow_naming = dict(flow.get("naming") or {})
+        _kind = flow_trigger.get("kind")
+        _pr_ids = {pr["id"] for pr in flow_naming.get("pull_requests", [])}
+        for entry in flow["steps"]:
+            _git_ops = entry.get("git_ops") or {}
+            _commits_to = _git_ops.get("commits_to")
+            if _commits_to is not None and _commits_to not in _pr_ids:
+                raise ValueError(
+                    f"step {entry.get('agent')!r} in flow {flow_name!r} commits_to "
+                    f"{_commits_to!r}, which names no pull request declared in that "
+                    f"flow's naming.pull_requests ({sorted(_pr_ids)})"
+                )
+            if _commits_to is None and len(_pr_ids) > 1 and _git_ops.get("commit_after"):
+                raise ValueError(
+                    f"step {entry.get('agent')!r} in flow {flow_name!r} commits but "
+                    f"declares no git_ops.commits_to, and the flow declares more than "
+                    f"one pull request ({sorted(_pr_ids)})"
+                )
+            if _git_ops.get("mark_ready_on_complete"):
+                log.warning(
+                    "pipeline.json: agent %r uses deprecated git_ops.mark_ready_on_complete; "
+                    "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",
+                    entry.get("agent", "<unknown>"),
+                )
+            _budgets = entry.get("budgets") or {}
             agents.append(AgentDef(
                 agent=entry["agent"],
                 phase=entry["phase"],
-                objects=entry["object"],
+                # A step's object kind is the flow's: the flow says what kind
+                # of work it is, so the step never restates it.
+                objects=[_kind] if _kind else [],
                 trigger=entry["trigger"],
                 dependencies=entry.get("dependencies", []),
                 human_gate_after=entry.get("human_gate_after", False),
@@ -410,27 +540,71 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
                 session_id_pattern=entry.get("session", {}).get("id_pattern"),
                 post_steps=list(entry.get("post_steps", [])),
                 review_gate=bool(entry.get("review_gate", False)),
-                commit_after=bool(entry.get("git_ops", {}).get("commit_after", False)),
-                branch_suffix=entry.get("branch_suffix", ""),
+                commit_after=bool(_git_ops.get("commit_after", False)),
+                flow=flow_name,
+                flow_naming=flow_naming,
+                flow_labels=list(flow_trigger.get("labels") or []),
+                flow_types=list(flow_trigger.get("type") or []),
+                flow_schedule=flow_trigger.get("schedule"),
+                commits_to=_commits_to,
+                unit=entry.get("unit", "item"),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
                 review_loop=entry.get("review_loop"),
-                script_timeout_seconds=int(entry.get("script_timeout_seconds", SCRIPT_TIMEOUT_SECONDS)),
+                # A script step's wall-clock budget is budgets.max_wall_seconds,
+                # the same field an agent step uses (the schema: "for every step,
+                # agent or script"). A script declaring none keeps the script
+                # default rather than the much longer agent default.
+                script_timeout_seconds=int(
+                    _budgets.get("max_wall_seconds") or SCRIPT_TIMEOUT_SECONDS
+                ),
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
                 self_gates=bool(entry.get("self_gates", False)),
                 extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
                 model=entry.get("model"),
-                max_turns=(entry.get("budgets") or {}).get("max_turns"),
-                max_wall_seconds=(entry.get("budgets") or {}).get("max_wall_seconds"),
+                max_turns=_budgets.get("max_turns"),
+                max_wall_seconds=_budgets.get("max_wall_seconds"),
                 expected_effect=dict(entry.get("expected_effect") or {}),
                 allowed_labels=dict(entry.get("allowed_labels") or {}),
             ))
-            if entry.get("git_ops", {}).get("mark_ready_on_complete"):
-                log.warning(
-                    "pipeline.json: agent %r uses deprecated git_ops.mark_ready_on_complete; "
-                    "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",
-                    entry.get("agent", "<unknown>"),
-                )
+    return agents
+
+
+def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
+    """Parse pipeline.json once and return (agents, default_extra_tools).
+
+    The file declares flows, not a flow (PRODUCT.md, "The pipeline defines
+    flows, not a flow"): every step lives inside a named flow, and the list
+    returned here is those flows' steps flattened in declaration order.
+
+    A consuming repository's own pipeline/pipeline.json, when present, is
+    composed over the shipped file per flow (see compose_pipeline) and the
+    composed result is validated against the live schema before use.
+
+    default_extra_tools comes from defaults.extra_allowedTools and is
+    prepended to every agent's own extra_allowedTools at invocation time.
+    """
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+
+        override_path = repo_pipeline_override_path(Path(path))
+        if override_path is not None:
+            with open(override_path) as f:
+                override_raw = json.load(f)
+            raw = compose_pipeline(raw, override_raw)
+            _validate_composed_pipeline(
+                raw, Path(__file__).parent / "schemas" / "pipeline.schema.json",
+                override_path,
+            )
+            log.info(
+                "pipeline: composed repository override %s over shipped %s "
+                "(flows replaced: %s)",
+                override_path, path,
+                ", ".join(sorted((override_raw.get("flows") or {}).keys())) or "none",
+            )
+
+        agents = _steps_from_flows(raw)
 
         default_extra_tools: list[str] = _coerce_tools(
             raw.get("defaults", {}).get("extra_allowedTools")
@@ -465,9 +639,250 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
         MAX_LAUNCHES_PER_TICK = int(_budgets.get("max_launches_per_tick", MAX_LAUNCHES_PER_TICK))
 
         return agents, default_extra_tools
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        log.error("pipeline.json is malformed (agent: %s) — cannot start: %s", entry.get("agent", "<unknown>"), exc)
+    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+        log.error("pipeline.json is malformed — cannot start: %s", exc)
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Flow naming (issue #406) -- a flow's branches and pull requests are declared
+# in pipeline.json as token patterns and resolved here. Nothing in this module
+# builds a branch name from parts; a flow that declares no naming has no
+# branch, and every caller handles that (None) rather than inventing one.
+# ---------------------------------------------------------------------------
+
+_NAMING_TOKEN_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+PARENT_ISSUE_LABEL_PREFIX = "parent-issue:"
+
+
+def _parent_issue_number(work_item: "WorkItem") -> Optional[int]:
+    """The parent this item was decomposed from, per its parent-issue:{N} label."""
+    for lbl in work_item.labels:
+        if lbl.startswith(PARENT_ISSUE_LABEL_PREFIX):
+            try:
+                return int(lbl[len(PARENT_ISSUE_LABEL_PREFIX):].strip())
+            except ValueError:
+                continue
+    return None
+
+
+def resolve_naming_pattern(pattern: str, work_item: "WorkItem") -> str:
+    """Resolve a naming token pattern (e.g. 'issue-{number}') for a work item.
+
+    Tokens: {number} (the work item's own number) and {parent_number} (the
+    number in its parent-issue:{N} label). An unknown token, or
+    {parent_number} on an item with no parent, is a declaration error and
+    raises -- a half-resolved branch name would silently point somewhere
+    wrong (STD-ARCH-014, fail loud).
+    """
+    tokens: dict[str, object] = {"number": work_item.number}
+    _parent = _parent_issue_number(work_item)
+    if _parent is not None:
+        tokens["parent_number"] = _parent
+
+    def _sub(m: "re.Match") -> str:
+        name = m.group(1)
+        if name not in tokens:
+            raise ValueError(
+                f"naming pattern {pattern!r} uses unknown token {{{name}}} "
+                f"(available: {', '.join(sorted(tokens))})"
+            )
+        return str(tokens[name])
+
+    return _NAMING_TOKEN_RE.sub(_sub, pattern)
+
+
+def flow_primary_branch(agent_def: "AgentDef", work_item: "WorkItem") -> Optional[str]:
+    """This step's flow's primary branch for this item, or None when the flow
+    declares no naming (a flow whose steps never commit has no branch)."""
+    pattern = (agent_def.flow_naming or {}).get("branch")
+    if not pattern:
+        return None
+    return resolve_naming_pattern(pattern, work_item)
+
+
+def flow_base_branch(agent_def: "AgentDef", work_item: "WorkItem") -> Optional[str]:
+    """The branch this flow's primary branch is created from, when declared.
+
+    None means "the repository's default branch" -- the caller's fallback,
+    which the schema also mandates when the computed base does not exist.
+    """
+    pattern = (agent_def.flow_naming or {}).get("base")
+    if not pattern:
+        return None
+    return resolve_naming_pattern(pattern, work_item)
+
+
+def _flow_pull_request(agent_def: "AgentDef", pr_id: str) -> Optional[dict]:
+    for pr in (agent_def.flow_naming or {}).get("pull_requests", []):
+        if pr.get("id") == pr_id:
+            return pr
+    return None
+
+
+def step_branch(agent_def: "AgentDef", work_item: "WorkItem") -> Optional[str]:
+    """The branch this step commits to / operates on for this item.
+
+    The flow's naming.pull_requests entry named by git_ops.commits_to when the
+    step declares one, otherwise the flow's primary branch. None when the flow
+    declares no naming.
+    """
+    if agent_def.commits_to:
+        pr = _flow_pull_request(agent_def, agent_def.commits_to)
+        if pr is None:
+            raise ValueError(
+                f"step {agent_def.agent!r} commits_to {agent_def.commits_to!r}, "
+                f"which names no pull request in flow {agent_def.flow!r}"
+            )
+        return resolve_naming_pattern(pr["branch"], work_item)
+    return flow_primary_branch(agent_def, work_item)
+
+
+# ---------------------------------------------------------------------------
+# A trigger that looks outward (issue #406) -- "every child of this item is
+# closed", and its mirror "while at least one child is open". Both read the
+# same fact about an item's children (the issues labelled parent-issue:{N}),
+# and both are evaluated as ordinary step eligibility, so any step in any flow
+# can declare either without a line of new orchestrator code.
+# ---------------------------------------------------------------------------
+
+# Children fetched this tick, keyed by parent issue number. A tick evaluates
+# many steps against the same item; without this each one would re-ask GitHub
+# for the same list. Cleared per work item as the tick reaches it, so a step
+# that closes a child does not leave a later step reading a stale answer.
+_CHILDREN_CACHE: dict[int, list] = {}
+
+
+def _invalidate_children_cache(issue_number: Optional[int] = None) -> None:
+    if issue_number is None:
+        _CHILDREN_CACHE.clear()
+    else:
+        _CHILDREN_CACHE.pop(issue_number, None)
+
+
+def find_child_items(gh: "GitHubClient", issue_number: int) -> list:
+    """State of every issue carrying this item's parent-issue:{N} label.
+
+    Returns a list of {"number": N, "state": "open"|"closed"} dicts, oldest
+    first. Returns an empty list on any API error, so a trigger that reads it
+    simply finds the condition unmet rather than acting on a half-answer.
+    PRs are excluded (they carry pull_request in the API response).
+    """
+    if issue_number in _CHILDREN_CACHE:
+        return _CHILDREN_CACHE[issue_number]
+    label = f"{PARENT_ISSUE_LABEL_PREFIX}{issue_number}"
+    results: list = []
+    page = 1
+    try:
+        while True:
+            data = gh._get(
+                f"/repos/{gh.repo}/issues",
+                params={"labels": label, "state": "all", "per_page": 100, "page": page},
+            )
+            if not data:
+                break
+            for item in data:
+                if "pull_request" not in item:
+                    results.append({"number": item["number"], "state": item["state"]})
+            if len(data) < 100:
+                break
+            page += 1
+    except Exception as exc:
+        log.warning("could not fetch children for #%d: %s", issue_number, exc)
+        return []
+    _CHILDREN_CACHE[issue_number] = results
+    return results
+
+
+def _open_children(children: list) -> list:
+    return [c for c in children if str(c.get("state", "")).lower() == "open"]
+
+
+def children_condition_met(condition: str, children: list) -> bool:
+    """Whether a trigger.children condition holds for this item's children.
+
+    all_closed -- there is at least one child and every one of them is closed.
+      An item with no children has nothing to have finished, so the condition
+      is not met (this is what kept the old epic sweep from closing a
+      childless epic, preserved here as declared behaviour).
+    any_open  -- at least one child is still open.
+    """
+    if condition == "all_closed":
+        return bool(children) and not _open_children(children)
+    if condition == "any_open":
+        return bool(_open_children(children))
+    raise ValueError(f"unknown trigger.children condition: {condition!r}")
+
+
+def _step_reads_children(agent_def: "AgentDef") -> Optional[str]:
+    """The trigger.children condition this step declares, if any."""
+    return (agent_def.trigger or {}).get("children")
+
+
+def select_sub_item(children: list) -> Optional[int]:
+    """Which open child this invocation of a sub_item step is for.
+
+    Lowest open child number first: deterministic, so a run is reproducible
+    and the pieces are addressed in the order they were raised.
+    """
+    open_children = _open_children(children)
+    if not open_children:
+        return None
+    return min(int(c["number"]) for c in open_children)
+
+
+def _flow_context_env(
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    *,
+    sub_item_number: Optional[int] = None,
+    children: Optional[list] = None,
+) -> dict[str, str]:
+    """The flow-derived context every step is told about its own situation.
+
+    A step learns its situation only from what it is told (PRODUCT.md): the
+    flow it is running in, the branch and pull-request shape that flow
+    declares, the piece of work this invocation is for, and -- for a step
+    whose trigger reads the item's children -- what those children are. No
+    step derives any of this for itself.
+    """
+    env: dict[str, str] = {
+        "AI_AGILE_FLOW": agent_def.flow,
+        "AI_AGILE_STEP": agent_def.agent,
+    }
+    if work_item.kind == "issue":
+        _branch = step_branch(agent_def, work_item)
+        if _branch:
+            env["AI_AGILE_BRANCH"] = _branch
+        _base = flow_base_branch(agent_def, work_item)
+        if _base:
+            env["AI_AGILE_BASE_BRANCH"] = _base
+    _closes = step_pr_closes_issue(agent_def)
+    if _closes is not None:
+        env["PR_CLOSES_ISSUE"] = "true" if _closes else "false"
+    if sub_item_number is not None:
+        env["SUB_ITEM_NUMBER"] = str(sub_item_number)
+    if children is not None:
+        env["AI_AGILE_CHILDREN_TOTAL"] = str(len(children))
+        env["AI_AGILE_CHILDREN_OPEN"] = str(
+            sum(1 for c in children if str(c.get("state", "")).lower() == "open")
+        )
+    return env
+
+
+def step_pr_closes_issue(agent_def: "AgentDef") -> Optional[bool]:
+    """Whether the pull request this step operates on carries a Closes trailer.
+
+    None when the step names no pull request (the flow declares no naming, or
+    the step declares no commits_to) -- the caller decides what that means.
+    """
+    if not agent_def.commits_to:
+        return None
+    pr = _flow_pull_request(agent_def, agent_def.commits_to)
+    if pr is None:
+        return None
+    return bool(pr.get("closes_issue", True))
 
 
 def pipeline_by_name(agents: list[AgentDef]) -> dict[str, AgentDef]:
@@ -742,6 +1157,20 @@ class GitHubClient:
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
 
+    def create_issue(self, title: str, body: str, labels: Optional[list] = None) -> int:
+        """Raise a new work item and return its number.
+
+        The orchestrator is the only writer (PRODUCT.md, "What a step must
+        never do"): a step returns what it produced, and this is the
+        orchestrator writing it. The body it is given already carries the
+        provenance stamp naming the step and flow that produced it.
+        """
+        payload: dict = {"title": title, "body": body}
+        if labels:
+            payload["labels"] = list(labels)
+        data = self._post(f"/repos/{self.repo}/issues", payload)
+        return int(data["number"])
+
     def list_comment_bodies(self, number: int) -> list[str]:
         """Return every comment body on an issue or PR, oldest first, paginated."""
         bodies: list[str] = []
@@ -998,7 +1427,7 @@ def _build_agent_metrics(
     github_issue_number: Optional[int] = work_item.number if work_item.kind == "issue" else None
     pr_id: Optional[int] = work_item.number if work_item.kind == "pr" else None
     branch_id: Optional[str] = (
-        f"issue-{work_item.number}" if work_item.kind == "issue" else None
+        step_branch(agent_def, work_item) if work_item.kind == "issue" else None
     )
 
     is_error = (
@@ -1012,6 +1441,7 @@ def _build_agent_metrics(
         "timestamp_end": timestamp_end,
         "github_issue_number": github_issue_number,
         "agent_id": agent_def.agent,
+        "flow": agent_def.flow,
         "branch_id": branch_id,
         "pr_id": pr_id,
         "cycle_id": cycle_id,
@@ -1067,7 +1497,7 @@ def _build_scripted_metrics(
     github_issue_number: Optional[int] = work_item.number if work_item.kind == "issue" else None
     pr_id: Optional[int] = work_item.number if work_item.kind == "pr" else None
     branch_id: Optional[str] = (
-        f"issue-{work_item.number}" if work_item.kind == "issue" else None
+        step_branch(agent_def, work_item) if work_item.kind == "issue" else None
     )
 
     return {
@@ -1075,6 +1505,7 @@ def _build_scripted_metrics(
         "timestamp_end": timestamp_end,
         "github_issue_number": github_issue_number,
         "agent_id": agent_def.agent,
+        "flow": agent_def.flow,
         "branch_id": branch_id,
         "pr_id": pr_id,
         "cycle_id": cycle_id,
@@ -1286,6 +1717,288 @@ def _append_metrics_record(
             time.sleep(1)
             continue
         raise RuntimeError(f"git push to {METRICS_BRANCH} failed: {push.stderr.strip()}")
+
+
+# ---------------------------------------------------------------------------
+# Scheduled flows (issue #406)
+#
+# A scheduled flow has no work item, so it has nowhere to carry a label -- and
+# labels are the state. Both things it needs are therefore read from the record
+# itself (PRODUCT.md, "A scheduled flow derives its own due-ness from the
+# record"):
+#
+#   due-ness   every completed step appends a timestamped entry to the metrics
+#              branch, so "when did this flow last run" is a read of that log.
+#              A flow with no entry has never run, which is the same answer as
+#              overdue. There is no last-run table anywhere.
+#   its mutex  :wip is a label on a work item and there is no work item, so a
+#              scheduled flow claims itself by appending a claim record to the
+#              same append-only log. That append is already a compare-and-swap
+#              (it pushes onto a fetched tip and retries on rejection), so a
+#              claim whose push loses the race IS the mutex failure. A claim
+#              older than its lease has been stranded by a runner that died,
+#              and is reclaimed on age -- the same shape as reclaiming a
+#              stranded :wip by its wall-clock budget.
+# ---------------------------------------------------------------------------
+
+SCHEDULE_CLAIM_EVENT = "schedule.claim"
+SCHEDULE_RELEASE_EVENT = "schedule.release"
+
+# How long a claim stays valid without a matching release. Beyond this the
+# runner that took it cannot still be legitimately running, so the claim is
+# reclaimable rather than wedging the schedule forever.
+SCHEDULE_CLAIM_LEASE_SECONDS = 3 * 3600
+
+
+def read_metrics_records(repo: str) -> list[dict]:
+    """Every record on the metrics branch, oldest first.
+
+    Read with the same git plumbing _append_metrics_record writes with, so the
+    log is one mechanism read and written the same way. Returns [] when the
+    branch or the file does not exist yet -- a pipeline that has never run has
+    no record, which every caller reads as "nothing has happened yet".
+    """
+    try:
+        subprocess.run(
+            ["git", "fetch", "origin", METRICS_BRANCH],
+            check=True, capture_output=True,
+        )
+        show = subprocess.run(
+            ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
+            capture_output=True, text=True,
+        )
+    except Exception as exc:
+        log.warning("metrics: could not read %s: %s", METRICS_RECORDS_FILE, exc)
+        return []
+    if show.returncode != 0:
+        return []
+    records: list[dict] = []
+    for line in show.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            records.append(entry)
+    return records
+
+
+def _parse_record_time(value: object) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.rstrip("Z") + "+00:00")
+    except ValueError:
+        return None
+
+
+def flow_last_run(records: list, flow: str) -> Optional[datetime]:
+    """When this flow's steps last appended an entry, or None if never.
+
+    Claim and release records are this mechanism's own bookkeeping, not a
+    step's work, so they never count as a run.
+    """
+    latest: Optional[datetime] = None
+    for entry in records:
+        if entry.get("flow") != flow:
+            continue
+        if entry.get("event") in (SCHEDULE_CLAIM_EVENT, SCHEDULE_RELEASE_EVENT):
+            continue
+        ts = _parse_record_time(entry.get("timestamp_end") or entry.get("timestamp_start"))
+        if ts is not None and (latest is None or ts > latest):
+            latest = ts
+    return latest
+
+
+def _cron_field_matches(field: str, value: int, *, low: int, high: int) -> bool:
+    """One cron field against one value: '*', 'a', 'a-b', '*/n', 'a-b/n', lists."""
+    for part in field.split(","):
+        part = part.strip()
+        if not part:
+            return False
+        step = 1
+        if "/" in part:
+            part, _, step_text = part.partition("/")
+            try:
+                step = int(step_text)
+            except ValueError:
+                return False
+            if step < 1:
+                return False
+        if part in ("*", "?"):
+            start, end = low, high
+        elif "-" in part:
+            start_text, _, end_text = part.partition("-")
+            try:
+                start, end = int(start_text), int(end_text)
+            except ValueError:
+                return False
+        else:
+            try:
+                start = end = int(part)
+            except ValueError:
+                return False
+        if start <= value <= end and (value - start) % step == 0:
+            return True
+    return False
+
+
+def cron_matches(expression: str, when: datetime) -> bool:
+    """Whether a 5-field cron expression fires at this minute (UTC).
+
+    Fields: minute hour day-of-month month day-of-week (0 or 7 = Sunday).
+    Day-of-month and day-of-week are OR'd when both are restricted, matching
+    cron's own long-standing behaviour.
+    """
+    fields = expression.split()
+    if len(fields) != 5:
+        raise ValueError(f"cron expression must have 5 fields, got {expression!r}")
+    minute, hour, dom, month, dow = fields
+    if not _cron_field_matches(minute, when.minute, low=0, high=59):
+        return False
+    if not _cron_field_matches(hour, when.hour, low=0, high=23):
+        return False
+    if not _cron_field_matches(month, when.month, low=1, high=12):
+        return False
+    _weekday = (when.weekday() + 1) % 7  # Monday=0 -> cron Sunday=0
+    _dom_restricted = dom.strip() not in ("*", "?")
+    _dow_restricted = dow.strip() not in ("*", "?")
+    _dom_ok = _cron_field_matches(dom, when.day, low=1, high=31)
+    _dow_ok = (
+        _cron_field_matches(dow, _weekday, low=0, high=6)
+        or _cron_field_matches(dow, 7 if _weekday == 0 else _weekday, low=0, high=7)
+    )
+    if _dom_restricted and _dow_restricted:
+        return _dom_ok or _dow_ok
+    if _dom_restricted:
+        return _dom_ok
+    if _dow_restricted:
+        return _dow_ok
+    return True
+
+
+# How far back a due-ness check looks for the schedule's last firing time. A
+# cadence that has not come round in this long is due whatever its expression
+# says, so a pathological expression cannot make the search unbounded.
+_CRON_LOOKBACK_MINUTES = 366 * 24 * 60
+
+
+def previous_fire_time(expression: str, now: datetime) -> Optional[datetime]:
+    """The most recent minute at or before *now* that this cadence fires."""
+    candidate = now.replace(second=0, microsecond=0)
+    for _ in range(_CRON_LOOKBACK_MINUTES):
+        if cron_matches(expression, candidate):
+            return candidate
+        candidate -= timedelta(minutes=1)
+    return None
+
+
+def schedule_is_due(expression: str, last_run: Optional[datetime], now: datetime) -> bool:
+    """Whether a scheduled flow is due, given when it last ran.
+
+    A flow that has never run has no entry in the record, which is the same
+    answer as overdue. Otherwise it is due when the cadence has come round
+    again since that entry. A cadence that cannot be parsed raises here rather
+    than being read as "always due" -- a broken declaration must not silently
+    run a sweep every tick (STD-ARCH-014).
+    """
+    if len(expression.split()) != 5:
+        raise ValueError(f"cron expression must have 5 fields, got {expression!r}")
+    if last_run is None:
+        return True
+    fired = previous_fire_time(expression, now)
+    if fired is None:
+        return True
+    return last_run < fired
+
+
+def _schedule_bookkeeping_record(flow: str, event: str, now: datetime) -> dict:
+    """A claim or release entry, shaped like every other record in the log."""
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "timestamp_start": stamp,
+        "timestamp_end": stamp,
+        "github_issue_number": None,
+        "agent_id": f"schedule/{flow}",
+        "flow": flow,
+        "event": event,
+        "cycle_id": str(uuid.uuid4()),
+        "duration_ms": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "retry_count": 0,
+        "retry_errors": [],
+    }
+
+
+def schedule_claim_is_held(records: list, flow: str, now: datetime) -> bool:
+    """Whether another runner currently holds this flow's claim.
+
+    A claim with no release after it holds until its lease expires; past that
+    it was stranded by a runner that died mid-flight and is reclaimable, so a
+    dead runner cannot wedge the schedule forever.
+    """
+    latest: Optional[tuple] = None
+    for entry in records:
+        if entry.get("flow") != flow:
+            continue
+        event = entry.get("event")
+        if event not in (SCHEDULE_CLAIM_EVENT, SCHEDULE_RELEASE_EVENT):
+            continue
+        ts = _parse_record_time(entry.get("timestamp_start"))
+        if ts is None:
+            continue
+        if latest is None or ts >= latest[0]:
+            latest = (ts, event)
+    if latest is None or latest[1] != SCHEDULE_CLAIM_EVENT:
+        return False
+    return (now - latest[0]).total_seconds() < SCHEDULE_CLAIM_LEASE_SECONDS
+
+
+def claim_schedule(
+    gh: "GitHubClient", repo: str, flow: str, *, now: Optional[datetime] = None,
+) -> bool:
+    """Take this flow's mutex, or report that someone else holds it.
+
+    Two runners racing both append a claim onto the same fetched tip; the
+    append is a compare-and-swap, so exactly one push lands and the other is
+    rejected -- the rejection IS the mutex failure, with no second locking
+    mechanism invented for it.
+    """
+    now = now or _now_utc()
+    records = read_metrics_records(repo)
+    if schedule_claim_is_held(records, flow, now):
+        log.info("schedule %s: claim held by another runner -- skipping", flow)
+        return False
+    try:
+        _ensure_metrics_branch(gh, repo)
+        _append_metrics_record(
+            gh, repo, _schedule_bookkeeping_record(flow, SCHEDULE_CLAIM_EVENT, now),
+            _retries=0,
+        )
+    except Exception as exc:
+        log.info("schedule %s: could not take the claim (%s) -- skipping", flow, exc)
+        return False
+    return True
+
+
+def release_schedule(
+    gh: "GitHubClient", repo: str, flow: str, *, now: Optional[datetime] = None,
+) -> None:
+    """Give the claim back. Never raises -- an unreleased claim expires anyway."""
+    try:
+        _append_metrics_record(
+            gh, repo,
+            _schedule_bookkeeping_record(flow, SCHEDULE_RELEASE_EVENT, now or _now_utc()),
+        )
+    except Exception as exc:
+        log.warning(
+            "schedule %s: could not release the claim (%s) -- it expires in %ds",
+            flow, exc, SCHEDULE_CLAIM_LEASE_SECONDS,
+        )
 
 
 def _post_cycle_metrics(
@@ -2182,6 +2895,7 @@ class StepResult:
     expected_effect: dict = field(default_factory=dict)   # the step's own belief about what it changed this run
     label_requests: list = field(default_factory=list)    # [{"issue": int|None, "add": [...], "remove": [...]}]
     body_write: dict = field(default_factory=dict)        # {} = none; see _read_step_result for the two shapes
+    creates_issue: dict = field(default_factory=dict)     # {} = none; {"title": str, "body": str, "labels": [str]} -- a new work item for the orchestrator to raise and stamp
 
 
 def _result_file_path(scratch_dir: str) -> Path:
@@ -2264,6 +2978,18 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         else:
             return None, 'result.body_write.mode must be "replace" or "patch"'
 
+    creates_issue = raw.get("creates_issue", {})
+    if not isinstance(creates_issue, dict):
+        return None, "result.creates_issue must be an object"
+    if creates_issue:
+        if not isinstance(creates_issue.get("title"), str) or not creates_issue["title"].strip():
+            return None, "result.creates_issue.title must be a non-empty string"
+        if not isinstance(creates_issue.get("body"), str):
+            return None, "result.creates_issue.body must be a string"
+        _ci_labels = creates_issue.get("labels", [])
+        if not isinstance(_ci_labels, list) or not all(isinstance(x, str) for x in _ci_labels):
+            return None, "result.creates_issue.labels must be an array of strings"
+
     return StepResult(
         outcome=outcome,
         summary=summary,
@@ -2273,6 +2999,7 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         expected_effect=expected_effect,
         label_requests=label_requests,
         body_write=body_write,
+        creates_issue=creates_issue,
     ), ""
 
 
@@ -2334,6 +3061,113 @@ def _apply_label_requests(
                 "  could not %s label %r on #%d (requested by %s): %s",
                 op, lbl, target, agent_def.agent, exc,
             )
+
+
+# ---------------------------------------------------------------------------
+# The orchestrator stamps what it creates (issue #406)
+#
+# A step returns what it produced and the orchestrator writes it; when what it
+# produced is a new work item, the orchestrator also records which step and
+# which flow produced it. That provenance is what lets a flow find its own
+# earlier output and raise only what is new since (PRODUCT.md).
+# ---------------------------------------------------------------------------
+
+def provenance_stamp(agent_def: "AgentDef") -> str:
+    """The marker recording which step, in which flow, produced a work item.
+
+    Same convention as the orchestrator's other markers (announcement,
+    artefact, snapshot): an HTML comment carrying the version and the author.
+    """
+    return (
+        f"<!-- ai-agile/provenance/v1 step={agent_def.agent} "
+        f"flow={agent_def.flow or 'none'} -->"
+    )
+
+
+def stamped_issue_body(agent_def: "AgentDef", body: str, work_item: "WorkItem") -> str:
+    """A created work item's body, with its provenance stamp and origin."""
+    return (
+        f"{provenance_stamp(agent_def)}\n\n"
+        f"{body.rstrip()}\n\n"
+        f"---\n"
+        f"_Raised by `{agent_def.agent}` (flow `{agent_def.flow or 'none'}`) "
+        f"while working on #{work_item.number}._"
+    )
+
+
+def expected_effect_disagreement(
+    agent_def: "AgentDef", *, requested_issue: bool,
+) -> Optional[str]:
+    """MI-6: does what the step declared match what it actually asked for?
+
+    A step declaring expected_effect.creates_issues that raises nothing, or
+    raising one having declared it would not, disagrees with itself, and the
+    disagreement is surfaced rather than buried. Note that a step which raises
+    issues with its own granted `gh issue create` rather than through the
+    result contract also reads as "declared but did not request" here, until
+    it moves to returning the request.
+    """
+    declared = bool((agent_def.expected_effect or {}).get("creates_issues", False))
+    if requested_issue and not declared:
+        return (
+            "requested a new work item but declares expected_effect."
+            "creates_issues: false"
+        )
+    if declared and not requested_issue:
+        return (
+            "declares expected_effect.creates_issues: true but requested no "
+            "work item"
+        )
+    return None
+
+
+def _create_requested_issue(
+    gh: "GitHubClient",
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    step_result: Optional["StepResult"],
+) -> Optional[int]:
+    """Raise the work item this step's result asked for, stamped. Never raises.
+
+    Refused, not silently created, when the step never declared
+    expected_effect.creates_issues -- the same enforced-not-discouraged
+    relationship allowed_labels has with label requests. Returns the new
+    issue number, or None when nothing was created.
+    """
+    request = (step_result.creates_issue if step_result else {}) or {}
+    disagreement = expected_effect_disagreement(
+        agent_def, requested_issue=bool(request),
+    )
+    if disagreement:
+        log.warning(
+            "  MI-6    %-38s  %s", agent_def.agent, disagreement,
+        )
+    if not request:
+        return None
+    if not bool((agent_def.expected_effect or {}).get("creates_issues", False)):
+        log.warning(
+            "  refusing to raise a work item for %s: it declares "
+            "expected_effect.creates_issues: false",
+            agent_def.agent,
+        )
+        return None
+    try:
+        number = gh.create_issue(
+            request["title"],
+            stamped_issue_body(agent_def, request.get("body", ""), work_item),
+            request.get("labels") or None,
+        )
+    except Exception as exc:
+        log.warning(
+            "  could not raise the work item requested by %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
+        return None
+    log.info(
+        "  RAISED  %-38s  #%d (stamped: step=%s flow=%s)",
+        agent_def.agent, number, agent_def.agent, agent_def.flow or "none",
+    )
+    return number
 
 
 def _post_artefact_if_present(
@@ -2457,20 +3291,22 @@ def _apply_todos_patch(body: str, subsection: str, content: str) -> tuple[Option
 
 
 def _resolve_body_write_target(
-    gh: "GitHubClient", work_item: "WorkItem", target: str,
+    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", target: str,
 ) -> Optional[int]:
     """Resolve body_write's declared target ("issue" or "pr") to a real
     number. Mirrors _mark_pr_ready_if_requested's PR lookup: a step running
     against an issue work item but targeting "pr" (e.g. coder ticking a PR's
     build-plan) needs the PR found by branch/label the same way review-gate
-    promotion does.
+    promotion does. The branch it looks the PR up by is this step's own, from
+    its flow's naming (issue #406) -- never a name built here.
     """
     if target == "issue":
         return work_item.number if work_item.kind == "issue" else None
     if work_item.kind == "pr":
         return work_item.number
     try:
-        pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+        _branch = step_branch(agent_def, work_item)
+        pr_number = gh.find_pr_by_branch(_branch) if _branch else None
         if pr_number is None:
             pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
         return pr_number
@@ -2511,7 +3347,7 @@ def _apply_body_write(
     if not step_result or not step_result.body_write:
         return
     bw = step_result.body_write
-    target_number = _resolve_body_write_target(gh, work_item, bw["target"])
+    target_number = _resolve_body_write_target(gh, agent_def, work_item, bw["target"])
     if target_number is None:
         log.warning(
             "  could not resolve body_write target (%s) for %s on #%d",
@@ -2735,8 +3571,9 @@ def _build_opening_announcement(
         "started_at": now,
         "intent": agent_def.description[:120],
     }
-    if work_item.kind == "issue":
-        payload["branch"] = f"issue-{work_item.number}"
+    _branch = step_branch(agent_def, work_item) if work_item.kind == "issue" else None
+    if _branch:
+        payload["branch"] = _branch
     return (
         f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
         f"```json\n"
@@ -2768,8 +3605,9 @@ def _build_closing_announcement(
     # this records the declared half of that comparison.
     if expected_effect:
         payload["expected_effect"] = expected_effect
-    if work_item.kind == "issue":
-        payload["branch"] = f"issue-{work_item.number}"
+    _branch = step_branch(agent_def, work_item) if work_item.kind == "issue" else None
+    if _branch:
+        payload["branch"] = _branch
     return (
         f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->\n"
         f"```json\n"
@@ -2874,6 +3712,7 @@ def invoke_script(
     repo: str,
     *,
     cwd: Optional[str] = None,
+    flow_env: Optional[dict] = None,
 ) -> AgentRunResult:
     """Invoke a script-type pipeline step directly via bash.
 
@@ -2933,8 +3772,12 @@ def invoke_script(
     }
     if work_item.kind == "issue":
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
-    else:
+    elif work_item.kind == "pr":
         agent_env["PR_NUMBER"] = str(work_item.number)
+    # A scheduled step has no work item at all, so it is told neither.
+    agent_env.update(
+        flow_env if flow_env is not None else _flow_context_env(agent_def, work_item)
+    )
 
     MAX_SCRIPT_CAPTURED_LINES = 500
     captured_lines: list[str] = []
@@ -3285,6 +4128,7 @@ def _build_agent_env(
     session_scope: str,
     *,
     ai_agile_root: Optional[str] = None,
+    flow_env: Optional[Mapping[str, str]] = None,
 ) -> dict[str, str]:
     """Build the environment for a Claude agent subprocess.
 
@@ -3317,11 +4161,17 @@ def _build_agent_env(
     agent_env["SESSION_SCOPE"] = session_scope
     if work_item.kind == "issue":
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
-    else:
+    elif work_item.kind == "pr":
         agent_env["PR_NUMBER"] = str(work_item.number)
+    # A scheduled step has no work item at all, so it is told neither.
     # Axis B: every orchestrator-spawned subprocess is always headless/opaque,
     # regardless of whether the tick itself was triggered by cron or interactively.
     agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
+    # Flow context (issue #406): which flow and step this is, the branch its
+    # flow's naming declares, and -- for a sub_item step -- which piece of work
+    # this invocation is for. Computed by the caller when it knows the piece;
+    # otherwise derived from the step's own declaration here.
+    agent_env.update(dict(flow_env) if flow_env is not None else {})
     # Per-run scratch directory under /tmp — outside the working tree, so it
     # can never appear in git status or be swept into a commit. Creation and
     # removal are done by .github/scripts/scratch-{setup,teardown}.sh, which
@@ -3502,6 +4352,10 @@ def _resolve_agent_invocation(
         f"  label_requests    [{{\"issue\": null, \"add\": [...], \"remove\": [...]}}] — \"issue\" null\n"
         f"                    means this work item; only requests matching your declared\n"
         f"                    allowed_labels are applied, the rest are silently dropped\n"
+        f"  creates_issue     {{\"title\": ..., \"body\": ..., \"labels\": [...]}} — a new work item\n"
+        f"                    for the orchestrator to raise on your behalf and stamp with the\n"
+        f"                    step and flow that produced it; only honoured when this step\n"
+        f"                    declares expected_effect.creates_issues\n"
         f"Do not print an AI_AGILE_STATUS sentinel — that mechanism is retired for agent-type "
         f"steps. The orchestrator reads the result file, applies the matching label, posts the "
         f"closing announcement and any artefact/label changes on your behalf."
@@ -3526,6 +4380,7 @@ def invoke_agent(
     default_extra_tools: Optional[list[str]] = None,
     *,
     cwd: Optional[str] = None,
+    flow_env: Optional[dict] = None,
 ) -> AgentRunResult:
     """
     Invoke the agent via claude CLI.
@@ -3574,6 +4429,7 @@ def invoke_agent(
     agent_env = _build_agent_env(
         os.environ, repo, work_item, agent_session_id, agent_def.session_scope,
         ai_agile_root=cwd,
+        flow_env=flow_env if flow_env is not None else _flow_context_env(agent_def, work_item),
     )
 
     # Run the declared "before" scripts. Inside invoke_agent, so each retry gets
@@ -4201,6 +5057,42 @@ def _should_run(
     if work_item.kind not in agent_def.objects:
         return False
 
+    # A scheduled flow has no work item to be eligible against; its steps are
+    # dispatched by cadence (see _run_scheduled_flows), never by this loop.
+    if agent_def.flow_schedule:
+        return False
+
+    # Flow membership (issue #406): the flow says what makes an item its own.
+    # A step is only reachable on an item that entered its flow.
+    if agent_def.flow_labels and not set(agent_def.flow_labels).issubset(labels):
+        log.debug(
+            "  skip %-40s  [flow %r requires labels: %s]",
+            agent_def.agent, agent_def.flow, ", ".join(sorted(agent_def.flow_labels)),
+        )
+        return False
+
+    if agent_def.flow_types and work_item.kind == "issue":
+        _type = get_work_item_classification(work_item)
+        if _type not in agent_def.flow_types:
+            log.debug(
+                "  skip %-40s  [flow %r requires type: %s]",
+                agent_def.agent, agent_def.flow, ", ".join(sorted(agent_def.flow_types)),
+            )
+            return False
+
+    # trigger.labels: additional labels that must ALL be present for this step,
+    # beyond whatever fires it -- what lets steps inside one flow vary by a
+    # dimension (e.g. size) without becoming a separate flow. Enforced even for
+    # a :requested manual override: it scopes what the step is for, and
+    # :requested bypasses only the trigger-label sequencing check.
+    _required_labels = (agent_def.trigger or {}).get("labels") or []
+    if _required_labels and not set(_required_labels).issubset(labels):
+        log.debug(
+            "  skip %-40s  [trigger.labels not all present: %s]",
+            agent_def.agent, ", ".join(sorted(_required_labels)),
+        )
+        return False
+
     if agent_def.exclude_classifications and work_item.kind == "issue":
         _classification = get_work_item_classification(work_item)
         if _classification and _classification in agent_def.exclude_classifications:
@@ -4222,6 +5114,23 @@ def _should_run(
             return False
 
     current_status = agent_status(labels, agent_def.label_key)
+
+    # A step that finishes its own work in pieces (unit: sub_item) is done with
+    # ONE piece when it completes, not with the item: while any child of its own
+    # remains open it becomes eligible again on a later tick, one piece per
+    # invocation, each committed as it goes (PRODUCT.md, "The unit of work
+    # shrinks; the contract does not").
+    if (
+        current_status == STATUS_COMPLETE
+        and agent_def.unit == "sub_item"
+        and work_item.kind == "issue"
+        and gh is not None
+        and select_sub_item(find_child_items(gh, work_item.number)) is not None
+    ):
+        log.debug(
+            "  again %-40s  [unit: sub_item, open child remains]", agent_def.agent,
+        )
+        current_status = None
 
     if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED):
         log.debug("  skip %-40s  [%s]", agent_def.agent, current_status)
@@ -4255,6 +5164,30 @@ def _should_run(
     ):
         log.debug("  skip %-40s  [dependencies unmet]", agent_def.agent)
         return False
+
+    # A condition about the item's other work (issue #406): "every child is
+    # closed" for a coordinating step that has been waiting, or "at least one
+    # child is open" for a step that finishes its own work in pieces. Read
+    # here, with every other eligibility condition, so declaring one takes no
+    # new orchestrator code.
+    _children_condition = _step_reads_children(agent_def)
+    if _children_condition or agent_def.unit == "sub_item":
+        if work_item.kind != "issue" or gh is None:
+            return False
+        _children = find_child_items(gh, work_item.number)
+        if _children_condition and not children_condition_met(_children_condition, _children):
+            log.debug(
+                "  skip %-40s  [children %s not met: %d open of %d]",
+                agent_def.agent, _children_condition,
+                len(_open_children(_children)), len(_children),
+            )
+            return False
+        if agent_def.unit == "sub_item" and select_sub_item(_children) is None:
+            log.debug(
+                "  skip %-40s  [unit: sub_item with no open child to address]",
+                agent_def.agent,
+            )
+            return False
 
     if concurrency is not None:
         _components = _work_item_components(work_item)
@@ -4299,6 +5232,19 @@ def _acquire_wip_and_announce(
     for re_invoke targets. Mutates labels and work_item.labels in-place.
     """
     if not dry_run:
+        # A sub_item step re-invoked for its next piece still carries the
+        # :complete it earned for the previous one -- clear it first, so the
+        # item never carries two status labels for the same step and
+        # downstream dependencies see it as unfinished while it runs.
+        if agent_def.unit == "sub_item" and agent_def.complete_label in labels:
+            try:
+                gh.remove_label(work_item.number, agent_def.complete_label)
+                labels.discard(agent_def.complete_label)
+            except Exception as exc:
+                log.debug(
+                    "  could not clear :complete for %s on #%d: %s",
+                    agent_def.agent, work_item.number, exc,
+                )
         # Remove :requested before applying :wip so the work item never
         # carries two status labels simultaneously.
         if manual_trigger:
@@ -4390,6 +5336,7 @@ def _invoke_with_retries(
     agent_text_snapshot: Optional[str],
     *,
     cwd: Optional[str] = None,
+    flow_env: Optional[dict] = None,
 ) -> tuple:
     """Invoke an agent, retrying on a crashed/malformed result up to max_retries.
 
@@ -4415,7 +5362,7 @@ def _invoke_with_retries(
         agent_def, work_item, dry_run, repo, attempt=0,
         agent_text_override=agent_text_snapshot,
         default_extra_tools=default_extra_tools,
-        cwd=cwd,
+        cwd=cwd, flow_env=flow_env,
     )
     while not dry_run:
         if result.rate_limited:
@@ -4446,7 +5393,7 @@ def _invoke_with_retries(
             agent_def, work_item, dry_run, repo, attempt=_attempt,
             agent_text_override=agent_text_snapshot,
             default_extra_tools=default_extra_tools,
-            cwd=cwd,
+            cwd=cwd, flow_env=flow_env,
         )
         if result.rate_limited:
             break
@@ -4536,6 +5483,29 @@ def _run_agent(
         _agent_file_path.read_text() if _agent_file_path.exists() else None
     )
 
+    # The piece of work this invocation is for (issue #406). A step declaring
+    # unit: sub_item addresses one open child per invocation -- the orchestrator
+    # picks it (deterministically, lowest number first) and tells the step which
+    # via SUB_ITEM_NUMBER; the step stays eligible while any child remains open,
+    # so the item is finished across several invocations, each of them committed.
+    _children: Optional[list] = None
+    _sub_item: Optional[int] = None
+    if gh is not None and work_item.kind == "issue" and (
+        _step_reads_children(agent_def) or agent_def.unit == "sub_item"
+    ):
+        _children = find_child_items(gh, work_item.number)
+        if agent_def.unit == "sub_item":
+            _sub_item = select_sub_item(_children)
+            if _sub_item is not None:
+                log.info(
+                    "  SUBITEM %-38s  addressing child #%d (%d open of %d)",
+                    agent_def.agent, _sub_item,
+                    len(_open_children(_children)), len(_children),
+                )
+    _flow_env = _flow_context_env(
+        agent_def, work_item, sub_item_number=_sub_item, children=_children,
+    )
+
     # For commit_after agents, check out the issue branch into its own
     # isolated worktree before invoking, so the agent reads accumulated state
     # without disturbing (or being disturbed by) a concurrent run on a
@@ -4546,7 +5516,23 @@ def _run_agent(
     _pre_agent_worktree: str = ""
     _agent_cwd: Optional[str] = None
     if not dry_run and agent_def.commit_after and work_item.kind == "issue" and not interactive_result:
-        _issue_branch = f"issue-{work_item.number}{agent_def.branch_suffix}"
+        _issue_branch = step_branch(agent_def, work_item)
+        if not _issue_branch:
+            log.error(
+                "  %s commits but its flow %r declares no naming.branch — "
+                "failing the run rather than inventing a branch name (#406)",
+                agent_def.agent, agent_def.flow,
+            )
+            return (
+                AgentRunResult(
+                    success=False,
+                    captured_tail=(
+                        f"step {agent_def.agent} declares git_ops.commit_after but "
+                        f"flow {agent_def.flow!r} declares no naming.branch"
+                    ),
+                ),
+                None, "", "", _invoked_at, 0, False, None,
+            )
         try:
             _pre_agent_worktree = _create_run_worktree(_issue_branch)
             _agent_cwd = _pre_agent_worktree
@@ -4580,7 +5566,9 @@ def _run_agent(
     _attempt = 0
 
     if agent_def.step_type == "script":
-        result = invoke_script(agent_def, work_item, dry_run, repo, cwd=_agent_cwd)
+        result = invoke_script(
+            agent_def, work_item, dry_run, repo, cwd=_agent_cwd, flow_env=_flow_env,
+        )
         if not dry_run:
             sentinel_status, sentinel_message = _parse_agent_sentinel(result.captured_tail)
     elif interactive_result:
@@ -4616,6 +5604,7 @@ def _run_agent(
         result, step_result, exhausted, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
             default_extra_tools, _agent_text_snapshot, cwd=_agent_cwd,
+            flow_env=_flow_env,
         )
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
@@ -4801,7 +5790,7 @@ def _orchestration_script_path(rel_path: str) -> Path:
 
 
 # STD-SEC-022 — env vars for commit-agent-work.sh: git stash/fetch/checkout/commit/push
-# plus base64 for the auth header. AGENT_NAME, ISSUE_NUMBER, BRANCH_SUFFIX are set
+# plus base64 for the auth header. AGENT_NAME, ISSUE_NUMBER, AI_AGILE_BRANCH are set
 # explicitly below.
 _COMMIT_AFTER_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
@@ -4825,11 +5814,19 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optio
     owns the label/branch side-effects on failure.
     """
     _commit_script = _orchestration_script_path(".github/scripts/commit-agent-work.sh")
+    _branch = step_branch(agent_def, work_item)
+    if not _branch:
+        return (
+            f"_step {agent_def.agent} commits but flow {agent_def.flow!r} declares "
+            f"no naming.branch; nothing to commit to._"
+        )
     _commit_env = {  # STD-SEC-022
         **{k: os.environ[k] for k in _COMMIT_AFTER_ENV_VARS if k in os.environ},
         "AGENT_NAME": agent_def.agent,
         "ISSUE_NUMBER": str(work_item.number),
-        "BRANCH_SUFFIX": agent_def.branch_suffix,
+        # The branch comes from the step's flow naming (issue #406); the script
+        # never derives it from the issue number itself.
+        "AI_AGILE_BRANCH": _branch,
     }
     log.info(
         "  commit-after: invoking commit-agent-work.sh for %s on #%d",
@@ -4909,6 +5906,10 @@ def _invoke_post_steps(
     else:
         _ps_env["PR_NUMBER"] = str(work_item.number)
     _ps_env["AI_AGILE_ROOT"] = os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
+    # A post_step is told the same flow context the step itself was (issue
+    # #406), so a hook that needs the branch or pull request reads the flow's
+    # declared name rather than building one from the issue number.
+    _ps_env.update(_flow_context_env(agent_def, work_item))
     for _ps_path_str in agent_def.post_steps:
         # Escape check on the DECLARED (working-tree) path: rejects a
         # pipeline.json entry that tries to point outside the repo root. This
@@ -5092,7 +6093,10 @@ def _compute_human_review_override(
             _hr_pr_number = work_item.number
         elif work_item.kind == "issue":
             try:
-                _hr_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+                _hr_branch = step_branch(agent_def, work_item)
+                _hr_pr_number = (
+                    gh.find_pr_by_branch(_hr_branch) if _hr_branch else None
+                )
                 if _hr_pr_number is None:
                     _hr_pr_number = gh.find_pr_by_label(
                         f"source-issue:{work_item.number}"
@@ -5270,7 +6274,10 @@ def _mark_pr_ready_if_requested(
         _ready_pr_number = work_item.number
     elif work_item.kind == "issue":
         try:
-            _ready_pr_number = gh.find_pr_by_branch(f"issue-{work_item.number}")
+            _ready_branch = step_branch(agent_def, work_item)
+            _ready_pr_number = (
+                gh.find_pr_by_branch(_ready_branch) if _ready_branch else None
+            )
             if _ready_pr_number is None:
                 _ready_pr_number = gh.find_pr_by_label(
                     f"source-issue:{work_item.number}"
@@ -5437,6 +6444,23 @@ def _apply_result(
     # Apply the step's requested body write, if any (issue #401) — a step
     # never writes the issue/PR body itself.
     _apply_body_write(gh, agent_def, work_item, step_result)
+
+    # Raise the work item the step asked for, if any (issue #406) — stamped
+    # with the step and flow that produced it, and compared against what the
+    # step declared it would do (MI-6).
+    _created_issue = _create_requested_issue(gh, agent_def, work_item, step_result)
+    if _created_issue is not None:
+        try:
+            gh.post_comment(
+                work_item.number,
+                f"{provenance_stamp(agent_def)}\n"
+                f"**`{agent_def.agent}`** raised #{_created_issue}.",
+            )
+        except Exception as exc:
+            log.warning(
+                "  could not note the raised work item on #%d: %s",
+                work_item.number, exc,
+            )
 
     # Refresh label set from GitHub after our writes.
     labels_refreshed = gh.get_issue_labels(work_item.number)
@@ -5619,6 +6643,9 @@ def process_work_item(
 
     triggered = 0
     labels = work_item.labels
+    # Children are re-read for this item this tick: a child closed since the
+    # last tick is exactly what a children trigger is watching for.
+    _invalidate_children_cache(work_item.number)
 
     log.info(
         "%s #%d: %s",
@@ -5949,6 +6976,10 @@ class RunContext:
     dry_run: bool
     default_extra_tools: Optional[list]
     interactive_result: bool = False
+    # True when this tick was scoped to one work item (--issue). A scheduled
+    # flow is about the repository, not that item, so a scoped tick leaves the
+    # cadences to the unscoped ticks that own them.
+    scoped_to_item: bool = False
 
 
 def _read_pr_event_action() -> str:
@@ -6159,7 +7190,10 @@ def _run_print_prompt(args) -> None:
 
     # Build env with interactive mode -- this path is used by /maos-{agent}-i,
     # not by a real orchestrator subprocess spawn.
-    env = _build_agent_env(os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope)
+    env = _build_agent_env(
+        os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope,
+        flow_env=_flow_context_env(agent_def, work_item),
+    )
     env["AI_AGILE_EXECUTION_MODE"] = "interactive"
 
     # Export only the named keys -- see PRINT_PROMPT_ENV_KEYS. The names of the
@@ -6521,106 +7555,132 @@ def _wake(args) -> "Optional[RunContext]":
         concurrency=conc, repo=args.repo, session_id=session_id,
         dry_run=args.dry_run, default_extra_tools=default_extra_tools,
         interactive_result=args.interactive_result,
+        scoped_to_item=args.issue is not None,
     )
 
 
-def _find_epic_siblings(gh: "GitHubClient", issue_number: int) -> list:
-    """Return state info for all issues carrying parent-issue:{issue_number} label.
+SCHEDULE_WORK_ITEM_KIND = "schedule"
 
-    Returns a list of {"number": N, "state": "open"|"closed"} dicts.
-    Returns an empty list on any API error so the check is safely skipped.
-    PRs are excluded (they carry pull_request in the API response).
+
+def _scheduled_flows(agents: list) -> dict:
+    """The scheduled flows in the pipeline, as {flow name: (cron, [steps])}.
+
+    A scheduled flow is a flow like any other; the only difference is that its
+    trigger is a cadence rather than an item, so its steps are never reached by
+    the per-item loop and are dispatched here instead.
     """
-    label = f"parent-issue:{issue_number}"
-    results = []
-    page = 1
+    flows: dict = {}
+    for agent_def in agents:
+        if not agent_def.flow_schedule:
+            continue
+        cron, steps = flows.setdefault(agent_def.flow, (agent_def.flow_schedule, []))
+        steps.append(agent_def)
+    return flows
+
+
+def _schedule_work_item(flow: str) -> WorkItem:
+    """The stand-in a scheduled step is invoked against.
+
+    A scheduled flow has no work item -- this carries no number anyone can act
+    on and no labels, precisely so nothing downstream mistakes it for one: its
+    kind is neither issue nor pr, so no ISSUE_NUMBER/PR_NUMBER is exported, no
+    branch is resolved, and its metrics record carries a null issue number.
+    """
+    return WorkItem(
+        number=0, kind=SCHEDULE_WORK_ITEM_KIND,
+        title=f"scheduled flow: {flow}", labels=set(), url="",
+    )
+
+
+def _run_scheduled_step(ctx: "RunContext", agent_def: AgentDef, work_item: WorkItem) -> None:
+    """Invoke one step of a scheduled flow and record what it did.
+
+    A scheduled step is a step: what it may do is its declared allowed commands
+    and expected effect, never inferred from the fact that a schedule started
+    it. With no work item there are no labels to move and no comments to post,
+    so what it returns reaches the world two ways -- the work item it asks the
+    orchestrator to raise (stamped with its provenance), and the entry it
+    appends to the record, which is also what makes the flow's next due-ness
+    computable.
+    """
+    _timestamp_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _flow_env = _flow_context_env(agent_def, work_item)
+    log.info("  TRIGGER %-38s  [scheduled: %s]", agent_def.agent, agent_def.flow)
+
+    step_result: Optional[StepResult] = None
+    if agent_def.step_type == "script":
+        result = invoke_script(
+            agent_def, work_item, ctx.dry_run, ctx.repo, flow_env=_flow_env,
+        )
+    else:
+        result = invoke_agent(
+            agent_def, work_item, ctx.dry_run, ctx.repo,
+            default_extra_tools=ctx.default_extra_tools, flow_env=_flow_env,
+        )
+        if not ctx.dry_run:
+            step_result, _ = _read_step_result(
+                _scratch_path(_compute_agent_session_id(agent_def, work_item, ctx.repo))
+            )
+    if ctx.dry_run:
+        return
+
+    _create_requested_issue(ctx.gh, agent_def, work_item, step_result)
+
+    _timestamp_end = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _record = _build_step_metrics(
+        agent_def, work_item, result, _timestamp_start, _timestamp_end, str(uuid.uuid4()),
+        is_error_override=not result.success,
+    )
     try:
-        while True:
-            data = gh._get(
-                f"/repos/{gh.repo}/issues",
-                params={"labels": label, "state": "all", "per_page": 100, "page": page},
-            )
-            if not data:
-                break
-            for item in data:
-                if "pull_request" not in item:
-                    results.append({"number": item["number"], "state": item["state"]})
-            if len(data) < 100:
-                break
-            page += 1
+        _ensure_metrics_branch(ctx.gh, ctx.repo)
+        _append_metrics_record(ctx.gh, ctx.repo, _record)
     except Exception as exc:
-        log.warning("could not fetch siblings for epic #%d: %s", issue_number, exc)
-        return []
-    return results
+        log.warning("schedule %s: could not append the run record: %s", agent_def.flow, exc)
+    _emit_audit_event(_make_audit_event(
+        ctx.session_id, "agent.complete" if result.success else "agent.failed", ctx.repo,
+        agent=agent_def.agent,
+        outcome_status=STATUS_COMPLETE if result.success else STATUS_FAILED,
+        outcome_detail=f"mode={agent_def.step_type} flow={agent_def.flow} scheduled=true",
+    ))
 
 
-def _check_epic_completions(ctx: "RunContext") -> None:
-    """For each open epic-labeled issue, check whether all child issues are closed.
+def _run_scheduled_flows(ctx: "RunContext") -> int:
+    """Run every scheduled flow that is due and whose claim this tick can take.
 
-    If all siblings are closed, re-processes the epic as a work item so it
-    advances through its own next eligible pipeline step.  When no agent fires
-    (today's default: no pipeline steps target epics), falls back to posting a
-    completion comment and closing the epic directly.
-
-    Runs after the normal work-item loop in _do_work().
+    Due-ness is a read of the record; the claim is an append to it. Neither is
+    kept anywhere else (PRODUCT.md, "A scheduled flow derives its own due-ness
+    from the record").
     """
-    for item in ctx.work_items:
-        if "epic" not in item.labels:
+    if ctx.scoped_to_item:
+        return 0
+    flows = _scheduled_flows(ctx.agents)
+    if not flows:
+        return 0
+    now = _now_utc()
+    records = read_metrics_records(ctx.repo)
+    ran = 0
+    for flow, (cron, steps) in flows.items():
+        try:
+            due = schedule_is_due(cron, flow_last_run(records, flow), now)
+        except ValueError as exc:
+            log.error("schedule %s: %s -- skipping", flow, exc)
             continue
-        if item.is_closed:
+        if not due:
+            log.debug("schedule %s: not due (%s)", flow, cron)
             continue
-
-        siblings = _find_epic_siblings(ctx.gh, item.number)
-        if not siblings:
-            log.debug("epic #%d: no parent-issue siblings found — skipping", item.number)
+        if ctx.dry_run:
+            log.info("  [DRY RUN] schedule %s is due (%s)", flow, cron)
             continue
-
-        open_siblings = [s for s in siblings if s["state"].lower() == "open"]
-        if open_siblings:
-            log.info(
-                "epic #%d: %d/%d sub-issue(s) still open — keeping open",
-                item.number, len(open_siblings), len(siblings),
-            )
+        if not claim_schedule(ctx.gh, ctx.repo, flow, now=now):
             continue
-
-        log.info(
-            "epic #%d: all %d sub-issue(s) closed — re-processing as work item",
-            item.number, len(siblings),
-        )
-
-        triggered = process_work_item(
-            item, ctx.agents, ctx.pipeline_map, ctx.gh, ctx.dry_run, ctx.repo,
-            session_id=ctx.session_id,
-            default_extra_tools=ctx.default_extra_tools,
-            concurrency=ctx.concurrency,
-        )
-
-        if triggered == 0 and ctx.dry_run:
-            log.info(
-                "  [DRY RUN] would close epic #%d (%d sub-issue(s) all closed)",
-                item.number, len(siblings),
-            )
-        elif triggered == 0:
-            # No pipeline agent matched — fall back to direct close with comment.
-            # Future pipeline steps (e.g. a whole-feature review) plug in by adding
-            # an agent that matches epics; once triggered > 0 this block is skipped.
-            try:
-                ctx.gh.post_comment(
-                    item.number,
-                    (
-                        "<!-- ai-agile/announcement/v1 by orchestrator -->\n"
-                        "## Epic complete\n\n"
-                        f"All {len(siblings)} sub-issue(s) have been closed. "
-                        "Closing this epic."
-                    ),
-                )
-            except Exception as exc:
-                log.warning("could not post completion comment on epic #%d: %s", item.number, exc)
-            try:
-                ctx.gh.close_issue(item.number)
-                log.info("epic #%d: closed", item.number)
-            except Exception as exc:
-                log.warning("could not close epic #%d: %s", item.number, exc)
+        work_item = _schedule_work_item(flow)
+        try:
+            for agent_def in steps:
+                _run_scheduled_step(ctx, agent_def, work_item)
+                ran += 1
+        finally:
+            release_schedule(ctx.gh, ctx.repo, flow)
+    return ran
 
 
 def _do_work(ctx: "RunContext") -> int:
@@ -6645,7 +7705,7 @@ def _do_work(ctx: "RunContext") -> int:
         if n > 0:
             # Brief pause between agent invocations to avoid rate limits
             time.sleep(2)
-    _check_epic_completions(ctx)
+    total_triggered += _run_scheduled_flows(ctx)
     return total_triggered
 
 

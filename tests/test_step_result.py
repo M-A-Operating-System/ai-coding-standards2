@@ -462,3 +462,165 @@ class TestExhaustionNeverRetried:
         assert exhausted is False
         assert step_result is None
         assert attempt == 2
+
+
+# ---------------------------------------------------------------------------
+# The orchestrator stamps what it creates (issue #406)
+# ---------------------------------------------------------------------------
+
+class TestCreatesIssueRequestValidation:
+    """result.creates_issue is validated like every other returned field."""
+
+    def _write(self, tmp_path, payload):
+        (tmp_path / "result.json").write_text(json.dumps(payload))
+        return _read_step_result(str(tmp_path))
+
+    def _base(self, **extra):
+        base = {"outcome": "complete", "summary": "did the thing"}
+        base.update(extra)
+        return base
+
+    def test_absent_creates_issue_defaults_to_empty(self, tmp_path):
+        result, reason = self._write(tmp_path, self._base())
+        assert reason == ""
+        assert result.creates_issue == {}
+
+    def test_valid_request_is_read(self, tmp_path):
+        result, reason = self._write(tmp_path, self._base(creates_issue={
+            "title": "Tech debt: retries", "body": "found this", "labels": ["tech-debt"],
+        }))
+        assert reason == ""
+        assert result.creates_issue["title"] == "Tech debt: retries"
+        assert result.creates_issue["labels"] == ["tech-debt"]
+
+    def test_non_object_is_rejected(self, tmp_path):
+        result, reason = self._write(tmp_path, self._base(creates_issue="nope"))
+        assert result is None
+        assert "creates_issue must be an object" in reason
+
+    def test_empty_title_is_rejected(self, tmp_path):
+        result, reason = self._write(tmp_path, self._base(creates_issue={"title": "  ", "body": "b"}))
+        assert result is None
+        assert "title" in reason
+
+    def test_non_string_labels_are_rejected(self, tmp_path):
+        result, reason = self._write(tmp_path, self._base(creates_issue={
+            "title": "t", "body": "b", "labels": [1, 2],
+        }))
+        assert result is None
+        assert "labels" in reason
+
+
+class TestProvenanceStamp:
+    """A work item the orchestrator raises records which step and flow made it."""
+
+    def test_stamp_names_the_step_and_its_flow(self):
+        agent = _make_agent_def(name="05_continuous/tech-debt-loop", flow="tech-debt")
+        assert orch.provenance_stamp(agent) == (
+            "<!-- ai-agile/provenance/v1 step=05_continuous/tech-debt-loop flow=tech-debt -->"
+        )
+
+    def test_stamp_follows_the_existing_marker_convention(self):
+        """Same shape as the announcement/artefact/snapshot markers."""
+        agent = _make_agent_def(flow="standard-delivery")
+        stamp = orch.provenance_stamp(agent)
+        assert stamp.startswith("<!-- ai-agile/") and stamp.endswith("-->")
+
+    def test_stamped_body_keeps_the_step_s_own_text_and_names_the_origin(self):
+        agent = _make_agent_def(name="00_ondemand/codebase-reviewer", flow="codebase-review")
+        body = orch.stamped_issue_body(agent, "Finding: unbounded retry", _make_work_item(42))
+        assert body.startswith(orch.provenance_stamp(agent))
+        assert "Finding: unbounded retry" in body
+        assert "#42" in body
+
+
+class TestCreateRequestedIssue:
+    """The orchestrator raises the work item; the step only asks for it."""
+
+    def _agent(self, declares=True, **extra):
+        return _make_agent_def(
+            name="00_ondemand/codebase-reviewer",
+            flow="codebase-review",
+            expected_effect={"commits": False, "creates_issues": declares},
+            **extra,
+        )
+
+    def _request(self):
+        return StepResult(
+            outcome=STATUS_COMPLETE, summary="reviewed",
+            creates_issue={"title": "Technical Review", "body": "findings", "labels": ["tech-debt"]},
+        )
+
+    def test_creates_a_stamped_issue_through_the_client(self):
+        gh = MagicMock()
+        gh.create_issue.return_value = 501
+        agent = self._agent()
+        number = orch._create_requested_issue(gh, agent, _make_work_item(42), self._request())
+
+        assert number == 501
+        title, body, labels = gh.create_issue.call_args.args
+        assert title == "Technical Review"
+        assert body.startswith(orch.provenance_stamp(agent))
+        assert "findings" in body
+        assert labels == ["tech-debt"]
+
+    def test_nothing_requested_creates_nothing(self):
+        gh = MagicMock()
+        result = StepResult(outcome=STATUS_COMPLETE, summary="did nothing")
+        assert orch._create_requested_issue(gh, self._agent(declares=False), _make_work_item(), result) is None
+        gh.create_issue.assert_not_called()
+
+    def test_request_from_a_step_that_declared_none_is_refused(self):
+        gh = MagicMock()
+        assert orch._create_requested_issue(
+            gh, self._agent(declares=False), _make_work_item(), self._request(),
+        ) is None
+        gh.create_issue.assert_not_called()
+
+    def test_api_failure_is_never_fatal(self):
+        gh = MagicMock()
+        gh.create_issue.side_effect = RuntimeError("boom")
+        assert orch._create_requested_issue(
+            gh, self._agent(), _make_work_item(), self._request(),
+        ) is None
+
+
+class TestExpectedEffectDisagreement:
+    """MI-6: a step that declares one thing and does another is surfaced."""
+
+    def test_declared_and_requested_agree(self):
+        agent = _make_agent_def(expected_effect={"commits": False, "creates_issues": True})
+        assert orch.expected_effect_disagreement(agent, requested_issue=True) is None
+
+    def test_neither_declared_nor_requested_agrees(self):
+        agent = _make_agent_def(expected_effect={"commits": False})
+        assert orch.expected_effect_disagreement(agent, requested_issue=False) is None
+
+    def test_declared_but_not_requested_is_flagged(self):
+        agent = _make_agent_def(expected_effect={"commits": False, "creates_issues": True})
+        msg = orch.expected_effect_disagreement(agent, requested_issue=False)
+        assert msg and "requested no work item" in msg
+
+    def test_requested_but_not_declared_is_flagged(self):
+        agent = _make_agent_def(expected_effect={"commits": False, "creates_issues": False})
+        msg = orch.expected_effect_disagreement(agent, requested_issue=True)
+        assert msg and "creates_issues: false" in msg
+
+
+class TestGitHubClientCreateIssue:
+    def test_posts_to_the_issues_endpoint_and_returns_the_number(self):
+        client = orch.GitHubClient.__new__(orch.GitHubClient)
+        client.repo = "org/repo"
+        with patch.object(orch.GitHubClient, "_post", return_value={"number": 77}) as post:
+            number = client.create_issue("t", "b", ["x"])
+        assert number == 77
+        path, payload = post.call_args.args
+        assert path == "/repos/org/repo/issues"
+        assert payload == {"title": "t", "body": "b", "labels": ["x"]}
+
+    def test_labels_are_omitted_when_none_requested(self):
+        client = orch.GitHubClient.__new__(orch.GitHubClient)
+        client.repo = "org/repo"
+        with patch.object(orch.GitHubClient, "_post", return_value={"number": 78}) as post:
+            client.create_issue("t", "b")
+        assert "labels" not in post.call_args.args[1]

@@ -261,6 +261,36 @@ identically in both layouts.
 
 ---
 
+## A repository's own flows
+
+The pipeline the orchestrator runs is the framework's shipped
+`pipeline/pipeline.json`, resolved from `SUBMODULE_ROOT`. A consuming
+repository that needs a flow of its own — a different delivery flow, an
+extra on-demand one — puts it in its **own** `pipeline/pipeline.json`, at
+the consuming repo root (`$AI_AGILE_ROOT/pipeline/pipeline.json`), outside
+the submodule. It is not a symlink and not gitignored: it is the
+repository's own file, committed like `adrs/`.
+
+Precedence is per flow, not per file (issue #406):
+
+- a flow the repository's file names **replaces** the shipped flow of that
+  name wholesale — never a field-by-field merge, so there is no way to end
+  up with half of each;
+- a flow it does not name is inherited from the shipped default unchanged,
+  and keeps tracking it as the framework changes;
+- a flow the shipped file does not have is added.
+
+`budgets` and `defaults` follow the same rule at their own level: present
+in the repository's file means it replaces that block entirely.
+
+The composed result is validated against
+`pipeline/schemas/pipeline.schema.json`. A repository file that composes
+into something invalid stops the run with the violations named — a broken
+override is never silently ignored (STD-ARCH-014). In non-submodule
+(source) mode the two paths are the same file, and nothing is composed.
+
+---
+
 ## This submodule is the sole source of agents
 
 The agent set is defined **only** by this submodule. The orchestrator

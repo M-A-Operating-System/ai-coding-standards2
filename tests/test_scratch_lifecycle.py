@@ -824,7 +824,9 @@ class TestCommitSweepRefusesNewRootFiles:
             **os.environ,
             "AGENT_NAME": "03_execute/pr-reviewer",
             "ISSUE_NUMBER": "999",
-            "BRANCH_SUFFIX": "",
+            # The branch is declared by the step's flow and exported by the
+            # orchestrator (issue #406), never derived inside the script.
+            "AI_AGILE_BRANCH": "issue-999",
         }
         env.pop("GITHUB_TOKEN", None)
         env.pop("GH_TOKEN", None)

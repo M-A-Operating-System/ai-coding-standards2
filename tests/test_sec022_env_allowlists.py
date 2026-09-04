@@ -252,7 +252,12 @@ class TestBotTokenIsScopedToPrWritingScripts:
         import json
         from pathlib import Path as _P
         spec = json.loads((_P(__file__).parent.parent / "pipeline" / "pipeline.json").read_text())
-        script_steps = [s for s in spec["pipeline"] if s.get("type") == "script"]
+        script_steps = [
+            step
+            for flow in spec["flows"].values()
+            for step in flow["steps"]
+            if step.get("type") == "script"
+        ]
         assert script_steps, "expected at least one script-type step"
         granted = {
             s["agent"] for s in script_steps

@@ -187,6 +187,9 @@ the same parent, rather than reopening one that already merged.
 Declaring "wait for the parts" needs a trigger that can say "every
 child of this item is closed" — a condition about other work items;
 see [`PRODUCT.md`](PRODUCT.md#coordinating-work-needs-a-trigger-that-can-look-outward).
+A step declares it as `trigger.children: all_closed`, evaluated with
+every other eligibility condition (issue #406); today's shipped
+`epic-completion` flow is the one flow that uses it.
 
 ### Many small tickets in a window
 

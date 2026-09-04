@@ -413,11 +413,23 @@ def build_complete_chart(all_entries: list[dict]) -> str:
 
 
 def load_pipeline() -> list[dict]:
+    """Every step declared in pipeline.json, in flow-then-step order.
+
+    The file declares flows, not a flow (PRODUCT.md, "The pipeline defines
+    flows, not a flow"); the charts are per phase, and a step's phase is its
+    own field, so the flows are flattened here and each step carries the name
+    of the flow that declared it under "flow".
+    """
     if not PIPELINE_JSON.exists():
         print(f"error: {PIPELINE_JSON} not found", file=sys.stderr)
         sys.exit(1)
     with PIPELINE_JSON.open(encoding="utf-8") as fh:
-        return json.load(fh).get("pipeline", [])
+        raw = json.load(fh)
+    entries: list[dict] = []
+    for flow_name, flow in (raw.get("flows") or {}).items():
+        for step in flow.get("steps") or []:
+            entries.append({**step, "flow": flow_name})
+    return entries
 
 
 def main(argv: list[str] | None = None) -> int:

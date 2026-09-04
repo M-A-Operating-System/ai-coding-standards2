@@ -6,8 +6,8 @@ the build phase then opens the code PR (issue-{N}, Closes) from the updated
 main. Covers:
 
   - pipeline.json wires the two-phase chain in the right order,
-  - prd-docs-updater targets the design branch via branch_suffix,
-  - load_pipeline parses branch_suffix (and defaults it to ""),
+  - the flow declares both pull requests and each step says which it
+    commits to (issue #406 -- naming is declared, never computed),
   - the new scripts exist and delegate/behave correctly,
   - delete-branch.sh cleans up issue-{N}-docs.
 """
@@ -21,7 +21,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
-from pipeline_orchestrator import AgentDef, _invoke_commit_after, load_pipeline
+from pipeline_orchestrator import (
+    AgentDef, WorkItem, _invoke_commit_after, load_pipeline,
+)
 
 REPO_ROOT = Path(__file__).parent.parent
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
@@ -77,76 +79,111 @@ class TestTwoPhaseChain:
 
 
 # ---------------------------------------------------------------------------
-# branch_suffix: design branch vs code branch
+# Flow naming: the design pull request and the code pull request (issue #406)
+#
+# The two phases are two pull requests DECLARED by one flow, not a suffix
+# computed in code: the step says which of the flow's pull requests it commits
+# to, and the flow says what that pull request's branch is called and whether
+# it closes the issue.
 # ---------------------------------------------------------------------------
 
-class TestBranchSuffix:
-    def test_prd_docs_updater_targets_design_branch(self):
-        assert _agents_by_name()["01_product_docs/prd-docs-updater"].branch_suffix == "-docs"
+class TestFlowNaming:
+    def test_flow_declares_both_pull_requests(self):
+        upd = _agents_by_name()["01_product_docs/prd-docs-updater"]
+        assert upd.flow == "standard-delivery"
+        assert upd.flow_naming["branch"] == "issue-{number}"
+        prs = {pr["id"]: pr for pr in upd.flow_naming["pull_requests"]}
+        assert prs["docs"]["branch"] == "issue-{number}-docs"
+        assert prs["docs"]["closes_issue"] is False
+        assert prs["code"]["branch"] == "issue-{number}"
+        assert prs["code"]["closes_issue"] is True
 
-    def test_coder_targets_code_branch_by_default(self):
-        assert _agents_by_name()["03_execute/coder"].branch_suffix == ""
+    def test_design_steps_commit_to_the_docs_pull_request(self):
+        a = _agents_by_name()
+        for name in (
+            "01_product_docs/create-docs-pr",
+            "01_product_docs/prd-docs-updater",
+            "01_product_docs/merge-docs-pr",
+        ):
+            assert a[name].commits_to == "docs", name
 
-    def test_load_pipeline_defaults_branch_suffix_to_empty(self, tmp_path):
-        pipeline_data = {
-            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-            "agent": "01_product_docs/issue-classifier",
-            "phase": "01_product_docs",
-            "object": ["issue"],
-            "trigger": {"event": "issue.opened"},
-            "dependencies": [],
-            "human_gate_after": False,
-            "description": "test",
-        }]}
-        path = tmp_path / "pipeline.json"
-        path.write_text(json.dumps(pipeline_data))
-        agents, _ = load_pipeline(path)
-        assert agents[0].branch_suffix == ""
+    def test_build_steps_commit_to_the_code_pull_request(self):
+        a = _agents_by_name()
+        assert a["01_product_docs/create-pr"].commits_to == "code"
+        assert a["03_execute/coder"].commits_to == "code"
 
-    def test_load_pipeline_reads_branch_suffix(self, tmp_path):
-        pipeline_data = {
-            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-            "agent": "01_product_docs/prd-docs-updater",
-            "phase": "01_product_docs",
-            "object": ["issue"],
-            "trigger": {"label": "create-docs-pr:complete"},
-            "dependencies": [],
-            "human_gate_after": True,
-            "human_gate_label": "prd-docs-updater:approved",
-            "branch_suffix": "-docs",
-            "description": "test",
-        }]}
-        path = tmp_path / "pipeline.json"
-        path.write_text(json.dumps(pipeline_data))
-        agents, _ = load_pipeline(path)
-        assert agents[0].branch_suffix == "-docs"
+    def test_prd_docs_updater_resolves_to_the_design_branch(self):
+        from pipeline_orchestrator import WorkItem, step_branch
+        wi = WorkItem(number=247, kind="issue", title="t", labels=set(), url="u")
+        assert step_branch(_agents_by_name()["01_product_docs/prd-docs-updater"], wi) == "issue-247-docs"
 
-    def test_branch_suffix_in_schema(self):
-        """The schema permits branch_suffix (additionalProperties is false)."""
+    def test_coder_resolves_to_the_code_branch(self):
+        from pipeline_orchestrator import WorkItem, step_branch
+        wi = WorkItem(number=247, kind="issue", title="t", labels=set(), url="u")
+        assert step_branch(_agents_by_name()["03_execute/coder"], wi) == "issue-247"
+
+    def test_ci_gate_without_commits_to_uses_the_flow_primary_branch(self):
+        from pipeline_orchestrator import WorkItem, step_branch
+        wi = WorkItem(number=247, kind="issue", title="t", labels=set(), url="u")
+        assert step_branch(_agents_by_name()["03_execute/ci-gate"], wi) == "issue-247"
+
+    def test_design_pr_does_not_close_the_issue_and_the_code_pr_does(self):
+        from pipeline_orchestrator import step_pr_closes_issue
+        a = _agents_by_name()
+        assert step_pr_closes_issue(a["01_product_docs/create-docs-pr"]) is False
+        assert step_pr_closes_issue(a["01_product_docs/create-pr"]) is True
+
+    def test_steps_are_told_their_branch_and_closing_shape(self):
+        import pipeline_orchestrator as orch
+        from pipeline_orchestrator import WorkItem
+        wi = WorkItem(number=247, kind="issue", title="t", labels=set(), url="u")
+        env = orch._flow_context_env(_agents_by_name()["01_product_docs/create-docs-pr"], wi)
+        assert env["AI_AGILE_BRANCH"] == "issue-247-docs"
+        assert env["PR_CLOSES_ISSUE"] == "false"
+        assert env["AI_AGILE_FLOW"] == "standard-delivery"
+        env = orch._flow_context_env(_agents_by_name()["01_product_docs/create-pr"], wi)
+        assert env["AI_AGILE_BRANCH"] == "issue-247"
+        assert env["PR_CLOSES_ISSUE"] == "true"
+
+    def test_no_step_declares_a_retired_branch_suffix(self):
+        """branch_suffix is superseded by commits_to + the flow's naming."""
+        raw = json.loads(PIPELINE_JSON.read_text())
+        for flow in raw["flows"].values():
+            for step in flow["steps"]:
+                assert "branch_suffix" not in step, step["agent"]
         schema = json.loads((REPO_ROOT / "pipeline" / "schemas" / "pipeline.schema.json").read_text())
-        assert "branch_suffix" in schema["definitions"]["agent"]["properties"]
+        assert "branch_suffix" not in schema["definitions"]["step"]["properties"]
+
+    def test_schema_declares_flow_naming(self):
+        schema = json.loads((REPO_ROOT / "pipeline" / "schemas" / "pipeline.schema.json").read_text())
+        naming = schema["definitions"]["flow"]["properties"]["naming"]
+        assert "branch" in naming["properties"]
+        assert "pull_requests" in naming["properties"]
+        assert "commits_to" in schema["definitions"]["step"]["properties"]["git_ops"]["properties"]
 
 
 # ---------------------------------------------------------------------------
-# create-docs-pr.sh delegates to create-pr.sh with the design-phase params
+# create-docs-pr.sh delegates to create-pr.sh under its own identity
 # ---------------------------------------------------------------------------
 
 class TestCreateDocsPrWrapper:
-    def test_sets_design_phase_params_and_delegates(self):
+    def test_delegates_under_its_own_announcement_identity(self):
         text = (SCRIPTS / "create-docs-pr.sh").read_text()
-        assert 'BRANCH_SUFFIX="-docs"' in text
-        assert 'PR_CLOSES_ISSUE="false"' in text
         assert 'CREATE_PR_AGENT="01_product_docs/create-docs-pr"' in text
         assert "create-pr.sh" in text
 
-    def test_create_pr_defaults_preserve_code_pr_behaviour(self):
-        """create-pr.sh keeps issue-{N} + Closes when the design params are unset."""
+    def test_wrapper_no_longer_computes_the_design_branch_itself(self):
+        """The branch and the non-closing body come from the flow, not the wrapper."""
+        text = (SCRIPTS / "create-docs-pr.sh").read_text()
+        assert "BRANCH_SUFFIX" not in text
+        assert 'PR_CLOSES_ISSUE="false"' not in text
+
+    def test_create_pr_takes_its_branch_and_closing_shape_from_the_flow(self):
         text = (SCRIPTS / "create-pr.sh").read_text()
-        assert 'BRANCH_SUFFIX="${BRANCH_SUFFIX:-}"' in text
-        assert 'PR_CLOSES_ISSUE="${PR_CLOSES_ISSUE:-true}"' in text
+        assert 'BRANCH="${AI_AGILE_BRANCH:?' in text
+        assert 'PR_CLOSES_ISSUE="${PR_CLOSES_ISSUE:?' in text
         assert 'PR_BODY="Closes #${ISSUE_NUMBER}"' in text
+        assert 'BRANCH="issue-${ISSUE_NUMBER}' not in text
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +207,9 @@ class TestMergeDocsPrScript:
             "PATH": f"{mock_dir}:{os.environ.get('PATH', '')}",
             "REPO": "owner/repo",
             "ISSUE_NUMBER": str(issue_number),
+            # The design branch is declared by the flow and exported by the
+            # orchestrator (issue #406), not derived inside the script.
+            "AI_AGILE_BRANCH": f"issue-{issue_number}-docs",
         }
         env.pop("GITHUB_TOKEN", None)
         env.pop("GH_TOKEN", None)
@@ -225,6 +265,7 @@ class TestMergeDocsPrScript:
             "PATH": f"{mock_dir}:{os.environ.get('PATH', '')}",
             "REPO": "owner/repo",
             "ISSUE_NUMBER": "247",
+            "AI_AGILE_BRANCH": "issue-247-docs",
             "GITHUB_TOKEN": "x",
         }
         result = subprocess.run(
@@ -301,30 +342,17 @@ class TestDeleteDesignBranch:
 COMMIT_AGENT_WORK_SCRIPT = SCRIPTS / "commit-agent-work.sh"
 
 
-def _commit_after_agent(branch_suffix: str, name: str) -> AgentDef:
-    """Minimal commit_after AgentDef carrying a branch_suffix."""
-    return AgentDef(
-        agent=name,
-        phase=name.split("/")[0],
-        objects=["issue"],
-        trigger={},
-        dependencies=[],
-        human_gate_after=False,
-        human_gate_label=None,
-        description="test agent",
-        commit_after=True,
-        branch_suffix=branch_suffix,
-    )
+class TestCommitAfterUsesTheFlowsBranch:
+    """_invoke_commit_after hands the script the branch the step's flow
+    declares, so design commits land on issue-{N}-docs and code commits on
+    issue-{N} -- the same two destinations as before, now declared rather
+    than computed."""
 
-
-class TestCommitAfterBranchSuffix:
-    """_invoke_commit_after must forward branch_suffix so docs commits land on
-    issue-{N}-docs, not the not-yet-existing issue-{N} code branch."""
-
-    def _captured_env(self, branch_suffix, name):
-        agent = _commit_after_agent(branch_suffix, name)
-        work_item = MagicMock()
-        work_item.number = 247
+    def _captured_env(self, name):
+        agent = _agents_by_name()[name]
+        work_item = WorkItem(
+            number=247, kind="issue", title="t", labels=set(), url="u",
+        )
         with patch(
             "pipeline_orchestrator.subprocess.run",
             return_value=MagicMock(returncode=0, stdout="", stderr=""),
@@ -334,22 +362,36 @@ class TestCommitAfterBranchSuffix:
         assert run.call_count == 1
         return run.call_args.kwargs["env"]
 
-    def test_design_step_forwards_docs_suffix(self):
-        """prd-docs-updater (branch_suffix="-docs") resolves to issue-{N}-docs."""
-        env = self._captured_env("-docs", "01_product_docs/prd-docs-updater")
-        assert env["BRANCH_SUFFIX"] == "-docs"
-        assert f"issue-{env['ISSUE_NUMBER']}{env['BRANCH_SUFFIX']}" == "issue-247-docs"
+    def test_design_step_commits_to_the_design_branch(self):
+        env = self._captured_env("01_product_docs/prd-docs-updater")
+        assert env["AI_AGILE_BRANCH"] == "issue-247-docs"
+        assert env["ISSUE_NUMBER"] == "247"
 
-    def test_code_step_forwards_empty_suffix(self):
-        """The coder (default empty suffix) resolves to issue-{N}, unchanged."""
-        env = self._captured_env("", "03_execute/coder")
-        assert env["BRANCH_SUFFIX"] == ""
-        assert f"issue-{env['ISSUE_NUMBER']}{env['BRANCH_SUFFIX']}" == "issue-247"
+    def test_code_step_commits_to_the_code_branch(self):
+        env = self._captured_env("03_execute/coder")
+        assert env["AI_AGILE_BRANCH"] == "issue-247"
+        assert env["ISSUE_NUMBER"] == "247"
+
+    def test_commit_after_fails_loud_without_a_declared_branch(self):
+        """A committing step whose flow declares no branch is a broken
+        declaration, not a run against a guessed name (STD-ARCH-014)."""
+        agent = AgentDef(
+            agent="03_execute/coder", phase="03_execute", objects=["issue"],
+            trigger={}, dependencies=[], human_gate_after=False,
+            human_gate_label=None, description="t", commit_after=True,
+            flow="nameless-flow",
+        )
+        work_item = WorkItem(number=247, kind="issue", title="t", labels=set(), url="u")
+        with patch("pipeline_orchestrator.subprocess.run") as run:
+            result = _invoke_commit_after(agent, work_item)
+        assert result is not None and "no naming.branch" in result
+        run.assert_not_called()
 
 
 class TestCommitAgentWorkBranchDerivation:
-    """The script itself must honour BRANCH_SUFFIX when deriving BRANCH."""
+    """The script takes the branch it is given; it never derives one."""
 
-    def test_branch_line_uses_optional_suffix(self):
+    def test_branch_comes_from_the_orchestrator(self):
         text = COMMIT_AGENT_WORK_SCRIPT.read_text()
-        assert 'BRANCH="issue-${ISSUE_NUMBER}${BRANCH_SUFFIX:-}"' in text
+        assert 'BRANCH="${AI_AGILE_BRANCH:?' in text
+        assert 'BRANCH="issue-${ISSUE_NUMBER}' not in text

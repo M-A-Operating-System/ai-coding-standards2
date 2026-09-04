@@ -10,7 +10,10 @@ pr_number=""
 if [ "${WORK_ITEM_KIND}" = "pr" ]; then
     pr_number="${WORK_ITEM_NUMBER}"
 elif [ "${WORK_ITEM_KIND}" = "issue" ]; then
-    pr_number=$(gh api "repos/${REPO}/pulls?head=${REPO%%/*}:issue-${WORK_ITEM_NUMBER}&state=open&per_page=1" --jq '.[0].number // empty')
+    # The branch comes from the step's flow naming, exported by the
+    # orchestrator (issue #406) -- never derived from the issue number here.
+    : "${AI_AGILE_BRANCH:?AI_AGILE_BRANCH must be set -- the branch declared by this step flow naming}"
+    pr_number=$(gh api "repos/${REPO}/pulls?head=${REPO%%/*}:${AI_AGILE_BRANCH}&state=open&per_page=1" --jq '.[0].number // empty')
     if [ -z "${pr_number}" ]; then
         pr_number=$(gh api "repos/${REPO}/issues?state=open&labels=source-issue:${WORK_ITEM_NUMBER}&per_page=100" --jq '[.[] | select(.pull_request) | .number] | first // empty')
     fi

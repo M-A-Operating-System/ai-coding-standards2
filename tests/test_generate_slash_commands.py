@@ -18,12 +18,18 @@ def _load_gen():
 def _fake_pipeline(tmp_path):
     p = tmp_path / "pipeline.json"
     p.write_text(json.dumps({
-        "pipeline": [
-            {"agent": "01_product_docs/prd-writer", "type": "agent",
-             "description": "Drafts a PRD. Second sentence."},
-            {"agent": "01_product_docs/create-pr", "type": "script",
-             "script": "x.sh", "description": "Scripted step."},
-        ]
+        "flows": {
+            "standard-delivery": {
+                "description": "test flow",
+                "trigger": {"kind": "issue"},
+                "steps": [
+                    {"agent": "01_product_docs/prd-writer", "type": "agent",
+                     "description": "Drafts a PRD. Second sentence."},
+                    {"agent": "01_product_docs/create-pr", "type": "script",
+                     "script": "x.sh", "description": "Scripted step."},
+                ],
+            }
+        }
     }))
     return p
 
