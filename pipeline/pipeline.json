@@ -419,6 +419,23 @@
       "budgets": { "max_turns": 60 },
       "expected_effect": { "commits": false },
       "description": "Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue."
+    },
+
+    {
+      "agent": "00_ondemand/blocker",
+      "type": "script",
+      "script": ".github/scripts/blocker.sh",
+      "phase": "00_ondemand",
+      "object": ["issue"],
+      "trigger": {
+        "label": "blocker:requested"
+      },
+      "human_gate_after": false,
+      "dependencies": [],
+      "max_retries": 1,
+      "script_timeout_seconds": 60,
+      "expected_effect": { "commits": false },
+      "description": "Reciprocates a blockedby:/blocks: pair. A human applies blockedby:{N} to this issue directly -- that alone already gates eligibility -- then requests this step to add the symmetric blocks:{this} label onto issue N. Emits blocked (not failed) when no blockedby: label is present to reciprocate, so a mistaken request is visible rather than silently swallowed. Triggered by applying the blocker:requested label to any issue."
     }
 
   ],

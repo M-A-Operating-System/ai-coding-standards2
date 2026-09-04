@@ -324,3 +324,56 @@
 **When** `_run_agent` runs
 **Then** it does not create a worktree or check out the issue branch at all, exactly as it already skips the pre-agent checkout under `--interactive-result`
 
+## Scenario: An untouched issue blocked by an open issue is not eligible to start
+
+**Given** an issue carries `blockedby:12`, issue #12 is still open, and no step has yet run on the blocked issue
+**When** the orchestrator evaluates the issue
+**Then** no agent is dispatched -- not even the entry step -- and no labels are changed
+
+## Scenario: blockedby: never gates a step mid-flow
+
+**Given** an issue carries `blockedby:12` (issue #12 still open) but already has at least one agent status label from an earlier tick
+**When** the orchestrator evaluates the issue
+**Then** the block has no effect on this item -- whichever step is next in the flow is dispatched normally
+
+## Scenario: Both labels come off automatically once the blocking issue closes
+
+**Given** an issue carries `blockedby:12` and issue #12 carries `blocks:{this}`, and issue #12 is now closed
+**When** the orchestrator evaluates the issue on its next tick
+**Then** it removes `blockedby:12` from this issue and `blocks:{this}` from issue #12, and the issue becomes eligible to start
+
+## Scenario: A human can clear a block directly, in either mode
+
+**Given** an issue carries `blockedby:12` while #12 is still open
+**When** a human removes the `blockedby:12` label directly, headless or interactive
+**Then** the issue is eligible to start on the very next evaluation -- clearing never depends on who or what removed the label
+
+## Scenario: A malformed blockedby: label is ignored, not treated as blocking
+
+**Given** an issue carries a label like `blockedby:abc` (a non-numeric suffix)
+**When** the orchestrator evaluates the issue
+**Then** it logs a warning and does not treat the issue as blocked by it -- a bad label must not silently wedge an item forever
+
+## Scenario: An indeterminate blocking-issue lookup fails closed
+
+**Given** the orchestrator cannot determine whether a blocking issue is open or closed because the GitHub API call failed
+**When** it evaluates an untouched issue carrying that blockedby: label
+**Then** it treats the issue as still blocked -- an unverifiable block is never silently lifted
+
+## Scenario: Blocking is issue-to-issue ordering, not a PR gate
+
+**Given** a PR carries a `blockedby:` label
+**When** the orchestrator evaluates the PR
+**Then** the label has no effect -- blocking eligibility only applies to issues
+
+## Scenario: 00_ondemand/blocker reciprocates an existing blockedby: label
+
+**Given** a human has applied `blockedby:12` directly to issue #7 and then requests `blocker` (`blocker:requested`)
+**When** the step runs
+**Then** it applies `blocks:7` to issue #12, creating the label first if the repository doesn't have it yet
+
+## Scenario: blocker reports blocked, not a silent no-op, when there is nothing to reciprocate
+**Given** a human requests `blocker` on an issue that carries no `blockedby:` label
+**When** the step runs
+**Then** it writes no label and signals `blocked`, so the mistaken request stays visible rather than being silently swallowed
+

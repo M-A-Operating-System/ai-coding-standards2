@@ -52,6 +52,14 @@ Ad-hoc sweep agent. Evaluates every remote branch, classifies each as a deletion
 
 Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue.
 
+### `00_ondemand/blocker`
+
+- **Kind:** script
+- **Operates on:** `issue`
+- **Script:** `.github/scripts/blocker.sh`
+
+Reciprocates a blockedby:/blocks: pair. A human applies blockedby:{N} to this issue directly -- that alone already gates eligibility -- then requests this step to add the symmetric blocks:{this} label onto issue N. Emits blocked (not failed) when no blockedby: label is present to reciprocate, so a mistaken request is visible rather than silently swallowed. Triggered by applying the blocker:requested label to any issue.
+
 ## 01_product_docs
 
 ### `01_product_docs/issue-classifier`

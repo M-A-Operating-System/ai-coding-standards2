@@ -29,6 +29,7 @@ authoritative and this table is a view of it.
 | `00_ondemand/standards-migrator` | agent | `standards-migrator:requested` | -- | -- |
 | `00_ondemand/branch-cleanup` | agent | `branch-cleanup:requested` | -- | -- |
 | `00_ondemand/issue-cleanup` | agent | `issue-cleanup:requested` | -- | -- |
+| `00_ondemand/blocker` | script | `blocker:requested` | -- | -- |
 
 ## Exclusions and retries
 
@@ -50,6 +51,7 @@ authoritative and this table is a view of it.
 | `00_ondemand/standards-migrator` | -- | -- | `1` |
 | `00_ondemand/branch-cleanup` | -- | -- | `1` |
 | `00_ondemand/issue-cleanup` | -- | -- | `1` |
+| `00_ondemand/blocker` | -- | -- | `1` |
 
 ## Entitled activities
 
@@ -76,3 +78,4 @@ complete: an entitlement that does not appear here is not granted.
 | `00_ondemand/standards-migrator` | `Bash(gh issue create *)`, `Bash(python3 *)` | -- |
 | `00_ondemand/branch-cleanup` | `Bash(gh api *)`, `Bash(gh pr list *)`, `Bash(gh issue comment *)`, `Bash(gh issue view *)` | -- |
 | `00_ondemand/issue-cleanup` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue close *)`, `Bash(gh pr list *)` | -- |
+| `00_ondemand/blocker` | -- | -- |
