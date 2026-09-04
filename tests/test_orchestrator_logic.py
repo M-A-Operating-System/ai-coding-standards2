@@ -46,6 +46,13 @@ from pipeline_orchestrator import (
     RunContext,
     _find_epic_siblings,
     _check_epic_completions,
+    BLOCKEDBY_LABEL_PREFIX,
+    BLOCKS_LABEL_PREFIX,
+    _parse_blocking_issue_numbers,
+    _work_item_has_started,
+    _issue_is_open,
+    _clear_satisfied_blocks,
+    _is_blocked_from_starting,
 )
 
 
@@ -5020,6 +5027,289 @@ class TestEnsureGhCli:
 
         assert "gh api user" in caplog.text
         assert "HTTP 401: Bad credentials" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Blocking eligibility (issue #405)
+# ---------------------------------------------------------------------------
+
+class TestParseBlockingIssueNumbers:
+    def test_extracts_numbers_from_blockedby_labels(self):
+        labels = {"blockedby:12", "blockedby:99", "issue-classifier:complete"}
+        assert sorted(_parse_blocking_issue_numbers(labels)) == [12, 99]
+
+    def test_ignores_labels_without_the_prefix(self):
+        assert _parse_blocking_issue_numbers({"blocks:12", "component:api"}) == []
+
+    def test_malformed_suffix_is_skipped_not_blocking(self, caplog):
+        with caplog.at_level("WARNING"):
+            result = _parse_blocking_issue_numbers({"blockedby:abc"})
+        assert result == []
+        assert "malformed" in caplog.text
+
+    def test_empty_labels_returns_empty_list(self):
+        assert _parse_blocking_issue_numbers(set()) == []
+
+
+class TestWorkItemHasStarted:
+    def _agents(self):
+        return [_make_agent_def_concurrent("01_product_docs/issue-classifier")]
+
+    def test_false_when_no_agent_status_present(self):
+        assert _work_item_has_started({"priority"}, self._agents()) is False
+
+    def test_true_when_any_agent_has_any_status(self):
+        assert _work_item_has_started({"issue-classifier:wip"}, self._agents()) is True
+        assert _work_item_has_started({"issue-classifier:complete"}, self._agents()) is True
+
+
+class TestIssueIsOpen:
+    def test_true_for_open_issue(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "open"}
+        assert _issue_is_open(gh, 5) is True
+
+    def test_false_for_closed_issue(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "closed"}
+        assert _issue_is_open(gh, 5) is False
+
+    def test_none_on_api_error(self, caplog):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.side_effect = Exception("boom")
+        with caplog.at_level("WARNING"):
+            result = _issue_is_open(gh, 5)
+        assert result is None
+        assert "could not check state" in caplog.text
+
+    def test_none_on_unexpected_payload(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "merged"}  # not a real issue state
+        assert _issue_is_open(gh, 5) is None
+
+
+class TestClearSatisfiedBlocks:
+    def _wi(self, number=7):
+        return WorkItem(number=number, kind="issue", title="t", labels=set(),
+                         url=f"https://github.com/test/repo/issues/{number}")
+
+    def test_clears_both_labels_when_blocking_issue_closed(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "closed"}
+        labels = {"blockedby:12"}
+
+        result = _clear_satisfied_blocks(gh, self._wi(7), labels)
+
+        assert "blockedby:12" not in result
+        gh.remove_label.assert_any_call(7, "blockedby:12")
+        gh.remove_label.assert_any_call(12, "blocks:7")
+
+    def test_leaves_block_in_place_when_still_open(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "open"}
+        labels = {"blockedby:12"}
+
+        result = _clear_satisfied_blocks(gh, self._wi(7), labels)
+
+        assert "blockedby:12" in result
+        gh.remove_label.assert_not_called()
+
+    def test_leaves_block_in_place_on_indeterminate_state(self):
+        """Fail-closed: an API error must never be read as 'closed'."""
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.side_effect = Exception("boom")
+        labels = {"blockedby:12"}
+
+        result = _clear_satisfied_blocks(gh, self._wi(7), labels)
+
+        assert "blockedby:12" in result
+        gh.remove_label.assert_not_called()
+
+    def test_removal_failure_is_logged_not_raised(self, caplog):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "closed"}
+        gh.remove_label.side_effect = Exception("gh 500")
+        labels = {"blockedby:12"}
+
+        with caplog.at_level("WARNING"):
+            result = _clear_satisfied_blocks(gh, self._wi(7), labels)
+
+        # Best-effort: the in-memory label is only discarded on a successful
+        # removal, so a failed API call leaves it present for the next tick
+        # to retry, while still being recorded (not silently swallowed).
+        assert "blockedby:12" in result
+        assert "could not remove" in caplog.text
+
+
+class TestIsBlockedFromStarting:
+    def test_true_when_blocking_issue_still_open(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "open"}
+        assert _is_blocked_from_starting(gh, {"blockedby:12"}) is True
+
+    def test_false_when_blocking_issue_closed(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "closed"}
+        assert _is_blocked_from_starting(gh, {"blockedby:12"}) is False
+
+    def test_true_on_indeterminate_state_fail_closed(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.side_effect = Exception("boom")
+        assert _is_blocked_from_starting(gh, {"blockedby:12"}) is True
+
+    def test_false_with_no_blockedby_labels(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        assert _is_blocked_from_starting(gh, {"component:api"}) is False
+
+
+class TestProcessWorkItemBlockingGate:
+    """Integration: process_work_item's entry gate and mid-flow bypass."""
+
+    def _agent(self):
+        return AgentDef(
+            agent="01_product_docs/issue-classifier",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+        )
+
+    def test_untouched_item_blocked_by_open_issue_dispatches_nothing(self):
+        agent = self._agent()
+        gh = _make_gh_mock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "open"}
+        wi = WorkItem(number=7, kind="issue", title="t", labels={"blockedby:12"},
+                      url="https://github.com/test/repo/issues/7")
+
+        with patch("pipeline_orchestrator.invoke_agent") as mock_invoke:
+            triggered = process_work_item(
+                wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="org/repo",
+            )
+
+        assert triggered == 0
+        mock_invoke.assert_not_called()
+
+    def test_untouched_item_becomes_eligible_once_blocking_issue_closes(self):
+        agent = self._agent()
+        gh = _make_gh_mock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "closed"}
+        wi = WorkItem(number=7, kind="issue", title="t", labels={"blockedby:12"},
+                      url="https://github.com/test/repo/issues/7")
+
+        with patch(
+            "pipeline_orchestrator.invoke_agent",
+            side_effect=_invoke_agent_writing_result("complete"),
+        ) as mock_invoke:
+            triggered = process_work_item(
+                wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="org/repo",
+            )
+
+        assert triggered == 1
+        mock_invoke.assert_called_once()
+        # The now-satisfied block was cleared, not merely bypassed.
+        gh.remove_label.assert_any_call(7, "blockedby:12")
+
+    def test_blockedby_on_a_mid_flow_item_no_longer_gates_a_downstream_agent(self):
+        """PRODUCT.md: blockedby: only gates the entry step -- once a flow
+        has started, further blockedby:/blocks: changes have no effect.
+        A second, still-eligible agent must still be dispatched even though
+        blockedby: names a still-open issue."""
+        entry_agent = self._agent()
+        downstream = AgentDef(
+            agent="03_execute/coder", phase="03_execute", objects=["issue"],
+            trigger={"label": "issue-classifier:complete"},
+            dependencies=["01_product_docs/issue-classifier"],
+            human_gate_after=False, human_gate_label=None, description="test",
+        )
+        gh = _make_gh_mock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "open"}  # still open -- would gate an untouched item
+        wi = WorkItem(
+            number=7, kind="issue", title="t",
+            labels={"blockedby:12", "issue-classifier:complete"},
+            url="https://github.com/test/repo/issues/7",
+        )
+
+        with patch(
+            "pipeline_orchestrator.invoke_agent",
+            side_effect=_invoke_agent_writing_result("complete"),
+        ) as mock_invoke:
+            triggered = process_work_item(
+                wi, [entry_agent, downstream],
+                {entry_agent.agent: entry_agent, downstream.agent: downstream},
+                gh, dry_run=False, repo="org/repo",
+            )
+
+        assert triggered == 1, "the downstream agent must still run -- the item has already started"
+        mock_invoke.assert_called_once()
+
+    def test_pr_kind_bypasses_the_blocking_gate_entirely(self):
+        """Blocking is issue-to-issue ordering (PRODUCT.md) -- PRs are never gated."""
+        agent = AgentDef(
+            agent="03_execute/pr-reviewer", phase="03_execute", objects=["pr"],
+            trigger={}, dependencies=[], human_gate_after=False, human_gate_label=None,
+            description="test",
+        )
+        gh = _make_gh_mock()
+        gh.repo = "org/repo"
+        gh._get.side_effect = AssertionError("blocking check must not run for a PR")
+        wi = WorkItem(number=7, kind="pr", title="t", labels={"blockedby:12"},
+                      url="https://github.com/test/repo/pull/7")
+
+        # Should not raise -- the blockedby: check is skipped for PR work items.
+        process_work_item(
+            wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="org/repo",
+        )
+
+    def test_dry_run_never_writes_labels_even_when_a_block_is_satisfied(self):
+        """dry_run still re-checks eligibility fresh (so simulated output is
+        realistic), but must never mutate GitHub state -- the labels
+        themselves are left untouched even though the block is satisfied."""
+        agent = self._agent()
+        gh = _make_gh_mock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "closed"}
+        wi = WorkItem(number=7, kind="issue", title="t", labels={"blockedby:12"},
+                      url="https://github.com/test/repo/issues/7")
+
+        triggered = process_work_item(
+            wi, [agent], {agent.agent: agent}, gh, dry_run=True, repo="org/repo",
+        )
+
+        assert triggered == 1, "the closed blocking issue means this item is genuinely eligible"
+        gh.remove_label.assert_not_called()
+
+    def test_dry_run_still_reports_blocked_when_blocking_issue_is_open(self):
+        agent = self._agent()
+        gh = _make_gh_mock()
+        gh.repo = "org/repo"
+        gh._get.return_value = {"state": "open"}
+        wi = WorkItem(number=7, kind="issue", title="t", labels={"blockedby:12"},
+                      url="https://github.com/test/repo/issues/7")
+
+        triggered = process_work_item(
+            wi, [agent], {agent.agent: agent}, gh, dry_run=True, repo="org/repo",
+        )
+
+        assert triggered == 0
+        gh.remove_label.assert_not_called()
 
 
 class TestFindEpicSiblings:

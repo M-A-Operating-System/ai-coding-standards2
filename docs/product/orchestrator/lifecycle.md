@@ -40,8 +40,7 @@ satisfied. Phase 5 does not block any per-ticket flow.
 | `00_ondemand/standards-migrator` | 0 | agent | Converts a consuming repo's existing knowledge files into `standards/*.json` |
 | `00_ondemand/branch-cleanup` | 0 | agent | Recommends, then (on approval) deletes, stale remote branches |
 | `00_ondemand/issue-cleanup` | 0 | agent | Recommends, then (on approval) closes, complete or duplicate issues |
-| `00_ondemand/blocker` | 0 | agent | Applies a cross-issue `blockedby:`/`blocks:` pair on request |
-| `00_ondemand/unblocker` | 0 | agent | Scheduled: clears `blockedby:`/`blocks:` once the blocking issue closes |
+| `00_ondemand/blocker` | 0 | script | Reciprocates `blocks:{this}` onto issue N given an existing `blockedby:{N}`, on request |
 | `01_product_docs/issue-classifier` | 1 | agent | Classifies the issue; validates required fields are present |
 | `01_product_docs/issue-sizer` | 1 | agent | Sizes the ticket (`S`/`M`/`L`) |
 | `01_product_docs/prd-writer` | 1 | agent | Drafts the PRD; rewrites the issue body into user-story + Gherkin format |
@@ -75,6 +74,13 @@ satisfied. Phase 5 does not block any per-ticket flow.
 | `05_continuous/debt-finder` | 5 | agent | Weekly: surfaces structural outliers — size, complexity, coupling, coverage, churn |
 | `05_continuous/adr-revisitor` | 5 | agent | Monthly: flags accepted ADRs whose context has materially shifted |
 | `05_continuous/debt-curator` | 5 | agent | Weekly: de-duplicates and prioritises debt candidates into one report |
+
+Clearing a satisfied `blockedby:`/`blocks:` pair once the blocking issue
+closes is not a separate scheduled agent -- the pipeline runs no scheduled
+jobs beyond the emergency-stop check and the main orchestrator tick, so this
+is orchestrator-internal behaviour that runs as part of every ordinary tick
+instead (`pipeline_orchestrator.py`'s `_clear_satisfied_blocks`), the same
+way gate promotion already does.
 
 ---
 

@@ -89,6 +89,14 @@ STATUS_IN_PROGRESS = STATUS_WIP
 # component label lets unrelated work run at once").
 COMPONENT_LABEL_PREFIX = "component:"
 
+# Blocking eligibility (issue #405). blocks:{N} and blockedby:{N} declare an
+# ordering dependency between two issues symmetrically -- PRODUCT.md,
+# "Blocking declares an ordering dependency between issues". blockedby:{N}
+# on an issue while N is still open makes that issue ineligible to start at
+# all; blocks:{N} is the informational reciprocal on N's own label list.
+BLOCKEDBY_LABEL_PREFIX = "blockedby:"
+BLOCKS_LABEL_PREFIX = "blocks:"
+
 ALL_STATUSES: list[str] = [
     STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED,  # terminal — highest priority
     STATUS_REVIEW, STATUS_BLOCKED,                     # halt
@@ -5493,6 +5501,95 @@ def _apply_result(
     return False
 
 
+def _parse_blocking_issue_numbers(labels: set[str]) -> list[int]:
+    """Extract the target issue numbers from every blockedby:{N} label.
+
+    A malformed suffix (non-numeric) is logged and ignored rather than
+    treated as blocking -- PRODUCT.md's blocking mechanism has no validated
+    vocabulary (like component:), so a mistyped label must not silently
+    wedge an item forever.
+    """
+    numbers = []
+    for lbl in labels:
+        if not lbl.startswith(BLOCKEDBY_LABEL_PREFIX):
+            continue
+        suffix = lbl[len(BLOCKEDBY_LABEL_PREFIX):]
+        if not suffix.isdigit():
+            log.warning("malformed %r label -- ignoring (not blocking)", lbl)
+            continue
+        numbers.append(int(suffix))
+    return numbers
+
+
+def _work_item_has_started(labels: set[str], agents: list[AgentDef]) -> bool:
+    """True once any configured agent has any status on this item.
+
+    blockedby: only gates the entry step, never a step mid-flow (PRODUCT.md)
+    -- once anything has run, further blockedby:/blocks: changes have no
+    effect on this item.
+    """
+    return any(agent_status(labels, a.label_key) is not None for a in agents)
+
+
+def _issue_is_open(gh: "GitHubClient", number: int) -> Optional[bool]:
+    """True if issue `number` is open, False if closed, None if indeterminate.
+
+    None on any API error or unexpected payload -- callers treat this the
+    same as "still blocking": an unverifiable block is never silently lifted
+    (STD-ARCH-014 fail-closed).
+    """
+    try:
+        data = gh._get(f"/repos/{gh.repo}/issues/{number}")
+        state = data.get("state") if isinstance(data, dict) else None
+        if state not in ("open", "closed"):
+            return None
+        return state == "open"
+    except Exception as exc:
+        log.warning("could not check state of blocking issue #%d: %s", number, exc)
+        return None
+
+
+def _clear_satisfied_blocks(
+    gh: "GitHubClient", work_item: WorkItem, labels: set[str],
+) -> set[str]:
+    """Remove blockedby:{N} (here) and blocks:{this} (on N) once N has closed.
+
+    PRODUCT.md: "once N closes on its own, both labels come off
+    automatically." Runs every tick regardless of whether this item has
+    started -- clearing a satisfied block is not itself entry-gated.
+    """
+    for number in _parse_blocking_issue_numbers(labels):
+        if _issue_is_open(gh, number) is not False:  # open, or indeterminate
+            continue
+        _this_label = f"{BLOCKEDBY_LABEL_PREFIX}{number}"
+        try:
+            gh.remove_label(work_item.number, _this_label)
+            labels.discard(_this_label)
+            log.info(
+                "  UNBLOCK  #%d: %s cleared (issue #%d closed)",
+                work_item.number, _this_label, number,
+            )
+        except Exception as exc:
+            log.warning("  could not remove %s on #%d: %s", _this_label, work_item.number, exc)
+        try:
+            gh.remove_label(number, f"{BLOCKS_LABEL_PREFIX}{work_item.number}")
+        except Exception as exc:
+            log.warning(
+                "  could not remove %s%d on #%d: %s",
+                BLOCKS_LABEL_PREFIX, work_item.number, number, exc,
+            )
+    return labels
+
+
+def _is_blocked_from_starting(gh: "GitHubClient", labels: set[str]) -> bool:
+    """True if any remaining blockedby:{N} names a still-open (or
+    indeterminate) issue."""
+    return any(
+        _issue_is_open(gh, number) is not False
+        for number in _parse_blocking_issue_numbers(labels)
+    )
+
+
 def process_work_item(
     work_item: WorkItem,
     agents: list[AgentDef],
@@ -5541,6 +5638,25 @@ def process_work_item(
     # Synthesize :complete for every :skipped agent so downstream eligibility
     # checks express "is done?" as a single :complete test throughout.
     labels = normalize_skipped_labels(labels, pipeline_map)
+
+    # Blocking eligibility (issue #405): clear blockedby:/blocks: pairs whose
+    # blocking issue has closed, then gate entry -- never a step mid-flow --
+    # if anything remains open. No dedicated "unblocker" agent or extra
+    # GitHub Actions workflow: this reuses the same orchestrator tick that
+    # already evaluates every other agent, by design (the pipeline
+    # deliberately runs no scheduled jobs beyond the emergency-stop check and
+    # the main orchestrator). Issues only -- blocking is issue-to-issue
+    # ordering (PRODUCT.md), not a PR gate.
+    if work_item.kind == "issue":
+        if not dry_run:
+            labels = _clear_satisfied_blocks(gh, work_item, labels)
+            work_item.labels = labels
+        if not _work_item_has_started(labels, agents) and _is_blocked_from_starting(gh, labels):
+            log.info(
+                "  BLOCKED #%d: blockedby %s still open -- no entry step dispatched",
+                work_item.number, _parse_blocking_issue_numbers(labels),
+            )
+            return 0
 
     for agent_def in agents:
         should_run = _should_run(
