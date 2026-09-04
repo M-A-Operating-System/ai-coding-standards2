@@ -545,3 +545,44 @@
 **When** `coder`'s `extra_allowedTools` is read from `pipeline.json`
 **Then** it grants those read-only subcommands by name and no write or history-rewriting subcommand
 **And** `Bash(git *)` is absent -- a step's allowed commands say the same thing its prompt does
+
+## Scenario: Every hand-authored `/maos-*` command names a single script
+
+**Given** the four commands that are not generated from `pipeline.json` -- `maos-merge`, `maos-new-branch-pr`, `maos-rebaseline`, `maos-run`
+**When** each command file is read
+**Then** it names one script under `.github/scripts/` and passes its arguments through
+**And** it contains no numbered procedure, no shell conditional beyond locating that script in the two supported checkout layouts, and no loop
+
+## Scenario: The `/maos-run` drive loop is a script, and stops where a person is needed
+
+**Given** an issue being driven interactively
+**When** `.github/scripts/drive-item.sh` runs
+**Then** it invokes an orchestrator tick, re-reads the labels, and ticks again while a tick keeps changing them
+**And** it stops with a distinct exit code as soon as a step lands on `:review`, `:blocked` or `:failed`, naming what halted and what clears it
+**And** it stops when a tick advances nothing, and when a bounded tick budget is exhausted
+
+## Scenario: The drive loop never crosses a gate
+
+**Given** a step waiting at a human gate
+**When** `drive-item.sh` reaches it
+**Then** it writes no label and confirms no gate -- crossing a gate is a person's decision, relayed to the orchestrator via `--confirm-gate`, never something a script does on its own (MI-7)
+
+## Scenario: An interactive branch-and-PR run produces what the pipeline step produces
+
+**Given** `/maos-new-branch-pr` is run for an issue
+**When** `.github/scripts/new-branch-pr.sh` resolves the branch from the flow's `naming` in `pipeline.json`
+**Then** it hands off to `create-pr.sh` -- the same script `01_product_docs/create-pr` runs -- so the branch, PR title, `source-issue` label and announcement are identical to a headless run
+**And** no branch-naming or title-truncation rule is restated in the command file
+
+## Scenario: A rebaseline refuses to run over uncommitted work
+
+**Given** a checkout with staged, unstaged or untracked changes
+**When** `.github/scripts/rebaseline-branch.sh` runs
+**Then** it lists what is dirty and stops, leaving every one of those changes on disk
+**And** it never runs `git clean` -- the dirty-tree check is the safety net, and deleting files would be a second one that contradicts it
+
+## Scenario: A rebaseline says what it is discarding before discarding it
+
+**Given** a local target branch carrying commits `origin` does not have
+**When** the rebaseline runs
+**Then** those commits are named in the output, along with the fact that they remain recoverable through `git reflog`
