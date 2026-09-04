@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 """
-validate.py — validate pipeline.json against the schema and check the
-dependency graph is acyclic and references existing agents.
+validate.py — validate pipeline.json against the schema, then check what the
+schema cannot express.
+
+The JSON Schema says what shape the file has. Everything below is a claim the
+schema has no way to state: that the dependency graph is acyclic and names
+steps that exist, that every agent prompt and every named script is on disk,
+that every naming pattern uses a token the orchestrator can resolve, and that
+no step's declared allowances cover a label only the orchestrator may write.
+All of it serves AS-1 — pipeline.json is the authoritative definition, so a
+definition it cannot honour must fail here, not partway through a run.
+
+AS-3's structural thinness (a command names one target and contains no
+procedure, conditional or retry loop) is deliberately NOT checked here: it is
+a check over `.claude/commands/`, not over pipeline.json, and it already lives
+in `tests/test_command_thinness.py` and `tests/test_promise_conformance.py`.
+Two implementations of one check drift; one is enough.
 
 Usage:
     python pipeline/validate.py [--pipeline PATH]
@@ -12,7 +26,9 @@ Exits 0 if valid, 1 if not. Prints findings to stderr.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -27,6 +43,15 @@ HERE = Path(__file__).parent
 DEFAULT_PIPELINE = HERE / "pipeline.json"
 DEFAULT_SCHEMA = HERE / "schemas" / "pipeline.schema.json"
 DEFAULT_AGENTS_DIR = HERE.parent / ".claude" / "agents"
+DEFAULT_REPO_ROOT = HERE.parent
+DEFAULT_STATUSES = HERE / "statuses.json"
+
+# The tokens pipeline_orchestrator.resolve_naming_pattern can substitute. A
+# branch pattern using anything else raises mid-flow rather than at load, so
+# it is caught here instead (AS-1: a definition the file cannot express is a
+# file that does not parse, not a failure to discover later).
+NAMING_TOKENS = frozenset({"number", "parent_number"})
+_NAMING_TOKEN_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 VALID_MODELS = frozenset({
     "claude-opus-4-7",
@@ -219,10 +244,142 @@ def validate_flow_naming(pipeline: dict) -> list[str]:
     return errors
 
 
+def validate_naming_tokens(pipeline: dict) -> list[str]:
+    """Every naming pattern uses only tokens the orchestrator can resolve.
+
+    AS-1: branch and pull-request names are declared in pipeline.json and
+    resolved from it, never built in code. The schema can say a pattern is a
+    string; only this file knows which tokens exist. A pattern naming a token
+    the orchestrator cannot substitute would raise partway through a flow,
+    after the step had already been dispatched -- so it is refused up front.
+    """
+    errors = []
+    for flow_name, flow in (pipeline.get("flows") or {}).items():
+        naming = flow.get("naming") or {}
+        patterns = [("naming.branch", naming.get("branch")), ("naming.base", naming.get("base"))]
+        for pr in naming.get("pull_requests") or []:
+            patterns.append((f"naming.pull_requests[{pr.get('id')}].branch", pr.get("branch")))
+        for where, pattern in patterns:
+            if not isinstance(pattern, str):
+                continue
+            unknown = sorted(set(_NAMING_TOKEN_RE.findall(pattern)) - NAMING_TOKENS)
+            if unknown:
+                errors.append(
+                    f"flow '{flow_name}' {where} '{pattern}' uses unknown token(s) "
+                    f"{unknown}; the orchestrator resolves only "
+                    f"{sorted(NAMING_TOKENS)}"
+                )
+    return errors
+
+
+def validate_named_scripts_exist(pipeline: dict, repo_root: Path) -> list[str]:
+    """Every script the file names exists on disk.
+
+    The counterpart to validate_agent_files, for the other kind of step the
+    pipeline names: a script step's `script`, a step's `post_steps`, and the
+    global `defaults.agent_lifecycle` hooks. AS-2 puts every piece of
+    value-add work in a script named here; a name pointing at nothing is a
+    step that fails when it is finally reached rather than when it was
+    declared.
+    """
+    if not repo_root.is_dir():
+        return []
+    errors = []
+    for entry in steps(pipeline):
+        named = []
+        if entry.get("type") == "script" and entry.get("script"):
+            named.append(("script", entry["script"]))
+        named += [("post_steps", p) for p in entry.get("post_steps") or []]
+        for field, rel in named:
+            if not (repo_root / rel).is_file():
+                errors.append(
+                    f"step '{entry['agent']}' names {field} '{rel}', which does not exist"
+                )
+    lifecycle = (pipeline.get("defaults") or {}).get("agent_lifecycle") or {}
+    for when in ("before", "after"):
+        for rel in lifecycle.get(when) or []:
+            if not (repo_root / rel).is_file():
+                errors.append(
+                    f"defaults.agent_lifecycle.{when} names '{rel}', which does not exist"
+                )
+    return errors
+
+
+def validate_no_step_grants_itself_a_lifecycle_or_gate_label(
+    pipeline: dict, statuses_path: Path,
+) -> list[str]:
+    """No step's allowed_labels may cover a gate label or a lifecycle label.
+
+    AS-1 says everything a step may do is declared here and nowhere else, so
+    the declaration itself must not grant what the orchestrator alone may
+    write. Two families:
+
+      - a `{step}:approved`-style human gate label, which only a person's own
+        application (or the orchestrator recording a relayed confirmation)
+        may put on an issue -- a step able to request one has an approval
+        path of its own (MI-7);
+      - a `{step}:{status}` lifecycle label, which the orchestrator applies
+        as it moves the step through its states -- a step writing its own
+        would be reporting its outcome twice, in two voices (MI-6).
+
+    Patterns are matched with the orchestrator's own glob convention, so a
+    wildcard broad enough to sweep one of these in is caught as readily as a
+    literal.
+    """
+    try:
+        suffixes = [
+            s["label_suffix"] for s in json.loads(statuses_path.read_text())["statuses"]
+        ]
+    except (OSError, KeyError, json.JSONDecodeError) as exc:
+        return [f"could not read statuses from {statuses_path}: {exc}"]
+
+    all_steps = steps(pipeline)
+    gate_labels = {
+        entry["human_gate_label"] for entry in all_steps if entry.get("human_gate_label")
+    }
+    lifecycle_labels = {
+        f"{entry['agent'].split('/')[-1]}:{suffix}"
+        for entry in all_steps for suffix in suffixes
+    }
+
+    errors = []
+    for entry in all_steps:
+        for op in ("add", "remove"):
+            for pattern in (entry.get("allowed_labels") or {}).get(op) or []:
+                for family, labels in (
+                    ("a human gate label", gate_labels),
+                    ("a lifecycle status label", lifecycle_labels),
+                ):
+                    covered = sorted(
+                        lbl for lbl in labels if fnmatch.fnmatchcase(lbl, pattern)
+                    )
+                    if covered:
+                        errors.append(
+                            f"step '{entry['agent']}' allowed_labels.{op} pattern "
+                            f"'{pattern}' covers {family}: {covered[:3]} -- only the "
+                            f"orchestrator may write those"
+                        )
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate pipeline.json")
     parser.add_argument("--pipeline", type=Path, default=DEFAULT_PIPELINE)
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=DEFAULT_REPO_ROOT,
+        help="Repository root the file's script paths are relative to "
+             "(default: the parent of pipeline/). Pass an empty string to skip.",
+    )
+    parser.add_argument(
+        "--statuses",
+        type=Path,
+        default=DEFAULT_STATUSES,
+        help="statuses.json, for the lifecycle-label grant check "
+             "(default: pipeline/statuses.json).",
+    )
     parser.add_argument(
         "--agents-dir",
         type=Path,
@@ -242,6 +399,12 @@ def main() -> int:
     all_errors += validate_dependency_references(pipeline)
     all_errors += validate_acyclic(pipeline)
     all_errors += validate_flow_naming(pipeline)
+    all_errors += validate_naming_tokens(pipeline)
+    all_errors += validate_no_step_grants_itself_a_lifecycle_or_gate_label(
+        pipeline, args.statuses,
+    )
+    if args.repo_root:
+        all_errors += validate_named_scripts_exist(pipeline, args.repo_root)
     if args.agents_dir:
         all_errors += validate_agent_files(pipeline, args.agents_dir)
 
