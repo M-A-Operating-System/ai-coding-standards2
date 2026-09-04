@@ -143,6 +143,16 @@ fi
 # README.md and .gitignore are legitimate edit targets. The file is left on
 # disk rather than deleted, so nothing an agent produced is destroyed and the
 # violation stays visible.
+#
+# Related but deliberately NOT the same guard as sweep-repo-root.sh (issue
+# #407), and not a duplicate of it:
+#   * this one reads the git INDEX, catches a file however it got staged
+#     (including one the agent staged itself), runs only for commit_after
+#     steps, and never deletes;
+#   * sweep-repo-root.sh reads a before/after diff of UNTRACKED files, runs for
+#     every agent-type step via defaults.agent_lifecycle, needs a baseline this
+#     script has no access to, and deletes.
+# Calling one from the other would change what it does, not remove duplication.
 # ---------------------------------------------------------------------------
 ROOT_ADDITIONS=$(git diff --cached --name-only --diff-filter=A -- ':(top)*' \
     | grep -v '/' || true)

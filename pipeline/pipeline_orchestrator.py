@@ -1627,6 +1627,29 @@ def _ensure_metrics_branch(gh: "GitHubClient", repo: str) -> None:
 # object-store ops; no network, no auth token needed. GIT_INDEX_FILE is set explicitly.
 _GIT_PLUMBING_ENV_VARS = ("PATH", "HOME")
 
+# The declared script that owns the metrics ledger append (AS-2, issue #407).
+_METRICS_APPEND_SCRIPT = ".github/scripts/append-metrics-record.sh"
+
+# STD-SEC-022 — env for append-metrics-record.sh. It runs the same git plumbing
+# _GIT_PLUMBING_ENV_VARS covers, plus `git fetch`/`git push` against the metrics
+# branch, so it also needs a git credential and the network vars every other
+# push site gets. It builds its own auth header from these, exactly as
+# commit-agent-work.sh does; the orchestrator's own GIT_CONFIG_* header (which
+# embeds a token) is deliberately never forwarded to a script.
+#
+# AI_AGILE_BOT_TOKEN is on this list because the ledger is a system action on
+# GitHub and MI-7 wants those made by one dedicated identity rather than the
+# generic identity a CI run gets by default. The script prefers it and falls
+# back to GITHUB_TOKEN, so a repo without the PAT keeps working.
+_METRICS_APPEND_ENV_VARS = _GIT_PLUMBING_ENV_VARS + (
+    "LANG", "LC_ALL", "LC_CTYPE",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
 
 def _append_metrics_record(
     gh: "GitHubClient",
@@ -1637,86 +1660,56 @@ def _append_metrics_record(
 ) -> None:
     """Append one metrics record to records.jsonl on the ai-agile/metrics branch.
 
-    Uses plain git plumbing (fetch/hash-object/commit-tree/push) rather than
-    the GitHub Contents API: some restricted sessions (e.g. an interactive
-    Claude Code session) 403 on a direct Contents API PUT even though `git
-    push` over the same HTTPS credential helper succeeds. Object/ref
-    operations don't touch the working tree or the real index (a scratch
-    GIT_INDEX_FILE is used), so this is safe to run while another branch is
-    checked out. Retries on a rejected push (concurrent writer) up to
-    _retries times. gh is accepted for interface symmetry with
-    _ensure_metrics_branch but unused here.
+    The orchestrator decides WHAT the record says -- it knows the step, the
+    outcome and the timing -- and hands the finished line to
+    .github/scripts/append-metrics-record.sh, which owns the git plumbing that
+    puts it on the branch. Committing is not coordination (AS-2, issue #407),
+    so the fetch/hash-object/commit-tree/push-with-retry sequence that used to
+    live here is a script now, invoked exactly the way _invoke_commit_after
+    invokes commit-agent-work.sh.
+
+    Raises RuntimeError when the append did not land, so a caller cannot read a
+    failure as a success (STD-ARCH-014). gh is accepted for interface symmetry
+    with _ensure_metrics_branch but unused here.
     """
+    script = _orchestration_script_path(_METRICS_APPEND_SCRIPT)
+    if not script.exists():
+        raise RuntimeError(f"{_METRICS_APPEND_SCRIPT} not found at {script}")
+
     record_line = json.dumps(record, separators=(",", ":")) + "\n"
     commit_message = (
         f"metrics: {record.get('agent_id', 'step')} "
         f"on #{record.get('github_issue_number')}"
     )
 
-    for attempt in range(_retries + 1):
-        subprocess.run(
-            ["git", "fetch", "origin", METRICS_BRANCH],
-            check=True, capture_output=True,
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".jsonl", delete=False, encoding="utf-8",
+    ) as record_file:
+        record_file.write(record_line)
+        record_path = record_file.name
+    try:
+        env = {  # STD-SEC-022
+            **{k: os.environ[k] for k in _METRICS_APPEND_ENV_VARS if k in os.environ},
+            "AI_AGILE_METRICS_BRANCH": METRICS_BRANCH,
+            "AI_AGILE_METRICS_FILE": METRICS_RECORDS_FILE,
+            "AI_AGILE_METRICS_COMMIT_MESSAGE": commit_message,
+            "AI_AGILE_METRICS_RETRIES": str(_retries),
+        }
+        result = subprocess.run(
+            ["bash", str(script), record_path],
+            env=env, capture_output=True, text=True, timeout=300,
         )
-        parent_sha = subprocess.run(
-            ["git", "rev-parse", f"origin/{METRICS_BRANCH}"],
-            check=True, capture_output=True, text=True,
-        ).stdout.strip()
-
-        show = subprocess.run(
-            ["git", "show", f"{parent_sha}:{METRICS_RECORDS_FILE}"],
-            capture_output=True, text=True,
-        )
-        existing = show.stdout if show.returncode == 0 else ""
-
-        blob_sha = subprocess.run(
-            ["git", "hash-object", "-w", "--stdin"],
-            input=existing + record_line, check=True, capture_output=True, text=True,
-        ).stdout.strip()
-
-        with tempfile.NamedTemporaryFile(delete=False) as idx_file:
-            index_path = idx_file.name
+    finally:
         try:
-            git_env = {  # STD-SEC-022
-                **{k: os.environ[k] for k in _GIT_PLUMBING_ENV_VARS if k in os.environ},
-                "GIT_INDEX_FILE": index_path,
-            }
-            subprocess.run(
-                ["git", "read-tree", parent_sha],
-                check=True, env=git_env, capture_output=True,
-            )
-            subprocess.run(
-                ["git", "update-index", "--add", "--cacheinfo",
-                 f"100644,{blob_sha},{METRICS_RECORDS_FILE}"],
-                check=True, env=git_env, capture_output=True,
-            )
-            tree_sha = subprocess.run(
-                ["git", "write-tree"],
-                check=True, env=git_env, capture_output=True, text=True,
-            ).stdout.strip()
-        finally:
-            os.unlink(index_path)
+            os.unlink(record_path)
+        except OSError:  # pragma: no cover -- best-effort
+            pass
 
-        commit_sha = subprocess.run(
-            ["git", "commit-tree", tree_sha, "-p", parent_sha, "-m", commit_message],
-            check=True, capture_output=True, text=True,
-        ).stdout.strip()
-
-        push = subprocess.run(
-            ["git", "push", "origin", f"{commit_sha}:refs/heads/{METRICS_BRANCH}"],
-            capture_output=True, text=True,
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{_METRICS_APPEND_SCRIPT} exited {result.returncode}: "
+            f"{(result.stderr or result.stdout).strip()[:500]}"
         )
-        if push.returncode == 0:
-            return
-        if attempt < _retries:
-            log.debug(
-                "metrics: push rejected appending records.jsonl (concurrent writer?),"
-                " retrying (attempt %d): %s",
-                attempt + 1, push.stderr.strip(),
-            )
-            time.sleep(1)
-            continue
-        raise RuntimeError(f"git push to {METRICS_BRANCH} failed: {push.stderr.strip()}")
 
 
 # ---------------------------------------------------------------------------
@@ -4069,8 +4062,15 @@ def _claude_cli_usable(env: Mapping[str, str]) -> bool:
 # scripts: a lifecycle script prepares the environment an agent runs in, so it
 # touches the filesystem and never GitHub, and no credential is passed. A script
 # that needs one is doing process work and belongs in post_steps, which has its
-# own allowlist. AI_AGILE_SCRATCH is added per call by _run_lifecycle_scripts.
-_LIFECYCLE_SCRIPT_ENV_VARS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
+# own allowlist. AI_AGILE_SCRATCH and AGENT_NAME are added per call by
+# _run_lifecycle_scripts.
+#
+# AI_AGILE_ROOT is on the list, not a credential: sweep-repo-root.sh resolves
+# the repository root from it (issue #407) exactly as the inline Python it
+# replaced did, so a tick started from a subdirectory still acts on the root.
+_LIFECYCLE_SCRIPT_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "AI_AGILE_ROOT",
+)
 
 
 def _scratch_path(agent_session_id: str) -> str:
@@ -4085,7 +4085,9 @@ def _scratch_path(agent_session_id: str) -> str:
     return f"/tmp/{agent_session_id}"
 
 
-def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
+def _run_lifecycle_scripts(
+    scripts: list, scratch_dir: str, agent_name: str = "",
+) -> None:
     """Run the agent-lifecycle scripts declared in pipeline.json. Never raises.
 
     The third kind of script in the pipeline, alongside script steps and
@@ -4107,6 +4109,9 @@ def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
             continue
         env = {k: os.environ[k] for k in _LIFECYCLE_SCRIPT_ENV_VARS if k in os.environ}
         env["AI_AGILE_SCRATCH"] = scratch_dir
+        # Names the step in the sweep's warning, so a leaked root file is
+        # attributable the same way the inline sweep made it (issue #376).
+        env["AGENT_NAME"] = agent_name
         try:
             res = subprocess.run(
                 ["bash", str(script)], env=env, capture_output=True, text=True, timeout=30,
@@ -4436,7 +4441,9 @@ def invoke_agent(
     # its own setup -- an attempt must never read the previous attempt's files.
     scratch_dir = agent_env.get("AI_AGILE_SCRATCH", "")
     if scratch_dir and not dry_run:
-        _run_lifecycle_scripts(agent_def.lifecycle_before, scratch_dir)
+        _run_lifecycle_scripts(
+            agent_def.lifecycle_before, scratch_dir, agent_def.agent,
+        )
 
     if dry_run:
         log.info(
@@ -5555,10 +5562,6 @@ def _run_agent(
                 None, "", "", _invoked_at, 0, False, None,
             )
 
-    # Snapshot repo-root untracked files so anything the agent adds there
-    # can be swept afterwards (issue #376).
-    _root_before = set() if dry_run else _untracked_root_files()
-
     sentinel_status: Optional[str] = None
     sentinel_message: str = ""
     step_result: Optional[StepResult] = None
@@ -5610,102 +5613,25 @@ def _run_agent(
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
         _post_artefact_if_present(gh, agent_def, work_item, step_result)
 
-    if not dry_run:
-        _sweep_agent_root_files(agent_def, _root_before)
-
     # Run the declared "after" scripts once all retries are done, whatever the
     # outcome. load_pipeline leaves these empty for script steps, which are
     # never handed a scratch directory, so the pairing with "before" holds
     # without the orchestrator deciding anything.
+    #
+    # The repo-root sweep (issue #376) is one of these scripts now, not inline
+    # Python here: what a step leaves behind is cleaned up by a declared
+    # post-action, not by the coordinator (AS-2, issue #407).
     if not dry_run and agent_def.lifecycle_after:
         _run_lifecycle_scripts(
             agent_def.lifecycle_after,
             _scratch_path(_compute_agent_session_id(agent_def, work_item, repo)),
+            agent_def.agent,
         )
 
     return (
         result, sentinel_status, sentinel_message, _pre_agent_worktree,
         _invoked_at, _attempt, exhausted, step_result,
     )
-
-
-def _repo_root() -> Path:
-    """The repository root the sweep operates on.
-
-    Asks git rather than trusting a path. AI_AGILE_ROOT is often "." (it is a
-    consuming-repo-relative convention), so reading it directly would leave the
-    sweep CWD-relative: a tick started from a subdirectory would list and
-    delete files there instead of at the repo root. `git rev-parse
-    --show-toplevel` is absolute and correct from anywhere inside the tree.
-    """
-    start = os.environ.get("AI_AGILE_ROOT") or str(SUBMODULE_ROOT)
-    try:
-        top = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True, cwd=start,
-        ).stdout.strip()
-        if top:
-            return Path(top)
-    except Exception:
-        pass
-    return Path(start).resolve()
-
-
-def _untracked_root_files() -> Optional[set]:
-    """Untracked files at the repository root (depth 0 only).
-
-    The scratch contract says agents write working files under
-    $AI_AGILE_SCRATCH and never into the repo. When an agent writes to a
-    relative path instead, the file lands here.
-
-    Returns None -- NOT an empty set -- when git cannot be consulted. The
-    caller uses this result as the "before" baseline, and an empty baseline
-    would mean "every untracked root file is new", turning a failed probe into
-    a delete-everything sweep. None makes that case unambiguous, so the sweep
-    can skip instead.
-    """
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
-            capture_output=True, text=True, check=True, cwd=str(_repo_root()),
-        ).stdout
-    except Exception:
-        return None
-    return {line for line in out.splitlines() if line and "/" not in line}
-
-
-def _sweep_agent_root_files(agent_def: AgentDef, before: set) -> None:
-    """Remove root files the agent created, and say so.
-
-    Runs for EVERY agent. commit-agent-work.sh carries the same guard, but it
-    only runs for git_ops.commit_after agents -- prd-writer, pr-reviewer and
-    issue-classifier all have none, and all three were observed leaving files
-    at the repo root (issue #376). Only files absent before the invocation are
-    removed, so a pre-existing file is never touched.
-    """
-    after = _untracked_root_files()
-    if before is None or after is None:
-        # A probe failed. Skipping loses a cleanup; guessing risks deleting
-        # files the agent never wrote. Skip, and say so.
-        log.warning(
-            "  scratch: could not check the repo root for %s; skipping the sweep",
-            agent_def.agent,
-        )
-        return
-    leaked = sorted(after - before)
-    if not leaked:
-        return
-    log.warning(
-        "  scratch: %s wrote %d file(s) to the repo root instead of "
-        "$AI_AGILE_SCRATCH; removing: %s",
-        agent_def.agent, len(leaked), ", ".join(leaked),
-    )
-    root = _repo_root()
-    for name in leaked:
-        try:
-            (root / name).unlink()
-        except OSError as exc:
-            log.warning("  scratch: could not remove %s: %s", name, exc)
 
 
 # ---------------------------------------------------------------------------

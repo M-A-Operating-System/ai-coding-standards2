@@ -401,8 +401,9 @@ class TestSubItemSelectionAndEnv:
         monkeypatch.setattr(orch, "invoke_agent", _fake_invoke)
         monkeypatch.setattr(orch, "_acquire_wip_and_announce", lambda *a, **k: None)
         monkeypatch.setattr(orch, "_create_run_worktree", lambda branch: "/tmp/wt")
-        monkeypatch.setattr(orch, "_untracked_root_files", lambda: set())
-        monkeypatch.setattr(orch, "_sweep_agent_root_files", lambda *a, **k: None)
+        # The repo-root sweep is a declared lifecycle script now (issue #407),
+        # so this test stubs the lifecycle runner instead of a sweep function.
+        monkeypatch.setattr(orch, "_run_lifecycle_scripts", lambda *a, **k: None)
         monkeypatch.setattr(orch, "_read_step_result", lambda scratch: (None, "none"))
 
         orch._run_agent(

@@ -35,8 +35,14 @@
       "Grep"
     ],
     "agent_lifecycle": {
-      "before": [".github/scripts/scratch-setup.sh"],
-      "after": [".github/scripts/scratch-teardown.sh"]
+      "before": [
+        ".github/scripts/scratch-setup.sh",
+        ".github/scripts/sweep-repo-root-snapshot.sh"
+      ],
+      "after": [
+        ".github/scripts/sweep-repo-root.sh",
+        ".github/scripts/scratch-teardown.sh"
+      ]
     }
   },
 
