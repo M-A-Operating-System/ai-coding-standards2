@@ -62,6 +62,12 @@ Environment variables the orchestrator exports for you:
 | `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
 | `AI_AGILE_EXECUTION_MODE` | Always `headless` for orchestrator-spawned subprocesses -- including `/maos-{agent}`, which spawns one exactly as headless does. `/maos-{agent}-i`'s resolve-only mode sets it to `interactive` instead: no agent is spawned there, so nothing else reads this env var for that run. |
 | `AI_AGILE_SCRATCH` | Per-run scratch directory, created empty before your run and removed after it. Write working files here; see "How you communicate". |
+| `AI_AGILE_FLOW` | The flow you are a step of (`pipeline.json`'s `flows` key), e.g. `standard-delivery`. |
+| `AI_AGILE_STEP` | Your own step name, e.g. `03_execute/coder`. |
+| `AI_AGILE_BRANCH` | The branch your flow declares for this step (e.g. `issue-42`, or `issue-42-docs` for a design-phase step). Set only when your flow declares naming. Never derive a branch name yourself. |
+| `AI_AGILE_BASE_BRANCH` | The branch your flow's primary branch is cut from, when it declares one. Absent means the repository default branch. |
+| `SUB_ITEM_NUMBER` | Set only for a step declaring `unit: sub_item`: the one open child issue THIS invocation is for. You address that piece and nothing else; the orchestrator invokes you again for the next one. |
+| `AI_AGILE_CHILDREN_TOTAL` / `AI_AGILE_CHILDREN_OPEN` | Set only for a step whose trigger reads its item's children: how many children it has, and how many are still open. |
 
 ---
 
@@ -91,6 +97,7 @@ own `tools:` frontmatter.
 | `output` | no (default `""`) | The artefact you produced (a review, a PRD, a plan). The orchestrator posts this as a structured comment; you never post it yourself |
 | `expected_effect` | no (default `{}`) | What you believe you changed this run, e.g. `{"commits": true}` |
 | `label_requests` | no (default `[]`) | `[{"issue": null, "add": [...], "remove": [...]}]` — `"issue": null` means this work item. Only requests matching your step's declared `allowed_labels` (`pipeline.json`) are applied; everything else is silently dropped |
+| `creates_issue` | no (default `{}`) | `{"title": "...", "body": "...", "labels": [...]}` — a new work item for the orchestrator to raise on your behalf and stamp with the step and flow that produced it. Only honoured when your step declares `expected_effect.creates_issues` in `pipeline.json`; an undeclared request is refused, not silently honoured |
 | `body_write` | no (default `{}`) | A full-body rewrite or a todos-block subsection patch (issue #401) — see "Todo lists" below for the patch shape. `{"target": "issue"\|"pr", "mode": "replace", "body": "...", "title": "..."}` (title optional) for a full rewrite. You never edit the body yourself; the orchestrator applies this and snapshots the pre-write body first, once, the first time you replace it |
 
 Any missing required field, wrong type, or an `outcome` outside the three

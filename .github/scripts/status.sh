@@ -285,8 +285,11 @@ status_bootstrap_all() {
 import json, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
-for a in data['pipeline']:
-    print(a['agent'])
+# pipeline.json declares flows, not a flow (issue #406): every step lives
+# inside a named flow, so walk the flows to reach them.
+for flow in (data.get('flows') or {}).values():
+    for a in flow.get('steps') or []:
+        print(a['agent'])
 PYEOF
 )
 
@@ -325,7 +328,12 @@ with open(sys.argv[2]) as f:
 colour_map = {s["status"]: s["colour"] for s in statuses_data["statuses"]}
 
 seen = set()
-for step in pipeline["pipeline"]:
+steps = [
+    step
+    for flow in (pipeline.get("flows") or {}).values()
+    for step in (flow.get("steps") or [])
+]
+for step in steps:
     agent = step["agent"]
     trigger = step.get("trigger", {})
     if "label" in trigger:
@@ -384,7 +392,12 @@ import json, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
 statuses = ['wip', 'complete', 'review', 'blocked', 'failed', 'skipped']
-for step in data['pipeline']:
+steps = [
+    step
+    for flow in (data.get('flows') or {}).values()
+    for step in (flow.get('steps') or [])
+]
+for step in steps:
     agent = step['agent'].rsplit('/', 1)[-1]  # strip phase prefix
     for s in statuses:
         print(f'{agent}:{s}')
