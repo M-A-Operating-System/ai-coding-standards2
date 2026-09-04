@@ -19,6 +19,7 @@ import json
 import subprocess
 import sys
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 import pytest
 import requests
@@ -39,6 +40,7 @@ from pipeline_orchestrator import (
     _post_metrics_comment,
     _ensure_metrics_branch,
     _append_metrics_record,
+    _METRICS_APPEND_ENV_VARS,
     _post_cycle_metrics,
     _StreamAccumulator,
 )
@@ -754,114 +756,110 @@ class TestEnsureMetricsBranch:
 # ---------------------------------------------------------------------------
 
 class TestAppendMetricsRecord:
-    """_append_metrics_record appends JSON lines to records.jsonl via git plumbing
-    (not the GitHub Contents API -- some restricted sessions 403 on a direct
-    Contents API PUT even though `git push` over the same credential succeeds)."""
+    """_append_metrics_record hands one finished record line to
+    .github/scripts/append-metrics-record.sh, which owns the git plumbing that
+    puts it on the metrics branch (AS-2, issue #407).
 
-    def _make_git_run(self, *, existing_content: str = "", push_returncodes=(0,)):
-        """Fake subprocess.run for the git plumbing sequence _append_metrics_record
-        issues. existing_content simulates `git show <sha>:records.jsonl`'s output
-        (empty simulates the file not existing yet). push_returncodes is consumed
-        one-per-push-attempt. Returns (run_stub, calls) where calls records every
-        (cmd, kwargs) pair for assertions."""
-        push_codes = list(push_returncodes)
+    The orchestrator still decides WHAT the record says and what the commit is
+    called; the assertions below are on that half plus the handover. The
+    plumbing itself -- creating records.jsonl when absent, appending when
+    present, the target branch, retrying a rejected push -- is exercised
+    against a real git repository in tests/test_metrics_append_script.py.
+    """
+
+    def _make_script_run(self, returncode=0, stderr=""):
         calls = []
 
         def _run(cmd, **kwargs):
             calls.append((cmd, kwargs))
             result = MagicMock()
-            result.returncode = 0
+            result.returncode = returncode
             result.stdout = ""
-            result.stderr = ""
-            sub = cmd[1]
-            if sub == "rev-parse":
-                result.stdout = "parent-sha-abc\n"
-            elif sub == "show":
-                if existing_content:
-                    result.stdout = existing_content
-                else:
-                    result.returncode = 128  # simulates file not found on branch
-            elif sub == "hash-object":
-                result.stdout = "blob-sha-xyz\n"
-            elif sub == "write-tree":
-                result.stdout = "tree-sha-123\n"
-            elif sub == "commit-tree":
-                result.stdout = "commit-sha-999\n"
-            elif sub == "push":
-                result.returncode = push_codes.pop(0)
-                if result.returncode != 0:
-                    result.stderr = "! [rejected]"
-            if kwargs.get("check") and result.returncode != 0:
-                raise subprocess.CalledProcessError(result.returncode, cmd)
+            result.stderr = stderr
             return result
 
         return _run, calls
 
-    def _call(self, cmd_list, sub):
-        """Return the (cmd, kwargs) tuple for the first call whose git subcommand matches."""
-        return next(c for c in cmd_list if c[0][1] == sub)
+    def _record_written(self, calls):
+        """The record line the script was handed, read back from the temp file.
 
-    def test_creates_file_when_not_found(self):
-        run, calls = self._make_git_run(existing_content="")
+        _append_metrics_record deletes the file once the script returns, so the
+        stub reads it while the call is still in flight.
+        """
+        return calls[0][2]
+
+    def _run_and_capture(self, record, *, returncode=0, stderr="", retries=0):
+        calls = []
+
+        def _run(cmd, **kwargs):
+            payload = Path(cmd[2]).read_text()
+            calls.append((cmd, kwargs, payload))
+            result = MagicMock()
+            result.returncode = returncode
+            result.stdout = ""
+            result.stderr = stderr
+            return result
+
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=_run):
+            _append_metrics_record(None, "owner/repo", record, _retries=retries)
+        return calls
+
+    def test_hands_the_record_to_the_declared_script(self):
         record = {"agent_id": "coder", "github_issue_number": 42}
+        calls = self._run_and_capture(record)
 
-        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
-            _append_metrics_record(None, "owner/repo", record, _retries=0)
+        assert len(calls) == 1
+        cmd = calls[0][0]
+        assert cmd[0] == "bash"
+        assert cmd[1].endswith("/.github/scripts/append-metrics-record.sh")
 
-        hash_call = self._call(calls, "hash-object")
-        assert json.loads(hash_call[1]["input"].strip()) == record
-        push_call = self._call(calls, "push")
-        assert f"refs/heads/{METRICS_BRANCH}" in push_call[0][3]
+    def test_record_is_written_as_one_compact_json_line(self):
+        record = {"agent_id": "coder", "github_issue_number": 42}
+        payload = self._run_and_capture(record)[0][2]
 
-    def test_appends_to_existing_file(self):
-        existing_record = {"agent_id": "prd-writer", "github_issue_number": 10}
-        existing_line = json.dumps(existing_record, separators=(",", ":")) + "\n"
-        run, calls = self._make_git_run(existing_content=existing_line)
-        new_record = {"agent_id": "coder", "github_issue_number": 42}
+        assert payload.endswith("\n")
+        assert json.loads(payload.strip()) == record
+        assert len(payload.strip().splitlines()) == 1
 
-        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
-            _append_metrics_record(None, "owner/repo", new_record, _retries=0)
+    def test_the_script_is_told_which_branch_and_file_to_append_to(self):
+        env = self._run_and_capture({"agent_id": "test"})[0][1]["env"]
 
-        hash_call = self._call(calls, "hash-object")
-        lines = [l for l in hash_call[1]["input"].strip().splitlines() if l]
-        assert len(lines) == 2
-        assert json.loads(lines[0]) == existing_record
-        assert json.loads(lines[1]) == new_record
-
-    def test_retries_on_rejected_push(self):
-        run, calls = self._make_git_run(existing_content="", push_returncodes=(1, 0))
-
-        with patch("pipeline_orchestrator.subprocess.run", side_effect=run), \
-             patch("pipeline_orchestrator.time.sleep"):
-            _append_metrics_record(None, "owner/repo", {"agent_id": "test"}, _retries=1)
-
-        push_calls = [c for c in calls if c[0][1] == "push"]
-        assert len(push_calls) == 2
+        assert env["AI_AGILE_METRICS_BRANCH"] == METRICS_BRANCH
+        assert env["AI_AGILE_METRICS_FILE"] == METRICS_RECORDS_FILE
 
     def test_commit_message_contains_agent_and_issue(self):
-        run, calls = self._make_git_run(existing_content="")
+        env = self._run_and_capture(
+            {"agent_id": "03_execute/coder", "github_issue_number": 55}
+        )[0][1]["env"]
 
-        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
-            _append_metrics_record(
-                None, "owner/repo",
-                {"agent_id": "03_execute/coder", "github_issue_number": 55},
-                _retries=0,
-            )
-
-        commit_call = self._call(calls, "commit-tree")
-        cmd = commit_call[0]
-        message = cmd[cmd.index("-m") + 1]
+        message = env["AI_AGILE_METRICS_COMMIT_MESSAGE"]
         assert "03_execute/coder" in message
         assert "55" in message
 
-    def test_push_targets_correct_branch(self):
-        run, calls = self._make_git_run(existing_content="")
+    def test_retry_budget_is_passed_through(self):
+        env = self._run_and_capture({"agent_id": "test"}, retries=1)[0][1]["env"]
+        assert env["AI_AGILE_METRICS_RETRIES"] == "1"
 
-        with patch("pipeline_orchestrator.subprocess.run", side_effect=run):
-            _append_metrics_record(None, "owner/repo", {"agent_id": "test"}, _retries=0)
+    def test_the_temp_record_file_is_removed_afterwards(self):
+        calls = self._run_and_capture({"agent_id": "test"})
+        assert not Path(calls[0][0][2]).exists()
 
-        push_call = self._call(calls, "push")
-        assert push_call[0][-1].endswith(f":refs/heads/{METRICS_BRANCH}")
+    def test_a_failed_append_raises_rather_than_reporting_success(self):
+        """STD-ARCH-014: a rejected push means the record is not in the ledger."""
+        with pytest.raises(RuntimeError, match="append-metrics-record.sh"):
+            self._run_and_capture(
+                {"agent_id": "test"}, returncode=1, stderr="! [rejected]",
+            )
+
+    def test_the_script_env_is_a_named_allowlist_without_the_orchestrators_header(self):
+        env = self._run_and_capture({"agent_id": "test"})[0][1]["env"]
+
+        # STD-SEC-022: the orchestrator's own GIT_CONFIG_* auth header embeds a
+        # token and is never forwarded to a script -- the script derives its own.
+        assert "GIT_CONFIG_COUNT" not in env
+        assert "GIT_CONFIG_VALUE_0" not in env
+        for key in env:
+            assert key in _METRICS_APPEND_ENV_VARS or key.startswith("AI_AGILE_METRICS_")
 
 
 # ---------------------------------------------------------------------------

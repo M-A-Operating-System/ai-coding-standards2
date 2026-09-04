@@ -15,7 +15,7 @@
 #
 # Env:
 #   REPO                 owner/repo (required)
-#   GITHUB_TOKEN / GH_TOKEN / AI_AGILE_BOT_TOKEN   auth for gh
+#   GITHUB_TOKEN / GH_TOKEN   auth for gh, resolved by lib/github-identity.sh
 #
 # Exit codes:
 #   0  merged (or already merged) and branch deleted
@@ -23,6 +23,12 @@
 #   2  usage / not-found error
 
 set -euo pipefail
+
+# The identity every headless system action on GitHub uses (MI-7): the
+# dedicated bot when the repository configures one, otherwise exactly the token
+# this script used before. Resolved in one place, never here.
+# shellcheck source=lib/github-identity.sh
+. "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
 
 NUMBER="${1:?usage: merge-pr.sh <pr-or-issue-number> [--merge|--squash|--rebase]}"
 METHOD="${2:---merge}"

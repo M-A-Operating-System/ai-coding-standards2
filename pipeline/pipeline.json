@@ -35,8 +35,14 @@
       "Grep"
     ],
     "agent_lifecycle": {
-      "before": [".github/scripts/scratch-setup.sh"],
-      "after": [".github/scripts/scratch-teardown.sh"]
+      "before": [
+        ".github/scripts/scratch-setup.sh",
+        ".github/scripts/sweep-repo-root-snapshot.sh"
+      ],
+      "after": [
+        ".github/scripts/sweep-repo-root.sh",
+        ".github/scripts/scratch-teardown.sh"
+      ]
     }
   },
 
@@ -182,7 +188,9 @@
           "max_retries": 1,
           "session": { "scope": "per_issue" },
           "extra_allowedTools": [
-            "Bash(git *)",
+            "Bash(git log *)",
+            "Bash(git diff *)",
+            "Bash(git rev-parse *)",
             "Bash(python *)", "Bash(python3 *)",
             "Bash(pip *)", "Bash(pip3 *)", "Bash(uv *)",
             "Bash(pytest *)", "Bash(tox *)",

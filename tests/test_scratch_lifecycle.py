@@ -291,8 +291,11 @@ class TestOrchestratorDelegatesToScripts:
             (Path(__file__).parent.parent / "pipeline" / "pipeline.json").read_text()
         )
         lifecycle = raw["defaults"]["agent_lifecycle"]
-        assert lifecycle["before"] == [".github/scripts/scratch-setup.sh"]
-        assert lifecycle["after"] == [".github/scripts/scratch-teardown.sh"]
+        # The repo-root sweep joined the same lifecycle in issue #407 (AS-2),
+        # so these lists are no longer scratch-only; scratch setup still opens
+        # "before" and scratch teardown still closes "after".
+        assert lifecycle["before"][0] == ".github/scripts/scratch-setup.sh"
+        assert lifecycle["after"][-1] == ".github/scripts/scratch-teardown.sh"
 
     def test_every_declared_lifecycle_script_exists_and_runs(self):
         """A declared path that does not exist is skipped with a warning, so a
@@ -737,7 +740,7 @@ class TestTeardownIsPairedWithSetup:
         )
         monkeypatch.setattr(
             po, "_run_lifecycle_scripts",
-            lambda scripts, path: torn_down.extend((s, path) for s in scripts),
+            lambda scripts, path, *a: torn_down.extend((s, path) for s in scripts),
         )
 
         po._run_agent(
@@ -745,8 +748,7 @@ class TestTeardownIsPairedWithSetup:
             labels=set(), session_id="sid", default_extra_tools=None,
             concurrency=None, gh=MagicMock(), pipeline_map={},
         )
-        assert len(torn_down) == 1
-        assert torn_down[0][0].endswith("scratch-teardown.sh")
+        assert torn_down[-1][0].endswith("scratch-teardown.sh")
 
 
 class TestShippedFilesAreAscii:

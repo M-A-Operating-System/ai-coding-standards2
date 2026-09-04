@@ -132,11 +132,15 @@ class TestANarrowedScriptStillWorks:
         assert "GH_TOKEN" in var_names
         assert "GITHUB_TOKEN" in var_names
 
-    def test_post_steps_excludes_bot_token_not_needed_for_gh_api(self):
-        assert "AI_AGILE_BOT_TOKEN" not in set(_POST_STEPS_ENV_VARS)
+    def test_post_steps_carries_the_system_identity(self):
+        """Was: post_steps excludes the bot token. A post_step writes to GitHub,
+        and MI-7 wants one identity behind every system write (issue #407)."""
+        assert "AI_AGILE_BOT_TOKEN" in set(_POST_STEPS_ENV_VARS)
 
-    def test_delete_branch_excludes_bot_token_not_needed(self):
-        assert "AI_AGILE_BOT_TOKEN" not in set(_DELETE_BRANCH_ENV_VARS)
+    def test_delete_branch_carries_the_system_identity(self):
+        """Was: delete-branch excludes the bot token. Deleting a branch is a
+        system write and carries the same identity as the rest (issue #407)."""
+        assert "AI_AGILE_BOT_TOKEN" in set(_DELETE_BRANCH_ENV_VARS)
 
     def test_all_network_sites_include_ca_and_proxy_vars(self):
         ca_and_proxy = {
@@ -205,66 +209,97 @@ class TestTheAgentPathIsUntouched:
 
 
 # ---------------------------------------------------------------------------
-# Scenario: the bot PAT reaches only the script steps that consume it
+# Scenario: one identity behind every system write (MI-7, issue #407)
+#
+# This class used to assert the opposite -- that AI_AGILE_BOT_TOKEN reached
+# only the three PR-writing scripts, because a classic PAT with repo+workflow
+# scopes is the broadest credential the orchestrator holds and least privilege
+# said to give it only where it was demonstrably used.
+#
+# MI-7 asks for something that split cannot give: "Everything the system does
+# on GitHub acts as a dedicated identity of its own, never a person's account
+# or the generic identity a CI run gets by default." With the grant split, the
+# same logical actor appeared on an issue as two identities depending on which
+# step wrote, and "a person applied this label" stopped being decidable. So the
+# rule inverted: every script step is handed the same credential and resolves
+# it in one place. The narrowing that survives is which VARIABLES a script gets
+# at all, and what each script is written to do. The tradeoff is stated in
+# .github/scripts/lib/github-identity.sh.
 # ---------------------------------------------------------------------------
 
-class TestBotTokenIsScopedToPrWritingScripts:
-    """AI_AGILE_BOT_TOKEN is a classic PAT with repo+workflow scopes -- the
-    broadest credential the orchestrator holds. Only the script steps that
-    demonstrably reference it should receive it."""
+class TestOneIdentityBehindEverySystemWrite:
 
     from pipeline_orchestrator import _script_step_env_vars as _resolve
 
-    def test_pr_writing_scripts_receive_the_bot_token(self):
-        for script in ("create-pr.sh", "create-docs-pr.sh", "merge-docs-pr.sh"):
+    def test_every_script_step_resolves_to_the_same_identity(self):
+        for script in (
+            "create-pr.sh", "create-docs-pr.sh", "merge-docs-pr.sh",
+            "ci-gate.sh", "some-future-step.sh",
+        ):
             got = type(self)._resolve(f".github/scripts/{script}")
             assert "AI_AGILE_BOT_TOKEN" in got, (
-                f"{script} opens or merges a PR and needs the bot PAT"
+                f"{script} talks to GitHub as the system and must carry the "
+                "system's own identity (MI-7)"
             )
 
-    def test_ci_gate_does_not_receive_the_bot_token(self):
-        """ci-gate.sh only reads check runs; it never references the variable."""
-        got = type(self)._resolve(".github/scripts/ci-gate.sh")
-        assert "AI_AGILE_BOT_TOKEN" not in got
+    def test_a_step_with_no_script_gets_the_same_list(self):
+        for path in (None, ""):
+            assert set(type(self)._resolve(path)) == set(_SCRIPT_AGENT_ENV_VARS)
 
-    def test_unknown_or_missing_script_does_not_receive_the_bot_token(self):
-        """Fail closed: a step whose script is unrecognised gets the base list."""
-        for path in (None, "", ".github/scripts/some-future-step.sh"):
-            got = type(self)._resolve(path)
-            assert "AI_AGILE_BOT_TOKEN" not in got, f"{path!r} should not be granted the PAT"
+    def test_the_list_does_not_vary_by_script(self):
+        """A per-script identity is exactly what MI-7 rules out."""
+        base = set(type(self)._resolve(".github/scripts/ci-gate.sh"))
+        assert base == set(type(self)._resolve(".github/scripts/create-pr.sh"))
+        assert base == set(_SCRIPT_AGENT_ENV_VARS)
 
-    def test_matching_is_on_file_name_not_full_path(self):
-        """A repo that relocates the scripts directory must still resolve."""
-        got = type(self)._resolve("vendor/ai-coding-standards2/.github/scripts/create-pr.sh")
-        assert "AI_AGILE_BOT_TOKEN" in got
+    def test_the_fallback_keeps_a_repo_without_a_pat_working(self):
+        """AI_AGILE_BOT_TOKEN is granted, never required: a repository that
+        configures none falls back to exactly the token it used before."""
+        got = set(type(self)._resolve(".github/scripts/create-pr.sh"))
+        assert {"GH_TOKEN", "GITHUB_TOKEN"} <= got
 
-    def test_base_list_is_otherwise_unchanged(self):
-        base = type(self)._resolve(".github/scripts/ci-gate.sh")
-        assert set(base) == set(_SCRIPT_AGENT_ENV_VARS)
-        granted = type(self)._resolve(".github/scripts/create-pr.sh")
-        assert set(granted) - set(base) == {"AI_AGILE_BOT_TOKEN"}, (
-            "the split must add exactly the bot token, nothing else"
-        )
-
-    def test_every_script_step_in_pipeline_json_is_classified_deliberately(self):
-        """Any new script step defaults to no bot token -- and if it needs one,
-        this test is where that decision becomes visible."""
-        import json
+    def test_the_identity_is_resolved_in_one_place(self):
         from pathlib import Path as _P
-        spec = json.loads((_P(__file__).parent.parent / "pipeline" / "pipeline.json").read_text())
-        script_steps = [
-            step
-            for flow in spec["flows"].values()
-            for step in flow["steps"]
-            if step.get("type") == "script"
-        ]
-        assert script_steps, "expected at least one script-type step"
-        granted = {
-            s["agent"] for s in script_steps
-            if "AI_AGILE_BOT_TOKEN" in type(self)._resolve(s.get("script"))
-        }
-        assert granted == {
-            "01_product_docs/create-pr",
-            "01_product_docs/create-docs-pr",
-            "01_product_docs/merge-docs-pr",
-        }, f"unexpected set of steps granted the bot PAT: {granted}"
+        scripts = _P(__file__).parent.parent / ".github" / "scripts"
+        helper = scripts / "lib" / "github-identity.sh"
+        assert helper.is_file(), "the shared identity resolver must exist"
+
+        # Every script that talks to GitHub sources it rather than choosing.
+        for script in sorted(scripts.glob("*.sh")):
+            text = script.read_text()
+            talks_to_github = any(
+                call in text for call in ("gh api", "gh pr", "gh issue", "git push")
+            )
+            if not talks_to_github or script.name in _IDENTITY_EXEMPT:
+                continue
+            assert "lib/github-identity.sh" in text, (
+                f"{script.name} talks to GitHub but does not resolve its "
+                "identity through lib/github-identity.sh (MI-7)"
+            )
+
+    def test_no_script_picks_its_own_identity(self):
+        """A script expanding AI_AGILE_BOT_TOKEN is deciding for itself."""
+        from pathlib import Path as _P
+        scripts = _P(__file__).parent.parent / ".github" / "scripts"
+        for script in sorted(scripts.glob("*.sh")):
+            assert "${AI_AGILE_BOT_TOKEN" not in script.read_text(), (
+                f"{script.name} reads AI_AGILE_BOT_TOKEN directly; the identity "
+                "is resolved once in lib/github-identity.sh"
+            )
+
+
+# Scripts that talk to GitHub but deliberately do not resolve the system
+# identity:
+#   status.sh          -- ceremony run inside an agent's own session, under
+#                         whatever credential that session already holds
+#   drive-item.sh      -- an interactive driver reading labels, not a system
+#                         write
+#   new-branch-pr.sh   -- an adapter; create-pr.sh, which it execs into,
+#                         resolves the identity
+#   rebaseline-branch.sh -- a local git utility that needs no credential
+_IDENTITY_EXEMPT = {
+    "status.sh",
+    "drive-item.sh",
+    "new-branch-pr.sh",
+    "rebaseline-branch.sh",
+}

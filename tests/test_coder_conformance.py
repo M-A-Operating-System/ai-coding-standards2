@@ -147,3 +147,89 @@ class TestCoderDescriptionMentionsHumanReviewPending:
             "coder.md frontmatter description must mention 'human-review-pending' label. "
             "Run: python3 scripts/update_agent_files.py"
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #407 -- the git grant matches what the prompt actually tells coder to do
+#
+# coder.md forbids itself from running git commit / push / checkout, and every
+# git call it demonstrates is read-only. `Bash(git *)` granted exactly the
+# commands the prompt forbids, so AS-1/P-16 (permissions say the same thing the
+# step is told) and PRODUCT.md's "What a step must never do" were both false of
+# the shipped config. The fix is narrowing the grant, never relaxing the prompt.
+# ---------------------------------------------------------------------------
+
+import json  # noqa: E402
+
+PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
+
+# The read-only subcommands coder's own prompt demonstrates: `git log --oneline`
+# for orientation, `git diff HEAD` for the self-review pass, `git rev-parse HEAD`
+# for the working-tree-vs-PR-head check in Mode B.
+_EXPECTED_CODER_GIT_GRANTS = {
+    "Bash(git log *)",
+    "Bash(git diff *)",
+    "Bash(git rev-parse *)",
+}
+
+# Anything that writes an object, moves a ref, or rewrites history.
+_FORBIDDEN_CODER_GIT_SUBCOMMANDS = (
+    "commit", "push", "checkout", "switch", "reset", "branch",
+    "merge", "rebase", "add", "rm", "stash", "cherry-pick", "tag",
+    "clean", "restore", "worktree", "remote",
+)
+
+
+def _coder_step() -> dict:
+    pipeline = json.loads(PIPELINE_JSON.read_text())
+    for flow in pipeline["flows"].values():
+        for step in flow.get("steps", []):
+            if step.get("agent") == "03_execute/coder":
+                return step
+    raise AssertionError("03_execute/coder is not declared in pipeline.json")
+
+
+def _coder_git_grants() -> set:
+    return {
+        tool for tool in _coder_step().get("extra_allowedTools", [])
+        if tool.startswith("Bash(git")
+    }
+
+
+class TestCoderGitGrantMatchesItsInstructions:
+    def test_the_unnarrowed_git_glob_is_gone(self):
+        assert "Bash(git *)" not in _coder_git_grants(), (
+            "Bash(git *) permits exactly the commands coder.md forbids "
+            "(git commit / push / checkout) -- PRODUCT.md, "
+            "'What a step must never do'"
+        )
+
+    def test_only_the_read_only_subcommands_the_prompt_uses_are_granted(self):
+        assert _coder_git_grants() == _EXPECTED_CODER_GIT_GRANTS
+
+    def test_no_write_or_history_rewriting_subcommand_is_granted(self):
+        for grant in _coder_git_grants():
+            for forbidden in _FORBIDDEN_CODER_GIT_SUBCOMMANDS:
+                assert not grant.startswith(f"Bash(git {forbidden}"), (
+                    f"{grant} grants a git subcommand that writes or rewrites "
+                    "history; the orchestrator owns all git operations (P-16)"
+                )
+
+    def test_the_prompt_still_forbids_the_commands_the_grant_now_excludes(self):
+        """The fix is narrowing the grant, not relaxing the instruction."""
+        text = _load_coder_text()
+        assert "Never run\n`git commit`, `git push`, `git checkout`" in text
+        assert "The orchestrator owns all git and PR operations." in text
+
+    def test_every_git_command_the_prompt_demonstrates_is_still_permitted(self):
+        """A narrowed grant that breaks the prompt's own worked examples would
+        be a different bug, not a fix."""
+        text = _load_coder_text()
+        demonstrated = set(re.findall(r"^\s*(?:\w+=\$\()?git ([a-z-]+)", text, re.M))
+        granted = {
+            g[len("Bash(git "):-len(" *)")] for g in _coder_git_grants()
+        }
+        assert demonstrated <= granted, (
+            f"coder.md demonstrates git {sorted(demonstrated - granted)} "
+            "but the grant does not permit it"
+        )

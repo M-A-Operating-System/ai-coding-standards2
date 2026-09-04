@@ -1627,6 +1627,29 @@ def _ensure_metrics_branch(gh: "GitHubClient", repo: str) -> None:
 # object-store ops; no network, no auth token needed. GIT_INDEX_FILE is set explicitly.
 _GIT_PLUMBING_ENV_VARS = ("PATH", "HOME")
 
+# The declared script that owns the metrics ledger append (AS-2, issue #407).
+_METRICS_APPEND_SCRIPT = ".github/scripts/append-metrics-record.sh"
+
+# STD-SEC-022 — env for append-metrics-record.sh. It runs the same git plumbing
+# _GIT_PLUMBING_ENV_VARS covers, plus `git fetch`/`git push` against the metrics
+# branch, so it also needs a git credential and the network vars every other
+# push site gets. It builds its own auth header from these, exactly as
+# commit-agent-work.sh does; the orchestrator's own GIT_CONFIG_* header (which
+# embeds a token) is deliberately never forwarded to a script.
+#
+# AI_AGILE_BOT_TOKEN is on this list because the ledger is a system action on
+# GitHub and MI-7 wants those made by one dedicated identity rather than the
+# generic identity a CI run gets by default. The script prefers it and falls
+# back to GITHUB_TOKEN, so a repo without the PAT keeps working.
+_METRICS_APPEND_ENV_VARS = _GIT_PLUMBING_ENV_VARS + (
+    "LANG", "LC_ALL", "LC_CTYPE",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
 
 def _append_metrics_record(
     gh: "GitHubClient",
@@ -1637,86 +1660,56 @@ def _append_metrics_record(
 ) -> None:
     """Append one metrics record to records.jsonl on the ai-agile/metrics branch.
 
-    Uses plain git plumbing (fetch/hash-object/commit-tree/push) rather than
-    the GitHub Contents API: some restricted sessions (e.g. an interactive
-    Claude Code session) 403 on a direct Contents API PUT even though `git
-    push` over the same HTTPS credential helper succeeds. Object/ref
-    operations don't touch the working tree or the real index (a scratch
-    GIT_INDEX_FILE is used), so this is safe to run while another branch is
-    checked out. Retries on a rejected push (concurrent writer) up to
-    _retries times. gh is accepted for interface symmetry with
-    _ensure_metrics_branch but unused here.
+    The orchestrator decides WHAT the record says -- it knows the step, the
+    outcome and the timing -- and hands the finished line to
+    .github/scripts/append-metrics-record.sh, which owns the git plumbing that
+    puts it on the branch. Committing is not coordination (AS-2, issue #407),
+    so the fetch/hash-object/commit-tree/push-with-retry sequence that used to
+    live here is a script now, invoked exactly the way _invoke_commit_after
+    invokes commit-agent-work.sh.
+
+    Raises RuntimeError when the append did not land, so a caller cannot read a
+    failure as a success (STD-ARCH-014). gh is accepted for interface symmetry
+    with _ensure_metrics_branch but unused here.
     """
+    script = _orchestration_script_path(_METRICS_APPEND_SCRIPT)
+    if not script.exists():
+        raise RuntimeError(f"{_METRICS_APPEND_SCRIPT} not found at {script}")
+
     record_line = json.dumps(record, separators=(",", ":")) + "\n"
     commit_message = (
         f"metrics: {record.get('agent_id', 'step')} "
         f"on #{record.get('github_issue_number')}"
     )
 
-    for attempt in range(_retries + 1):
-        subprocess.run(
-            ["git", "fetch", "origin", METRICS_BRANCH],
-            check=True, capture_output=True,
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".jsonl", delete=False, encoding="utf-8",
+    ) as record_file:
+        record_file.write(record_line)
+        record_path = record_file.name
+    try:
+        env = {  # STD-SEC-022
+            **{k: os.environ[k] for k in _METRICS_APPEND_ENV_VARS if k in os.environ},
+            "AI_AGILE_METRICS_BRANCH": METRICS_BRANCH,
+            "AI_AGILE_METRICS_FILE": METRICS_RECORDS_FILE,
+            "AI_AGILE_METRICS_COMMIT_MESSAGE": commit_message,
+            "AI_AGILE_METRICS_RETRIES": str(_retries),
+        }
+        result = subprocess.run(
+            ["bash", str(script), record_path],
+            env=env, capture_output=True, text=True, timeout=300,
         )
-        parent_sha = subprocess.run(
-            ["git", "rev-parse", f"origin/{METRICS_BRANCH}"],
-            check=True, capture_output=True, text=True,
-        ).stdout.strip()
-
-        show = subprocess.run(
-            ["git", "show", f"{parent_sha}:{METRICS_RECORDS_FILE}"],
-            capture_output=True, text=True,
-        )
-        existing = show.stdout if show.returncode == 0 else ""
-
-        blob_sha = subprocess.run(
-            ["git", "hash-object", "-w", "--stdin"],
-            input=existing + record_line, check=True, capture_output=True, text=True,
-        ).stdout.strip()
-
-        with tempfile.NamedTemporaryFile(delete=False) as idx_file:
-            index_path = idx_file.name
+    finally:
         try:
-            git_env = {  # STD-SEC-022
-                **{k: os.environ[k] for k in _GIT_PLUMBING_ENV_VARS if k in os.environ},
-                "GIT_INDEX_FILE": index_path,
-            }
-            subprocess.run(
-                ["git", "read-tree", parent_sha],
-                check=True, env=git_env, capture_output=True,
-            )
-            subprocess.run(
-                ["git", "update-index", "--add", "--cacheinfo",
-                 f"100644,{blob_sha},{METRICS_RECORDS_FILE}"],
-                check=True, env=git_env, capture_output=True,
-            )
-            tree_sha = subprocess.run(
-                ["git", "write-tree"],
-                check=True, env=git_env, capture_output=True, text=True,
-            ).stdout.strip()
-        finally:
-            os.unlink(index_path)
+            os.unlink(record_path)
+        except OSError:  # pragma: no cover -- best-effort
+            pass
 
-        commit_sha = subprocess.run(
-            ["git", "commit-tree", tree_sha, "-p", parent_sha, "-m", commit_message],
-            check=True, capture_output=True, text=True,
-        ).stdout.strip()
-
-        push = subprocess.run(
-            ["git", "push", "origin", f"{commit_sha}:refs/heads/{METRICS_BRANCH}"],
-            capture_output=True, text=True,
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{_METRICS_APPEND_SCRIPT} exited {result.returncode}: "
+            f"{(result.stderr or result.stdout).strip()[:500]}"
         )
-        if push.returncode == 0:
-            return
-        if attempt < _retries:
-            log.debug(
-                "metrics: push rejected appending records.jsonl (concurrent writer?),"
-                " retrying (attempt %d): %s",
-                attempt + 1, push.stderr.strip(),
-            )
-            time.sleep(1)
-            continue
-        raise RuntimeError(f"git push to {METRICS_BRANCH} failed: {push.stderr.strip()}")
 
 
 # ---------------------------------------------------------------------------
@@ -3668,7 +3661,7 @@ def _apply_terminal_status(
 # :blocked. Neither is a credential.
 _SCRIPT_AGENT_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
     "CI_GATE_EXCLUDE_JOB_NAMES", "GITHUB_RUN_ID",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
@@ -3676,32 +3669,34 @@ _SCRIPT_AGENT_ENV_VARS = (
     "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 )
 
-# Scripts that open or merge a PR, and so may need the bot PAT when org policy
-# blocks GITHUB_TOKEN from those operations:
-#   create-pr.sh      -- _PR_TOKEN, for `gh pr create`
-#   merge-docs-pr.sh  -- _MERGE_TOKEN, for the design-PR merge
-#   create-docs-pr.sh -- execs into create-pr.sh, so it needs it too
-# ci-gate.sh only reads check runs and never references the variable, so it is
-# not on this list. AI_AGILE_BOT_TOKEN is a classic PAT with repo+workflow
-# scopes -- the broadest credential the orchestrator holds -- so it goes only to
-# the steps that demonstrably use it.
-_PR_WRITING_SCRIPTS = (
-    "create-pr.sh",
-    "create-docs-pr.sh",
-    "merge-docs-pr.sh",
-)
+# Until issue #407, AI_AGILE_BOT_TOKEN went only to the three PR-writing
+# scripts (create-pr.sh, create-docs-pr.sh, merge-docs-pr.sh) and
+# commit-agent-work.sh, on the reasoning that a classic PAT with repo+workflow
+# scopes is the broadest credential the orchestrator holds and should reach
+# only the steps that demonstrably use it.
+#
+# MI-7 asks for something that reasoning cannot give: "Everything the system
+# does on GitHub acts as a dedicated identity of its own, never a person's
+# account or the generic identity a CI run gets by default." Splitting the
+# grant made the same logical actor appear on an issue as two identities
+# depending on which step wrote, and MI-7 needs "a person applied this label"
+# to be a fact rather than a guess. So every script that talks to GitHub is
+# handed the same credential and resolves it through one place --
+# .github/scripts/lib/github-identity.sh -- falling back to GITHUB_TOKEN in a
+# repository that configures no PAT.
+#
+# The narrowing that remains is which variables a script is handed at all
+# (these lists) and what each script is written to do. The tradeoff is stated
+# in full in lib/github-identity.sh.
 
 
 def _script_step_env_vars(script_path: Optional[str]) -> tuple[str, ...]:
     """Env allowlist for a script-type step, per STD-SEC-022.
 
-    Returns the base list, plus AI_AGILE_BOT_TOKEN only for the scripts that
-    actually consume it. Matching is on the file name so a repo that relocates
-    the scripts directory still resolves correctly.
+    One list for every script step: the identity a system action uses is not a
+    per-script decision (MI-7). script_path is kept so a future step-specific
+    grant has somewhere to live.
     """
-    name = Path(script_path).name if script_path else ""
-    if name in _PR_WRITING_SCRIPTS:
-        return _SCRIPT_AGENT_ENV_VARS + ("AI_AGILE_BOT_TOKEN",)
     return _SCRIPT_AGENT_ENV_VARS
 
 
@@ -4069,8 +4064,15 @@ def _claude_cli_usable(env: Mapping[str, str]) -> bool:
 # scripts: a lifecycle script prepares the environment an agent runs in, so it
 # touches the filesystem and never GitHub, and no credential is passed. A script
 # that needs one is doing process work and belongs in post_steps, which has its
-# own allowlist. AI_AGILE_SCRATCH is added per call by _run_lifecycle_scripts.
-_LIFECYCLE_SCRIPT_ENV_VARS = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE")
+# own allowlist. AI_AGILE_SCRATCH and AGENT_NAME are added per call by
+# _run_lifecycle_scripts.
+#
+# AI_AGILE_ROOT is on the list, not a credential: sweep-repo-root.sh resolves
+# the repository root from it (issue #407) exactly as the inline Python it
+# replaced did, so a tick started from a subdirectory still acts on the root.
+_LIFECYCLE_SCRIPT_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "AI_AGILE_ROOT",
+)
 
 
 def _scratch_path(agent_session_id: str) -> str:
@@ -4085,7 +4087,9 @@ def _scratch_path(agent_session_id: str) -> str:
     return f"/tmp/{agent_session_id}"
 
 
-def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
+def _run_lifecycle_scripts(
+    scripts: list, scratch_dir: str, agent_name: str = "",
+) -> None:
     """Run the agent-lifecycle scripts declared in pipeline.json. Never raises.
 
     The third kind of script in the pipeline, alongside script steps and
@@ -4107,6 +4111,9 @@ def _run_lifecycle_scripts(scripts: list, scratch_dir: str) -> None:
             continue
         env = {k: os.environ[k] for k in _LIFECYCLE_SCRIPT_ENV_VARS if k in os.environ}
         env["AI_AGILE_SCRATCH"] = scratch_dir
+        # Names the step in the sweep's warning, so a leaked root file is
+        # attributable the same way the inline sweep made it (issue #376).
+        env["AGENT_NAME"] = agent_name
         try:
             res = subprocess.run(
                 ["bash", str(script)], env=env, capture_output=True, text=True, timeout=30,
@@ -4436,7 +4443,9 @@ def invoke_agent(
     # its own setup -- an attempt must never read the previous attempt's files.
     scratch_dir = agent_env.get("AI_AGILE_SCRATCH", "")
     if scratch_dir and not dry_run:
-        _run_lifecycle_scripts(agent_def.lifecycle_before, scratch_dir)
+        _run_lifecycle_scripts(
+            agent_def.lifecycle_before, scratch_dir, agent_def.agent,
+        )
 
     if dry_run:
         log.info(
@@ -5214,6 +5223,188 @@ def _should_run(
     return True
 
 
+# ---------------------------------------------------------------------------
+# Stale :wip reclaim (MI-4, issue #407)
+#
+# A step can just stop existing: the machine running it is lost, or the process
+# is killed outright. Nothing is returned and the :wip it held stays where it
+# is, blocking the item forever. The SIGTERM/SIGINT handler
+# (_clear_inflight_wip_on_signal) only helps a process that gets to run a
+# handler -- kill -9, an OOM kill and a lost host all bypass it.
+#
+# So the reclaim is something a LATER tick does, by looking at the label rather
+# than the run: a :wip older than what that step could legitimately still be
+# spending cannot still be running, so the orchestrator takes the lock back,
+# records the step as failed, and says why.
+# ---------------------------------------------------------------------------
+
+LOCK_RECLAIMED_EVENT = "lock.reclaimed"
+
+# Slack on top of a step's own allowance before its :wip is called stranded.
+# The claim comment is posted before the step starts and the mutex is still
+# held while the orchestrator runs the step's post_steps and git_ops, so the
+# label legitimately outlives the step's compute budget by a little.
+WIP_RECLAIM_GRACE_SECONDS = 300
+
+_ANNOUNCEMENT_JSON_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
+
+
+def _wip_lease_seconds(agent_def: AgentDef) -> int:
+    """How long this step's :wip can legitimately be held.
+
+    Its wall-clock budget bounds ONE attempt; the mutex is held across the
+    whole retry allowance, so a step with max_retries: 1 holds it for up to two
+    budgets. Reclaiming on a single budget would take the lock off a step that
+    is still legitimately on its second attempt.
+    """
+    wall = agent_def.max_wall_seconds or AGENT_TIMEOUT_SECONDS
+    return (agent_def.max_retries + 1) * int(wall) + WIP_RECLAIM_GRACE_SECONDS
+
+
+def _announcement_payload(body: str) -> Optional[dict]:
+    """The JSON object inside an announcement comment, or None if unreadable."""
+    match = _ANNOUNCEMENT_JSON_RE.search(body)
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _wip_held_since(
+    gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem,
+) -> Optional[datetime]:
+    """When this step last announced it was taking the mutex, or None.
+
+    The opening announcement IS the claim marker -- the orchestrator posts it
+    in the same breath as applying :wip -- so "how long has this been held" is
+    a read of the item's own trail, not of a run nobody can see any more.
+
+    None means the evidence could not be established: the comments could not be
+    read, no opening announcement is there, or its timestamp does not parse.
+    The caller must not reclaim on that (STD-ARCH-014).
+    """
+    marker = f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->"
+    try:
+        bodies = gh.list_comment_bodies(work_item.number)
+    except Exception as exc:
+        log.warning(
+            "  reclaim: could not read comments on #%d (%s) -- leaving %s's :wip alone",
+            work_item.number, exc, agent_def.agent,
+        )
+        return None
+    latest: Optional[datetime] = None
+    for body in bodies or []:
+        if not body or marker not in body:
+            continue
+        payload = _announcement_payload(body)
+        if payload is None or payload.get("phase") != "start":
+            continue
+        started = _parse_record_time(payload.get("started_at"))
+        if started is None:
+            continue
+        if latest is None or started > latest:
+            latest = started
+    return latest
+
+
+def _reclaim_stale_wip(
+    gh: "GitHubClient",
+    agents: list,
+    work_item: WorkItem,
+    labels: set,
+    repo: str,
+    session_id: str,
+    *,
+    now: Optional[datetime] = None,
+) -> set:
+    """Take back any :wip on this item that has outlived its step's allowance.
+
+    Returns the (possibly updated) label set. A reclaim is recorded exactly the
+    way a crash is -- :wip off, :failed on, the same diagnostic comment, the
+    orchestrator's own closing announcement -- because that is what it is: an
+    attempt that produced nothing. It therefore draws from the retry budget the
+    hardest way the budget can be drawn, landing directly on the :failed a
+    person must clear, so a step that hangs the same way every time cannot
+    reclaim and hang indefinitely (MI-4).
+    """
+    now = now or _now_utc()
+    for agent_def in agents:
+        if agent_status(labels, agent_def.label_key) != STATUS_WIP:
+            continue
+
+        lease = _wip_lease_seconds(agent_def)
+        held_since = _wip_held_since(gh, agent_def, work_item)
+
+        if held_since is None:
+            # Fail closed: with no readable claim there is no age, and a reclaim
+            # on a guess would take the lock off a step that is still running.
+            # This is not a permanent stall -- eligibility is evaluated fresh
+            # every tick, so a transient read failure resolves itself on the
+            # next one. If the claim comment is genuinely gone the warning
+            # repeats every tick until a person removes the label by hand,
+            # which is the documented exit for it.
+            log.warning(
+                "  reclaim: %s holds :wip on #%d with no readable claim comment; "
+                "not reclaiming on a guess. If this repeats, remove %s by hand.",
+                agent_def.agent, work_item.number,
+                agent_def.status_label(STATUS_WIP),
+            )
+            continue
+
+        age = int((now - held_since).total_seconds())
+        if age <= lease:
+            continue
+
+        summary = (
+            f"stale `:wip` reclaimed after {age}s, exceeding this step's "
+            f"{lease}s wall-clock allowance -- treated as a crashed/lost run"
+        )
+        log.error(
+            "  RECLAIM %-38s  :wip held %ds on #%d (allowance %ds)",
+            agent_def.agent, age, work_item.number, lease,
+        )
+        _apply_failed(
+            gh, agent_def, work_item,
+            AgentRunResult(
+                success=False,
+                captured_tail=(
+                    f"No result was ever returned. The claim was announced at "
+                    f"{held_since.strftime('%Y-%m-%dT%H:%M:%SZ')} and the step "
+                    f"has held its `:wip` for {age}s since."
+                ),
+            ),
+            heading=f"### `{agent_def.agent}` failed — stale `:wip` reclaimed",
+            reason=(
+                f"The `:wip` was held for {age}s, longer than this step can "
+                f"legitimately run ({lease}s: {agent_def.max_retries + 1} "
+                f"attempt(s) of {agent_def.max_wall_seconds or AGENT_TIMEOUT_SECONDS}s "
+                f"plus {WIP_RECLAIM_GRACE_SECONDS}s of grace). The machine "
+                f"running it was lost or the process was killed outright, so "
+                f"nothing was returned and no signal handler ran. This counts "
+                f"as an attempt: fix the underlying cause, then remove "
+                f"`{agent_def.failed_label}` to retry."
+            ),
+        )
+        labels.discard(agent_def.status_label(STATUS_WIP))
+        labels.add(agent_def.failed_label)
+        work_item.labels = labels
+
+        _announce_and_prompt(
+            agent_def, work_item, session_id, STATUS_FAILED, summary, gh,
+        )
+        _emit_audit_event(_make_audit_event(
+            session_id, LOCK_RECLAIMED_EVENT, repo,
+            work_item=work_item, agent=agent_def.agent,
+            outcome_status="failed",
+            outcome_detail=summary,
+            duration_ms=age * 1000,
+        ))
+    return labels
+
+
 def _acquire_wip_and_announce(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -5555,10 +5746,6 @@ def _run_agent(
                 None, "", "", _invoked_at, 0, False, None,
             )
 
-    # Snapshot repo-root untracked files so anything the agent adds there
-    # can be swept afterwards (issue #376).
-    _root_before = set() if dry_run else _untracked_root_files()
-
     sentinel_status: Optional[str] = None
     sentinel_message: str = ""
     step_result: Optional[StepResult] = None
@@ -5610,102 +5797,25 @@ def _run_agent(
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
         _post_artefact_if_present(gh, agent_def, work_item, step_result)
 
-    if not dry_run:
-        _sweep_agent_root_files(agent_def, _root_before)
-
     # Run the declared "after" scripts once all retries are done, whatever the
     # outcome. load_pipeline leaves these empty for script steps, which are
     # never handed a scratch directory, so the pairing with "before" holds
     # without the orchestrator deciding anything.
+    #
+    # The repo-root sweep (issue #376) is one of these scripts now, not inline
+    # Python here: what a step leaves behind is cleaned up by a declared
+    # post-action, not by the coordinator (AS-2, issue #407).
     if not dry_run and agent_def.lifecycle_after:
         _run_lifecycle_scripts(
             agent_def.lifecycle_after,
             _scratch_path(_compute_agent_session_id(agent_def, work_item, repo)),
+            agent_def.agent,
         )
 
     return (
         result, sentinel_status, sentinel_message, _pre_agent_worktree,
         _invoked_at, _attempt, exhausted, step_result,
     )
-
-
-def _repo_root() -> Path:
-    """The repository root the sweep operates on.
-
-    Asks git rather than trusting a path. AI_AGILE_ROOT is often "." (it is a
-    consuming-repo-relative convention), so reading it directly would leave the
-    sweep CWD-relative: a tick started from a subdirectory would list and
-    delete files there instead of at the repo root. `git rev-parse
-    --show-toplevel` is absolute and correct from anywhere inside the tree.
-    """
-    start = os.environ.get("AI_AGILE_ROOT") or str(SUBMODULE_ROOT)
-    try:
-        top = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True, cwd=start,
-        ).stdout.strip()
-        if top:
-            return Path(top)
-    except Exception:
-        pass
-    return Path(start).resolve()
-
-
-def _untracked_root_files() -> Optional[set]:
-    """Untracked files at the repository root (depth 0 only).
-
-    The scratch contract says agents write working files under
-    $AI_AGILE_SCRATCH and never into the repo. When an agent writes to a
-    relative path instead, the file lands here.
-
-    Returns None -- NOT an empty set -- when git cannot be consulted. The
-    caller uses this result as the "before" baseline, and an empty baseline
-    would mean "every untracked root file is new", turning a failed probe into
-    a delete-everything sweep. None makes that case unambiguous, so the sweep
-    can skip instead.
-    """
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
-            capture_output=True, text=True, check=True, cwd=str(_repo_root()),
-        ).stdout
-    except Exception:
-        return None
-    return {line for line in out.splitlines() if line and "/" not in line}
-
-
-def _sweep_agent_root_files(agent_def: AgentDef, before: set) -> None:
-    """Remove root files the agent created, and say so.
-
-    Runs for EVERY agent. commit-agent-work.sh carries the same guard, but it
-    only runs for git_ops.commit_after agents -- prd-writer, pr-reviewer and
-    issue-classifier all have none, and all three were observed leaving files
-    at the repo root (issue #376). Only files absent before the invocation are
-    removed, so a pre-existing file is never touched.
-    """
-    after = _untracked_root_files()
-    if before is None or after is None:
-        # A probe failed. Skipping loses a cleanup; guessing risks deleting
-        # files the agent never wrote. Skip, and say so.
-        log.warning(
-            "  scratch: could not check the repo root for %s; skipping the sweep",
-            agent_def.agent,
-        )
-        return
-    leaked = sorted(after - before)
-    if not leaked:
-        return
-    log.warning(
-        "  scratch: %s wrote %d file(s) to the repo root instead of "
-        "$AI_AGILE_SCRATCH; removing: %s",
-        agent_def.agent, len(leaked), ", ".join(leaked),
-    )
-    root = _repo_root()
-    for name in leaked:
-        try:
-            (root / name).unlink()
-        except OSError as exc:
-            log.warning("  scratch: could not remove %s: %s", name, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -5875,10 +5985,12 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optio
 
 # STD-SEC-022 — env vars for post_steps hooks (e.g. mark-pr-ready.sh): gh API/CLI
 # calls only, no git commits. REPO, WORK_ITEM_*, AGENT_NAME, ISSUE/PR_NUMBER, and
-# AI_AGILE_ROOT are set explicitly below.
+# AI_AGILE_ROOT are set explicitly below. AI_AGILE_BOT_TOKEN is here because a
+# post_step writes to GitHub and MI-7 wants one identity behind every system
+# write (issue #407); the scripts resolve it through lib/github-identity.sh.
 _POST_STEPS_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
     "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
@@ -6662,6 +6774,16 @@ def process_work_item(
         )
         work_item.labels = labels
 
+    # Take back any :wip a lost machine or a killed process stranded here
+    # (MI-4). Before the eligibility loop, so a step whose lock is reclaimed
+    # this tick is seen as :failed by everything that follows rather than as
+    # still running.
+    if not dry_run:
+        labels = _reclaim_stale_wip(
+            gh, agents, work_item, labels, repo, session_id,
+        )
+        work_item.labels = labels
+
     # Synthesize :complete for every :skipped agent so downstream eligibility
     # checks express "is done?" as a single :complete test throughout.
     labels = normalize_skipped_labels(labels, pipeline_map)
@@ -7021,11 +7143,12 @@ def _read_pr_event_merged() -> bool:
         return False
 
 
-# STD-SEC-022 — env vars for delete-branch.sh: gh API only, no git commands,
-# no bot token needed. REPO and BRANCH are set explicitly below.
+# STD-SEC-022 — env vars for delete-branch.sh: gh API only, no git commands.
+# REPO and BRANCH are set explicitly below. Deleting a branch is a system write,
+# so it carries the same identity as every other one (MI-7, issue #407).
 _DELETE_BRANCH_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
     "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",

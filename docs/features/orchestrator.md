@@ -468,3 +468,140 @@
 **Given** a repository has no `pipeline/pipeline.json` of its own
 **When** the orchestrator loads the pipeline
 **Then** it runs exactly the shipped flows, with no composition step observable in its behaviour
+
+## Scenario: The repo-root sweep runs as a declared lifecycle hook, not as orchestrator code
+
+**Given** an agent-type step whose defaults declare `agent_lifecycle.before` and `agent_lifecycle.after`
+**When** the step is invoked
+**Then** the baseline of untracked repo-root files is recorded by `.github/scripts/sweep-repo-root-snapshot.sh` and the files the step added are removed by `.github/scripts/sweep-repo-root.sh`
+**And** `pipeline_orchestrator.py` holds no sweep code of its own -- adding, removing or changing the sweep is a change to a script and to `pipeline.json`, never to the orchestrator
+
+## Scenario: A retried step is still swept against the baseline from before its first attempt
+
+**Given** a step whose first attempt leaves a file at the repo root and is retried
+**When** `scratch-setup.sh` empties the scratch directory before the second attempt
+**Then** the baseline recorded before the first attempt survives, so the file leaked by the first attempt is still removed after the last one
+
+## Scenario: The sweep never deletes on a guess
+
+**Given** no baseline was recorded for this run, or the repository root cannot be resolved
+**When** the sweep runs
+**Then** it removes nothing at all and reports why, rather than treating every untracked root file as newly added
+
+## Scenario: A file that was already in the tree survives an agent run
+
+**Given** an untracked file a person left at the repo root before the step started
+**When** the sweep runs after the step
+**Then** that file is untouched -- only files absent from the baseline are removed
+
+## Scenario: The metrics ledger append is performed by a script
+
+**Given** a completed step whose metrics record is ready
+**When** the orchestrator records it
+**Then** it writes the finished record line and hands it to `.github/scripts/append-metrics-record.sh`, which fetches the `ai-agile/metrics` branch, builds the commit with git plumbing and pushes it
+**And** deciding what the record says stays with the orchestrator, which knows the step, the outcome and the timing
+
+## Scenario: A concurrent writer loses the race rather than the record
+
+**Given** another runner appends to `records.jsonl` between this one's fetch and its push
+**When** the push is rejected
+**Then** the append is retried against the new tip, and the record lands after the other runner's
+
+## Scenario: A metrics record that never landed is not reported as landed
+
+**Given** every push attempt is rejected
+**When** the retries run out
+**Then** the script exits non-zero and the orchestrator records the failure, rather than a success-shaped result that hides a missing record
+
+## Scenario: A `:wip` left by a lost machine is reclaimed by a later tick
+
+**Given** a work item carrying `{agent}:wip` whose claim announcement is older than that step's whole wall-clock allowance
+**When** a later tick evaluates the item
+**Then** the `:wip` is removed, `{agent}:failed` is applied, and the orchestrator posts its own closing announcement naming the reclaim and what clears it
+**And** a `lock.reclaimed` audit event is emitted for the item and the step
+
+## Scenario: A reclaim draws from the retry budget
+
+**Given** a step whose `:wip` has just been reclaimed
+**When** the tick continues
+**Then** the step is `:failed` -- the state only a person clears -- so a step that hangs the same way every time cannot reclaim and hang indefinitely
+
+## Scenario: A step still inside its allowance keeps its lock
+
+**Given** a step on its second of two permitted attempts, within its wall-clock budget plus the grace the mutex is held for
+**When** a tick evaluates the item
+**Then** the `:wip` is left exactly where it is
+
+## Scenario: A `:wip` whose claim cannot be read is never reclaimed on a guess
+
+**Given** a work item carrying `{agent}:wip` whose claim announcement is missing, unparseable, or cannot be fetched
+**When** a tick evaluates the item
+**Then** the label is left in place and the reason is logged, naming the label a person can remove by hand
+**And** the item is evaluated again on the next tick, so a transient read failure resolves itself rather than stranding the item permanently
+
+## Scenario: `coder`'s git grant permits only what its prompt tells it to run
+
+**Given** `coder.md` forbids `git commit`, `git push` and `git checkout` and demonstrates only read-only git calls
+**When** `coder`'s `extra_allowedTools` is read from `pipeline.json`
+**Then** it grants those read-only subcommands by name and no write or history-rewriting subcommand
+**And** `Bash(git *)` is absent -- a step's allowed commands say the same thing its prompt does
+
+## Scenario: Every hand-authored `/maos-*` command names a single script
+
+**Given** the four commands that are not generated from `pipeline.json` -- `maos-merge`, `maos-new-branch-pr`, `maos-rebaseline`, `maos-run`
+**When** each command file is read
+**Then** it names one script under `.github/scripts/` and passes its arguments through
+**And** it contains no numbered procedure, no shell conditional beyond locating that script in the two supported checkout layouts, and no loop
+
+## Scenario: The `/maos-run` drive loop is a script, and stops where a person is needed
+
+**Given** an issue being driven interactively
+**When** `.github/scripts/drive-item.sh` runs
+**Then** it invokes an orchestrator tick, re-reads the labels, and ticks again while a tick keeps changing them
+**And** it stops with a distinct exit code as soon as a step lands on `:review`, `:blocked` or `:failed`, naming what halted and what clears it
+**And** it stops when a tick advances nothing, and when a bounded tick budget is exhausted
+
+## Scenario: The drive loop never crosses a gate
+
+**Given** a step waiting at a human gate
+**When** `drive-item.sh` reaches it
+**Then** it writes no label and confirms no gate -- crossing a gate is a person's decision, relayed to the orchestrator via `--confirm-gate`, never something a script does on its own (MI-7)
+
+## Scenario: An interactive branch-and-PR run produces what the pipeline step produces
+
+**Given** `/maos-new-branch-pr` is run for an issue
+**When** `.github/scripts/new-branch-pr.sh` resolves the branch from the flow's `naming` in `pipeline.json`
+**Then** it hands off to `create-pr.sh` -- the same script `01_product_docs/create-pr` runs -- so the branch, PR title, `source-issue` label and announcement are identical to a headless run
+**And** no branch-naming or title-truncation rule is restated in the command file
+
+## Scenario: A rebaseline refuses to run over uncommitted work
+
+**Given** a checkout with staged, unstaged or untracked changes
+**When** `.github/scripts/rebaseline-branch.sh` runs
+**Then** it lists what is dirty and stops, leaving every one of those changes on disk
+**And** it never runs `git clean` -- the dirty-tree check is the safety net, and deleting files would be a second one that contradicts it
+
+## Scenario: A rebaseline says what it is discarding before discarding it
+
+**Given** a local target branch carrying commits `origin` does not have
+**When** the rebaseline runs
+**Then** those commits are named in the output, along with the fact that they remain recoverable through `git reflog`
+
+## Scenario: Every headless system action on GitHub uses one identity
+
+**Given** a repository that configures `AI_AGILE_BOT_TOKEN`
+**When** any orchestrator-invoked script talks to GitHub -- opening a PR, merging one, marking one ready, applying a label, deleting a branch, pushing a commit, appending to the metrics ledger
+**Then** it authenticates as that one dedicated identity, resolved in `.github/scripts/lib/github-identity.sh` and nowhere else
+**And** no script chooses its own credential, so the same logical actor never appears on an issue as two different identities
+
+## Scenario: A repository without a dedicated identity keeps working
+
+**Given** a repository that configures no `AI_AGILE_BOT_TOKEN`
+**When** the same scripts run
+**Then** each falls back to exactly the token it used before, and nothing changes for it
+
+## Scenario: Interactive-session identity is out of scope, not overlooked
+
+**Given** a chat session acting on GitHub through the MCP server
+**When** its identity is asked about
+**Then** it is authenticated by session and environment configuration outside this repository, which no code change here can unify -- recorded as a separate infrastructure question rather than left implied

@@ -3124,9 +3124,12 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
-            # The orchestrator also runs the scratch lifecycle scripts via bash
-            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
-            and "scratch-" not in str(c.args[0][-1])
+            # The orchestrator also runs the agent-lifecycle scripts and the
+            # metrics-ledger append via bash (STD-ARCH-035, AS-2). These tests
+            # are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][1])
+            and "sweep-repo-root" not in str(c.args[0][1])
+            and "append-metrics-record" not in str(c.args[0][1])
         ]
         assert len(bash_calls) == 1
         assert "mark-pr-ready.sh" in bash_calls[0].args[0][-1]
@@ -3157,9 +3160,12 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
-            # The orchestrator also runs the scratch lifecycle scripts via bash
-            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
-            and "scratch-" not in str(c.args[0][-1])
+            # The orchestrator also runs the agent-lifecycle scripts and the
+            # metrics-ledger append via bash (STD-ARCH-035, AS-2). These tests
+            # are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][1])
+            and "sweep-repo-root" not in str(c.args[0][1])
+            and "append-metrics-record" not in str(c.args[0][1])
         ]
         assert len(bash_calls) == 0
 
@@ -3278,9 +3284,12 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
-            # The orchestrator also runs the scratch lifecycle scripts via bash
-            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
-            and "scratch-" not in str(c.args[0][-1])
+            # The orchestrator also runs the agent-lifecycle scripts and the
+            # metrics-ledger append via bash (STD-ARCH-035, AS-2). These tests
+            # are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][1])
+            and "sweep-repo-root" not in str(c.args[0][1])
+            and "append-metrics-record" not in str(c.args[0][1])
         ]
         assert len(bash_calls) == 2, f"Expected 2 bash calls, got {len(bash_calls)}"
 
@@ -3373,9 +3382,12 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
-            # The orchestrator also runs the scratch lifecycle scripts via bash
-            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
-            and "scratch-" not in str(c.args[0][-1])
+            # The orchestrator also runs the agent-lifecycle scripts and the
+            # metrics-ledger append via bash (STD-ARCH-035, AS-2). These tests
+            # are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][1])
+            and "sweep-repo-root" not in str(c.args[0][1])
+            and "append-metrics-record" not in str(c.args[0][1])
         ]
         assert len(bash_calls) == 0, "Traversal path must not reach subprocess.run"
 
@@ -3401,9 +3413,12 @@ class TestPostSteps:
         bash_calls = [
             c for c in mock_sub.call_args_list
             if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
-            # The orchestrator also runs the scratch lifecycle scripts via bash
-            # (STD-ARCH-035). These tests are about post_steps, so exclude them.
-            and "scratch-" not in str(c.args[0][-1])
+            # The orchestrator also runs the agent-lifecycle scripts and the
+            # metrics-ledger append via bash (STD-ARCH-035, AS-2). These tests
+            # are about post_steps, so exclude them.
+            and "scratch-" not in str(c.args[0][1])
+            and "sweep-repo-root" not in str(c.args[0][1])
+            and "append-metrics-record" not in str(c.args[0][1])
         ]
         assert len(bash_calls) == 1
         env_passed = bash_calls[0].kwargs["env"]

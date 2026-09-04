@@ -66,7 +66,7 @@ authoritative and these tables are a view of it.
 | `01_product_docs/prd-docs-updater` | -- | `commit_after=true`, `commits_to="docs"` |
 | `01_product_docs/merge-docs-pr` | -- | `commit_after=false`, `commits_to="docs"` |
 | `01_product_docs/create-pr` | -- | `commit_after=false`, `commits_to="code"` |
-| `03_execute/coder` | `Bash(git *)`, `Bash(python *)`, `Bash(python3 *)`, `Bash(pip *)`, `Bash(pip3 *)`, `Bash(uv *)` _(+61 more)_ | `commit_after=true`, `commits_to="code"` |
+| `03_execute/coder` | `Bash(git log *)`, `Bash(git diff *)`, `Bash(git rev-parse *)`, `Bash(python *)`, `Bash(python3 *)`, `Bash(pip *)` _(+63 more)_ | `commit_after=true`, `commits_to="code"` |
 | `03_execute/ci-gate` | -- | -- |
 | `03_execute/merge-conflict` | `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh pr comment *)`, `Bash(gh run view *)`, `Bash(gh run list *)`, `Bash(git fetch *)` _(+8 more)_ | -- |
 | `03_execute/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | `commit_after=false` |
