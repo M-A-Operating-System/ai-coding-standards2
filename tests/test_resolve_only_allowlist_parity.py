@@ -110,7 +110,7 @@ def test_pipeline_defaults_are_included(capsys):
 
 def test_per_agent_grants_are_included(capsys):
     allowed = _resolve_only(capsys)["allowed_tools"]
-    for tool in ["Bash(git *)", "Bash(rm *)", "Bash(sed *)", "Bash(pytest *)"]:
+    for tool in ["Bash(git log *)", "Bash(rm *)", "Bash(sed *)", "Bash(pytest *)"]:
         assert tool in allowed, f"pipeline.json per-agent grant {tool} was dropped"
 
 

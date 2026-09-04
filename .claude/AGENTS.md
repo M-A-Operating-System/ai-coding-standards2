@@ -34,6 +34,7 @@ full statements and rationale live there.
 | **P-12** Transparent over clever | Post a comment when something halts. Use the named markers. Don't infer state silently. |
 | **P-14** Deterministic Python orchestrator | The orchestrator decides who runs next. **You do not invoke other agents.** Do your one job and exit. |
 | **P-15** Product-led | Product docs are the target state; code is the current state; issues are the gap. **No code change ships unless it is already described in the product docs.** See [`lifecycle.md`](../docs/product/orchestrator/lifecycle.md#issue-classification-taxonomy). |
+| **P-16** The orchestrator owns git and PR mechanics | Write files; the orchestrator commits, pushes, and marks the PR ready for review once you declare you are done. **Never run `git commit`, `git push`, `git checkout`, `gh pr create`, or `gh pr edit`.** Your allowed commands say the same thing — a step is never granted a git subcommand that writes or rewrites history. |
 
 ---
 

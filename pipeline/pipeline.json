@@ -188,7 +188,9 @@
           "max_retries": 1,
           "session": { "scope": "per_issue" },
           "extra_allowedTools": [
-            "Bash(git *)",
+            "Bash(git log *)",
+            "Bash(git diff *)",
+            "Bash(git rev-parse *)",
             "Bash(python *)", "Bash(python3 *)",
             "Bash(pip *)", "Bash(pip3 *)", "Bash(uv *)",
             "Bash(pytest *)", "Bash(tox *)",
