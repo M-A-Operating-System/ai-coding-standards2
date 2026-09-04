@@ -5221,6 +5221,188 @@ def _should_run(
     return True
 
 
+# ---------------------------------------------------------------------------
+# Stale :wip reclaim (MI-4, issue #407)
+#
+# A step can just stop existing: the machine running it is lost, or the process
+# is killed outright. Nothing is returned and the :wip it held stays where it
+# is, blocking the item forever. The SIGTERM/SIGINT handler
+# (_clear_inflight_wip_on_signal) only helps a process that gets to run a
+# handler -- kill -9, an OOM kill and a lost host all bypass it.
+#
+# So the reclaim is something a LATER tick does, by looking at the label rather
+# than the run: a :wip older than what that step could legitimately still be
+# spending cannot still be running, so the orchestrator takes the lock back,
+# records the step as failed, and says why.
+# ---------------------------------------------------------------------------
+
+LOCK_RECLAIMED_EVENT = "lock.reclaimed"
+
+# Slack on top of a step's own allowance before its :wip is called stranded.
+# The claim comment is posted before the step starts and the mutex is still
+# held while the orchestrator runs the step's post_steps and git_ops, so the
+# label legitimately outlives the step's compute budget by a little.
+WIP_RECLAIM_GRACE_SECONDS = 300
+
+_ANNOUNCEMENT_JSON_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
+
+
+def _wip_lease_seconds(agent_def: AgentDef) -> int:
+    """How long this step's :wip can legitimately be held.
+
+    Its wall-clock budget bounds ONE attempt; the mutex is held across the
+    whole retry allowance, so a step with max_retries: 1 holds it for up to two
+    budgets. Reclaiming on a single budget would take the lock off a step that
+    is still legitimately on its second attempt.
+    """
+    wall = agent_def.max_wall_seconds or AGENT_TIMEOUT_SECONDS
+    return (agent_def.max_retries + 1) * int(wall) + WIP_RECLAIM_GRACE_SECONDS
+
+
+def _announcement_payload(body: str) -> Optional[dict]:
+    """The JSON object inside an announcement comment, or None if unreadable."""
+    match = _ANNOUNCEMENT_JSON_RE.search(body)
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _wip_held_since(
+    gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem,
+) -> Optional[datetime]:
+    """When this step last announced it was taking the mutex, or None.
+
+    The opening announcement IS the claim marker -- the orchestrator posts it
+    in the same breath as applying :wip -- so "how long has this been held" is
+    a read of the item's own trail, not of a run nobody can see any more.
+
+    None means the evidence could not be established: the comments could not be
+    read, no opening announcement is there, or its timestamp does not parse.
+    The caller must not reclaim on that (STD-ARCH-014).
+    """
+    marker = f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->"
+    try:
+        bodies = gh.list_comment_bodies(work_item.number)
+    except Exception as exc:
+        log.warning(
+            "  reclaim: could not read comments on #%d (%s) -- leaving %s's :wip alone",
+            work_item.number, exc, agent_def.agent,
+        )
+        return None
+    latest: Optional[datetime] = None
+    for body in bodies or []:
+        if not body or marker not in body:
+            continue
+        payload = _announcement_payload(body)
+        if payload is None or payload.get("phase") != "start":
+            continue
+        started = _parse_record_time(payload.get("started_at"))
+        if started is None:
+            continue
+        if latest is None or started > latest:
+            latest = started
+    return latest
+
+
+def _reclaim_stale_wip(
+    gh: "GitHubClient",
+    agents: list,
+    work_item: WorkItem,
+    labels: set,
+    repo: str,
+    session_id: str,
+    *,
+    now: Optional[datetime] = None,
+) -> set:
+    """Take back any :wip on this item that has outlived its step's allowance.
+
+    Returns the (possibly updated) label set. A reclaim is recorded exactly the
+    way a crash is -- :wip off, :failed on, the same diagnostic comment, the
+    orchestrator's own closing announcement -- because that is what it is: an
+    attempt that produced nothing. It therefore draws from the retry budget the
+    hardest way the budget can be drawn, landing directly on the :failed a
+    person must clear, so a step that hangs the same way every time cannot
+    reclaim and hang indefinitely (MI-4).
+    """
+    now = now or _now_utc()
+    for agent_def in agents:
+        if agent_status(labels, agent_def.label_key) != STATUS_WIP:
+            continue
+
+        lease = _wip_lease_seconds(agent_def)
+        held_since = _wip_held_since(gh, agent_def, work_item)
+
+        if held_since is None:
+            # Fail closed: with no readable claim there is no age, and a reclaim
+            # on a guess would take the lock off a step that is still running.
+            # This is not a permanent stall -- eligibility is evaluated fresh
+            # every tick, so a transient read failure resolves itself on the
+            # next one. If the claim comment is genuinely gone the warning
+            # repeats every tick until a person removes the label by hand,
+            # which is the documented exit for it.
+            log.warning(
+                "  reclaim: %s holds :wip on #%d with no readable claim comment; "
+                "not reclaiming on a guess. If this repeats, remove %s by hand.",
+                agent_def.agent, work_item.number,
+                agent_def.status_label(STATUS_WIP),
+            )
+            continue
+
+        age = int((now - held_since).total_seconds())
+        if age <= lease:
+            continue
+
+        summary = (
+            f"stale `:wip` reclaimed after {age}s, exceeding this step's "
+            f"{lease}s wall-clock allowance -- treated as a crashed/lost run"
+        )
+        log.error(
+            "  RECLAIM %-38s  :wip held %ds on #%d (allowance %ds)",
+            agent_def.agent, age, work_item.number, lease,
+        )
+        _apply_failed(
+            gh, agent_def, work_item,
+            AgentRunResult(
+                success=False,
+                captured_tail=(
+                    f"No result was ever returned. The claim was announced at "
+                    f"{held_since.strftime('%Y-%m-%dT%H:%M:%SZ')} and the step "
+                    f"has held its `:wip` for {age}s since."
+                ),
+            ),
+            heading=f"### `{agent_def.agent}` failed — stale `:wip` reclaimed",
+            reason=(
+                f"The `:wip` was held for {age}s, longer than this step can "
+                f"legitimately run ({lease}s: {agent_def.max_retries + 1} "
+                f"attempt(s) of {agent_def.max_wall_seconds or AGENT_TIMEOUT_SECONDS}s "
+                f"plus {WIP_RECLAIM_GRACE_SECONDS}s of grace). The machine "
+                f"running it was lost or the process was killed outright, so "
+                f"nothing was returned and no signal handler ran. This counts "
+                f"as an attempt: fix the underlying cause, then remove "
+                f"`{agent_def.failed_label}` to retry."
+            ),
+        )
+        labels.discard(agent_def.status_label(STATUS_WIP))
+        labels.add(agent_def.failed_label)
+        work_item.labels = labels
+
+        _announce_and_prompt(
+            agent_def, work_item, session_id, STATUS_FAILED, summary, gh,
+        )
+        _emit_audit_event(_make_audit_event(
+            session_id, LOCK_RECLAIMED_EVENT, repo,
+            work_item=work_item, agent=agent_def.agent,
+            outcome_status="failed",
+            outcome_detail=summary,
+            duration_ms=age * 1000,
+        ))
+    return labels
+
+
 def _acquire_wip_and_announce(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -6585,6 +6767,16 @@ def process_work_item(
         labels = promote_gated_agents(
             labels, agents, work_item, gh,
             session_id=session_id, repo=repo,
+        )
+        work_item.labels = labels
+
+    # Take back any :wip a lost machine or a killed process stranded here
+    # (MI-4). Before the eligibility loop, so a step whose lock is reclaimed
+    # this tick is seen as :failed by everything that follows rather than as
+    # still running.
+    if not dry_run:
+        labels = _reclaim_stale_wip(
+            gh, agents, work_item, labels, repo, session_id,
         )
         work_item.labels = labels
 
