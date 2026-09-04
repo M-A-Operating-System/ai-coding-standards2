@@ -1036,13 +1036,18 @@ class TestMI5TheResultDoesNotDependOnWhoWasWatching:
     instead against a recording client: the same step is driven through
     `process_work_item` twice -- once with the tick started headless
     (`_HEADLESS = True`), once interactively -- and the ordered sequence of
-    label transitions, comments and lifecycle scripts is diffed. Timestamps
-    and the actor field are excluded, exactly as the paragraph says.
+    label transitions, comments, agent invocation and post-actions is diffed.
+    Timestamps and the actor field are excluded, exactly as the paragraph
+    says.
 
     What this does not cover: the effects a real agent subprocess has on the
     repository. The subprocess is stubbed identically in both runs, which is
     the point -- MI-5 is about the orchestration around the step, since the
-    step itself is the same binary invoked the same way in both modes.
+    step itself is the same binary invoked the same way in both modes. The
+    step's pre-actions run inside that stubbed call, so they do not reach the
+    recorded timeline; the last test in this class covers them from the other
+    side, by pinning them to the single declaration in `pipeline.json` that
+    both modes read.
     """
 
     def _drive(self, headless, tmp_path, monkeypatch):

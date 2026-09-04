@@ -398,9 +398,10 @@ def repo_pipeline_override_path(shipped: Path) -> Optional[Path]:
 
     The framework ships its pipeline at SUBMODULE_ROOT/pipeline/pipeline.json
     (the *shipped* file, passed in as `shipped`). A repository that installs
-    this repo as a submodule keeps its own overrides at
+    this repo as a submodule keeps its own complete definition at
     {consuming repo root}/pipeline/pipeline.json -- outside the submodule, in
-    the same tree that carries the symlinked standards/ and .claude/.
+    the same tree that carries the symlinked standards/ and .claude/. Where
+    it exists it replaces the shipped file entirely (PRODUCT.md, AS-1).
     AI_AGILE_ROOT is the consuming repo root (see SUBMODULE_ROOT's comment).
 
     Returns None when there is no replacement: no AI_AGILE_ROOT, no such
