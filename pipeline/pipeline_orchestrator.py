@@ -1441,6 +1441,7 @@ def _build_agent_metrics(
         "timestamp_end": timestamp_end,
         "github_issue_number": github_issue_number,
         "agent_id": agent_def.agent,
+        "flow": agent_def.flow,
         "branch_id": branch_id,
         "pr_id": pr_id,
         "cycle_id": cycle_id,
@@ -1504,6 +1505,7 @@ def _build_scripted_metrics(
         "timestamp_end": timestamp_end,
         "github_issue_number": github_issue_number,
         "agent_id": agent_def.agent,
+        "flow": agent_def.flow,
         "branch_id": branch_id,
         "pr_id": pr_id,
         "cycle_id": cycle_id,
@@ -1715,6 +1717,288 @@ def _append_metrics_record(
             time.sleep(1)
             continue
         raise RuntimeError(f"git push to {METRICS_BRANCH} failed: {push.stderr.strip()}")
+
+
+# ---------------------------------------------------------------------------
+# Scheduled flows (issue #406)
+#
+# A scheduled flow has no work item, so it has nowhere to carry a label -- and
+# labels are the state. Both things it needs are therefore read from the record
+# itself (PRODUCT.md, "A scheduled flow derives its own due-ness from the
+# record"):
+#
+#   due-ness   every completed step appends a timestamped entry to the metrics
+#              branch, so "when did this flow last run" is a read of that log.
+#              A flow with no entry has never run, which is the same answer as
+#              overdue. There is no last-run table anywhere.
+#   its mutex  :wip is a label on a work item and there is no work item, so a
+#              scheduled flow claims itself by appending a claim record to the
+#              same append-only log. That append is already a compare-and-swap
+#              (it pushes onto a fetched tip and retries on rejection), so a
+#              claim whose push loses the race IS the mutex failure. A claim
+#              older than its lease has been stranded by a runner that died,
+#              and is reclaimed on age -- the same shape as reclaiming a
+#              stranded :wip by its wall-clock budget.
+# ---------------------------------------------------------------------------
+
+SCHEDULE_CLAIM_EVENT = "schedule.claim"
+SCHEDULE_RELEASE_EVENT = "schedule.release"
+
+# How long a claim stays valid without a matching release. Beyond this the
+# runner that took it cannot still be legitimately running, so the claim is
+# reclaimable rather than wedging the schedule forever.
+SCHEDULE_CLAIM_LEASE_SECONDS = 3 * 3600
+
+
+def read_metrics_records(repo: str) -> list[dict]:
+    """Every record on the metrics branch, oldest first.
+
+    Read with the same git plumbing _append_metrics_record writes with, so the
+    log is one mechanism read and written the same way. Returns [] when the
+    branch or the file does not exist yet -- a pipeline that has never run has
+    no record, which every caller reads as "nothing has happened yet".
+    """
+    try:
+        subprocess.run(
+            ["git", "fetch", "origin", METRICS_BRANCH],
+            check=True, capture_output=True,
+        )
+        show = subprocess.run(
+            ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
+            capture_output=True, text=True,
+        )
+    except Exception as exc:
+        log.warning("metrics: could not read %s: %s", METRICS_RECORDS_FILE, exc)
+        return []
+    if show.returncode != 0:
+        return []
+    records: list[dict] = []
+    for line in show.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            records.append(entry)
+    return records
+
+
+def _parse_record_time(value: object) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.rstrip("Z") + "+00:00")
+    except ValueError:
+        return None
+
+
+def flow_last_run(records: list, flow: str) -> Optional[datetime]:
+    """When this flow's steps last appended an entry, or None if never.
+
+    Claim and release records are this mechanism's own bookkeeping, not a
+    step's work, so they never count as a run.
+    """
+    latest: Optional[datetime] = None
+    for entry in records:
+        if entry.get("flow") != flow:
+            continue
+        if entry.get("event") in (SCHEDULE_CLAIM_EVENT, SCHEDULE_RELEASE_EVENT):
+            continue
+        ts = _parse_record_time(entry.get("timestamp_end") or entry.get("timestamp_start"))
+        if ts is not None and (latest is None or ts > latest):
+            latest = ts
+    return latest
+
+
+def _cron_field_matches(field: str, value: int, *, low: int, high: int) -> bool:
+    """One cron field against one value: '*', 'a', 'a-b', '*/n', 'a-b/n', lists."""
+    for part in field.split(","):
+        part = part.strip()
+        if not part:
+            return False
+        step = 1
+        if "/" in part:
+            part, _, step_text = part.partition("/")
+            try:
+                step = int(step_text)
+            except ValueError:
+                return False
+            if step < 1:
+                return False
+        if part in ("*", "?"):
+            start, end = low, high
+        elif "-" in part:
+            start_text, _, end_text = part.partition("-")
+            try:
+                start, end = int(start_text), int(end_text)
+            except ValueError:
+                return False
+        else:
+            try:
+                start = end = int(part)
+            except ValueError:
+                return False
+        if start <= value <= end and (value - start) % step == 0:
+            return True
+    return False
+
+
+def cron_matches(expression: str, when: datetime) -> bool:
+    """Whether a 5-field cron expression fires at this minute (UTC).
+
+    Fields: minute hour day-of-month month day-of-week (0 or 7 = Sunday).
+    Day-of-month and day-of-week are OR'd when both are restricted, matching
+    cron's own long-standing behaviour.
+    """
+    fields = expression.split()
+    if len(fields) != 5:
+        raise ValueError(f"cron expression must have 5 fields, got {expression!r}")
+    minute, hour, dom, month, dow = fields
+    if not _cron_field_matches(minute, when.minute, low=0, high=59):
+        return False
+    if not _cron_field_matches(hour, when.hour, low=0, high=23):
+        return False
+    if not _cron_field_matches(month, when.month, low=1, high=12):
+        return False
+    _weekday = (when.weekday() + 1) % 7  # Monday=0 -> cron Sunday=0
+    _dom_restricted = dom.strip() not in ("*", "?")
+    _dow_restricted = dow.strip() not in ("*", "?")
+    _dom_ok = _cron_field_matches(dom, when.day, low=1, high=31)
+    _dow_ok = (
+        _cron_field_matches(dow, _weekday, low=0, high=6)
+        or _cron_field_matches(dow, 7 if _weekday == 0 else _weekday, low=0, high=7)
+    )
+    if _dom_restricted and _dow_restricted:
+        return _dom_ok or _dow_ok
+    if _dom_restricted:
+        return _dom_ok
+    if _dow_restricted:
+        return _dow_ok
+    return True
+
+
+# How far back a due-ness check looks for the schedule's last firing time. A
+# cadence that has not come round in this long is due whatever its expression
+# says, so a pathological expression cannot make the search unbounded.
+_CRON_LOOKBACK_MINUTES = 366 * 24 * 60
+
+
+def previous_fire_time(expression: str, now: datetime) -> Optional[datetime]:
+    """The most recent minute at or before *now* that this cadence fires."""
+    candidate = now.replace(second=0, microsecond=0)
+    for _ in range(_CRON_LOOKBACK_MINUTES):
+        if cron_matches(expression, candidate):
+            return candidate
+        candidate -= timedelta(minutes=1)
+    return None
+
+
+def schedule_is_due(expression: str, last_run: Optional[datetime], now: datetime) -> bool:
+    """Whether a scheduled flow is due, given when it last ran.
+
+    A flow that has never run has no entry in the record, which is the same
+    answer as overdue. Otherwise it is due when the cadence has come round
+    again since that entry. A cadence that cannot be parsed raises here rather
+    than being read as "always due" -- a broken declaration must not silently
+    run a sweep every tick (STD-ARCH-014).
+    """
+    if len(expression.split()) != 5:
+        raise ValueError(f"cron expression must have 5 fields, got {expression!r}")
+    if last_run is None:
+        return True
+    fired = previous_fire_time(expression, now)
+    if fired is None:
+        return True
+    return last_run < fired
+
+
+def _schedule_bookkeeping_record(flow: str, event: str, now: datetime) -> dict:
+    """A claim or release entry, shaped like every other record in the log."""
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "timestamp_start": stamp,
+        "timestamp_end": stamp,
+        "github_issue_number": None,
+        "agent_id": f"schedule/{flow}",
+        "flow": flow,
+        "event": event,
+        "cycle_id": str(uuid.uuid4()),
+        "duration_ms": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "retry_count": 0,
+        "retry_errors": [],
+    }
+
+
+def schedule_claim_is_held(records: list, flow: str, now: datetime) -> bool:
+    """Whether another runner currently holds this flow's claim.
+
+    A claim with no release after it holds until its lease expires; past that
+    it was stranded by a runner that died mid-flight and is reclaimable, so a
+    dead runner cannot wedge the schedule forever.
+    """
+    latest: Optional[tuple] = None
+    for entry in records:
+        if entry.get("flow") != flow:
+            continue
+        event = entry.get("event")
+        if event not in (SCHEDULE_CLAIM_EVENT, SCHEDULE_RELEASE_EVENT):
+            continue
+        ts = _parse_record_time(entry.get("timestamp_start"))
+        if ts is None:
+            continue
+        if latest is None or ts >= latest[0]:
+            latest = (ts, event)
+    if latest is None or latest[1] != SCHEDULE_CLAIM_EVENT:
+        return False
+    return (now - latest[0]).total_seconds() < SCHEDULE_CLAIM_LEASE_SECONDS
+
+
+def claim_schedule(
+    gh: "GitHubClient", repo: str, flow: str, *, now: Optional[datetime] = None,
+) -> bool:
+    """Take this flow's mutex, or report that someone else holds it.
+
+    Two runners racing both append a claim onto the same fetched tip; the
+    append is a compare-and-swap, so exactly one push lands and the other is
+    rejected -- the rejection IS the mutex failure, with no second locking
+    mechanism invented for it.
+    """
+    now = now or _now_utc()
+    records = read_metrics_records(repo)
+    if schedule_claim_is_held(records, flow, now):
+        log.info("schedule %s: claim held by another runner -- skipping", flow)
+        return False
+    try:
+        _ensure_metrics_branch(gh, repo)
+        _append_metrics_record(
+            gh, repo, _schedule_bookkeeping_record(flow, SCHEDULE_CLAIM_EVENT, now),
+            _retries=0,
+        )
+    except Exception as exc:
+        log.info("schedule %s: could not take the claim (%s) -- skipping", flow, exc)
+        return False
+    return True
+
+
+def release_schedule(
+    gh: "GitHubClient", repo: str, flow: str, *, now: Optional[datetime] = None,
+) -> None:
+    """Give the claim back. Never raises -- an unreleased claim expires anyway."""
+    try:
+        _append_metrics_record(
+            gh, repo,
+            _schedule_bookkeeping_record(flow, SCHEDULE_RELEASE_EVENT, now or _now_utc()),
+        )
+    except Exception as exc:
+        log.warning(
+            "schedule %s: could not release the claim (%s) -- it expires in %ds",
+            flow, exc, SCHEDULE_CLAIM_LEASE_SECONDS,
+        )
 
 
 def _post_cycle_metrics(
@@ -3488,8 +3772,9 @@ def invoke_script(
     }
     if work_item.kind == "issue":
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
-    else:
+    elif work_item.kind == "pr":
         agent_env["PR_NUMBER"] = str(work_item.number)
+    # A scheduled step has no work item at all, so it is told neither.
     agent_env.update(
         flow_env if flow_env is not None else _flow_context_env(agent_def, work_item)
     )
@@ -3876,8 +4161,9 @@ def _build_agent_env(
     agent_env["SESSION_SCOPE"] = session_scope
     if work_item.kind == "issue":
         agent_env["ISSUE_NUMBER"] = str(work_item.number)
-    else:
+    elif work_item.kind == "pr":
         agent_env["PR_NUMBER"] = str(work_item.number)
+    # A scheduled step has no work item at all, so it is told neither.
     # Axis B: every orchestrator-spawned subprocess is always headless/opaque,
     # regardless of whether the tick itself was triggered by cron or interactively.
     agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
@@ -7268,6 +7554,128 @@ def _wake(args) -> "Optional[RunContext]":
     )
 
 
+SCHEDULE_WORK_ITEM_KIND = "schedule"
+
+
+def _scheduled_flows(agents: list) -> dict:
+    """The scheduled flows in the pipeline, as {flow name: (cron, [steps])}.
+
+    A scheduled flow is a flow like any other; the only difference is that its
+    trigger is a cadence rather than an item, so its steps are never reached by
+    the per-item loop and are dispatched here instead.
+    """
+    flows: dict = {}
+    for agent_def in agents:
+        if not agent_def.flow_schedule:
+            continue
+        cron, steps = flows.setdefault(agent_def.flow, (agent_def.flow_schedule, []))
+        steps.append(agent_def)
+    return flows
+
+
+def _schedule_work_item(flow: str) -> WorkItem:
+    """The stand-in a scheduled step is invoked against.
+
+    A scheduled flow has no work item -- this carries no number anyone can act
+    on and no labels, precisely so nothing downstream mistakes it for one: its
+    kind is neither issue nor pr, so no ISSUE_NUMBER/PR_NUMBER is exported, no
+    branch is resolved, and its metrics record carries a null issue number.
+    """
+    return WorkItem(
+        number=0, kind=SCHEDULE_WORK_ITEM_KIND,
+        title=f"scheduled flow: {flow}", labels=set(), url="",
+    )
+
+
+def _run_scheduled_step(ctx: "RunContext", agent_def: AgentDef, work_item: WorkItem) -> None:
+    """Invoke one step of a scheduled flow and record what it did.
+
+    A scheduled step is a step: what it may do is its declared allowed commands
+    and expected effect, never inferred from the fact that a schedule started
+    it. With no work item there are no labels to move and no comments to post,
+    so what it returns reaches the world two ways -- the work item it asks the
+    orchestrator to raise (stamped with its provenance), and the entry it
+    appends to the record, which is also what makes the flow's next due-ness
+    computable.
+    """
+    _timestamp_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _flow_env = _flow_context_env(agent_def, work_item)
+    log.info("  TRIGGER %-38s  [scheduled: %s]", agent_def.agent, agent_def.flow)
+
+    step_result: Optional[StepResult] = None
+    if agent_def.step_type == "script":
+        result = invoke_script(
+            agent_def, work_item, ctx.dry_run, ctx.repo, flow_env=_flow_env,
+        )
+    else:
+        result = invoke_agent(
+            agent_def, work_item, ctx.dry_run, ctx.repo,
+            default_extra_tools=ctx.default_extra_tools, flow_env=_flow_env,
+        )
+        if not ctx.dry_run:
+            step_result, _ = _read_step_result(
+                _scratch_path(_compute_agent_session_id(agent_def, work_item, ctx.repo))
+            )
+    if ctx.dry_run:
+        return
+
+    _create_requested_issue(ctx.gh, agent_def, work_item, step_result)
+
+    _timestamp_end = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _record = _build_step_metrics(
+        agent_def, work_item, result, _timestamp_start, _timestamp_end, str(uuid.uuid4()),
+        is_error_override=not result.success,
+    )
+    try:
+        _ensure_metrics_branch(ctx.gh, ctx.repo)
+        _append_metrics_record(ctx.gh, ctx.repo, _record)
+    except Exception as exc:
+        log.warning("schedule %s: could not append the run record: %s", agent_def.flow, exc)
+    _emit_audit_event(_make_audit_event(
+        ctx.session_id, "agent.complete" if result.success else "agent.failed", ctx.repo,
+        agent=agent_def.agent,
+        outcome_status=STATUS_COMPLETE if result.success else STATUS_FAILED,
+        outcome_detail=f"mode={agent_def.step_type} flow={agent_def.flow} scheduled=true",
+    ))
+
+
+def _run_scheduled_flows(ctx: "RunContext") -> int:
+    """Run every scheduled flow that is due and whose claim this tick can take.
+
+    Due-ness is a read of the record; the claim is an append to it. Neither is
+    kept anywhere else (PRODUCT.md, "A scheduled flow derives its own due-ness
+    from the record").
+    """
+    flows = _scheduled_flows(ctx.agents)
+    if not flows:
+        return 0
+    now = _now_utc()
+    records = read_metrics_records(ctx.repo)
+    ran = 0
+    for flow, (cron, steps) in flows.items():
+        try:
+            due = schedule_is_due(cron, flow_last_run(records, flow), now)
+        except ValueError as exc:
+            log.error("schedule %s: %s -- skipping", flow, exc)
+            continue
+        if not due:
+            log.debug("schedule %s: not due (%s)", flow, cron)
+            continue
+        if ctx.dry_run:
+            log.info("  [DRY RUN] schedule %s is due (%s)", flow, cron)
+            continue
+        if not claim_schedule(ctx.gh, ctx.repo, flow, now=now):
+            continue
+        work_item = _schedule_work_item(flow)
+        try:
+            for agent_def in steps:
+                _run_scheduled_step(ctx, agent_def, work_item)
+                ran += 1
+        finally:
+            release_schedule(ctx.gh, ctx.repo, flow)
+    return ran
+
+
 def _do_work(ctx: "RunContext") -> int:
     """Do the work: evaluate each work item, honouring the pipeline-wide
     per-tick launch budget. Returns the number of agents triggered."""
@@ -7290,6 +7698,7 @@ def _do_work(ctx: "RunContext") -> int:
         if n > 0:
             # Brief pause between agent invocations to avoid rate limits
             time.sleep(2)
+    total_triggered += _run_scheduled_flows(ctx)
     return total_triggered
 
 
