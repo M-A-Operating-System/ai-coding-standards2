@@ -17,15 +17,19 @@ BLOCKER_SCRIPT="${REPO_ROOT}/.github/scripts/blocker.sh"
 TEST_REPO="owner/repo"
 ISSUE_NUM=7
 TARGET_NUM=12
+TARGET2_NUM=15
 
 # ---------------------------------------------------------------------------
 # Helper: create a temp mock dir; writes a mock gh into it.
 #
 # Caller sets these before calling setup_mocks:
-#   blockedby_label      — the blockedby:{N} label to report on the issue,
-#                           or "" for none, or a malformed value to test that path
+#   blockedby_labels     — newline-separated blockedby:{N} labels to report
+#                           on the issue, or "" for none
 #   existing_labels      — labels already known to the repo (for label-create
 #                           idempotency); "" means none exist yet
+#
+# The mock logs "RECIPROCAL_LABEL_APPLIED <target>" for each POST so a test
+# can check which specific target(s) were reciprocated.
 # ---------------------------------------------------------------------------
 setup_mocks() {
   MOCK_DIR="$(mktemp -d)"
@@ -39,8 +43,8 @@ ARGS="\$*"
 case "\$ARGS" in
   *"issues/${ISSUE_NUM}"*"--jq"*)
     # blockedby: label lookup on the requesting issue.
-    if [ -n "${blockedby_label}" ]; then
-      echo "${blockedby_label}"
+    if [ -n "${blockedby_labels}" ]; then
+      printf '%s\n' "${blockedby_labels}"
     fi
     ;;
   *"label list"*)
@@ -51,8 +55,9 @@ case "\$ARGS" in
   *"label create"*)
     echo "LABEL_CREATE_CALLED" >> "${CALLS_LOG}"
     ;;
-  *"api --method POST"*"issues/${TARGET_NUM}/labels"*)
-    echo "RECIPROCAL_LABEL_APPLIED" >> "${CALLS_LOG}"
+  *"api --method POST"*"issues/"*"/labels"*)
+    target=\$(echo "\$ARGS" | grep -oE 'issues/[0-9]+/labels' | grep -oE '[0-9]+')
+    echo "RECIPROCAL_LABEL_APPLIED \${target}" >> "${CALLS_LOG}"
     ;;
   *)
     ;;
@@ -76,13 +81,13 @@ run_blocker() {
 # Test 1 (happy path): blockedby:{N} present -> reciprocates blocks:{this}.
 # ---------------------------------------------------------------------------
 test_reciprocates_blocks_label_onto_target() {
-  blockedby_label="blockedby:${TARGET_NUM}"
+  blockedby_labels="blockedby:${TARGET_NUM}"
   existing_labels=""
   setup_mocks
 
   OUTPUT=$(run_blocker) || true
 
-  if grep -q "RECIPROCAL_LABEL_APPLIED" "${CALLS_LOG}"; then
+  if grep -q "RECIPROCAL_LABEL_APPLIED ${TARGET_NUM}" "${CALLS_LOG}"; then
     pass "happy path: blocks:${ISSUE_NUM} applied to issue #${TARGET_NUM}"
   else
     fail "happy path: reciprocal label was NOT applied — output: ${OUTPUT}"
@@ -107,7 +112,7 @@ test_reciprocates_blocks_label_onto_target() {
 # Test 2: blocks:{N} label already exists on the repo -> no duplicate create.
 # ---------------------------------------------------------------------------
 test_skips_label_create_when_already_present() {
-  blockedby_label="blockedby:${TARGET_NUM}"
+  blockedby_labels="blockedby:${TARGET_NUM}"
   existing_labels="blocks:${ISSUE_NUM}"
   setup_mocks
 
@@ -119,7 +124,7 @@ test_skips_label_create_when_already_present() {
     pass "existing label: gh label create is NOT called"
   fi
 
-  if grep -q "RECIPROCAL_LABEL_APPLIED" "${CALLS_LOG}"; then
+  if grep -q "RECIPROCAL_LABEL_APPLIED ${TARGET_NUM}" "${CALLS_LOG}"; then
     pass "existing label: reciprocal label is still applied to the issue"
   else
     fail "existing label: reciprocal label was NOT applied"
@@ -132,7 +137,7 @@ test_skips_label_create_when_already_present() {
 # Test 3: no blockedby: label on the requesting issue -> blocked, no write.
 # ---------------------------------------------------------------------------
 test_no_blockedby_label_reports_blocked_without_writing() {
-  blockedby_label=""
+  blockedby_labels=""
   existing_labels=""
   setup_mocks
 
@@ -164,7 +169,7 @@ test_no_blockedby_label_reports_blocked_without_writing() {
 # Test 4: malformed blockedby: label (non-numeric target) -> blocked, no write.
 # ---------------------------------------------------------------------------
 test_malformed_blockedby_label_reports_blocked_without_writing() {
-  blockedby_label="blockedby:abc"
+  blockedby_labels="blockedby:abc"
   existing_labels=""
   setup_mocks
 
@@ -186,12 +191,72 @@ test_malformed_blockedby_label_reports_blocked_without_writing() {
 }
 
 # ---------------------------------------------------------------------------
+# Test 5: multiple blockedby: labels -> every one is reciprocated, not just
+# the first (regression for the pr-reviewer QA-001 finding).
+# ---------------------------------------------------------------------------
+test_reciprocates_every_blockedby_label_not_just_the_first() {
+  blockedby_labels="$(printf 'blockedby:%s\nblockedby:%s' "${TARGET_NUM}" "${TARGET2_NUM}")"
+  existing_labels=""
+  setup_mocks
+
+  OUTPUT=$(run_blocker) || true
+
+  if grep -q "RECIPROCAL_LABEL_APPLIED ${TARGET_NUM}" "${CALLS_LOG}"; then
+    pass "multiple: first target (#${TARGET_NUM}) reciprocated"
+  else
+    fail "multiple: first target (#${TARGET_NUM}) was NOT reciprocated"
+  fi
+
+  if grep -q "RECIPROCAL_LABEL_APPLIED ${TARGET2_NUM}" "${CALLS_LOG}"; then
+    pass "multiple: second target (#${TARGET2_NUM}) reciprocated"
+  else
+    fail "multiple: second target (#${TARGET2_NUM}) was NOT reciprocated -- only the first blockedby: label was handled"
+  fi
+
+  if echo "${OUTPUT}" | grep -q "AI_AGILE_STATUS: complete"; then
+    pass "multiple: script exits AI_AGILE_STATUS: complete"
+  else
+    fail "multiple: missing AI_AGILE_STATUS: complete — output: ${OUTPUT}"
+  fi
+
+  teardown_mock_dir
+}
+
+# ---------------------------------------------------------------------------
+# Test 6: one valid, one malformed blockedby: label -> the valid one is
+# still reciprocated; the malformed one is skipped, not fatal.
+# ---------------------------------------------------------------------------
+test_one_malformed_label_does_not_block_the_valid_one() {
+  blockedby_labels="$(printf 'blockedby:%s\nblockedby:abc' "${TARGET_NUM}")"
+  existing_labels=""
+  setup_mocks
+
+  OUTPUT=$(run_blocker) || true
+
+  if grep -q "RECIPROCAL_LABEL_APPLIED ${TARGET_NUM}" "${CALLS_LOG}"; then
+    pass "mixed: valid target (#${TARGET_NUM}) still reciprocated despite a malformed sibling label"
+  else
+    fail "mixed: valid target (#${TARGET_NUM}) was NOT reciprocated — output: ${OUTPUT}"
+  fi
+
+  if echo "${OUTPUT}" | grep -q "AI_AGILE_STATUS: complete"; then
+    pass "mixed: script exits AI_AGILE_STATUS: complete"
+  else
+    fail "mixed: missing AI_AGILE_STATUS: complete — output: ${OUTPUT}"
+  fi
+
+  teardown_mock_dir
+}
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 test_reciprocates_blocks_label_onto_target
 test_skips_label_create_when_already_present
 test_no_blockedby_label_reports_blocked_without_writing
 test_malformed_blockedby_label_reports_blocked_without_writing
+test_reciprocates_every_blockedby_label_not_just_the_first
+test_one_malformed_label_does_not_block_the_valid_one
 
 echo ""
 echo "Results: ${PASS} passed, ${FAIL} failed"

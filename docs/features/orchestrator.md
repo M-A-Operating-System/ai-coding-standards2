@@ -373,6 +373,7 @@
 **Then** it applies `blocks:7` to issue #12, creating the label first if the repository doesn't have it yet
 
 ## Scenario: blocker reports blocked, not a silent no-op, when there is nothing to reciprocate
+
 **Given** a human requests `blocker` on an issue that carries no `blockedby:` label
 **When** the step runs
 **Then** it writes no label and signals `blocked`, so the mistaken request stays visible rather than being silently swallowed

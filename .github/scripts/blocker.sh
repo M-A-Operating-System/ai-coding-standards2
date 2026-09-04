@@ -32,26 +32,36 @@ ensure_label() {
     fi
 }
 
-BLOCKEDBY_LABEL=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq \
-    '.labels[].name | select(startswith("blockedby:"))' | head -n1)
+BLOCKEDBY_LABELS=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq \
+    '.labels[].name | select(startswith("blockedby:"))')
 
-if [[ -z "${BLOCKEDBY_LABEL}" ]]; then
+if [[ -z "${BLOCKEDBY_LABELS}" ]]; then
     log "no blockedby: label found on #${ISSUE_NUMBER} -- nothing to reciprocate"
     echo "AI_AGILE_STATUS: blocked \"apply blockedby:{N} to #${ISSUE_NUMBER} first, then re-request blocker\""
     exit 0
 fi
 
-TARGET="${BLOCKEDBY_LABEL#blockedby:}"
-if ! [[ "${TARGET}" =~ ^[0-9]+$ ]]; then
-    log "malformed label '${BLOCKEDBY_LABEL}' on #${ISSUE_NUMBER} -- not a numeric issue reference"
-    echo "AI_AGILE_STATUS: blocked \"'${BLOCKEDBY_LABEL}' is not a valid blockedby:{N} label\""
+# An issue can carry more than one blockedby: label at once (the orchestrator
+# side gates on all of them) -- reciprocate every one, not just the first.
+RECIPROCATED=0
+while IFS= read -r blockedby_label; do
+    target="${blockedby_label#blockedby:}"
+    if ! [[ "${target}" =~ ^[0-9]+$ ]]; then
+        log "malformed label '${blockedby_label}' on #${ISSUE_NUMBER} -- skipping"
+        continue
+    fi
+    log "reciprocating: applying blocks:${ISSUE_NUMBER} to issue #${target}"
+    ensure_label "${REPO}" "blocks:${ISSUE_NUMBER}"
+    gh api --method POST "repos/${REPO}/issues/${target}/labels" \
+        -f "labels[]=blocks:${ISSUE_NUMBER}" >/dev/null
+    RECIPROCATED=$((RECIPROCATED + 1))
+done <<< "${BLOCKEDBY_LABELS}"
+
+if [[ "${RECIPROCATED}" -eq 0 ]]; then
+    log "every blockedby: label on #${ISSUE_NUMBER} was malformed -- nothing reciprocated"
+    echo "AI_AGILE_STATUS: blocked \"no valid blockedby:{N} label on #${ISSUE_NUMBER}\""
     exit 0
 fi
 
-log "reciprocating: applying blocks:${ISSUE_NUMBER} to issue #${TARGET}"
-ensure_label "${REPO}" "blocks:${ISSUE_NUMBER}"
-gh api --method POST "repos/${REPO}/issues/${TARGET}/labels" \
-    -f "labels[]=blocks:${ISSUE_NUMBER}" >/dev/null
-
-log "done"
+log "done (${RECIPROCATED} reciprocated)"
 echo "AI_AGILE_STATUS: complete"
