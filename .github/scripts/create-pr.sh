@@ -15,10 +15,16 @@
 #   GITHUB_TOKEN    — token with repo write access (used for all git/gh calls)
 #                     Also used to build this script's own git auth header: since
 #                     STD-SEC-022 the orchestrator no longer forwards GIT_CONFIG_*.
-#   AI_AGILE_BOT_TOKEN — optional PAT used only for gh pr create when org policy
-#                        blocks GITHUB_TOKEN from creating pull requests
+#   AI_AGILE_BOT_TOKEN -- the system's own GitHub identity when the repository
+#                        configures one; resolved by lib/github-identity.sh
 
 set -euo pipefail
+
+# The identity every headless system action on GitHub uses (MI-7): the
+# dedicated bot when the repository configures one, otherwise exactly the token
+# this script used before. Resolved in one place, never here.
+# shellcheck source=lib/github-identity.sh
+. "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
 
 # ---------------------------------------------------------------------------
 # Git auth -- set GIT_CONFIG env vars so every git operation in this process
@@ -114,10 +120,10 @@ else
   echo "DEBUG: DEFAULT_BRANCH='${DEFAULT_BRANCH}' BRANCH='${BRANCH}'"
 
   # PR token setup.
-  _PR_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN}}}"
-  _TOKEN_SOURCE="${AI_AGILE_BOT_TOKEN:+AI_AGILE_BOT_TOKEN}"
-  _TOKEN_SOURCE="${_TOKEN_SOURCE:-${GH_TOKEN:+GH_TOKEN}}"
-  _TOKEN_SOURCE="${_TOKEN_SOURCE:-GITHUB_TOKEN}"
+  # Which credential is the system's identity is settled by
+  # lib/github-identity.sh, sourced at the top -- not chosen again here.
+  _PR_TOKEN="${GH_TOKEN}"
+  _TOKEN_SOURCE="${AI_AGILE_GH_IDENTITY}"
 
   _TOKEN_USER=$(GH_TOKEN="${_PR_TOKEN}" gh api "/user" --jq '.login' 2>/dev/null || echo "unknown")
   echo "PR token source: ${_TOKEN_SOURCE}, authenticated as: ${_TOKEN_USER}"

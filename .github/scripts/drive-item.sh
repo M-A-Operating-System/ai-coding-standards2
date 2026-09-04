@@ -20,10 +20,10 @@
 # Usage: drive-item.sh <issue-number> [extra orchestrator args...]
 #
 # Required env:
-#   REPO — owner/repo
+#   REPO -- owner/repo
 #
 # Optional env:
-#   AI_AGILE_MAX_TICKS — stop after this many ticks (default 20), so a
+#   AI_AGILE_MAX_TICKS -- stop after this many ticks (default 20), so a
 #                        misconfigured pipeline cannot spin forever.
 #
 # Exit codes:

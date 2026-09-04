@@ -586,3 +586,22 @@
 **Given** a local target branch carrying commits `origin` does not have
 **When** the rebaseline runs
 **Then** those commits are named in the output, along with the fact that they remain recoverable through `git reflog`
+
+## Scenario: Every headless system action on GitHub uses one identity
+
+**Given** a repository that configures `AI_AGILE_BOT_TOKEN`
+**When** any orchestrator-invoked script talks to GitHub -- opening a PR, merging one, marking one ready, applying a label, deleting a branch, pushing a commit, appending to the metrics ledger
+**Then** it authenticates as that one dedicated identity, resolved in `.github/scripts/lib/github-identity.sh` and nowhere else
+**And** no script chooses its own credential, so the same logical actor never appears on an issue as two different identities
+
+## Scenario: A repository without a dedicated identity keeps working
+
+**Given** a repository that configures no `AI_AGILE_BOT_TOKEN`
+**When** the same scripts run
+**Then** each falls back to exactly the token it used before, and nothing changes for it
+
+## Scenario: Interactive-session identity is out of scope, not overlooked
+
+**Given** a chat session acting on GitHub through the MCP server
+**When** its identity is asked about
+**Then** it is authenticated by session and environment configuration outside this repository, which no code change here can unify -- recorded as a separate infrastructure question rather than left implied

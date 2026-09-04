@@ -16,11 +16,11 @@
 # Usage: new-branch-pr.sh <issue-number>
 #
 # Required env:
-#   REPO         — owner/repo
-#   GITHUB_TOKEN or GH_TOKEN — passed straight through to create-pr.sh
+#   REPO         -- owner/repo
+#   GITHUB_TOKEN or GH_TOKEN -- passed straight through to create-pr.sh
 #
 # Optional env:
-#   AI_AGILE_STEP — the pipeline step to resolve naming from
+#   AI_AGILE_STEP -- the pipeline step to resolve naming from
 #                   (default 01_product_docs/create-pr)
 
 set -euo pipefail

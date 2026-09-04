@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# append-metrics-record.sh — append one record to the metrics ledger.
+# append-metrics-record.sh -- append one record to the metrics ledger.
 #
 # Usage: append-metrics-record.sh <path-to-record-line>
 #
@@ -24,12 +24,12 @@
 # rejects rather than clobbers. A rejection is retried against the new tip.
 #
 # Required env:
-#   AI_AGILE_METRICS_BRANCH          — the orphan branch holding the ledger
-#   AI_AGILE_METRICS_FILE            — the ledger path on that branch
-#   AI_AGILE_METRICS_COMMIT_MESSAGE  — the commit message for this append
+#   AI_AGILE_METRICS_BRANCH          -- the orphan branch holding the ledger
+#   AI_AGILE_METRICS_FILE            -- the ledger path on that branch
+#   AI_AGILE_METRICS_COMMIT_MESSAGE  -- the commit message for this append
 #
 # Optional env:
-#   AI_AGILE_METRICS_RETRIES         — push retries on rejection (default 2)
+#   AI_AGILE_METRICS_RETRIES         -- push retries on rejection (default 2)
 
 set -euo pipefail
 
@@ -45,24 +45,22 @@ if [[ ! -f "$RECORD_FILE" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Git auth — same pattern as commit-agent-work.sh: derive the Basic header from
+# Git auth -- same pattern as commit-agent-work.sh: derive the Basic header from
 # a token in the environment rather than inheriting the orchestrator's
 # GIT_CONFIG_* vars, which are deliberately not forwarded to scripts
 # (STD-SEC-022). The token is never embedded in a URL, keeping it out of
-# `git remote -v`, `ps`, and CI logs.
-#
-# AI_AGILE_BOT_TOKEN first (MI-7): every headless system action should reach
-# GitHub as the one dedicated identity, not as the generic identity a CI run
-# gets by default. GITHUB_TOKEN/GH_TOKEN is the fallback for a repo that has no
-# PAT configured. When neither is set the checkout's own credential helper is
-# left to do the work, exactly as before.
+# `git remote -v`, `ps`, and CI logs. Which token is the identity question, and
+# lib/github-identity.sh answers it once for every script (MI-7). When no token
+# is set at all the checkout's own credential helper is left to do the work.
 # ---------------------------------------------------------------------------
-_TOKEN="${AI_AGILE_BOT_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
-if [[ -n "$_TOKEN" ]]; then
+# shellcheck source=lib/github-identity.sh
+. "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
+
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
     # base64 -w 0 (GNU) suppresses line-wrapping; macOS base64 has no -w flag.
-    _ENCODED=$(printf 'x-access-token:%s' "$_TOKEN" \
+    _ENCODED=$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" \
         | base64 -w 0 2>/dev/null \
-        || printf 'x-access-token:%s' "$_TOKEN" | base64)
+        || printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64)
     # Remove any extraHeader actions/checkout wrote into .git/config: git would
     # otherwise send two Authorization headers and GitHub answers HTTP 400.
     git config --local --unset-all "http.https://github.com/.extraHeader" 2>/dev/null || true

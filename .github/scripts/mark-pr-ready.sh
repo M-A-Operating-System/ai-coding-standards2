@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The identity every headless system action on GitHub uses (MI-7): the
+# dedicated bot when the repository configures one, otherwise exactly the token
+# this script used before. Resolved in one place, never here.
+# shellcheck source=lib/github-identity.sh
+. "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
+
 : "${REPO:?REPO must be set}"
 : "${WORK_ITEM_KIND:?WORK_ITEM_KIND must be set}"
 : "${WORK_ITEM_NUMBER:?WORK_ITEM_NUMBER must be set}"

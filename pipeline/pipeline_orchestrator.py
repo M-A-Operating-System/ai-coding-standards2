@@ -3661,7 +3661,7 @@ def _apply_terminal_status(
 # :blocked. Neither is a credential.
 _SCRIPT_AGENT_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
     "CI_GATE_EXCLUDE_JOB_NAMES", "GITHUB_RUN_ID",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
@@ -3669,32 +3669,34 @@ _SCRIPT_AGENT_ENV_VARS = (
     "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
 )
 
-# Scripts that open or merge a PR, and so may need the bot PAT when org policy
-# blocks GITHUB_TOKEN from those operations:
-#   create-pr.sh      -- _PR_TOKEN, for `gh pr create`
-#   merge-docs-pr.sh  -- _MERGE_TOKEN, for the design-PR merge
-#   create-docs-pr.sh -- execs into create-pr.sh, so it needs it too
-# ci-gate.sh only reads check runs and never references the variable, so it is
-# not on this list. AI_AGILE_BOT_TOKEN is a classic PAT with repo+workflow
-# scopes -- the broadest credential the orchestrator holds -- so it goes only to
-# the steps that demonstrably use it.
-_PR_WRITING_SCRIPTS = (
-    "create-pr.sh",
-    "create-docs-pr.sh",
-    "merge-docs-pr.sh",
-)
+# Until issue #407, AI_AGILE_BOT_TOKEN went only to the three PR-writing
+# scripts (create-pr.sh, create-docs-pr.sh, merge-docs-pr.sh) and
+# commit-agent-work.sh, on the reasoning that a classic PAT with repo+workflow
+# scopes is the broadest credential the orchestrator holds and should reach
+# only the steps that demonstrably use it.
+#
+# MI-7 asks for something that reasoning cannot give: "Everything the system
+# does on GitHub acts as a dedicated identity of its own, never a person's
+# account or the generic identity a CI run gets by default." Splitting the
+# grant made the same logical actor appear on an issue as two identities
+# depending on which step wrote, and MI-7 needs "a person applied this label"
+# to be a fact rather than a guess. So every script that talks to GitHub is
+# handed the same credential and resolves it through one place --
+# .github/scripts/lib/github-identity.sh -- falling back to GITHUB_TOKEN in a
+# repository that configures no PAT.
+#
+# The narrowing that remains is which variables a script is handed at all
+# (these lists) and what each script is written to do. The tradeoff is stated
+# in full in lib/github-identity.sh.
 
 
 def _script_step_env_vars(script_path: Optional[str]) -> tuple[str, ...]:
     """Env allowlist for a script-type step, per STD-SEC-022.
 
-    Returns the base list, plus AI_AGILE_BOT_TOKEN only for the scripts that
-    actually consume it. Matching is on the file name so a repo that relocates
-    the scripts directory still resolves correctly.
+    One list for every script step: the identity a system action uses is not a
+    per-script decision (MI-7). script_path is kept so a future step-specific
+    grant has somewhere to live.
     """
-    name = Path(script_path).name if script_path else ""
-    if name in _PR_WRITING_SCRIPTS:
-        return _SCRIPT_AGENT_ENV_VARS + ("AI_AGILE_BOT_TOKEN",)
     return _SCRIPT_AGENT_ENV_VARS
 
 
@@ -5983,10 +5985,12 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optio
 
 # STD-SEC-022 — env vars for post_steps hooks (e.g. mark-pr-ready.sh): gh API/CLI
 # calls only, no git commits. REPO, WORK_ITEM_*, AGENT_NAME, ISSUE/PR_NUMBER, and
-# AI_AGILE_ROOT are set explicitly below.
+# AI_AGILE_ROOT are set explicitly below. AI_AGILE_BOT_TOKEN is here because a
+# post_step writes to GitHub and MI-7 wants one identity behind every system
+# write (issue #407); the scripts resolve it through lib/github-identity.sh.
 _POST_STEPS_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
     "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
@@ -7139,11 +7143,12 @@ def _read_pr_event_merged() -> bool:
         return False
 
 
-# STD-SEC-022 — env vars for delete-branch.sh: gh API only, no git commands,
-# no bot token needed. REPO and BRANCH are set explicitly below.
+# STD-SEC-022 — env vars for delete-branch.sh: gh API only, no git commands.
+# REPO and BRANCH are set explicitly below. Deleting a branch is a system write,
+# so it carries the same identity as every other one (MI-7, issue #407).
 _DELETE_BRANCH_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN",
+    "AI_AGILE_BOT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
     "http_proxy", "https_proxy", "no_proxy",
     "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",

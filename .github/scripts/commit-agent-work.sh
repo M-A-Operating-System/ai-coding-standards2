@@ -12,10 +12,18 @@
 #   GITHUB_TOKEN or GH_TOKEN — for git auth (contents:write scope)
 #
 # Optional env:
-#   AI_AGILE_BOT_TOKEN — classic PAT with repo+workflow scopes;
-#                        required when the agent wrote .github/workflows/ files.
+#   AI_AGILE_BOT_TOKEN -- the system's own GitHub identity when the repository
+#                        configures one, resolved by lib/github-identity.sh.
+#                        Required when the agent wrote .github/workflows/
+#                        files: only a PAT carries the workflow scope.
 
 set -euo pipefail
+
+# The identity every headless system action on GitHub uses (MI-7): the
+# dedicated bot when the repository configures one, otherwise exactly the token
+# this script used before. Resolved in one place, never here.
+# shellcheck source=lib/github-identity.sh
+. "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
 
 AGENT_NAME="${AGENT_NAME:?AGENT_NAME is required}"
 ISSUE_NUMBER="${ISSUE_NUMBER:?ISSUE_NUMBER is required}"
@@ -174,18 +182,19 @@ if [[ -z "$(git diff --cached --name-only)" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Detect .github/workflows/ files — GITHUB_TOKEN cannot push them.
-# AI_AGILE_BOT_TOKEN (classic PAT with repo+workflow scopes) is used instead.
+# Detect .github/workflows/ files -- the Actions-default token cannot push them;
+# only a PAT carrying the workflow scope can. lib/github-identity.sh reports
+# which credential the system resolved to, so the check is on that rather than
+# on a variable read here.
 # ---------------------------------------------------------------------------
 WORKFLOW_FILES=$(git diff --cached --name-only -- .github/workflows/ 2>/dev/null || true)
-_BOT_TOKEN="${AI_AGILE_BOT_TOKEN:-}"
 if [[ -n "$WORKFLOW_FILES" ]]; then
-    if [[ -z "$_BOT_TOKEN" ]]; then
-        echo "ERROR: agent wrote .github/workflows/ files but AI_AGILE_BOT_TOKEN is not set." >&2
-        echo "GITHUB_TOKEN cannot push workflow files — add AI_AGILE_BOT_TOKEN as a classic PAT with repo+workflow scopes." >&2
+    if [[ "${AI_AGILE_GH_IDENTITY}" != "AI_AGILE_BOT_TOKEN" ]]; then
+        echo "ERROR: agent wrote .github/workflows/ files but the system identity is ${AI_AGILE_GH_IDENTITY}." >&2
+        echo "Only a PAT with the workflow scope can push workflow files -- configure AI_AGILE_BOT_TOKEN." >&2
         exit 1
     fi
-    echo "commit-agent-work: workflow files staged — using AI_AGILE_BOT_TOKEN for push"
+    echo "commit-agent-work: workflow files staged -- pushing as the system identity (${AI_AGILE_GH_IDENTITY})"
 fi
 
 # Guard: if the staging area is empty after stash pop, there is nothing to
@@ -202,20 +211,10 @@ COMMIT_MSG="[agent] ${AGENT_NAME} — issue #${ISSUE_NUMBER}"
 git commit -m "${COMMIT_MSG}"
 
 # ---------------------------------------------------------------------------
-# Push — use AI_AGILE_BOT_TOKEN when workflow files are staged (requires the
-# workflow scope that GITHUB_TOKEN lacks), otherwise use the default auth set
-# up above.
+# Push. One credential, set up above: the auth header already carries the
+# system identity, workflow files or not, so there is no second push path that
+# could reach GitHub as somebody else (MI-7).
 # ---------------------------------------------------------------------------
-if [[ -n "$WORKFLOW_FILES" ]] && [[ -n "$_BOT_TOKEN" ]]; then
-    _PUSH_ENCODED=$(printf 'x-access-token:%s' "$_BOT_TOKEN" \
-        | base64 -w 0 2>/dev/null \
-        || printf 'x-access-token:%s' "$_BOT_TOKEN" | base64)
-    GIT_CONFIG_COUNT=1 \
-    GIT_CONFIG_KEY_0="http.https://github.com/.extraHeader" \
-    GIT_CONFIG_VALUE_0="Authorization: Basic ${_PUSH_ENCODED}" \
-    git push origin "${BRANCH}"
-else
-    git push origin "${BRANCH}"
-fi
+git push origin "${BRANCH}"
 
 echo "commit-agent-work: pushed commit to ${BRANCH}"

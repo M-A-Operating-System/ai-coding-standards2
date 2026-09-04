@@ -15,9 +15,15 @@
 # build phase to proceed only once the design is on main.
 #
 # Environment (set by orchestrator): REPO, ISSUE_NUMBER, GITHUB_TOKEN,
-#   optionally AI_AGILE_BOT_TOKEN.
+#   optionally the system identity resolved by lib/github-identity.sh.
 
 set -euo pipefail
+
+# The identity every headless system action on GitHub uses (MI-7): the
+# dedicated bot when the repository configures one, otherwise exactly the token
+# this script used before. Resolved in one place, never here.
+# shellcheck source=lib/github-identity.sh
+. "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
 
 : "${REPO:?REPO must be set}"
 : "${ISSUE_NUMBER:?ISSUE_NUMBER must be set}"
@@ -45,7 +51,8 @@ if [[ -z "${PR_NUMBER}" ]]; then
 fi
 
 # A PAT may be required where org policy blocks GITHUB_TOKEN from merging.
-_MERGE_TOKEN="${AI_AGILE_BOT_TOKEN:-${GH_TOKEN:-${GITHUB_TOKEN:-}}}"
+# Resolved once by lib/github-identity.sh, sourced at the top.
+_MERGE_TOKEN="${GH_TOKEN:-}"
 
 PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
 

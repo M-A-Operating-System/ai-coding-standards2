@@ -15,7 +15,7 @@
 # resolves and exports as AI_AGILE_BRANCH / PR_CLOSES_ISSUE (issue #406).
 #
 # Environment (set by orchestrator): REPO, ISSUE_NUMBER, AI_AGILE_BRANCH,
-#   PR_CLOSES_ISSUE, GITHUB_TOKEN, optionally AI_AGILE_BOT_TOKEN.
+#   PR_CLOSES_ISSUE, and the system identity lib/github-identity.sh resolves.
 
 set -euo pipefail
 
