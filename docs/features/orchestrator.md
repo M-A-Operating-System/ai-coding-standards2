@@ -378,3 +378,93 @@
 **When** the step runs
 **Then** it writes no label and signals `blocked`, so the mistaken request stays visible rather than being silently swallowed
 
+
+## Scenario: A flow declared in pipeline.json drives its own branch and pull-request names
+
+**Given** `pipeline.json` declares the `standard-delivery` flow with `naming.branch` `issue-{number}` and two pull requests -- `docs` on `issue-{number}-docs` (non-closing) and `code` on `issue-{number}` (closing)
+**When** a step of that flow runs on issue #247
+**Then** the branch it commits to is the one its `git_ops.commits_to` names -- `issue-247-docs` for `prd-docs-updater`, `issue-247` for `coder` -- resolved from the flow's pattern
+**And** the scripts are told that name (`AI_AGILE_BRANCH`) and whether the pull request closes the issue (`PR_CLOSES_ISSUE`), so no branch name is built from parts anywhere in Python or bash
+
+## Scenario: A step that commits in a flow with no declared branch fails loud
+
+**Given** a step declares `git_ops.commit_after` but its flow declares no `naming.branch`
+**When** the orchestrator reaches the commit
+**Then** the run fails with that reason named, rather than committing to a branch invented in code
+
+## Scenario: A coordinating flow closes its parent once every child is closed, with no bespoke orchestrator code
+
+**Given** the `epic-completion` flow applies to issues labelled `epic` and its one step declares `trigger.children: all_closed`
+**When** the last issue carrying `parent-issue:{N}` closes
+**Then** that step becomes eligible through the same per-item eligibility check every other step goes through
+**And** it posts the epic-complete comment and closes the epic, exactly as the orchestrator's own sweep used to
+**And** an epic with an open child, or with no children at all, is not eligible
+
+## Scenario: Any flow can declare the same outward-looking trigger
+
+**Given** a new step in any flow declares `trigger.children: all_closed`
+**When** the orchestrator evaluates it
+**Then** the condition is honoured with no change to the orchestrator -- the epic wait is a declaration, not a special case
+
+## Scenario: A step finishes its own work in pieces, one child per invocation
+
+**Given** a step declares `unit: sub_item` and `trigger.children: any_open`
+**When** the orchestrator evaluates it on an item with open children
+**Then** it selects one open child deterministically (lowest number first) and tells the step which piece this invocation is for, via `SUB_ITEM_NUMBER`
+**And** the step is committed after that invocation, so a later invocation that runs out of budget does not lose the pieces already finished
+**And** the step stays eligible on later ticks while any child remains open, and stops being eligible once the last one closes
+
+## Scenario: A scheduled flow reads its own due-ness from the record
+
+**Given** a flow whose trigger is a cadence rather than a work item
+**When** the orchestrator decides whether to run it
+**Then** it reads when that flow's steps last appended an entry to the metrics branch, and compares it against the cadence
+**And** a flow with no entry has never run, which is the same answer as overdue
+**And** nothing is read from, or written to, a last-run table anywhere else
+
+## Scenario: A scheduled flow's claim keeps two runners from starting the same sweep
+
+**Given** a scheduled flow is due and two orchestrator runs reach it at once
+**When** each tries to claim it by appending a claim record to the metrics branch
+**Then** exactly one append lands -- the other's push is rejected, and that rejection is the mutex answer, not an error to retry
+**And** the claim is not a `:wip` label, because a scheduled flow has no work item to label
+
+## Scenario: A stranded schedule claim does not wedge the cadence forever
+
+**Given** a runner took a scheduled flow's claim and died before releasing it
+**When** a later tick evaluates that flow after the claim's lease has expired
+**Then** the claim is treated as stranded and reclaimable, the same way a `:wip` older than its wall-clock budget is
+
+## Scenario: The orchestrator stamps a work item it raises on a step's behalf
+
+**Given** a step returns `creates_issue` in its result and declares `expected_effect.creates_issues`
+**When** the orchestrator applies that result
+**Then** it raises the work item itself and stamps the body with which step and which flow produced it (`<!-- ai-agile/provenance/v1 step=... flow=... -->`)
+**And** the step never creates the issue itself
+
+## Scenario: MI-6 surfaces a step that disagrees with itself about raising work
+
+**Given** a step declares `expected_effect.creates_issues: true` but returns no `creates_issue`, or returns one having declared `false`
+**When** the orchestrator applies the result
+**Then** the disagreement is surfaced rather than buried
+**And** an undeclared request is refused, not silently honoured -- the same relationship `allowed_labels` has with label requests
+
+## Scenario: A repository's own pipeline.json replaces the flows it names and inherits the rest
+
+**Given** a consuming repository has its own `pipeline/pipeline.json` at its repo root, outside the submodule, naming one flow
+**When** the orchestrator loads the pipeline
+**Then** that flow's whole definition replaces the shipped flow of the same name -- never a field-by-field merge
+**And** every flow the file does not name is inherited from the shipped default unchanged
+**And** a flow the shipped file does not have is added
+
+## Scenario: A broken repository override stops the run instead of being ignored
+
+**Given** a repository's own `pipeline/pipeline.json` composes into a definition that does not validate against the schema
+**When** the orchestrator loads the pipeline
+**Then** it names the violations and exits, rather than running on a half-understood definition or silently discarding the override
+
+## Scenario: A repository with no pipeline.json of its own is unaffected
+
+**Given** a repository has no `pipeline/pipeline.json` of its own
+**When** the orchestrator loads the pipeline
+**Then** it runs exactly the shipped flows, with no composition step observable in its behaviour
