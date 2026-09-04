@@ -1157,6 +1157,20 @@ class GitHubClient:
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
 
+    def create_issue(self, title: str, body: str, labels: Optional[list] = None) -> int:
+        """Raise a new work item and return its number.
+
+        The orchestrator is the only writer (PRODUCT.md, "What a step must
+        never do"): a step returns what it produced, and this is the
+        orchestrator writing it. The body it is given already carries the
+        provenance stamp naming the step and flow that produced it.
+        """
+        payload: dict = {"title": title, "body": body}
+        if labels:
+            payload["labels"] = list(labels)
+        data = self._post(f"/repos/{self.repo}/issues", payload)
+        return int(data["number"])
+
     def list_comment_bodies(self, number: int) -> list[str]:
         """Return every comment body on an issue or PR, oldest first, paginated."""
         bodies: list[str] = []
@@ -2597,6 +2611,7 @@ class StepResult:
     expected_effect: dict = field(default_factory=dict)   # the step's own belief about what it changed this run
     label_requests: list = field(default_factory=list)    # [{"issue": int|None, "add": [...], "remove": [...]}]
     body_write: dict = field(default_factory=dict)        # {} = none; see _read_step_result for the two shapes
+    creates_issue: dict = field(default_factory=dict)     # {} = none; {"title": str, "body": str, "labels": [str]} -- a new work item for the orchestrator to raise and stamp
 
 
 def _result_file_path(scratch_dir: str) -> Path:
@@ -2679,6 +2694,18 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         else:
             return None, 'result.body_write.mode must be "replace" or "patch"'
 
+    creates_issue = raw.get("creates_issue", {})
+    if not isinstance(creates_issue, dict):
+        return None, "result.creates_issue must be an object"
+    if creates_issue:
+        if not isinstance(creates_issue.get("title"), str) or not creates_issue["title"].strip():
+            return None, "result.creates_issue.title must be a non-empty string"
+        if not isinstance(creates_issue.get("body"), str):
+            return None, "result.creates_issue.body must be a string"
+        _ci_labels = creates_issue.get("labels", [])
+        if not isinstance(_ci_labels, list) or not all(isinstance(x, str) for x in _ci_labels):
+            return None, "result.creates_issue.labels must be an array of strings"
+
     return StepResult(
         outcome=outcome,
         summary=summary,
@@ -2688,6 +2715,7 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         expected_effect=expected_effect,
         label_requests=label_requests,
         body_write=body_write,
+        creates_issue=creates_issue,
     ), ""
 
 
@@ -2749,6 +2777,113 @@ def _apply_label_requests(
                 "  could not %s label %r on #%d (requested by %s): %s",
                 op, lbl, target, agent_def.agent, exc,
             )
+
+
+# ---------------------------------------------------------------------------
+# The orchestrator stamps what it creates (issue #406)
+#
+# A step returns what it produced and the orchestrator writes it; when what it
+# produced is a new work item, the orchestrator also records which step and
+# which flow produced it. That provenance is what lets a flow find its own
+# earlier output and raise only what is new since (PRODUCT.md).
+# ---------------------------------------------------------------------------
+
+def provenance_stamp(agent_def: "AgentDef") -> str:
+    """The marker recording which step, in which flow, produced a work item.
+
+    Same convention as the orchestrator's other markers (announcement,
+    artefact, snapshot): an HTML comment carrying the version and the author.
+    """
+    return (
+        f"<!-- ai-agile/provenance/v1 step={agent_def.agent} "
+        f"flow={agent_def.flow or 'none'} -->"
+    )
+
+
+def stamped_issue_body(agent_def: "AgentDef", body: str, work_item: "WorkItem") -> str:
+    """A created work item's body, with its provenance stamp and origin."""
+    return (
+        f"{provenance_stamp(agent_def)}\n\n"
+        f"{body.rstrip()}\n\n"
+        f"---\n"
+        f"_Raised by `{agent_def.agent}` (flow `{agent_def.flow or 'none'}`) "
+        f"while working on #{work_item.number}._"
+    )
+
+
+def expected_effect_disagreement(
+    agent_def: "AgentDef", *, requested_issue: bool,
+) -> Optional[str]:
+    """MI-6: does what the step declared match what it actually asked for?
+
+    A step declaring expected_effect.creates_issues that raises nothing, or
+    raising one having declared it would not, disagrees with itself, and the
+    disagreement is surfaced rather than buried. Note that a step which raises
+    issues with its own granted `gh issue create` rather than through the
+    result contract also reads as "declared but did not request" here, until
+    it moves to returning the request.
+    """
+    declared = bool((agent_def.expected_effect or {}).get("creates_issues", False))
+    if requested_issue and not declared:
+        return (
+            "requested a new work item but declares expected_effect."
+            "creates_issues: false"
+        )
+    if declared and not requested_issue:
+        return (
+            "declares expected_effect.creates_issues: true but requested no "
+            "work item"
+        )
+    return None
+
+
+def _create_requested_issue(
+    gh: "GitHubClient",
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    step_result: Optional["StepResult"],
+) -> Optional[int]:
+    """Raise the work item this step's result asked for, stamped. Never raises.
+
+    Refused, not silently created, when the step never declared
+    expected_effect.creates_issues -- the same enforced-not-discouraged
+    relationship allowed_labels has with label requests. Returns the new
+    issue number, or None when nothing was created.
+    """
+    request = (step_result.creates_issue if step_result else {}) or {}
+    disagreement = expected_effect_disagreement(
+        agent_def, requested_issue=bool(request),
+    )
+    if disagreement:
+        log.warning(
+            "  MI-6    %-38s  %s", agent_def.agent, disagreement,
+        )
+    if not request:
+        return None
+    if not bool((agent_def.expected_effect or {}).get("creates_issues", False)):
+        log.warning(
+            "  refusing to raise a work item for %s: it declares "
+            "expected_effect.creates_issues: false",
+            agent_def.agent,
+        )
+        return None
+    try:
+        number = gh.create_issue(
+            request["title"],
+            stamped_issue_body(agent_def, request.get("body", ""), work_item),
+            request.get("labels") or None,
+        )
+    except Exception as exc:
+        log.warning(
+            "  could not raise the work item requested by %s on #%d: %s",
+            agent_def.agent, work_item.number, exc,
+        )
+        return None
+    log.info(
+        "  RAISED  %-38s  #%d (stamped: step=%s flow=%s)",
+        agent_def.agent, number, agent_def.agent, agent_def.flow or "none",
+    )
+    return number
 
 
 def _post_artefact_if_present(
@@ -3931,6 +4066,10 @@ def _resolve_agent_invocation(
         f"  label_requests    [{{\"issue\": null, \"add\": [...], \"remove\": [...]}}] — \"issue\" null\n"
         f"                    means this work item; only requests matching your declared\n"
         f"                    allowed_labels are applied, the rest are silently dropped\n"
+        f"  creates_issue     {{\"title\": ..., \"body\": ..., \"labels\": [...]}} — a new work item\n"
+        f"                    for the orchestrator to raise on your behalf and stamp with the\n"
+        f"                    step and flow that produced it; only honoured when this step\n"
+        f"                    declares expected_effect.creates_issues\n"
         f"Do not print an AI_AGILE_STATUS sentinel — that mechanism is retired for agent-type "
         f"steps. The orchestrator reads the result file, applies the matching label, posts the "
         f"closing announcement and any artefact/label changes on your behalf."
@@ -6019,6 +6158,23 @@ def _apply_result(
     # Apply the step's requested body write, if any (issue #401) — a step
     # never writes the issue/PR body itself.
     _apply_body_write(gh, agent_def, work_item, step_result)
+
+    # Raise the work item the step asked for, if any (issue #406) — stamped
+    # with the step and flow that produced it, and compared against what the
+    # step declared it would do (MI-6).
+    _created_issue = _create_requested_issue(gh, agent_def, work_item, step_result)
+    if _created_issue is not None:
+        try:
+            gh.post_comment(
+                work_item.number,
+                f"{provenance_stamp(agent_def)}\n"
+                f"**`{agent_def.agent}`** raised #{_created_issue}.",
+            )
+        except Exception as exc:
+            log.warning(
+                "  could not note the raised work item on #%d: %s",
+                work_item.number, exc,
+            )
 
     # Refresh label set from GitHub after our writes.
     labels_refreshed = gh.get_issue_labels(work_item.number)
