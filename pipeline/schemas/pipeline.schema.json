@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-agile.org/standards/schemas/pipeline.schema.json",
+  "title": "AI Agile Pipeline",
+  "description": "The agent dependency graph that the orchestrator uses to decide which agent runs next. See docs/product/orchestrator/05-pipeline-config.md.",
+  "type": "object",
+  "required": ["pipeline"],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": { "type": "string" },
+    "defaults": {
+      "type": "object",
+      "description": "Pipeline-level defaults merged into every agent invocation.",
+      "additionalProperties": false,
+      "properties": {
+        "extra_allowedTools": {
+          "type": "array",
+          "description": "Tools prepended to every agent's extra_allowedTools. Agents can extend this list in their own frontmatter.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "pipeline": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/agent" }
+    }
+  },
+  "definitions": {
+    "agent": {
+      "type": "object",
+      "required": [
+        "agent",
+        "phase",
+        "object",
+        "trigger",
+        "dependencies",
+        "human_gate_after",
+        "description"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string",
+          "pattern": "^(00_ondemand|01_product_docs|02_design|03_execute|04_evaluate|05_continuous)/[a-z][a-z0-9-]*[a-z0-9]$",
+          "description": "Stable agent name in the form {phase}/{short-name}; matches the prompt at .claude/agents/{phase}/{short-name}.md and the name: field in that prompt's frontmatter. The phase prefix is numeric-prefixed (e.g. 01_product_docs) so the directory tree sorts in lifecycle order. 00_ondemand holds human-triggered agents outside the lifecycle flow. The phase prefix must equal the phase field. See docs/product/orchestrator/12-agent-spec.md."
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "00_ondemand",
+            "01_product_docs",
+            "02_design",
+            "03_execute",
+            "04_evaluate",
+            "05_continuous"
+          ]
+        },
+        "object": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["issue", "pr"] }
+        },
+        "trigger": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "description": "One or more trigger shapes. The orchestrator fires when ANY shape is satisfied.",
+          "properties": {
+            "event": { "type": "string" },
+            "label": { "type": "string" },
+            "schedule": { "type": "string", "description": "cron expression" },
+            "path_filter": { "type": "string", "description": "glob; modifier on event triggers" }
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "human_gate_after": { "type": "boolean" },
+        "human_gate_label": {
+          "type": "string",
+          "description": "Required when human_gate_after is true."
+        },
+        "auto_approve_on_complete": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true and the agent emits :complete, the orchestrator automatically applies human_gate_label without requiring a human to act. Use for agents whose :review path needs a gate (conflicted PRs) but whose :complete path should advance uninterrupted (clean PRs)."
+        },
+        "session": {
+          "type": "object",
+          "description": "Session management configuration for this agent. Controls whether the claude CLI is invoked with a per-issue session ID or a single shared session ID across all issues.",
+          "additionalProperties": false,
+          "required": ["scope"],
+          "properties": {
+            "scope": {
+              "type": "string",
+              "enum": ["per_issue", "global"],
+              "description": "per_issue — unique session per work item; default ID: ais-v1-{safe_agent}-issue-{number}. global — one persistent session for all invocations of this agent; default ID: ais-v1-{safe_agent}. Use global for agents that benefit from accumulated context across issues (e.g. doc reviewers)."
+            },
+            "id_pattern": {
+              "type": "string",
+              "description": "Optional token pattern for the session ID. Available tokens: {agent}, {safe_agent}, {phase}, {safe_phase}, {number}, {kind}, {owner}, {repo_name}, {safe_repo}. Only bare {identifier} placeholders are allowed — attribute/index access is rejected. When omitted the built-in default for the chosen scope is used. See docs/product/orchestrator/05-pipeline-config.md §Session ID tokens."
+            }
+          }
+        },
+        "type": {
+          "type": "string",
+          "enum": ["agent", "script"],
+          "default": "agent",
+          "description": "Invocation mode. 'agent' (default) invokes Claude CLI with the matching .claude/agents/{phase}/{name}.md prompt. 'script' runs the file at the 'script' path directly via bash with the standard environment variables."
+        },
+        "script": {
+          "type": "string",
+          "description": "Repo-relative path to the shell script to execute. Required when type is 'script'; ignored otherwise."
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 0,
+          "description": "How many times the orchestrator will re-invoke this step after a :failed outcome before giving up. 0 means no retries (fail immediately)."
+        },
+        "max_concurrent": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "default": 1,
+          "description": "Maximum concurrent instances of this agent type across all work items in a single orchestrator tick. The orchestrator counts :wip labels before launching and skips eligible work items once this ceiling is reached. Null or absent means 1 (default). A pipeline-wide aggregate ceiling (see PIPELINE_MAX_CONCURRENT in pipeline_orchestrator.py for the authoritative value) applies across all agent types regardless of per-agent values."
+        },
+        "git_ops": {
+          "type": "object",
+          "description": "Declares that this agent produces file output the orchestrator should commit, push, and optionally open a PR for. Absent means the agent does not produce file output.",
+          "additionalProperties": false,
+          "required": ["commit_after"],
+          "properties": {
+            "commit_after": {
+              "type": "boolean",
+              "description": "When true the orchestrator stages all changes and creates a commit after the agent exits successfully."
+            },
+            "branch_prefix": {
+              "type": "string",
+              "description": "Prefix for the branch the orchestrator creates before invoking the agent. Final branch name: {branch_prefix}{issue_number}."
+            },
+            "pr_lifecycle": {
+              "type": "boolean",
+              "description": "When true the orchestrator opens a draft PR before invoking the agent (on the branch identified by branch_prefix)."
+            }
+          }
+        },
+        "post_steps": {
+          "type": "array",
+          "description": "Ordered list of repo-relative paths to bash scripts the orchestrator runs after the agent signals :complete. Each script runs with REPO, WORK_ITEM_KIND, WORK_ITEM_NUMBER, AGENT_NAME, ISSUE_NUMBER (or PR_NUMBER), and AI_AGILE_ROOT set. A non-zero exit transitions the work item from :complete to :failed.",
+          "items": { "type": "string" }
+        },
+        "review_gate": {
+          "type": "boolean",
+          "description": "Set true only on the agent that acts as the final automated review gate before human merge approval (currently pr-reviewer). Controls whether unresolved human REQUEST_CHANGES reviews trigger a free coder re-invoke. Independent of post_steps."
+        },
+        "exclude_classifications": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["bug", "toil", "enhancement", "feature", "spike"]
+          },
+          "description": "Skip this agent when the issue classification matches any value in this list. Classification is read from a 'classification: {type}' label or a '[TYPE]' title prefix applied by issue-classifier."
+        },
+        "exclude_labels": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "Skip this agent when any of these labels is present on the work item. Use to prevent pipeline stages running on epics ('epic') or issues blocked by sub-issues ('blocked')."
+        },
+        "review_loop": {
+          "type": "object",
+          "description": "Automatic retry loop: when this agent emits :review, the orchestrator re-invokes a target agent (up to max_cycles times) before escalating to human sign-off. Only applies to agents that emit :review.",
+          "additionalProperties": false,
+          "required": ["re_invoke", "max_cycles"],
+          "properties": {
+            "re_invoke": {
+              "type": "string",
+              "description": "The agent to re-invoke when this agent requests changes. Must be an earlier stage in the pipeline (e.g. coder for pr-reviewer)."
+            },
+            "max_cycles": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Maximum number of retry cycles. After this many REQUEST CHANGES verdicts, the orchestrator escalates to human sign-off."
+            },
+            "also_clear": {
+              "type": "array",
+              "description": "Additional agent names whose :complete label is also cleared when the review loop fires, so intermediate steps re-run on the next cycle (e.g. ci-gate between coder and pr-reviewer).",
+              "items": { "type": "string" },
+              "uniqueItems": true
+            }
+          }
+        },
+        "extra_allowedTools": {
+          "type": "array",
+          "description": "Additional tools allowed for this agent beyond the pipeline defaults. Merged with defaults.extra_allowedTools at invocation time.",
+          "items": { "type": "string" }
+        },
+        "script_timeout_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 7200,
+          "description": "Override the default script timeout (seconds) for script-type steps that need longer polling windows (e.g. ci-gate)."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "human_gate_after": { "const": true } } },
+          "then": { "required": ["human_gate_label"] }
+        },
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "const": "script" } }
+          },
+          "then": { "required": ["script"] }
+        }
+      ]
+    }
+  }
+}

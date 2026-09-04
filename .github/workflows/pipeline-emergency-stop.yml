@@ -1,0 +1,110 @@
+name: Pipeline Emergency Stop
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for stopping (recorded in .pipeline-stop and audit log)'
+        required: true
+        type: string
+      cancel_runs:
+        description: 'Cancel all currently-running orchestrator workflow runs'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  emergency-stop:
+    name: Write stop marker and cancel in-flight runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Write stop marker
+        env:
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYEOF'
+          import json, os, datetime
+          marker = {
+            "stopped_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "reason": os.environ["REASON"],
+            "stopped_by": "github-actions",
+          }
+          with open(".pipeline-stop", "w") as f:
+              json.dump(marker, f, indent=2)
+          print(f"Stop marker written: {json.dumps(marker)}")
+          PYEOF
+
+      - name: Commit and push stop marker
+        run: |
+          set -euo pipefail
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add .pipeline-stop
+          git commit -m "chore: write emergency stop marker [skip ci]"
+          git push
+
+      - name: Cancel in-flight orchestrator runs
+        if: ${{ github.event.inputs.cancel_runs == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "Cancelling in-progress orchestrator runs..."
+          CANCELLED=0
+          RUN_IDS=$(gh run list \
+            --repo "$REPO" \
+            --workflow orchestrator.yml \
+            --status in_progress \
+            --json databaseId \
+            --jq '.[].databaseId')
+          for RUN_ID in $RUN_IDS; do
+            if gh run cancel "$RUN_ID" --repo "$REPO" 2>/dev/null; then
+              echo "Cancelled run $RUN_ID"
+              CANCELLED=$((CANCELLED + 1))
+            fi
+          done
+          echo "Total runs cancelled: $CANCELLED"
+          echo "CANCELLED_COUNT=$CANCELLED" >> "$GITHUB_ENV"
+
+      - name: Summary
+        env:
+          REASON: ${{ github.event.inputs.reason }}
+          ACTOR: ${{ github.actor }}
+          CANCEL_RUNS: ${{ github.event.inputs.cancel_runs }}
+        run: |
+          set -euo pipefail
+          echo "## Pipeline Emergency Stop Applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Reason:** ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** ${ACTOR}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${CANCEL_RUNS}" = "true" ]; then
+            echo "**Runs cancelled:** ${CANCELLED_COUNT:-0}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The pipeline will not invoke any agents until the stop marker is cleared." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### How to restart" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Delete the stop marker from the default branch and push. The next" >> "$GITHUB_STEP_SUMMARY"
+          echo "scheduled orchestrator run (every 30 min) or any new issue/PR event" >> "$GITHUB_STEP_SUMMARY"
+          echo "then resumes normal operation:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "git rm .pipeline-stop" >> "$GITHUB_STEP_SUMMARY"
+          echo "git commit -m 'chore: clear emergency stop marker [skip ci]'" >> "$GITHUB_STEP_SUMMARY"
+          echo "git push" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "To resume immediately without waiting for the next scheduled run, also" >> "$GITHUB_STEP_SUMMARY"
+          echo "trigger the orchestrator manually (Actions -> Pipeline Orchestrator ->" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run workflow), or run the **Pipeline Restart** workflow if it is installed." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Note: runs starting after this workflow began are not cancelled; the stop marker prevents all subsequent agent invocations." >> "$GITHUB_STEP_SUMMARY"

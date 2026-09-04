@@ -1,0 +1,7 @@
+{
+  "$schema": "../pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "org",
+  "description": "Approved Architecture Decision Records. Each ADR authorises a specific design choice that would otherwise violate a standard marked adr_overridable: true. Cite the ADR ID inline where the authorised pattern appears and in any pr-reviewer finding to downgrade the severity to Informational.",
+  "adrs": []
+}

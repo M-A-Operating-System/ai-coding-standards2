@@ -1,0 +1,36 @@
+name: Validate pipeline
+
+on:
+  pull_request:
+    paths:
+      - 'pipeline/pipeline.json'
+      - 'pipeline/schemas/pipeline.schema.json'
+      - 'pipeline/validate.py'
+      - '.github/workflows/validate-pipeline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pipeline/pipeline.json'
+      - 'pipeline/schemas/pipeline.schema.json'
+      - 'pipeline/validate.py'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate pipeline.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install jsonschema
+
+      - name: Run validator
+        run: python pipeline/validate.py

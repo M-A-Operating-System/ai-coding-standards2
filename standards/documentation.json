@@ -1,0 +1,163 @@
+{
+  "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "org",
+  "category": "documentation",
+  "description": "Org-wide documentation standards for master-model-maven (settled-decision stability, claim traceability, specification intent voice, coverage via BDD .feature evidence, MAOS spec codification, canonical AI-first structure). Checked by the pr-reviewer agent against documentation changes.",
+  "standards": [
+    {
+      "id": "STD-DOC-001",
+      "title": "Do not reopen settled design decisions without explicit instruction",
+      "description": "Design decisions recorded as settled (the Confirmed Design Decisions tables in CLAUDE.md, accepted ADRs, and decisional product-spec sections) are treated as fixed. A change must not silently re-litigate, contradict, or reverse a settled decision; doing so requires an explicit instruction or a superseding ADR referenced in the change.",
+      "rationale": "Settled decisions exist so they are not re-debated on every PR; a change that quietly reverses one reintroduces resolved questions and diverges code from documented intent. Source: CLAUDE.md (Confirmed Design Decisions); docs/adr/.",
+      "acceptance_criteria": [
+        "No change in the diff contradicts or reverses a decision marked settled in CLAUDE.md, an accepted ADR, or a decisional spec section without citing an explicit instruction or superseding ADR.",
+        "A change that revisits a settled decision in the diff references the ADR (or instruction) that authorises the reversal.",
+        "Documentation edits in the diff do not delete or weaken a Confirmed Design Decision without a referenced authorisation."
+      ],
+      "anti_patterns": [
+        "Re-introducing a separate consulting alert when single-delivery-per-submission is settled.",
+        "Editing a Confirmed Design Decision table to flip a decision with no ADR or instruction cited."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from CLAUDE.md — Confirmed Design Decisions"
+    },
+    {
+      "id": "STD-DOC-002",
+      "related": [
+        "STD-DOC-004"
+      ],
+      "title": "Every product-doc claim is traceable to a test or an open issue",
+      "description": "A claim of behaviour in a product/capability specification must either be specified as a scenario in a BDD .feature (generated from the capability) and realised by a passing executable test, or be accompanied by an open GitHub issue / roadmap gap that records it. New or changed behavioural claims are not left untraceable.",
+      "rationale": "Untraceable claims drift from the implementation and cannot be verified; tying each claim to a behaviour-spec scenario (with a test) or a tracked gap keeps the docs honest. Source: docs/product/_testing/01-overview.md §1.1 (Claims are traceable); STD-PROC-008.",
+      "acceptance_criteria": [
+        "Each new or changed behavioural claim in a specification in the diff has a corresponding BDD .feature scenario (realised by a passing test) or a referenced open issue/roadmap gap.",
+        "A documented behaviour added in the diff without a passing test links the gap that tracks the missing coverage.",
+        "The diff does not add a behavioural claim with neither a BDD/test nor a tracked gap."
+      ],
+      "anti_patterns": [
+        "Documenting a new redirect/authorization behaviour with no BDD .feature/test and no open issue.",
+        "Adding a spec claim that contradicts the BDD/tests without updating either."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/product/_testing/01-overview.md §1.1 — Claims are traceable"
+    },
+    {
+      "id": "STD-DOC-003",
+      "related": [
+        "STD-PROC-005",
+        "STD-DOC-001"
+      ],
+      "title": "Specifications state intent in future/invariant voice — no tests, no 'Planned/Future'",
+      "description": "Product and Capability Specifications (docs/product/) describe what the system must do in future/invariant voice — contracts, invariants, data model, authorisation rules, user-facing behaviour and outcomes. They do not reference test IDs/files or coverage/evidence state, contain no 'Planned' or 'Future work' headings, and do not track gaps (planned behaviour and gaps are the roadmap/issues, STD-PROC-005). When a specification disagrees with code, code wins and a type:debt/area:docs issue is filed rather than editing the spec in place.",
+      "rationale": "A specification that mixes intent with coverage, planned work, or test references stops being a trustworthy contract; keeping it pure intent lets a reader answer 'what does it do?' without inference. Source: docs/_process/02_product-led-design.md.",
+      "acceptance_criteria": [
+        "Product/Capability specification changes in the diff are written in future/invariant voice ('Unauthenticated requests receive 401'), not 'we test that…'.",
+        "A specification in the diff contains no test IDs/file references, no coverage/evidence tables, and no 'Planned'/'Future work' headings.",
+        "A gap discovered in the diff is filed as an issue / reflected in the roadmap, not added as a markdown gap/TODO in the spec."
+      ],
+      "anti_patterns": [
+        "A 'Planned' or 'Future work' heading in a product/capability specification.",
+        "A specification that cites a test file or says 'we test that X'.",
+        "A '❌ Status: gap' or 'what is NOT tested' section in a specification."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/02_product-led-design.md"
+    },
+    {
+      "id": "STD-DOC-004",
+      "related": [
+        "STD-DOC-002",
+        "STD-PROC-008",
+        "STD-PROC-014"
+      ],
+      "title": "Coverage is the BDD .feature's test evidence, not a hand-maintained doc",
+      "description": "Coverage — what is proven now — is the evidence status of the BDD specification: each BDD .feature scenario (generated from a capability) is either realised by a passing executable test (tests/features) or is an open gap tracked in the roadmap / a GitHub issue. Coverage is derived from the test evidence, not hand-maintained in a separate doc. A scenario with no passing test, or a failing one, signals an open gap (STD-PROC-005, STD-PROC-014).",
+      "rationale": "Deriving coverage from the .feature↔test evidence keeps it truthful and current; a hand-maintained coverage table drifts from reality and rots. Source: docs/_process/03 / 04; MAOS BDD Specification.",
+      "acceptance_criteria": [
+        "Every BDD .feature scenario touched in the diff is either realised by a passing executable test or has a tracked gap.",
+        "Coverage in the diff is expressed via the .feature↔test evidence, not a hand-maintained coverage table.",
+        "A capability/behaviour added in the diff with no passing test links the gap (roadmap/issue, STD-PROC-014)."
+      ],
+      "anti_patterns": [
+        "Maintaining a separate coverage table that duplicates or drifts from the test evidence.",
+        "A BDD .feature scenario with no executable test and no tracked gap."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from docs/_process/03 / 04; MAOS BDD Specification"
+    },
+    {
+      "id": "STD-DOC-005",
+      "related": [
+        "STD-PROC-008",
+        "STD-PROC-009",
+        "STD-PROC-013",
+        "STD-PROC-014",
+        "STD-DOC-003",
+        "STD-DOC-006"
+      ],
+      "title": "Follow the canonical AI-first repository structure and MAOS spec taxonomy",
+      "description": "The repo is a codified, AI-first product knowledge system. Specifications follow the MAOS taxonomy — five human- and machine-readable spec types: Product Specification (docs/product/product-spec.md — Purpose, Scope, Capabilities, Roadmap Alignment, Success Measures); Capability Specifications (docs/product/capabilities/<id>.{md|yaml} — Outcome, Business Context, Inputs, Outputs, User Journeys, Dependencies — STD-DOC-006); Roadmap Specification (docs/product/roadmap.yaml — Outcomes, Milestones, Dependencies, Risks, Measures; calculated — STD-PROC-014); BDD Specifications (Gherkin .feature under tests/features/{playwright,deno}/, referenced by capabilities); Decision Specifications (docs/product/decisions/<id>.md — rules, policies, operational decisions). Governing process narrative is docs/_process/; technical-architecture narrative is docs/_architecture/, which references the codified engineering standards in standards/ — the detailed policing layer that sits alongside the specs. Step definitions/fixtures under tests/; frontend in src/; edge functions and migrations in supabase/. Names are kebab-case; there is no docs/agile/ or docs/reviews/.",
+      "rationale": "One home per spec type, on the MAOS taxonomy, keeps the linear, backward-traceable knowledge chain navigable by humans and AI; the standards police engineering quality alongside it. Source: MAOS Specification Framework; docs/_process/.",
+      "acceptance_criteria": [
+        "Specifications in the diff use the MAOS taxonomy (Product, Capability, Roadmap, BDD, Decision) and are both human- and machine-readable.",
+        "Product definition in the diff lives in docs/product/ (product-spec.md, capabilities/, decisions/, roadmap.yaml); behaviour specs are .feature under tests/features/.",
+        "Engineering policing rules in the diff live in standards/*.json (referenced by docs/_architecture/); process narrative in docs/_process/.",
+        "Names are kebab-case; the diff does not add docs/agile/ or docs/reviews/."
+      ],
+      "anti_patterns": [
+        "A capability described only in prose with no Capability Specification artifact (STD-DOC-006).",
+        "Putting engineering policing rules in product specs, or product intent in standards/.",
+        "A camelCase id, or a hand-maintained roadmap status."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from MAOS Specification Framework + docs/_process/ (AI-first product engineering)"
+    },
+    {
+      "id": "STD-DOC-006",
+      "related": [
+        "STD-PROC-013",
+        "STD-DOC-003",
+        "STD-DOC-005"
+      ],
+      "title": "Specifications are codified to the MAOS templates (capability, product, decision)",
+      "description": "MAOS specifications are codified to a consistent, machine-readable template so humans and AI parse them identically. A Capability Specification has a stable kebab-case id and covers Outcome, Business Context, Inputs, Outputs, User Journeys, and Dependencies, and references its BDD .feature(s) — the capability is the canonical unit bridging product, roadmap, and verification (STD-PROC-013). A Product Specification covers Purpose, Scope, Capabilities, Roadmap Alignment, and Success Measures. A Decision Specification covers the rule/policy/operational decision, its context, and its consequences. Capabilities are named in business language, not implementation terms, and every spec links to its adjacent artifacts (module/outcome/BDD/evidence) by id.",
+      "rationale": "Consistent codified specs let AI generate capabilities, BDD, tests, and reports from them and let humans review them; freeform specs cannot be reasoned over or traversed. Source: MAOS Specification Framework (templates); docs/_process/02_product-led-design.md.",
+      "acceptance_criteria": [
+        "A Capability Specification in the diff has a stable kebab-case id, the MAOS sections (Outcome, Business Context, Inputs, Outputs, User Journeys, Dependencies), and references its BDD .feature(s).",
+        "Capabilities in the diff are named in business language (e.g. 'Search Public Trees'), not implementation terms (e.g. 'Build Search API').",
+        "Product and Decision specifications in the diff follow their MAOS templates and link to adjacent artifacts by id."
+      ],
+      "anti_patterns": [
+        "A capability named for its implementation ('Create React Component', 'Add Database Table').",
+        "A spec with no stable id or links, that AI/tools cannot traverse."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ],
+      "source": "Migrated from MAOS Specification Framework; docs/_process/02_product-led-design.md"
+    }
+  ]
+}

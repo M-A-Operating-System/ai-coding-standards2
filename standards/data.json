@@ -1,0 +1,293 @@
+{
+  "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "org",
+  "category": "data",
+  "description": "Org-wide data and migration standards for master-model-maven (table/column/key naming, primary and foreign keys, CDC, three-schema migrations, schemas-as-modules, Display-ID format, regulated-data gate). Migration-safety and CDC rules are non-overridable; naming, metadata, and the regulated-data gate are ADR-overridable.",
+  "standards": [
+    {
+      "id": "STD-DATA-001",
+      "related": ["STD-PROC-020"],
+      "title": "Follow the three-schema migration checklist for every new entity",
+      "description": "A new entity migration must: create the base table in the dm schema; ENABLE ROW LEVEL SECURITY on it; add a SELECT policy for authenticated users and INSERT/UPDATE/DELETE policies gated by has_role(); create a passthrough view (security_invoker = true) in the public schema; grant SELECT on the public view and INSERT/UPDATE/DELETE on the dm base table; and register the entity in entityRegistry.ts.",
+      "rationale": "Skipping any step (RLS, view, grants, registry) yields an entity that is either inaccessible, unguarded, or invisible to the schema-driven UI. Source: docs/AI_INSTRUCTIONS.md §Migration Checklist and Common Tasks (Adding a New Entity).",
+      "acceptance_criteria": [
+        "Each new dm table in the migration has RLS enabled, a SELECT policy, and role-gated write policies.",
+        "Each new dm table has a corresponding public view and grants (SELECT on the view, write grants on the dm table).",
+        "The new entity is registered in src/config/entityRegistry.ts in the same change set."
+      ],
+      "anti_patterns": [
+        "A migration that creates a dm table and view but omits the write grants or RLS policies.",
+        "Adding an entity to the UI without registering it in entityRegistry.ts."
+      ],
+      "adr_overridable": false,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Migration Checklist / Adding a New Entity"
+    },
+    {
+      "id": "STD-DATA-002",
+      "title": "Do not use INSTEAD OF triggers; grant on the view and base table",
+      "description": "This project does not use INSTEAD OF triggers for any database operation. Views are read projections; writes go directly to the underlying dm table via grants. To enable writes through a view, grant SELECT on the public view and INSERT/UPDATE/DELETE on the dm base table — never via an INSTEAD OF trigger.",
+      "rationale": "No view in this database uses INSTEAD OF triggers; the grant-based pattern is simpler and is the established convention. Source: docs/AI_INSTRUCTIONS.md §2 and §Security 3.",
+      "acceptance_criteria": [
+        "No migration in the diff creates an INSTEAD OF trigger on a view.",
+        "Write enablement through a view in the diff is implemented via grants on the dm base table.",
+        "Public views in the diff are simple passthrough projections, not write-routing triggers."
+      ],
+      "anti_patterns": [
+        "`CREATE TRIGGER ... INSTEAD OF INSERT ON public.my_view ...`",
+        "Routing view writes through a trigger function instead of base-table grants."
+      ],
+      "adr_overridable": false,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Critical Architectural Rules §2 / Security Best Practices §3"
+    },
+    {
+      "id": "STD-DATA-003",
+      "title": "Regenerate the schema cache after any schema change, with full metadata",
+      "description": "When database schemas change (tables/columns added, removed, renamed, retyped, or constraints/foreign keys modified), regenerate src/config/tableSchemas.ts so the app stays in sync. The regenerated cache must include foreign_key metadata with a display_columns array (ID/CODE/NAME pattern), mark bytea file columns with is_file_upload: true, preserve USER-DEFINED enum types via the correct udt_name, and include numeric_scale for numeric types.",
+      "rationale": "The schema-driven UI reads tableSchemas.ts; a stale or metadata-incomplete cache silently breaks form generation, foreign-key selects, and file uploads. Source: docs/AI_INSTRUCTIONS.md §Regenerating Table Schemas; docs/SCHEMA_REGENERATION_INSTRUCTIONS.md.",
+      "acceptance_criteria": [
+        "A diff that alters the database schema also updates src/config/tableSchemas.ts to match.",
+        "Foreign-key fields in the regenerated cache carry foreign_key metadata with a display_columns array.",
+        "bytea file columns are marked is_file_upload: true; enum columns preserve udt_name; numeric columns include numeric_scale."
+      ],
+      "anti_patterns": [
+        "Adding a column in a migration without regenerating tableSchemas.ts.",
+        "A regenerated foreign-key entry missing its display_columns array."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Regenerating Table Schemas"
+    },
+    {
+      "id": "STD-DATA-005",
+      "title": "Every table has a corresponding _cdc table and trigger",
+      "description": "Every base table (including join tables) has a corresponding {table}_cdc table that mirrors all of the base table's columns and adds the standard CDC columns: _cdc_id (bigint PK), _cdc_operation (INSERT/UPDATE/DELETE), _cdc_from (timestamp the row became active), _cdc_to (timestamp it was superseded; NULL = current), _cdc_user (auth.uid()), _cdc_session_id, and _cdc_prev (pointer to the previous CDC row for the entity). The mirrored columns on the _cdc table carry NO foreign-key constraints — CDC is an append-only history, not a referential copy. Change capture is driven by an AFTER INSERT OR UPDATE OR DELETE trigger calling the shared shared.cdc_trigger_function(); do not write a bespoke per-table CDC function. Exempt: the _cdc tables themselves, and pure append-only logging tables whose rows are write-once (never updated or deleted) — these do not need CDC.",
+      "rationale": "A uniform per-table CDC mirror plus the shared dynamic-PK trigger gives every table a complete, attributable, append-only change history; FK constraints on the mirror would reject historical rows whose referents have since changed or been deleted. Source: docs/LOVABLE_KNOWLEDGE.md §17 (Change Data Capture).",
+      "acceptance_criteria": [
+        "Each new base table (including join tables) in the diff — except a pure write-once append-only logging table — has a matching {table}_cdc table mirroring its columns plus _cdc_id, _cdc_operation, _cdc_from, _cdc_to, _cdc_user, _cdc_session_id, and _cdc_prev.",
+        "The mirrored columns on the _cdc table in the diff carry no FOREIGN KEY constraints.",
+        "Each new base table in the diff has an AFTER INSERT OR UPDATE OR DELETE trigger calling shared.cdc_trigger_function(), not a bespoke CDC function."
+      ],
+      "anti_patterns": [
+        "Creating new_entity with no new_entity_cdc table or trigger.",
+        "Re-declaring the base table's FOREIGN KEY constraints on the _cdc mirror columns.",
+        "Writing a one-off `new_entity_cdc_fn()` instead of using shared.cdc_trigger_function()."
+      ],
+      "adr_overridable": false,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §17 — Change Data Capture"
+    },
+    {
+      "id": "STD-DATA-006",
+      "title": "Model many-to-many relationships with {group}_{child}_2_{parent} join tables",
+      "description": "New many-to-many relationships use a join table named {group}_{child}_2_{parent}: the role/module prefix, then the child entity, then `_2_`, then the parent entity — child before parent (e.g. data_concepts_2_domains: group `data`, child `concepts`, parent `domains`). Columns use the abbreviated `x2y_` prefix formed from the two entity initials (c2d_concept, c2d_domain). An array column (BIGINT[]) is used only as a deliberate, documented decision for an association that is never queried from the other side.",
+      "rationale": "The join-table convention enables indexed lookups from either side (RLS, permission checks) and FK integrity; array columns lose FK constraints, cascades, and association-level RLS. Source: docs/LOVABLE_KNOWLEDGE.md §17 (Join Table Naming Convention).",
+      "acceptance_criteria": [
+        "A new many-to-many relationship in the diff uses a {group}_{child}_2_{parent} join table (child before parent) with `x2y_`-prefixed columns.",
+        "A BIGINT[] array column is used for an association in the diff only when it is never queried from the other side, and that decision is recorded inline.",
+        "Join-table FK columns in the diff reference the related tables' surrogate {target}_id primary keys."
+      ],
+      "anti_patterns": [
+        "Adding a BIGINT[] column for a relationship that needs reverse-side lookups (e.g. group→concepts).",
+        "A new join table that omits the role prefix, orders parent before child (e.g. `data_domains_2_concepts`), or lacks `x2y_` column prefixes."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §17 — Join Table Naming Convention"
+    },
+    {
+      "id": "STD-DATA-007",
+      "title": "Every entity table has the core columns {prefix}_id, {prefix}_code, {prefix}_name, {prefix}_state",
+      "description": "Every column is prefixed with the entity's singular name (domain_id, domain_name, …). Every entity base table carries the four core columns: {prefix}_id (bigint PK, STD-DATA-008), {prefix}_code (short unique code), {prefix}_name (display name), and {prefix}_state (lifecycle/status). Additional standard columns use the conventional names where present: {prefix}_display_id, {prefix}_description, {prefix}_icon (FK to shared.icons), {prefix}_order, {prefix}_validation_rules (JSONB). Join (_2_) and CDC tables are exempt from the core set.",
+      "rationale": "A guaranteed core set (id/code/name/state) lets the schema-driven UI, lookups, Display-ID logic, and lifecycle handling work uniformly across every entity; missing or off-name core columns break generated metadata and forms. Source: docs/LOVABLE_KNOWLEDGE.md §17 (Column Naming Conventions).",
+      "acceptance_criteria": [
+        "Every new entity base table in the diff has {prefix}_id, {prefix}_code, {prefix}_name, and {prefix}_state columns.",
+        "All columns on a new table in the diff are prefixed with the entity's singular name (no bare `name`/`code`/`state`).",
+        "Optional standard columns in the diff use the conventional names ({prefix}_description, {prefix}_icon, {prefix}_order, {prefix}_validation_rules)."
+      ],
+      "anti_patterns": [
+        "An entity table missing a {prefix}_code, {prefix}_name, or {prefix}_state column.",
+        "A bare `name` / `status` / `sort` column instead of `{prefix}_name` / `{prefix}_state` / `{prefix}_order`."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §17 — Column Naming Conventions"
+    },
+    {
+      "id": "STD-DATA-008",
+      "title": "Primary keys are bigint surrogate {entity_abbrev}_id identity columns",
+      "description": "Every base table has a single surrogate primary key named {entity_abbrev}_id (e.g. domain_id, concept_id, attribute_id), placed as the table's first column, typed bigint and defined as an auto-generated identity column (GENERATED … AS IDENTITY). The PK constraint is named {table}_pkey. Join tables key on {x2y}_id (a2p_id, c2d_id, f2nr_id); CDC tables key on _cdc_id.",
+      "rationale": "A uniform bigint surrogate identity PK avoids exhausting the 2^31 integer range and the painful integer→bigint widening migration that follows, and keeps every PK and the FKs that reference it the same width. The surrogate {abbrev}_id shape is also what Display-ID formatting, entityMeta generation, CDC dynamic-PK detection (first column ending _id), and enriched reads rely on. Source: supabase/migrations/20260419142342_remote_schema.sql; docs/LOVABLE_KNOWLEDGE.md §17.",
+      "acceptance_criteria": [
+        "Each new base table in the diff has a single surrogate PK column named {entity_abbrev}_id, placed as the first column, typed bigint and generated as an identity.",
+        "The PK constraint in the diff is named {table}_pkey; join-table PKs are {x2y}_id and CDC PKs are _cdc_id.",
+        "No new PK in the diff is typed integer/serial, a bare `id`, or a composite natural key."
+      ],
+      "anti_patterns": [
+        "`thing_id integer generated always as identity` or `id serial primary key` (PKs must be bigint and named {abbrev}_id).",
+        "A composite/natural primary key on a base entity table.",
+        "A PK constraint with an ad-hoc name instead of {table}_pkey."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Derived from real schema snapshot supabase/migrations/20260419142342_remote_schema.sql"
+    },
+    {
+      "id": "STD-DATA-009",
+      "title": "Foreign keys are role-named with the owning-entity prefix",
+      "description": "Foreign-key columns are named for their semantic role within the owning entity, prefixed with the owning entity's abbreviation — e.g. attribute_concept, attribute_lookup_type, concept_applies_domain, feed_vendor, domain_owner (→ shared.profiles.profile_id) — NOT {target}_id. Self-referential FKs follow the same rule (concept_parent, concept_is_alias, lookup_parent). Each FK references the target's surrogate PK ({target}_id) and its constraint is named {table}_{column}_fkey. Join-table FK columns use the abbreviated x2y_ prefix (a2p_attribute → data_attributes; c2d_domain → data_domains).",
+      "rationale": "Role-named FKs make each relationship self-describing (an attribute's owning concept is attribute_concept, its lookup is attribute_lookup_type) and disambiguate multiple FKs to the same target; a generic {target}_id loses the role and collides. Source: supabase/migrations/20260419142342_remote_schema.sql.",
+      "acceptance_criteria": [
+        "New FK columns in the diff are named {owning_prefix}_{role} for their semantic role, not {target}_id.",
+        "Each FK in the diff references the target table's {target}_id PK, and the constraint is named {table}_{column}_fkey.",
+        "FK columns in the diff are typed bigint to match the referenced {target}_id primary key (STD-DATA-008).",
+        "Join-table FK columns in the diff use the x2y_ prefix; self-referential FKs use a role suffix (e.g. _parent)."
+      ],
+      "anti_patterns": [
+        "Naming an attribute's concept FK `concept_id` instead of `attribute_concept`.",
+        "Two FKs to data_domains both named `domain_id` instead of distinct roles (concept_applies_domain, concept_is_domain).",
+        "An FK constraint named arbitrarily instead of {table}_{column}_fkey."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Derived from real schema snapshot supabase/migrations/20260419142342_remote_schema.sql"
+    },
+    {
+      "id": "STD-DATA-011",
+      "title": "Migrations are timestamped, forward-only, and bundle CDC + RLS",
+      "description": "Every schema change is a migration file under supabase/migrations/ named YYYYMMDDHHMMSS_<description>.sql (filename ordering defines apply order) — never a dashboard ALTER or pg_dump/restore. Migrations are forward-only: an applied migration is never rewritten; a mistake is corrected by a new migration. A migration that creates a table must include, in the same file, its CDC table + trigger and its RLS enablement + policies. Data/backfill migrations are separate from schema migrations and guarded by transaction boundaries.",
+      "rationale": "Forward-only timestamped migrations are the single input to the database and the basis of the staging-first deploy and drift detection; a schema change missing its CDC or RLS counterpart is an incomplete migration that the pre-merge schema check rejects. Source: docs/product/_infra/02-supabase-db.md §2.2 / §2.4.",
+      "acceptance_criteria": [
+        "Each schema change in the diff is a new supabase/migrations/YYYYMMDDHHMMSS_<description>.sql file, not an edit to an already-applied migration.",
+        "A migration that creates a table in the diff includes its {table}_cdc table + trigger and ENABLE ROW LEVEL SECURITY + policies in the same file.",
+        "Row-rewriting/backfill logic in the diff is in a separate migration from schema DDL and is transaction-guarded."
+      ],
+      "anti_patterns": [
+        "Editing an already-merged migration to 'fix' it instead of adding a new corrective migration.",
+        "A migration creating dm.new_table with no CDC table/trigger or no RLS policies.",
+        "Mixing a large data backfill into a schema-DDL migration."
+      ],
+      "adr_overridable": false,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/product/_infra/02-supabase-db.md §2.2 / §2.4"
+    },
+    {
+      "id": "STD-DATA-012",
+      "title": "entityRegistry.displayIDFormat is the single source of truth for Display-ID format",
+      "description": "Each entity's Display-ID format — uppercase prefix plus zero-padded digits (e.g. DMD00000000, DMC00000000, DLT00000000) — is defined once by displayIDFormat in src/config/entityRegistry.ts and flows to generated entityMeta.ts. Code reads the prefix and padding from that config (via formatDisplayId / displayIDFormat) and never hardcodes prefix strings or padding widths. entityRegistry.displayIDFormat is the single source of truth for Display-ID format.",
+      "rationale": "A single authoritative format source keeps UI, Edge Functions, exports, and MCP consistent; hardcoded prefixes and widths drift from the registry. Source: src/config/entityRegistry.ts; docs/LOVABLE_KNOWLEDGE.md §18.",
+      "acceptance_criteria": [
+        "Display-ID formatting in the diff reads prefix/padding from entityRegistry.displayIDFormat (or formatDisplayId), not hardcoded literals.",
+        "No diff introduces a Display-ID prefix or padding width that disagrees with the entity's entityRegistry.displayIDFormat.",
+        "New entities in the diff declare displayIDFormat in entityRegistry before any Display-ID is emitted for them."
+      ],
+      "anti_patterns": [
+        "`'DMC' + String(id).padStart(8,'0')` hardcoded instead of reading displayIDFormat.",
+        "Hardcoding a Display-ID prefix or padding width that differs from the entity's displayIDFormat."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Derived from src/config/entityRegistry.ts (authoritative) vs docs/LOVABLE_KNOWLEDGE.md §18"
+    },
+    {
+      "id": "STD-DATA-013",
+      "title": "Do not store regulated or PII data without ADR approval",
+      "description": "Regulated or personally-identifiable information (PII) — financial, payment-card, health, government-identifier, biometric, or other special-category personal data — is not stored unless a project ADR explicitly approves capturing that specific data and defines its handling. Absent an approving ADR, new columns and entities hold only non-regulated business/operational data. Approved sensitive attributes carry an explicit classification.",
+      "rationale": "Regulated/PII data brings compliance obligations (lawful basis, retention, access control, deletion, breach handling) the platform must deliberately accept, not acquire by accident; requiring an ADR makes that decision explicit and auditable. Source: docs/adr/0001 (operational profile); docs/product/survey/07-threat-model.md §0.1.",
+      "acceptance_criteria": [
+        "No new column or entity in the diff stores regulated or PII data unless a project ADR authorising that specific data is referenced.",
+        "Where such data is introduced under an approving ADR, the diff cites the ADR and applies the handling/classification it specifies.",
+        "Sensitive attributes added in the diff carry an explicit classification, not an absent or default one."
+      ],
+      "anti_patterns": [
+        "Adding a column for personal/financial/health/government-id data with no approving ADR (e.g. `customer_ssn`, `card_number`, `health_condition`).",
+        "Storing a sensitive attribute with no classification set."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/adr/0001 (operational profile); docs/product/survey/07-threat-model.md §0.1"
+    },
+    {
+      "id": "STD-DATA-014",
+      "title": "Database objects follow one naming shape (schema, table plural, singular column prefix, PK first)",
+      "description": "Database naming follows a single predictable shape. Schema: base tables live in dm with a same-named public view; reference/identity tables live in shared (STD-ARCH-009). Table: plural snake_case — e.g. data_domains, group_items. Field: every column is prefixed with the SINGULAR entity name derived from the table — group_items → item_ (item_id, item_code, item_name, item_state); data_domains → domain_. Primary key: the first column, named {singular}_id, bigint (STD-DATA-008). Foreign key: the relevant field/role name with NO _id suffix — attribute_concept, feed_vendor — never concept_id/vendor_id (STD-DATA-009).",
+      "rationale": "A single predictable naming shape lets a reader infer an object's schema, layer, ownership, and relationships from its name alone, and is what the schema-driven UI, entityMeta generation, and CDC PK-detection rely on. Source: real schema snapshot supabase/migrations/20260419142342_remote_schema.sql; docs/LOVABLE_KNOWLEDGE.md §17.",
+      "acceptance_criteria": [
+        "New tables in the diff are named in plural snake_case (e.g. group_items, data_domains).",
+        "Every column on a new table in the diff is prefixed with the singular form of the table's entity name (group_items → item_).",
+        "New base tables in the diff are created in dm with a same-named public view; reference/identity tables are created in shared.",
+        "PK and FK naming in the diff follow STD-DATA-008 (first column, {singular}_id, bigint) and STD-DATA-009 (role name, no _id suffix)."
+      ],
+      "anti_patterns": [
+        "A singular table name (`group_item`) instead of the plural (`group_items`).",
+        "A column without the singular-entity prefix (`name` instead of `item_name`).",
+        "A foreign key named `concept_id` instead of the role name `attribute_concept`."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Derived from real schema snapshot supabase/migrations/20260419142342_remote_schema.sql; docs/LOVABLE_KNOWLEDGE.md §17"
+    },
+    {
+      "id": "STD-DATA-015",
+      "title": "Schemas represent modules — keep them minimal; do not create one without approval",
+      "description": "A database schema represents an application module, and the number of schemas is kept to the minimum. New tables and objects are placed in an existing schema (dm base tables, public views, shared reference/identity, or another already-established module schema); a new schema is not introduced to organise objects that fit an existing one. Creating a new schema is a deliberate, human-approved decision — when a new schema seems necessary, stop and ask before adding it.",
+      "rationale": "Each schema is a module boundary with its own grants, RLS, search_path, and migration surface; proliferating schemas multiplies that surface and fragments access control for no benefit when an existing schema fits. Source: project design decision (schemas-as-modules).",
+      "acceptance_criteria": [
+        "New tables and objects in the diff are created in an existing schema, not a newly-introduced one.",
+        "The diff contains no CREATE SCHEMA statement unless an explicit approval for the new module schema is recorded in the PR (e.g. a referenced ADR).",
+        "Where a new schema appears necessary, the PR documents the approval rather than introducing the schema unilaterally."
+      ],
+      "anti_patterns": [
+        "`CREATE SCHEMA reporting;` to hold a few tables that belong in an existing schema.",
+        "Adding a new schema in a migration with no recorded approval."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Project design decision — schemas represent modules, kept minimal"
+    },
+    {
+      "id": "STD-DATA-017",
+      "title": "No plaintext secrets in source",
+      "description": "Credentials, API keys, tokens, private keys, and passwords must never appear in source files, test fixtures, or commit messages. All secrets must be injected via environment variables, a secrets manager, or a CI/CD vault at runtime.",
+      "rationale": "Plaintext secrets committed to source are exposed to every person with repo access, every CI runner log, and every fork. They are the leading cause of supply-chain compromise and are effectively permanent once in git history.",
+      "acceptance_criteria": [
+        "No string literal in the diff matches the pattern of a known secret format (AWS key, GitHub PAT, private key PEM block, bearer token, connection string with embedded password).",
+        "No test fixture file in the diff contains a real credential — synthetic values like 'test-secret-placeholder' are acceptable; real-looking tokens are not.",
+        "Configuration that requires a secret uses an environment variable reference (e.g. os.environ['API_KEY']) or a named secrets-manager path — never a hardcoded value.",
+        "Any file added in the diff whose name suggests secret content (.env, *.pem, *.p12, *_key.json, credentials.*) is absent from tracked source and present in .gitignore."
+      ],
+      "anti_patterns": [
+        "API_KEY = 'sk-live-abc123...' in any source file.",
+        "A test that creates a real token and stores it in a fixture file.",
+        "A connection string like 'postgresql://user:password@host/db' hardcoded in config.",
+        "A private key PEM block embedded in a YAML or JSON config file.",
+        "Logging a full Authorization header value at DEBUG level."
+      ],
+      "adr_overridable": false,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from standards/security.json"
+    },
+    {
+      "id": "STD-DATA-016",
+      "related": ["STD-DATA-017", "STD-PROC-020"],
+      "title": "Name database roles {module}_{tier} (ro / rw / wf / ad)",
+      "description": "Application database roles follow the pattern {module}_{tier}, where module is the application module (STD-DATA-015) and tier is one of the fixed access tiers: _ro (read-only), _rw (read-write), _ad (admin: create/delete/configure), _wf (workflow engine) — e.g. data_model_ro, data_model_rw, data_model_ad, data_model_wf, survey_ad. Roles are values of the app_role enum, assigned to users via the user_roles table, and enforced only through has_role() in RLS policies (STD-SEC-001, STD-SEC-002). A new module adds its own {module}_{tier} family; roles are kept minimal — no ad-hoc names, no per-table roles, and no new tier beyond the established set without a deliberate decision.",
+      "rationale": "A consistent {module}_{tier} role taxonomy keeps RLS policies, edge-function entitlements, and grants legible and auditable per module and per tier; ad-hoc or per-table roles fragment authorization and make access impossible to reason about. Source: docs/AI_INSTRUCTIONS.md §Role-Based Access Control; docs/LOVABLE_KNOWLEDGE.md §6; app_role enum in the real schema.",
+      "acceptance_criteria": [
+        "New database roles in the diff are named {module}_{ro|rw|wf|ad} and added as app_role enum values.",
+        "Write (INSERT/UPDATE/DELETE) policies in the diff check a _rw / _ad / _wf role via has_role(); read access uses _ro (or an authenticated SELECT policy).",
+        "No diff introduces a role outside the {module}_{tier} pattern, a per-table role, or a new tier beyond ro/rw/wf/ad without a recorded decision."
+      ],
+      "anti_patterns": [
+        "A role named `editors` or `domain_admin` instead of `{module}_rw` / `{module}_ad`.",
+        "Creating a distinct role per table rather than per module tier.",
+        "Granting write access in a policy without a has_role() check (see STD-SEC-002)."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md §RBAC; docs/LOVABLE_KNOWLEDGE.md §6 (app_role enum)"
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "standards.schema.json",
+  "title": "AI Agile Standards",
+  "description": "Schema for standards/*.json files loaded by the coder and pr-reviewer agents. Each file is either a StandardsFile (array of enforceable rules) or an AdrsFile (registry of approved exceptions). See docs/product/orchestrator/14-standards.md.",
+  "oneOf": [
+    { "$ref": "#/definitions/StandardsFile" },
+    { "$ref": "#/definitions/AdrsFile" }
+  ],
+  "definitions": {
+    "Scope": {
+      "type": "string",
+      "enum": ["org", "project"],
+      "description": "'org' — lives in the ai-coding-standards2 submodule and applies to all consuming repos. 'project' — lives in the consuming repo and is additive to the org set."
+    },
+    "Category": {
+      "type": "string",
+      "enum": [
+        "architecture",
+        "security",
+        "testing",
+        "process",
+        "data",
+        "ux-design",
+        "documentation"
+      ],
+      "description": "The concern domain this file governs. Must match the category prefix in every STD ID in this file (e.g. 'architecture' → STD-ARCH-*)."
+    },
+    "Standard": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "description",
+        "rationale",
+        "acceptance_criteria",
+        "anti_patterns",
+        "adr_overridable",
+        "applies_to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^STD-[A-Z]+-\\d{3}$",
+          "description": "Unique identifier, e.g. STD-ARCH-001. Stable — never reused even if the standard is retired."
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Short imperative phrase (≤100 chars)."
+        },
+        "description": {
+          "type": "string",
+          "description": "One or two sentences stating precisely what is required or forbidden."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "One or two sentences explaining why. May cite a source file or section."
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Concrete, diff-checkable statements. Each starts with a subject and verb."
+        },
+        "anti_patterns": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Specific examples of what violates this rule."
+        },
+        "adr_overridable": {
+          "type": "boolean",
+          "description": "true — a project ADR citing this STD ID can waive a violation (finding becomes Informational). false — always blocks merge; no ADR can waive this standard."
+        },
+        "applies_to": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["coder", "pr-reviewer", "issue-classifier", "prd-writer"]
+          },
+          "description": "Which pipeline agents load and enforce this standard."
+        },
+        "source": {
+          "type": "string",
+          "description": "Optional migration provenance, e.g. 'Migrated from CLAUDE.md — §Principles'."
+        },
+        "instantiates": {
+          "type": "string",
+          "pattern": "^STD-[A-Z]+-\\d{3}$",
+          "description": "Optional. The parent (usually org) standard ID this standard is a concrete project-specific instance of."
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^STD-[A-Z]+-\\d{3}$"
+          },
+          "description": "Optional. Other standard IDs that are related or should be consulted together with this one."
+        }
+      }
+    },
+    "StandardsFile": {
+      "type": "object",
+      "required": ["version", "scope", "category", "standards"],
+      "additionalProperties": false,
+      "properties": {
+        "$schema": { "type": "string" },
+        "version": { "type": "string" },
+        "scope": { "$ref": "#/definitions/Scope" },
+        "category": { "$ref": "#/definitions/Category" },
+        "description": { "type": "string" },
+        "standards": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Standard" }
+        }
+      }
+    },
+    "AdrsFile": {
+      "type": "object",
+      "required": ["version", "scope", "adrs"],
+      "additionalProperties": false,
+      "properties": {
+        "$schema": { "type": "string" },
+        "version": { "type": "string" },
+        "scope": { "$ref": "#/definitions/Scope" },
+        "description": { "type": "string" },
+        "adrs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "authorises_exception_to", "rationale"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^ADR-\\d{3}$",
+                "description": "ADR-NNN — zero-padded, sequential within this file's scope."
+              },
+              "title": { "type": "string" },
+              "authorises_exception_to": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^STD-[A-Z]+-\\d{3}$"
+                },
+                "description": "The STD IDs this ADR waives. Only standards with adr_overridable: true can be listed here."
+              },
+              "rationale": { "type": "string" },
+              "approved_by": { "type": "string" },
+              "approved_at": {
+                "type": "string",
+                "description": "ISO 8601 date of approval, e.g. 2026-06-11."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

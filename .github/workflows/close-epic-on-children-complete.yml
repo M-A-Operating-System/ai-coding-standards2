@@ -1,0 +1,75 @@
+name: Close epic when all sub-issues are done
+
+# When any issue is closed, check whether it is a sub-issue of an epic.
+# If it is, and every other sibling sub-issue is also closed, close the
+# parent epic. Siblings are found via the parent-issue:{N} label applied
+# to each sub-issue by the sizer agent.
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  check-and-close-epic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close parent epic if all sub-issues are done
+        env:
+          GITHUB_TOKEN: ${{ secrets.AI_AGILE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Find all parent-issue:{N} labels on the closed issue
+          PARENT_LABELS=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" \
+            --json labels --jq '[.labels[].name | select(startswith("parent-issue:"))] | .[]')
+
+          if [ -z "$PARENT_LABELS" ]; then
+            echo "Issue #$ISSUE_NUMBER has no parent-issue label — nothing to do."
+            exit 0
+          fi
+
+          for PARENT_LABEL in $PARENT_LABELS; do
+            PARENT_NUMBER="${PARENT_LABEL#parent-issue:}"
+            echo "Issue #$ISSUE_NUMBER is a sub-issue of #$PARENT_NUMBER"
+
+            # Find all siblings (issues with the same parent-issue:{N} label)
+            # --limit 500 guards against the default 30-item pagination cap
+            SIBLINGS=$(gh issue list --repo "$REPO" \
+              --label "$PARENT_LABEL" \
+              --state all \
+              --limit 500 \
+              --json number,state \
+              --jq '.[]')
+
+            TOTAL=$(echo "$SIBLINGS" | jq -s 'length')
+            OPEN=$(echo "$SIBLINGS" | jq -s '[.[] | select(.state == "OPEN")] | length')
+
+            echo "Siblings: $TOTAL total, $OPEN still open"
+
+            if [ "$OPEN" -eq 0 ]; then
+              echo "All $TOTAL sub-issues of #$PARENT_NUMBER are closed — closing epic."
+
+              # Remove blocked label before closing so the state is clean
+              gh issue edit "$PARENT_NUMBER" --repo "$REPO" \
+                --remove-label "blocked" 2>/dev/null || true
+
+              gh issue comment "$PARENT_NUMBER" --repo "$REPO" \
+                --body "$(cat <<EOF
+<!-- ai-agile/announcement/v1 by close-epic-on-children-complete -->
+## Epic complete
+
+All ${TOTAL} sub-issues have been closed. Closing this epic.
+EOF
+)"
+
+              gh issue close "$PARENT_NUMBER" --repo "$REPO" \
+                --reason completed
+            else
+              echo "$OPEN of $TOTAL sub-issues still open — keeping #$PARENT_NUMBER open."
+            fi
+          done

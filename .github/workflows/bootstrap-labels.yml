@@ -1,0 +1,50 @@
+name: Bootstrap Pipeline Labels
+
+on:
+  # Run daily so new agents and trigger labels are always present
+  schedule:
+    - cron: '0 6 * * *'  # 06:00 UTC every day
+
+  # Re-sync whenever the pipeline config or status script changes
+  push:
+    branches: [main]
+    paths:
+      - 'pipeline/pipeline.json'
+      - '.github/scripts/status.sh'
+
+  # Allow manual trigger (e.g. to create labels on a fresh repo)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  ai-standards-setup-labels:
+    name: Ensure all pipeline labels exist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Bootstrap agent status labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          bash .github/scripts/status.sh bootstrap-all \
+            pipeline/pipeline.json
+
+      - name: Bootstrap trigger and human-gate labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          bash .github/scripts/status.sh bootstrap-triggers
+
+      - name: Migrate non-conforming labels to {agent}:{status} convention
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python .github/scripts/migrate_labels.py

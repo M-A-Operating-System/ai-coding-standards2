@@ -1,0 +1,44 @@
+name: Tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pipeline/pipeline_orchestrator.py'
+      - 'pipeline/generators/generate_phase_mermaid.py'
+      - 'tests/**'
+  pull_request:
+    paths:
+      - 'pipeline/pipeline_orchestrator.py'
+      - 'pipeline/validate_standards.py'
+      - 'standards/**'
+      - 'pipeline/generators/generate_phase_mermaid.py'
+      - 'tests/**'
+permissions:
+  contents: read
+jobs:
+  pytest:
+    name: Run pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: pytest tests/ -v
+      - name: Run integration tests
+        run: pytest tests/integration/ -v
+      - name: Run shell tests
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in tests/*.sh; do
+            echo "=== $f ==="
+            bash "$f" || fail=1
+          done
+          exit "$fail"

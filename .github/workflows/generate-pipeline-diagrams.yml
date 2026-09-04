@@ -1,0 +1,41 @@
+name: Generate pipeline diagrams
+
+on:
+  push:
+    paths:
+      - 'pipeline/pipeline.json'
+      - 'pipeline/generators/generate_phase_mermaid.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    name: Regenerate Mermaid diagrams
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          # Checkout the actual branch so we can push back to it.
+          ref: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+
+      - name: Regenerate diagrams
+        run: python3 pipeline/generators/generate_phase_mermaid.py
+
+      - name: Commit updated diagrams if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/product/orchestrator/generated/phases/
+          if git diff --cached --quiet; then
+            echo "Diagrams are already up-to-date — nothing to commit."
+          else
+            git commit -m "chore: regenerate pipeline diagrams"
+            git push
+          fi

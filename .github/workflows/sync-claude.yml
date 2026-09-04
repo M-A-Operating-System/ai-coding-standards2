@@ -1,0 +1,101 @@
+name: Sync AI Agile .claude directory
+
+# Keeps the consuming repo's .claude/agents and .claude/commands/ in
+# sync with whatever version of the ai-coding-standards2 submodule is
+# currently pinned. Runs daily to catch any drift, and can be triggered
+# on demand.
+#
+# On Linux runners get_started.py creates a directory symlink for
+# .claude/agents (symlink to submodule's .claude/agents/). The symlink is committed
+# as a tiny git blob (~40 bytes) so developers who clone the consuming
+# repo get agent visibility in Claude Code without running get_started.py.
+#
+# .claude/commands/ and standards/ are committed as verbatim copies with
+# path rewrites applied. .claude/settings.local.json is always excluded --
+# it is developer-local and must never be committed.
+#
+# These paths are listed in .gitignore to protect developers on Windows
+# (where get_started.py falls back to file copies that should not be
+# committed manually). The workflow uses `git add -f` to force-stage them
+# despite the .gitignore rule.
+#
+# This workflow is installed into consuming repos by get_started.py.
+# Do NOT edit it directly in the consuming repo -- edit the source at
+# ai-coding-standards2/.github/workflows/sync-claude.yml and re-run
+# get_started.py --force (or wait for the next daily sync).
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-claude
+  cancel-in-progress: true
+
+jobs:
+  ai-standards-sync:
+    name: Sync .claude from ai-coding-standards2 submodule
+    # This workflow is designed for consuming repos that have ai-coding-standards2
+    # as a submodule. Skip when running in the source repo itself.
+    if: github.repository != 'M-A-Operating-System/ai-coding-standards2'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          submodules: true
+          # Use AI_AGILE_BOT_TOKEN so the commit is attributed to the bot
+          # and so branch-protection rules that block GITHUB_TOKEN pushes
+          # are bypassed. Falls back to GITHUB_TOKEN if the secret is absent.
+          token: ${{ secrets.AI_AGILE_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync agents, commands, standards, and workflows
+        # --force overwrites any files that have drifted from the submodule.
+        # On Linux this creates a .claude/agents symlink instead of copying
+        # individual files. Also adds/updates .gitignore entries and removes
+        # any previously-tracked managed paths from the git index.
+        run: python ai-coding-standards2/get_started.py --force
+
+      - name: Commit and push if anything changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Force-stage managed paths despite .gitignore (the gitignore rule
+          # protects developers from accidentally committing Windows copies;
+          # the sync workflow is the authoritative committer on Linux).
+          #
+          # .claude/agents -- symlink on Linux (no trailing slash; git add -f
+          #   stages the symlink blob, not the directory contents).
+          # .claude/commands/ -- copied with path rewrites applied.
+          # standards/ -- copied with schema path rewrites applied.
+          # Workflows -- always committed (GitHub Actions requires them here).
+          git add -f \
+            standards/ \
+            .claude/agents \
+            .claude/commands/ \
+            .gitignore \
+            .github/workflows/orchestrator.yml \
+            .github/workflows/bootstrap-labels.yml \
+            .github/workflows/label-cleanup.yml \
+            .github/workflows/sync-claude.yml
+
+          # requirements.txt is project-owned and not gitignored; add without -f.
+          git add requirements.txt 2>/dev/null || true
+
+          if git diff --cached --quiet; then
+            echo "OK: .claude is already in sync with the submodule -- nothing to commit."
+          else
+            git commit -m "chore: sync .claude and workflows from ai-coding-standards2 submodule"
+            git push origin HEAD
+          fi

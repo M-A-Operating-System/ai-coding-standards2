@@ -1,0 +1,194 @@
+{
+  "$schema": "../ai-coding-standards/pipeline/schemas/standards.schema.json",
+  "version": "1.0",
+  "scope": "org",
+  "category": "ux-design",
+  "description": "Org-wide UX and design-system standards for the DDA platform (semantic tokens, shared component library, accessibility to WCAG 2.1 AA, mobile-first responsive behaviour, async loading/empty/error states). Checked by the pr-reviewer agent against every diff that touches UI.",
+  "standards": [
+    {
+      "id": "STD-UX-001",
+      "title": "Colour comes from design-system semantic tokens, never hardcoded values",
+      "description": "All colour comes from the design system's semantic tokens (primary, destructive, secondary, muted, accent, foreground, …) and component variants; hardcoded colour values are forbidden in UI code. In this project, tokens are the DDA theme classes — raw Tailwind colour utilities (bg-blue-500, text-white) and hex/rgb literals are not allowed.",
+      "rationale": "Semantic tokens keep a single visual language consistent and theme-able; hardcoded colours fork the palette and bypass the design system. Source: docs/AI_INSTRUCTIONS.md §Design System 1; design-system §Colour.",
+      "acceptance_criteria": [
+        "No diff introduces a raw Tailwind colour utility (e.g. `bg-blue-500`, `text-white`, `text-red-600`) on a UI element.",
+        "No diff introduces a hardcoded hex/rgb colour value in a className or style for themed UI.",
+        "Colour is applied via component variants (e.g. `variant=\"destructive\"`) or semantic token classes (e.g. `text-foreground`, `bg-primary`)."
+      ],
+      "anti_patterns": [
+        "`<Button className=\"bg-blue-500 text-white\">Save</Button>`",
+        "`style={{ color: '#1e40af' }}` on a themed component."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Design System & UI Guidelines §1"
+    },
+    {
+      "id": "STD-UX-002",
+      "related": ["STD-PROC-016"],
+      "title": "Build from the shared DDA component library; no new primitives without approval",
+      "description": "All interactive UI is built from the existing DDA component library (shadcn/ui base + DDA theme: shared DataTable, DynamicEditDialog, Layout, platform nav, form controls). Custom components are a last resort. A new font, icon set, spacing scale, or colour token requires a product decision record and platform approval before introduction.",
+      "rationale": "One visual language across modules means users experience no context switch; ad-hoc primitives fragment it. Source: design-system §Principles and §Component library.",
+      "acceptance_criteria": [
+        "New UI in the diff composes existing DDA/shadcn components rather than reimplementing buttons, inputs, dialogs, tables, or cards from scratch.",
+        "The diff introduces no new font family, icon set, spacing scale, or colour token without a referenced decision record.",
+        "New icons used in the diff come from the shared platform icon library (Lucide-based), not a locally bundled set."
+      ],
+      "anti_patterns": [
+        "Hand-rolling a bespoke modal instead of using DynamicEditDialog / shadcn Dialog.",
+        "Adding a new icon package or custom font for a single module."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/product/_design/01-design-system.md — Principles / Component library"
+    },
+    {
+      "id": "STD-UX-003",
+      "title": "Colour is never the sole indicator of state",
+      "description": "Every status colour must be accompanied by an icon or text label. This applies to entity status (active/inactive/archived), quality/health scores, tool-call success/error, and participant permission states.",
+      "rationale": "Colour-only state is invisible to colour-blind users and fails WCAG; it is both a design-system rule and an accessibility requirement. Source: design-system §Status indicators; accessibility §Standards.",
+      "acceptance_criteria": [
+        "Every status/health indicator added in the diff pairs its colour with an icon or text label.",
+        "No diff conveys success/error or active/inactive purely by colour.",
+        "Tool-call and entity-status badges in the diff include a non-colour cue."
+      ],
+      "anti_patterns": [
+        "A green/red dot with no accompanying label or icon to convey success/failure.",
+        "An 'active' state shown only as a colour swatch."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/product/_design/01-design-system.md — Status indicators / 03-accessibility.md"
+    },
+    {
+      "id": "STD-UX-004",
+      "title": "Meet WCAG 2.1 AA on every UI surface",
+      "description": "All UI meets WCAG 2.1 AA as a build requirement: ≥4.5:1 contrast for body text (3:1 for large text/UI components); all interactive elements keyboard-navigable with visible focus indicators (focus rings never globally suppressed); minimum 44×44px touch targets; dynamic regions use aria-live; icon-only buttons carry aria-label and form inputs have associated labels; animations respect prefers-reduced-motion.",
+      "rationale": "Accessibility is a build requirement, not a post-launch concern; axe-core violations are blocking pre-merge failures. Source: docs/product/_design/03-accessibility.md.",
+      "acceptance_criteria": [
+        "Interactive elements added in the diff are reachable and operable by keyboard and show a visible focus indicator (no global `outline: none` / focus suppression).",
+        "Icon-only buttons in the diff carry an aria-label; form inputs are associated with a visible label or aria-labelledby; meaningful images carry alt text (decorative images use alt=\"\").",
+        "Interactive controls in the diff meet the 44×44px minimum target size.",
+        "Dynamic content regions added in the diff (streaming responses, toasts, status changes) use aria-live; animations honour prefers-reduced-motion."
+      ],
+      "anti_patterns": [
+        "An icon-only button with no aria-label.",
+        "`*:focus { outline: none }` or globally suppressed focus rings.",
+        "A toast/streaming region with no aria-live announcement."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/product/_design/03-accessibility.md"
+    },
+    {
+      "id": "STD-UX-005",
+      "title": "Mobile-first responsive — functional at every breakpoint",
+      "description": "Layout starts from the mobile viewport and scales up; every surface is fully functional at every breakpoint. Primary controls are visible without scroll and never hidden behind hover; horizontal scroll is permitted only for overflow content (wide tables, diagrams), never for page layout. New UI surfaces are validated across the project's breakpoints before being considered complete. In this project the breakpoints are mobile (<768px), tablet (768–1023px), and desktop (≥1280px).",
+      "rationale": "Mobile-first keeps every surface usable on the smallest viewport up; hover-hidden controls and layout overflow break the mobile experience. Source: docs/product/_design/02-responsive-and-mobile.md.",
+      "acceptance_criteria": [
+        "New UI in the diff is laid out mobile-first and remains usable across the project's breakpoints (this project: <768px, 768–1023px, ≥1280px).",
+        "No primary control in the diff is hidden behind a hover-only state on mobile.",
+        "The diff introduces no horizontal page-layout overflow; horizontal scroll is confined to wide tables/diagrams.",
+        "A new UI surface in the diff has been validated (or has a test) at the three primary breakpoints."
+      ],
+      "anti_patterns": [
+        "A control revealed only on `:hover`, unreachable on touch.",
+        "A fixed-width layout that overflows the mobile viewport horizontally."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/product/_design/02-responsive-and-mobile.md"
+    },
+    {
+      "id": "STD-UX-006",
+      "title": "Define visual variants once in the component, select them by prop",
+      "description": "Visual variants (default, destructive, secondary, …) are declared once in the component definition and selected at the call site through a `variant` prop, never re-implemented inline with ad-hoc className overrides at each usage. In this project, variants are declared via cva (class-variance-authority).",
+      "rationale": "Centralised variants keep styling consistent and single-sourced; inline variant styling drifts and duplicates the design system. Source: docs/AI_INSTRUCTIONS.md §Design System 2.",
+      "acceptance_criteria": [
+        "New visual variants in the diff are added to the component's variant definition (cva), not expressed as inline className combinations at call sites.",
+        "Call sites in the diff select a variant via the `variant` prop rather than overriding styling inline.",
+        "No diff duplicates an existing variant's styling inline instead of using the prop."
+      ],
+      "anti_patterns": [
+        "Re-creating the destructive look with `className=\"bg-destructive text-destructive-foreground ...\"` instead of `variant=\"destructive\"`.",
+        "Defining variant styles inline per usage rather than in buttonVariants/cva."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/AI_INSTRUCTIONS.md — Design System & UI Guidelines §2"
+    },
+    {
+      "id": "STD-UX-007",
+      "related": ["STD-UX-004"],
+      "title": "Every button has a descriptive, full-sentence tooltip",
+      "description": "Project convention (not a universal UX rule): every <Button> is wrapped in a <Tooltip> (from @/components/ui/tooltip) whose content is at least one complete, descriptive sentence explaining the action — not a single word or a repeat of the label. Icon-only buttons especially require this (also an accessibility need, STD-UX-004); text-labelled buttons still carry a tooltip for additional context.",
+      "rationale": "Tooltips are the primary affordance for understanding actions, and the only one for icon-only buttons. Source: docs/LOVABLE_KNOWLEDGE.md §28 (Button Tooltip Standard).",
+      "acceptance_criteria": [
+        "Every Button added in the diff is wrapped in a Tooltip with TooltipContent.",
+        "Tooltip content for buttons in the diff is a complete sentence, not a single word or the bare label.",
+        "Icon-only buttons in the diff have a tooltip describing the action."
+      ],
+      "anti_patterns": [
+        "An icon-only `<Button>` with no surrounding Tooltip.",
+        "`<TooltipContent><p>Delete</p></TooltipContent>` (single word, not a sentence)."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §28 — Button Tooltip Standard"
+    },
+    {
+      "id": "STD-UX-008",
+      "title": "Entity pills show code only, full label on hover, click to navigate",
+      "description": "Pill/badge components representing linked entities (JoinTablePills, mention pills) display only the short code (first display column). A Tooltip shows the full label (all display columns joined, e.g. 'GRP001 - Engineering Team') plus a navigation hint. When relatedEntityType is configured, clicking the pill navigates to the entity's edit page via the standard deep-link pattern (/models/:slug/:displayId).",
+      "rationale": "A consistent pill UX keeps dense relationship views readable while preserving discoverability and navigation; showing full names inline clutters the surface. Source: docs/LOVABLE_KNOWLEDGE.md §28 (Pills / Badge UX Standard).",
+      "acceptance_criteria": [
+        "Entity-linked pills in the diff render the code (first display column), not the full name, as the visible text.",
+        "Each such pill in the diff is wrapped in a Tooltip exposing the full joined label.",
+        "Pills with a relatedEntityType in the diff are clickable and navigate via the /models/:slug/:displayId deep-link pattern."
+      ],
+      "anti_patterns": [
+        "`<Badge>{item.fullLabel}</Badge>` showing the full name directly on the pill.",
+        "An entity pill with neither a tooltip nor navigation when relatedEntityType is set."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §28 — Pills / Badge UX Standard"
+    },
+    {
+      "id": "STD-UX-009",
+      "title": "Render entity icons via the two-tier fallback hierarchy",
+      "description": "Entity icons follow a strict two-tier fallback: (1) the binary icon_image data-URI from the record's {prefix}_icon FK into the icons table, decoded from PostgREST's hex `\\x` encoding and validated to start with `data:`; (2) the EntityRegistry defaultIcon (a kebab-case Lucide name) rendered dynamically. Do not fall back to icon_filename or local SVGs in public/icons/. Fetch icons in bulk selecting only icon_id, icon_image.",
+      "rationale": "A single consistent icon hierarchy keeps rendering uniform across tables, cards, and report headers; skipping the bytea decode yields broken images and local-SVG fallbacks diverge from the data-driven model. Source: docs/LOVABLE_KNOWLEDGE.md §21 (Icon Rendering Pattern).",
+      "acceptance_criteria": [
+        "Icon rendering in the diff tries the record's binary icon_image (decoded from `\\x`, validated as a data: URI) before the EntityRegistry defaultIcon.",
+        "No diff uses icon_filename or a local public/icons/ SVG as a fallback step for entity-record icons.",
+        "Bulk icon fetches in the diff select only icon_id, icon_image and deduplicate IDs."
+      ],
+      "anti_patterns": [
+        "Using `icon.icon_image` directly without decoding the `\\x` hex prefix.",
+        "Falling back to a local `/icons/foo.svg` instead of the EntityRegistry defaultIcon."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §21 — Icon Rendering Pattern"
+    },
+    {
+      "id": "STD-UX-010",
+      "title": "Every async surface handles loading, empty, and error states",
+      "description": "Any surface that fetches data presents explicit loading, empty, and error states — never a blank or frozen UI: a loading indicator while fetching, a clear empty state when there is no data, and a user-safe error state on failure (rendering errors caught by an ErrorBoundary). Error text shown to users is the translated, safe message (STD-SEC-009), never a raw error.",
+      "rationale": "Unhandled async states leave users with blank screens or stack traces; explicit loading/empty/error states are a baseline of a usable, trustworthy UI. Source: docs/LOVABLE_KNOWLEDGE.md §23 (Error Handling — ErrorBoundary / toast).",
+      "acceptance_criteria": [
+        "A data-fetching surface in the diff renders an explicit loading state (spinner/skeleton) while fetching.",
+        "A data-fetching surface in the diff renders a clear empty state when there is no data, and a user-safe error state on failure.",
+        "Page-level components in the diff are wrapped in an ErrorBoundary; error text shown to users is translated/safe (STD-SEC-009), not a raw error."
+      ],
+      "anti_patterns": [
+        "A list/table that renders blank while loading with no spinner or skeleton.",
+        "A fetch failure that shows nothing, a frozen UI, or a raw error message."
+      ],
+      "adr_overridable": true,
+      "applies_to": ["coder", "pr-reviewer"],
+      "source": "Migrated from docs/LOVABLE_KNOWLEDGE.md §23 — Error Handling & Logging"
+    }
+  ]
+}
