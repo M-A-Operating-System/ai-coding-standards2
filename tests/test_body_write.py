@@ -33,6 +33,8 @@ def _make_agent_def(name: str = "01_product_docs/prd-writer", **overrides) -> Ag
         human_gate_after=False,
         human_gate_label=None,
         description="test agent",
+        flow="test-flow",
+        flow_naming={"branch": "issue-{number}"},
     )
     kwargs.update(overrides)
     return AgentDef(**kwargs)
@@ -252,23 +254,23 @@ class TestResolveBodyWriteTarget:
     def test_issue_target_on_issue_work_item(self):
         gh = MagicMock()
         wi = _make_work_item(42, "issue")
-        assert _resolve_body_write_target(gh, wi, "issue") == 42
+        assert _resolve_body_write_target(gh, _make_agent_def(), wi, "issue") == 42
 
     def test_issue_target_on_pr_work_item_returns_none(self):
         gh = MagicMock()
         wi = _make_work_item(42, "pr")
-        assert _resolve_body_write_target(gh, wi, "issue") is None
+        assert _resolve_body_write_target(gh, _make_agent_def(), wi, "issue") is None
 
     def test_pr_target_on_pr_work_item(self):
         gh = MagicMock()
         wi = _make_work_item(99, "pr")
-        assert _resolve_body_write_target(gh, wi, "pr") == 99
+        assert _resolve_body_write_target(gh, _make_agent_def(), wi, "pr") == 99
 
     def test_pr_target_on_issue_work_item_looks_up_by_branch(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = 77
         wi = _make_work_item(42, "issue")
-        assert _resolve_body_write_target(gh, wi, "pr") == 77
+        assert _resolve_body_write_target(gh, _make_agent_def(), wi, "pr") == 77
         gh.find_pr_by_branch.assert_called_once_with("issue-42")
 
     def test_pr_target_falls_back_to_label_lookup(self):
@@ -276,7 +278,7 @@ class TestResolveBodyWriteTarget:
         gh.find_pr_by_branch.return_value = None
         gh.find_pr_by_label.return_value = 88
         wi = _make_work_item(42, "issue")
-        assert _resolve_body_write_target(gh, wi, "pr") == 88
+        assert _resolve_body_write_target(gh, _make_agent_def(), wi, "pr") == 88
         gh.find_pr_by_label.assert_called_once_with("source-issue:42")
 
     def test_pr_target_returns_none_when_not_found(self):
@@ -284,13 +286,13 @@ class TestResolveBodyWriteTarget:
         gh.find_pr_by_branch.return_value = None
         gh.find_pr_by_label.return_value = None
         wi = _make_work_item(42, "issue")
-        assert _resolve_body_write_target(gh, wi, "pr") is None
+        assert _resolve_body_write_target(gh, _make_agent_def(), wi, "pr") is None
 
     def test_pr_lookup_exception_returns_none(self):
         gh = MagicMock()
         gh.find_pr_by_branch.side_effect = RuntimeError("boom")
         wi = _make_work_item(42, "issue")
-        assert _resolve_body_write_target(gh, wi, "pr") is None
+        assert _resolve_body_write_target(gh, _make_agent_def(), wi, "pr") is None
 
 
 # ---------------------------------------------------------------------------

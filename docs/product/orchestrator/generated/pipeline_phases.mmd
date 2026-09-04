@@ -4,9 +4,9 @@ flowchart TD
         n_01_product_docs__issue_classifier["issue-classifier"]
         n_01_product_docs__prd_writer["prd-writer"]
         n_01_product_docs__create_docs_pr("create-docs-pr")
-        n_01_product_docs__create_pr("create-pr")
         n_01_product_docs__prd_docs_updater["prd-docs-updater"]
         n_01_product_docs__merge_docs_pr("merge-docs-pr")
+        n_01_product_docs__create_pr("create-pr")
         gate__n_01_product_docs__prd_writer{"prd-writer:approved"}
         gate__n_01_product_docs__prd_docs_updater{"prd-docs-updater:approved"}
     end
@@ -16,6 +16,9 @@ flowchart TD
         n_03_execute__merge_conflict["merge-conflict"]
         n_03_execute__pr_reviewer["pr-reviewer"]
         gate__n_03_execute__merge_conflict{"merge-conflict:approved · auto"}
+    end
+    subgraph 04_evaluate["04 Evaluate"]
+        n_04_evaluate__epic_closer("epic-closer")
     end
     subgraph 00_ondemand["00 Ondemand"]
         entry_n_00_ondemand__codebase_reviewer(["codebase-reviewer:requested"])
@@ -54,9 +57,9 @@ flowchart TD
     n_00_ondemand__sizer --> gate__n_00_ondemand__sizer
     n_01_product_docs__issue_classifier --> n_01_product_docs__prd_writer
     gate__n_01_product_docs__prd_writer --> n_01_product_docs__create_docs_pr
-    n_01_product_docs__merge_docs_pr --> n_01_product_docs__create_pr
     n_01_product_docs__create_docs_pr --> n_01_product_docs__prd_docs_updater
     gate__n_01_product_docs__prd_docs_updater --> n_01_product_docs__merge_docs_pr
+    n_01_product_docs__merge_docs_pr --> n_01_product_docs__create_pr
     n_01_product_docs__create_pr --> n_03_execute__coder
     n_03_execute__coder --> n_03_execute__ci_gate
     n_03_execute__ci_gate --> n_03_execute__merge_conflict

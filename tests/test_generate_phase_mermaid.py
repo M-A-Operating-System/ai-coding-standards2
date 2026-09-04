@@ -86,7 +86,9 @@ build_complete_chart = _mod.build_complete_chart
 def patched(tmp_path, monkeypatch):
     pipeline_file = tmp_path / "pipeline" / "pipeline.json"
     pipeline_file.parent.mkdir(parents=True)
-    pipeline_file.write_text(json.dumps({"pipeline": _ENTRIES}), encoding="utf-8")
+    pipeline_file.write_text(
+        json.dumps({"flows": {"test-flow": {"steps": _ENTRIES}}}), encoding="utf-8",
+    )
     output_dir = tmp_path / "docs" / "product" / "agile" / "generated" / "phases"
     lifecycle_file = tmp_path / "docs" / "product" / "agile" / "generated" / "pipeline.mmd"
     complete_flow_file = tmp_path / "docs" / "product" / "agile" / "generated" / "pipeline_phases.mmd"
@@ -428,11 +430,24 @@ def test_load_pipeline_missing_file(monkeypatch, tmp_path):
     assert exc_info.value.code != 0
 
 
-def test_load_pipeline_empty_when_no_pipeline_key(monkeypatch, tmp_path):
+def test_load_pipeline_empty_when_no_flows_key(monkeypatch, tmp_path):
     pipeline_file = tmp_path / "pipeline.json"
     pipeline_file.write_text(json.dumps({"something_else": []}), encoding="utf-8")
     monkeypatch.setattr(_mod, "PIPELINE_JSON", pipeline_file)
     assert load_pipeline() == []
+
+
+def test_load_pipeline_flattens_flows_and_tags_each_step(monkeypatch, tmp_path):
+    """Steps come back in flow-then-step order, each carrying its flow name."""
+    pipeline_file = tmp_path / "pipeline.json"
+    pipeline_file.write_text(json.dumps({"flows": {
+        "first": {"steps": [{"agent": "ph_a/one", "phase": "ph_a"}]},
+        "second": {"steps": [{"agent": "ph_b/two", "phase": "ph_b"}]},
+    }}), encoding="utf-8")
+    monkeypatch.setattr(_mod, "PIPELINE_JSON", pipeline_file)
+    entries = load_pipeline()
+    assert [e["agent"] for e in entries] == ["ph_a/one", "ph_b/two"]
+    assert [e["flow"] for e in entries] == ["first", "second"]
 
 
 def test_load_pipeline_malformed_json_raises(monkeypatch, tmp_path):

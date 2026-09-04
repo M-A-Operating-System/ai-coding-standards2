@@ -8,17 +8,18 @@
 # prd-docs-updater:approved gate, ahead of the build phase. The code PR
 # (issue-{N}, Closes #{N}) is opened later by create-pr from the updated main.
 #
-# This is a thin wrapper: it sets the phase parameters and delegates to
-# create-pr.sh, reusing its tested token/freshness/idempotency logic.
+# This is a thin wrapper: it delegates to create-pr.sh, reusing its tested
+# token/freshness/idempotency logic under its own announcement identity. The
+# branch (issue-{N}-docs) and the non-closing body are NOT set here -- they come
+# from the flow's naming.pull_requests "docs" entry, which the orchestrator
+# resolves and exports as AI_AGILE_BRANCH / PR_CLOSES_ISSUE (issue #406).
 #
-# Environment (set by orchestrator): REPO, ISSUE_NUMBER, GITHUB_TOKEN,
-#   optionally AI_AGILE_BOT_TOKEN.
+# Environment (set by orchestrator): REPO, ISSUE_NUMBER, AI_AGILE_BRANCH,
+#   PR_CLOSES_ISSUE, GITHUB_TOKEN, optionally AI_AGILE_BOT_TOKEN.
 
 set -euo pipefail
 
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-BRANCH_SUFFIX="-docs" \
-PR_CLOSES_ISSUE="false" \
 CREATE_PR_AGENT="01_product_docs/create-docs-pr" \
   exec bash "${_SCRIPT_DIR}/create-pr.sh"

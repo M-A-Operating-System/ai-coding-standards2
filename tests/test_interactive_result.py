@@ -33,6 +33,8 @@ def _make_agent_def(name: str = "03_execute/coder", **overrides) -> AgentDef:
         human_gate_after=False,
         human_gate_label=None,
         description="test agent",
+        flow="test-flow",
+        flow_naming={"branch": "issue-{number}"},
     )
     kwargs.update(overrides)
     return AgentDef(**kwargs)

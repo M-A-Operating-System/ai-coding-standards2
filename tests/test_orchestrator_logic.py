@@ -44,8 +44,10 @@ from pipeline_orchestrator import (
     main,
     _ensure_gh_cli,
     RunContext,
-    _find_epic_siblings,
-    _check_epic_completions,
+    find_child_items,
+    children_condition_met,
+    select_sub_item,
+    _invalidate_children_cache,
     BLOCKEDBY_LABEL_PREFIX,
     BLOCKS_LABEL_PREFIX,
     _parse_blocking_issue_numbers,
@@ -54,6 +56,15 @@ from pipeline_orchestrator import (
     _clear_satisfied_blocks,
     _is_blocked_from_starting,
 )
+
+
+def _shipped_steps(raw: dict) -> list:
+    """Every step declared in a flows-shaped pipeline.json, in order."""
+    return [
+        step
+        for flow in (raw.get("flows") or {}).values()
+        for step in (flow.get("steps") or [])
+    ]
 
 
 def _make_agent_def(name: str = "03_execute/coder") -> AgentDef:
@@ -320,7 +331,8 @@ def _invoke_agent_writing_result(outcome, *, message="", summary=None, output=""
     Matches invoke_agent's call signature.
     """
     def _effect(agent_def, work_item, dry_run, repo, attempt=0,
-                agent_text_override=None, default_extra_tools=None, cwd=None):
+                agent_text_override=None, default_extra_tools=None, cwd=None,
+                flow_env=None):
         result = agent_run_result if agent_run_result is not None else AgentRunResult(success=True)
         if not dry_run:
             session_id = orch._compute_agent_session_id(agent_def, work_item, repo)
@@ -355,12 +367,14 @@ def _invoke_agent_fail_then_succeed(outcome, *, message="", summary=None, output
     )
 
     def _effect(agent_def, work_item, dry_run, repo, attempt=0,
-                agent_text_override=None, default_extra_tools=None, cwd=None):
+                agent_text_override=None, default_extra_tools=None, cwd=None,
+                flow_env=None):
         if attempt == 0:
             return AgentRunResult(success=False, returncode=1, captured_tail="error")
         return _write(agent_def, work_item, dry_run, repo, attempt=attempt,
                       agent_text_override=agent_text_override,
-                      default_extra_tools=default_extra_tools, cwd=cwd)
+                      default_extra_tools=default_extra_tools, cwd=cwd,
+                      flow_env=flow_env)
     return _effect
 
 
@@ -476,16 +490,22 @@ class TestPipelineLoaderMisc:
         import json
         pipeline_data = {
             "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-                "agent": "03_execute/pr-reviewer",
-                "phase": "03_execute",
-                "object": ["issue"],
-                "trigger": {"label": "merge-conflict:complete"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-                "review_gate": True,
-            }]
+            "flows": {
+                "test-flow": {
+                    "description": "test flow",
+                    "trigger": {"kind": "issue"},
+                    "naming": {"branch": "issue-{number}"},
+                    "steps": [{
+                        "agent": "03_execute/pr-reviewer",
+                        "phase": "03_execute",
+                        "trigger": {"label": "merge-conflict:complete"},
+                        "dependencies": [],
+                        "human_gate_after": False,
+                        "description": "test",
+                        "review_gate": True,
+                    }]
+                }
+            }
         }
         path = tmp_path / "pipeline.json"
         path.write_text(json.dumps(pipeline_data))
@@ -497,15 +517,21 @@ class TestPipelineLoaderMisc:
         import json
         pipeline_data = {
             "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-                "agent": "01_product_docs/issue-classifier",
-                "phase": "01_product_docs",
-                "object": ["issue"],
-                "trigger": {"event": "issue.opened"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-            }]
+            "flows": {
+                "test-flow": {
+                    "description": "test flow",
+                    "trigger": {"kind": "issue"},
+                    "naming": {"branch": "issue-{number}"},
+                    "steps": [{
+                        "agent": "01_product_docs/issue-classifier",
+                        "phase": "01_product_docs",
+                        "trigger": {"event": "issue.opened"},
+                        "dependencies": [],
+                        "human_gate_after": False,
+                        "description": "test",
+                    }]
+                }
+            }
         }
         path = tmp_path / "pipeline.json"
         path.write_text(json.dumps(pipeline_data))
@@ -518,16 +544,22 @@ class TestPipelineLoaderMisc:
         import logging
         pipeline_data = {
             "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-                "agent": "03_execute/pr-reviewer",
-                "phase": "03_execute",
-                "object": ["issue"],
-                "trigger": {"label": "merge-conflict:complete"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-                "git_ops": {"commit_after": False, "mark_ready_on_complete": True},
-            }]
+            "flows": {
+                "test-flow": {
+                    "description": "test flow",
+                    "trigger": {"kind": "issue"},
+                    "naming": {"branch": "issue-{number}"},
+                    "steps": [{
+                        "agent": "03_execute/pr-reviewer",
+                        "phase": "03_execute",
+                        "trigger": {"label": "merge-conflict:complete"},
+                        "dependencies": [],
+                        "human_gate_after": False,
+                        "description": "test",
+                        "git_ops": {"commit_after": False, "mark_ready_on_complete": True},
+                    }]
+                }
+            }
         }
         path = tmp_path / "pipeline.json"
         path.write_text(json.dumps(pipeline_data))
@@ -1784,17 +1816,23 @@ class TestSelfGates:
         import json
         pipeline_data = {
             "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-                "agent": "01_product_docs/prd-docs-updater",
-                "phase": "01_product_docs",
-                "object": ["issue"],
-                "trigger": {"label": "create-pr:complete"},
-                "dependencies": [],
-                "human_gate_after": True,
-                "human_gate_label": "prd-docs-updater:approved",
-                "description": "test",
-                "self_gates": True,
-            }]
+            "flows": {
+                "test-flow": {
+                    "description": "test flow",
+                    "trigger": {"kind": "issue"},
+                    "naming": {"branch": "issue-{number}"},
+                    "steps": [{
+                        "agent": "01_product_docs/prd-docs-updater",
+                        "phase": "01_product_docs",
+                        "trigger": {"label": "create-pr:complete"},
+                        "dependencies": [],
+                        "human_gate_after": True,
+                        "human_gate_label": "prd-docs-updater:approved",
+                        "description": "test",
+                        "self_gates": True,
+                    }]
+                }
+            }
         }
         path = tmp_path / "pipeline.json"
         path.write_text(json.dumps(pipeline_data))
@@ -1805,15 +1843,21 @@ class TestSelfGates:
         import json
         pipeline_data = {
             "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "pipeline": [{
-                "agent": "01_product_docs/issue-classifier",
-                "phase": "01_product_docs",
-                "object": ["issue"],
-                "trigger": {"event": "issue.opened"},
-                "dependencies": [],
-                "human_gate_after": False,
-                "description": "test",
-            }]
+            "flows": {
+                "test-flow": {
+                    "description": "test flow",
+                    "trigger": {"kind": "issue"},
+                    "naming": {"branch": "issue-{number}"},
+                    "steps": [{
+                        "agent": "01_product_docs/issue-classifier",
+                        "phase": "01_product_docs",
+                        "trigger": {"event": "issue.opened"},
+                        "dependencies": [],
+                        "human_gate_after": False,
+                        "description": "test",
+                    }]
+                }
+            }
         }
         path = tmp_path / "pipeline.json"
         path.write_text(json.dumps(pipeline_data))
@@ -3566,7 +3610,7 @@ class TestCommitAgentWorkScript:
 
         commit_after_agents = []
         post_steps_agents = []
-        for entry in raw["pipeline"]:
+        for entry in _shipped_steps(raw):
             if entry.get("git_ops", {}).get("commit_after"):
                 commit_after_agents.append(entry["agent"])
             if entry.get("post_steps"):
@@ -3593,7 +3637,7 @@ class TestCommitAgentWorkScript:
         agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
         with open(orch.PIPELINE_PATH) as f:
             raw = json.load(f)
-        raw_by_agent = {e["agent"]: e for e in raw["pipeline"]}
+        raw_by_agent = {e["agent"]: e for e in _shipped_steps(raw)}
         for agent_def in agents:
             entry = raw_by_agent.get(agent_def.agent, {})
             expected = bool(entry.get("git_ops", {}).get("commit_after", False))
@@ -3634,6 +3678,8 @@ class TestCommitAgentWorkScript:
             human_gate_label=None,
             description="test coder",
             commit_after=True,
+            flow="test-flow",
+            flow_naming={"branch": "issue-{number}"},
         )
 
     def _make_issue_wi(self) -> WorkItem:
@@ -4453,6 +4499,8 @@ class TestCommitAfterExactlyOnce:
             trigger={"label": "issue-classifier:complete"}, dependencies=[],
             human_gate_after=False, human_gate_label=None, description="test coder",
             commit_after=True,
+            flow="test-flow",
+            flow_naming={"branch": "issue-{number}"},
         )
 
     def _wi(self) -> WorkItem:
@@ -4576,6 +4624,8 @@ class TestRunAgentWorktreeIsolation:
             trigger={"label": "issue-classifier:complete"}, dependencies=[],
             human_gate_after=False, human_gate_label=None, description="test coder",
             commit_after=True,
+            flow="test-flow",
+            flow_naming={"branch": "issue-{number}"},
         )
         wi = _make_work_item_with_labels(7, {"issue-classifier:complete"})
         gh = _make_gh_mock()
@@ -4769,6 +4819,8 @@ class TestOrchestrationScriptResolution:
             trigger={"label": "x:complete"}, dependencies=[],
             human_gate_after=False, human_gate_label=None, description="t",
             commit_after=True,
+            flow="test-flow",
+            flow_naming={"branch": "issue-{number}"},
         )
         wi = WorkItem(
             number=999, kind="issue", title="T", labels=set(),
@@ -5312,10 +5364,18 @@ class TestProcessWorkItemBlockingGate:
         gh.remove_label.assert_not_called()
 
 
-class TestFindEpicSiblings:
-    """_find_epic_siblings(): reads parent-issue:{N}-labeled issues."""
+class TestFindChildItems:
+    """find_child_items(): reads the parent-issue:{N}-labeled children of an item.
 
-    def test_returns_sibling_number_and_state(self):
+    The generalised form of what used to be the epic sweep's own sibling
+    lookup: nothing about it is epic-specific, so any step's trigger can read
+    it (issue #406).
+    """
+
+    def setup_method(self):
+        _invalidate_children_cache()
+
+    def test_returns_child_number_and_state(self):
         gh = MagicMock()
         gh.repo = "org/repo"
         gh._get.return_value = [
@@ -5323,7 +5383,7 @@ class TestFindEpicSiblings:
             {"number": 11, "state": "open"},
         ]
 
-        result = _find_epic_siblings(gh, 5)
+        result = find_child_items(gh, 5)
 
         assert result == [{"number": 10, "state": "closed"}, {"number": 11, "state": "open"}]
         _args, kwargs = gh._get.call_args
@@ -5337,7 +5397,7 @@ class TestFindEpicSiblings:
             {"number": 20, "state": "open", "pull_request": {}},
         ]
 
-        result = _find_epic_siblings(gh, 5)
+        result = find_child_items(gh, 5)
 
         assert result == [{"number": 10, "state": "closed"}]
 
@@ -5346,92 +5406,190 @@ class TestFindEpicSiblings:
         gh.repo = "org/repo"
         gh._get.side_effect = Exception("boom")
 
-        result = _find_epic_siblings(gh, 5)
+        result = find_child_items(gh, 5)
 
         assert result == []
 
+    def test_result_is_cached_until_invalidated(self):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = [{"number": 10, "state": "open"}]
 
-class TestCheckEpicCompletions:
-    """_check_epic_completions(): scheduled-sweep epic-completion check + loop-back."""
+        find_child_items(gh, 5)
+        find_child_items(gh, 5)
+        assert gh._get.call_count == 1
 
-    def _epic_item(self, number=100, closed=False):
+        _invalidate_children_cache(5)
+        find_child_items(gh, 5)
+        assert gh._get.call_count == 2
+
+
+class TestChildrenConditions:
+    """children_condition_met(): the two directions of one outward-looking fact."""
+
+    def test_all_closed_requires_at_least_one_child(self):
+        assert children_condition_met("all_closed", []) is False
+
+    def test_all_closed_true_when_every_child_closed(self):
+        children = [{"number": 1, "state": "closed"}, {"number": 2, "state": "closed"}]
+        assert children_condition_met("all_closed", children) is True
+
+    def test_all_closed_false_while_one_remains_open(self):
+        children = [{"number": 1, "state": "closed"}, {"number": 2, "state": "open"}]
+        assert children_condition_met("all_closed", children) is False
+
+    def test_any_open_true_while_one_remains_open(self):
+        children = [{"number": 1, "state": "closed"}, {"number": 2, "state": "open"}]
+        assert children_condition_met("any_open", children) is True
+
+    def test_any_open_false_when_all_closed(self):
+        assert children_condition_met("any_open", [{"number": 1, "state": "closed"}]) is False
+
+    def test_unknown_condition_raises(self):
+        with pytest.raises(ValueError):
+            children_condition_met("sometimes", [])
+
+    def test_select_sub_item_picks_lowest_open_child(self):
+        children = [
+            {"number": 30, "state": "open"},
+            {"number": 12, "state": "closed"},
+            {"number": 21, "state": "open"},
+        ]
+        assert select_sub_item(children) == 21
+
+    def test_select_sub_item_is_none_when_nothing_open(self):
+        assert select_sub_item([{"number": 1, "state": "closed"}]) is None
+
+
+class TestEpicCompletionIsDeclared:
+    """The epic wait is a declared step, not a sweep in the orchestrator.
+
+    Same observable behaviour the old `_check_epic_completions` sweep had --
+    an epic whose children are all closed advances; one with an open child, or
+    with no children at all, does not -- but reached through ordinary step
+    eligibility, so any flow can declare the same trigger (issue #406, AC2).
+    """
+
+    PIPELINE_JSON = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+
+    def setup_method(self):
+        _invalidate_children_cache()
+        agents, _ = load_pipeline(self.PIPELINE_JSON)
+        self.agents = agents
+        self.pipeline_map = pipeline_by_name(agents)
+        self.step = self.pipeline_map["04_evaluate/epic-closer"]
+
+    def _epic(self, labels=None, number=100):
         return WorkItem(
             number=number, kind="issue", title="Epic",
-            labels={"epic", "blocked"}, url="https://github.com/test/repo/issues/100",
-            is_closed=closed,
+            labels=set(labels if labels is not None else {"epic"}),
+            url="https://github.com/test/repo/issues/100",
         )
 
-    def _ctx(self, work_items):
-        return RunContext(
-            gh=MagicMock(), agents=[], pipeline_map={}, work_items=work_items,
-            concurrency=MagicMock(), repo="org/repo", session_id="s", dry_run=False,
-            default_extra_tools=None,
+    def _gh(self, children):
+        gh = MagicMock()
+        gh.repo = "org/repo"
+        gh._get.return_value = list(children)
+        return gh
+
+    def test_step_is_declared_with_the_children_trigger(self):
+        assert self.step.flow == "epic-completion"
+        assert self.step.flow_labels == ["epic"]
+        assert self.step.trigger == {"children": "all_closed"}
+        assert self.step.step_type == "script"
+        assert self.step.script_path == ".github/scripts/epic-closer.sh"
+
+    def test_eligible_once_every_child_is_closed(self):
+        item = self._epic()
+        gh = self._gh([{"number": 1, "state": "closed"}, {"number": 2, "state": "closed"}])
+        assert _should_run(
+            self.step, item, item.labels, self.pipeline_map, None, gh=gh, repo="org/repo",
+        ) is True
+
+    def test_not_eligible_while_a_child_is_open(self):
+        item = self._epic()
+        gh = self._gh([{"number": 1, "state": "closed"}, {"number": 2, "state": "open"}])
+        assert _should_run(
+            self.step, item, item.labels, self.pipeline_map, None, gh=gh, repo="org/repo",
+        ) is False
+
+    def test_not_eligible_with_no_children_at_all(self):
+        item = self._epic()
+        gh = self._gh([])
+        assert _should_run(
+            self.step, item, item.labels, self.pipeline_map, None, gh=gh, repo="org/repo",
+        ) is False
+
+    def test_not_eligible_on_an_item_outside_the_flow(self):
+        """The flow's own trigger (labels: ['epic']) is what admits an item."""
+        item = self._epic(labels=set())
+        gh = self._gh([{"number": 1, "state": "closed"}])
+        assert _should_run(
+            self.step, item, item.labels, self.pipeline_map, None, gh=gh, repo="org/repo",
+        ) is False
+
+    def test_step_is_told_how_many_children_it_has(self):
+        item = self._epic()
+        env = orch._flow_context_env(
+            self.step, item,
+            children=[{"number": 1, "state": "closed"}, {"number": 2, "state": "closed"}],
         )
+        assert env["AI_AGILE_CHILDREN_TOTAL"] == "2"
+        assert env["AI_AGILE_CHILDREN_OPEN"] == "0"
+        assert env["AI_AGILE_FLOW"] == "epic-completion"
+        # The flow declares no naming: this step never commits, so it is told
+        # no branch rather than one invented for it.
+        assert "AI_AGILE_BRANCH" not in env
 
-    def test_non_epic_items_are_skipped(self):
-        item = WorkItem(number=1, kind="issue", title="x", labels=set(), url="u")
-        ctx = self._ctx([item])
+    def test_closer_script_posts_the_completion_comment_and_closes(self, tmp_path):
+        """The declared step reproduces exactly what the sweep used to do."""
+        script = Path(__file__).parent.parent / ".github" / "scripts" / "epic-closer.sh"
+        calls = tmp_path / "calls.log"
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        (fake_bin / "gh").write_text(
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> " + str(calls) + "\n"
+        )
+        (fake_bin / "gh").chmod(0o755)
 
-        with patch("pipeline_orchestrator._find_epic_siblings") as mock_find:
-            _check_epic_completions(ctx)
+        env = {
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "REPO": "org/repo",
+            "ISSUE_NUMBER": "100",
+            "AI_AGILE_CHILDREN_TOTAL": "3",
+            "AI_AGILE_CHILDREN_OPEN": "0",
+        }
+        out = subprocess.run(
+            ["bash", str(script)], env=env, capture_output=True, text=True,
+        )
+        assert out.returncode == 0, out.stderr
+        assert out.stdout.strip().splitlines()[-1] == "AI_AGILE_STATUS: complete"
 
-        mock_find.assert_not_called()
+        logged = calls.read_text()
+        assert "repos/org/repo/issues/100/comments" in logged
+        assert "## Epic complete" in logged
+        assert "All 3 sub-issue(s) have been closed. Closing this epic." in logged
+        assert "<!-- ai-agile/announcement/v1 by orchestrator -->" in logged
+        assert "state=closed" in logged
+        assert "state_reason=completed" in logged
 
-    def test_closed_epics_are_skipped(self):
-        item = self._epic_item(closed=True)
-        ctx = self._ctx([item])
+    def test_closer_script_refuses_while_a_child_is_open(self, tmp_path):
+        script = Path(__file__).parent.parent / ".github" / "scripts" / "epic-closer.sh"
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        (fake_bin / "gh").write_text("#!/usr/bin/env bash\nexit 0\n")
+        (fake_bin / "gh").chmod(0o755)
+        env = {
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "REPO": "org/repo",
+            "ISSUE_NUMBER": "100",
+            "AI_AGILE_CHILDREN_TOTAL": "3",
+            "AI_AGILE_CHILDREN_OPEN": "1",
+        }
+        out = subprocess.run(
+            ["bash", str(script)], env=env, capture_output=True, text=True,
+        )
+        assert out.returncode == 0
+        assert out.stdout.strip().splitlines()[-1] == "AI_AGILE_STATUS: blocked"
 
-        with patch("pipeline_orchestrator._find_epic_siblings") as mock_find:
-            _check_epic_completions(ctx)
 
-        mock_find.assert_not_called()
-
-    def test_some_open_siblings_keeps_epic_open(self):
-        item = self._epic_item()
-        ctx = self._ctx([item])
-
-        with patch("pipeline_orchestrator._find_epic_siblings",
-                    return_value=[{"number": 1, "state": "closed"}, {"number": 2, "state": "open"}]), \
-             patch("pipeline_orchestrator.process_work_item") as mock_process:
-            _check_epic_completions(ctx)
-
-        mock_process.assert_not_called()
-        ctx.gh.close_issue.assert_not_called()
-
-    def test_all_siblings_closed_reprocesses_parent_and_falls_back_to_close(self):
-        item = self._epic_item()
-        ctx = self._ctx([item])
-
-        with patch("pipeline_orchestrator._find_epic_siblings",
-                    return_value=[{"number": 1, "state": "closed"}, {"number": 2, "state": "closed"}]), \
-             patch("pipeline_orchestrator.process_work_item", return_value=0) as mock_process:
-            _check_epic_completions(ctx)
-
-        mock_process.assert_called_once()
-        ctx.gh.close_issue.assert_called_once_with(item.number)
-        ctx.gh.post_comment.assert_called_once()
-
-    def test_all_siblings_closed_and_agent_triggered_skips_fallback_close(self):
-        """When a real pipeline agent matches the epic, the orchestrator-native
-        fallback (direct close + comment) must not also fire."""
-        item = self._epic_item()
-        ctx = self._ctx([item])
-
-        with patch("pipeline_orchestrator._find_epic_siblings",
-                    return_value=[{"number": 1, "state": "closed"}]), \
-             patch("pipeline_orchestrator.process_work_item", return_value=1) as mock_process:
-            _check_epic_completions(ctx)
-
-        mock_process.assert_called_once()
-        ctx.gh.close_issue.assert_not_called()
-
-    def test_no_siblings_found_is_skipped(self):
-        item = self._epic_item()
-        ctx = self._ctx([item])
-
-        with patch("pipeline_orchestrator._find_epic_siblings", return_value=[]), \
-             patch("pipeline_orchestrator.process_work_item") as mock_process:
-            _check_epic_completions(ctx)
-
-        mock_process.assert_not_called()
-        ctx.gh.close_issue.assert_not_called()

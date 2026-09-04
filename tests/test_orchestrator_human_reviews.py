@@ -29,7 +29,8 @@ def _invoke_agent_writing_result(outcome="complete", **fields):
     the unmocked _read_step_result finds it (issue #400).
     """
     def _effect(agent_def, work_item, dry_run, repo, attempt=0,
-                agent_text_override=None, default_extra_tools=None, cwd=None):
+                agent_text_override=None, default_extra_tools=None, cwd=None,
+                flow_env=None):
         if not dry_run:
             scratch = _scratch_path(_compute_agent_session_id(agent_def, work_item, repo))
             os.makedirs(scratch, exist_ok=True)
@@ -432,6 +433,8 @@ class TestProcessWorkItemHumanReviewGuard:
             human_gate_after=False,
             human_gate_label=None,
             description="test pr-reviewer",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
             post_steps=[".github/scripts/mark-pr-ready.sh"],
             review_gate=True,
             review_loop={
@@ -451,6 +454,8 @@ class TestProcessWorkItemHumanReviewGuard:
             human_gate_after=False,
             human_gate_label=None,
             description="test coder",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
         )
 
     def _make_gh_for_process(

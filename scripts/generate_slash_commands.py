@@ -194,8 +194,10 @@ def main() -> int:
     # Agent-type entries only — script-type steps (create-pr, ci-gate) are
     # not interactively invokable and get no slash command.
     agents = [
-        e for e in pipeline["pipeline"]
-        if e.get("type", "agent") == "agent"
+        step
+        for flow in (pipeline.get("flows") or {}).values()
+        for step in (flow.get("steps") or [])
+        if step.get("type", "agent") == "agent"
     ]
 
     COMMANDS_DIR.mkdir(parents=True, exist_ok=True)

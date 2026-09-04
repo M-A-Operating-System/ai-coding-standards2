@@ -65,7 +65,39 @@ def _trigger(step):
         return f"`{trig['label']}`"
     if "event" in trig:
         return f"event `{trig['event']}`"
+    if "children" in trig:
+        return f"children `{trig['children']}`"
     return _cell(trig)
+
+
+def _flows(pipeline):
+    """Every flow, in declaration order, as (name, flow) pairs."""
+    return list((pipeline.get("flows") or {}).items())
+
+
+def _flow_trigger(flow):
+    trig = flow.get("trigger") or {}
+    if "schedule" in trig:
+        return f"schedule `{trig['schedule']}`"
+    parts = [f"kind `{trig.get('kind')}`"]
+    if trig.get("type"):
+        parts.append("type " + ", ".join(f"`{t}`" for t in trig["type"]))
+    if trig.get("labels"):
+        parts.append("labels " + ", ".join(f"`{lab}`" for lab in trig["labels"]))
+    return "; ".join(parts)
+
+
+def _flow_naming(flow):
+    naming = flow.get("naming") or {}
+    if not naming:
+        return "--"
+    parts = [f"branch `{naming['branch']}`"]
+    if naming.get("base"):
+        parts.append(f"base `{naming['base']}`")
+    for pr in naming.get("pull_requests", []):
+        closes = "closes" if pr.get("closes_issue", True) else "does not close"
+        parts.append(f"PR `{pr['id']}` on `{pr['branch']}` ({closes} the issue)")
+    return "; ".join(parts)
 
 
 # --- agents.md -------------------------------------------------------------
@@ -74,27 +106,29 @@ def _trigger(step):
 def render_agents(pipeline):
     lines = [BANNER.format(source="pipeline/pipeline.json"), "# Agent Catalogue", ""]
     lines += [
-        "Every step in the pipeline, in configuration order, with the",
-        "description declared in `pipeline.json`.",
+        "Every step in the pipeline, by the flow that declares it and in",
+        "configuration order, with the description declared in `pipeline.json`.",
         "",
     ]
 
-    by_phase = {}
-    for step in pipeline["pipeline"]:
-        by_phase.setdefault(step["phase"], []).append(step)
-
-    for phase in sorted(by_phase):
-        lines += [f"## {phase}", ""]
-        for step in by_phase[phase]:
+    for flow_name, flow in _flows(pipeline):
+        lines += [f"## Flow: `{flow_name}`", ""]
+        lines += [f"- **Applies to:** {_flow_trigger(flow)}"]
+        lines += [f"- **Naming:** {_flow_naming(flow)}"]
+        desc = (flow.get("description") or "").strip()
+        if desc:
+            lines += ["", desc]
+        lines += [""]
+        for step in flow.get("steps") or []:
             kind = step.get("type", "agent")
             lines += [f"### `{step['agent']}`", ""]
             lines += [f"- **Kind:** {kind}"]
-            lines += [f"- **Operates on:** {_cell(step.get('object'))}"]
+            lines += [f"- **Phase:** `{step['phase']}`"]
             if step.get("script"):
                 lines += [f"- **Script:** `{step['script']}`"]
-            desc = (step.get("description") or "").strip()
-            if desc:
-                lines += ["", desc]
+            step_desc = (step.get("description") or "").strip()
+            if step_desc:
+                lines += ["", step_desc]
             lines += [""]
     return "\n".join(lines).rstrip() + "\n"
 
@@ -106,48 +140,64 @@ def render_steps(pipeline):
     lines = [BANNER.format(source="pipeline/pipeline.json"), "# Pipeline Steps", ""]
     lines += [
         "What runs, what starts it, what must finish first, and where a human",
-        "decides. This is the process definition (AS-1): `pipeline.json` is",
-        "authoritative and this table is a view of it.",
+        "decides -- one section per flow, because the pipeline defines flows,",
+        "not a flow. This is the process definition (AS-1): `pipeline.json` is",
+        "authoritative and these tables are a view of it.",
         "",
-        "## Sequence and gates",
+        "## Flows",
         "",
-        "| Step | Kind | Trigger | Depends on | Human gate |",
-        "|---|---|---|---|---|",
+        "| Flow | Applies to | Naming |",
+        "|---|---|---|",
     ]
-    for step in pipeline["pipeline"]:
-        gate = step.get("human_gate_label") if step.get("human_gate_after") else None
-        lines.append(
-            f"| `{step['agent']}` | {step.get('type', 'agent')} | {_trigger(step)} "
-            f"| {_cell(step.get('dependencies'))} | {_cell(gate)} |"
-        )
+    for flow_name, flow in _flows(pipeline):
+        lines.append(f"| `{flow_name}` | {_flow_trigger(flow)} | {_flow_naming(flow)} |")
 
-    lines += ["", "## Exclusions and retries", ""]
-    lines += [
-        "| Step | Excluded classifications | Excluded labels | Max retries |",
-        "|---|---|---|---|",
-    ]
-    for step in pipeline["pipeline"]:
-        lines.append(
-            f"| `{step['agent']}` | {_cell(step.get('exclude_classifications'))} "
-            f"| {_cell(step.get('exclude_labels'))} | {_cell(step.get('max_retries'))} |"
-        )
+    for flow_name, flow in _flows(pipeline):
+        flow_steps = flow.get("steps") or []
+        lines += ["", f"## Flow: `{flow_name}`", ""]
+        lines += [
+            "### Sequence and gates",
+            "",
+            "| Step | Kind | Unit | Trigger | Depends on | Human gate |",
+            "|---|---|---|---|---|---|",
+        ]
+        for step in flow_steps:
+            gate = step.get("human_gate_label") if step.get("human_gate_after") else None
+            lines.append(
+                f"| `{step['agent']}` | {step.get('type', 'agent')} "
+                f"| `{step.get('unit', 'item')}` | {_trigger(step)} "
+                f"| {_cell(step.get('dependencies'))} | {_cell(gate)} |"
+            )
 
-    lines += ["", "## Entitled activities", ""]
+        lines += ["", "### Exclusions and retries", ""]
+        lines += [
+            "| Step | Excluded classifications | Excluded labels | Max retries |",
+            "|---|---|---|---|",
+        ]
+        for step in flow_steps:
+            lines.append(
+                f"| `{step['agent']}` | {_cell(step.get('exclude_classifications'))} "
+                f"| {_cell(step.get('exclude_labels'))} | {_cell(step.get('max_retries'))} |"
+            )
+
+        lines += ["", "### Entitled activities", ""]
+        lines += ["| Step | Additional entitlements | Git operations |", "|---|---|---|"]
+        for step in flow_steps:
+            extra = step.get("extra_allowedTools") or []
+            shown = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
+            lines.append(
+                f"| `{step['agent']}` | {shown if extra else '--'} "
+                f"| {_cell(step.get('git_ops'))} |"
+            )
+
+    lines += ["", "## Entitlements granted to every step", ""]
     lines += [
-        "What each step is permitted to do. Under AS-1 this table must be",
-        "complete: an entitlement that does not appear here is not granted.",
+        "Under AS-1 the tables above must be complete: an entitlement that does",
+        "not appear there or here is not granted.",
         "",
     ]
     defaults = pipeline.get("defaults", {}).get("extra_allowedTools", [])
-    lines += [f"**Granted to every step:** {_cell(defaults)}", ""]
-    lines += ["| Step | Additional entitlements | Git operations |", "|---|---|---|"]
-    for step in pipeline["pipeline"]:
-        extra = step.get("extra_allowedTools") or []
-        shown = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
-        lines.append(
-            f"| `{step['agent']}` | {shown if extra else '--'} "
-            f"| {_cell(step.get('git_ops'))} |"
-        )
+    lines += [f"**Granted to every step:** {_cell(defaults)}"]
 
     return "\n".join(lines).rstrip() + "\n"
 

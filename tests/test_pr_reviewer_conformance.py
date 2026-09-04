@@ -140,7 +140,12 @@ class TestPrReviewerExtraAllowedToolsForApi:
     def test_pipeline_json_allows_gh_api(self):
         pipeline = json.loads(PIPELINE_JSON.read_text())
         pr_reviewer = next(
-            (a for a in pipeline["pipeline"] if a["agent"] == "03_execute/pr-reviewer"),
+            (
+                step
+                for flow in pipeline["flows"].values()
+                for step in flow["steps"]
+                if step["agent"] == "03_execute/pr-reviewer"
+            ),
             None,
         )
         assert pr_reviewer is not None, "03_execute/pr-reviewer not found in pipeline.json"

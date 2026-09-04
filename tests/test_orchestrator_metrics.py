@@ -63,6 +63,8 @@ def _make_agent_def(name: str = "03_execute/coder", step_type: str = "agent") ->
         human_gate_label=None,
         description="test agent",
         step_type=step_type,
+        flow="test-flow",
+        flow_naming={"branch": "issue-{number}"},
     )
 
 
