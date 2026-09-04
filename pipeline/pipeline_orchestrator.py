@@ -6976,6 +6976,10 @@ class RunContext:
     dry_run: bool
     default_extra_tools: Optional[list]
     interactive_result: bool = False
+    # True when this tick was scoped to one work item (--issue). A scheduled
+    # flow is about the repository, not that item, so a scoped tick leaves the
+    # cadences to the unscoped ticks that own them.
+    scoped_to_item: bool = False
 
 
 def _read_pr_event_action() -> str:
@@ -7551,6 +7555,7 @@ def _wake(args) -> "Optional[RunContext]":
         concurrency=conc, repo=args.repo, session_id=session_id,
         dry_run=args.dry_run, default_extra_tools=default_extra_tools,
         interactive_result=args.interactive_result,
+        scoped_to_item=args.issue is not None,
     )
 
 
@@ -7646,6 +7651,8 @@ def _run_scheduled_flows(ctx: "RunContext") -> int:
     kept anywhere else (PRODUCT.md, "A scheduled flow derives its own due-ness
     from the record").
     """
+    if ctx.scoped_to_item:
+        return 0
     flows = _scheduled_flows(ctx.agents)
     if not flows:
         return 0

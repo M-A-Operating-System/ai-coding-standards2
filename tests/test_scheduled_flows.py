@@ -410,3 +410,15 @@ class TestScheduledDispatch:
         title, body, _labels = ctx.gh.create_issue.call_args.args
         assert title == "Tech debt found"
         assert body.startswith(orch.provenance_stamp(step))
+
+    def test_a_tick_scoped_to_one_item_leaves_the_cadences_alone(self, monkeypatch):
+        """--issue asks about one work item; a schedule is about the repo."""
+        ctx = _ctx([_scheduled_step()])
+        ctx.scoped_to_item = True
+        read = MagicMock()
+        monkeypatch.setattr(orch, "read_metrics_records", read)
+        run = MagicMock()
+        monkeypatch.setattr(orch, "_run_scheduled_step", run)
+        assert orch._run_scheduled_flows(ctx) == 0
+        read.assert_not_called()
+        run.assert_not_called()
