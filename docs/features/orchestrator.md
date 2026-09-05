@@ -449,25 +449,25 @@
 **Then** the disagreement is surfaced rather than buried
 **And** an undeclared request is refused, not silently honoured -- the same relationship `allowed_labels` has with label requests
 
-## Scenario: A repository's own pipeline.json replaces the flows it names and inherits the rest
+## Scenario: A repository's own pipeline.json replaces the shipped definition in full
 
-**Given** a consuming repository has its own `pipeline/pipeline.json` at its repo root, outside the submodule, naming one flow
+**Given** a consuming repository has its own `pipeline/pipeline.json` at its repo root, outside the submodule
 **When** the orchestrator loads the pipeline
-**Then** that flow's whole definition replaces the shipped flow of the same name -- never a field-by-field merge
-**And** every flow the file does not name is inherited from the shipped default unchanged
-**And** a flow the shipped file does not have is added
+**Then** that file is the complete definition for the rest of the run -- precedence is per file, not per flow (AS-1)
+**And** no flow, budget or default from the shipped file survives, including a flow the repository's file never names
+**And** nothing is merged: there is no partial override to reconcile
 
-## Scenario: A broken repository override stops the run instead of being ignored
+## Scenario: A broken repository pipeline.json stops the run instead of being ignored
 
-**Given** a repository's own `pipeline/pipeline.json` composes into a definition that does not validate against the schema
+**Given** a repository's own `pipeline/pipeline.json` does not validate against the schema on its own
 **When** the orchestrator loads the pipeline
-**Then** it names the violations and exits, rather than running on a half-understood definition or silently discarding the override
+**Then** it names the violations and exits, rather than running on a half-understood definition or silently falling back to the shipped file
 
 ## Scenario: A repository with no pipeline.json of its own is unaffected
 
 **Given** a repository has no `pipeline/pipeline.json` of its own
 **When** the orchestrator loads the pipeline
-**Then** it runs exactly the shipped flows, with no composition step observable in its behaviour
+**Then** it runs exactly the shipped flows, with no replacement step observable in its behaviour
 
 ## Scenario: The repo-root sweep runs as a declared lifecycle hook, not as orchestrator code
 

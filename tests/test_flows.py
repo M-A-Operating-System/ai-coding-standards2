@@ -1,9 +1,12 @@
-"""Tests for issue #406's flow-level composition and sub-item units.
+"""Tests for the repository's own pipeline definition and sub-item units.
 
 Two capabilities that make a flow a first-class object:
 
-  - a consuming repository's own pipeline/pipeline.json replaces the flows
-    it names, wholesale, and inherits the rest from the shipped file;
+  - a consuming repository's own pipeline/pipeline.json replaces the shipped
+    definition in full -- precedence is per file, not per flow (PRODUCT.md,
+    AS-1): presence means the repository's file decides everything, absence
+    means the shipped default decides everything, and there is nothing to
+    merge;
   - a step can declare it finishes its own work in pieces (unit: sub_item),
     staying eligible while its own children are open and being told which
     piece each invocation is for.
@@ -18,7 +21,6 @@ import pytest
 import pipeline_orchestrator as orch
 from pipeline_orchestrator import (
     AgentDef, WorkItem,
-    compose_pipeline,
     repo_pipeline_override_path,
     load_pipeline,
     pipeline_by_name,
@@ -71,55 +73,23 @@ def _shipped(tmp_path, flows=None):
     return path
 
 
-def _override(root, flows):
+def _override(root, flows, budgets=None, defaults=None):
+    """A consuming repository's own pipeline definition.
+
+    Complete by construction, not a fragment: under AS-1 the repository's
+    file is a whole pipeline definition validating against the identical
+    schema, so the helper writes budgets alongside the flows.
+    """
+    data = {
+        "budgets": budgets if budgets is not None else {"max_turns": 7, "max_wall_seconds": 900},
+        "flows": flows,
+    }
+    if defaults is not None:
+        data["defaults"] = defaults
     path = root / "pipeline" / "pipeline.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"flows": flows}))
+    path.write_text(json.dumps(data))
     return path
-
-
-# ---------------------------------------------------------------------------
-# compose_pipeline: precedence is per flow, not per file
-# ---------------------------------------------------------------------------
-
-class TestComposePipeline:
-    def _shipped_dict(self):
-        return {
-            "budgets": {"max_turns": 30, "max_wall_seconds": 1800},
-            "defaults": {"extra_allowedTools": ["Read"]},
-            "flows": {
-                "a": {"description": "shipped a", "trigger": {"kind": "issue"}, "steps": [1]},
-                "b": {"description": "shipped b", "trigger": {"kind": "issue"}, "steps": [2]},
-            },
-        }
-
-    def test_unnamed_flows_keep_tracking_the_shipped_default(self):
-        composed = compose_pipeline(self._shipped_dict(), {"flows": {"a": {"description": "mine"}}})
-        assert composed["flows"]["b"] == {"description": "shipped b", "trigger": {"kind": "issue"}, "steps": [2]}
-
-    def test_a_named_flow_is_replaced_wholesale_never_field_merged(self):
-        composed = compose_pipeline(
-            self._shipped_dict(),
-            {"flows": {"a": {"description": "mine", "trigger": {"kind": "pr"}, "steps": [9]}}},
-        )
-        assert composed["flows"]["a"] == {"description": "mine", "trigger": {"kind": "pr"}, "steps": [9]}
-        assert "steps" in composed["flows"]["a"] and composed["flows"]["a"]["steps"] == [9]
-
-    def test_a_flow_the_shipped_file_lacks_is_added(self):
-        composed = compose_pipeline(self._shipped_dict(), {"flows": {"c": {"description": "new"}}})
-        assert set(composed["flows"]) == {"a", "b", "c"}
-
-    def test_an_empty_override_changes_nothing(self):
-        shipped = self._shipped_dict()
-        assert compose_pipeline(shipped, {}) == shipped
-
-    def test_budgets_and_defaults_replace_wholesale_when_named(self):
-        composed = compose_pipeline(
-            self._shipped_dict(),
-            {"budgets": {"max_turns": 5, "max_wall_seconds": 60}, "flows": {}},
-        )
-        assert composed["budgets"] == {"max_turns": 5, "max_wall_seconds": 60}
-        assert composed["defaults"] == {"extra_allowedTools": ["Read"]}
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +121,7 @@ class TestOverrideLookup:
         monkeypatch.setenv("AI_AGILE_ROOT", str(consuming))
         assert repo_pipeline_override_path(shipped) == override
 
-    def test_source_mode_never_composes_the_shipped_file_with_itself(self, tmp_path, monkeypatch):
+    def test_source_mode_never_treats_the_shipped_file_as_its_own_override(self, tmp_path, monkeypatch):
         root = tmp_path / "repo"
         root.mkdir()
         shipped = _shipped(root)
@@ -161,11 +131,39 @@ class TestOverrideLookup:
 
 
 # ---------------------------------------------------------------------------
-# load_pipeline: composition end to end
+# load_pipeline: whole-file replacement end to end (PRODUCT.md, AS-1)
+#
+# "There is no partial override and nothing to merge: presence means the
+# repository's file decides everything, absence means the shipped default
+# decides everything."
 # ---------------------------------------------------------------------------
 
-class TestLoadPipelineComposition:
-    def _setup(self, tmp_path, monkeypatch, override_flows=None, override_raw=None):
+_OUR_DELIVERY_FLOW = {
+    "description": "our own delivery",
+    "trigger": {"kind": "issue"},
+    "naming": {"branch": "work/{number}"},
+    "steps": [{
+        "agent": "03_execute/coder",
+        "phase": "03_execute",
+        "trigger": {"event": "issue.opened"},
+        "dependencies": [],
+        "human_gate_after": False,
+        "expected_effect": {"commits": True},
+        "git_ops": {"commit_after": True},
+        "description": "our coder",
+    }],
+}
+
+
+class TestLoadPipelineReplacement:
+    @pytest.fixture(autouse=True)
+    def _restore_budget_globals(self, monkeypatch):
+        """load_pipeline sets the budget globals; keep that out of other tests."""
+        for name in ("DEFAULT_MAX_TURNS", "AGENT_TIMEOUT_SECONDS", "MAX_LAUNCHES_PER_TICK"):
+            monkeypatch.setattr(orch, name, getattr(orch, name))
+
+    def _setup(self, tmp_path, monkeypatch, override_flows=None, override_raw=None,
+               override_budgets=None, override_defaults=None):
         consuming = tmp_path / "consuming"
         submodule = consuming / "vendor" / "ai-coding-standards2"
         submodule.mkdir(parents=True)
@@ -177,10 +175,12 @@ class TestLoadPipelineComposition:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(override_raw))
         elif override_flows is not None:
-            _override(consuming, override_flows)
+            _override(consuming, override_flows,
+                      budgets=override_budgets, defaults=override_defaults)
         return shipped
 
     def test_no_override_loads_the_shipped_file_alone(self, tmp_path, monkeypatch):
+        """Absence means the shipped default decides everything."""
         shipped = self._setup(tmp_path, monkeypatch)
         agents, _ = load_pipeline(shipped)
         assert [a.agent for a in agents] == [
@@ -188,57 +188,68 @@ class TestLoadPipelineComposition:
         ]
         assert [a.flow for a in agents] == ["standard-delivery", "blocker"]
 
-    def test_a_named_flow_is_replaced_and_the_rest_inherited(self, tmp_path, monkeypatch):
-        shipped = self._setup(tmp_path, monkeypatch, override_flows={
-            "standard-delivery": {
-                "description": "our own delivery",
-                "trigger": {"kind": "issue"},
-                "naming": {"branch": "work/{number}"},
-                "steps": [{
-                    "agent": "03_execute/coder",
-                    "phase": "03_execute",
-                    "trigger": {"event": "issue.opened"},
-                    "dependencies": [],
-                    "human_gate_after": False,
-                    "expected_effect": {"commits": True},
-                    "git_ops": {"commit_after": True},
-                    "description": "our coder",
-                }],
-            },
-        })
+    def test_the_repository_file_decides_everything_when_present(self, tmp_path, monkeypatch):
+        """Presence means the repository's file decides everything.
+
+        Its `standard-delivery` replaces the shipped one, and -- the point of
+        whole-file replacement -- the shipped `blocker` flow, which the
+        repository's file does not mention at all, does not come along.
+        """
+        shipped = self._setup(tmp_path, monkeypatch,
+                              override_flows={"standard-delivery": _OUR_DELIVERY_FLOW})
         agents, _ = load_pipeline(shipped)
         by_name = pipeline_by_name(agents)
-        # replaced wholesale: the shipped flow's only step is gone
-        assert "01_product_docs/prd-writer" not in by_name
+        assert set(by_name) == {"03_execute/coder"}
         assert by_name["03_execute/coder"].flow_naming["branch"] == "work/{number}"
-        # untouched: the flow the override did not name is inherited
-        assert by_name["00_ondemand/blocker"].flow == "blocker"
+        # Nothing from the shipped file leaks through, not even a flow the
+        # repository's file never names.
+        assert "01_product_docs/prd-writer" not in by_name
+        assert "00_ondemand/blocker" not in by_name
+        assert {a.flow for a in agents} == {"standard-delivery"}
 
-    def test_a_new_flow_is_added(self, tmp_path, monkeypatch):
-        shipped = self._setup(tmp_path, monkeypatch, override_flows={
-            "house-style": {
-                "description": "our own extra flow",
-                "trigger": {"kind": "issue"},
-                "steps": [{
-                    "agent": "04_evaluate/house-style",
-                    "phase": "04_evaluate",
-                    "type": "script",
-                    "script": ".github/scripts/house-style.sh",
-                    "trigger": {"label": "house-style:requested"},
-                    "dependencies": [],
-                    "human_gate_after": False,
-                    "expected_effect": {"commits": False},
-                    "description": "our own check",
-                }],
-            },
+    def test_budgets_come_from_the_repository_file_not_the_shipped_one(self, tmp_path, monkeypatch):
+        """Budgets are part of the same file, so they are replaced with it."""
+        shipped = self._setup(
+            tmp_path, monkeypatch,
+            override_flows={"standard-delivery": _OUR_DELIVERY_FLOW},
+            override_budgets={"max_turns": 7, "max_wall_seconds": 900},
+        )
+        load_pipeline(shipped)
+        assert orch.DEFAULT_MAX_TURNS == 7
+        assert orch.AGENT_TIMEOUT_SECONDS == 900
+
+    def test_shipped_defaults_do_not_leak_into_a_repository_file(self, tmp_path, monkeypatch):
+        """The shipped `defaults.extra_allowedTools` is not merged in.
+
+        The shipped file grants `Read`; a repository file that declares no
+        defaults at all gets none, rather than inheriting the shipped grant --
+        a permission is exactly what must not survive a replacement silently.
+        """
+        shipped = self._setup(tmp_path, monkeypatch,
+                              override_flows={"standard-delivery": _OUR_DELIVERY_FLOW})
+        _, default_extra_tools = load_pipeline(shipped)
+        assert default_extra_tools == []
+
+    def test_a_repository_file_the_schema_rejects_fails_loud(self, tmp_path, monkeypatch):
+        """STD-ARCH-014: a broken repository definition stops the run.
+
+        It is validated against the schema on its own, not as a composed
+        result -- so a file that declares no budgets is rejected too, since a
+        complete definition is what the schema describes.
+        """
+        shipped = self._setup(tmp_path, monkeypatch, override_raw={
+            "flows": {"standard-delivery": {"description": "missing trigger and steps"}},
         })
-        agents, _ = load_pipeline(shipped)
-        assert {a.flow for a in agents} == {"standard-delivery", "blocker", "house-style"}
+        with pytest.raises(SystemExit) as exc:
+            load_pipeline(shipped)
+        assert exc.value.code == 1
 
-    def test_an_invalid_composed_result_fails_loud(self, tmp_path, monkeypatch):
-        """STD-ARCH-014: a broken override stops the run, naming the violation."""
-        shipped = self._setup(tmp_path, monkeypatch, override_flows={
-            "standard-delivery": {"description": "missing trigger and steps"},
+    def test_a_repository_file_missing_budgets_is_not_rescued_by_the_shipped_one(
+        self, tmp_path, monkeypatch
+    ):
+        """No composition means no rescue: an incomplete file is just invalid."""
+        shipped = self._setup(tmp_path, monkeypatch, override_raw={
+            "flows": {"standard-delivery": _OUR_DELIVERY_FLOW},
         })
         with pytest.raises(SystemExit) as exc:
             load_pipeline(shipped)
@@ -265,7 +276,7 @@ class TestLoadPipelineComposition:
         import logging
         with caplog.at_level(logging.INFO, logger="orchestrator"):
             load_pipeline(shipped)
-        assert any("composed repository override" in r.message for r in caplog.records)
+        assert any("using repository definition" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
