@@ -78,10 +78,17 @@ marker or a snapshot comment. Those specifically mean "the orchestrator
 posted this on a step's behalf," which would misattribute a conversation you
 just had with a person. Leave the body clean; when the normal pipeline picks
 up the new issue (`issue.opened` → `issue-classifier` → `prd-writer`),
-`prd-writer` will detect the pre-existing spec on its own (Section 3 of its
-prompt: Gherkin, acceptance criteria, user stories, and problem/goal content
-between them already clear its four-signal threshold) and add the governance
-header itself in Augmentation mode — no special-casing needed here.
+`prd-writer` runs its own Section 3 signal count (Gherkin, an acceptance
+criteria heading, user stories, a problem section over two sentences, a goal
+statement, body length) against what you wrote. A `feature`/`enhancement`/
+`security` draft reliably clears its four-signal threshold and lands in
+Augmentation mode, which only adds the governance header. A terse `bug`/
+`toil`/`spike` draft — 5a permits a one-sentence problem and zero user
+stories for these — can legitimately fall short and send `prd-writer` down
+its full-draft path instead, redrafting the PRD from the same facts you and
+the person already established. That's a minor, self-correcting redundancy,
+not lost content; don't pad a terse PRD's sections artificially just to
+force Augmentation mode, since that would fight 5a's own scaling rule.
 
 Report back the issue number and URL. Do not apply any labels yourself and
 do not attempt to cross the `prd-writer:approved` gate — that stays a real
