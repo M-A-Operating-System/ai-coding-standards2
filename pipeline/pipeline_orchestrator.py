@@ -6881,6 +6881,38 @@ def _discover_github_token() -> str | None:
         return None
 
 
+def _discover_human_github_token() -> str | None:
+    """Return a token likely to be human-attributed on GitHub; None if unavailable.
+
+    For --confirm-gate only (issue #425) -- never for agent-spawned work,
+    which keeps using _discover_github_token()'s env-first resolution:
+    agent-authored content is meant to attribute to the system identity
+    (issue #51), so that priority is correct there and must not change.
+
+    Opposite priority to _discover_github_token(): tries `gh auth token`
+    first, the env vars ($GITHUB_TOKEN/$GH_TOKEN) only as a fallback when
+    gh itself has no credential. A person running the orchestrator directly
+    is unaffected either way -- their own shell typically has no such env
+    vars set, so _discover_github_token() already falls through to the same
+    `gh auth token`. The two diverge in an environment that injects a
+    bot-flavored credential into the env ahead of an interactively
+    human-authenticated `gh` -- a proxy-issued GitHub App token, for
+    instance, which `gh api user` reports as the human account for reads
+    but which GitHub's Events API attributes to the App's own bot identity
+    for label/comment writes.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=True
+        )
+        token = result.stdout.strip()
+        if token:
+            return token
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+
+
 def _ensure_gh_cli() -> None:
     """Ensure `gh` is on PATH and can make authenticated REST calls, installing
     it via apt if missing.
@@ -7332,10 +7364,15 @@ def _run_confirm_gate(args) -> None:
 
     The orchestrator -- never the driver -- writes the human-gate label,
     having been told by the driver that a person confirmed the approval.
-    Because this runs inside the person's own interactive session, the
-    label's GitHub-recorded actor is their own account, so it satisfies
-    _gate_label_human_applied exactly the way a headless human-applied label
-    does -- one mechanism, not two (MI-3/MI-7).
+    Uses _discover_human_github_token() rather than the usual
+    _discover_github_token(), so the label's GitHub-recorded actor is a
+    human account whenever the environment's `gh` is itself interactively
+    authenticated -- satisfying _gate_label_human_applied the same way a
+    headless human-applied label does. Verified immediately after the write
+    (see below), not assumed: an environment offering no human-attributed
+    credential at all cannot make this mechanism succeed no matter how it
+    resolves tokens (issue #425), so this fails loud on that write rather
+    than reporting bare success and letting the next tick discover it.
 
     Refuses (never silently no-ops) when:
     - --agent has no human_gate_label: nothing for this mode to confirm.
@@ -7346,6 +7383,9 @@ def _run_confirm_gate(args) -> None:
       a no-op"). If that prior application was already human-verified there
       is nothing to do; if not, the fix is removing it first, not papering
       over it here.
+    - the label was just applied but its own labeled event is not
+      human-attributed: same underlying cause as the "already present"
+      case above, caught immediately instead of on the following tick.
     """
     if not args.agent:
         log.error("--confirm-gate requires --agent <agent-name>")
@@ -7357,7 +7397,7 @@ def _run_confirm_gate(args) -> None:
         log.error("--confirm-gate requires --repo <owner/repo>")
         sys.exit(1)
 
-    token = _discover_github_token()
+    token = _discover_human_github_token()
     if not token:
         log.error("No GitHub token found. Set $GITHUB_TOKEN or authenticate with `gh auth login`.")
         sys.exit(1)
@@ -7402,6 +7442,19 @@ def _run_confirm_gate(args) -> None:
         gh.add_label(args.issue, gate_label)
     except Exception as exc:
         log.error("Could not apply %s to #%s: %s", gate_label, args.issue, exc)
+        sys.exit(1)
+
+    if not _gate_label_human_applied(gh, args.repo, args.issue, gate_label):
+        log.error(
+            "  %s was applied to #%s, but GitHub does not attribute the write to a "
+            "human account -- this environment's resolved token authenticates writes "
+            "as a bot even though it may read back as a human user. --confirm-gate "
+            "cannot satisfy the self-approval guard here (issue #425); remove %s "
+            "(gh issue edit %s --repo %s --remove-label %r) and apply it directly on "
+            "GitHub instead, or supply a token from an interactively "
+            "human-authenticated `gh auth login` before retrying.",
+            gate_label, args.issue, gate_label, args.issue, args.repo, gate_label,
+        )
         sys.exit(1)
     log.info("  CONFIRM %-38s  %s applied to #%s (relayed human confirmation)",
               args.agent, gate_label, args.issue)
