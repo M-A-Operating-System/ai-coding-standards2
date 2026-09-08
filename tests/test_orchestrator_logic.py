@@ -1601,6 +1601,59 @@ class TestInvokeAgentRuntimeContext:
             f"Expected SESSION_ID={env_session_id!r} in prompt."
         )
 
+    def test_prompt_gives_resolved_scratch_path(self, monkeypatch):
+        """AI_AGILE_SCRATCH must appear in the prompt as a resolved path (issue #424).
+
+        An agent has no allowed way to expand a literal '$AI_AGILE_SCRATCH'
+        shell reference -- Write needs a literal path, and Bash forms that
+        could resolve an env var (echo, bash -c, printenv) are not on most
+        steps' allowlists. The prompt's Runtime context block must give the
+        concrete value directly, matching what _scratch_path() computes and
+        what is exported to the subprocess. (AGENTS.md's own prose still
+        uses the symbolic '$AI_AGILE_SCRATCH' form to describe the mechanism
+        generally, which is fine -- this test only checks that the resolved,
+        usable value is also present.)
+        """
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+        captured_cmd: list = []
+        captured_env: dict = {}
+
+        def fake_popen(cmd, env=None, **kwargs):
+            captured_cmd.extend(cmd)
+            if env is not None:
+                captured_env.update(env)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(number=42),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        prompt = self._capture_prompt(captured_cmd)
+        env_scratch = captured_env.get("AI_AGILE_SCRATCH", "")
+        assert env_scratch, "AI_AGILE_SCRATCH must be exported to subprocess env"
+        assert f"AI_AGILE_SCRATCH={env_scratch}" in prompt, (
+            f"Prompt must contain the resolved AI_AGILE_SCRATCH path. "
+            f"Expected AI_AGILE_SCRATCH={env_scratch!r} in prompt."
+        )
+        assert env_scratch == orch._scratch_path(captured_env.get("SESSION_ID", "")), (
+            "Resolved AI_AGILE_SCRATCH must match _scratch_path(session_id) -- "
+            "the sole formula every caller derives the path from."
+        )
+
 
 class TestPromoteGatedAgents:
     """Tests for promote_gated_agents covering all label-state transitions."""
