@@ -190,7 +190,13 @@
 
 **Given** a person confirms a gate approval to the chat-AI driving `/maos-run` or `/approve-prd`
 **When** the driver runs `pipeline_orchestrator.py --repo R --agent {agent} --issue N --confirm-gate`
-**Then** the orchestrator itself calls `gh.add_label` for the gate label -- the driver never calls `gh issue edit --add-label` or an equivalent MCP write itself -- and the label's GitHub-recorded actor is the person's own account, satisfying the same `_gate_label_human_applied` check a headless human-applied label would (one mechanism, not two)
+**Then** the orchestrator itself calls `gh.add_label` for the gate label -- the driver never calls `gh issue edit --add-label` or an equivalent MCP write itself -- and, when the environment's resolved credential (`_discover_human_github_token()`) is itself human-attributed, the label's GitHub-recorded actor is the person's own account, satisfying the same `_gate_label_human_applied` check a headless human-applied label would (one mechanism, not two)
+
+## Scenario: --confirm-gate refuses when its own write is not human-attributed
+
+**Given** the environment's resolved token authenticates writes as a bot even though it may read back as a human user (issue #425)
+**When** `--confirm-gate` applies the gate label and then re-checks `_gate_label_human_applied` on that same write
+**Then** it refuses immediately, naming issue #425 and the exact remove-label command to run, rather than reporting success and leaving the next tick to discover the mismatch cold
 
 ## Scenario: --confirm-gate refuses when the named agent has no gate to confirm
 

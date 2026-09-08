@@ -6867,18 +6867,29 @@ def process_work_item(
 # Helpers used by entry point
 # ---------------------------------------------------------------------------
 
+def _gh_auth_token_from_cli() -> str | None:
+    """Return `gh auth token`'s trimmed stdout, or None if gh has no credential.
+
+    Sole caller of the gh-CLI subprocess for token discovery -- both
+    _discover_github_token() and _discover_human_github_token() call this
+    rather than each invoking `gh auth token` themselves (issue #425 review,
+    STD-ARCH-001/002: the second call site is what justifies the extraction).
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    return result.stdout.strip() or None
+
+
 def _discover_github_token() -> str | None:
     """Return the GitHub token from env or gh CLI; None if unavailable."""
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
         return token
-    try:
-        result = subprocess.run(
-            ["gh", "auth", "token"], capture_output=True, text=True, check=True
-        )
-        return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
+    return _gh_auth_token_from_cli()
 
 
 def _discover_human_github_token() -> str | None:
@@ -6901,15 +6912,9 @@ def _discover_human_github_token() -> str | None:
     but which GitHub's Events API attributes to the App's own bot identity
     for label/comment writes.
     """
-    try:
-        result = subprocess.run(
-            ["gh", "auth", "token"], capture_output=True, text=True, check=True
-        )
-        token = result.stdout.strip()
-        if token:
-            return token
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
+    token = _gh_auth_token_from_cli()
+    if token:
+        return token
     return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
