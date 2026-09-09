@@ -1,8 +1,9 @@
 """Tests for issue #403's --confirm-gate interactive gate-crossing mode
 (PRODUCT.md MI-7): the orchestrator, not the driver, writes a human-gate
 label, on the driver's relayed word that a person confirmed. Refuses rather
-than silently no-ops on a missing gate, an already-present label, or an
-already-present label that wasn't verifiably human-applied (issue #377).
+than silently no-ops on a missing gate, an already-present label, an
+already-present label that wasn't verifiably human-applied (issue #377), or
+a just-applied label whose own write is not human-attributed (issue #425).
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
@@ -46,32 +47,32 @@ def _no_stray_audit_output(monkeypatch):
 
 class TestConfirmGateValidation:
     def test_missing_agent_exits(self):
-        with patch.object(po, "_discover_github_token", return_value="t"):
+        with patch.object(po, "_discover_human_github_token", return_value="t"):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args(agent=None))
         assert excinfo.value.code == 1
 
     def test_missing_issue_exits(self):
-        with patch.object(po, "_discover_github_token", return_value="t"):
+        with patch.object(po, "_discover_human_github_token", return_value="t"):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args(issue=None))
         assert excinfo.value.code == 1
 
     def test_missing_repo_exits(self):
-        with patch.object(po, "_discover_github_token", return_value="t"):
+        with patch.object(po, "_discover_human_github_token", return_value="t"):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args(repo=None))
         assert excinfo.value.code == 1
 
     def test_unknown_agent_exits(self):
-        with patch.object(po, "_discover_github_token", return_value="t"):
+        with patch.object(po, "_discover_human_github_token", return_value="t"):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args(agent="not/a-real-agent"))
         assert excinfo.value.code == 1
 
     def test_agent_with_no_human_gate_label_exits(self):
         """--confirm-gate has nothing to confirm for a step with no gate."""
-        with patch.object(po, "_discover_github_token", return_value="t"):
+        with patch.object(po, "_discover_human_github_token", return_value="t"):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args(agent=UNGATED_AGENT))
         assert excinfo.value.code == 1
@@ -79,9 +80,17 @@ class TestConfirmGateValidation:
 
 class TestConfirmGateApplication:
     def test_absent_label_is_applied_and_audited(self):
-        gh = _gh_with_labels(labels=set())
+        """The write is applied, then verified: the labeled event GitHub
+        reports back for it must be human-attributed for this to succeed."""
+        gh = _gh_with_labels(
+            labels=set(),
+            events=[{
+                "event": "labeled", "label": {"name": GATE_LABEL},
+                "actor": {"login": "andrew", "type": "User"},
+            }],
+        )
         events = []
-        with patch.object(po, "_discover_github_token", return_value="t"), \
+        with patch.object(po, "_discover_human_github_token", return_value="t"), \
              patch.object(po, "GitHubClient", return_value=gh), \
              patch.object(po, "_emit_audit_event", lambda e: events.append(e)):
             po._run_confirm_gate(_args())
@@ -91,6 +100,35 @@ class TestConfirmGateApplication:
         assert events[0]["event"] == "gate.confirmed"
         assert GATE_LABEL in events[0]["detail"]
 
+    def test_applied_but_not_human_attributed_refuses(self, caplog):
+        """issue #425: the write can silently authenticate as a bot even
+        when _discover_human_github_token() resolved what looked like a
+        human credential (an environment where `gh api user` reports a
+        human account for reads but writes still attribute to a bot App
+        identity). The label was just applied by this very call, but its
+        own labeled event is bot-attributed -- must refuse immediately,
+        not report success and let the next tick discover it."""
+        gh = _gh_with_labels(
+            labels=set(),
+            events=[{
+                "event": "labeled", "label": {"name": GATE_LABEL},
+                "actor": {"login": "claude[bot]", "type": "Bot"},
+            }],
+        )
+        events = []
+        with patch.object(po, "_discover_human_github_token", return_value="t"), \
+             patch.object(po, "GitHubClient", return_value=gh), \
+             patch.object(po, "_emit_audit_event", lambda e: events.append(e)):
+            with pytest.raises(SystemExit) as excinfo:
+                po._run_confirm_gate(_args())
+
+        assert excinfo.value.code == 1
+        gh.add_label.assert_called_once_with(42, GATE_LABEL)
+        assert events == [], "must not audit a gate.confirmed that was never verifiably human"
+        assert any("#425" in r.message for r in caplog.records), (
+            "must point at the issue explaining why, not just fail silently"
+        )
+
     def test_already_present_and_human_applied_is_a_no_op(self):
         gh = _gh_with_labels(
             labels={GATE_LABEL},
@@ -99,7 +137,7 @@ class TestConfirmGateApplication:
                 "actor": {"login": "andrew", "type": "User"},
             }],
         )
-        with patch.object(po, "_discover_github_token", return_value="t"), \
+        with patch.object(po, "_discover_human_github_token", return_value="t"), \
              patch.object(po, "GitHubClient", return_value=gh):
             po._run_confirm_gate(_args())  # must not raise
 
@@ -116,7 +154,7 @@ class TestConfirmGateApplication:
                 "actor": {"login": "claude[bot]", "type": "Bot"},
             }],
         )
-        with patch.object(po, "_discover_github_token", return_value="t"), \
+        with patch.object(po, "_discover_human_github_token", return_value="t"), \
              patch.object(po, "GitHubClient", return_value=gh):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args())
@@ -132,7 +170,7 @@ class TestConfirmGateApplication:
         traceback -- matching --print-prompt's identical-purpose fetch."""
         gh = MagicMock()
         gh.get_issue_labels.side_effect = RuntimeError("network blip")
-        with patch.object(po, "_discover_github_token", return_value="t"), \
+        with patch.object(po, "_discover_human_github_token", return_value="t"), \
              patch.object(po, "GitHubClient", return_value=gh):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args())
@@ -142,8 +180,59 @@ class TestConfirmGateApplication:
     def test_add_label_failure_exits_cleanly(self):
         gh = _gh_with_labels(labels=set())
         gh.add_label.side_effect = RuntimeError("network blip")
-        with patch.object(po, "_discover_github_token", return_value="t"), \
+        with patch.object(po, "_discover_human_github_token", return_value="t"), \
              patch.object(po, "GitHubClient", return_value=gh):
             with pytest.raises(SystemExit) as excinfo:
                 po._run_confirm_gate(_args())
         assert excinfo.value.code == 1
+
+
+class TestDiscoverHumanGithubToken:
+    """issue #425: _discover_human_github_token() is _discover_github_token()'s
+    mirror image -- `gh auth token` first, the env vars only as a fallback --
+    used solely by --confirm-gate. _discover_github_token() itself is
+    untouched and keeps its env-first priority for agent-spawned work
+    (issue #51: agent-authored content attributes to the system identity)."""
+
+    def test_prefers_gh_auth_token_over_env_vars(self, monkeypatch):
+        monkeypatch.setenv("GITHUB_TOKEN", "env-token")
+        monkeypatch.setenv("GH_TOKEN", "env-token")
+        with patch.object(
+            po.subprocess, "run",
+            return_value=MagicMock(stdout="human-token\n", returncode=0),
+        ) as run:
+            assert po._discover_human_github_token() == "human-token"
+        run.assert_called_once()
+        assert run.call_args[0][0] == ["gh", "auth", "token"]
+
+    def test_falls_back_to_env_vars_when_gh_has_no_credential(self, monkeypatch):
+        monkeypatch.setenv("GITHUB_TOKEN", "env-token")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        with patch.object(
+            po.subprocess, "run",
+            side_effect=po.subprocess.CalledProcessError(1, ["gh", "auth", "token"]),
+        ):
+            assert po._discover_human_github_token() == "env-token"
+
+    def test_falls_back_to_env_vars_when_gh_is_not_installed(self, monkeypatch):
+        monkeypatch.setenv("GH_TOKEN", "env-token")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        with patch.object(po.subprocess, "run", side_effect=FileNotFoundError):
+            assert po._discover_human_github_token() == "env-token"
+
+    def test_none_when_neither_source_has_a_token(self, monkeypatch):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        with patch.object(po.subprocess, "run", side_effect=FileNotFoundError):
+            assert po._discover_human_github_token() is None
+
+    def test_priority_is_the_mirror_of_discover_github_token(self, monkeypatch):
+        """The two functions must resolve to different values when `gh auth
+        token` and the env vars disagree -- otherwise the fix is a no-op."""
+        monkeypatch.setenv("GITHUB_TOKEN", "bot-token")
+        with patch.object(
+            po.subprocess, "run",
+            return_value=MagicMock(stdout="human-token\n", returncode=0),
+        ):
+            assert po._discover_github_token() == "bot-token"
+            assert po._discover_human_github_token() == "human-token"
