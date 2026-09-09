@@ -6490,7 +6490,13 @@ def _apply_result(
 
     # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
     # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
-    if final_status == STATUS_COMPLETE and agent_def.commit_after and work_item.kind == "issue":
+    # Also commits on STATUS_REVIEW (issue #429): a step can legitimately
+    # return "review" with real file edits worth keeping (e.g.
+    # prd-docs-updater's docs/product/ path) -- final_status here is always
+    # the agent's own declared outcome, never the pr-reviewer human-review
+    # override (that runs later, below, and only applies to review_loop
+    # steps, none of which set commit_after).
+    if final_status in (STATUS_COMPLETE, STATUS_REVIEW) and agent_def.commit_after and work_item.kind == "issue":
         _commit_fail_reason = _invoke_commit_after(agent_def, work_item, cwd=pre_agent_worktree or None)
         if _commit_fail_reason:
             _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)

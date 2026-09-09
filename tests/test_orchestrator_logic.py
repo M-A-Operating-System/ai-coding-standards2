@@ -3804,6 +3804,46 @@ class TestCommitAgentWorkScript:
     @patch("pipeline_orchestrator._create_run_worktree")
     @patch("pipeline_orchestrator.invoke_agent")
     @patch("pipeline_orchestrator._apply_failed")
+    def test_commit_after_fires_on_review_outcome(
+        self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
+    ):
+        """Scenario: agent returns outcome "review" — commit-agent-work.sh still runs.
+
+        Given an agent with commit_after: true whose own result is "review"
+              (e.g. prd-docs-updater's docs/product/ path -- issue #429: this
+              outcome can carry real file edits, not just STATUS_COMPLETE)
+        When the agent's result.json declares outcome: "review"
+        Then commit-agent-work.sh is still invoked -- the file edits are not
+             silently discarded just because the step also gates on human
+             review.
+        """
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
+        mock_create_wt.return_value = "/fake/worktree"
+        mock_invoke.side_effect = _invoke_agent_writing_result("review")
+        bash_ok = MagicMock()
+        bash_ok.returncode = 0
+        bash_ok.stdout = ""
+        bash_ok.stderr = ""
+
+        with patch("subprocess.run", return_value=bash_ok) as mock_run:
+            process_work_item(
+                self._make_issue_wi(),
+                [self._make_commit_after_agent()],
+                {"03_execute/coder": self._make_commit_after_agent()},
+                _make_gh_mock(),
+                dry_run=False,
+                repo="test/repo",
+                concurrency=ComponentClaims(),
+            )
+
+        mock_run.assert_called_once()
+        mock_failed.assert_not_called()
+
+    @patch("pipeline_orchestrator._remove_run_worktree")
+    @patch("pipeline_orchestrator._create_run_worktree")
+    @patch("pipeline_orchestrator.invoke_agent")
+    @patch("pipeline_orchestrator._apply_failed")
     def test_commit_after_nonzero_exit_applies_failed(
         self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
     ):

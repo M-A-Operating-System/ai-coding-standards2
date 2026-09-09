@@ -243,6 +243,12 @@
 **When** the orchestrator invokes an agent whose step declares `git_ops.commit_after`
 **Then** it fetches `issue-{N}` and checks it out into its own isolated git worktree before the invocation, so the pin does not strand the agent on the wrong branch
 
+## Scenario: A commit_after agent's file edits survive a "review" outcome
+
+**Given** a step declares `git_ops.commit_after: true` and the agent's own result legitimately declares `outcome: "review"` (not `"complete"`) -- e.g. `prd-docs-updater`'s `docs/product/` path, where the file edits are exactly what the human gate is meant to review
+**When** the orchestrator applies the step's result
+**Then** it still invokes `commit-agent-work.sh` before the worktree is removed, the same as it would for `"complete"` -- a step's own designed `"review"` outcome must never be the reason its file edits are silently discarded (issue #429)
+
 ## Scenario: An agent's working files go to the scratch directory, not the repo
 
 **Given** an agent is given `$AI_AGILE_SCRATCH` as an absolute path in its runtime context
