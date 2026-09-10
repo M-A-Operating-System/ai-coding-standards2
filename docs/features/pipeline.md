@@ -17,3 +17,17 @@
 **Given** neither `pipeline/pipeline_orchestrator.py` nor `ai-coding-standards2/pipeline/pipeline_orchestrator.py` exists relative to the working directory
 **When** `/maos-run` is invoked
 **Then** it stops and reports the missing prerequisite per the existing Fallback section, rather than attempting a tick against a path that doesn't exist
+
+## Scenario: Worktree agent chooses --resume when a prior transcript exists
+
+**Given** `invoke_agent()` is called with a `cwd` under a dot-prefixed directory (e.g. `.claude/worktrees/orchestrator/issue-N`)
+**And** a session transcript file for the agent's UUID exists on disk under the CLI's actual project-directory encoding of that path
+**When** the session-resume check runs
+**Then** `--resume` is passed to the Claude CLI subprocess, not `--session-id`
+
+## Scenario: New agent session is started when no prior transcript exists
+
+**Given** `invoke_agent()` is called for any agent (worktree-based or not)
+**And** no file matching `{agent_session_uuid}.jsonl` exists anywhere under any `.claude/projects/` directory reachable from `CLAUDE_CONFIG_DIR` or `HOME`
+**When** the session-resume check runs
+**Then** `--session-id` is passed to the Claude CLI subprocess, not `--resume`
