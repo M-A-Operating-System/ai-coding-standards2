@@ -512,9 +512,10 @@ testable in isolation and portable between the two modes.
 | `AI_AGILE_CONTEXT` | Where the shared agent protocol is |
 | `AI_AGILE_EXECUTION_MODE` | Whether *this step* has a human attached |
 | `REPO` | Which GitHub repository to act on |
-| `WORK_ITEM_KIND`, `WORK_ITEM_NUMBER` | What it is working on |
-| `ISSUE_NUMBER` or `PR_NUMBER` | The same, in the form the step expects |
-| `RELATED_PR_NUMBER` (when applicable) | The open PR already associated with this issue, for a step that needs it (`coder`, `pr-reviewer`) -- additive context, never a replacement for the subject identity above |
+| `ISSUE_NUMBER` | The issue this invocation is for -- resolved for every invocation, whether the work item is an issue or a PR |
+| `PR_NUMBER` | The pull request this invocation is for -- resolved for every invocation, whether the work item is a PR or an issue with an associated open PR; unset when no PR exists yet |
+| `BRANCH` (when applicable) | The branch name declared by the flow's `naming` for this step |
+| `BASE_BRANCH` (when applicable) | The branch the flow's primary branch is cut from, when declared; absent means the repository default |
 | `SUB_ITEM_NUMBER` (when applicable) | Which piece of the item this invocation covers, for a step invoked once per sub-issue |
 | `SESSION_ID`, `SESSION_SCOPE` | Which run this is, and how far it persists |
 | `AI_AGILE_SCRATCH` | Where working files go |
