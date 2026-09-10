@@ -92,7 +92,15 @@ Check for Mode B trigger labels on the issue:
 
 Absence of both means Mode A (initial build).
 
+The orchestrator already resolves the open PR for this issue when it exists
+(issue #431) -- `$AI_AGILE_RELATED_PR_NUMBER`, set only for steps that need
+it. Use it directly and skip the `gh api` lookups below entirely; they exist
+only as a fallback for the (should not happen in practice) case where it's
+unset.
+
 ```bash
+PR_NUMBER="${AI_AGILE_RELATED_PR_NUMBER:-}"
+
 REVIEW_CYCLE_LABEL=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '.labels[].name | select(startswith("review-cycle:"))' \
   | head -1)
@@ -116,21 +124,24 @@ elif [ -n "$REVIEW_CYCLE_LABEL" ]; then
     echo "BLOCKED: '${REVIEW_CYCLE_LABEL}' is malformed — expected review-cycle:N where N is a positive integer"
     exit 1
   fi
-  # Self-discover the associated PR via GitHub data model.
+  # Self-discover the associated PR via GitHub data model -- only when
+  # $AI_AGILE_RELATED_PR_NUMBER didn't already give it to us above.
   # Try the canonical branch name first, then fall back to the source-issue
   # label (applied by link-pr-to-issue.sh) so that rebased branches (e.g.
   # issue-23-rebase) are found even when they don't match the issue-{N} pattern.
-  OWNER="${REPO%%/*}"
-  PR_NUMBER=$(gh api \
-    "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
-    --jq '.[0].number // empty')
-
   if [ -z "$PR_NUMBER" ]; then
-    # REST has no label filter on the pulls endpoint; query the issues endpoint
-    # (which includes PRs) by label and keep only entries that are PRs.
+    OWNER="${REPO%%/*}"
     PR_NUMBER=$(gh api \
-      "repos/$REPO/issues?labels=source-issue:${ISSUE_NUMBER}&state=open&per_page=100" \
-      --jq '[.[] | select(.pull_request) | .number] | first // empty')
+      "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
+      --jq '.[0].number // empty')
+
+    if [ -z "$PR_NUMBER" ]; then
+      # REST has no label filter on the pulls endpoint; query the issues endpoint
+      # (which includes PRs) by label and keep only entries that are PRs.
+      PR_NUMBER=$(gh api \
+        "repos/$REPO/issues?labels=source-issue:${ISSUE_NUMBER}&state=open&per_page=100" \
+        --jq '[.[] | select(.pull_request) | .number] | first // empty')
+    fi
   fi
 
   if [ -z "$PR_NUMBER" ]; then
@@ -356,22 +367,24 @@ test must:
 
 Place tests in `tests/` adjacent to the code.
 
-**Run the full test suite.** After implementing each sub-issue, run the
-test command defined in `docs/tech-spec/` or detected from the repo. For
-Python/pytest projects:
+**Run only the tests your change touches, per sub-issue.** After implementing
+each sub-issue, run just the test file(s) for the code you changed (e.g.
+`pytest tests/test_foo.py`, not the full suite) to catch immediate breakage
+before moving on. Fix failures before moving to the next sub-issue.
 
-```bash
-python -m pytest tests/ --tb=short 2>&1 | tail -50
-```
+**Run the full suite exactly twice for the whole session, not per
+sub-issue** (issue #431 -- a prior run burned roughly half its turn budget
+re-running the full suite and overlapping subsets repeatedly with no new
+code change in between). Once after all sub-issues are implemented: the test
+command from `docs/tech-spec/` or detected from the repo (Python/pytest:
+`python -m pytest tests/ --tb=short 2>&1 | tail -50`; other stacks, the
+equivalent, e.g. `npm test`, `go test ./...`). Fix any failures this
+surfaces with targeted runs of the failing file(s) only, iterating locally
+-- never a second full-suite run at this point. The second and final full
+run happens once, in Step 6, right before you signal completion.
 
-For other stacks use the equivalent (e.g. `npm test`, `go test ./...`). If
-no test command is specified in the tech spec, default to the above.
-
-If any test fails, fix it before moving to the next sub-issue. Do not signal
-completion with a failing test suite.
-
-Repeat for each sub-issue. The orchestrator will commit all changes when you
-signal completion — you do not need to commit between sub-issues.
+The orchestrator will commit all changes when you signal completion — you do
+not need to commit between sub-issues.
 
 ---
 
@@ -398,6 +411,9 @@ are the traceable record.
 
 Run the full test suite one final time using the command from `docs/tech-spec/`
 or the repo default (Python: `python -m pytest tests/ --tb=short 2>&1 | tail -50`).
+This is the second and last full-suite run for the session (see Step 5) --
+if it fails, fix with targeted runs of the failing file(s), then re-run only
+those files to confirm, not the full suite again.
 
 All tests must pass. Fix any failures before signalling complete.
 

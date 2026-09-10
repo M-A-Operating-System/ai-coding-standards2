@@ -52,13 +52,21 @@ PR's head, and missing this PR's changes. Therefore:
 
 ## Step 0 — Orient and find the PR
 
+The orchestrator already resolves the open PR for this issue when it exists
+(issue #431) -- use `$AI_AGILE_RELATED_PR_NUMBER` directly and skip the `gh
+api` lookup below; it exists only as a fallback for the (should not happen
+in practice) case where it's unset.
+
 ```bash
 cat "$AI_AGILE_CONTEXT"
 
-OWNER="${REPO%%/*}"
-PR_NUMBER=$(gh api \
-  "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
-  --jq '.[0].number // empty')
+PR_NUMBER="${AI_AGILE_RELATED_PR_NUMBER:-}"
+if [ -z "$PR_NUMBER" ]; then
+  OWNER="${REPO%%/*}"
+  PR_NUMBER=$(gh api \
+    "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
+    --jq '.[0].number // empty')
+fi
 ```
 
 If `$PR_NUMBER` is empty, write `$AI_AGILE_SCRATCH/result.json` with

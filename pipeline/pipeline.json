@@ -184,6 +184,7 @@
             "label": "create-pr:complete"
           },
           "human_gate_after": false,
+          "resolve_related_pr": true,
           "dependencies": ["01_product_docs/create-pr"],
           "max_retries": 1,
           "session": { "scope": "per_issue" },
@@ -284,6 +285,7 @@
             "label": "merge-conflict:complete"
           },
           "human_gate_after": false,
+          "resolve_related_pr": true,
           "dependencies": ["03_execute/merge-conflict"],
           "max_retries": 1,
           "session": { "scope": "per_issue" },
