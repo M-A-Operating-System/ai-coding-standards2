@@ -31,3 +31,15 @@
 **And** no file matching `{agent_session_uuid}.jsonl` exists anywhere under any `.claude/projects/` directory reachable from `CLAUDE_CONFIG_DIR` or `HOME`
 **When** the session-resume check runs
 **Then** `--session-id` is passed to the Claude CLI subprocess, not `--resume`
+
+## Scenario: Step 0 standalone gh api call is permitted under allowedTools
+
+**Given** the orchestrator has spawned a coder subprocess with `--allowedTools` including `Bash(gh api repos/*/issues/*)`
+**When** Step 0 issues a `gh api` call as a standalone Bash command with no leading variable assignment or `&&` chain on the same invocation
+**Then** the call is permitted and returns the expected issue metadata without a permission denial
+
+## Scenario: No multi-statement Bash blocks remain in documented Step 0 scripts
+
+**Given** `coder.md` and `pr-reviewer.md` have been updated
+**When** a reviewer reads the Step 0 section of each agent prompt file
+**Then** every `gh api` call in those sections appears as a standalone Bash command, not embedded in a variable assignment, `&&` chain, or `if` conditional on the same invocation
