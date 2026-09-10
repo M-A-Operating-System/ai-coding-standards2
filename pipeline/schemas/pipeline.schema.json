@@ -386,6 +386,10 @@
           "type": "boolean",
           "description": "Set true only on the step that is the final automated review gate before human merge approval."
         },
+        "resolve_related_pr": {
+          "type": "boolean",
+          "description": "Set true only on an issue-kind step whose own PR is guaranteed to already exist by the time it runs (coder, pr-reviewer). The orchestrator resolves it once via the same branch/source-issue-label lookup body_write already uses, and injects it as RELATED_PR_NUMBER -- additive context, never a replacement for WORK_ITEM_KIND/ISSUE_NUMBER/PR_NUMBER (issue #431)."
+        },
         "review_loop": {
           "type": "object",
           "description": "Automatic retry loop: when this step emits review, the orchestrator re-invokes a target step (up to max_cycles) before escalating to human sign-off.",

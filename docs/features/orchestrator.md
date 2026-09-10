@@ -249,6 +249,25 @@
 **When** the orchestrator applies the step's result
 **Then** it still invokes `commit-agent-work.sh` before the worktree is removed, the same as it would for `"complete"` -- a step's own designed `"review"` outcome must never be the reason its file edits are silently discarded (issue #429)
 
+## Scenario: coder and pr-reviewer receive the related PR number without lookup
+
+**Given** an issue with an open PR exists and the orchestrator is about to spawn `03_execute/coder` or `03_execute/pr-reviewer`
+**When** the orchestrator builds the step's runtime environment
+**Then** the environment includes `RELATED_PR_NUMBER` set to the correct open PR number, resolved once via the same branch/label lookup `_resolve_body_write_target` already uses, and the step's own Step 0 uses it directly instead of re-deriving it via trial-and-error `gh api` calls (issue #431)
+**And** `WORK_ITEM_KIND`/`ISSUE_NUMBER`/`PR_NUMBER` -- the invocation's own subject identity -- are unaffected; `RELATED_PR_NUMBER` is additive context only
+
+## Scenario: no related PR number is injected for other issue-scoped steps
+
+**Given** an issue-scoped step other than `coder` or `pr-reviewer` (e.g. `01_product_docs/prd-writer`), which runs before any PR exists
+**When** the orchestrator builds that step's runtime environment
+**Then** `RELATED_PR_NUMBER` is never resolved or set, so no GitHub API call is spent on a lookup that step has no evidenced need for (STD-ARCH-002)
+
+## Scenario: coder runs the full test suite at most twice per session
+
+**Given** `coder` has implemented all of an issue's sub-issues
+**When** it decides whether to run the test suite again
+**Then** it has already run the full suite at most once during implementation and once to confirm before finishing -- any additional verification during that window is a targeted run of the specific failing file(s), never another full-suite pass (issue #431)
+
 ## Scenario: An agent's working files go to the scratch directory, not the repo
 
 **Given** an agent is given `$AI_AGILE_SCRATCH` as an absolute path in its runtime context

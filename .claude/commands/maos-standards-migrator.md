@@ -10,7 +10,8 @@ same as it does headless (see `/maos-run`'s core rule).
 
 ## Input
 
-`$ARGUMENTS` — GitHub issue or PR number (e.g. `42`)
+`$ARGUMENTS` — an issue number by default (e.g. `42`); the orchestrator
+auto-detects a PR number too, when one is given instead.
 
 ## Instructions
 

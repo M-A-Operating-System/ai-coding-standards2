@@ -204,6 +204,7 @@ class AgentDef:
     lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
+    resolve_related_pr: bool = False      # True for a step whose own PR already exists by the time it runs and that needs its number (coder, pr-reviewer) -- drives RELATED_PR_NUMBER injection (issue #431). Declared per-step, not named in orchestrator code (AS-2).
     # --- the flow this step belongs to (issue #406) -------------------------
     # A step is declared inside a named flow; the flow says what kind of work
     # it is, what makes an item its own, and what its branches and pull
@@ -526,6 +527,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 post_steps=list(entry.get("post_steps", [])),
                 review_gate=bool(entry.get("review_gate", False)),
                 commit_after=bool(_git_ops.get("commit_after", False)),
+                resolve_related_pr=bool(entry.get("resolve_related_pr", False)),
                 flow=flow_name,
                 flow_naming=flow_naming,
                 flow_labels=list(flow_trigger.get("labels") or []),
@@ -3294,6 +3296,33 @@ def _resolve_body_write_target(
         return None
 
 
+def _related_pr_number_env(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> dict[str, str]:
+    """The open PR already associated with this issue, for a step declaring
+    resolve_related_pr -- additive context, never a replacement for
+    WORK_ITEM_KIND/ISSUE_NUMBER/PR_NUMBER (the invocation's own subject
+    identity, PRODUCT.md, "A step learns its situation only from what it's
+    told"). coder and pr-reviewer each re-derived this themselves via up to
+    six sequential gh api/gh pr list attempts before this existed (issue
+    #431); same lookup _resolve_body_write_target already uses.
+
+    Declared per-step in pipeline.json (AS-2: the orchestrator names no step
+    of its own) -- not extended to every issue-kind step by default: most
+    run before any PR exists, so attempting the lookup would just burn an
+    API call for nothing. Empty when not applicable or nothing resolves -- a
+    step reading it falls back to its own lookup rather than failing.
+    """
+    if work_item.kind != "issue" or not agent_def.resolve_related_pr:
+        return {}
+    try:
+        _branch = step_branch(agent_def, work_item)
+        pr_number = gh.find_pr_by_branch(_branch) if _branch else None
+        if pr_number is None:
+            pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
+    except Exception:
+        return {}
+    return {"RELATED_PR_NUMBER": str(pr_number)} if pr_number is not None else {}
+
+
 def _snapshot_body_if_first_replace(gh: "GitHubClient", agent_def: "AgentDef", number: int) -> None:
     """Post the pre-write body as a snapshot comment, once, before the first
     full-body replace this agent makes on this target (PRODUCT.md: "snapshot
@@ -3924,6 +3953,12 @@ PRINT_PROMPT_ENV_KEYS = (
     "SESSION_SCOPE",
     "ISSUE_NUMBER",
     "PR_NUMBER",
+    # Additive context (issue #431), never the subject identity above -- the
+    # open PR already associated with this issue, when the step is one that
+    # needs it. See _related_pr_number_env. Bare, not AI_AGILE_-prefixed:
+    # domain vocabulary about the work item (like ISSUE_NUMBER/PR_NUMBER
+    # above), not orchestrator plumbing (PRODUCT.md's variable table).
+    "RELATED_PR_NUMBER",
     # Derived from SESSION_ID, which is already here -- a path, not a secret.
     # Without it /maos-{agent}-i has nothing to export and every hand-run agent
     # falls through ${AI_AGILE_SCRATCH:-/tmp} to a shared directory with fixed
@@ -5536,6 +5571,9 @@ def _invoke_with_retries(
     step_result: Optional[StepResult] = None
     exhausted = False
     _attempt = 0
+    # Resolved once, reused across retries (issue #431) -- see
+    # _related_pr_number_env for which steps this applies to and why.
+    flow_env = {**(flow_env or {}), **_related_pr_number_env(gh, agent_def, work_item)}
     # Retry loop: re-invoke on a crashed/malformed result up to max_retries
     # times. Rate-limit and exhaustion events break immediately.
     result = invoke_agent(
@@ -7347,7 +7385,10 @@ def _run_print_prompt(args) -> None:
     # not by a real orchestrator subprocess spawn.
     env = _build_agent_env(
         os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope,
-        flow_env=_flow_context_env(agent_def, work_item),
+        flow_env={
+            **_flow_context_env(agent_def, work_item),
+            **_related_pr_number_env(gh, agent_def, work_item),
+        },
     )
     env["AI_AGILE_EXECUTION_MODE"] = "interactive"
 

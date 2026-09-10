@@ -5701,3 +5701,121 @@ class TestEpicCompletionIsDeclared:
         assert out.stdout.strip().splitlines()[-1] == "AI_AGILE_STATUS: blocked"
 
 
+# ---------------------------------------------------------------------------
+# TestRelatedPrNumberEnv — issue #431: orchestrator resolves the open PR for
+# coder/pr-reviewer instead of leaving them to re-derive it via trial-and-error
+# gh api calls.
+# ---------------------------------------------------------------------------
+
+class TestRelatedPrNumberEnv:
+    def _agent_def(self, name: str, resolve_related_pr: bool = True) -> AgentDef:
+        return AgentDef(
+            agent=name,
+            phase=name.split("/")[0],
+            objects=["issue"],
+            trigger={"label": "x:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test agent",
+            flow="test-flow",
+            flow_naming={"branch": "issue-{number}"},
+            resolve_related_pr=resolve_related_pr,
+        )
+
+    def _work_item(self, kind="issue", number=431) -> WorkItem:
+        return WorkItem(
+            number=number, kind=kind, title="t", labels=set(),
+            url="https://example.invalid/431",
+        )
+
+    def test_coder_gets_related_pr_number_by_branch(self):
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = 430
+        env = orch._related_pr_number_env(gh, self._agent_def("03_execute/coder"), self._work_item())
+        assert env == {"RELATED_PR_NUMBER": "430"}
+        gh.find_pr_by_branch.assert_called_once_with("issue-431")
+
+    def test_pr_reviewer_gets_related_pr_number_by_branch(self):
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = 430
+        env = orch._related_pr_number_env(gh, self._agent_def("03_execute/pr-reviewer"), self._work_item())
+        assert env == {"RELATED_PR_NUMBER": "430"}
+
+    def test_falls_back_to_label_lookup(self):
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = None
+        gh.find_pr_by_label.return_value = 430
+        env = orch._related_pr_number_env(gh, self._agent_def("03_execute/coder"), self._work_item())
+        assert env == {"RELATED_PR_NUMBER": "430"}
+        gh.find_pr_by_label.assert_called_once_with("source-issue:431")
+
+    def test_no_pr_yet_returns_empty(self):
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = None
+        gh.find_pr_by_label.return_value = None
+        assert orch._related_pr_number_env(gh, self._agent_def("03_execute/coder"), self._work_item()) == {}
+
+    def test_lookup_exception_returns_empty_not_raises(self):
+        gh = MagicMock()
+        gh.find_pr_by_branch.side_effect = RuntimeError("boom")
+        assert orch._related_pr_number_env(gh, self._agent_def("03_execute/coder"), self._work_item()) == {}
+
+    def test_not_attempted_when_step_does_not_declare_it(self):
+        """resolve_related_pr defaults False (AS-2 -- the orchestrator
+        names no step of its own; only pipeline.json's declaration decides).
+        Every issue-kind step other than coder/pr-reviewer never had this
+        problem (most run before any PR exists), so no API call is spent on
+        them (STD-ARCH-002 -- built for the two evidenced call sites)."""
+        gh = MagicMock()
+        agent_def = self._agent_def("01_product_docs/prd-writer", resolve_related_pr=False)
+        env = orch._related_pr_number_env(gh, agent_def, self._work_item())
+        assert env == {}
+        gh.find_pr_by_branch.assert_not_called()
+        gh.find_pr_by_label.assert_not_called()
+
+    def test_pipeline_json_declares_it_only_for_coder_and_pr_reviewer(self):
+        """AS-2: the orchestrator loads this from pipeline.json rather than
+        naming coder/pr-reviewer in its own code -- confirmed here against the
+        real shipped file, not just the isolated helper above."""
+        agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
+        with_it = sorted(a.agent for a in agents if a.resolve_related_pr)
+        assert with_it == ["03_execute/coder", "03_execute/pr-reviewer"]
+
+    def test_not_attempted_for_pr_kind_work_item(self):
+        """Additive context only for issue-kind work items -- never touches
+        the invocation's own subject identity (WORK_ITEM_KIND/PR_NUMBER)."""
+        gh = MagicMock()
+        env = orch._related_pr_number_env(
+            gh, self._agent_def("03_execute/pr-reviewer"), self._work_item(kind="pr", number=430),
+        )
+        assert env == {}
+        gh.find_pr_by_branch.assert_not_called()
+
+    def test_invoke_with_retries_merges_related_pr_into_flow_env(self, monkeypatch):
+        """The resolved fact reaches invoke_agent's flow_env -- verified
+        against the real _invoke_with_retries wiring, not just the helper
+        in isolation."""
+        monkeypatch.setattr(orch, "_HEADLESS", True)
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = 430
+        agent_def = self._agent_def("03_execute/coder")
+        wi = self._work_item()
+        captured = {}
+
+        def _fake_invoke_agent(agent_def, work_item, dry_run, repo, attempt=0,
+                                agent_text_override=None, default_extra_tools=None,
+                                cwd=None, flow_env=None):
+            captured["flow_env"] = flow_env
+            return orch.AgentRunResult(success=True, captured_tail="AI_AGILE_STATUS: complete")
+
+        with patch.object(orch, "invoke_agent", side_effect=_fake_invoke_agent), \
+             patch.object(orch, "_scratch_path", return_value="/tmp/does-not-exist-431"), \
+             patch.object(orch, "_read_step_result", return_value=(None, "no result file")):
+            orch._invoke_with_retries(
+                agent_def, wi, False, "test/repo", gh, None, None,
+                flow_env={"AI_AGILE_FLOW": "standard-delivery"},
+            )
+
+        assert captured["flow_env"]["RELATED_PR_NUMBER"] == "430"
+        assert captured["flow_env"]["AI_AGILE_FLOW"] == "standard-delivery"
