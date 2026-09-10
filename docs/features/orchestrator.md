@@ -112,13 +112,13 @@
 
 **Given** `--print-prompt` is given a number that refers to a pull request and no explicit `--kind`
 **When** the invocation is resolved
-**Then** the probed kind is `pr`, and the printed env carries `WORK_ITEM_KIND=pr` and `PR_NUMBER`
+**Then** the probed kind is `pr`, and the printed env carries `PR_NUMBER`
 
 ## Scenario: An explicit --kind is an override, not a hint
 
 **Given** `--print-prompt --kind issue` is given a number that refers to a pull request
 **When** the invocation is resolved
-**Then** the printed env carries `WORK_ITEM_KIND=issue` -- probing does not overrule the operator
+**Then** the printed env carries `ISSUE_NUMBER` -- probing does not overrule the operator
 
 ## Scenario: Resolving an agent against an object kind it does not handle is reported
 
@@ -249,18 +249,24 @@
 **When** the orchestrator applies the step's result
 **Then** it still invokes `commit-agent-work.sh` before the worktree is removed, the same as it would for `"complete"` -- a step's own designed `"review"` outcome must never be the reason its file edits are silently discarded (issue #429)
 
-## Scenario: coder and pr-reviewer receive the related PR number without lookup
+## Scenario: coder, pr-reviewer, and merge-conflict receive the open PR number without lookup
 
-**Given** an issue with an open PR exists and the orchestrator is about to spawn `03_execute/coder` or `03_execute/pr-reviewer`
+**Given** an issue with an open PR exists and the orchestrator is about to spawn `03_execute/coder`, `03_execute/pr-reviewer`, or `03_execute/merge-conflict`
 **When** the orchestrator builds the step's runtime environment
-**Then** the environment includes `RELATED_PR_NUMBER` set to the correct open PR number, resolved once via the same branch/label lookup `_resolve_body_write_target` already uses, and the step's own Step 0 uses it directly instead of re-deriving it via trial-and-error `gh api` calls (issue #431)
-**And** `WORK_ITEM_KIND`/`ISSUE_NUMBER`/`PR_NUMBER` -- the invocation's own subject identity -- are unaffected; `RELATED_PR_NUMBER` is additive context only
+**Then** the environment includes `PR_NUMBER` set to the correct open PR number, resolved once via the same branch/label lookup `_resolve_body_write_target` already uses, and the step's own Step 0 uses it directly instead of re-deriving it via trial-and-error `gh api` calls (issue #431/#433)
+**And** `ISSUE_NUMBER` -- the invocation's own subject identity -- is unaffected; the resolved `PR_NUMBER` is additive context only
 
-## Scenario: no related PR number is injected for other issue-scoped steps
+## Scenario: no PR number is injected for other issue-scoped steps
 
-**Given** an issue-scoped step other than `coder` or `pr-reviewer` (e.g. `01_product_docs/prd-writer`), which runs before any PR exists
+**Given** an issue-scoped step other than `coder`, `pr-reviewer`, or `merge-conflict` (e.g. `01_product_docs/prd-writer`), which runs before any PR exists
 **When** the orchestrator builds that step's runtime environment
-**Then** `RELATED_PR_NUMBER` is never resolved or set, so no GitHub API call is spent on a lookup that step has no evidenced need for (STD-ARCH-002)
+**Then** `PR_NUMBER` is never resolved or set, so no GitHub API call is spent on a lookup that step has no evidenced need for (STD-ARCH-002)
+
+## Scenario: a PR-kind invocation gets its issue number resolved unconditionally
+
+**Given** the orchestrator is about to spawn a step against a PR-kind work item, whose head branch matches `issue-{N}` or carries a `source-issue:{N}` label
+**When** the orchestrator builds the step's runtime environment
+**Then** the environment includes `ISSUE_NUMBER` set to `N`, resolved with no per-step opt-in flag -- unlike the `PR_NUMBER` direction above, since a PR-kind invocation is the exceptional, manually-dispatched case rather than a scheduled flow step (issue #433)
 
 ## Scenario: coder runs the full test suite at most twice per session
 
