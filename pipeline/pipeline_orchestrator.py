@@ -3298,7 +3298,7 @@ def _resolve_body_write_target(
 
 def _related_pr_number_env(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> dict[str, str]:
     """The open PR already associated with this issue, for a step declaring
-    git_ops.resolve_related_pr -- additive context, never a replacement for
+    resolve_related_pr -- additive context, never a replacement for
     WORK_ITEM_KIND/ISSUE_NUMBER/PR_NUMBER (the invocation's own subject
     identity, PRODUCT.md, "A step learns its situation only from what it's
     told"). coder and pr-reviewer each re-derived this themselves via up to

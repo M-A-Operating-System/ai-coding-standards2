@@ -5762,7 +5762,7 @@ class TestRelatedPrNumberEnv:
         assert orch._related_pr_number_env(gh, self._agent_def("03_execute/coder"), self._work_item()) == {}
 
     def test_not_attempted_when_step_does_not_declare_it(self):
-        """git_ops.resolve_related_pr defaults False (AS-2 -- the orchestrator
+        """resolve_related_pr defaults False (AS-2 -- the orchestrator
         names no step of its own; only pipeline.json's declaration decides).
         Every issue-kind step other than coder/pr-reviewer never had this
         problem (most run before any PR exists), so no API call is spent on
