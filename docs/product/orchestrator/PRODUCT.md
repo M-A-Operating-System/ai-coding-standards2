@@ -514,6 +514,7 @@ testable in isolation and portable between the two modes.
 | `REPO` | Which GitHub repository to act on |
 | `WORK_ITEM_KIND`, `WORK_ITEM_NUMBER` | What it is working on |
 | `ISSUE_NUMBER` or `PR_NUMBER` | The same, in the form the step expects |
+| `RELATED_PR_NUMBER` (when applicable) | The open PR already associated with this issue, for a step that needs it (`coder`, `pr-reviewer`) -- additive context, never a replacement for the subject identity above |
 | `SUB_ITEM_NUMBER` (when applicable) | Which piece of the item this invocation covers, for a step invoked once per sub-issue |
 | `SESSION_ID`, `SESSION_SCOPE` | Which run this is, and how far it persists |
 | `AI_AGILE_SCRATCH` | Where working files go |

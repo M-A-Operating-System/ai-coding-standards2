@@ -253,14 +253,14 @@
 
 **Given** an issue with an open PR exists and the orchestrator is about to spawn `03_execute/coder` or `03_execute/pr-reviewer`
 **When** the orchestrator builds the step's runtime environment
-**Then** the environment includes `AI_AGILE_RELATED_PR_NUMBER` set to the correct open PR number, resolved once via the same branch/label lookup `_resolve_body_write_target` already uses, and the step's own Step 0 uses it directly instead of re-deriving it via trial-and-error `gh api` calls (issue #431)
-**And** `WORK_ITEM_KIND`/`ISSUE_NUMBER`/`PR_NUMBER` -- the invocation's own subject identity -- are unaffected; `AI_AGILE_RELATED_PR_NUMBER` is additive context only
+**Then** the environment includes `RELATED_PR_NUMBER` set to the correct open PR number, resolved once via the same branch/label lookup `_resolve_body_write_target` already uses, and the step's own Step 0 uses it directly instead of re-deriving it via trial-and-error `gh api` calls (issue #431)
+**And** `WORK_ITEM_KIND`/`ISSUE_NUMBER`/`PR_NUMBER` -- the invocation's own subject identity -- are unaffected; `RELATED_PR_NUMBER` is additive context only
 
 ## Scenario: no related PR number is injected for other issue-scoped steps
 
 **Given** an issue-scoped step other than `coder` or `pr-reviewer` (e.g. `01_product_docs/prd-writer`), which runs before any PR exists
 **When** the orchestrator builds that step's runtime environment
-**Then** `AI_AGILE_RELATED_PR_NUMBER` is never resolved or set, so no GitHub API call is spent on a lookup that step has no evidenced need for (STD-ARCH-002)
+**Then** `RELATED_PR_NUMBER` is never resolved or set, so no GitHub API call is spent on a lookup that step has no evidenced need for (STD-ARCH-002)
 
 ## Scenario: coder runs the full test suite at most twice per session
 

@@ -204,7 +204,7 @@ class AgentDef:
     lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
-    resolve_related_pr: bool = False      # True for a step whose own PR already exists by the time it runs and that needs its number (coder, pr-reviewer) -- drives AI_AGILE_RELATED_PR_NUMBER injection (issue #431). Declared per-step, not named in orchestrator code (AS-2).
+    resolve_related_pr: bool = False      # True for a step whose own PR already exists by the time it runs and that needs its number (coder, pr-reviewer) -- drives RELATED_PR_NUMBER injection (issue #431). Declared per-step, not named in orchestrator code (AS-2).
     # --- the flow this step belongs to (issue #406) -------------------------
     # A step is declared inside a named flow; the flow says what kind of work
     # it is, what makes an item its own, and what its branches and pull
@@ -3320,7 +3320,7 @@ def _related_pr_number_env(gh: "GitHubClient", agent_def: "AgentDef", work_item:
             pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
     except Exception:
         return {}
-    return {"AI_AGILE_RELATED_PR_NUMBER": str(pr_number)} if pr_number is not None else {}
+    return {"RELATED_PR_NUMBER": str(pr_number)} if pr_number is not None else {}
 
 
 def _snapshot_body_if_first_replace(gh: "GitHubClient", agent_def: "AgentDef", number: int) -> None:
@@ -3955,8 +3955,10 @@ PRINT_PROMPT_ENV_KEYS = (
     "PR_NUMBER",
     # Additive context (issue #431), never the subject identity above -- the
     # open PR already associated with this issue, when the step is one that
-    # needs it. See _related_pr_number_env.
-    "AI_AGILE_RELATED_PR_NUMBER",
+    # needs it. See _related_pr_number_env. Bare, not AI_AGILE_-prefixed:
+    # domain vocabulary about the work item (like ISSUE_NUMBER/PR_NUMBER
+    # above), not orchestrator plumbing (PRODUCT.md's variable table).
+    "RELATED_PR_NUMBER",
     # Derived from SESSION_ID, which is already here -- a path, not a secret.
     # Without it /maos-{agent}-i has nothing to export and every hand-run agent
     # falls through ${AI_AGILE_SCRATCH:-/tmp} to a shared directory with fixed

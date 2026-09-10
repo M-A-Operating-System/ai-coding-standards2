@@ -5733,21 +5733,21 @@ class TestRelatedPrNumberEnv:
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = 430
         env = orch._related_pr_number_env(gh, self._agent_def("03_execute/coder"), self._work_item())
-        assert env == {"AI_AGILE_RELATED_PR_NUMBER": "430"}
+        assert env == {"RELATED_PR_NUMBER": "430"}
         gh.find_pr_by_branch.assert_called_once_with("issue-431")
 
     def test_pr_reviewer_gets_related_pr_number_by_branch(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = 430
         env = orch._related_pr_number_env(gh, self._agent_def("03_execute/pr-reviewer"), self._work_item())
-        assert env == {"AI_AGILE_RELATED_PR_NUMBER": "430"}
+        assert env == {"RELATED_PR_NUMBER": "430"}
 
     def test_falls_back_to_label_lookup(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = None
         gh.find_pr_by_label.return_value = 430
         env = orch._related_pr_number_env(gh, self._agent_def("03_execute/coder"), self._work_item())
-        assert env == {"AI_AGILE_RELATED_PR_NUMBER": "430"}
+        assert env == {"RELATED_PR_NUMBER": "430"}
         gh.find_pr_by_label.assert_called_once_with("source-issue:431")
 
     def test_no_pr_yet_returns_empty(self):
@@ -5817,5 +5817,5 @@ class TestRelatedPrNumberEnv:
                 flow_env={"AI_AGILE_FLOW": "standard-delivery"},
             )
 
-        assert captured["flow_env"]["AI_AGILE_RELATED_PR_NUMBER"] == "430"
+        assert captured["flow_env"]["RELATED_PR_NUMBER"] == "430"
         assert captured["flow_env"]["AI_AGILE_FLOW"] == "standard-delivery"
