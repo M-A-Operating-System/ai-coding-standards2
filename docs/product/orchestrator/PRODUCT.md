@@ -512,7 +512,7 @@ testable in isolation and portable between the two modes.
 | `AI_AGILE_CONTEXT` | Where the shared agent protocol is |
 | `AI_AGILE_EXECUTION_MODE` | Whether *this step* has a human attached |
 | `REPO` | Which GitHub repository to act on |
-| `ISSUE_NUMBER` | The issue this invocation is for -- resolved for every invocation, whether the work item is an issue or a PR |
+| `ISSUE_NUMBER` | The issue this invocation is for -- resolved for every invocation, whether the work item is an issue or a PR; unset when the reverse lookup finds nothing (PR's head branch does not match issue-{N} and it carries no source-issue:{N} label) |
 | `PR_NUMBER` | The pull request this invocation is for -- resolved for every invocation, whether the work item is a PR or an issue with an associated open PR; unset when no PR exists yet |
 | `BRANCH` (when applicable) | The branch name declared by the flow's `naming` for this step |
 | `BASE_BRANCH` (when applicable) | The branch the flow's primary branch is cut from, when declared; absent means the repository default |
