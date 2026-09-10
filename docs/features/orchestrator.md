@@ -636,3 +636,33 @@
 **Given** a chat session acting on GitHub through the MCP server
 **When** its identity is asked about
 **Then** it is authenticated by session and environment configuration outside this repository, which no code change here can unify -- recorded as a separate infrastructure question rather than left implied
+
+## Scenario: PR_NUMBER resolved for issue-kind agent invocation
+
+**Given** an issue-kind work item has an associated open pull request in the repository
+**When** the orchestrator builds the agent subprocess environment for a step on that issue
+**Then** PR_NUMBER is set to that pull request's number without the step declaring an opt-in
+
+## Scenario: ISSUE_NUMBER resolved for PR-kind agent invocation
+
+**Given** a PR-kind work item has a head branch matching the pattern issue-{N} or carries a source-issue:{N} label
+**When** the orchestrator builds the agent subprocess environment for a step on that PR
+**Then** ISSUE_NUMBER is set to N without the step inspecting WORK_ITEM_KIND or performing its own branch parse
+
+## Scenario: mark-pr-ready.sh operates without WORK_ITEM_KIND
+
+**Given** the orchestrator has resolved PR_NUMBER for the current work item
+**When** mark-pr-ready.sh executes to mark a pull request ready for review
+**Then** it reads $PR_NUMBER directly and completes successfully without consulting $WORK_ITEM_KIND
+
+## Scenario: agent subprocess receives BRANCH not AI_AGILE_BRANCH
+
+**Given** a flow step declares a branch name via the flow's naming.branch field
+**When** the orchestrator builds the agent subprocess environment for that step
+**Then** the branch name is present as $BRANCH and $AI_AGILE_BRANCH is absent from the environment
+
+## Scenario: pipeline auto-targets the configured base branch when creating a PR
+
+**Given** a flow in pipeline.json declares naming.base as "feature/393-orchestrator-target-design"
+**When** create-pr.sh runs for a new pull request in that flow
+**Then** the pull request is opened targeting "feature/393-orchestrator-target-design" without a hand-configured override
