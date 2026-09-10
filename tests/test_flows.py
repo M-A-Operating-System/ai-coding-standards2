@@ -378,7 +378,7 @@ class TestSubItemSelectionAndEnv:
         assert env["SUB_ITEM_NUMBER"] == "502"
         assert env["AI_AGILE_CHILDREN_OPEN"] == "1"
         assert env["AI_AGILE_CHILDREN_TOTAL"] == "2"
-        assert env["AI_AGILE_BRANCH"] == "issue-500"
+        assert env["BRANCH"] == "issue-500"
 
     def test_an_item_unit_step_is_told_no_sub_item(self):
         env = orch._flow_context_env(_sub_item_step(unit="item"), _parent())

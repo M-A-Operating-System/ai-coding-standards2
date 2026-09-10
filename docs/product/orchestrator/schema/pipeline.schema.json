@@ -366,6 +366,10 @@
           "default": false,
           "description": "When true, the orchestrator trusts this step's own outcome (review vs complete) instead of forcing complete to review."
         },
+        "resolve_pr_number": {
+          "type": "boolean",
+          "description": "Set true only on an issue-kind step whose own PR is guaranteed to already exist by the time it runs (coder, pr-reviewer, merge-conflict). The orchestrator resolves it once via the same branch/source-issue-label lookup body_write already uses, and injects it as PR_NUMBER -- additive to, never a replacement for, the invocation's own subject identity (ISSUE_NUMBER/PR_NUMBER). ISSUE_NUMBER is resolved the symmetric way for a PR-kind invocation, unconditionally, with no equivalent per-step flag (issue #431/#433)."
+        },
         "review_gate": {
           "type": "boolean",
           "description": "Set true only on the step that is the final automated review gate before human merge approval."

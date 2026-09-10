@@ -59,10 +59,10 @@ work_item = po.WorkItem(
     labels=set(), url="",
 )
 env = po._flow_context_env(agent_def, work_item)
-if "AI_AGILE_BRANCH" not in env:
+if "BRANCH" not in env:
     sys.exit(f"ERROR: flow {agent_def.flow!r} declares no naming.branch for {step}")
 env.setdefault("PR_CLOSES_ISSUE", "true")
-for key in ("AI_AGILE_BRANCH", "AI_AGILE_BASE_BRANCH", "PR_CLOSES_ISSUE"):
+for key in ("BRANCH", "BASE_BRANCH", "PR_CLOSES_ISSUE"):
     if key in env:
         print(f"{key}={env[key]}")
 PY
@@ -73,7 +73,7 @@ while IFS= read -r assignment; do
     [[ -n "$assignment" ]] && export "${assignment?}"
 done <<< "$NAMING"
 
-echo "new-branch-pr: issue #${ISSUE_NUMBER} -> branch ${AI_AGILE_BRANCH} (via ${STEP})"
+echo "new-branch-pr: issue #${ISSUE_NUMBER} -> branch ${BRANCH} (via ${STEP})"
 
 export REPO ISSUE_NUMBER
 exec bash "${HERE}/create-pr.sh"

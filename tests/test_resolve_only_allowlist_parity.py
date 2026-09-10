@@ -58,6 +58,11 @@ def _gh(kind="issue"):
         payload["pull_request"] = {"url": "https://api.github.com/pr/1"}
     gh._get.return_value = payload
     gh.repo = "test/repo"
+    # No PR/issue exists yet in this fixture's world -- realistic "nothing
+    # resolves" behavior for _related_work_item_env's lookups (issue #433),
+    # rather than an auto-generated MagicMock masquerading as a found number.
+    gh.find_pr_by_branch.return_value = None
+    gh.find_pr_by_label.return_value = None
     return gh
 
 
@@ -137,17 +142,21 @@ def test_an_unregistered_agent_still_resolves(capsys):
 
 def test_a_pr_number_resolves_as_a_pr(capsys):
     """`--print-prompt --issue 360` on a PR number used to default to "issue"
-    and export WORK_ITEM_KIND=issue, so the agent read the wrong object with no
-    error anywhere. main()'s --issue path already probes; this must agree."""
+    and treat it as one, so the agent read the wrong object with no error
+    anywhere. main()'s --issue path already probes; this must agree.
+    WORK_ITEM_KIND is retired as agent-facing (issue #433) -- PR_NUMBER
+    itself being set is the observable signal now."""
     payload = _resolve_only(capsys, kind="pr")
-    assert payload["env"]["WORK_ITEM_KIND"] == "pr"
+    assert "WORK_ITEM_KIND" not in payload["env"]
     assert payload["env"]["PR_NUMBER"] == "1"
+    # The gh mock's fixed payload has no real PR head data, so the reverse
+    # ISSUE_NUMBER lookup (issue #433) finds nothing here.
     assert "ISSUE_NUMBER" not in payload["env"]
 
 
 def test_an_issue_number_still_resolves_as_an_issue(capsys):
     payload = _resolve_only(capsys)
-    assert payload["env"]["WORK_ITEM_KIND"] == "issue"
+    assert "WORK_ITEM_KIND" not in payload["env"]
     assert payload["env"]["ISSUE_NUMBER"] == "1"
 
 
@@ -158,7 +167,7 @@ def test_an_explicit_kind_still_wins(capsys):
          patch.object(po, "_discover_github_token", return_value="t"):
         po._run_print_prompt(_args(kind="issue"))
     payload = json.loads(capsys.readouterr().out)
-    assert payload["env"]["WORK_ITEM_KIND"] == "issue"
+    assert payload["env"]["ISSUE_NUMBER"] == "1"
     assert "PR_NUMBER" not in payload["env"]
 
 

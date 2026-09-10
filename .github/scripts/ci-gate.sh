@@ -16,7 +16,7 @@ set -euo pipefail
 
 # The branch whose PR this gate polls, resolved by the orchestrator from this
 # step's flow naming (issue #406) -- never derived from the issue number here.
-BRANCH="${AI_AGILE_BRANCH:?AI_AGILE_BRANCH is required -- the branch declared by this step flow naming}"
+BRANCH="${BRANCH:?BRANCH is required -- the branch declared by this step flow naming}"
 POLL_INTERVAL="${CI_GATE_POLL_INTERVAL:-30}"
 TIMEOUT="${CI_GATE_TIMEOUT:-840}"                # 14 minutes — leaves 1 min headroom
 NO_CHECKS_GRACE="${CI_GATE_NO_CHECKS_GRACE:-4}"  # polls before assuming no CI exists

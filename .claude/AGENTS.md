@@ -55,18 +55,16 @@ Environment variables the orchestrator exports for you:
 | `AI_AGILE_ROOT` | Absolute path to the consuming repo root |
 | `AI_AGILE_CONTEXT` | Absolute path to **this file** |
 | `REPO` | `owner/repo` of the consuming repository |
-| `ISSUE_NUMBER` | Set when the work item is an issue |
-| `PR_NUMBER` | Set when the work item is a PR |
-| `WORK_ITEM_KIND` | `issue` or `pr` |
-| `WORK_ITEM_NUMBER` | Numeric ID, regardless of kind |
+| `ISSUE_NUMBER` | Set whenever the orchestrator can resolve it -- the work item's own number when it's an issue, or the source issue of a PR-kind work item, when derivable |
+| `PR_NUMBER` | Set whenever the orchestrator can resolve it -- the work item's own number when it's a PR, or the open PR already associated with an issue-kind work item, for a step that declares it needs it |
 | `SESSION_ID` | Human-readable session key (e.g. `ais-v1-01-product-docs-prd-writer-issue-42`). Use in `session_id` fields of announcement/artefact JSON. |
 | `SESSION_SCOPE` | `per_issue` or `global`. Informational — the orchestrator already passed the right `--session-id` to the claude CLI. |
 | `AI_AGILE_EXECUTION_MODE` | Always `headless` for orchestrator-spawned subprocesses -- including `/maos-{agent}`, which spawns one exactly as headless does. `/maos-{agent}-i`'s resolve-only mode sets it to `interactive` instead: no agent is spawned there, so nothing else reads this env var for that run. |
 | `AI_AGILE_SCRATCH` | Per-run scratch directory, created empty before your run and removed after it. Write working files here; see "How you communicate". |
 | `AI_AGILE_FLOW` | The flow you are a step of (`pipeline.json`'s `flows` key), e.g. `standard-delivery`. |
 | `AI_AGILE_STEP` | Your own step name, e.g. `03_execute/coder`. |
-| `AI_AGILE_BRANCH` | The branch your flow declares for this step (e.g. `issue-42`, or `issue-42-docs` for a design-phase step). Set only when your flow declares naming. Never derive a branch name yourself. |
-| `AI_AGILE_BASE_BRANCH` | The branch your flow's primary branch is cut from, when it declares one. Absent means the repository default branch. |
+| `BRANCH` | The branch your flow declares for this step (e.g. `issue-42`, or `issue-42-docs` for a design-phase step). Set only when your flow declares naming. Never derive a branch name yourself. |
+| `BASE_BRANCH` | The branch your flow's primary branch is cut from, when it declares one. Absent means the repository default branch. |
 | `SUB_ITEM_NUMBER` | Set only for a step declaring `unit: sub_item`: the one open child issue THIS invocation is for. You address that piece and nothing else; the orchestrator invokes you again for the next one. |
 | `AI_AGILE_CHILDREN_TOTAL` / `AI_AGILE_CHILDREN_OPEN` | Set only for a step whose trigger reads its item's children: how many children it has, and how many are still open. |
 

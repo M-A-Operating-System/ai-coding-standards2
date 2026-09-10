@@ -6,7 +6,7 @@
 # Required env:
 #   AGENT_NAME   — fully-qualified agent name (e.g. 03_execute/coder)
 #   ISSUE_NUMBER — issue number
-#   AI_AGILE_BRANCH — the branch to commit to, resolved by the orchestrator
+#   BRANCH — the branch to commit to, resolved by the orchestrator
 #                     from the step's flow naming in pipeline.json (issue #406).
 #                     Never derived here: a branch name is declared, not computed.
 #   GITHUB_TOKEN or GH_TOKEN — for git auth (contents:write scope)
@@ -27,7 +27,7 @@ set -euo pipefail
 
 AGENT_NAME="${AGENT_NAME:?AGENT_NAME is required}"
 ISSUE_NUMBER="${ISSUE_NUMBER:?ISSUE_NUMBER is required}"
-BRANCH="${AI_AGILE_BRANCH:?AI_AGILE_BRANCH is required -- the branch declared by this step flow naming}"
+BRANCH="${BRANCH:?BRANCH is required -- the branch declared by this step flow naming}"
 
 # ---------------------------------------------------------------------------
 # Git auth — set GIT_CONFIG env vars so every git operation in this process

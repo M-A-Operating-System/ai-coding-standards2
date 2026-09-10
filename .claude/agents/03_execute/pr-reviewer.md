@@ -53,14 +53,14 @@ PR's head, and missing this PR's changes. Therefore:
 ## Step 0 — Orient and find the PR
 
 The orchestrator already resolves the open PR for this issue when it exists
-(issue #431) -- use `$RELATED_PR_NUMBER` directly and skip the `gh
-api` lookup below; it exists only as a fallback for the (should not happen
-in practice) case where it's unset.
+(issue #431/#433) -- `$PR_NUMBER` arrives already set. Use it directly and
+skip the `gh api` lookup below; it exists only as a fallback for the (should
+not happen in practice) case where it's unset.
 
 ```bash
 cat "$AI_AGILE_CONTEXT"
 
-PR_NUMBER="${RELATED_PR_NUMBER:-}"
+PR_NUMBER="${PR_NUMBER:-}"
 if [ -z "$PR_NUMBER" ]; then
   OWNER="${REPO%%/*}"
   PR_NUMBER=$(gh api \

@@ -204,7 +204,7 @@ class AgentDef:
     lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
     commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
-    resolve_related_pr: bool = False      # True for a step whose own PR already exists by the time it runs and that needs its number (coder, pr-reviewer) -- drives RELATED_PR_NUMBER injection (issue #431). Declared per-step, not named in orchestrator code (AS-2).
+    resolve_pr_number: bool = False       # True for an issue-kind step whose own PR already exists by the time it runs and that needs its number (coder, pr-reviewer, merge-conflict) -- drives PR_NUMBER injection (issue #431/#433). Declared per-step, not named in orchestrator code (AS-2).
     # --- the flow this step belongs to (issue #406) -------------------------
     # A step is declared inside a named flow; the flow says what kind of work
     # it is, what makes an item its own, and what its branches and pull
@@ -527,7 +527,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 post_steps=list(entry.get("post_steps", [])),
                 review_gate=bool(entry.get("review_gate", False)),
                 commit_after=bool(_git_ops.get("commit_after", False)),
-                resolve_related_pr=bool(entry.get("resolve_related_pr", False)),
+                resolve_pr_number=bool(entry.get("resolve_pr_number", False)),
                 flow=flow_name,
                 flow_naming=flow_naming,
                 flow_labels=list(flow_trigger.get("labels") or []),
@@ -843,10 +843,10 @@ def _flow_context_env(
     if work_item.kind == "issue":
         _branch = step_branch(agent_def, work_item)
         if _branch:
-            env["AI_AGILE_BRANCH"] = _branch
+            env["BRANCH"] = _branch
         _base = flow_base_branch(agent_def, work_item)
         if _base:
-            env["AI_AGILE_BASE_BRANCH"] = _base
+            env["BASE_BRANCH"] = _base
     _closes = step_pr_closes_issue(agent_def)
     if _closes is not None:
         env["PR_CLOSES_ISSUE"] = "true" if _closes else "false"
@@ -3296,31 +3296,59 @@ def _resolve_body_write_target(
         return None
 
 
-def _related_pr_number_env(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> dict[str, str]:
-    """The open PR already associated with this issue, for a step declaring
-    resolve_related_pr -- additive context, never a replacement for
-    WORK_ITEM_KIND/ISSUE_NUMBER/PR_NUMBER (the invocation's own subject
-    identity, PRODUCT.md, "A step learns its situation only from what it's
-    told"). coder and pr-reviewer each re-derived this themselves via up to
-    six sequential gh api/gh pr list attempts before this existed (issue
-    #431); same lookup _resolve_body_write_target already uses.
+def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> dict[str, str]:
+    """Whichever of ISSUE_NUMBER/PR_NUMBER this invocation's own subject
+    identity (WORK_ITEM_NUMBER) does not already give it (PRODUCT.md, "A step
+    learns its situation only from what it's told") -- additive context, not
+    a replacement for that subject identity. Resolves ISSUE_NUMBER and
+    PR_NUMBER independently of work-item kind, so a step reads either bare name
+    directly instead of re-deriving it -- coder and pr-reviewer each
+    re-derived this themselves via up to six sequential gh api/gh pr list
+    attempts before this existed (issue #431); same lookup
+    _resolve_body_write_target already uses.
 
-    Declared per-step in pipeline.json (AS-2: the orchestrator names no step
-    of its own) -- not extended to every issue-kind step by default: most
-    run before any PR exists, so attempting the lookup would just burn an
-    API call for nothing. Empty when not applicable or nothing resolves -- a
-    step reading it falls back to its own lookup rather than failing.
+    Issue-kind (PR_NUMBER): declared per-step in pipeline.json via
+    resolve_pr_number (AS-2: the orchestrator names no step of its own) --
+    not extended to every issue-kind step by default: most run before any PR
+    exists, so attempting the lookup would just burn an API call for
+    nothing.
+
+    PR-kind (ISSUE_NUMBER): always attempted (issue #433) -- no equivalent
+    cost concern, since a PR-kind invocation is already the exceptional,
+    manually-dispatched case rather than a scheduled flow step. Parses the
+    PR's own head branch against the issue-{N} pattern, falling back to the
+    source-issue:{N} label already applied to every coder-created PR.
+
+    Empty when not applicable or nothing resolves -- a step reading it falls
+    back to its own lookup rather than failing.
     """
-    if work_item.kind != "issue" or not agent_def.resolve_related_pr:
-        return {}
-    try:
-        _branch = step_branch(agent_def, work_item)
-        pr_number = gh.find_pr_by_branch(_branch) if _branch else None
-        if pr_number is None:
-            pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
-    except Exception:
-        return {}
-    return {"RELATED_PR_NUMBER": str(pr_number)} if pr_number is not None else {}
+    if work_item.kind == "issue":
+        if not agent_def.resolve_pr_number:
+            return {}
+        try:
+            _branch = step_branch(agent_def, work_item)
+            pr_number = gh.find_pr_by_branch(_branch) if _branch else None
+            if pr_number is None:
+                pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
+        except Exception:
+            return {}
+        return {"PR_NUMBER": str(pr_number)} if pr_number is not None else {}
+
+    if work_item.kind == "pr":
+        try:
+            _head_ref = gh._get(f"/repos/{gh.repo}/pulls/{work_item.number}")["head"]["ref"]
+            _match = re.match(r"^issue-(\d+)", _head_ref)
+            issue_number = int(_match.group(1)) if _match else None
+            if issue_number is None:
+                for _label in work_item.labels:
+                    if _label.startswith("source-issue:"):
+                        issue_number = int(_label.removeprefix("source-issue:"))
+                        break
+        except Exception:
+            return {}
+        return {"ISSUE_NUMBER": str(issue_number)} if issue_number is not None else {}
+
+    return {}
 
 
 def _snapshot_body_if_first_replace(gh: "GitHubClient", agent_def: "AgentDef", number: int) -> None:
@@ -3728,7 +3756,7 @@ def invoke_script(
     """Invoke a script-type pipeline step directly via bash.
 
     The script receives the same environment variables as an agent
-    ($REPO, $ISSUE_NUMBER / $PR_NUMBER, $WORK_ITEM_KIND, etc.) and must
+    ($REPO, $ISSUE_NUMBER, $PR_NUMBER, etc.) and must
     emit AI_AGILE_STATUS: complete|review|blocked as the last output line.
     The orchestrator reads the sentinel and applies the matching label.
 
@@ -3773,8 +3801,6 @@ def invoke_script(
         "AI_AGILE_ROOT":    cwd or os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)),
         "AI_AGILE_CONTEXT": str(AI_AGILE_CONTEXT),
         "REPO":             repo,
-        "WORK_ITEM_KIND":   work_item.kind,
-        "WORK_ITEM_NUMBER": str(work_item.number),
         # SESSION_ID / SESSION_SCOPE are not meaningful for script steps (no
         # Claude CLI session), but are exported so scripts can reference them
         # in announcement output without having to special-case the env.
@@ -3947,18 +3973,13 @@ PRINT_PROMPT_ENV_KEYS = (
     "AI_AGILE_CONTEXT",
     "AI_AGILE_EXECUTION_MODE",
     "REPO",
-    "WORK_ITEM_KIND",
-    "WORK_ITEM_NUMBER",
     "SESSION_ID",
     "SESSION_SCOPE",
+    # Each resolved independently when the orchestrator can (issue #433),
+    # never gated on a separate kind flag -- a step's own identity already
+    # determines which bare name it reads. See _related_work_item_env.
     "ISSUE_NUMBER",
     "PR_NUMBER",
-    # Additive context (issue #431), never the subject identity above -- the
-    # open PR already associated with this issue, when the step is one that
-    # needs it. See _related_pr_number_env. Bare, not AI_AGILE_-prefixed:
-    # domain vocabulary about the work item (like ISSUE_NUMBER/PR_NUMBER
-    # above), not orchestrator plumbing (PRODUCT.md's variable table).
-    "RELATED_PR_NUMBER",
     # Derived from SESSION_ID, which is already here -- a path, not a secret.
     # Without it /maos-{agent}-i has nothing to export and every hand-run agent
     # falls through ${AI_AGILE_SCRATCH:-/tmp} to a shared directory with fixed
@@ -4178,14 +4199,16 @@ def _build_agent_env(
     """
     agent_env = {k: base_env[k] for k in AGENT_ENV_PASSTHROUGH if k in base_env}
     # Export resolved paths so the agent prompt's bash snippets work regardless
-    # of CWD or where this repo is mounted in the consuming repo. Only one of
-    # ISSUE_NUMBER / PR_NUMBER is set, matching the work item's kind, so the
-    # agent's prompt cannot get them confused.
+    # of CWD or where this repo is mounted in the consuming repo. ISSUE_NUMBER
+    # and PR_NUMBER are each set independently when the orchestrator can
+    # resolve them (issue #433) -- a step's own subject is not named by a
+    # separate kind flag; each step's own identity already determines which
+    # bare name it reads (a step scoping work to an issue uses ISSUE_NUMBER; a
+    # step reviewing a PR uses PR_NUMBER; a step needing both already has
+    # both).
     agent_env["AI_AGILE_ROOT"] = ai_agile_root or base_env.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
     agent_env["AI_AGILE_CONTEXT"] = str(AI_AGILE_CONTEXT)
     agent_env["REPO"] = repo
-    agent_env["WORK_ITEM_KIND"] = work_item.kind
-    agent_env["WORK_ITEM_NUMBER"] = str(work_item.number)
     agent_env["SESSION_ID"] = agent_session_id
     agent_env["SESSION_SCOPE"] = session_scope
     if work_item.kind == "issue":
@@ -4193,6 +4216,8 @@ def _build_agent_env(
     elif work_item.kind == "pr":
         agent_env["PR_NUMBER"] = str(work_item.number)
     # A scheduled step has no work item at all, so it is told neither.
+    # The other of ISSUE_NUMBER/PR_NUMBER, when resolvable, arrives via
+    # flow_env (_related_work_item_env), merged in below.
     # Axis B: every orchestrator-spawned subprocess is always headless/opaque,
     # regardless of whether the tick itself was triggered by cron or interactively.
     agent_env["AI_AGILE_EXECUTION_MODE"] = "headless"
@@ -4362,7 +4387,6 @@ def _resolve_agent_invocation(
         f"## Runtime context\n\n"
         f"REPO={repo.strip()}\n"
         f"{num_var}={work_item.number}\n"
-        f"WORK_ITEM_KIND={work_item.kind}\n"
         f"SESSION_ID={agent_session_id.strip()}\n"
         f"SESSION_SCOPE={agent_def.session_scope.strip()}\n"
         f"AI_AGILE_ROOT={(cwd or os.environ.get('AI_AGILE_ROOT', str(SUBMODULE_ROOT))).strip()}\n"
@@ -5571,9 +5595,9 @@ def _invoke_with_retries(
     step_result: Optional[StepResult] = None
     exhausted = False
     _attempt = 0
-    # Resolved once, reused across retries (issue #431) -- see
-    # _related_pr_number_env for which steps this applies to and why.
-    flow_env = {**(flow_env or {}), **_related_pr_number_env(gh, agent_def, work_item)}
+    # Resolved once, reused across retries (issue #431/#433) -- see
+    # _related_work_item_env for which steps this applies to and why.
+    flow_env = {**(flow_env or {}), **_related_work_item_env(gh, agent_def, work_item)}
     # Retry loop: re-invoke on a crashed/malformed result up to max_retries
     # times. Rate-limit and exhaustion events break immediately.
     result = invoke_agent(
@@ -5927,7 +5951,7 @@ def _orchestration_script_path(rel_path: str) -> Path:
 
 
 # STD-SEC-022 — env vars for commit-agent-work.sh: git stash/fetch/checkout/commit/push
-# plus base64 for the auth header. AGENT_NAME, ISSUE_NUMBER, AI_AGILE_BRANCH are set
+# plus base64 for the auth header. AGENT_NAME, ISSUE_NUMBER, BRANCH are set
 # explicitly below.
 _COMMIT_AFTER_ENV_VARS = (
     "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
@@ -5963,7 +5987,7 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optio
         "ISSUE_NUMBER": str(work_item.number),
         # The branch comes from the step's flow naming (issue #406); the script
         # never derives it from the issue number itself.
-        "AI_AGILE_BRANCH": _branch,
+        "BRANCH": _branch,
     }
     log.info(
         "  commit-after: invoking commit-agent-work.sh for %s on #%d",
@@ -6011,7 +6035,7 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optio
 
 
 # STD-SEC-022 — env vars for post_steps hooks (e.g. mark-pr-ready.sh): gh API/CLI
-# calls only, no git commits. REPO, WORK_ITEM_*, AGENT_NAME, ISSUE/PR_NUMBER, and
+# calls only, no git commits. REPO, AGENT_NAME, ISSUE/PR_NUMBER, and
 # AI_AGILE_ROOT are set explicitly below. AI_AGILE_BOT_TOKEN is here because a
 # post_step writes to GitHub and MI-7 wants one identity behind every system
 # write (issue #407); the scripts resolve it through lib/github-identity.sh.
@@ -6036,8 +6060,6 @@ def _invoke_post_steps(
     _ps_env = {  # STD-SEC-022
         **{k: os.environ[k] for k in _POST_STEPS_ENV_VARS if k in os.environ},
         "REPO": repo or gh.repo,
-        "WORK_ITEM_KIND": work_item.kind,
-        "WORK_ITEM_NUMBER": str(work_item.number),
         "AGENT_NAME": agent_def.agent,
     }
     if work_item.kind == "issue":
@@ -6047,8 +6069,12 @@ def _invoke_post_steps(
     _ps_env["AI_AGILE_ROOT"] = os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))
     # A post_step is told the same flow context the step itself was (issue
     # #406), so a hook that needs the branch or pull request reads the flow's
-    # declared name rather than building one from the issue number.
+    # declared name rather than building one from the issue number. The other
+    # of ISSUE_NUMBER/PR_NUMBER, when resolvable, is the same lookup the step
+    # itself used (issue #433) -- e.g. mark-pr-ready.sh reads PR_NUMBER
+    # directly instead of branching on work-item kind.
     _ps_env.update(_flow_context_env(agent_def, work_item))
+    _ps_env.update(_related_work_item_env(gh, agent_def, work_item))
     for _ps_path_str in agent_def.post_steps:
         # Escape check on the DECLARED (working-tree) path: rejects a
         # pipeline.json entry that tries to point outside the repo root. This
@@ -7387,7 +7413,7 @@ def _run_print_prompt(args) -> None:
         os.environ, args.repo, work_item, resolved.session_id, agent_def.session_scope,
         flow_env={
             **_flow_context_env(agent_def, work_item),
-            **_related_pr_number_env(gh, agent_def, work_item),
+            **_related_work_item_env(gh, agent_def, work_item),
         },
     )
     env["AI_AGILE_EXECUTION_MODE"] = "interactive"

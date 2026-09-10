@@ -12,9 +12,9 @@
 # token/freshness/idempotency logic under its own announcement identity. The
 # branch (issue-{N}-docs) and the non-closing body are NOT set here -- they come
 # from the flow's naming.pull_requests "docs" entry, which the orchestrator
-# resolves and exports as AI_AGILE_BRANCH / PR_CLOSES_ISSUE (issue #406).
+# resolves and exports as BRANCH / PR_CLOSES_ISSUE (issue #406).
 #
-# Environment (set by orchestrator): REPO, ISSUE_NUMBER, AI_AGILE_BRANCH,
+# Environment (set by orchestrator): REPO, ISSUE_NUMBER, BRANCH,
 #   PR_CLOSES_ISSUE, and the system identity lib/github-identity.sh resolves.
 
 set -euo pipefail
