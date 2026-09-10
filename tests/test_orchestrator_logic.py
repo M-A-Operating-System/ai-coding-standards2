@@ -5701,8 +5701,6 @@ class TestEpicCompletionIsDeclared:
         assert out.stdout.strip().splitlines()[-1] == "AI_AGILE_STATUS: blocked"
 
 
-
-
 # ---------------------------------------------------------------------------
 # TestRelatedPrNumberEnv — issue #431: orchestrator resolves the open PR for
 # coder/pr-reviewer instead of leaving them to re-derive it via trial-and-error
