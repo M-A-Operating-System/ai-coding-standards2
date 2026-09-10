@@ -93,13 +93,12 @@ Check for Mode B trigger labels on the issue:
 Absence of both means Mode A (initial build).
 
 The orchestrator already resolves the open PR for this issue when it exists
-(issue #431) -- `$RELATED_PR_NUMBER`, set only for steps that need
-it. Use it directly and skip the `gh api` lookups below entirely; they exist
-only as a fallback for the (should not happen in practice) case where it's
-unset.
+(issue #431/#433) -- `$PR_NUMBER` arrives already set. Use it directly and
+skip the `gh api` lookups below entirely; they exist only as a fallback for
+the (should not happen in practice) case where it's unset.
 
 ```bash
-PR_NUMBER="${RELATED_PR_NUMBER:-}"
+PR_NUMBER="${PR_NUMBER:-}"
 
 REVIEW_CYCLE_LABEL=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '.labels[].name | select(startswith("review-cycle:"))' \
@@ -125,7 +124,7 @@ elif [ -n "$REVIEW_CYCLE_LABEL" ]; then
     exit 1
   fi
   # Self-discover the associated PR via GitHub data model -- only when
-  # $RELATED_PR_NUMBER didn't already give it to us above.
+  # $PR_NUMBER wasn't already set above.
   # Try the canonical branch name first, then fall back to the source-issue
   # label (applied by link-pr-to-issue.sh) so that rebased branches (e.g.
   # issue-23-rebase) are found even when they don't match the issue-{N} pattern.

@@ -33,7 +33,7 @@ setup() {
   cp -r "${REPO_ROOT}/pipeline/schemas" "${WORK_DIR}/pipeline/" 2>/dev/null || true
   cat >"${WORK_DIR}/.github/scripts/create-pr.sh" <<'STUB'
 #!/usr/bin/env bash
-echo "create-pr REPO=${REPO} ISSUE_NUMBER=${ISSUE_NUMBER} AI_AGILE_BRANCH=${AI_AGILE_BRANCH} PR_CLOSES_ISSUE=${PR_CLOSES_ISSUE}"
+echo "create-pr REPO=${REPO} ISSUE_NUMBER=${ISSUE_NUMBER} BRANCH=${BRANCH} PR_CLOSES_ISSUE=${PR_CLOSES_ISSUE}"
 STUB
   chmod +x "${WORK_DIR}/.github/scripts/create-pr.sh"
 }
@@ -50,10 +50,10 @@ run_it() {
 # ---------------------------------------------------------------------------
 setup
 rc=0; REPO="owner/repo" run_it 42 || rc=$?
-if [ "${rc}" -eq 0 ] && grep -q "AI_AGILE_BRANCH=issue-42" "${WORK_DIR}/out.txt"; then
+if [ "${rc}" -eq 0 ] && grep -q "BRANCH=issue-42" "${WORK_DIR}/out.txt"; then
   pass "resolves the branch from pipeline.json's flow naming"
 else
-  fail "expected AI_AGILE_BRANCH=issue-42; rc=${rc}"
+  fail "expected BRANCH=issue-42; rc=${rc}"
   cat "${WORK_DIR}/out.txt"
 fi
 if grep -q "PR_CLOSES_ISSUE=true" "${WORK_DIR}/out.txt"; then

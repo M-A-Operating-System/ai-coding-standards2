@@ -67,14 +67,14 @@ fi
 # body from the flow's naming.pull_requests entry the step commits to, and
 # exports them. Two-phase design->build (issue #247) is one flow declaring two
 # pull requests -- the design PR (non-closing) and the code PR (closing).
-BRANCH="${AI_AGILE_BRANCH:?AI_AGILE_BRANCH is required -- the branch declared by this step flow naming}"
+BRANCH="${BRANCH:?BRANCH is required -- the branch declared by this step flow naming}"
 PR_CLOSES_ISSUE="${PR_CLOSES_ISSUE:?PR_CLOSES_ISSUE is required -- the closes_issue declared for this pull request}"
 CREATE_PR_AGENT="${CREATE_PR_AGENT:-01_product_docs/create-pr}"  # announcement identity + idempotency marker
 
 # The branch this one is cut from and merged into: the flow's naming.base when
 # it declares one and that branch exists, otherwise the repository default
 # branch (the schema's own fallback rule). Resolved after DEFAULT_BRANCH below.
-AI_AGILE_BASE_BRANCH="${AI_AGILE_BASE_BRANCH:-}"
+BASE_BRANCH="${BASE_BRANCH:-}"
 PLACEHOLDER_MSG="chore: open branch for ${BRANCH}"
 
 if [[ "${PR_CLOSES_ISSUE}" == "false" ]]; then
@@ -109,12 +109,12 @@ else
   # A flow may declare its own base (e.g. a shared integration branch for a
   # decomposed parent). Fall back to the default branch when it declares none,
   # or when the branch it names does not exist.
-  if [[ -n "${AI_AGILE_BASE_BRANCH}" ]]; then
-    if git ls-remote --exit-code --heads origin "${AI_AGILE_BASE_BRANCH}" &>/dev/null; then
-      DEFAULT_BRANCH="${AI_AGILE_BASE_BRANCH}"
+  if [[ -n "${BASE_BRANCH}" ]]; then
+    if git ls-remote --exit-code --heads origin "${BASE_BRANCH}" &>/dev/null; then
+      DEFAULT_BRANCH="${BASE_BRANCH}"
       echo "Using this flow's declared base branch: ${DEFAULT_BRANCH}"
     else
-      echo "Declared base branch '${AI_AGILE_BASE_BRANCH}' does not exist -- falling back to ${DEFAULT_BRANCH}." >&2
+      echo "Declared base branch '${BASE_BRANCH}' does not exist -- falling back to ${DEFAULT_BRANCH}." >&2
     fi
   fi
   echo "DEBUG: DEFAULT_BRANCH='${DEFAULT_BRANCH}' BRANCH='${BRANCH}'"

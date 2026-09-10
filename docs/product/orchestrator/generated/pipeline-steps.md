@@ -14,7 +14,7 @@ authoritative and these tables are a view of it.
 
 | Flow | Applies to | Naming |
 |---|---|---|
-| `standard-delivery` | kind `issue` | branch `issue-{number}`; PR `docs` on `issue-{number}-docs` (does not close the issue); PR `code` on `issue-{number}` (closes the issue) |
+| `standard-delivery` | kind `issue` | branch `issue-{number}`; base `feature/393-orchestrator-target-design`; PR `docs` on `issue-{number}-docs` (does not close the issue); PR `code` on `issue-{number}` (closes the issue) |
 | `epic-completion` | kind `issue`; labels `epic` | -- |
 | `codebase-review` | kind `issue` | -- |
 | `sizer` | kind `issue` | -- |

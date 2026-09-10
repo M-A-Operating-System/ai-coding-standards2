@@ -415,7 +415,7 @@
 **Given** `pipeline.json` declares the `standard-delivery` flow with `naming.branch` `issue-{number}` and two pull requests -- `docs` on `issue-{number}-docs` (non-closing) and `code` on `issue-{number}` (closing)
 **When** a step of that flow runs on issue #247
 **Then** the branch it commits to is the one its `git_ops.commits_to` names -- `issue-247-docs` for `prd-docs-updater`, `issue-247` for `coder` -- resolved from the flow's pattern
-**And** the scripts are told that name (`AI_AGILE_BRANCH`) and whether the pull request closes the issue (`PR_CLOSES_ISSUE`), so no branch name is built from parts anywhere in Python or bash
+**And** the scripts are told that name (`BRANCH`) and whether the pull request closes the issue (`PR_CLOSES_ISSUE`), so no branch name is built from parts anywhere in Python or bash
 
 ## Scenario: A step that commits in a flow with no declared branch fails loud
 
@@ -655,11 +655,11 @@
 **When** mark-pr-ready.sh executes to mark a pull request ready for review
 **Then** it reads $PR_NUMBER directly and completes successfully without consulting $WORK_ITEM_KIND
 
-## Scenario: agent subprocess receives BRANCH not AI_AGILE_BRANCH
+## Scenario: agent subprocess receives BRANCH not BRANCH
 
 **Given** a flow step declares a branch name via the flow's naming.branch field
 **When** the orchestrator builds the agent subprocess environment for that step
-**Then** the branch name is present as $BRANCH and $AI_AGILE_BRANCH is absent from the environment
+**Then** the branch name is present as $BRANCH and $BRANCH is absent from the environment
 
 ## Scenario: pipeline auto-targets the configured base branch when creating a PR
 

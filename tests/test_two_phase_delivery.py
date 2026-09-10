@@ -138,11 +138,11 @@ class TestFlowNaming:
         from pipeline_orchestrator import WorkItem
         wi = WorkItem(number=247, kind="issue", title="t", labels=set(), url="u")
         env = orch._flow_context_env(_agents_by_name()["01_product_docs/create-docs-pr"], wi)
-        assert env["AI_AGILE_BRANCH"] == "issue-247-docs"
+        assert env["BRANCH"] == "issue-247-docs"
         assert env["PR_CLOSES_ISSUE"] == "false"
         assert env["AI_AGILE_FLOW"] == "standard-delivery"
         env = orch._flow_context_env(_agents_by_name()["01_product_docs/create-pr"], wi)
-        assert env["AI_AGILE_BRANCH"] == "issue-247"
+        assert env["BRANCH"] == "issue-247"
         assert env["PR_CLOSES_ISSUE"] == "true"
 
     def test_no_step_declares_a_retired_branch_suffix(self):
@@ -180,7 +180,7 @@ class TestCreateDocsPrWrapper:
 
     def test_create_pr_takes_its_branch_and_closing_shape_from_the_flow(self):
         text = (SCRIPTS / "create-pr.sh").read_text()
-        assert 'BRANCH="${AI_AGILE_BRANCH:?' in text
+        assert 'BRANCH="${BRANCH:?' in text
         assert 'PR_CLOSES_ISSUE="${PR_CLOSES_ISSUE:?' in text
         assert 'PR_BODY="Closes #${ISSUE_NUMBER}"' in text
         assert 'BRANCH="issue-${ISSUE_NUMBER}' not in text
@@ -209,7 +209,7 @@ class TestMergeDocsPrScript:
             "ISSUE_NUMBER": str(issue_number),
             # The design branch is declared by the flow and exported by the
             # orchestrator (issue #406), not derived inside the script.
-            "AI_AGILE_BRANCH": f"issue-{issue_number}-docs",
+            "BRANCH": f"issue-{issue_number}-docs",
         }
         env.pop("GITHUB_TOKEN", None)
         env.pop("GH_TOKEN", None)
@@ -265,7 +265,7 @@ class TestMergeDocsPrScript:
             "PATH": f"{mock_dir}:{os.environ.get('PATH', '')}",
             "REPO": "owner/repo",
             "ISSUE_NUMBER": "247",
-            "AI_AGILE_BRANCH": "issue-247-docs",
+            "BRANCH": "issue-247-docs",
             "GITHUB_TOKEN": "x",
         }
         result = subprocess.run(
@@ -364,12 +364,12 @@ class TestCommitAfterUsesTheFlowsBranch:
 
     def test_design_step_commits_to_the_design_branch(self):
         env = self._captured_env("01_product_docs/prd-docs-updater")
-        assert env["AI_AGILE_BRANCH"] == "issue-247-docs"
+        assert env["BRANCH"] == "issue-247-docs"
         assert env["ISSUE_NUMBER"] == "247"
 
     def test_code_step_commits_to_the_code_branch(self):
         env = self._captured_env("03_execute/coder")
-        assert env["AI_AGILE_BRANCH"] == "issue-247"
+        assert env["BRANCH"] == "issue-247"
         assert env["ISSUE_NUMBER"] == "247"
 
     def test_commit_after_fails_loud_without_a_declared_branch(self):
@@ -393,5 +393,5 @@ class TestCommitAgentWorkBranchDerivation:
 
     def test_branch_comes_from_the_orchestrator(self):
         text = COMMIT_AGENT_WORK_SCRIPT.read_text()
-        assert 'BRANCH="${AI_AGILE_BRANCH:?' in text
+        assert 'BRANCH="${BRANCH:?' in text
         assert 'BRANCH="issue-${ISSUE_NUMBER}' not in text

@@ -375,7 +375,8 @@ class TestResolveOnlyModeExportsOnlyNamedEnvKeys:
         assert payload["env"]["AI_AGILE_EXECUTION_MODE"] == "interactive"
         assert payload["env"]["REPO"] == "test/repo"
         assert payload["env"]["ISSUE_NUMBER"] == "1"
-        assert payload["env"]["WORK_ITEM_KIND"] == "issue"
+        # WORK_ITEM_KIND is retired as agent-facing (issue #433).
+        assert "WORK_ITEM_KIND" not in payload["env"]
 
     def test_real_subprocess_env_still_carries_credentials(self):
         """The restriction is print-only -- a real spawn still needs the values."""

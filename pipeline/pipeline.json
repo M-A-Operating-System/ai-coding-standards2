@@ -55,6 +55,7 @@
       },
       "naming": {
         "branch": "issue-{number}",
+        "base": "feature/393-orchestrator-target-design",
         "pull_requests": [
           {
             "id": "docs",
@@ -184,7 +185,7 @@
             "label": "create-pr:complete"
           },
           "human_gate_after": false,
-          "resolve_related_pr": true,
+          "resolve_pr_number": true,
           "dependencies": ["01_product_docs/create-pr"],
           "max_retries": 1,
           "session": { "scope": "per_issue" },
@@ -251,6 +252,7 @@
           "human_gate_after": true,
           "human_gate_label": "merge-conflict:approved",
           "auto_approve_on_complete": true,
+          "resolve_pr_number": true,
           "dependencies": ["03_execute/ci-gate"],
           "max_retries": 1,
           "session": { "scope": "per_issue" },
@@ -285,7 +287,7 @@
             "label": "merge-conflict:complete"
           },
           "human_gate_after": false,
-          "resolve_related_pr": true,
+          "resolve_pr_number": true,
           "dependencies": ["03_execute/merge-conflict"],
           "max_retries": 1,
           "session": { "scope": "per_issue" },

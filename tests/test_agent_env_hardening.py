@@ -101,12 +101,13 @@ class TestAgentEnvAllowlist:
             session_scope="per_issue",
         )
         assert env["REPO"] == "owner/repo"
-        assert env["WORK_ITEM_KIND"] == "issue"
-        assert env["WORK_ITEM_NUMBER"] == "259"
         assert env["SESSION_ID"] == "sess-259"
         assert env["SESSION_SCOPE"] == "per_issue"
         assert env["ISSUE_NUMBER"] == "259"
         assert "PR_NUMBER" not in env
+        # WORK_ITEM_KIND/WORK_ITEM_NUMBER are retired as agent-facing (issue #433).
+        assert "WORK_ITEM_KIND" not in env
+        assert "WORK_ITEM_NUMBER" not in env
 
     def test_build_agent_env_sets_pr_number_for_pr_work_item(self):
         env = _build_agent_env(

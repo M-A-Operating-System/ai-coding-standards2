@@ -11,7 +11,7 @@ configuration order, with the description declared in `pipeline.json`.
 ## Flow: `standard-delivery`
 
 - **Applies to:** kind `issue`
-- **Naming:** branch `issue-{number}`; PR `docs` on `issue-{number}-docs` (does not close the issue); PR `code` on `issue-{number}` (closes the issue)
+- **Naming:** branch `issue-{number}`; base `feature/393-orchestrator-target-design`; PR `docs` on `issue-{number}-docs` (does not close the issue); PR `code` on `issue-{number}` (closes the issue)
 
 An issue taken from description to shipped code: classify, write the PRD, publish the approved design to main on its own design branch and PR, then build, gate on CI, resolve conflicts and review the code PR. Two-phase design->build (issue #247) is expressed here as two pull requests on one flow -- the design PR (issue-{N}-docs, non-closing) merged ahead of the code PR (issue-{N}, closing).
 

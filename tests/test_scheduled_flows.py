@@ -373,7 +373,7 @@ class TestScheduledDispatch:
         work_item = orch._schedule_work_item("learn-loop")
         assert work_item.kind == orch.SCHEDULE_WORK_ITEM_KIND
         env = orch._flow_context_env(_scheduled_step(), work_item)
-        assert "AI_AGILE_BRANCH" not in env
+        assert "BRANCH" not in env
         assert env["AI_AGILE_FLOW"] == "learn-loop"
 
     def test_the_run_appends_an_entry_that_makes_the_next_dueness_computable(self, monkeypatch):
