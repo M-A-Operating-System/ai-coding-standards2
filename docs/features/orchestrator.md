@@ -655,11 +655,11 @@
 **When** mark-pr-ready.sh executes to mark a pull request ready for review
 **Then** it reads $PR_NUMBER directly and completes successfully without consulting $WORK_ITEM_KIND
 
-## Scenario: agent subprocess receives BRANCH not BRANCH
+## Scenario: agent subprocess receives BRANCH not AI_AGILE_BRANCH
 
 **Given** a flow step declares a branch name via the flow's naming.branch field
 **When** the orchestrator builds the agent subprocess environment for that step
-**Then** the branch name is present as $BRANCH and $BRANCH is absent from the environment
+**Then** the branch name is present as $BRANCH and $AI_AGILE_BRANCH is absent from the environment
 
 ## Scenario: pipeline auto-targets the configured base branch when creating a PR
 

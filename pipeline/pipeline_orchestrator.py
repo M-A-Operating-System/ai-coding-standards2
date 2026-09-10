@@ -6035,7 +6035,7 @@ def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optio
 
 
 # STD-SEC-022 — env vars for post_steps hooks (e.g. mark-pr-ready.sh): gh API/CLI
-# calls only, no git commits. REPO, WORK_ITEM_*, AGENT_NAME, ISSUE/PR_NUMBER, and
+# calls only, no git commits. REPO, AGENT_NAME, ISSUE/PR_NUMBER, and
 # AI_AGILE_ROOT are set explicitly below. AI_AGILE_BOT_TOKEN is here because a
 # post_step writes to GitHub and MI-7 wants one identity behind every system
 # write (issue #407); the scripts resolve it through lib/github-identity.sh.
