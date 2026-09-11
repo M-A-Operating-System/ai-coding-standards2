@@ -1306,6 +1306,30 @@ a test failure.
 AS-1 and MI-3 are two halves of one property: AS-1 says permissions are
 written down in one place, MI-3 says they are enforced by one mechanism.
 
+**One mechanism is not the same as one kind of limit.** Matching the text
+of a command is the weaker kind, and it fails in both directions at once.
+Too broad, and a pattern admitting a family of commands admits the
+dangerous members with the harmless ones — a grant covering every
+invocation of a tool covers the ones that publish as readily as the ones
+that read. Too narrow, and the match is defeated by the shape of the
+command rather than its effect: the same call, written as part of a
+larger expression, no longer looks like the thing that was permitted, and
+a step is refused work it was plainly meant to do.
+
+Both failures come from the same substitution — judging what a step
+*typed* instead of what it can *reach*. Where a boundary matters, it
+should be a capability the step does not hold: a step that must not
+publish is given no credential that could, and there is then no phrasing
+that gets around it, no allowlist to keep current, and nothing to keep in
+step between the two modes. A step's declared commands remain the record
+of what it is *meant* to do, and remain worth checking; they are not what
+makes the boundary true.
+
+**Test (extended).** For every limit the design treats as a safety
+property, ask what would happen if a step ignored the instruction and
+attempted the action. A limit that holds only because the step did not
+try is documentation, not enforcement.
+
 ---
 
 ### MI-4 -- Nothing gets stuck with no way out
