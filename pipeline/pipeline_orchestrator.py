@@ -3626,6 +3626,7 @@ def _build_closing_announcement(
     outcome: str,
     summary: str,
     expected_effect: Optional[dict] = None,
+    subject: Optional[str] = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
@@ -3642,6 +3643,12 @@ def _build_closing_announcement(
     # this records the declared half of that comparison.
     if expected_effect:
         payload["expected_effect"] = expected_effect
+    # What this conclusion was reached against (PRODUCT.md, "A record that can
+    # be superseded says what it was about"). Without it, "this describes a
+    # commit that is no longer the head" is not decidable and a stale
+    # :complete stops the step running instead of prompting it to run again.
+    if subject:
+        payload["subject"] = subject
     _branch = step_branch(agent_def, work_item) if work_item.kind == "issue" else None
     if _branch:
         payload["branch"] = _branch
@@ -5189,6 +5196,26 @@ def _should_run(
         )
         current_status = None
 
+    # A :complete recording a subject that is no longer the current one is
+    # superseded: it has not become false, it has become about something else
+    # (PRODUCT.md, "Superseded is not the same as wrong"). The step runs again
+    # and replaces its own record -- which is the step correcting itself, not a
+    # repair of anything it does not own.
+    #
+    # Both sides must be established for that to hold. An unrecorded subject,
+    # an unreadable one, or a step with no subject at all leaves the record
+    # alone: not knowing is not evidence of staleness.
+    if current_status == STATUS_COMPLETE and gh is not None:
+        _recorded = _recorded_subject(gh, agent_def, work_item)
+        if _recorded is not None:
+            _current = step_subject(gh, agent_def, work_item)
+            if _current is not None and _current != _recorded:
+                log.info(
+                    "  again %-40s  [superseded: recorded %s, now %s]",
+                    agent_def.agent, _recorded[:12], _current[:12],
+                )
+                current_status = None
+
     if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED):
         log.debug("  skip %-40s  [%s]", agent_def.agent, current_status)
         return False
@@ -5319,6 +5346,72 @@ def _announcement_payload(body: str) -> Optional[dict]:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def step_subject(
+    gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem,
+) -> Optional[str]:
+    """What this step's conclusion is reached against, if it has a subject.
+
+    PRODUCT.md, "A record that can be superseded says what it was about": a
+    record naming no subject cannot be superseded at all, only repeated or
+    trusted indefinitely.
+
+    One subject exists today -- the head commit of the PR the step works
+    against -- and it belongs to the steps that already declare they need that
+    PR (`resolve_pr_number`), rather than to a list of step names kept here
+    (AS-2). A step with no PR in play has no subject, and is never treated as
+    superseded.
+
+    None on any failure: unable to establish a subject is not evidence that
+    the record is stale, and must not be read as such.
+    """
+    if not agent_def.resolve_pr_number:
+        return None
+    try:
+        if work_item.kind == "pr":
+            pr_number: Optional[int] = work_item.number
+        else:
+            _branch = step_branch(agent_def, work_item)
+            pr_number = gh.find_pr_by_branch(_branch) if _branch else None
+            if pr_number is None:
+                pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
+        if pr_number is None:
+            return None
+        return gh._get(f"/repos/{gh.repo}/pulls/{pr_number}")["head"]["sha"] or None
+    except Exception:
+        return None
+
+
+def _recorded_subject(
+    gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem,
+) -> Optional[str]:
+    """The subject this step's own last closing record named, or None.
+
+    Read from the trail rather than from a label: a status label is a bare
+    fact about a step with no subject attached, which is why it cannot answer
+    "is this still about the same thing".
+
+    None means no subject was recorded -- an older record written before
+    subjects existed, a step that has none, or comments that could not be
+    read. In every one of those cases the caller leaves the record alone.
+    """
+    marker = f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->"
+    try:
+        bodies = gh.list_comment_bodies(work_item.number)
+    except Exception:
+        return None
+    latest: Optional[str] = None
+    for body in bodies or []:
+        if not body or marker not in body:
+            continue
+        payload = _announcement_payload(body)
+        if payload is None or payload.get("phase") != "end":
+            continue
+        recorded = payload.get("subject")
+        if recorded:
+            latest = str(recorded)
+    return latest
 
 
 def _wip_held_since(
@@ -6357,6 +6450,7 @@ def _announce_and_prompt(
             _build_closing_announcement(
                 agent_def, work_item, session_id, applied_status, sentinel_message,
                 expected_effect=agent_def.expected_effect,
+                subject=step_subject(gh, agent_def, work_item),
             ),
         )
     except Exception as exc:
