@@ -313,12 +313,18 @@ same obligation `blocked` carries everywhere else. Guessing at a record
 and replacing it removes the only evidence that anything went wrong, and
 the next reader sees a state the system never passed through.
 
-Two other labels a person can set carry a gate's character rather than a
-record's: `skipped`, and a `classification:` a person chose over the one
-a step proposed. Both are decisions the artefact cannot establish.
-Whether they take the gate's protection, or are repairable like any
-other record, is not settled here and needs settling before this is
-built.
+Two other labels take a gate's protection for the same reason: `skipped`,
+and a `classification:` a person chose over the one a step proposed. Both
+record a decision the artefact cannot establish — `skipped` says *I am
+accountable for bypassing this*, which no amount of re-deriving reaches.
+A step treats them as it treats a gate: it may read them, it may act on
+them, and it may not repair them.
+
+What separates them from an ordinary record is not who wrote the label
+but whether a person's judgement is what it holds. A `classification:` a
+step proposed and nobody overrode is that step's record, and repairable.
+The same label, once a person has set it against the step's proposal, is
+a decision, and is not.
 
 **A gate approves a specific thing, and does not transfer.** When that
 thing changes, the approval no longer describes what it approved. The
@@ -832,6 +838,24 @@ value, and nothing is inferred from a clean exit. The orchestrator
 writes the summary and the output to the issue as structured comments;
 the step does not.
 
+**One exception, and it is narrow: review threads.** A thread is not the
+pipeline's record of anything. It is the conversation about a particular
+line of a particular diff, and that thread *is* the identity which lets a
+finding be recognised across rounds ([when a step's review is another
+step's work](#when-a-steps-review-is-another-steps-work)). Threading does
+not survive being flattened into a returned artefact and re-posted by
+something else: what comes back out is a list, and a list must be
+renumbered every review — which is the thing that made findings
+untrackable. So a reviewing step opens its threads itself, and the step
+answering them replies and resolves them itself.
+
+The line is not who is writing but what is being written. The pipeline's
+own record — announcements, artefacts, lifecycle labels, issue and PR
+body content — is uniform, attributable to the system, and not shaped by
+a step's discretion; it goes through the orchestrator, always. A review
+thread is none of those things, and proxying it destroys the only
+property it was wanted for.
+
 The same rule covers changing what is already there, not only adding a
 comment. `prd-writer` rewriting an issue body into a PRD and `coder`
 ticking off one entry in a todos-block subsection are the same case: the
@@ -1063,8 +1087,12 @@ explicitly, is unfinished target-state work.
 
 ### What a step must never do
 
-- **Write to the issue or PR.** No comments, no edits, no labels. A
-  step returns what it produced and the orchestrator records it.
+- **Write the pipeline's record.** No announcements, no artefact
+  comments, no lifecycle labels, no edits to an issue or PR body. A step
+  returns what it produced and the orchestrator records it. Review
+  threads are the one thing a step writes to GitHub directly, because
+  proxying them destroys the identity they exist for (see [what a step
+  must return](#what-a-step-must-return)).
 - **Decide what runs next.** Routing belongs to the orchestrator.
 - **Apply its own lifecycle labels.** `:wip`, `:complete`, `:review`,
   `:blocked`, `:failed` and `:exhausted` are the orchestrator's record
