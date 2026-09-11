@@ -986,6 +986,54 @@ that hits the turn wall never writes a result at all, so "what it did
 not do" only ever captures work a step deliberately left; being cut off
 mid-task is caught by `exhausted` and the diff.
 
+### When a step's review is another step's work
+
+Not every `review` is addressed to a person. A reviewing step that finds
+fault names the step that must act on it, and the orchestrator
+re-invokes that step. Two steps handing work back and forth need a
+guarantee that they stop, so the exchange is capped: past a declared
+number of rounds it halts and a person decides.
+
+The cap is a termination guarantee, and only that. It bounds the worst
+case; it cannot tell apart the cases inside the bound, and there are
+three:
+
+| What happened | What it needs |
+|---|---|
+| The reviewing step is right, and the acting step disagrees | A person, on the first occurrence. A disagreement is not resolved by repeating it |
+| The acting step accepted the finding and did not address it | Re-invocation naming the finding. Nothing is in dispute; the work simply was not done |
+| Each round raises different findings | Nothing. That is convergence, and counting rounds penalises it |
+
+Counting rounds treats all three alike, so it halts late on the first,
+wrongly on the third, and never recognises the second at all.
+
+So the exchange turns on findings, not rounds. A reviewing step raises
+findings that carry identity. The acting step disposes of each one
+explicitly — **fixed**, **disputed** with its reasoning, or **deferred**
+with its reasoning — and the disposition is what the next round reads. A
+finding disputed, or raised again after being reported fixed, is a
+disagreement: it goes to a person straight away rather than after a
+budget of rounds. A finding neither addressed nor disputed is not a
+disagreement at all, and does not spend the budget; the acting step is
+re-invoked with that finding named.
+
+The cap stays behind all of it, for the case none of the above catches:
+a reviewing step that keeps finding genuinely new fault indefinitely.
+
+**Identity has to outlive the round.** "The same finding, raised again"
+is only decidable if a finding can be recognised across invocations. So a
+finding is anchored to something durable — the place it concerns, and the
+thread of conversation about it — rather than to a number assigned in
+the order it happened to be written, which means something different in
+the next review.
+
+Today the exchange counts rounds: a cycle counter advances per dispatch,
+a declared maximum halts it, and findings carry numbers assigned per
+review. Nothing records a disposition, so a round in which nothing was
+addressed reads exactly like one in which everything was disputed.
+Giving findings durable identity, and requiring each to be disposed of
+explicitly, is unfinished target-state work.
+
 ### What a step must never do
 
 - **Write to the issue or PR.** No comments, no edits, no labels. A
