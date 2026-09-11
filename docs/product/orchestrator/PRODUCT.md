@@ -279,38 +279,57 @@ otherwise happens — a person edits a label by hand, outside the system,
 unseen and unrecorded, which is exactly what
 [MI-4](#mi-4----nothing-gets-stuck-with-no-way-out) forbids.
 
-Labels do not all correct the same way, because they are not all the
-same kind of thing.
+**Superseded is not the same as wrong.** When a new commit lands, a
+record describing the previous head has not become false — it has become
+*about something else*. The step whose input changed runs again and
+replaces what it recorded. Nothing went wrong there; that is the flow
+advancing. Whatever was derived from the superseded state is replaced
+along with it, together, or the pipeline advances on a mixture of two
+different artefacts.
 
-| Kind | Examples | How it is corrected |
-|---|---|---|
-| **Derived** — re-derivable from the artefact | `ci-gate:complete` (is CI green on the current head), `merge-conflict:complete` (does it merge now) | Automatically. The owning step re-derives on the next tick and the record follows. The correction *is* the step running again; no person is involved, and nothing is cleared by hand |
-| **Declared** — records a decision, with nothing to check it against | `{agent}:approved`, `{agent}:skipped`, `classification:` | Never automatically. Only the kind of actor who could have made the declaration changes it, and doing so is a claim, not a click |
-| **Run record** — says what became of a run, not what is true of the artefact | `:wip`, `:failed`, `:exhausted` | By reclaim: a later tick, on a stated condition, recording why (see [MI-4](#mi-4----nothing-gets-stuck-with-no-way-out)) |
+A record is *wrong* when it cannot be reconciled with the artefact by any
+legitimate path: a step recorded complete against a check that failed, a
+lock held by a run that never existed. Nothing produced that honestly, so
+something is broken, and the record is the evidence.
 
-**A correction invalidates whatever was derived from the same superseded
-state.** When the head moves, every record describing the old head
-describes nothing — not only the first one noticed. They are corrected
-together, as one correction, or the pipeline advances on a mixture of
-two different artefacts.
+**A step repairs its own record, and nothing else.** Re-deriving and
+replacing what it previously recorded is a step correcting itself, and
+needs no permission from anyone — it owns that record the same way it
+owns its subsection of a todos block. Three things sit outside that
+ownership, and a step that finds one of them wrong stops instead of
+repairing it:
 
-**A gate approves a specific thing.** When that thing changes, the
-approval does not transfer. The system may withdraw an approval whose
-subject no longer exists; it may never grant one — which leaves
-[MI-7](#mi-7----only-a-person-approves) intact, since withdrawing is not
-approving. A withdrawal is announced, because it costs a person a
-decision they had already made.
+| Not a step's to repair | Why |
+|---|---|
+| Another step's record | It did not produce it and cannot re-derive it |
+| A declaration — `approved`, `skipped`, `classification:` | A person decided it, and nothing about the artefact establishes what they decided |
+| The orchestrator's account of how a run ended — `failed`, `exhausted` | A step that broke or was cut off is in no position to describe what happened to it, which is why it never sets these in the first place |
 
-**Every correction is recorded as a correction.** A record quietly
-replaced leaves a trail showing a state the system never passed through,
-which is worse than the stale record it replaced.
+**A step that stops says what it could not reconcile**: what it found,
+what it expected, and which of the two it could not square — the same
+obligation `blocked` carries everywhere else. A person decides what the
+record should say. A system that quietly rewrites a record it does not
+own removes the only evidence that anything went wrong, and the next
+reader sees a state the system never passed through.
+
+**A gate approves a specific thing, and does not transfer.** When that
+thing changes, the approval no longer describes what it approved. The
+system neither withdraws it nor honours it: it stops and says so.
+Withdrawing on its own authority would be the system reversing a
+person's decision — the same objection as granting one
+([MI-7](#mi-7----only-a-person-approves)), arriving from the other side.
+
+**Every repair is visible as one.** A step that replaced what it had
+recorded says that it did, and why. A repair indistinguishable from an
+ordinary run is how a record that keeps going wrong stays undiscovered.
 
 `statuses.json` does not describe this yet: `complete`, `skipped` and
 `approved` are all declared `cleared_by: "never"`. That is right for the
-last two and wrong for the first — a derived `:complete` whose artefact
-has moved must be correctable, or the only exit left is the hand-edit
-MI-4 rules out. Reconciling the declared taxonomy with this section is
-unfinished target-state work.
+last two, and wrong for the first in two ways — a step must be able to
+replace its own superseded `:complete`, and a person must be able to
+correct one that is wrong — so as written the field denies both and
+leaves only the hand-edit MI-4 rules out. Reconciling the declared
+taxonomy with this section is unfinished target-state work.
 
 ### Eligibility and order decide which item runs next
 
