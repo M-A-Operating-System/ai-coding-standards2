@@ -67,8 +67,8 @@ class TestGenuineFirstDispatchRunsModeA:
     def test_step0_bash_fetches_pr_comments_for_artefact(self):
         text = _load_coder()
         step = _extract_step0(text)
-        assert "PR_REVIEWER_ARTEFACT" in step, (
-            "Step 0 bash block must define PR_REVIEWER_ARTEFACT to hold the artefact check result"
+        assert 'contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")' in step, (
+            "Step 0 must fetch PR comments and check for the pr-reviewer artefact marker"
         )
 
     def test_step0_bash_checks_artefact_marker_string(self):
@@ -89,8 +89,9 @@ class TestGenuineFirstDispatchRunsModeA:
     def test_step0_human_review_pending_is_always_mode_b(self):
         text = _load_coder()
         step = _extract_step0(text)
-        assert "HUMAN_REVIEW_PENDING" in step, (
-            "Step 0 must still handle the human-review-pending label as a reliable Mode B trigger"
+        assert "`human-review-pending` present: **MODE=B**" in step, (
+            "Step 0 must still handle the human-review-pending label as a reliable, "
+            "unconditional Mode B trigger"
         )
 
 
@@ -119,19 +120,19 @@ class TestGenuineReInvocationRunsModeB:
     def test_step0_human_review_pending_triggers_mode_b_unconditionally(self):
         text = _load_coder()
         step = _extract_step0(text)
-        # human-review-pending must set MODE=B without an artefact check
-        lines = step.splitlines()
-        hrp_lines = [i for i, l in enumerate(lines) if "HUMAN_REVIEW_PENDING" in l and "MODE=B" in l]
-        # Also acceptable: separate lines where HUMAN_REVIEW_PENDING check sets MODE=B
-        hrp_check_idx = next((i for i, l in enumerate(lines) if '"$HUMAN_REVIEW_PENDING"' in l or '[ -n "$HUMAN_REVIEW_PENDING" ]' in l), None)
-        assert hrp_check_idx is not None, (
-            "Step 0 bash block must check HUMAN_REVIEW_PENDING"
+        # human-review-pending must set MODE=B and explicitly skip the artefact check,
+        # not require it -- unlike the review-cycle:N path a few lines below.
+        hrp_idx = step.index("`human-review-pending` present: **MODE=B**")
+        artefact_idx = step.index(
+            'contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")'
         )
-        # MODE=B must appear after the human-review-pending check and before any artefact check
-        artefact_idx = next((i for i, l in enumerate(lines) if "PR_REVIEWER_ARTEFACT" in l), len(lines))
-        modeb_before_artefact = any("MODE=B" in l for l in lines[hrp_check_idx:artefact_idx])
-        assert modeb_before_artefact, (
-            "human-review-pending must set MODE=B without requiring a pr-reviewer artefact check"
+        assert hrp_idx < artefact_idx, (
+            "human-review-pending's unconditional MODE=B must be stated before "
+            "the pr-reviewer artefact check that only review-cycle:N needs"
+        )
+        hrp_to_artefact = step[hrp_idx:artefact_idx]
+        assert "Skip to the PR lookup" in hrp_to_artefact, (
+            "human-review-pending must explicitly skip the artefact check, not require it"
         )
 
     def test_frontmatter_description_reflects_new_mode_b_triggers(self):

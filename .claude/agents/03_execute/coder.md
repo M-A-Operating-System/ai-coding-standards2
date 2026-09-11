@@ -97,109 +97,82 @@ The orchestrator already resolves the open PR for this issue when it exists
 skip the `gh api` lookups below entirely; they exist only as a fallback for
 the (should not happen in practice) case where it's unset.
 
-```bash
-PR_NUMBER="${PR_NUMBER:-}"
+Each `gh api` call below is run as its own standalone command — never combined
+with a variable assignment, `&&` chain, or `if` on the same invocation, so
+each one matches the `--allowedTools` allowlist on its own.
 
-REVIEW_CYCLE_LABEL=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
-  --jq '.labels[].name | select(startswith("review-cycle:"))' \
-  | head -1)
-
-HUMAN_REVIEW_PENDING=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
-  --jq '.labels[].name | select(. == "human-review-pending")' \
-  | head -1)
-
-MODE=A
-
-if [ -n "$HUMAN_REVIEW_PENDING" ]; then
-  # human-review-pending is applied only after a real human review — always Mode B.
-  MODE=B
-elif [ -n "$REVIEW_CYCLE_LABEL" ]; then
-  # review-cycle:N is applied at dispatch time including the very first dispatch,
-  # so presence alone is not a reliable Mode B signal. Discover the PR and check
-  # for a pr-reviewer artefact comment — that is concrete evidence a review ran.
-  REVIEW_CYCLE="${REVIEW_CYCLE_LABEL#review-cycle:}"
-  # Validate: must be a positive integer (orchestrator always sets N >= 1)
-  if ! printf '%s' "$REVIEW_CYCLE" | grep -qE '^[1-9][0-9]*$'; then
-    echo "BLOCKED: '${REVIEW_CYCLE_LABEL}' is malformed — expected review-cycle:N where N is a positive integer"
-    exit 1
-  fi
-  # Self-discover the associated PR via GitHub data model -- only when
-  # $PR_NUMBER wasn't already set above.
-  # Try the canonical branch name first, then fall back to the source-issue
-  # label (applied by link-pr-to-issue.sh) so that rebased branches (e.g.
-  # issue-23-rebase) are found even when they don't match the issue-{N} pattern.
-  if [ -z "$PR_NUMBER" ]; then
-    OWNER="${REPO%%/*}"
-    PR_NUMBER=$(gh api \
-      "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
-      --jq '.[0].number // empty')
-
-    if [ -z "$PR_NUMBER" ]; then
-      # REST has no label filter on the pulls endpoint; query the issues endpoint
-      # (which includes PRs) by label and keep only entries that are PRs.
-      PR_NUMBER=$(gh api \
-        "repos/$REPO/issues?labels=source-issue:${ISSUE_NUMBER}&state=open&per_page=100" \
-        --jq '[.[] | select(.pull_request) | .number] | first // empty')
-    fi
-  fi
-
-  if [ -z "$PR_NUMBER" ]; then
-    echo "BLOCKED: review-cycle:${REVIEW_CYCLE} present but no open PR found for issue #${ISSUE_NUMBER} (checked head branch issue-${ISSUE_NUMBER} and source-issue:${ISSUE_NUMBER} label)"
-    exit 1
-  fi
-
-  # Verify a pr-reviewer artefact exists on the PR. Without it, review-cycle:N
-  # reflects only the dispatch-time counter, not an actual review — Mode A.
-  PR_REVIEWER_ARTEFACT=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
-    --jq '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer"))] | length')
-  if [ "${PR_REVIEWER_ARTEFACT:-0}" -gt 0 ]; then
-    MODE=B
-  fi
-fi
-
-if [ "$MODE" = "B" ]; then
-  if [ -z "$PR_NUMBER" ]; then
-    # Entered Mode B via human-review-pending — discover the PR now.
-    OWNER="${REPO%%/*}"
-    PR_NUMBER=$(gh api \
-      "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
-      --jq '.[0].number // empty')
-    if [ -z "$PR_NUMBER" ]; then
-      PR_NUMBER=$(gh api \
-        "repos/$REPO/issues?labels=source-issue:${ISSUE_NUMBER}&state=open&per_page=100" \
-        --jq '[.[] | select(.pull_request) | .number] | first // empty')
-    fi
-    if [ -z "$PR_NUMBER" ]; then
-      echo "BLOCKED: human-review-pending present but no open PR found for issue #${ISSUE_NUMBER} (checked head branch issue-${ISSUE_NUMBER} and source-issue:${ISSUE_NUMBER} label)"
-      exit 1
-    fi
-  fi
-  # Capture the PR's actual head branch — may differ from issue-{N} if the
-  # branch was rebased. Used in announcements and for the orchestrator push.
-  PR_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
-  echo "MODE=B  REVIEW_CYCLE=${REVIEW_CYCLE:-0}  PR=${PR_NUMBER}  BRANCH=${PR_BRANCH}"
-else
-  echo "MODE=A"
-fi
-```
-
-If the block above printed a `BLOCKED: ...` line and exited, write
-`$AI_AGILE_SCRATCH/result.json` with the Write tool now, carrying that
-message forward, and stop — do not proceed to Step 1:
-
-```json
-{
-  "outcome": "blocked",
-  "summary": "Could not determine build mode for issue #${ISSUE_NUMBER}.",
-  "message": "{the BLOCKED: message from above, without the 'BLOCKED: ' prefix}"
-}
-```
-
-Export `PR_NUMBER` and `PR_BRANCH` so later steps can use them:
+Fetch the issue's current labels (one per line):
 
 ```bash
-export PR_NUMBER PR_BRANCH
+gh api "repos/$REPO/issues/$ISSUE_NUMBER" --jq '.labels[].name'
 ```
+
+From that output, note whether `human-review-pending` is present, and
+whether any label matches `review-cycle:N`.
+
+- `human-review-pending` present: **MODE=B** (applied only after a real
+  human review — always Mode B). Skip to the PR lookup below.
+- `review-cycle:N` present (and `human-review-pending` absent): its N suffix
+  must be a positive integer (the orchestrator always sets N >= 1). If it
+  isn't, write `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"` and
+  `message: "'review-cycle:{label}' is malformed — expected review-cycle:N
+  where N is a positive integer"`, and stop. Otherwise continue below —
+  `review-cycle:N` is applied at dispatch time including the very first
+  dispatch, so presence alone is not a reliable Mode B signal; a `pr-reviewer`
+  artefact on the PR is the concrete evidence that decides it.
+- Neither present: **MODE=A**. Skip the rest of this step.
+
+If `review-cycle:N` is present and `$PR_NUMBER` is unset, discover the PR.
+Try the canonical branch name first:
+
+```bash
+gh api "repos/$REPO/pulls?head=${REPO%%/*}:issue-${ISSUE_NUMBER}&state=open&per_page=1" --jq '.[0].number // empty'
+```
+
+If that returned nothing, fall back to the source-issue label (REST has no
+label filter on the pulls endpoint, so this queries the issues endpoint,
+which includes PRs, and keeps only entries that are PRs) — catches rebased
+branches (e.g. `issue-23-rebase`) that don't match the `issue-{N}` pattern:
+
+```bash
+gh api "repos/$REPO/issues?labels=source-issue:${ISSUE_NUMBER}&state=open&per_page=100" --jq '[.[] | select(.pull_request) | .number] | first // empty'
+```
+
+If both returned nothing, write `$AI_AGILE_SCRATCH/result.json` with
+`outcome: "blocked"` and `message: "review-cycle:{N} present but no open PR
+found for issue #${ISSUE_NUMBER} (checked head branch issue-${ISSUE_NUMBER}
+and source-issue:${ISSUE_NUMBER} label)"`, and stop.
+
+With `$PR_NUMBER` known, confirm a `pr-reviewer` artefact exists on the PR —
+concrete evidence a review actually happened. Without one, `review-cycle:N`
+reflects only the dispatch-time counter, not an actual review, and this is
+still Mode A:
+
+```bash
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer"))] | length'
+```
+
+A count greater than 0 means **MODE=B**; otherwise **MODE=A**.
+
+For Mode B entered via `human-review-pending` where `$PR_NUMBER` is still
+unset, run the same two PR-discovery calls above. If both return nothing,
+write `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"` and
+`message: "human-review-pending present but no open PR found for issue
+#${ISSUE_NUMBER} (checked head branch issue-${ISSUE_NUMBER} and
+source-issue:${ISSUE_NUMBER} label)"`, and stop.
+
+For Mode B, capture the PR's actual head branch as `PR_BRANCH` — it may
+differ from `issue-{N}` if the branch was rebased. Used in announcements and
+for the orchestrator push:
+
+```bash
+gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref'
+```
+
+If any step above wrote a `blocked` result.json, stop now — do not proceed
+to Step 1. `$PR_NUMBER` is already available to every later `gh api` call
+below via the orchestrator's own exported env var; keep the `PR_BRANCH`
+value you recorded above in mind for the announcement text in Mode B.
 
 Then follow the corresponding section below.
 
