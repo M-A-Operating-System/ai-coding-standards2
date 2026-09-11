@@ -1599,11 +1599,12 @@ that must be got around, and every failure of the suppression lands on a
 person as a question about something nobody needed to decide.
 
 **And gates inside the pipeline are not the last line.** The decision
-that admits work is the merge. A design that invests in in-pipeline gates
-while the branch they protect accepts direct pushes has put its guarantee
-in the wrong place — the elaborate lock is on an inner door. Protecting
-the branch is what makes MI-7 worth enforcing anywhere else; without it,
-a gate is a convention that only binds whoever chose to route through it.
+that admits work is the merge, so the branch that receives it is
+protected: no direct push, and a reviewed pull request to change it. That
+is a precondition of everything above, not an extra. Without it a gate is
+a convention binding only whoever chose to route through it, and the
+elaborate lock is on an inner door — every in-pipeline gate can be
+satisfied perfectly and the work still arrive another way.
 
 ---
 
