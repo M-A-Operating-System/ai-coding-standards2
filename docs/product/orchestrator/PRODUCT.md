@@ -70,6 +70,7 @@ in a prompt (see
 
 **The state machine**
 - [Labels record state; the artefact holds it](#labels-record-state-the-artefact-holds-it)
+- [Correcting the record](#correcting-the-record)
 - [Eligibility and order decide which item runs next](#eligibility-and-order-decide-which-item-runs-next)
 - [A component label lets unrelated work run at once](#a-component-label-lets-unrelated-work-run-at-once)
 - [Every step has the same four parts](#every-step-has-the-same-four-parts)
@@ -231,9 +232,10 @@ one step whose conditions are met, runs it, and records the outcome.
 
 Where the record and the artefact disagree, the artefact wins. A label
 describing a commit that is no longer the head describes nothing: the
-step re-derives, and the record is corrected. This is what keeps a stale
-label a cosmetic problem rather than a stall — the failure mode where a
-person must hand-edit a label to make the pipeline look again.
+step re-derives, and the record is corrected (see [Correcting the
+record](#correcting-the-record)). This is what keeps a stale label a
+cosmetic problem rather than a stall — the failure mode where a person
+must hand-edit a label to make the pipeline look again.
 
 Because the record lives on the work item, there is still nothing that
 exists only in memory, and any orchestrator process reaches the same
@@ -266,6 +268,48 @@ working interactively. Interactive concurrency is addressed on its own
 terms (see [A component label lets unrelated work run at
 once](#a-component-label-lets-unrelated-work-run-at-once)), not folded
 into headless's guarantee.
+
+### Correcting the record
+
+A record can be wrong: a step wrote it and the artefact moved on, or a
+run died between doing the work and recording it. The design has to say
+how a wrong record is put right, because the alternative is what
+otherwise happens — a person edits a label by hand, outside the system,
+unseen and unrecorded, which is exactly what
+[MI-4](#mi-4----nothing-gets-stuck-with-no-way-out) forbids.
+
+Labels do not all correct the same way, because they are not all the
+same kind of thing.
+
+| Kind | Examples | How it is corrected |
+|---|---|---|
+| **Derived** — re-derivable from the artefact | `ci-gate:complete` (is CI green on the current head), `merge-conflict:complete` (does it merge now) | Automatically. The owning step re-derives on the next tick and the record follows. The correction *is* the step running again; no person is involved, and nothing is cleared by hand |
+| **Declared** — records a decision, with nothing to check it against | `{agent}:approved`, `{agent}:skipped`, `classification:` | Never automatically. Only the kind of actor who could have made the declaration changes it, and doing so is a claim, not a click |
+| **Run record** — says what became of a run, not what is true of the artefact | `:wip`, `:failed`, `:exhausted` | By reclaim: a later tick, on a stated condition, recording why (see [MI-4](#mi-4----nothing-gets-stuck-with-no-way-out)) |
+
+**A correction invalidates whatever was derived from the same superseded
+state.** When the head moves, every record describing the old head
+describes nothing — not only the first one noticed. They are corrected
+together, as one correction, or the pipeline advances on a mixture of
+two different artefacts.
+
+**A gate approves a specific thing.** When that thing changes, the
+approval does not transfer. The system may withdraw an approval whose
+subject no longer exists; it may never grant one — which leaves
+[MI-7](#mi-7----only-a-person-approves) intact, since withdrawing is not
+approving. A withdrawal is announced, because it costs a person a
+decision they had already made.
+
+**Every correction is recorded as a correction.** A record quietly
+replaced leaves a trail showing a state the system never passed through,
+which is worse than the stale record it replaced.
+
+`statuses.json` does not describe this yet: `complete`, `skipped` and
+`approved` are all declared `cleared_by: "never"`. That is right for the
+last two and wrong for the first — a derived `:complete` whose artefact
+has moved must be correctable, or the only exit left is the hand-edit
+MI-4 rules out. Reconciling the declared taxonomy with this section is
+unfinished target-state work.
 
 ### Eligibility and order decide which item runs next
 
