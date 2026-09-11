@@ -69,7 +69,7 @@ in a prompt (see
 - [Blocking declares an ordering dependency between issues](#blocking-declares-an-ordering-dependency-between-issues)
 
 **The state machine**
-- [Labels are state; a step is a transition](#labels-are-state-a-step-is-a-transition)
+- [Labels record state; the artefact holds it](#labels-record-state-the-artefact-holds-it)
 - [Eligibility and order decide which item runs next](#eligibility-and-order-decide-which-item-runs-next)
 - [A component label lets unrelated work run at once](#a-component-label-lets-unrelated-work-run-at-once)
 - [Every step has the same four parts](#every-step-has-the-same-four-parts)
@@ -217,15 +217,27 @@ changes what it meant while it was there.
 
 ---
 
-## Labels are state; a step is a transition
+## Labels record state; the artefact holds it
 
-The labels on a work item are the state. A step is a transition. The
-orchestrator reads the labels, selects the one step whose conditions
-are met, runs it, and writes the outcome back as a label.
+The artefact holds the state. Whether a PR exists, whether CI passed on
+its current head, whether it merges cleanly, whether a review left
+unresolved threads — GitHub knows all of it first-hand, and the answer
+is the same whoever asks. The labels on a work item *record* that state,
+so a person can read the position at a glance and the orchestrator need
+not re-derive everything on every tick.
 
-Because state lives on the work item, there is nothing to recover and
-no position that exists only in memory. Any orchestrator process reading
-settled labels reaches the same conclusion.
+A step is a transition. The orchestrator reads the position, selects the
+one step whose conditions are met, runs it, and records the outcome.
+
+Where the record and the artefact disagree, the artefact wins. A label
+describing a commit that is no longer the head describes nothing: the
+step re-derives, and the record is corrected. This is what keeps a stale
+label a cosmetic problem rather than a stall — the failure mode where a
+person must hand-edit a label to make the pipeline look again.
+
+Because the record lives on the work item, there is still nothing that
+exists only in memory, and any orchestrator process reaches the same
+conclusion from the same artefact.
 
 A headless run is started by a GitHub event, automatically. A label
 write is not visible instantly, so a run's own `:wip` write can fire an
@@ -1049,9 +1061,9 @@ conditional, or a retry loop is a test failure.
 > mean the same thing whether a person or the headless runner put them
 > there.**
 
-Labels are the only state, so their meaning must not depend on their
-origin — otherwise the same label on two issues means two different
-things according to history nobody can see.
+Labels are the shared record of state, so their meaning must not depend
+on their origin — otherwise the same label on two issues means two
+different things according to history nobody can see.
 
 **Precisely.** No label is specific to one mode, and no step interprets
 a label differently depending on which actor applied it.
@@ -1073,8 +1085,14 @@ routing drift invisibly until they disagree on a specific issue.
 step. Routing is computed in exactly one place. A driver may read the
 pipeline definition to explain what will happen, never to decide it.
 
+"Identical state" means the artefact, not the label record. Two ticks
+taken either side of a CI run finishing see different state and may
+legitimately select differently; that is the artefact being read
+correctly, not routing drifting. What this promise forbids is two
+readers of the *same* artefact reaching different answers.
+
 **Test.** Run the resolver and the real dispatch path over the same
-issue state and assert identical selection, for every step.
+artefact state and assert identical selection, for every step.
 
 ---
 
