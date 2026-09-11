@@ -817,6 +817,57 @@ A checkbox is `- [ ]` (pending) or `- [x]` (done). Every state change
 carries a timestamp and the actor that made it. A step touches only the
 subsection it owns, and never removes a checked item.
 
+### What lands in git
+
+An agent's work is not durable because the agent returned successfully.
+It is durable because it was committed. Those are different moments, and
+the gap between them is where work is lost: a step killed at its budget
+ceiling has done the work, has it correct, and has it only in a working
+tree that is about to be torn down.
+
+So a step that produces code commits it, as it goes, into the isolated
+worktree it was given. The commit is the deliverable, not a side effect
+of returning cleanly. A step killed mid-run leaves behind whatever it had
+committed by then, on its own branch, and the record says how far it got.
+
+**What the step owns.** Committing, inside its own worktree, on its own
+branch. Nothing else.
+
+**What the orchestrator owns.** Creating the branch, pushing it, the PR
+lifecycle, and merging. A step never pushes, never touches the base
+branch, and never merges — not because prose forbids the commands, but
+because the worktree it runs in holds no credential that could.
+
+**Durability has a defined moment.** A commit is durable once the branch
+ref moves: a worktree can be removed and the objects survive in the
+shared store. The orchestrator pushes the branch after the step returns.
+If the step never returns, the branch is still ahead of its remote, and a
+later tick pushes it — recovering by reading what is actually there
+rather than what a record claims.
+
+**What this replaces.** Extracting a step's work after the fact — stash
+it, reset the branch to the remote, replay the stash, commit whatever
+appears — fails in three directions at once: unrelated dirt in the
+working tree drags a no-op run into the whole path, a branch that moved
+between stash and replay conflicts with itself, and a step returning
+anything other than success never reaches the extraction at all. Those
+are not defects in the extraction script. They are properties of
+extracting work from a process instead of having the process commit it.
+
+One consequence has to be read deliberately: **a branch carrying commits
+no longer implies the step succeeded.** Partial work landing is the point
+— it is what stops correct work being discarded — so what the step
+achieved is read from the record, never inferred from the branch.
+
+The pipeline does not work this way yet, in three places:
+`git_ops.commit_after` and the extraction script it names still hold this
+responsibility; the agent prompts still forbid a step from committing at
+all; and one step, `merge-conflict`, both pushes and force-pushes in its
+rebase path, which this section and the history rule below already
+disallow. Moving the commit into the step, moving that rebase to the
+orchestrator, and narrowing the worktree's credentials so the boundary
+above is enforced rather than asserted, is unfinished target-state work.
+
 ### The environment can refuse more than the pipeline denies
 
 A step's allowed commands are what the design permits. The environment
@@ -910,6 +961,9 @@ mid-task is caught by `exhausted` and the diff.
   `git reset`, `git push --force`, `git branch -D`, or any other command
   that rewrites or deletes history. These are operator-only actions
   taken outside the pipeline.
+- **Push, merge, or move the base branch.** A step commits inside its
+  own worktree (see [What lands in git](#what-lands-in-git)); everything
+  that publishes those commits belongs to the orchestrator.
 - **Depend on state from outside its own (object, agent) session.**
   Sessions never cross-pollinate (P-7). A re-invocation of the same
   agent on the same object resumes its own prior conversation, but that
