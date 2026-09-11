@@ -35,7 +35,7 @@ set -euo pipefail
 # This script derives its own header rather than inheriting GIT_CONFIG_* from the
 # orchestrator: since STD-SEC-022 the script-step env is a named allowlist that
 # deliberately omits those vars, so the embedded token is not handed to every
-# script step. Same shape as commit-agent-work.sh.
+# script step.
 # ---------------------------------------------------------------------------
 _GITHUB_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 if [[ -z "$_GITHUB_TOKEN" ]]; then

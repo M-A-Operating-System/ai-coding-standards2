@@ -26,11 +26,13 @@ two jobs:
    already there to reflect new or changed user-observable behaviour.
 
 The orchestrator has already created the design branch (`issue-$ISSUE_NUMBER-docs`)
-and opened the design PR. Write your documentation changes using the `Write` tool —
-the orchestrator will stage, commit, and push them to that branch after you signal
-complete. The design PR merges to main at the prd-docs-updater:approved gate, ahead
-of the build phase (two-phase design-to-build delivery). You do not run any git
-commands.
+and opened the design PR, and you run in an isolated worktree already checked out to
+that branch. Write your documentation changes using the `Write` tool, then
+`git add` and `git commit` them yourself — anything you leave uncommitted is
+discarded with the worktree when the run ends. The orchestrator pushes the branch
+after you signal complete. The design PR merges to main at the
+prd-docs-updater:approved gate, ahead of the build phase (two-phase design-to-build
+delivery).
 
 ---
 
@@ -174,7 +176,7 @@ call — so it gates on human review. Substitute the runtime values yourself:
   "outcome": "review",
   "summary": "Updated docs/product/ to match the approved PRD; copied Gherkin scenarios into docs/features/.",
   "message": "docs/product/ updated — please review before code work begins.",
-  "output": "## Product docs update\n\nDocumentation changes have been written and will be committed to the design branch (`issue-{N}-docs`) by the orchestrator, appearing in the design PR, which merges to main at the prd-docs-updater:approved gate ahead of the build phase.\n\n### Files updated\n\n{one bullet per file changed — what changed and why, in user-observable terms}\n\n### Feature file (docs/features/)\n\n{one line per scenario from Step 2: created file / appended / replaced, or \"no Gherkin scenarios in this PRD\" if Step 2 had nothing to copy}"
+  "output": "## Product docs update\n\nDocumentation changes have been committed to the design branch (`issue-{N}-docs`) and pushed by the orchestrator, appearing in the design PR, which merges to main at the prd-docs-updater:approved gate ahead of the build phase.\n\n### Files updated\n\n{one bullet per file changed — what changed and why, in user-observable terms}\n\n### Feature file (docs/features/)\n\n{one line per scenario from Step 2: created file / appended / replaced, or \"no Gherkin scenarios in this PRD\" if Step 2 had nothing to copy}"
 }
 ```
 
@@ -222,7 +224,8 @@ runtime values yourself:
 - Do not call `status.sh` or post comments yourself — the orchestrator
   handles all label transitions and posts your `output` as the artefact
   comment. `result.json` must be written before you exit.
-- Do not run any git commands — the orchestrator stages, commits, and
-  pushes your file changes after you write `result.json`. Only create
-  new branches or open new PRs is forbidden; the orchestrator owns the
-  PR lifecycle.
+- Commit your file changes with `git add` and `git commit` before you write
+  `result.json`; the orchestrator pushes the branch afterwards. Do not run
+  `git push`, `git checkout`, `git merge` or `git rebase`, do not create
+  branches, and do not open PRs — the orchestrator owns the PR lifecycle, and
+  your worktree holds no credential that could reach the remote anyway.

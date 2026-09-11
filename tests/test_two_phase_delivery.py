@@ -22,7 +22,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
 from pipeline_orchestrator import (
-    AgentDef, WorkItem, _invoke_commit_after, load_pipeline,
+    AgentDef, WorkItem, _push_step_branch, load_pipeline,
 )
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -336,41 +336,48 @@ class TestDeleteDesignBranch:
 
 
 # ---------------------------------------------------------------------------
-# commit_after passes branch_suffix through to commit-agent-work.sh (issue #273)
+# A committing step pushes to the branch its own flow declares (issue #273)
 # ---------------------------------------------------------------------------
-
-COMMIT_AGENT_WORK_SCRIPT = SCRIPTS / "commit-agent-work.sh"
 
 
 class TestCommitAfterUsesTheFlowsBranch:
-    """_invoke_commit_after hands the script the branch the step's flow
-    declares, so design commits land on issue-{N}-docs and code commits on
-    issue-{N} -- the same two destinations as before, now declared rather
-    than computed."""
+    """_push_step_branch moves the branch the step's flow declares, so design
+    commits land on issue-{N}-docs and code commits on issue-{N} -- the same
+    two destinations as before, now declared rather than computed."""
 
-    def _captured_env(self, name):
+    @staticmethod
+    def _one_clean_commit(args, **kwargs):
+        """A worktree holding exactly one commit, nothing uncommitted, and no
+        file added at the repository root."""
+        sub = args[1]
+        out = {"rev-list": "1", "status": "", "diff": ""}.get(sub, "")
+        return MagicMock(returncode=0, stdout=out, stderr="")
+
+    def _pushed_refspec(self, name):
         agent = _agents_by_name()[name]
         work_item = WorkItem(
             number=247, kind="issue", title="t", labels=set(), url="u",
         )
         with patch(
             "pipeline_orchestrator.subprocess.run",
-            return_value=MagicMock(returncode=0, stdout="", stderr=""),
+            side_effect=self._one_clean_commit,
         ) as run:
-            result = _invoke_commit_after(agent, work_item)
-        assert result is None
-        assert run.call_count == 1
-        return run.call_args.kwargs["env"]
+            result = _push_step_branch(agent, work_item, cwd="/tmp/wt")
+        assert result is None, result
+        pushes = [c for c in run.call_args_list if c.args[0][:2] == ["git", "push"]]
+        assert len(pushes) == 1, run.call_args_list
+        assert pushes[0].kwargs["cwd"] == "/tmp/wt"
+        return pushes[0].args[0]
 
     def test_design_step_commits_to_the_design_branch(self):
-        env = self._captured_env("01_product_docs/prd-docs-updater")
-        assert env["BRANCH"] == "issue-247-docs"
-        assert env["ISSUE_NUMBER"] == "247"
+        assert self._pushed_refspec("01_product_docs/prd-docs-updater") == [
+            "git", "push", "origin", "HEAD:issue-247-docs",
+        ]
 
     def test_code_step_commits_to_the_code_branch(self):
-        env = self._captured_env("03_execute/coder")
-        assert env["BRANCH"] == "issue-247"
-        assert env["ISSUE_NUMBER"] == "247"
+        assert self._pushed_refspec("03_execute/coder") == [
+            "git", "push", "origin", "HEAD:issue-247",
+        ]
 
     def test_commit_after_fails_loud_without_a_declared_branch(self):
         """A committing step whose flow declares no branch is a broken
@@ -383,15 +390,6 @@ class TestCommitAfterUsesTheFlowsBranch:
         )
         work_item = WorkItem(number=247, kind="issue", title="t", labels=set(), url="u")
         with patch("pipeline_orchestrator.subprocess.run") as run:
-            result = _invoke_commit_after(agent, work_item)
+            result = _push_step_branch(agent, work_item, cwd="/tmp/wt")
         assert result is not None and "no naming.branch" in result
         run.assert_not_called()
-
-
-class TestCommitAgentWorkBranchDerivation:
-    """The script takes the branch it is given; it never derives one."""
-
-    def test_branch_comes_from_the_orchestrator(self):
-        text = COMMIT_AGENT_WORK_SCRIPT.read_text()
-        assert 'BRANCH="${BRANCH:?' in text
-        assert 'BRANCH="issue-${ISSUE_NUMBER}' not in text
