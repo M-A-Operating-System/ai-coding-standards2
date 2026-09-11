@@ -163,20 +163,27 @@ import json  # noqa: E402
 
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
 
-# The read-only subcommands coder's own prompt demonstrates: `git log --oneline`
-# for orientation, `git diff HEAD` for the self-review pass, `git rev-parse HEAD`
-# for the working-tree-vs-PR-head check in Mode B.
+# What coder's own prompt demonstrates. Read-only orientation: `git log
+# --oneline`, `git diff HEAD` for the self-review pass, `git rev-parse HEAD`
+# for the working-tree-vs-PR-head check in Mode B. Plus committing its own
+# work: coder runs in an isolated worktree already on its branch, and its
+# commit is the deliverable rather than a side effect of returning cleanly
+# (PRODUCT.md, "What lands in git").
 _EXPECTED_CODER_GIT_GRANTS = {
     "Bash(git log *)",
     "Bash(git diff *)",
     "Bash(git rev-parse *)",
+    "Bash(git add *)",
+    "Bash(git commit *)",
+    "Bash(git status *)",
 }
 
-# Anything that writes an object, moves a ref, or rewrites history.
+# Anything that moves the branch, reaches the remote, rewrites history, or
+# discards work. Committing is the step's; the ref is the orchestrator's.
 _FORBIDDEN_CODER_GIT_SUBCOMMANDS = (
-    "commit", "push", "checkout", "switch", "reset", "branch",
-    "merge", "rebase", "add", "rm", "stash", "cherry-pick", "tag",
-    "clean", "restore", "worktree", "remote",
+    "push", "checkout", "switch", "reset", "branch",
+    "merge", "rebase", "rm", "stash", "cherry-pick", "tag",
+    "clean", "restore", "worktree", "remote", "fetch", "pull",
 )
 
 
@@ -211,15 +218,23 @@ class TestCoderGitGrantMatchesItsInstructions:
         for grant in _coder_git_grants():
             for forbidden in _FORBIDDEN_CODER_GIT_SUBCOMMANDS:
                 assert not grant.startswith(f"Bash(git {forbidden}"), (
-                    f"{grant} grants a git subcommand that writes or rewrites "
-                    "history; the orchestrator owns all git operations (P-16)"
+                    f"{grant} grants a git subcommand that moves the branch, "
+                    "reaches the remote, rewrites history or discards work. A "
+                    "step commits; the orchestrator owns the ref (PRODUCT.md, "
+                    "'What lands in git')"
                 )
 
     def test_the_prompt_still_forbids_the_commands_the_grant_now_excludes(self):
-        """The fix is narrowing the grant, not relaxing the instruction."""
-        text = _load_coder_text()
-        assert "Never run\n`git commit`, `git push`, `git checkout`" in text
-        assert "The orchestrator owns all git and PR operations." in text
+        """The grant widened to let coder commit; the instruction against
+        reaching the remote or moving the branch did not relax with it."""
+        text = " ".join(_load_coder_text().split())
+        for forbidden in ("git push", "git checkout", "git merge", "git rebase"):
+            assert f"Never run `{forbidden}`" in text or (
+                "Never run" in text and f"`{forbidden}`" in text
+            ), f"coder.md no longer forbids {forbidden}"
+        assert "the orchestrator's" in text or "the orchestrator pushes" in text, (
+            "coder.md no longer says who owns pushing"
+        )
 
     def test_every_git_command_the_prompt_demonstrates_is_still_permitted(self):
         """A narrowed grant that breaks the prompt's own worked examples would

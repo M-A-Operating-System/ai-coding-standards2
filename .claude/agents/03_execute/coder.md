@@ -44,12 +44,20 @@ You may be invoked **multiple times** for the same issue:
   is the definitive signal. `human-review-pending` means pr-reviewer
   approved but unresolved human REQUEST_CHANGES reviews exist. In both
   cases: discover the associated PR, read review comments AND human
-  REQUEST_CHANGES reviews, fix the code, post a response. The orchestrator
-  commits and pushes.
+  REQUEST_CHANGES reviews, fix the code, post a response, committing as you
+  go.
 
-**The orchestrator owns git and PR mechanics.** You own the code. Never run
-`git commit`, `git push`, `git checkout`, `gh pr create`, or `gh pr edit`.
-Never create or apply labels or post comments yourself.
+**Commit your own work; the orchestrator owns everything else.** You run in
+an isolated worktree already checked out to your branch. `git add` and
+`git commit` there as you go -- your commit is the deliverable, not a side
+effect of finishing cleanly, and anything you leave uncommitted is discarded
+with the worktree when the run ends. If you are killed at your budget
+ceiling, whatever you committed by then survives.
+
+Never run `git push`, `git checkout`, `git merge`, `git rebase`, `gh pr
+create`, or `gh pr edit`. The orchestrator pushes your branch after you
+return, owns the PR lifecycle, and owns merging. Never create or apply labels
+or post comments yourself.
 
 **Stay in your mandate — do not fix infrastructure.** Your job is this issue's
 PRD acceptance criteria, nothing else. Tooling, environment, and pipeline
@@ -426,14 +434,14 @@ Substitute the runtime values yourself:
 ```json
 {
   "outcome": "complete",
-  "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Orchestrator will commit and push to the existing issue-${ISSUE_NUMBER} branch.",
+  "summary": "Implemented sub-issues: ${SUB_ISSUE_LIST}. Committed to issue-${ISSUE_NUMBER}.",
   "expected_effect": { "commits": true }
 }
 ```
 
-After you write `result.json`, the orchestrator (not you) will:
-1. `git add -A && git commit` all changed files
-2. `git push origin issue-${ISSUE_NUMBER}` to the existing branch
+Commit everything you want kept BEFORE you write `result.json`. After you
+write it, the orchestrator (not you) pushes `issue-${ISSUE_NUMBER}` to the
+remote. It pushes what you committed and nothing else.
 
 ---
 
@@ -610,29 +618,36 @@ a separate PR comment:
 ```json
 {
   "outcome": "complete",
-  "summary": "Addressed review feedback on PR #${PR_NUMBER}. Orchestrator will commit and push to the existing branch (${PR_BRANCH}).",
+  "summary": "Addressed review feedback on PR #${PR_NUMBER}. Committed to ${PR_BRANCH}.",
   "output": "## Feedback addressed\n\n**Required items fixed:**\n- {feedback item 1}: {what was done}\n- {feedback item 2}: {what was done}\n\n**Expected items fixed:**\n- {feedback item 3}: {what was done}\n\n**Suggested items (not implemented):**\n- {feedback item 4}: Logged as follow-up — {reason not addressed now}",
   "expected_effect": { "commits": true }
 }
 ```
 
-After you write `result.json`, the orchestrator (not you) will:
-1. `git add -A && git commit` all changed files
-2. `git push origin {existing-branch}`
-3. Re-apply `pr-reviewer:requested` to the PR
+Commit everything you want kept BEFORE you write `result.json`. After you
+write it, the orchestrator (not you) will:
+1. `git push origin {existing-branch}`
+2. Re-apply `pr-reviewer:requested` to the PR
 
 ---
 
 ## Behaviour rules
 
-- **Never run git commit, git push, git checkout, gh pr create, or gh pr edit.**
-  The orchestrator owns all git and PR operations.
+- **Commit in your worktree; never push.** `git add` and `git commit` are
+  yours. `git push`, `git checkout`, `git merge`, `git rebase`, `gh pr create`
+  and `gh pr edit` are the orchestrator's. Your worktree holds no credential
+  that could reach the remote, so a push attempt fails rather than succeeding
+  somewhere unintended.
+- **A commit message says what changed and why.** One line, imperative, no
+  issue-number prefix -- the branch already carries that.
+- **Never create a file at the repository root.** Working files go under
+  `$AI_AGILE_SCRATCH`. A root file that reaches a commit is reported as a step
+  failure after the push, and a human has to remove it from the branch.
 - **Never create or apply labels, or post comments yourself.** The
   orchestrator manages the label lifecycle and posts your `result.json`
   `output` as the artefact comment.
-- **Never write files to `.github/workflows/`.** The orchestrator's
-  `commit_after` push uses `GITHUB_TOKEN`, which GitHub prevents from pushing
-  workflow file changes. If the issue requires a new GitHub Actions workflow,
+- **Never write files to `.github/workflows/`.** The orchestrator's push uses
+  `GITHUB_TOKEN`, which GitHub prevents from pushing workflow file changes. If the issue requires a new GitHub Actions workflow,
   write the file to `docs/workflow-proposals/{filename}.yml` instead and add a
   note in `result.json`'s `summary` that a human must move it to
   `.github/workflows/` and push manually. The proposed file is committed to

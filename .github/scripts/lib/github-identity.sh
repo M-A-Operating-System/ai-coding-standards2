@@ -10,7 +10,7 @@
 # dedicated identity of its own, never a person's account or the generic
 # identity a CI run gets by default -- the default is the trap, since it makes
 # system actions indistinguishable from unrelated CI." Before issue #407 only
-# three PR-writing scripts and commit-agent-work.sh were handed
+# three PR-writing scripts were handed
 # AI_AGILE_BOT_TOKEN; everything else fell back to the Actions-default
 # GITHUB_TOKEN, so the same logical actor appeared on an issue as two different
 # identities depending on which step wrote.

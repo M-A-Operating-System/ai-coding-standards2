@@ -204,7 +204,7 @@ class AgentDef:
     lifecycle_before: list = field(default_factory=list)  # defaults.agent_lifecycle.before — run immediately before each invocation, including each retry
     lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
-    commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
+    commit_after: bool = False            # True when git_ops.commit_after is true; the step commits in its own worktree and the orchestrator pushes the branch
     resolve_pr_number: bool = False       # True for an issue-kind step whose own PR already exists by the time it runs and that needs its number (coder, pr-reviewer, merge-conflict) -- drives PR_NUMBER injection (issue #431/#433). Declared per-step, not named in orchestrator code (AS-2).
     # --- the flow this step belongs to (issue #406) -------------------------
     # A step is declared inside a named flow; the flow says what kind of work
@@ -1624,9 +1624,9 @@ _METRICS_APPEND_SCRIPT = ".github/scripts/append-metrics-record.sh"
 # STD-SEC-022 — env for append-metrics-record.sh. It runs the same git plumbing
 # _GIT_PLUMBING_ENV_VARS covers, plus `git fetch`/`git push` against the metrics
 # branch, so it also needs a git credential and the network vars every other
-# push site gets. It builds its own auth header from these, exactly as
-# commit-agent-work.sh does; the orchestrator's own GIT_CONFIG_* header (which
-# embeds a token) is deliberately never forwarded to a script.
+# push site gets. It builds its own auth header from these; the orchestrator's
+# own GIT_CONFIG_* header (which embeds a token) is deliberately never
+# forwarded to a script.
 #
 # AI_AGILE_BOT_TOKEN is on this list because the ledger is a system action on
 # GitHub and MI-7 wants those made by one dedicated identity rather than the
@@ -1656,8 +1656,8 @@ def _append_metrics_record(
     .github/scripts/append-metrics-record.sh, which owns the git plumbing that
     puts it on the branch. Committing is not coordination (AS-2, issue #407),
     so the fetch/hash-object/commit-tree/push-with-retry sequence that used to
-    live here is a script now, invoked exactly the way _invoke_commit_after
-    invokes commit-agent-work.sh.
+    live here is a script now, invoked as a subprocess with its own named env
+    allowlist.
 
     Raises RuntimeError when the append did not land, so a caller cannot read a
     failure as a success (STD-ARCH-014). gh is accepted for interface symmetry
@@ -3723,10 +3723,10 @@ _SCRIPT_AGENT_ENV_VARS = (
 )
 
 # Until issue #407, AI_AGILE_BOT_TOKEN went only to the three PR-writing
-# scripts (create-pr.sh, create-docs-pr.sh, merge-docs-pr.sh) and
-# commit-agent-work.sh, on the reasoning that a classic PAT with repo+workflow
-# scopes is the broadest credential the orchestrator holds and should reach
-# only the steps that demonstrably use it.
+# scripts (create-pr.sh, create-docs-pr.sh, merge-docs-pr.sh) and the
+# now-retired commit extraction script, on the reasoning that a classic PAT
+# with repo+workflow scopes is the broadest credential the orchestrator holds
+# and should reach only the steps that demonstrably use it.
 #
 # MI-7 asks for something that reasoning cannot give: "Everything the system
 # does on GitHub acts as a dedicated identity of its own, never a person's
@@ -5058,6 +5058,53 @@ def _run_worktree_path(issue_branch: str) -> Path:
     return _WORKTREE_ROOT / _safe
 
 
+def _recover_unpushed_commits(issue_branch: str) -> None:
+    """Push commits a previous run committed but never got to push.
+
+    A step commits into its worktree as it goes, and those commits move the
+    shared branch ref immediately -- but they only become durable when the ref
+    moves on the remote, which the orchestrator does after the step returns. A
+    step killed at its budget ceiling never returns, so its commits sit ahead
+    of origin with nothing having pushed them.
+
+    The next run for that branch is where they would otherwise be lost: the
+    `worktree add -B ... origin/{branch}` below resets the local branch to the
+    remote, discarding exactly the work the arrangement exists to protect. So
+    the ref is moved first. PRODUCT.md, "What lands in git": a later tick
+    pushes a branch left ahead of its remote, recovering by reading what is
+    actually there rather than what a record claims.
+
+    Best-effort by design. A branch that cannot be pushed (diverged, or the
+    remote refuses) is logged and left alone -- the run still needs its
+    worktree, and failing the whole run over a previous run's leftovers would
+    strand the branch rather than rescue it.
+    """
+    ahead = subprocess.run(
+        ["git", "rev-list", "--count", f"origin/{issue_branch}..{issue_branch}"],
+        check=False, capture_output=True, text=True,
+    )
+    if ahead.returncode != 0 or not (ahead.stdout.strip() or "0").isdigit():
+        return
+    count = int(ahead.stdout.strip() or "0")
+    if count == 0:
+        return
+    log.warning(
+        "  worktree: %s is %d commit(s) ahead of its remote from an earlier run "
+        "-- pushing before the branch is reset", issue_branch, count,
+    )
+    pushed = subprocess.run(
+        ["git", "push", "origin", f"{issue_branch}:{issue_branch}"],
+        check=False, capture_output=True, text=True,
+    )
+    if pushed.returncode != 0:
+        log.error(
+            "  worktree: could not recover %d unpushed commit(s) on %s: %s",
+            count, issue_branch, (pushed.stderr or pushed.stdout).strip()[:500],
+        )
+        return
+    log.info("  worktree: recovered %d unpushed commit(s) on %s", count, issue_branch)
+
+
 def _create_run_worktree(issue_branch: str) -> str:
     """Create an isolated git worktree checked out to `issue_branch`.
 
@@ -5085,6 +5132,7 @@ def _create_run_worktree(issue_branch: str) -> str:
             ["git", "fetch", "origin", issue_branch],
             check=True, capture_output=True, text=True,
         )
+        _recover_unpushed_commits(issue_branch)
         subprocess.run(
             ["git", "worktree", "add", "--force", "-B", issue_branch, str(path), f"origin/{issue_branch}"],
             check=True, capture_output=True, text=True,
@@ -5859,8 +5907,8 @@ def _run_agent(
     # For commit_after agents, check out the issue branch into its own
     # isolated worktree before invoking, so the agent reads accumulated state
     # without disturbing (or being disturbed by) a concurrent run on a
-    # different issue (#373). commit-agent-work.sh handles staging, commit,
-    # and push, run from that same worktree. Guard: only for issue work items
+    # different issue (#373). The agent commits there itself; the orchestrator
+    # pushes that branch afterwards. Guard: only for issue work items
     # (ISSUE_NUMBER required). Skipped under interactive_result — see this
     # function's docstring.
     _pre_agent_worktree: str = ""
@@ -5980,7 +6028,7 @@ def _run_agent(
 # ---------------------------------------------------------------------------
 # Orchestration-script resolution (issue #196)
 #
-# The orchestrator's own helper scripts (commit-agent-work.sh, mark-pr-ready.sh,
+# The orchestrator's own helper scripts (mark-pr-ready.sh, create-pr.sh,
 # ...) are infrastructure that ships with the orchestrator, not work-item
 # content. A commit_after agent checks out the issue branch before committing;
 # when that branch is stale (cut from an old main that predates a script), the
@@ -6058,87 +6106,151 @@ def _orchestration_script_path(rel_path: str) -> Path:
     return dest
 
 
-# STD-SEC-022 — env vars for commit-agent-work.sh: git stash/fetch/checkout/commit/push
-# plus base64 for the auth header. AGENT_NAME, ISSUE_NUMBER, BRANCH are set
-# explicitly below.
-_COMMIT_AFTER_ENV_VARS = (
-    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN", "AI_AGILE_BOT_TOKEN",
-    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-    "http_proxy", "https_proxy", "no_proxy",
-    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
-    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
-)
+def _git_in(cwd: str, *args: str) -> subprocess.CompletedProcess:
+    """Run one git command inside a step's worktree.
 
-
-def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional[str] = None) -> Optional[str]:
-    """Run commit-agent-work.sh for a `commit_after` agent.
-
-    cwd (#373): the isolated worktree this run's agent invocation used, so
-    commit-agent-work.sh stages and commits the files that were actually
-    edited there rather than whatever the orchestrator's own working
-    directory happens to hold.
-
-    Returns a human-readable failure reason, or None on success. The caller
-    owns the label/branch side-effects on failure.
+    Inherits the orchestrator's own environment, which is where the push
+    credential lives (set once in main()). The step's subprocess never sees
+    it -- that asymmetry is what makes "the orchestrator owns pushing" a
+    property of the environment rather than a rule in prose.
     """
-    _commit_script = _orchestration_script_path(".github/scripts/commit-agent-work.sh")
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args, 1, "", f"git {args[0]} timed out after 300s",
+        )
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(args, 1, "", "git not found in PATH")
+
+
+def _root_additions(cwd: str, base: str) -> list:
+    """Files a step's commits added at the repository root.
+
+    Working files belong under $AI_AGILE_SCRATCH, and every agent prompt says
+    so. Instruction is not enforcement: a bare filename resolves against the
+    repo root because that is the working directory, which is how
+    pr_review_328.txt reached a commit on issue-316 (issue #321).
+
+    The check moved here when committing moved into the step. It can no
+    longer unstage the file before the commit is written, so it does not try:
+    it reports, and the caller pushes anyway. Discarding a commit to punish a
+    stray file would throw away the work the commit exists to protect.
+    """
+    proc = _git_in(cwd, "diff", "--name-only", "--diff-filter=A", f"{base}..HEAD")
+    if proc.returncode != 0:
+        return []
+    return [f for f in proc.stdout.splitlines() if f and "/" not in f]
+
+
+def _push_step_branch(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional[str] = None) -> Optional[str]:
+    """Move the branch ref to what the step committed in its own worktree.
+
+    PRODUCT.md, "What lands in git": the step owns committing, inside the
+    worktree it was given; the orchestrator owns the branch, pushing it, the
+    PR lifecycle, and merging. A commit becomes durable when the ref moves --
+    before that it lives only in a worktree that is about to be torn down.
+
+    This replaces extracting the step's work after the fact (stash it, reset
+    the branch to the remote, replay the stash, commit whatever appears).
+    That approach failed in three directions at once: unrelated dirt dragged
+    a no-op run through the whole path, a branch that moved between stash and
+    replay conflicted with itself, and a step returning anything but success
+    never reached the extraction at all (issue #448). Those were not defects
+    in the script. They were properties of extracting work from a process
+    instead of having the process commit it.
+
+    Returns a human-readable failure reason, or None on success. A failure
+    reason can be returned *after* a successful push: a branch carrying
+    commits no longer implies the step succeeded, which is the deliberate
+    consequence of letting partial work land.
+    """
     _branch = step_branch(agent_def, work_item)
     if not _branch:
         return (
             f"_step {agent_def.agent} commits but flow {agent_def.flow!r} declares "
             f"no naming.branch; nothing to commit to._"
         )
-    _commit_env = {  # STD-SEC-022
-        **{k: os.environ[k] for k in _COMMIT_AFTER_ENV_VARS if k in os.environ},
-        "AGENT_NAME": agent_def.agent,
-        "ISSUE_NUMBER": str(work_item.number),
-        # The branch comes from the step's flow naming (issue #406); the script
-        # never derives it from the issue number itself.
-        "BRANCH": _branch,
-    }
+    if not cwd:
+        return (
+            f"_step {agent_def.agent} declares git_ops.commit_after but ran with no "
+            f"isolated worktree, so there is nothing to push from._"
+        )
+
+    _base = f"origin/{_branch}"
+    _ahead = _git_in(cwd, "rev-list", "--count", f"{_base}..HEAD")
+    if _ahead.returncode != 0:
+        return (
+            f"_could not read what {agent_def.agent} committed in its worktree: "
+            f"{(_ahead.stderr or _ahead.stdout).strip()[:500]}_"
+        )
+    _n = int(_ahead.stdout.strip() or "0")
+
+    # Work the step left uncommitted dies with the worktree. Saying so is the
+    # whole point of moving the commit into the step: a step that edited files
+    # and returned complete without committing them has not delivered, however
+    # cleanly it returned.
+    _dirty = _git_in(cwd, "status", "--porcelain")
+    _uncommitted = [ln for ln in _dirty.stdout.splitlines() if ln.strip()]
+
+    if _n == 0:
+        if _uncommitted:
+            return (
+                f"_{agent_def.agent} left {len(_uncommitted)} changed file(s) "
+                f"uncommitted and committed nothing. A step's commit is its "
+                f"deliverable; an uncommitted edit is discarded with the worktree. "
+                f"First: {', '.join(ln[3:] for ln in _uncommitted[:5])}._"
+            )
+        log.info(
+            "  commit-after: %s committed nothing on %s for #%d -- nothing to push",
+            agent_def.agent, _branch, work_item.number,
+        )
+        return None
+
     log.info(
-        "  commit-after: invoking commit-agent-work.sh for %s on #%d",
-        agent_def.agent, work_item.number,
+        "  commit-after: pushing %d commit(s) by %s to %s for #%d",
+        _n, agent_def.agent, _branch, work_item.number,
     )
-    if not _commit_script.exists():
-        log.error("  commit-after: commit-agent-work.sh not found at %s", _commit_script)
-        return (
-            "_commit-agent-work.sh not found. Check that .github/scripts/commit-agent-work.sh "
-            "exists on the orchestrator branch. Remove the failed label to retry._"
-        )
-    try:
-        _commit_result = subprocess.run(
-            ["bash", str(_commit_script)],
-            env=_commit_env, capture_output=True, text=True, timeout=300, cwd=cwd,
-        )
-    except subprocess.TimeoutExpired:
+    _stray = _root_additions(cwd, _base)
+    _push = _git_in(cwd, "push", "origin", f"HEAD:{_branch}")
+    if _push.returncode != 0:
+        _out = (_push.stderr or _push.stdout).strip()[:2000]
         log.error(
-            "  commit-after: commit-agent-work.sh timed out for %s on #%d",
-            agent_def.agent, work_item.number,
+            "  commit-after: push of %s failed for %s on #%d\n%s",
+            _branch, agent_def.agent, work_item.number, _out,
         )
-        return "_commit-agent-work.sh timed out after 300s. Remove the failed label to retry._"
-    except FileNotFoundError:
-        log.error("  commit-after: bash not found in PATH")
         return (
-            "_bash not found in PATH; commit-agent-work.sh could not run. "
-            "Remove the failed label to retry._"
+            f"_{agent_def.agent} committed {_n} commit(s) but the push to {_branch} "
+            f"failed. Its work is still in the worktree until that is cleaned up; a "
+            f"later tick pushes a branch left ahead of its remote. Error: {_out[:500]}_"
         )
-    if _commit_result.returncode != 0:
-        _failure_output = (_commit_result.stderr or _commit_result.stdout)[:2000]
+    log.info("  commit-after: %s is now at %s", _branch, _n)
+
+    if _stray:
         log.error(
-            "  commit-after: commit-agent-work.sh exited %d for %s on #%d\n%s",
-            _commit_result.returncode, agent_def.agent, work_item.number, _failure_output,
+            "  commit-after: %s committed %d file(s) at the repo root: %s",
+            agent_def.agent, len(_stray), ", ".join(_stray),
         )
         return (
-            "_The agent completed successfully but commit-agent-work.sh failed. "
-            "Check the orchestrator CI log for the specific error. "
-            "Remove the failed label to retry._"
+            f"_{agent_def.agent} committed file(s) at the repository root: "
+            f"{', '.join(_stray)}. Working files belong under $AI_AGILE_SCRATCH "
+            f"(see .claude/AGENTS.md). The commits were pushed rather than "
+            f"discarded -- the rest of the work is real -- so the fix is to "
+            f"remove these paths on {_branch}._"
         )
-    log.info(
-        "  commit-after: commit-agent-work.sh completed for %s on #%d",
-        agent_def.agent, work_item.number,
-    )
+    if _uncommitted:
+        log.warning(
+            "  commit-after: %s left %d file(s) uncommitted; discarded with the worktree",
+            agent_def.agent, len(_uncommitted),
+        )
+        return (
+            f"_{agent_def.agent} pushed {_n} commit(s) but left "
+            f"{len(_uncommitted)} changed file(s) uncommitted, which are discarded "
+            f"with the worktree. First: "
+            f"{', '.join(ln[3:] for ln in _uncommitted[:5])}._"
+        )
     return None
 
 
@@ -6661,16 +6773,17 @@ def _apply_result(
         _remove_run_worktree(pre_agent_worktree)
         return True
 
-    # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
-    # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
-    # Also commits on STATUS_REVIEW (issue #429): a step can legitimately
+    # commit-after: push what the step committed in its own worktree when
+    # git_ops.commit_after: true. Guard: the branch is an issue branch, so only
+    # for issue work items.
+    # Also pushes on STATUS_REVIEW (issue #429): a step can legitimately
     # return "review" with real file edits worth keeping (e.g.
     # prd-docs-updater's docs/product/ path) -- final_status here is always
     # the agent's own declared outcome, never the pr-reviewer human-review
     # override (that runs later, below, and only applies to review_loop
     # steps, none of which set commit_after).
     if final_status in (STATUS_COMPLETE, STATUS_REVIEW) and agent_def.commit_after and work_item.kind == "issue":
-        _commit_fail_reason = _invoke_commit_after(agent_def, work_item, cwd=pre_agent_worktree or None)
+        _commit_fail_reason = _push_step_branch(agent_def, work_item, cwd=pre_agent_worktree or None)
         if _commit_fail_reason:
             _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
             final_status = STATUS_FAILED
@@ -7748,8 +7861,10 @@ def _wake(args) -> "Optional[RunContext]":
     # this process authenticate with GITHUB_TOKEN (contents:write scope).
     # The token is passed via env vars, never embedded in a URL, keeping it
     # out of `git remote -v`, `ps`, and CI logs.
-    # NOTE: GITHUB_TOKEN cannot push .github/workflows/ files; commit-agent-work.sh
-    # reads AI_AGILE_BOT_TOKEN when workflow-scope pushes are needed.
+    # NOTE: GITHUB_TOKEN cannot push .github/workflows/ files. Agent prompts
+    # tell a step to write a proposed workflow under docs/workflow-proposals/
+    # instead, so a person carries it the last step (see "The environment can
+    # refuse more than the pipeline denies").
     _git_auth_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if _git_auth_token:
         try:
@@ -7767,13 +7882,19 @@ def _wake(args) -> "Optional[RunContext]":
             # checkout/fetch calls run via subprocess.run with no env= argument,
             # so they read the header from here and authenticate.
             #
-            # commit-agent-work.sh and post_steps do NOT inherit these any more.
-            # Since STD-SEC-022 they build their env from named allowlists
-            # (_COMMIT_AFTER_ENV_VARS / _POST_STEPS_ENV_VARS) that deliberately
-            # omit GIT_CONFIG_*; commit-agent-work.sh derives its own auth
-            # header from GH_TOKEN/GITHUB_TOKEN instead. Do not re-add
-            # GIT_CONFIG_* to those lists -- the scripts do not need it, and it
-            # would hand the embedded token to every post_steps hook.
+            # post_steps do NOT inherit these: since STD-SEC-022 they build
+            # their env from a named allowlist (_POST_STEPS_ENV_VARS) that
+            # deliberately omits GIT_CONFIG_*. Do not re-add it -- the hooks do
+            # not need it, and it would hand the embedded token to every one.
+            #
+            # The --unset-all above is load-bearing for more than this process.
+            # A step runs in a git worktree, and a worktree shares the
+            # repository's config: any credential left in .git/config by the
+            # checkout would be a credential the step could push with. Clearing
+            # it and keeping the header in this process's env alone is what
+            # makes "the orchestrator owns pushing" a property of the
+            # environment rather than a rule in prose (PRODUCT.md, "What lands
+            # in git").
             # SECURITY: this base64 header embeds GITHUB_TOKEN. It must NEVER be
             # added to AGENT_ENV_PASSTHROUGH -- agent subprocesses build env via
             # _build_agent_env, which does not pass GIT_CONFIG_* through, so a
