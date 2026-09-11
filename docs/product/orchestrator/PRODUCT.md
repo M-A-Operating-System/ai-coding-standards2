@@ -337,13 +337,32 @@ person's decision — the same objection as granting one
 recorded says that it did, and why. A repair indistinguishable from an
 ordinary run is how a record that keeps going wrong stays undiscovered.
 
-`statuses.json` does not describe this yet: `complete`, `skipped` and
-`approved` are all declared `cleared_by: "never"`. That is right for the
-last two, and wrong for the first in two ways — a step must be able to
-replace its own superseded `:complete`, and a person must be able to
-correct one that is wrong — so as written the field denies both and
-leaves only the hand-edit MI-4 rules out. Reconciling the declared
-taxonomy with this section is unfinished target-state work.
+**A record that can be superseded says what it was about.** "This
+describes a commit that is no longer the head" is only decidable if the
+record named the commit. A status label cannot carry that: a bare
+`{agent}:complete` is a fact about a step with no subject attached. So
+the label stays the at-a-glance summary, and the step's own record
+carries the subject its conclusion was reached against — the commit it
+checked, the version of the artefact it read, whatever the answer
+depended on.
+Supersession is then decided by comparing that subject against what is
+there now, rather than inferred from timing or from the order labels
+happen to appear in.
+
+A step whose record names no subject cannot be superseded at all. It can
+only be repeated, or trusted indefinitely. That is a gap in the record,
+not a property of the step.
+
+Three things are unfinished target-state work here. `statuses.json`
+declares `complete`, `skipped` and `approved` all as
+`cleared_by: "never"` — right for the last two, wrong for the first in
+two ways, since a step must be able to replace its own superseded
+`:complete` and a person must be able to correct one that is wrong, and
+as written the field denies both and leaves only the hand-edit MI-4 rules
+out. Only one step records a subject at all today. And the orchestrator
+has no supersession check: a step carrying `:complete` is skipped, so a
+record describing a commit that has since moved keeps the step from
+running rather than prompting it to run again.
 
 ### Eligibility and order decide which item runs next
 
