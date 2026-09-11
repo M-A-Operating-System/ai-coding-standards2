@@ -199,6 +199,7 @@ class AgentDef:
     max_retries: int = 0               # how many times to re-invoke after :failed before giving up
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
+    session_resume: bool = True        # session.resume -- may a re-invocation continue the prior conversation. Resuming is an optimisation, never a source of truth; a step that re-derives everything has nothing worth carrying and declares false (issue #450).
     post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
     lifecycle_before: list = field(default_factory=list)  # defaults.agent_lifecycle.before — run immediately before each invocation, including each retry
     lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
@@ -524,6 +525,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 max_retries=int(entry.get("max_retries", 0)),
                 session_scope=entry.get("session", {}).get("scope", "per_issue"),
                 session_id_pattern=entry.get("session", {}).get("id_pattern"),
+                session_resume=bool(entry.get("session", {}).get("resume", True)),
                 post_steps=list(entry.get("post_steps", [])),
                 review_gate=bool(entry.get("review_gate", False)),
                 commit_after=bool(_git_ops.get("commit_after", False)),
@@ -4524,10 +4526,23 @@ def invoke_agent(
     # already in use") -- which strands re-runs in a persistent environment.
     # Resume the session when it already exists; create it (--session-id) only
     # when it does not (first run, or a fresh -r{attempt} retry id).
+    #
+    # Whether resuming is wanted at all is the step's own declaration, not an
+    # accident of which transcripts happen to be on disk. A step that re-derives
+    # everything it needs carries nothing worth resuming, and a resumed one
+    # answers from what it concluded last time instead of re-checking -- cheap,
+    # fast and wrong (issue #450). Such a step declares session.resume false and
+    # gets a distinct id per invocation, so "already in use" cannot arise either.
     _proj_dir = os.getcwd().replace("/", "-")
     _home = os.environ.get("HOME") or os.path.expanduser("~")
-    _session_file = os.path.join(_home, ".claude", "projects", _proj_dir, f"{agent_session_uuid}.jsonl")
-    _session_flag = "--resume" if os.path.isfile(_session_file) else "--session-id"
+    if not agent_def.session_resume:
+        agent_session_uuid = str(uuid.uuid4())
+        _session_flag = "--session-id"
+    else:
+        _session_file = os.path.join(
+            _home, ".claude", "projects", _proj_dir, f"{agent_session_uuid}.jsonl",
+        )
+        _session_flag = "--resume" if os.path.isfile(_session_file) else "--session-id"
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)

@@ -255,7 +255,7 @@
           "resolve_pr_number": true,
           "dependencies": ["03_execute/ci-gate"],
           "max_retries": 1,
-          "session": { "scope": "per_issue" },
+          "session": { "scope": "per_issue", "resume": false },
           "extra_allowedTools": [
             "Bash(gh api *)",
             "Bash(gh pr checks *)",
