@@ -86,6 +86,7 @@ in a prompt (see
 
 **Steps**
 - [A step learns its situation only from what it's told](#a-step-learns-its-situation-only-from-what-its-told)
+- [What a step is told, and what it must not remember](#what-a-step-is-told-and-what-it-must-not-remember)
 - [Headless and interactive ask two different questions](#headless-and-interactive-ask-two-different-questions)
 - [The orchestrator decides; agents only produce](#the-orchestrator-decides-agents-only-produce)
 - [An agent's activity lives in one prompt file](#an-agents-activity-lives-in-one-prompt-file)
@@ -583,6 +584,48 @@ are specified in
 are supplied the same way and deliberately not part of this list: a
 step receives what it needs to authenticate and nothing about how that
 was arranged.
+
+### What a step is told, and what it must not remember
+
+The list above is a step's *situation*. Its *material* — the standards it
+must apply, the decisions already recorded, the specification it builds
+against — is told to it as well: large, stable, identical on every
+invocation of that step, and assembled into the prompt by the
+orchestrator.
+
+A step that fetches its own material contradicts the rule this section
+opens with, and pays for the contradiction twice. Turns spent reading
+files are turns not spent working. And a fetch is a command like any
+other, so it can be refused by the environment at precisely the moment
+the step depends on it — a step left guessing at the standards it is
+meant to be applying.
+
+**Resuming is an optimisation, never a source of truth.** A step may be
+handed a conversation it had before; that is a saving, not an authority.
+The situation it acts on is re-derived from the artefact every time, and
+a step that answers from what it concluded on a previous invocation has
+failed — however plausible the answer, and however certain it sounds.
+That is [what a step must never do](#what-a-step-must-never-do) and [what
+a re-run means](#what-a-step-must-do-when-it-cannot-comply) restated from
+the other side, because stating them as rules has not been enough: for a
+resumed step, repeating itself is the cheapest path available. A design
+that forbids the cheap path without offering a cheaper one is relying on
+the step's restraint.
+
+**It can offer one, because the saving does not depend on the
+conversation.** A cache keyed on the content of a prompt's stable opening
+is hit by anything that sends the same opening — a new conversation
+included. Assembling the material deterministically buys the economy;
+carrying the conversation forward buys only the conclusions, and the
+conclusions are the part that must not be carried.
+
+Today the material is fetched rather than told — the agent prompts
+instruct a step to go and read `standards/` itself — and a step's session
+is derived from its `(agent, work item)` pair alone, so every invocation
+for that item resumes the same conversation however much has changed
+underneath it. Assembling the material into the prompt, and making a
+session an optimisation a step cannot mistake for state, is unfinished
+target-state work.
 
 ### Headless and interactive ask two different questions
 
