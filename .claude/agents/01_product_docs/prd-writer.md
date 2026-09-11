@@ -29,24 +29,21 @@ decomposition before a PRD is written.
 Check whether this is a first run or a revision after human rejection.
 
 ```bash
-# Find the timestamp of the most recent prd-writer artefact comment.
-PREV_ARTEFACT_TIME=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs '[.[]
-        | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer"))
-        ] | last | .created_at // ""')
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-writer")) ] | last | .created_at // ""'
 ```
 
-If `$PREV_ARTEFACT_TIME` is **non-empty**, this is a revision run. Read the
-human feedback posted after the last artefact:
+Record that output as `PREV_ARTEFACT_TIME`. If it is **non-empty**, this is a
+revision run. Read the human feedback posted after the last artefact — run
+this standalone call (not combined with the fetch above in the same
+invocation), writing the literal `PREV_ARTEFACT_TIME` value you just
+recorded directly into the `--arg since` argument (e.g.
+`--arg since "2026-09-01T12:00:00Z"`):
 
 ```bash
-HUMAN_FEEDBACK=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -s --arg since "$PREV_ARTEFACT_TIME" \
-  '[.[] | select(.created_at > $since)
-       | select(.body | startswith("<!-- ai-agile/") | not)
-       | "**\(.user.login):** \(.body)"
-  ] | join("\n\n---\n\n")')
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -s --arg since "{PREV_ARTEFACT_TIME}" '[.[] | select(.created_at > $since) | select(.body | startswith("<!-- ai-agile/") | not) | "**\(.user.login):** \(.body)"] | join("\n\n---\n\n")'
 ```
+
+Record that output as `HUMAN_FEEDBACK`.
 
 If `$HUMAN_FEEDBACK` is non-empty, incorporate the feedback when
 rewriting the PRD in Step 7. Address every point the reviewer raised.

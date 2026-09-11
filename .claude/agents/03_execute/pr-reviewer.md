@@ -59,14 +59,14 @@ not happen in practice) case where it's unset.
 
 ```bash
 cat "$AI_AGILE_CONTEXT"
+```
 
-PR_NUMBER="${PR_NUMBER:-}"
-if [ -z "$PR_NUMBER" ]; then
-  OWNER="${REPO%%/*}"
-  PR_NUMBER=$(gh api \
-    "repos/$REPO/pulls?head=${OWNER}:issue-${ISSUE_NUMBER}&state=open&per_page=1" \
-    --jq '.[0].number // empty')
-fi
+If `$PR_NUMBER` is not already set, run this standalone fallback lookup (not
+combined with the check above in the same invocation, so it matches the
+`--allowedTools` allowlist on its own):
+
+```bash
+gh api "repos/$REPO/pulls?head=${REPO%%/*}:issue-${ISSUE_NUMBER}&state=open&per_page=1" --jq '.[0].number // empty'
 ```
 
 If `$PR_NUMBER` is empty, write `$AI_AGILE_SCRATCH/result.json` with
@@ -74,11 +74,10 @@ If `$PR_NUMBER` is empty, write `$AI_AGILE_SCRATCH/result.json` with
 and stop; do not proceed to the steps below.
 
 ```bash
-PRIOR=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty')
+gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty'
 ```
 
-`$PRIOR` is your previous artefact on this PR, if any. If it is set, head this
+Record that output as `PRIOR` -- your previous artefact on this PR, if any. If it is set, head this
 run's artefact `## PR Review (Re-run)` and read the prior one to see what you
 found last time. It is not an edit target -- artefacts are append-only (P-11).
 
