@@ -1496,6 +1496,36 @@ inside a chat session. If anything ever invokes the orchestrator
 non-headlessly without a human, this guarantee disappears silently,
 because nothing exists to catch that case.
 
+**The interactive row depends on the environment, and can be false in
+it.** Recording a relayed approval requires a credential GitHub will
+attribute to a person. An environment can present one that reads back as
+a human for a query and is attributed to an app for a write — and then
+the orchestrator applies the gate label and its own check rejects it,
+correctly, as not human-applied. The guarantee survives; the mechanism
+does not. What is left is a gate no one present can cross.
+
+That failure is a property of the environment, not a safety feature, and
+it must be established before a gate is reached rather than discovered
+at it — the same rule [the environment can refuse more than the pipeline
+denies](#the-environment-can-refuse-more-than-the-pipeline-denies)
+states for any other limit. An environment that cannot produce a
+human-attributed write has one honest gate-crossing path, a person
+acting on GitHub directly, and the system should say so at the start
+rather than stage an approval it will refuse.
+
+**A gate exists where there is a decision to make.** A step that gates
+unconditionally and then suppresses its own gate whenever there was
+nothing to decide has inverted the rule: the common path is now the one
+that must be got around, and every failure of the suppression lands on a
+person as a question about something nobody needed to decide.
+
+**And gates inside the pipeline are not the last line.** The decision
+that admits work is the merge. A design that invests in in-pipeline gates
+while the branch they protect accepts direct pushes has put its guarantee
+in the wrong place — the elaborate lock is on an inner door. Protecting
+the branch is what makes MI-7 worth enforcing anywhere else; without it,
+a gate is a convention that only binds whoever chose to route through it.
+
 ---
 
 ### MI-8 -- Any difference is written down
