@@ -292,25 +292,33 @@ legitimate path: a step recorded complete against a check that failed, a
 lock held by a run that never existed. Nothing produced that honestly, so
 something is broken, and the record is the evidence.
 
-**A step repairs its own record, and nothing else.** Re-deriving and
-replacing what it previously recorded is a step correcting itself, and
-needs no permission from anyone — it owns that record the same way it
-owns its subsection of a todos block. Three things sit outside that
-ownership, and a step that finds one of them wrong stops instead of
-repairing it:
+**A step repairs a record the system produced. It never repairs a
+person's decision.** Re-deriving a record and replacing it — its own, or
+another step's — is the system correcting itself against the artefact
+both records were meant to describe, and needs no permission from
+anyone. The line is not whose record it was; it is whether the artefact
+can settle it.
 
-| Not a step's to repair | Why |
-|---|---|
-| Another step's record | It did not produce it and cannot re-derive it |
-| A declaration — `approved`, `skipped`, `classification:` | A person decided it, and nothing about the artefact establishes what they decided |
-| The orchestrator's account of how a run ended — `failed`, `exhausted` | A step that broke or was cut off is in no position to describe what happened to it, which is why it never sets these in the first place |
+A gate label is the case it cannot. A gate records a decision a person
+made, and nothing about the artefact establishes what they decided, so no
+amount of re-deriving reaches it. A step that believes a gate is wrong
+stops and says so.
 
-**A step that stops says what it could not reconcile**: what it found,
-what it expected, and which of the two it could not square — the same
-obligation `blocked` carries everywhere else. A person decides what the
-record should say. A system that quietly rewrites a record it does not
-own removes the only evidence that anything went wrong, and the next
-reader sees a state the system never passed through.
+**Stopping remains the answer wherever the artefact cannot settle it.**
+A record a step cannot derive — a lock held by a run that left no trace,
+a record whose subject it cannot identify — it reports rather than
+guesses. **A step that stops says what it could not reconcile**: what it
+found, what it expected, and which of the two it could not square, the
+same obligation `blocked` carries everywhere else. Guessing at a record
+and replacing it removes the only evidence that anything went wrong, and
+the next reader sees a state the system never passed through.
+
+Two other labels a person can set carry a gate's character rather than a
+record's: `skipped`, and a `classification:` a person chose over the one
+a step proposed. Both are decisions the artefact cannot establish.
+Whether they take the gate's protection, or are repairable like any
+other record, is not settled here and needs settling before this is
+built.
 
 **A gate approves a specific thing, and does not transfer.** When that
 thing changes, the approval no longer describes what it approved. The
