@@ -45,15 +45,13 @@ class TestStep0GhApiCallsAreStandalone:
         text = agent_file.read_text()
         step = _extract_step0(text)
         for block in _bash_blocks(step):
-            lines = [l for l in block.splitlines() if l.strip() and not l.strip().startswith("#")]
-            if not lines:
-                continue
-            first = lines[0].strip()
-            if "gh api" in first:
-                assert not re.match(r"^\w+=", first), (
-                    f"{agent_file.name} Step 0 has a gh api call preceded by a "
-                    f"variable assignment in the same invocation: {first!r}"
-                )
+            lines = [l.strip() for l in block.splitlines() if l.strip() and not l.strip().startswith("#")]
+            for line in lines:
+                if "gh api" in line:
+                    assert not re.match(r"^\w+=", line), (
+                        f"{agent_file.name} Step 0 has a gh api call preceded by a "
+                        f"variable assignment in the same invocation: {line!r}"
+                    )
 
     def test_no_gh_api_call_wrapped_in_if_conditional(self, agent_file):
         text = agent_file.read_text()
