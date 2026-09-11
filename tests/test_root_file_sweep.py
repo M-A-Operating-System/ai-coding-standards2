@@ -3,10 +3,11 @@ Tests for the post-agent repo-root sweep (issue #376).
 
 Agents are told to write working files under $AI_AGILE_SCRATCH. When one
 writes to a relative path instead, the file lands at the repository root.
-`commit-agent-work.sh` already unstages such files, but only for agents with
-`git_ops.commit_after: true` -- prd-writer, pr-reviewer and issue-classifier
-have none, and all three were observed leaving files there. These tests cover
-the sweep that runs for every agent.
+The orchestrator reports such a file at push time, but only for steps with
+`git_ops.commit_after: true`, and only once it has already been committed --
+prd-writer, pr-reviewer and issue-classifier declare no commit_after at all,
+and all three were observed leaving files there. These tests cover the sweep
+that runs for every agent, before anything is committed.
 
 Issue #407 moved the sweep out of `pipeline_orchestrator.py` and into two
 declared agent-lifecycle scripts (AS-2: the orchestrator only coordinates), so

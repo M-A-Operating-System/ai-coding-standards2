@@ -68,7 +68,7 @@ instead:
 
 - git or branch topology — `no merge base`, unrelated histories, a stale or
   diverged `issue-{N}` branch, merge/rebase mechanics;
-- missing or broken pipeline scripts (`commit-agent-work.sh`, `mark-pr-ready.sh`,
+- missing or broken pipeline scripts (`mark-pr-ready.sh`, `create-pr.sh`,
   `ci-gate.sh`, …), or orchestrator / CI / GitHub Actions / workflow behaviour;
 - missing framework setup artefacts caused by incomplete onboarding in the
   consuming repo (e.g. `requirements.txt` absent at the repo root, CI failing

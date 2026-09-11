@@ -247,7 +247,7 @@
 
 **Given** a step declares `git_ops.commit_after: true` and the agent's own result legitimately declares `outcome: "review"` (not `"complete"`) -- e.g. `prd-docs-updater`'s `docs/product/` path, where the file edits are exactly what the human gate is meant to review
 **When** the orchestrator applies the step's result
-**Then** it still invokes `commit-agent-work.sh` before the worktree is removed, the same as it would for `"complete"` -- a step's own designed `"review"` outcome must never be the reason its file edits are silently discarded (issue #429)
+**Then** it still pushes the step's branch before the worktree is removed, the same as it would for `"complete"` -- a step's own designed `"review"` outcome must never be the reason its committed work is silently discarded (issue #429)
 
 ## Scenario: coder, pr-reviewer, and merge-conflict receive the open PR number without lookup
 
