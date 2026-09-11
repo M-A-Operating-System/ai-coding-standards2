@@ -69,7 +69,8 @@ in a prompt (see
 - [Blocking declares an ordering dependency between issues](#blocking-declares-an-ordering-dependency-between-issues)
 
 **The state machine**
-- [Labels are state; a step is a transition](#labels-are-state-a-step-is-a-transition)
+- [Labels record state; the artefact holds it](#labels-record-state-the-artefact-holds-it)
+- [Correcting the record](#correcting-the-record)
 - [Eligibility and order decide which item runs next](#eligibility-and-order-decide-which-item-runs-next)
 - [A component label lets unrelated work run at once](#a-component-label-lets-unrelated-work-run-at-once)
 - [Every step has the same four parts](#every-step-has-the-same-four-parts)
@@ -85,6 +86,7 @@ in a prompt (see
 
 **Steps**
 - [A step learns its situation only from what it's told](#a-step-learns-its-situation-only-from-what-its-told)
+- [What a step is told, and what it must not remember](#what-a-step-is-told-and-what-it-must-not-remember)
 - [Headless and interactive ask two different questions](#headless-and-interactive-ask-two-different-questions)
 - [The orchestrator decides; agents only produce](#the-orchestrator-decides-agents-only-produce)
 - [An agent's activity lives in one prompt file](#an-agents-activity-lives-in-one-prompt-file)
@@ -217,15 +219,28 @@ changes what it meant while it was there.
 
 ---
 
-## Labels are state; a step is a transition
+## Labels record state; the artefact holds it
 
-The labels on a work item are the state. A step is a transition. The
-orchestrator reads the labels, selects the one step whose conditions
-are met, runs it, and writes the outcome back as a label.
+The artefact holds the state. Whether a PR exists, whether CI passed on
+its current head, whether it merges cleanly, whether a review left
+unresolved threads — GitHub knows all of it first-hand, and the answer
+is the same whoever asks. The labels on a work item *record* that state,
+so a person can read the position at a glance and the orchestrator need
+not re-derive everything on every tick.
 
-Because state lives on the work item, there is nothing to recover and
-no position that exists only in memory. Any orchestrator process reading
-settled labels reaches the same conclusion.
+A step is a transition. The orchestrator reads the position, selects the
+one step whose conditions are met, runs it, and records the outcome.
+
+Where the record and the artefact disagree, the artefact wins. A label
+describing a commit that is no longer the head describes nothing: the
+step re-derives, and the record is corrected (see [Correcting the
+record](#correcting-the-record)). This is what keeps a stale label a
+cosmetic problem rather than a stall — the failure mode where a person
+must hand-edit a label to make the pipeline look again.
+
+Because the record lives on the work item, there is still nothing that
+exists only in memory, and any orchestrator process reaches the same
+conclusion from the same artefact.
 
 A headless run is started by a GitHub event, automatically. A label
 write is not visible instantly, so a run's own `:wip` write can fire an
@@ -254,6 +269,100 @@ working interactively. Interactive concurrency is addressed on its own
 terms (see [A component label lets unrelated work run at
 once](#a-component-label-lets-unrelated-work-run-at-once)), not folded
 into headless's guarantee.
+
+### Correcting the record
+
+A record can be wrong: a step wrote it and the artefact moved on, or a
+run died between doing the work and recording it. The design has to say
+how a wrong record is put right, because the alternative is what
+otherwise happens — a person edits a label by hand, outside the system,
+unseen and unrecorded, which is exactly what
+[MI-4](#mi-4----nothing-gets-stuck-with-no-way-out) forbids.
+
+**Superseded is not the same as wrong.** When a new commit lands, a
+record describing the previous head has not become false — it has become
+*about something else*. The step whose input changed runs again and
+replaces what it recorded. Nothing went wrong there; that is the flow
+advancing. Whatever was derived from the superseded state is replaced
+along with it, together, or the pipeline advances on a mixture of two
+different artefacts.
+
+A record is *wrong* when it cannot be reconciled with the artefact by any
+legitimate path: a step recorded complete against a check that failed, a
+lock held by a run that never existed. Nothing produced that honestly, so
+something is broken, and the record is the evidence.
+
+**A step repairs a record the system produced. It never repairs a
+person's decision.** Re-deriving a record and replacing it — its own, or
+another step's — is the system correcting itself against the artefact
+both records were meant to describe, and needs no permission from
+anyone. The line is not whose record it was; it is whether the artefact
+can settle it.
+
+A gate label is the case it cannot. A gate records a decision a person
+made, and nothing about the artefact establishes what they decided, so no
+amount of re-deriving reaches it. A step that believes a gate is wrong
+stops and says so.
+
+**Stopping remains the answer wherever the artefact cannot settle it.**
+A record a step cannot derive — a lock held by a run that left no trace,
+a record whose subject it cannot identify — it reports rather than
+guesses. **A step that stops says what it could not reconcile**: what it
+found, what it expected, and which of the two it could not square, the
+same obligation `blocked` carries everywhere else. Guessing at a record
+and replacing it removes the only evidence that anything went wrong, and
+the next reader sees a state the system never passed through.
+
+Two other labels take a gate's protection for the same reason: `skipped`,
+and a `classification:` a person chose over the one a step proposed. Both
+record a decision the artefact cannot establish — `skipped` says *I am
+accountable for bypassing this*, which no amount of re-deriving reaches.
+A step treats them as it treats a gate: it may read them, it may act on
+them, and it may not repair them.
+
+What separates them from an ordinary record is not who wrote the label
+but whether a person's judgement is what it holds. A `classification:` a
+step proposed and nobody overrode is that step's record, and repairable.
+The same label, once a person has set it against the step's proposal, is
+a decision, and is not.
+
+**A gate approves a specific thing, and does not transfer.** When that
+thing changes, the approval no longer describes what it approved. The
+system neither withdraws it nor honours it: it stops and says so.
+Withdrawing on its own authority would be the system reversing a
+person's decision — the same objection as granting one
+([MI-7](#mi-7----only-a-person-approves)), arriving from the other side.
+
+**Every repair is visible as one.** A step that replaced what it had
+recorded says that it did, and why. A repair indistinguishable from an
+ordinary run is how a record that keeps going wrong stays undiscovered.
+
+**A record that can be superseded says what it was about.** "This
+describes a commit that is no longer the head" is only decidable if the
+record named the commit. A status label cannot carry that: a bare
+`{agent}:complete` is a fact about a step with no subject attached. So
+the label stays the at-a-glance summary, and the step's own record
+carries the subject its conclusion was reached against — the commit it
+checked, the version of the artefact it read, whatever the answer
+depended on.
+Supersession is then decided by comparing that subject against what is
+there now, rather than inferred from timing or from the order labels
+happen to appear in.
+
+A step whose record names no subject cannot be superseded at all. It can
+only be repeated, or trusted indefinitely. That is a gap in the record,
+not a property of the step.
+
+Three things are unfinished target-state work here. `statuses.json`
+declares `complete`, `skipped` and `approved` all as
+`cleared_by: "never"` — right for the last two, wrong for the first in
+two ways, since a step must be able to replace its own superseded
+`:complete` and a person must be able to correct one that is wrong, and
+as written the field denies both and leaves only the hand-edit MI-4 rules
+out. Only one step records a subject at all today. And the orchestrator
+has no supersession check: a step carrying `:complete` is skipped, so a
+record describing a commit that has since moved keeps the step from
+running rather than prompting it to run again.
 
 ### Eligibility and order decide which item runs next
 
@@ -528,6 +637,48 @@ are supplied the same way and deliberately not part of this list: a
 step receives what it needs to authenticate and nothing about how that
 was arranged.
 
+### What a step is told, and what it must not remember
+
+The list above is a step's *situation*. Its *material* — the standards it
+must apply, the decisions already recorded, the specification it builds
+against — is told to it as well: large, stable, identical on every
+invocation of that step, and assembled into the prompt by the
+orchestrator.
+
+A step that fetches its own material contradicts the rule this section
+opens with, and pays for the contradiction twice. Turns spent reading
+files are turns not spent working. And a fetch is a command like any
+other, so it can be refused by the environment at precisely the moment
+the step depends on it — a step left guessing at the standards it is
+meant to be applying.
+
+**Resuming is an optimisation, never a source of truth.** A step may be
+handed a conversation it had before; that is a saving, not an authority.
+The situation it acts on is re-derived from the artefact every time, and
+a step that answers from what it concluded on a previous invocation has
+failed — however plausible the answer, and however certain it sounds.
+That is [what a step must never do](#what-a-step-must-never-do) and [what
+a re-run means](#what-a-step-must-do-when-it-cannot-comply) restated from
+the other side, because stating them as rules has not been enough: for a
+resumed step, repeating itself is the cheapest path available. A design
+that forbids the cheap path without offering a cheaper one is relying on
+the step's restraint.
+
+**It can offer one, because the saving does not depend on the
+conversation.** A cache keyed on the content of a prompt's stable opening
+is hit by anything that sends the same opening — a new conversation
+included. Assembling the material deterministically buys the economy;
+carrying the conversation forward buys only the conclusions, and the
+conclusions are the part that must not be carried.
+
+Today the material is fetched rather than told — the agent prompts
+instruct a step to go and read `standards/` itself — and a step's session
+is derived from its `(agent, work item)` pair alone, so every invocation
+for that item resumes the same conversation however much has changed
+underneath it. Assembling the material into the prompt, and making a
+session an optimisation a step cannot mistake for state, is unfinished
+target-state work.
+
 ### Headless and interactive ask two different questions
 
 "Headless or interactive" means two different things depending on what
@@ -706,6 +857,24 @@ value, and nothing is inferred from a clean exit. The orchestrator
 writes the summary and the output to the issue as structured comments;
 the step does not.
 
+**One exception, and it is narrow: review threads.** A thread is not the
+pipeline's record of anything. It is the conversation about a particular
+line of a particular diff, and that thread *is* the identity which lets a
+finding be recognised across rounds ([when a step's review is another
+step's work](#when-a-steps-review-is-another-steps-work)). Threading does
+not survive being flattened into a returned artefact and re-posted by
+something else: what comes back out is a list, and a list must be
+renumbered every review — which is the thing that made findings
+untrackable. So a reviewing step opens its threads itself, and the step
+answering them replies and resolves them itself.
+
+The line is not who is writing but what is being written. The pipeline's
+own record — announcements, artefacts, lifecycle labels, issue and PR
+body content — is uniform, attributable to the system, and not shaped by
+a step's discretion; it goes through the orchestrator, always. A review
+thread is none of those things, and proxying it destroys the only
+property it was wanted for.
+
 The same rule covers changing what is already there, not only adding a
 comment. `prd-writer` rewriting an issue body into a PRD and `coder`
 ticking off one entry in a todos-block subsection are the same case: the
@@ -760,6 +929,57 @@ rest, and ticks them off in turn.
 A checkbox is `- [ ]` (pending) or `- [x]` (done). Every state change
 carries a timestamp and the actor that made it. A step touches only the
 subsection it owns, and never removes a checked item.
+
+### What lands in git
+
+An agent's work is not durable because the agent returned successfully.
+It is durable because it was committed. Those are different moments, and
+the gap between them is where work is lost: a step killed at its budget
+ceiling has done the work, has it correct, and has it only in a working
+tree that is about to be torn down.
+
+So a step that produces code commits it, as it goes, into the isolated
+worktree it was given. The commit is the deliverable, not a side effect
+of returning cleanly. A step killed mid-run leaves behind whatever it had
+committed by then, on its own branch, and the record says how far it got.
+
+**What the step owns.** Committing, inside its own worktree, on its own
+branch. Nothing else.
+
+**What the orchestrator owns.** Creating the branch, pushing it, the PR
+lifecycle, and merging. A step never pushes, never touches the base
+branch, and never merges — not because prose forbids the commands, but
+because the worktree it runs in holds no credential that could.
+
+**Durability has a defined moment.** A commit is durable once the branch
+ref moves: a worktree can be removed and the objects survive in the
+shared store. The orchestrator pushes the branch after the step returns.
+If the step never returns, the branch is still ahead of its remote, and a
+later tick pushes it — recovering by reading what is actually there
+rather than what a record claims.
+
+**What this replaces.** Extracting a step's work after the fact — stash
+it, reset the branch to the remote, replay the stash, commit whatever
+appears — fails in three directions at once: unrelated dirt in the
+working tree drags a no-op run into the whole path, a branch that moved
+between stash and replay conflicts with itself, and a step returning
+anything other than success never reaches the extraction at all. Those
+are not defects in the extraction script. They are properties of
+extracting work from a process instead of having the process commit it.
+
+One consequence has to be read deliberately: **a branch carrying commits
+no longer implies the step succeeded.** Partial work landing is the point
+— it is what stops correct work being discarded — so what the step
+achieved is read from the record, never inferred from the branch.
+
+The pipeline does not work this way yet, in three places:
+`git_ops.commit_after` and the extraction script it names still hold this
+responsibility; the agent prompts still forbid a step from committing at
+all; and one step, `merge-conflict`, both pushes and force-pushes in its
+rebase path, which this section and the history rule below already
+disallow. Moving the commit into the step, moving that rebase to the
+orchestrator, and narrowing the worktree's credentials so the boundary
+above is enforced rather than asserted, is unfinished target-state work.
 
 ### The environment can refuse more than the pipeline denies
 
@@ -836,10 +1056,62 @@ that hits the turn wall never writes a result at all, so "what it did
 not do" only ever captures work a step deliberately left; being cut off
 mid-task is caught by `exhausted` and the diff.
 
+### When a step's review is another step's work
+
+Not every `review` is addressed to a person. A reviewing step that finds
+fault names the step that must act on it, and the orchestrator
+re-invokes that step. Two steps handing work back and forth need a
+guarantee that they stop, so the exchange is capped: past a declared
+number of rounds it halts and a person decides.
+
+The cap is a termination guarantee, and only that. It bounds the worst
+case; it cannot tell apart the cases inside the bound, and there are
+three:
+
+| What happened | What it needs |
+|---|---|
+| The reviewing step is right, and the acting step disagrees | A person, on the first occurrence. A disagreement is not resolved by repeating it |
+| The acting step accepted the finding and did not address it | Re-invocation naming the finding. Nothing is in dispute; the work simply was not done |
+| Each round raises different findings | Nothing. That is convergence, and counting rounds penalises it |
+
+Counting rounds treats all three alike, so it halts late on the first,
+wrongly on the third, and never recognises the second at all.
+
+So the exchange turns on findings, not rounds. A reviewing step raises
+findings that carry identity. The acting step disposes of each one
+explicitly — **fixed**, **disputed** with its reasoning, or **deferred**
+with its reasoning — and the disposition is what the next round reads. A
+finding disputed, or raised again after being reported fixed, is a
+disagreement: it goes to a person straight away rather than after a
+budget of rounds. A finding neither addressed nor disputed is not a
+disagreement at all, and does not spend the budget; the acting step is
+re-invoked with that finding named.
+
+The cap stays behind all of it, for the case none of the above catches:
+a reviewing step that keeps finding genuinely new fault indefinitely.
+
+**Identity has to outlive the round.** "The same finding, raised again"
+is only decidable if a finding can be recognised across invocations. So a
+finding is anchored to something durable — the place it concerns, and the
+thread of conversation about it — rather than to a number assigned in
+the order it happened to be written, which means something different in
+the next review.
+
+Today the exchange counts rounds: a cycle counter advances per dispatch,
+a declared maximum halts it, and findings carry numbers assigned per
+review. Nothing records a disposition, so a round in which nothing was
+addressed reads exactly like one in which everything was disputed.
+Giving findings durable identity, and requiring each to be disposed of
+explicitly, is unfinished target-state work.
+
 ### What a step must never do
 
-- **Write to the issue or PR.** No comments, no edits, no labels. A
-  step returns what it produced and the orchestrator records it.
+- **Write the pipeline's record.** No announcements, no artefact
+  comments, no lifecycle labels, no edits to an issue or PR body. A step
+  returns what it produced and the orchestrator records it. Review
+  threads are the one thing a step writes to GitHub directly, because
+  proxying them destroys the identity they exist for (see [what a step
+  must return](#what-a-step-must-return)).
 - **Decide what runs next.** Routing belongs to the orchestrator.
 - **Apply its own lifecycle labels.** `:wip`, `:complete`, `:review`,
   `:blocked`, `:failed` and `:exhausted` are the orchestrator's record
@@ -854,6 +1126,9 @@ mid-task is caught by `exhausted` and the diff.
   `git reset`, `git push --force`, `git branch -D`, or any other command
   that rewrites or deletes history. These are operator-only actions
   taken outside the pipeline.
+- **Push, merge, or move the base branch.** A step commits inside its
+  own worktree (see [What lands in git](#what-lands-in-git)); everything
+  that publishes those commits belongs to the orchestrator.
 - **Depend on state from outside its own (object, agent) session.**
   Sessions never cross-pollinate (P-7). A re-invocation of the same
   agent on the same object resumes its own prior conversation, but that
@@ -1049,9 +1324,9 @@ conditional, or a retry loop is a test failure.
 > mean the same thing whether a person or the headless runner put them
 > there.**
 
-Labels are the only state, so their meaning must not depend on their
-origin — otherwise the same label on two issues means two different
-things according to history nobody can see.
+Labels are the shared record of state, so their meaning must not depend
+on their origin — otherwise the same label on two issues means two
+different things according to history nobody can see.
 
 **Precisely.** No label is specific to one mode, and no step interprets
 a label differently depending on which actor applied it.
@@ -1073,8 +1348,14 @@ routing drift invisibly until they disagree on a specific issue.
 step. Routing is computed in exactly one place. A driver may read the
 pipeline definition to explain what will happen, never to decide it.
 
+"Identical state" means the artefact, not the label record. Two ticks
+taken either side of a CI run finishing see different state and may
+legitimately select differently; that is the artefact being read
+correctly, not routing drifting. What this promise forbids is two
+readers of the *same* artefact reaching different answers.
+
 **Test.** Run the resolver and the real dispatch path over the same
-issue state and assert identical selection, for every step.
+artefact state and assert identical selection, for every step.
 
 ---
 
@@ -1098,6 +1379,30 @@ a test failure.
 
 AS-1 and MI-3 are two halves of one property: AS-1 says permissions are
 written down in one place, MI-3 says they are enforced by one mechanism.
+
+**One mechanism is not the same as one kind of limit.** Matching the text
+of a command is the weaker kind, and it fails in both directions at once.
+Too broad, and a pattern admitting a family of commands admits the
+dangerous members with the harmless ones — a grant covering every
+invocation of a tool covers the ones that publish as readily as the ones
+that read. Too narrow, and the match is defeated by the shape of the
+command rather than its effect: the same call, written as part of a
+larger expression, no longer looks like the thing that was permitted, and
+a step is refused work it was plainly meant to do.
+
+Both failures come from the same substitution — judging what a step
+*typed* instead of what it can *reach*. Where a boundary matters, it
+should be a capability the step does not hold: a step that must not
+publish is given no credential that could, and there is then no phrasing
+that gets around it, no allowlist to keep current, and nothing to keep in
+step between the two modes. A step's declared commands remain the record
+of what it is *meant* to do, and remain worth checking; they are not what
+makes the boundary true.
+
+**Test (extended).** For every limit the design treats as a safety
+property, ask what would happen if a step ignored the instruction and
+attempted the action. A limit that holds only because the step did not
+try is documentation, not enforcement.
 
 ---
 
@@ -1288,6 +1593,37 @@ check — it holds because the interactive path exists nowhere except
 inside a chat session. If anything ever invokes the orchestrator
 non-headlessly without a human, this guarantee disappears silently,
 because nothing exists to catch that case.
+
+**The interactive row depends on the environment, and can be false in
+it.** Recording a relayed approval requires a credential GitHub will
+attribute to a person. An environment can present one that reads back as
+a human for a query and is attributed to an app for a write — and then
+the orchestrator applies the gate label and its own check rejects it,
+correctly, as not human-applied. The guarantee survives; the mechanism
+does not. What is left is a gate no one present can cross.
+
+That failure is a property of the environment, not a safety feature, and
+it must be established before a gate is reached rather than discovered
+at it — the same rule [the environment can refuse more than the pipeline
+denies](#the-environment-can-refuse-more-than-the-pipeline-denies)
+states for any other limit. An environment that cannot produce a
+human-attributed write has one honest gate-crossing path, a person
+acting on GitHub directly, and the system should say so at the start
+rather than stage an approval it will refuse.
+
+**A gate exists where there is a decision to make.** A step that gates
+unconditionally and then suppresses its own gate whenever there was
+nothing to decide has inverted the rule: the common path is now the one
+that must be got around, and every failure of the suppression lands on a
+person as a question about something nobody needed to decide.
+
+**And gates inside the pipeline are not the last line.** The decision
+that admits work is the merge, so the branch that receives it is
+protected: no direct push, and a reviewed pull request to change it. That
+is a precondition of everything above, not an extra. Without it a gate is
+a convention binding only whoever chose to route through it, and the
+elaborate lock is on an inner door — every in-pipeline gate can be
+satisfied perfectly and the work still arrive another way.
 
 ---
 

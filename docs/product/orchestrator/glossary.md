@@ -45,17 +45,18 @@ one shippable unit. See [`lifecycle.md`](lifecycle.md#many-small-tickets-in-a-wi
 ## How work advances
 
 **Status label** — A GitHub label that encodes pipeline state, of the form
-`{agent}:{status}` (e.g. `prd-writer:complete`). Labels are the entire state
-machine — there is no separate database. See [`PRODUCT.md`](PRODUCT.md#labels-are-state-a-step-is-a-transition).
+`{agent}:{status}` (e.g. `prd-writer:complete`). Labels are the shared record
+of pipeline state — there is no separate database. Where a label and the
+artefact it describes disagree, the artefact wins. See [`PRODUCT.md`](PRODUCT.md#labels-record-state-the-artefact-holds-it).
 
 **Status suffixes** — `:wip` (running), `:complete` (done), `:review`
 (awaiting a human), `:blocked` (stuck, needs a human), `:failed` (errored),
 `:approved` (a human applied a gate label). The orchestrator owns every
-transition; humans only apply gate labels. See [`PRODUCT.md`](PRODUCT.md#labels-are-state-a-step-is-a-transition).
+transition; humans only apply gate labels. See [`PRODUCT.md`](PRODUCT.md#labels-record-state-the-artefact-holds-it).
 
 **`:wip` (mutex)** — The `{agent}:wip` label doubles as the lock that stops
 two orchestrator runs from working the same `(object, agent)` at once.
-See [`PRODUCT.md`](PRODUCT.md#labels-are-state-a-step-is-a-transition).
+See [`PRODUCT.md`](PRODUCT.md#labels-record-state-the-artefact-holds-it).
 
 **Human gate** — A point where work cannot advance until a named human
 approves by applying a gate label (e.g. `prd-writer:approved`). Agents draft;
