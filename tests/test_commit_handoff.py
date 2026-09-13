@@ -374,8 +374,12 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
         weight or -- the case that matters -- a replacement that was assumed
         to cover a deleted pattern and does not.
         """
-        for pattern in self._CONTRADICTIONS:
-            others = [p for p in self._CONTRADICTIONS if p != pattern]
+        # Compared by position, not by value: `p != pattern` would drop both
+        # copies of a duplicated pattern, so each copy would be measured
+        # against a set excluding its own twin and would look load-bearing --
+        # the one shape of redundancy this test exists to catch.
+        for i, pattern in enumerate(self._CONTRADICTIONS):
+            others = [p for j, p in enumerate(self._CONTRADICTIONS) if j != i]
             covered_only_by_this = [
                 s for s in self._MUST_FAIL
                 if re.search(pattern, s, re.IGNORECASE)
