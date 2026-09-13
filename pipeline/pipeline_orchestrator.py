@@ -4517,10 +4517,17 @@ def invoke_agent(
     # already in use") -- which strands re-runs in a persistent environment.
     # Resume the session when it already exists; create it (--session-id) only
     # when it does not (first run, or a fresh -r{attempt} retry id).
-    _proj_dir = os.getcwd().replace("/", "-")
-    _home = os.environ.get("HOME") or os.path.expanduser("~")
-    _session_file = os.path.join(_home, ".claude", "projects", _proj_dir, f"{agent_session_uuid}.jsonl")
-    _session_flag = "--resume" if os.path.isfile(_session_file) else "--session-id"
+    #
+    # The CLI encodes the subprocess cwd into its project-directory path.  For
+    # worktree-based agents the subprocess cwd differs from os.getcwd() (the
+    # orchestrator's own cwd), so a path reconstructed from os.getcwd() never
+    # matches the actual transcript location.  Glob across ALL project dirs
+    # instead so the check is correct regardless of cwd or path-encoding scheme.
+    _claude_config_root = os.environ.get("CLAUDE_CONFIG_DIR") or os.environ.get("HOME") or os.path.expanduser("~")
+    _projects_dir = Path(_claude_config_root) / ".claude" / "projects"
+    _session_flag = "--session-id"
+    if _projects_dir.is_dir() and any(_projects_dir.glob(f"*/{agent_session_uuid}.jsonl")):
+        _session_flag = "--resume"
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
