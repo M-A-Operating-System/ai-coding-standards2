@@ -322,6 +322,15 @@ def _make_gh_mock() -> MagicMock:
     return gh
 
 
+def _git_one_clean_commit(cmd, **kwargs):
+    """A worktree holding exactly one commit by the step, nothing left
+    uncommitted, and no file added at the repository root."""
+    if not (isinstance(cmd, list) and cmd and cmd[0] == "git"):
+        return MagicMock(returncode=0, stdout="", stderr="")
+    out = {"rev-list": "1", "status": "", "diff": ""}.get(cmd[1], "")
+    return MagicMock(returncode=0, stdout=out, stderr="")
+
+
 def _invoke_agent_writing_result(outcome, *, message="", summary=None, output="",
                                   undone="", expected_effect=None, label_requests=None,
                                   agent_run_result=None):
@@ -1747,6 +1756,76 @@ class TestInvokeAgentSessionResumeCheck:
             "under any .claude/projects/ subdir (including worktree-encoded paths)"
         )
         assert "--session-id" not in captured_cmd
+
+    # Scenario: a step that declares it carries nothing does not resume, even
+    # when a transcript for it is sitting right there.
+    def test_declared_no_resume_wins_over_an_existing_transcript(
+        self, monkeypatch, tmp_path
+    ):
+        """The interaction between issue #439 and issue #450, which neither
+        change tested on its own.
+
+        #439 made an existing transcript findable for worktree agents (glob
+        across project dirs instead of rebuilding a path from os.getcwd()).
+        #450 made resuming a declaration rather than a filesystem accident.
+        Resolving the two by keeping only one would be a silent regression in
+        whichever direction it went, and nothing would have failed:
+
+          * keep only the glob -> session.resume: false is ignored, and a step
+            that re-derives everything still answers from last time;
+          * keep only the declaration -> a step that asked to resume never
+            can, because the path check it kept is the broken one.
+
+        So: transcript present AND findable, and the step declares it carries
+        nothing worth resuming. The declaration decides.
+        """
+        import pipeline_orchestrator as orch
+        import uuid
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+
+        projects_dir = tmp_path / ".claude" / "projects" / "any-encoded-cwd"
+        projects_dir.mkdir(parents=True)
+
+        agent_def = self._make_agent_def()
+        agent_def.session_resume = False
+        work_item = self._make_work_item(42)
+        session_id = orch._compute_agent_session_id(
+            agent_def, work_item, "test-org/test-repo",
+        )
+        agent_session_uuid = str(uuid.uuid5(orch._SESSION_NAMESPACE, session_id))
+        (projects_dir / f"{agent_session_uuid}.jsonl").write_text("{}")
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+        captured_cmd: list = []
+
+        def fake_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                agent_def, work_item, dry_run=False, repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        assert "--resume" not in captured_cmd, (
+            "session.resume: false must not resume, however findable the "
+            "transcript is"
+        )
+        assert "--session-id" in captured_cmd
+        # And the id it is given is a fresh one, not the deterministic uuid5
+        # whose transcript is sitting on disk -- otherwise "already in use".
+        assert agent_session_uuid not in captured_cmd, (
+            "a non-resuming step must get a distinct id per invocation"
+        )
 
     # Scenario: New agent session is started when no prior transcript exists
     def test_new_session_started_when_no_prior_transcript_exists(
@@ -3746,9 +3825,10 @@ class TestPostStepFailureDecoupling:
 # ---------------------------------------------------------------------------
 
 class TestCommitAgentWorkScript:
-    """Tests for the commit-agent-work.sh shell script and commit_after wiring.
+    """Tests for the commit_after wiring: the step commits, the orchestrator
+    pushes.
 
-    Scenario: New script stages, commits, and pushes agent work
+    Scenario: A step's own commits are pushed to the branch its flow declares
     Scenario: Python orchestrator contains no git logic
     Scenario: git_ops.commit_after drives commits for affected agents
     """
@@ -3759,21 +3839,24 @@ class TestCommitAgentWorkScript:
             url="https://github.com/test/repo/issues/42",
         )
 
-    def test_commit_agent_work_script_exists(self):
-        """Scenario: New script stages, commits, and pushes agent work.
+    def test_the_extraction_script_is_gone(self):
+        """Scenario: A step's own commits are pushed to the branch its flow
+        declares.
 
-        Given .github/scripts/commit-agent-work.sh exists
-        Then the file is a bash script with the correct shebang.
+        Extracting a step's work after the fact -- stash it, reset the branch
+        to the remote, replay the stash, commit whatever appears -- failed in
+        three directions at once (issue #448). The step commits for itself
+        now, so the script it replaced must not be left behind to be invoked
+        by anything.
         """
         import pipeline_orchestrator as orch
         script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "commit-agent-work.sh"
-        assert script_path.exists(), (
-            f"commit-agent-work.sh must exist at {script_path}"
+        assert not script_path.exists(), (
+            f"commit-agent-work.sh still exists at {script_path}; the step "
+            "commits its own work now (PRODUCT.md, 'What lands in git')"
         )
-        first_line = script_path.read_text().splitlines()[0]
-        assert first_line.startswith("#!/"), (
-            f"commit-agent-work.sh must start with a shebang; got: {first_line!r}"
-        )
+        assert hasattr(orch, "_push_step_branch")
+        assert not hasattr(orch, "_invoke_commit_after")
 
     def test_python_orchestrator_has_no_run_commit_after(self):
         """Scenario: Python orchestrator contains no git logic.
@@ -3854,10 +3937,10 @@ class TestCommitAgentWorkScript:
     def test_commit_after_outer_guard_requires_issue_kind(self):
         """Scenario: commit-after is not invoked for PR work items.
 
-        Given commit-agent-work.sh requires ISSUE_NUMBER
+        Given a step's branch is an issue branch
         When the orchestrator source is reviewed
-        Then the commit_after invoke block is guarded by work_item.kind == 'issue'
-             so the script is never called for PR-scoped work items.
+        Then the commit_after push block is guarded by work_item.kind == 'issue'
+             so it is never reached for PR-scoped work items.
         After the process_work_item() refactor the guard lives in _apply_result().
         """
         import inspect
@@ -3865,9 +3948,9 @@ class TestCommitAgentWorkScript:
         source = inspect.getsource(orch._apply_result)
         guard = 'agent_def.commit_after and work_item.kind == "issue"'
         assert guard in source, (
-            "commit_after invoke block must include 'work_item.kind == \"issue\"' "
-            "in the outer guard — commit-agent-work.sh requires ISSUE_NUMBER and "
-            "must not be invoked for PR work items (DP-001). "
+            "commit_after push block must include 'work_item.kind == \"issue\"' "
+            "in the outer guard — the branch is an issue branch and the push "
+            "must not be attempted for PR work items (DP-001). "
             "After the process_work_item() refactor this guard lives in _apply_result()."
         )
 
@@ -3898,9 +3981,9 @@ class TestCommitAgentWorkScript:
     # commit_after agent before invoking it, and fails the whole run loudly if
     # that setup fails (no more silent fall-back onto the shared tree — see
     # TestRunAgentWorktreeIsolation below for that path). These tests are
-    # about commit-agent-work.sh's own outcome handling, so _create_run_worktree
+    # about _push_step_branch's own outcome handling, so _create_run_worktree
     # and _remove_run_worktree are mocked out here rather than exercised for
-    # real, and subprocess.run is left to cover only the bash invocation.
+    # real, and subprocess.run is left to cover only the git calls.
 
     @patch("pipeline_orchestrator._remove_run_worktree")
     @patch("pipeline_orchestrator._create_run_worktree")
@@ -3909,22 +3992,19 @@ class TestCommitAgentWorkScript:
     def test_commit_after_success_keeps_complete_status(
         self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
     ):
-        """Scenario: commit-agent-work.sh exits 0 — agent stays complete.
+        """Scenario: the push of a step's own commits succeeds — agent stays
+        complete.
 
         Given an agent with commit_after: true that completes successfully
-        When commit-agent-work.sh exits 0
+        When it committed one clean commit and the push succeeds
         Then _apply_failed is not called.
         """
         monkeypatch.setattr(orch, "_HEADLESS", True)
         monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
-        bash_ok = MagicMock()
-        bash_ok.returncode = 0
-        bash_ok.stdout = ""
-        bash_ok.stderr = ""
 
-        with patch("subprocess.run", return_value=bash_ok):
+        with patch("subprocess.run", side_effect=_git_one_clean_commit):
             process_work_item(
                 self._make_issue_wi(),
                 [self._make_commit_after_agent()],
@@ -3944,26 +4024,22 @@ class TestCommitAgentWorkScript:
     def test_commit_after_fires_on_review_outcome(
         self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
     ):
-        """Scenario: agent returns outcome "review" — commit-agent-work.sh still runs.
+        """Scenario: agent returns outcome "review" — its branch is still pushed.
 
         Given an agent with commit_after: true whose own result is "review"
               (e.g. prd-docs-updater's docs/product/ path -- issue #429: this
               outcome can carry real file edits, not just STATUS_COMPLETE)
         When the agent's result.json declares outcome: "review"
-        Then commit-agent-work.sh is still invoked -- the file edits are not
-             silently discarded just because the step also gates on human
-             review.
+        Then its commits are still pushed -- the work is not silently
+             discarded with the worktree just because the step also gates on
+             human review.
         """
         monkeypatch.setattr(orch, "_HEADLESS", True)
         monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.side_effect = _invoke_agent_writing_result("review")
-        bash_ok = MagicMock()
-        bash_ok.returncode = 0
-        bash_ok.stdout = ""
-        bash_ok.stderr = ""
 
-        with patch("subprocess.run", return_value=bash_ok) as mock_run:
+        with patch("subprocess.run", side_effect=_git_one_clean_commit) as mock_run:
             process_work_item(
                 self._make_issue_wi(),
                 [self._make_commit_after_agent()],
@@ -3974,7 +4050,12 @@ class TestCommitAgentWorkScript:
                 concurrency=ComponentClaims(),
             )
 
-        mock_run.assert_called_once()
+        pushes = [
+            c for c in mock_run.call_args_list
+            if c.args and c.args[0][:2] == ["git", "push"]
+        ]
+        assert len(pushes) == 1, mock_run.call_args_list
+        assert pushes[0].args[0][-1] == "HEAD:issue-42"
         mock_failed.assert_not_called()
 
     @patch("pipeline_orchestrator._remove_run_worktree")
@@ -3984,10 +4065,10 @@ class TestCommitAgentWorkScript:
     def test_commit_after_nonzero_exit_applies_failed(
         self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
     ):
-        """Scenario: commit-agent-work.sh exits non-zero — _apply_failed is called.
+        """Scenario: the push exits non-zero — _apply_failed is called.
 
         Given an agent with commit_after: true that completes successfully
-        When commit-agent-work.sh exits 1
+        When git reports a failure
         Then _apply_failed is called.
         """
         monkeypatch.setattr(orch, "_HEADLESS", True)
@@ -4021,11 +4102,12 @@ class TestCommitAgentWorkScript:
     def test_commit_after_timeout_applies_failed(
         self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
     ):
-        """Scenario: commit-agent-work.sh times out — _apply_failed is called.
+        """Scenario: a git call times out — _apply_failed is called.
 
         Given an agent with commit_after: true that completes successfully
-        When commit-agent-work.sh raises subprocess.TimeoutExpired
-        Then _apply_failed is called.
+        When a git call raises subprocess.TimeoutExpired
+        Then the timeout is reported as a step failure rather than escaping as
+             an exception, and _apply_failed is called.
         """
         import subprocess as _sp
 
@@ -4052,46 +4134,15 @@ class TestCommitAgentWorkScript:
 
         mock_failed.assert_called_once()
 
-    @patch("pipeline_orchestrator._remove_run_worktree")
-    @patch("pipeline_orchestrator._create_run_worktree")
-    @patch("pipeline_orchestrator.invoke_agent")
-    @patch("pipeline_orchestrator._apply_failed")
-    def test_commit_after_script_not_found_applies_failed(
-        self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
-    ):
-        """Scenario: commit-agent-work.sh does not exist — _apply_failed is called.
-
-        Given an agent with commit_after: true that completes successfully
-        When the commit-agent-work.sh script does not exist
-        Then _apply_failed is called.
-        """
-        monkeypatch.setattr(orch, "_HEADLESS", True)
-        monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
-        mock_create_wt.return_value = "/fake/worktree"
-        mock_invoke.return_value = AgentRunResult(
-            success=True, captured_tail="AI_AGILE_STATUS: complete"
+    def test_a_step_with_no_worktree_fails_rather_than_pushing_from_anywhere(self):
+        """A commit_after step is given an isolated worktree. With none, there
+        is no tree whose commits are this step's, and pushing from wherever
+        the orchestrator happens to stand would move the branch to something
+        nobody authored (STD-ARCH-014, fail closed)."""
+        reason = orch._push_step_branch(
+            self._make_commit_after_agent(), self._make_issue_wi(), cwd=None,
         )
-
-        import subprocess as _sp
-
-        def _git_fail(cmd, **kwargs):
-            if isinstance(cmd, list) and cmd and cmd[0] == "git":
-                raise _sp.CalledProcessError(1, cmd)
-            return MagicMock(returncode=0)
-
-        with patch("subprocess.run", side_effect=_git_fail), \
-             patch("pathlib.Path.exists", return_value=False):
-            process_work_item(
-                self._make_issue_wi(),
-                [self._make_commit_after_agent()],
-                {"03_execute/coder": self._make_commit_after_agent()},
-                _make_gh_mock(),
-                dry_run=False,
-                repo="test/repo",
-                concurrency=ComponentClaims(),
-            )
-
-        mock_failed.assert_called_once()
+        assert reason is not None and "no isolated worktree" in reason
 
 
 # ---------------------------------------------------------------------------
@@ -4736,7 +4787,7 @@ class TestRunAgentBehaviour:
 
 class TestCommitAfterExactlyOnce:
     """Regression guard for the double-execution bug the rebaseline removed:
-    commit-agent-work.sh must run EXACTLY once on :complete, not twice."""
+    the step's branch must be pushed EXACTLY once on :complete, not twice."""
 
     def _agent(self) -> AgentDef:
         return AgentDef(
@@ -4763,16 +4814,15 @@ class TestCommitAfterExactlyOnce:
         self, mock_failed, mock_invoke, mock_create_wt, mock_remove_wt, monkeypatch,
     ):
         # (#373) The pre-agent worktree setup is mocked out here so this test
-        # stays focused on its own regression: commit-agent-work.sh running
-        # exactly once. Worktree creation itself is covered separately by
+        # stays focused on its own regression: the push running exactly once.
+        # Worktree creation itself is covered separately by
         # TestRunAgentWorktreeIsolation below.
         monkeypatch.setattr(orch, "_HEADLESS", True)
         monkeypatch.setattr(orch, "is_pipeline_stopped", lambda: (False, ""))
         mock_create_wt.return_value = "/fake/worktree"
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
-        bash_ok = MagicMock(returncode=0, stdout="", stderr="")
         agent = self._agent()
-        with patch("subprocess.run", return_value=bash_ok) as mock_sub:
+        with patch("subprocess.run", side_effect=_git_one_clean_commit) as mock_sub:
             process_work_item(
                 self._wi(), [agent], {agent.agent: agent}, _make_gh_mock(),
                 dry_run=False, repo="test/repo",
@@ -4780,12 +4830,11 @@ class TestCommitAfterExactlyOnce:
             )
         commit_calls = [
             c for c in mock_sub.call_args_list
-            if isinstance(c.args[0], list) and c.args[0] and c.args[0][0] == "bash"
-            and "commit-agent-work.sh" in c.args[0][-1]
+            if isinstance(c.args[0], list) and c.args[0][:2] == ["git", "push"]
         ]
         assert len(commit_calls) == 1, (
-            f"commit-agent-work.sh must run exactly once on :complete; "
-            f"ran {len(commit_calls)}x (double-execution regression)"
+            f"the step's branch must be pushed exactly once on :complete; "
+            f"pushed {len(commit_calls)}x (double-execution regression)"
         )
         mock_failed.assert_not_called()
 
@@ -4979,7 +5028,7 @@ class TestWorktreeIsolationPreventsCorruption:
 # ---------------------------------------------------------------------------
 
 class TestOrchestrationScriptResolution:
-    SCRIPT_REL = ".github/scripts/commit-agent-work.sh"
+    SCRIPT_REL = ".github/scripts/mark-pr-ready.sh"
 
     @pytest.fixture(autouse=True)
     def _isolate_cache(self):
@@ -5049,15 +5098,26 @@ class TestOrchestrationScriptResolution:
         # It must NOT be the (missing) working-tree path on the stale branch.
         assert resolved != work / self.SCRIPT_REL
 
-    def test_commit_after_succeeds_when_issue_branch_lacks_script(self, tmp_path, monkeypatch):
-        """Acceptance criterion #196: a coder run on an issue branch missing
-        commit-agent-work.sh still succeeds, because commit-after sources the
-        script from main. The main version here is a no-op that exits 0."""
+    def test_pushing_a_step_s_commits_needs_no_script_on_the_branch(self, tmp_path, monkeypatch):
+        """Issue #196 was: a coder run on a branch cut before
+        commit-agent-work.sh existed hard-failed, because committing went
+        through a script that had to be present in the checked-out tree.
+
+        The step commits for itself now and the orchestrator pushes with git
+        directly, so that class of failure has no surface left: a branch
+        carrying no orchestration scripts at all still pushes. The resolver
+        this class covers remains for the scripts that are still scripts.
+        """
         import pipeline_orchestrator as po
         work = self._make_stale_branch_repo(
             tmp_path, "#!/usr/bin/env bash\nexit 0\n"
         )
         monkeypatch.setattr(po, "SUBMODULE_ROOT", work)
+        self._git(work, "checkout", "issue-999")
+        (work / "src").mkdir(exist_ok=True)
+        (work / "src" / "mod.py").write_text("x = 1\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "the step's own commit")
 
         agent = AgentDef(
             agent="03_execute/coder", phase="03_execute", objects=["issue"],
@@ -5071,8 +5131,17 @@ class TestOrchestrationScriptResolution:
             number=999, kind="issue", title="T", labels=set(),
             url="https://github.com/test/repo/issues/999",
         )
-        result = po._invoke_commit_after(agent, wi)
-        assert result is None, f"commit-after should succeed, got failure: {result!r}"
+        result = po._push_step_branch(agent, wi, cwd=str(work))
+        assert result is None, f"push should succeed, got failure: {result!r}"
+        pushed = subprocess.run(
+            ["git", "rev-parse", "origin/issue-999"], cwd=str(work),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(work),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert pushed == head, "the branch ref did not move to the step's commit"
 
     def test_caches_resolution_across_calls(self, tmp_path, monkeypatch):
         import pipeline_orchestrator as po

@@ -199,11 +199,12 @@ class AgentDef:
     max_retries: int = 0               # how many times to re-invoke after :failed before giving up
     session_scope: str = "per_issue"   # "per_issue" | "global"
     session_id_pattern: Optional[str] = None  # None → use built-in default for scope
+    session_resume: bool = True        # session.resume -- may a re-invocation continue the prior conversation. Resuming is an optimisation, never a source of truth; a step that re-derives everything has nothing worth carrying and declares false (issue #450).
     post_steps: list = field(default_factory=list)  # repo-relative script paths run after :complete
     lifecycle_before: list = field(default_factory=list)  # defaults.agent_lifecycle.before — run immediately before each invocation, including each retry
     lifecycle_after: list = field(default_factory=list)   # defaults.agent_lifecycle.after — run once after the last retry, whatever the outcome
     review_gate: bool = False             # True only for the agent that gates human review (pr-reviewer); controls free-reinvoke on unresolved human REQUEST_CHANGES
-    commit_after: bool = False            # True when git_ops.commit_after is true; drives branch checkout + commit-agent-work.sh
+    commit_after: bool = False            # True when git_ops.commit_after is true; the step commits in its own worktree and the orchestrator pushes the branch
     resolve_pr_number: bool = False       # True for an issue-kind step whose own PR already exists by the time it runs and that needs its number (coder, pr-reviewer, merge-conflict) -- drives PR_NUMBER injection (issue #431/#433). Declared per-step, not named in orchestrator code (AS-2).
     # --- the flow this step belongs to (issue #406) -------------------------
     # A step is declared inside a named flow; the flow says what kind of work
@@ -524,6 +525,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 max_retries=int(entry.get("max_retries", 0)),
                 session_scope=entry.get("session", {}).get("scope", "per_issue"),
                 session_id_pattern=entry.get("session", {}).get("id_pattern"),
+                session_resume=bool(entry.get("session", {}).get("resume", True)),
                 post_steps=list(entry.get("post_steps", [])),
                 review_gate=bool(entry.get("review_gate", False)),
                 commit_after=bool(_git_ops.get("commit_after", False)),
@@ -1145,6 +1147,10 @@ class GitHubClient:
 
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
+        # The comment list for this item is now out of date. Dropping it here
+        # rather than only between ticks means a cached read can never answer
+        # with a list that predates a comment this run has already posted.
+        _TICK_COMMENTS.pop(number, None)
 
     def create_issue(self, title: str, body: str, labels: Optional[list] = None) -> int:
         """Raise a new work item and return its number.
@@ -1622,9 +1628,9 @@ _METRICS_APPEND_SCRIPT = ".github/scripts/append-metrics-record.sh"
 # STD-SEC-022 — env for append-metrics-record.sh. It runs the same git plumbing
 # _GIT_PLUMBING_ENV_VARS covers, plus `git fetch`/`git push` against the metrics
 # branch, so it also needs a git credential and the network vars every other
-# push site gets. It builds its own auth header from these, exactly as
-# commit-agent-work.sh does; the orchestrator's own GIT_CONFIG_* header (which
-# embeds a token) is deliberately never forwarded to a script.
+# push site gets. It builds its own auth header from these; the orchestrator's
+# own GIT_CONFIG_* header (which embeds a token) is deliberately never
+# forwarded to a script.
 #
 # AI_AGILE_BOT_TOKEN is on this list because the ledger is a system action on
 # GitHub and MI-7 wants those made by one dedicated identity rather than the
@@ -1654,8 +1660,8 @@ def _append_metrics_record(
     .github/scripts/append-metrics-record.sh, which owns the git plumbing that
     puts it on the branch. Committing is not coordination (AS-2, issue #407),
     so the fetch/hash-object/commit-tree/push-with-retry sequence that used to
-    live here is a script now, invoked exactly the way _invoke_commit_after
-    invokes commit-agent-work.sh.
+    live here is a script now, invoked as a subprocess with its own named env
+    allowlist.
 
     Raises RuntimeError when the append did not land, so a caller cannot read a
     failure as a success (STD-ARCH-014). gh is accepted for interface symmetry
@@ -3626,6 +3632,7 @@ def _build_closing_announcement(
     outcome: str,
     summary: str,
     expected_effect: Optional[dict] = None,
+    subject: Optional[str] = None,
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
@@ -3642,6 +3649,12 @@ def _build_closing_announcement(
     # this records the declared half of that comparison.
     if expected_effect:
         payload["expected_effect"] = expected_effect
+    # What this conclusion was reached against (PRODUCT.md, "A record that can
+    # be superseded says what it was about"). Without it, "this describes a
+    # commit that is no longer the head" is not decidable and a stale
+    # :complete stops the step running instead of prompting it to run again.
+    if subject:
+        payload["subject"] = subject
     _branch = step_branch(agent_def, work_item) if work_item.kind == "issue" else None
     if _branch:
         payload["branch"] = _branch
@@ -3714,10 +3727,10 @@ _SCRIPT_AGENT_ENV_VARS = (
 )
 
 # Until issue #407, AI_AGILE_BOT_TOKEN went only to the three PR-writing
-# scripts (create-pr.sh, create-docs-pr.sh, merge-docs-pr.sh) and
-# commit-agent-work.sh, on the reasoning that a classic PAT with repo+workflow
-# scopes is the broadest credential the orchestrator holds and should reach
-# only the steps that demonstrably use it.
+# scripts (create-pr.sh, create-docs-pr.sh, merge-docs-pr.sh) and the
+# now-retired commit extraction script, on the reasoning that a classic PAT
+# with repo+workflow scopes is the broadest credential the orchestrator holds
+# and should reach only the steps that demonstrably use it.
 #
 # MI-7 asks for something that reasoning cannot give: "Everything the system
 # does on GitHub acts as a dedicated identity of its own, never a person's
@@ -4518,16 +4531,41 @@ def invoke_agent(
     # Resume the session when it already exists; create it (--session-id) only
     # when it does not (first run, or a fresh -r{attempt} retry id).
     #
-    # The CLI encodes the subprocess cwd into its project-directory path.  For
-    # worktree-based agents the subprocess cwd differs from os.getcwd() (the
-    # orchestrator's own cwd), so a path reconstructed from os.getcwd() never
-    # matches the actual transcript location.  Glob across ALL project dirs
-    # instead so the check is correct regardless of cwd or path-encoding scheme.
-    _claude_config_root = os.environ.get("CLAUDE_CONFIG_DIR") or os.environ.get("HOME") or os.path.expanduser("~")
-    _projects_dir = Path(_claude_config_root) / ".claude" / "projects"
-    _session_flag = "--session-id"
-    if _projects_dir.is_dir() and any(_projects_dir.glob(f"*/{agent_session_uuid}.jsonl")):
-        _session_flag = "--resume"
+    # Two separate questions, and the merge of #439 and #450 keeps both.
+    #
+    # WHETHER to resume is the step's own declaration, not an accident of which
+    # transcripts happen to be on disk. A step that re-derives everything it
+    # needs carries nothing worth resuming, and a resumed one answers from what
+    # it concluded last time instead of re-checking -- cheap, fast and wrong
+    # (issue #450). Such a step declares session.resume false and gets a
+    # distinct id per invocation, so "already in use" cannot arise either.
+    #
+    # WHETHER A SESSION EXISTS is a question about the filesystem, and the
+    # obvious way to ask it is wrong (issue #439). The CLI encodes the
+    # subprocess cwd into its project-directory path, and a worktree-based
+    # agent's cwd is not the orchestrator's, so a path rebuilt from
+    # os.getcwd() never matches the real transcript location -- making
+    # --resume unreachable for exactly the steps that run in worktrees. Glob
+    # across all project dirs instead, which is correct whatever the cwd or
+    # path-encoding scheme.
+    #
+    # Keeping only one of these would be a silent regression: the declaration
+    # without the glob means a step that asked to resume never can.
+    if not agent_def.session_resume:
+        agent_session_uuid = str(uuid.uuid4())
+        _session_flag = "--session-id"
+    else:
+        _claude_config_root = (
+            os.environ.get("CLAUDE_CONFIG_DIR")
+            or os.environ.get("HOME")
+            or os.path.expanduser("~")
+        )
+        _projects_dir = Path(_claude_config_root) / ".claude" / "projects"
+        _session_flag = "--session-id"
+        if _projects_dir.is_dir() and any(
+            _projects_dir.glob(f"*/{agent_session_uuid}.jsonl")
+        ):
+            _session_flag = "--resume"
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
@@ -5043,6 +5081,53 @@ def _run_worktree_path(issue_branch: str) -> Path:
     return _WORKTREE_ROOT / _safe
 
 
+def _recover_unpushed_commits(issue_branch: str) -> None:
+    """Push commits a previous run committed but never got to push.
+
+    A step commits into its worktree as it goes, and those commits move the
+    shared branch ref immediately -- but they only become durable when the ref
+    moves on the remote, which the orchestrator does after the step returns. A
+    step killed at its budget ceiling never returns, so its commits sit ahead
+    of origin with nothing having pushed them.
+
+    The next run for that branch is where they would otherwise be lost: the
+    `worktree add -B ... origin/{branch}` below resets the local branch to the
+    remote, discarding exactly the work the arrangement exists to protect. So
+    the ref is moved first. PRODUCT.md, "What lands in git": a later tick
+    pushes a branch left ahead of its remote, recovering by reading what is
+    actually there rather than what a record claims.
+
+    Best-effort by design. A branch that cannot be pushed (diverged, or the
+    remote refuses) is logged and left alone -- the run still needs its
+    worktree, and failing the whole run over a previous run's leftovers would
+    strand the branch rather than rescue it.
+    """
+    ahead = subprocess.run(
+        ["git", "rev-list", "--count", f"origin/{issue_branch}..{issue_branch}"],
+        check=False, capture_output=True, text=True,
+    )
+    if ahead.returncode != 0 or not (ahead.stdout.strip() or "0").isdigit():
+        return
+    count = int(ahead.stdout.strip() or "0")
+    if count == 0:
+        return
+    log.warning(
+        "  worktree: %s is %d commit(s) ahead of its remote from an earlier run "
+        "-- pushing before the branch is reset", issue_branch, count,
+    )
+    pushed = subprocess.run(
+        ["git", "push", "origin", f"{issue_branch}:{issue_branch}"],
+        check=False, capture_output=True, text=True,
+    )
+    if pushed.returncode != 0:
+        log.error(
+            "  worktree: could not recover %d unpushed commit(s) on %s: %s",
+            count, issue_branch, (pushed.stderr or pushed.stdout).strip()[:500],
+        )
+        return
+    log.info("  worktree: recovered %d unpushed commit(s) on %s", count, issue_branch)
+
+
 def _create_run_worktree(issue_branch: str) -> str:
     """Create an isolated git worktree checked out to `issue_branch`.
 
@@ -5070,6 +5155,7 @@ def _create_run_worktree(issue_branch: str) -> str:
             ["git", "fetch", "origin", issue_branch],
             check=True, capture_output=True, text=True,
         )
+        _recover_unpushed_commits(issue_branch)
         subprocess.run(
             ["git", "worktree", "add", "--force", "-B", issue_branch, str(path), f"origin/{issue_branch}"],
             check=True, capture_output=True, text=True,
@@ -5195,6 +5281,26 @@ def _should_run(
             "  again %-40s  [unit: sub_item, open child remains]", agent_def.agent,
         )
         current_status = None
+
+    # A :complete recording a subject that is no longer the current one is
+    # superseded: it has not become false, it has become about something else
+    # (PRODUCT.md, "Superseded is not the same as wrong"). The step runs again
+    # and replaces its own record -- which is the step correcting itself, not a
+    # repair of anything it does not own.
+    #
+    # Both sides must be established for that to hold. An unrecorded subject,
+    # an unreadable one, or a step with no subject at all leaves the record
+    # alone: not knowing is not evidence of staleness.
+    if current_status == STATUS_COMPLETE and gh is not None:
+        _recorded = _recorded_subject(gh, agent_def, work_item)
+        if _recorded is not None:
+            _current = step_subject(gh, agent_def, work_item)
+            if _current is not None and _current != _recorded:
+                log.info(
+                    "  again %-40s  [superseded: recorded %s, now %s]",
+                    agent_def.agent, _recorded[:12], _current[:12],
+                )
+                current_status = None
 
     if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED):
         log.debug("  skip %-40s  [%s]", agent_def.agent, current_status)
@@ -5326,6 +5432,99 @@ def _announcement_payload(body: str) -> Optional[dict]:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+# Comment bodies read during one tick, keyed by work-item number. The
+# supersession check runs for every :complete step declaring resolve_pr_number,
+# and each call would otherwise walk the item's whole comment list again --
+# paginated at 100, uncached, several requests per step on a long-running
+# issue, purely to decide that nothing changed.
+#
+# Safe because it is invalidated on write: post_comment drops the item's entry,
+# so a cached read can never answer with a list that predates a comment this
+# run has posted. It is also cleared at the start of each tick, which bounds
+# how long any entry can live.
+_TICK_COMMENTS: dict[int, list[str]] = {}
+
+
+def _reset_tick_caches() -> None:
+    """Drop per-tick caches. Called once at the start of each evaluation."""
+    _TICK_COMMENTS.clear()
+
+
+def _tick_comment_bodies(gh: "GitHubClient", number: int) -> list[str]:
+    """Comment bodies for one work item, read at most once per tick."""
+    cached = _TICK_COMMENTS.get(number)
+    if cached is None:
+        cached = gh.list_comment_bodies(number)
+        _TICK_COMMENTS[number] = cached
+    return cached
+
+
+def step_subject(
+    gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem,
+) -> Optional[str]:
+    """What this step's conclusion is reached against, if it has a subject.
+
+    PRODUCT.md, "A record that can be superseded says what it was about": a
+    record naming no subject cannot be superseded at all, only repeated or
+    trusted indefinitely.
+
+    One subject exists today -- the head commit of the PR the step works
+    against -- and it belongs to the steps that already declare they need that
+    PR (`resolve_pr_number`), rather than to a list of step names kept here
+    (AS-2). A step with no PR in play has no subject, and is never treated as
+    superseded.
+
+    None on any failure: unable to establish a subject is not evidence that
+    the record is stale, and must not be read as such.
+    """
+    if not agent_def.resolve_pr_number:
+        return None
+    try:
+        if work_item.kind == "pr":
+            pr_number: Optional[int] = work_item.number
+        else:
+            _branch = step_branch(agent_def, work_item)
+            pr_number = gh.find_pr_by_branch(_branch) if _branch else None
+            if pr_number is None:
+                pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
+        if pr_number is None:
+            return None
+        return gh._get(f"/repos/{gh.repo}/pulls/{pr_number}")["head"]["sha"] or None
+    except Exception:
+        return None
+
+
+def _recorded_subject(
+    gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem,
+) -> Optional[str]:
+    """The subject this step's own last closing record named, or None.
+
+    Read from the trail rather than from a label: a status label is a bare
+    fact about a step with no subject attached, which is why it cannot answer
+    "is this still about the same thing".
+
+    None means no subject was recorded -- an older record written before
+    subjects existed, a step that has none, or comments that could not be
+    read. In every one of those cases the caller leaves the record alone.
+    """
+    marker = f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->"
+    try:
+        bodies = _tick_comment_bodies(gh, work_item.number)
+    except Exception:
+        return None
+    latest: Optional[str] = None
+    for body in bodies or []:
+        if not body or marker not in body:
+            continue
+        payload = _announcement_payload(body)
+        if payload is None or payload.get("phase") != "end":
+            continue
+        recorded = payload.get("subject")
+        if recorded:
+            latest = str(recorded)
+    return latest
 
 
 def _wip_held_since(
@@ -5758,8 +5957,8 @@ def _run_agent(
     # For commit_after agents, check out the issue branch into its own
     # isolated worktree before invoking, so the agent reads accumulated state
     # without disturbing (or being disturbed by) a concurrent run on a
-    # different issue (#373). commit-agent-work.sh handles staging, commit,
-    # and push, run from that same worktree. Guard: only for issue work items
+    # different issue (#373). The agent commits there itself; the orchestrator
+    # pushes that branch afterwards. Guard: only for issue work items
     # (ISSUE_NUMBER required). Skipped under interactive_result — see this
     # function's docstring.
     _pre_agent_worktree: str = ""
@@ -5879,7 +6078,7 @@ def _run_agent(
 # ---------------------------------------------------------------------------
 # Orchestration-script resolution (issue #196)
 #
-# The orchestrator's own helper scripts (commit-agent-work.sh, mark-pr-ready.sh,
+# The orchestrator's own helper scripts (mark-pr-ready.sh, create-pr.sh,
 # ...) are infrastructure that ships with the orchestrator, not work-item
 # content. A commit_after agent checks out the issue branch before committing;
 # when that branch is stale (cut from an old main that predates a script), the
@@ -5957,87 +6156,183 @@ def _orchestration_script_path(rel_path: str) -> Path:
     return dest
 
 
-# STD-SEC-022 — env vars for commit-agent-work.sh: git stash/fetch/checkout/commit/push
-# plus base64 for the auth header. AGENT_NAME, ISSUE_NUMBER, BRANCH are set
-# explicitly below.
-_COMMIT_AFTER_ENV_VARS = (
-    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
-    "GH_TOKEN", "GITHUB_TOKEN", "AI_AGILE_BOT_TOKEN",
-    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-    "http_proxy", "https_proxy", "no_proxy",
-    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
-    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
-)
+def _git_in(cwd: str, *args: str) -> subprocess.CompletedProcess:
+    """Run one git command inside a step's worktree.
 
-
-def _invoke_commit_after(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional[str] = None) -> Optional[str]:
-    """Run commit-agent-work.sh for a `commit_after` agent.
-
-    cwd (#373): the isolated worktree this run's agent invocation used, so
-    commit-agent-work.sh stages and commits the files that were actually
-    edited there rather than whatever the orchestrator's own working
-    directory happens to hold.
-
-    Returns a human-readable failure reason, or None on success. The caller
-    owns the label/branch side-effects on failure.
+    Inherits the orchestrator's own environment, which is where the push
+    credential lives (set once in main()). The step's subprocess never sees
+    it -- that asymmetry is what makes "the orchestrator owns pushing" a
+    property of the environment rather than a rule in prose.
     """
-    _commit_script = _orchestration_script_path(".github/scripts/commit-agent-work.sh")
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            args, 1, "", f"git {args[0]} timed out after 300s",
+        )
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(args, 1, "", "git not found in PATH")
+
+
+def _root_additions(cwd: str, base: str) -> list:
+    """Files a step's commits added at the repository root.
+
+    Working files belong under $AI_AGILE_SCRATCH, and every agent prompt says
+    so. Instruction is not enforcement: a bare filename resolves against the
+    repo root because that is the working directory, which is how
+    pr_review_328.txt reached a commit on issue-316 (issue #321).
+
+    The check moved here when committing moved into the step. It can no
+    longer unstage the file before the commit is written, so it does not try:
+    it reports, and the caller pushes anyway. Discarding a commit to punish a
+    stray file would throw away the work the commit exists to protect.
+
+    Fails open by choice, and says so when it does: reporting a violation it
+    could not substantiate would fail a step over a guess. A git failure here
+    is logged rather than swallowed, so "the guard did not run" is never
+    indistinguishable from "the guard found nothing".
+    """
+    proc = _git_in(cwd, "diff", "--name-only", "--diff-filter=A", f"{base}..HEAD")
+    if proc.returncode != 0:
+        log.warning(
+            "  commit-after: could not check for repo-root additions on %s: %s "
+            "-- the guard did not run for this push",
+            base, (proc.stderr or proc.stdout).strip()[:300],
+        )
+        return []
+    return [f for f in proc.stdout.splitlines() if f and "/" not in f]
+
+
+def _push_step_branch(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    *,
+    cwd: Optional[str] = None,
+    pushed: Optional[dict] = None,
+) -> Optional[str]:
+    """Move the branch ref to what the step committed in its own worktree.
+
+    PRODUCT.md, "What lands in git": the step owns committing, inside the
+    worktree it was given; the orchestrator owns the branch, pushing it, the
+    PR lifecycle, and merging. A commit becomes durable when the ref moves --
+    before that it lives only in a worktree that is about to be torn down.
+
+    This replaces extracting the step's work after the fact (stash it, reset
+    the branch to the remote, replay the stash, commit whatever appears).
+    That approach failed in three directions at once: unrelated dirt dragged
+    a no-op run through the whole path, a branch that moved between stash and
+    replay conflicted with itself, and a step returning anything but success
+    never reached the extraction at all (issue #448). Those were not defects
+    in the script. They were properties of extracting work from a process
+    instead of having the process commit it.
+
+    Returns a human-readable failure reason, or None on success. A failure
+    reason can be returned *after* a successful push: a branch carrying
+    commits no longer implies the step succeeded, which is the deliberate
+    consequence of letting partial work land.
+
+    `pushed`, when given, receives {"sha": <the commit this push put on the
+    branch>}. The step's record names that SHA as its subject rather than a
+    fresh read of the pull request's head: GitHub is eventually consistent
+    with a push it has just received, and a read that lags by a moment would
+    record a subject that is already superseded -- making the next tick re-run
+    a step for no reason.
+    """
     _branch = step_branch(agent_def, work_item)
     if not _branch:
         return (
             f"_step {agent_def.agent} commits but flow {agent_def.flow!r} declares "
             f"no naming.branch; nothing to commit to._"
         )
-    _commit_env = {  # STD-SEC-022
-        **{k: os.environ[k] for k in _COMMIT_AFTER_ENV_VARS if k in os.environ},
-        "AGENT_NAME": agent_def.agent,
-        "ISSUE_NUMBER": str(work_item.number),
-        # The branch comes from the step's flow naming (issue #406); the script
-        # never derives it from the issue number itself.
-        "BRANCH": _branch,
-    }
+    if not cwd:
+        return (
+            f"_step {agent_def.agent} declares git_ops.commit_after but ran with no "
+            f"isolated worktree, so there is nothing to push from._"
+        )
+
+    _base = f"origin/{_branch}"
+    _ahead = _git_in(cwd, "rev-list", "--count", f"{_base}..HEAD")
+    _count = (_ahead.stdout or "").strip() or "0"
+    # Guarded exactly as _recover_unpushed_commits guards the same parse: git
+    # returning 0 with anything non-numeric on stdout would otherwise raise
+    # ValueError out of _apply_result and abort the tick, rather than failing
+    # this one step with something a person can act on.
+    if _ahead.returncode != 0 or not _count.isdigit():
+        return (
+            f"_could not read what {agent_def.agent} committed in its worktree: "
+            f"{((_ahead.stderr or _ahead.stdout) or '').strip()[:500] or _count!r}_"
+        )
+    _n = int(_count)
+
+    # Work the step left uncommitted dies with the worktree. Saying so is the
+    # whole point of moving the commit into the step: a step that edited files
+    # and returned complete without committing them has not delivered, however
+    # cleanly it returned.
+    _dirty = _git_in(cwd, "status", "--porcelain")
+    _uncommitted = [ln for ln in _dirty.stdout.splitlines() if ln.strip()]
+
+    if _n == 0:
+        if _uncommitted:
+            return (
+                f"_{agent_def.agent} left {len(_uncommitted)} changed file(s) "
+                f"uncommitted and committed nothing. A step's commit is its "
+                f"deliverable; an uncommitted edit is discarded with the worktree. "
+                f"First: {', '.join(ln[3:] for ln in _uncommitted[:5])}._"
+            )
+        log.info(
+            "  commit-after: %s committed nothing on %s for #%d -- nothing to push",
+            agent_def.agent, _branch, work_item.number,
+        )
+        return None
+
     log.info(
-        "  commit-after: invoking commit-agent-work.sh for %s on #%d",
-        agent_def.agent, work_item.number,
+        "  commit-after: pushing %d commit(s) by %s to %s for #%d",
+        _n, agent_def.agent, _branch, work_item.number,
     )
-    if not _commit_script.exists():
-        log.error("  commit-after: commit-agent-work.sh not found at %s", _commit_script)
-        return (
-            "_commit-agent-work.sh not found. Check that .github/scripts/commit-agent-work.sh "
-            "exists on the orchestrator branch. Remove the failed label to retry._"
-        )
-    try:
-        _commit_result = subprocess.run(
-            ["bash", str(_commit_script)],
-            env=_commit_env, capture_output=True, text=True, timeout=300, cwd=cwd,
-        )
-    except subprocess.TimeoutExpired:
+    _stray = _root_additions(cwd, _base)
+    _push = _git_in(cwd, "push", "origin", f"HEAD:{_branch}")
+    if _push.returncode != 0:
+        _out = (_push.stderr or _push.stdout).strip()[:2000]
         log.error(
-            "  commit-after: commit-agent-work.sh timed out for %s on #%d",
-            agent_def.agent, work_item.number,
+            "  commit-after: push of %s failed for %s on #%d\n%s",
+            _branch, agent_def.agent, work_item.number, _out,
         )
-        return "_commit-agent-work.sh timed out after 300s. Remove the failed label to retry._"
-    except FileNotFoundError:
-        log.error("  commit-after: bash not found in PATH")
         return (
-            "_bash not found in PATH; commit-agent-work.sh could not run. "
-            "Remove the failed label to retry._"
+            f"_{agent_def.agent} committed {_n} commit(s) but the push to {_branch} "
+            f"failed. Its work is still in the worktree until that is cleaned up; a "
+            f"later tick pushes a branch left ahead of its remote. Error: {_out[:500]}_"
         )
-    if _commit_result.returncode != 0:
-        _failure_output = (_commit_result.stderr or _commit_result.stdout)[:2000]
+    log.info("  commit-after: %s is now at %s", _branch, _n)
+    if pushed is not None:
+        _head = _git_in(cwd, "rev-parse", "HEAD")
+        if _head.returncode == 0 and _head.stdout.strip():
+            pushed["sha"] = _head.stdout.strip()
+
+    if _stray:
         log.error(
-            "  commit-after: commit-agent-work.sh exited %d for %s on #%d\n%s",
-            _commit_result.returncode, agent_def.agent, work_item.number, _failure_output,
+            "  commit-after: %s committed %d file(s) at the repo root: %s",
+            agent_def.agent, len(_stray), ", ".join(_stray),
         )
         return (
-            "_The agent completed successfully but commit-agent-work.sh failed. "
-            "Check the orchestrator CI log for the specific error. "
-            "Remove the failed label to retry._"
+            f"_{agent_def.agent} committed file(s) at the repository root: "
+            f"{', '.join(_stray)}. Working files belong under $AI_AGILE_SCRATCH "
+            f"(see .claude/AGENTS.md). The commits were pushed rather than "
+            f"discarded -- the rest of the work is real -- so the fix is to "
+            f"remove these paths on {_branch}._"
         )
-    log.info(
-        "  commit-after: commit-agent-work.sh completed for %s on #%d",
-        agent_def.agent, work_item.number,
-    )
+    if _uncommitted:
+        log.warning(
+            "  commit-after: %s left %d file(s) uncommitted; discarded with the worktree",
+            agent_def.agent, len(_uncommitted),
+        )
+        return (
+            f"_{agent_def.agent} pushed {_n} commit(s) but left "
+            f"{len(_uncommitted)} changed file(s) uncommitted, which are discarded "
+            f"with the worktree. First: "
+            f"{', '.join(ln[3:] for ln in _uncommitted[:5])}._"
+        )
     return None
 
 
@@ -6356,14 +6651,21 @@ def _announce_and_prompt(
     applied_status: str,
     sentinel_message: str,
     gh: "GitHubClient",
+    pushed_sha: Optional[str] = None,
 ) -> None:
-    """Post the closing announcement and, if awaiting a gate, the gate prompt."""
+    """Post the closing announcement and, if awaiting a gate, the gate prompt.
+
+    pushed_sha: the commit this run's own push put on the branch, when it
+    pushed one. Preferred over re-reading the pull request's head, which is
+    eventually consistent with a push just made -- see _push_step_branch.
+    """
     try:
         gh.post_comment(
             work_item.number,
             _build_closing_announcement(
                 agent_def, work_item, session_id, applied_status, sentinel_message,
                 expected_effect=agent_def.expected_effect,
+                subject=pushed_sha or step_subject(gh, agent_def, work_item),
             ),
         )
     except Exception as exc:
@@ -6559,16 +6861,20 @@ def _apply_result(
         _remove_run_worktree(pre_agent_worktree)
         return True
 
-    # commit-after: invoke commit-agent-work.sh when git_ops.commit_after: true.
-    # Guard: commit-agent-work.sh requires ISSUE_NUMBER; only invoke for issue work items.
-    # Also commits on STATUS_REVIEW (issue #429): a step can legitimately
+    # commit-after: push what the step committed in its own worktree when
+    # git_ops.commit_after: true. Guard: the branch is an issue branch, so only
+    # for issue work items.
+    # Also pushes on STATUS_REVIEW (issue #429): a step can legitimately
     # return "review" with real file edits worth keeping (e.g.
     # prd-docs-updater's docs/product/ path) -- final_status here is always
     # the agent's own declared outcome, never the pr-reviewer human-review
     # override (that runs later, below, and only applies to review_loop
     # steps, none of which set commit_after).
+    _pushed: dict = {}
     if final_status in (STATUS_COMPLETE, STATUS_REVIEW) and agent_def.commit_after and work_item.kind == "issue":
-        _commit_fail_reason = _invoke_commit_after(agent_def, work_item, cwd=pre_agent_worktree or None)
+        _commit_fail_reason = _push_step_branch(
+            agent_def, work_item, cwd=pre_agent_worktree or None, pushed=_pushed,
+        )
         if _commit_fail_reason:
             _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
             final_status = STATUS_FAILED
@@ -6611,6 +6917,7 @@ def _apply_result(
 
     _announce_and_prompt(
         agent_def, work_item, session_id, applied_status, sentinel_message, gh,
+        pushed_sha=_pushed.get("sha"),
     )
 
     # Apply the step's requested label changes, filtered against its
@@ -7646,8 +7953,10 @@ def _wake(args) -> "Optional[RunContext]":
     # this process authenticate with GITHUB_TOKEN (contents:write scope).
     # The token is passed via env vars, never embedded in a URL, keeping it
     # out of `git remote -v`, `ps`, and CI logs.
-    # NOTE: GITHUB_TOKEN cannot push .github/workflows/ files; commit-agent-work.sh
-    # reads AI_AGILE_BOT_TOKEN when workflow-scope pushes are needed.
+    # NOTE: GITHUB_TOKEN cannot push .github/workflows/ files. Agent prompts
+    # tell a step to write a proposed workflow under docs/workflow-proposals/
+    # instead, so a person carries it the last step (see "The environment can
+    # refuse more than the pipeline denies").
     _git_auth_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if _git_auth_token:
         try:
@@ -7665,13 +7974,19 @@ def _wake(args) -> "Optional[RunContext]":
             # checkout/fetch calls run via subprocess.run with no env= argument,
             # so they read the header from here and authenticate.
             #
-            # commit-agent-work.sh and post_steps do NOT inherit these any more.
-            # Since STD-SEC-022 they build their env from named allowlists
-            # (_COMMIT_AFTER_ENV_VARS / _POST_STEPS_ENV_VARS) that deliberately
-            # omit GIT_CONFIG_*; commit-agent-work.sh derives its own auth
-            # header from GH_TOKEN/GITHUB_TOKEN instead. Do not re-add
-            # GIT_CONFIG_* to those lists -- the scripts do not need it, and it
-            # would hand the embedded token to every post_steps hook.
+            # post_steps do NOT inherit these: since STD-SEC-022 they build
+            # their env from a named allowlist (_POST_STEPS_ENV_VARS) that
+            # deliberately omits GIT_CONFIG_*. Do not re-add it -- the hooks do
+            # not need it, and it would hand the embedded token to every one.
+            #
+            # The --unset-all above is load-bearing for more than this process.
+            # A step runs in a git worktree, and a worktree shares the
+            # repository's config: any credential left in .git/config by the
+            # checkout would be a credential the step could push with. Clearing
+            # it and keeping the header in this process's env alone is what
+            # makes "the orchestrator owns pushing" a property of the
+            # environment rather than a rule in prose (PRODUCT.md, "What lands
+            # in git").
             # SECURITY: this base64 header embeds GITHUB_TOKEN. It must NEVER be
             # added to AGENT_ENV_PASSTHROUGH -- agent subprocesses build env via
             # _build_agent_env, which does not pass GIT_CONFIG_* through, so a
@@ -7780,6 +8095,7 @@ def _wake(args) -> "Optional[RunContext]":
     work_items = [wi for tier in _tiers for wi in tier] + _other_items
 
     log.info("Work items to evaluate: %d", len(work_items))
+    _reset_tick_caches()
 
     if not args.dry_run:
         _emit_audit_event(_make_audit_event(

@@ -26,7 +26,7 @@ auto-detects a PR number too, when one is given instead.
 2. Make `03_execute/merge-conflict` eligible even if it is not the pipeline's natural next step
    (stays in place until Phase 2 consumes it):
    ```bash
-   gh issue edit $ARGUMENTS --repo "$REPO" --add-label "03_execute/merge-conflict:requested"
+   gh issue edit $ARGUMENTS --repo "$REPO" --add-label "merge-conflict:requested"
    ```
 3. Resolve the step's prompt, tool context, and scratch directory —
    resolve-only mode; mutates no GitHub state:
@@ -57,7 +57,7 @@ auto-detects a PR number too, when one is given instead.
    ```bash
    python3 "$SCRIPT" --repo "$REPO" --agent 03_execute/merge-conflict --issue $ARGUMENTS --interactive-result
    ```
-7. Report what happened from the resulting labels. If `03_execute/merge-conflict:requested` is
+7. Report what happened from the resulting labels. If `merge-conflict:requested` is
    still present afterward, nothing was applied — the orchestrator's own
    output names why (an invalid/missing `result.json`, or an eligibility
    check that no longer passes); fix that and re-run step 6 rather than

@@ -1,4 +1,4 @@
-"""Tests for issue #348 -- STD-SEC-022 env allowlists for the five non-agent call sites.
+"""Tests for issue #348 -- STD-SEC-022 env allowlists for the non-agent call sites.
 
 Scenarios traced from docs/features/orchestrator.md:
 - Each call site builds env from a named variable list
@@ -15,7 +15,6 @@ from pipeline_orchestrator import (
     _build_agent_env,
     _GIT_PLUMBING_ENV_VARS,
     _SCRIPT_AGENT_ENV_VARS,
-    _COMMIT_AFTER_ENV_VARS,
     _POST_STEPS_ENV_VARS,
     _DELETE_BRANCH_ENV_VARS,
 )
@@ -23,7 +22,6 @@ from pipeline_orchestrator import (
 _ALL_SITE_VARS = [
     ("git_plumbing", _GIT_PLUMBING_ENV_VARS),
     ("script_agent", _SCRIPT_AGENT_ENV_VARS),
-    ("commit_after", _COMMIT_AFTER_ENV_VARS),
     ("post_steps", _POST_STEPS_ENV_VARS),
     ("delete_branch", _DELETE_BRANCH_ENV_VARS),
 ]
@@ -64,7 +62,6 @@ class TestEachCallSiteBuildsEnvFromANamedVariableList:
         expected_names = [
             "_GIT_PLUMBING_ENV_VARS",
             "_SCRIPT_AGENT_ENV_VARS",
-            "_COMMIT_AFTER_ENV_VARS",
             "_POST_STEPS_ENV_VARS",
             "_DELETE_BRANCH_ENV_VARS",
         ]
@@ -119,14 +116,6 @@ class TestANarrowedScriptStillWorks:
         assert "PATH" in var_names
         assert "HOME" in var_names
 
-    def test_commit_after_allowlist_includes_bot_token_for_git_auth(self):
-        var_names = set(_COMMIT_AFTER_ENV_VARS)
-        assert "AI_AGILE_BOT_TOKEN" in var_names
-        assert "GH_TOKEN" in var_names
-        assert "GITHUB_TOKEN" in var_names
-        assert "PATH" in var_names
-        assert "HOME" in var_names
-
     def test_post_steps_allowlist_includes_gh_auth(self):
         var_names = set(_POST_STEPS_ENV_VARS)
         assert "GH_TOKEN" in var_names
@@ -151,8 +140,7 @@ class TestANarrowedScriptStillWorks:
         }
         network_sites = [
             ("script_agent", _SCRIPT_AGENT_ENV_VARS),
-            ("commit_after", _COMMIT_AFTER_ENV_VARS),
-            ("post_steps", _POST_STEPS_ENV_VARS),
+                    ("post_steps", _POST_STEPS_ENV_VARS),
             ("delete_branch", _DELETE_BRANCH_ENV_VARS),
         ]
         for name, var_set in network_sites:

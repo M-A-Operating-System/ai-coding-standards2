@@ -23,6 +23,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
+import pipeline_orchestrator as po
 from pipeline_orchestrator import (
     WorkItem,
     _build_agent_env,
@@ -784,7 +785,7 @@ class TestShippedFilesAreAscii:
 
 
 class TestCommitSweepRefusesNewRootFiles:
-    """The enforcement half of #321.
+    """The enforcement half of #321, at its new moment.
 
     Every agent prompt carries the scratch rule, and the rule is still only an
     instruction: a bare filename resolves against the repo root because that is
@@ -792,15 +793,32 @@ class TestCommitSweepRefusesNewRootFiles:
     `pr_review_328.txt` reached a commit on issue-316 and how
     `artefact_comment.txt` reached `d0471f1`.
 
-    commit-agent-work.sh now unstages new root-level files before the commit is
-    written, which closes the harm without depending on agent compliance.
+    Two guards catch it, at different moments. `sweep-repo-root.sh` deletes new
+    UNTRACKED root files after the step returns, so a leak the step merely left
+    lying around never reaches a commit at all. What this class covers is the
+    other moment: a step that committed the file itself. The commit cannot be
+    unwritten -- and must not be discarded, since the rest of it is the work
+    the whole arrangement exists to protect -- so the orchestrator pushes it
+    and reports the violation as a step failure. A branch carrying commits no
+    longer implies the step succeeded.
     """
 
-    SCRIPT = (Path(__file__).parent.parent / ".github" / "scripts"
-              / "commit-agent-work.sh")
+    def _agent(self):
+        return po.AgentDef(
+            agent="03_execute/pr-reviewer", phase="03_execute", objects=["issue"],
+            trigger={}, dependencies=[], human_gate_after=False,
+            human_gate_label=None, description="t", commit_after=True,
+            flow="test-flow", flow_naming={"branch": "issue-{number}"},
+        )
+
+    def _work_item(self):
+        return po.WorkItem(
+            number=999, kind="issue", title="T", labels=set(),
+            url="https://github.com/test/repo/issues/999",
+        )
 
     def _repo(self, tmp_path):
-        """A repo with an `origin` the script can fetch and push, on issue-999."""
+        """A repo with an `origin` the orchestrator can push to, on issue-999."""
         origin = tmp_path / "origin.git"
         work = tmp_path / "work"
         subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
@@ -821,83 +839,87 @@ class TestCommitSweepRefusesNewRootFiles:
         git("push", "-q", "origin", "issue-999")
         return work
 
-    def _run_sweep(self, work):
-        env = {
-            **os.environ,
-            "AGENT_NAME": "03_execute/pr-reviewer",
-            "ISSUE_NUMBER": "999",
-            # The branch is declared by the step's flow and exported by the
-            # orchestrator (issue #406), never derived inside the script.
-            "BRANCH": "issue-999",
-        }
-        env.pop("GITHUB_TOKEN", None)
-        env.pop("GH_TOKEN", None)
-        return subprocess.run(
-            ["bash", str(self.SCRIPT)], cwd=work, env=env,
-            capture_output=True, text=True, timeout=60,
-        )
+    def _commit(self, work, message="step work"):
+        subprocess.run(["git", "add", "-A"], cwd=work, check=True,
+                       capture_output=True, text=True)
+        subprocess.run(["git", "commit", "-qm", message], cwd=work, check=True,
+                       capture_output=True, text=True)
 
-    def _committed_files(self, work):
+    def _pushed_files(self, work):
         out = subprocess.run(
-            ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+            ["git", "show", "--name-only", "--pretty=format:", "origin/issue-999"],
             cwd=work, capture_output=True, text=True, check=True,
         )
         return sorted(f for f in out.stdout.split("\n") if f.strip())
 
-    def test_a_leaked_root_file_never_reaches_the_commit(self, tmp_path):
+    def test_a_committed_root_file_is_reported_as_a_step_failure(self, tmp_path):
         work = self._repo(tmp_path)
         # The exact filenames pr-reviewer invented on issue #348.
         (work / "review_body.json").write_text('{"body": "leak"}')
         (work / "announce_close.json").write_text('{"body": "leak"}')
+        self._commit(work)
 
-        result = self._run_sweep(work)
-        assert result.returncode == 0, result.stderr
+        reason = po._push_step_branch(self._agent(), self._work_item(), cwd=str(work))
 
-        committed = self._committed_files(work)
-        assert "review_body.json" not in committed
-        assert "announce_close.json" not in committed
-        assert "created new file(s) at the repo root" in result.stderr
+        assert reason is not None, "a committed root file must not pass silently"
+        assert "review_body.json" in reason
+        assert "announce_close.json" in reason
+        assert "repository root" in reason
 
-    def test_the_agent_s_real_work_still_lands(self, tmp_path):
-        """The guard must not cost the agent its actual output."""
+    def test_the_work_is_pushed_rather_than_discarded(self, tmp_path):
+        """The guard must not cost the step its actual output. Refusing the
+        push to punish a stray file would throw away the commit the whole
+        arrangement exists to protect."""
         work = self._repo(tmp_path)
         (work / "README.md").write_text("readme\nedited by the agent\n")
         (work / "src" / "b.py").write_text("new module\n")
         (work / "review_body.json").write_text('{"body": "leak"}')
+        self._commit(work)
 
-        result = self._run_sweep(work)
-        assert result.returncode == 0, result.stderr
+        reason = po._push_step_branch(self._agent(), self._work_item(), cwd=str(work))
+        assert reason is not None
 
-        committed = self._committed_files(work)
-        assert "README.md" in committed, "a modified tracked root file is legitimate"
-        assert "src/b.py" in committed, "a new nested file is legitimate"
-        assert "review_body.json" not in committed
+        pushed = self._pushed_files(work)
+        assert "README.md" in pushed, "a modified tracked root file is legitimate"
+        assert "src/b.py" in pushed, "a new nested file is legitimate"
 
-    def test_the_leaked_file_is_left_on_disk_not_destroyed(self, tmp_path):
-        """Unstage, do not delete -- nothing an agent produced is thrown away,
-        and the violation stays visible to whoever looks."""
+    def test_a_clean_run_is_not_reported(self, tmp_path):
+        """The guard fires on a new file at depth 0 and nothing else: an edit
+        to a tracked root file is a legitimate target (README.md, .gitignore,
+        CLAUDE.md) and must not be mistaken for a leak."""
+        work = self._repo(tmp_path)
+        (work / "README.md").write_text("readme\nedited by the agent\n")
+        (work / "src" / "b.py").write_text("new module\n")
+        self._commit(work)
+
+        reason = po._push_step_branch(self._agent(), self._work_item(), cwd=str(work))
+        assert reason is None, reason
+        assert "src/b.py" in self._pushed_files(work)
+
+    def test_a_run_that_commits_nothing_pushes_nothing(self, tmp_path):
+        """pr-reviewer writes no source. A run that committed nothing must not
+        be reported as a failure, and must not move the branch."""
+        work = self._repo(tmp_path)
+        before = subprocess.run(["git", "rev-parse", "origin/issue-999"], cwd=work,
+                                capture_output=True, text=True, check=True).stdout
+
+        reason = po._push_step_branch(self._agent(), self._work_item(), cwd=str(work))
+        assert reason is None, reason
+
+        after = subprocess.run(["git", "rev-parse", "origin/issue-999"], cwd=work,
+                               capture_output=True, text=True, check=True).stdout
+        assert before == after, "a run with no commits must not move the branch"
+
+    def test_uncommitted_work_is_reported_rather_than_lost_silently(self, tmp_path):
+        """A step's commit is its deliverable. Edits it left uncommitted die
+        with the worktree, so the record must say so rather than letting the
+        branch look complete."""
         work = self._repo(tmp_path)
         (work / "src" / "b.py").write_text("new module\n")
-        (work / "review_body.json").write_text('{"body": "leak"}')
 
-        self._run_sweep(work)
-        assert (work / "review_body.json").exists()
-        assert (work / "review_body.json").read_text() == '{"body": "leak"}'
-
-    def test_a_run_that_leaks_only_root_files_commits_nothing(self, tmp_path):
-        """pr-reviewer writes no source. A run whose entire output is leaks must
-        produce no commit at all, rather than an empty or leak-only one."""
-        work = self._repo(tmp_path)
-        before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work,
-                                capture_output=True, text=True, check=True).stdout
-        (work / "review_body.json").write_text('{"body": "leak"}')
-
-        result = self._run_sweep(work)
-        assert result.returncode == 0, result.stderr
-
-        after = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work,
-                               capture_output=True, text=True, check=True).stdout
-        assert before == after, "a leak-only run must not create a commit"
+        reason = po._push_step_branch(self._agent(), self._work_item(), cwd=str(work))
+        assert reason is not None and "uncommitted" in reason
+        assert "src/b.py" in reason
 
 
 class TestPrReviewerArtefactsAreAppendOnly:

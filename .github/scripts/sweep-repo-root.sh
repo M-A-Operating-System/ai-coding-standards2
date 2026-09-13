@@ -23,11 +23,12 @@
 # untracked root file is new", turning a failed probe into a delete-everything
 # sweep.
 #
-# Related but NOT the same guard: commit-agent-work.sh refuses to COMMIT a new
-# root-level file, working from the git index and leaving the file on disk. This
-# script works from a before/after diff of untracked files and deletes. Both
-# exist because they catch the leak at different moments and for different sets
-# of steps; neither subsumes the other.
+# Related but NOT the same guard: the orchestrator also checks, at push time,
+# whether a step COMMITTED a new root-level file, and reports that as a step
+# failure without discarding the commit. This script works from a before/after
+# diff of untracked files and deletes. Both exist because they catch the leak
+# at different moments -- this one before anything is committed, that one after
+# -- and for different sets of steps; neither subsumes the other.
 #
 # Environment (set by the orchestrator):
 #   AI_AGILE_SCRATCH -- absolute path to this run's scratch directory

@@ -34,13 +34,13 @@
       "label_suffix": "complete",
       "colour": "0E8A16",
       "colour_name": "green",
-      "meaning": "Agent completed its work successfully. All automated checks passed. If the agent has a human_gate_label configured, the pipeline still waits for that gate before the next agent fires.",
+      "meaning": "Agent completed its work successfully. All automated checks passed. If the agent has a human_gate_label configured, the pipeline still waits for that gate before the next agent fires. A :complete records the subject its conclusion was reached against. When that subject is no longer the current one the record is superseded, not wrong, and the step runs again and replaces it -- the step correcting itself, which needs no permission. A record naming no subject is never treated as superseded.",
       "set_by": "orchestrator",
-      "cleared_by": "never",
+      "cleared_by": "the owning step, when the subject its record named is no longer the current one; otherwise a human correcting a record that is wrong",
       "blocks_pipeline": false,
       "terminal": true,
       "human_action_required": false,
-      "orchestrator_behaviour": "Treat as a satisfied dependency for downstream agents."
+      "orchestrator_behaviour": "Treat as a satisfied dependency for downstream agents. Before skipping a completed step, compare the subject its last closing record named against the current one; re-run the step when both are established and they differ. Not being able to establish either is not evidence of staleness -- leave the record alone."
     },
     {
       "status": "review",

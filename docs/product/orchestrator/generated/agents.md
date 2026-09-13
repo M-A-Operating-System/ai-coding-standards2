@@ -42,7 +42,7 @@ Scripted step (two-phase design->build, issue #247): opens the DESIGN pull reque
 - **Kind:** agent
 - **Phase:** `01_product_docs`
 
-Runs after create-docs-pr opens the design PR. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool -- the orchestrator then invokes commit-agent-work.sh to stage, commit, and push those changes to the DESIGN branch (issue-{N}-docs, this flow's 'docs' pull request) so they land in the design PR. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight (mechanical docs/features/ copy only, or no changes needed); either way merge-docs-pr then publishes the design to main ahead of the build phase (two-phase design->build, issue #247). Skipped for spike issues. Skipped for epic/blocked issues.
+Runs after create-docs-pr opens the design PR. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool and commits them in its own worktree; the orchestrator then pushes the DESIGN branch (issue-{N}-docs, this flow's 'docs' pull request) so they land in the design PR. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight (mechanical docs/features/ copy only, or no changes needed); either way merge-docs-pr then publishes the design to main ahead of the build phase (two-phase design->build, issue #247). Skipped for spike issues. Skipped for epic/blocked issues.
 
 ### `01_product_docs/merge-docs-pr`
 
@@ -65,7 +65,7 @@ Scripted step: creates the CODE branch (issue-{N}) and opens a draft PR with 'Cl
 - **Kind:** agent
 - **Phase:** `03_execute`
 
-Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools; the orchestrator then invokes commit-agent-work.sh to stage, commit, and push all changes to the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues -- spikes produce research findings, not code. Skipped for epic/blocked issues.
+Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools and commits it in its own worktree as it goes; the orchestrator then pushes the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues -- spikes produce research findings, not code. Skipped for epic/blocked issues.
 
 ### `03_execute/ci-gate`
 

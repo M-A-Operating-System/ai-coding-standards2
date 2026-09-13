@@ -45,7 +45,7 @@ if [[ ! -f "$RECORD_FILE" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Git auth -- same pattern as commit-agent-work.sh: derive the Basic header from
+# Git auth: derive the Basic header from
 # a token in the environment rather than inheriting the orchestrator's
 # GIT_CONFIG_* vars, which are deliberately not forwarded to scripts
 # (STD-SEC-022). The token is never embedded in a URL, keeping it out of
