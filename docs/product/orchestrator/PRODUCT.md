@@ -989,6 +989,22 @@ no longer implies the step succeeded.** Partial work landing is the point
 — it is what stops correct work being discarded — so what the step
 achieved is read from the record, never inferred from the branch.
 
+**A broken contract is reported, not repaired.** A step's working files
+belong in its scratch directory and
+[nowhere else](#every-step-agent-or-script-is-bound-by-the-same-contract);
+one committed at the repository root breaks that, and the orchestrator
+says so. It says so *after* the branch has moved, because the only way to
+keep the stray file off the branch would be to throw away the commit it
+is sitting in — and the rest of that commit is the work this section
+exists to protect. So the file lands, the step is failed, and a person
+removes it. This is the consequence above arriving in practice: the
+branch carries commits and the step did not succeed, and both are true at
+once. It is also why the moment matters. While the orchestrator extracted
+a step's work it could unstage a stray file before writing the commit;
+once the step commits for itself that moment is gone, and a guard that
+destroyed real work to enforce tidiness would cost more than the
+untidiness does.
+
 This is how the pipeline works. The extraction script is gone,
 `git_ops.commit_after` now means "this step's deliverable is a commit",
 and the agent prompts say to commit and not to push.
