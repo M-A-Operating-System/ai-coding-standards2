@@ -200,11 +200,19 @@ class TestAgentsMdScratchConvention:
 SCRIPTS = Path(__file__).parent.parent / ".github" / "scripts"
 
 
-def _run_script(name, scratch):
+def _run_script(name, scratch, cwd=None):
+    """Run one script with AI_AGILE_SCRATCH set.
+
+    cwd matters: the scripts resolve with readlink -m, which resolves a
+    relative path against the caller's working directory. Left unset, the
+    subprocess inherits pytest's, so a test of the relative-path case would
+    pass or fail depending on where the suite was started. Pass it explicitly
+    whenever the assertion depends on resolution.
+    """
     return subprocess.run(
         ["bash", str(SCRIPTS / name)],
         env={"PATH": os.environ["PATH"], "AI_AGILE_SCRATCH": str(scratch)},
-        capture_output=True, text=True, timeout=30,
+        cwd=cwd, capture_output=True, text=True, timeout=30,
     )
 
 
@@ -260,6 +268,38 @@ class TestScratchScripts:
         """
         for name in ("scratch-setup.sh", "scratch-teardown.sh"):
             assert _run_script(name, bad).returncode != 0, f"{name} accepted {bad!r}"
+
+    def test_scripts_refuse_a_relative_path_from_a_cwd_under_tmp(self):
+        """The case above cannot see this one, and CI cannot see it at all.
+
+        readlink -m resolves a relative path against the caller's cwd. Run from
+        a repository checkout -- what CI does -- "relative/path" resolves
+        outside /tmp and the resolved-path check rejects it, so that test passes
+        whether or not the absolute-path guard exists. Run from a cwd that is
+        itself under /tmp, the resolved path lands under /tmp and only the
+        absolute-path guard refuses it.
+
+        That second cwd is not a curiosity: the orchestrator gives every
+        committing step a git worktree under /tmp, so it is the normal case for
+        a step invoking these scripts. Without this test, deleting the guard
+        leaves the suite green.
+        """
+        cwd = Path("/tmp/ais-test-relative-cwd")
+        shutil.rmtree(cwd, ignore_errors=True)
+        cwd.mkdir(parents=True)
+        try:
+            for name in ("scratch-setup.sh", "scratch-teardown.sh"):
+                r = _run_script(name, "relative/path", cwd=cwd)
+                assert r.returncode != 0, (
+                    f"{name} accepted a relative path when run from {cwd}; "
+                    f"it would have targeted {cwd / 'relative/path'}"
+                )
+                assert "absolute path" in r.stderr, (
+                    f"{name} refused for the wrong reason: {r.stderr!r}"
+                )
+            assert not (cwd / "relative").exists(), "a script created the path it refused"
+        finally:
+            shutil.rmtree(cwd, ignore_errors=True)
 
 
 class TestOrchestratorDelegatesToScripts:

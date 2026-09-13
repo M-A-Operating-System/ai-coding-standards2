@@ -196,6 +196,67 @@ class TestRecoveringWhatWasRecorded:
         assert _recorded_subject(gh, _agent(), _work_item()) is None
 
 
+class TestTheCommentCacheCannotAnswerAcrossRepositories:
+    """An issue number is unique only within a repository.
+
+    The per-tick cache exists so the supersession check does not re-read an
+    item's whole comment list once per step. Keyed on the number alone, #42 in
+    one repository would be answered with #42's comments from another -- and
+    _recorded_subject would then decide supersession from a record describing
+    different work. It would fail toward "not superseded", silently skipping a
+    step that should have run again: the exact failure the supersession check
+    was added to remove.
+    """
+
+    def _gh(self, repo: str, bodies: list):
+        gh = MagicMock()
+        gh.repo = repo
+        gh.list_comment_bodies = MagicMock(return_value=bodies)
+        return gh
+
+    def test_two_repositories_sharing_an_issue_number_do_not_share_comments(self):
+        import pipeline_orchestrator as po
+
+        first = self._gh("owner/first", [_closing_comment("03_execute/ci-gate", OLD_SHA)])
+        second = self._gh("owner/second", [_closing_comment("03_execute/ci-gate", NEW_SHA)])
+
+        assert po._tick_comment_bodies(first, 42) == [
+            _closing_comment("03_execute/ci-gate", OLD_SHA)
+        ]
+        assert po._tick_comment_bodies(second, 42) == [
+            _closing_comment("03_execute/ci-gate", NEW_SHA)
+        ], "the second repository was answered from the first's cache entry"
+        second.list_comment_bodies.assert_called_once()
+
+    def test_the_same_repository_and_number_is_read_once(self):
+        """The point of the cache: the second read does not hit the API."""
+        import pipeline_orchestrator as po
+
+        gh = self._gh("owner/first", [_closing_comment("03_execute/ci-gate", OLD_SHA)])
+        po._tick_comment_bodies(gh, 42)
+        po._tick_comment_bodies(gh, 42)
+        gh.list_comment_bodies.assert_called_once()
+
+    def test_invalidation_uses_the_same_key_as_the_read(self):
+        """post_comment drops the entry. Keyed differently, it would drop
+        nothing and a cached read could answer with a list predating a comment
+        this run just posted."""
+        import pipeline_orchestrator as po
+
+        first = self._gh("owner/first", [_closing_comment("03_execute/ci-gate", OLD_SHA)])
+        second = self._gh("owner/second", [_closing_comment("03_execute/ci-gate", NEW_SHA)])
+        po._tick_comment_bodies(first, 42)
+        po._tick_comment_bodies(second, 42)
+        assert po._tick_comment_key("owner/first", 42) in po._TICK_COMMENTS
+        assert po._tick_comment_key("owner/second", 42) in po._TICK_COMMENTS
+
+        po.GitHubClient.post_comment(first, 42, "a new comment")
+        assert po._tick_comment_key("owner/first", 42) not in po._TICK_COMMENTS
+        assert po._tick_comment_key("owner/second", 42) in po._TICK_COMMENTS, (
+            "posting to one repository dropped another repository's entry"
+        )
+
+
 class TestSupersessionIsDecidedByComparison:
     """The comparison the eligibility check makes, stated directly.
 
