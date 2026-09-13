@@ -258,6 +258,41 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
                 "the orchestrator's"
             )
 
+    # Phrases that tell a step the orchestrator will commit for it. Each is
+    # false since committing moved into the step, and each sits in a prompt
+    # long enough that a reader reaches one of them and not the other.
+    _CONTRADICTIONS = (
+        "orchestrator will commit",
+        "orchestrator owns all git",
+        "orchestrator will stage",
+        "will stage, commit",
+        "do not need to commit",
+        "Do not run any git commands",
+    )
+
+    def test_no_committing_step_is_also_told_the_orchestrator_commits(self):
+        """Presence is not agreement.
+
+        The test above passes on a prompt that says both "commit your own
+        work" and "the orchestrator will commit all changes when you signal
+        completion" -- which is what `coder.md` said after #443 merged, with
+        the contradicting lines sitting at the end of Mode A and Mode B,
+        exactly where the step decides what to do. A step reading that does
+        not commit, and is then failed for delivering nothing.
+
+        So the prompt must not merely mention committing; it must not also
+        tell the step someone else will do it.
+        """
+        agents, _ = po.load_pipeline(po.PIPELINE_PATH)
+        prompts = Path(po.__file__).parent.parent / ".claude" / "agents"
+        for agent_def in (a for a in agents if a.commit_after):
+            text = " ".join((prompts / f"{agent_def.agent}.md").read_text().split())
+            found = [c for c in self._CONTRADICTIONS if c.lower() in text.lower()]
+            assert not found, (
+                f"{agent_def.agent} tells the step to commit and also says "
+                f"{found!r}; the step will believe the second"
+            )
+
     def test_no_step_but_the_one_known_exception_is_granted_a_push(self):
         """Pushing is the orchestrator's. The allowlist says what the step is
         meant to do; the credential decides what it can do."""

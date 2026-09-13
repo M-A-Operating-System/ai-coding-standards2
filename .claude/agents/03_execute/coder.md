@@ -12,8 +12,9 @@ description: >
   artefact on the PR confirming a review actually happened): reads review
   comments and any unresolved human REQUEST_CHANGES reviews, addresses required
   and expected changes, and posts a response.
-  The orchestrator owns all git operations (branch, commit, push) and the
-  PR lifecycle (create, ready, labels). Triggered by create-pr:complete
+  Commits its own work inside the isolated worktree it is given; the
+  orchestrator owns the branch, the push, and the PR lifecycle (create,
+  ready, labels). Triggered by create-pr:complete
   (Mode A); re-invoked via review-cycle:N / human-review-pending (Mode B).
 # Network egress (curl, wget, nc, ssh, rsync) and secret-printing commands
 # (env, printenv, base64) are intentionally absent to raise the bar against
@@ -363,8 +364,11 @@ surfaces with targeted runs of the failing file(s) only, iterating locally
 -- never a second full-suite run at this point. The second and final full
 run happens once, in Step 6, right before you signal completion.
 
-The orchestrator will commit all changes when you signal completion — you do
-not need to commit between sub-issues.
+Commit as you go — after each sub-issue, not once at the end. Your commit is
+the deliverable: if this run is killed at its budget ceiling, whatever you
+committed by then survives on the branch and the rest is discarded with the
+worktree. The orchestrator pushes the branch after you return; it does not
+commit for you.
 
 ---
 
@@ -577,7 +581,8 @@ fixes are applied, re-run the full test suite using the command from
 
 All tests must pass before signalling complete.
 
-The orchestrator will commit all changes when you signal completion.
+Commit your fixes before signalling complete. The orchestrator pushes the
+branch after you return; it does not commit for you.
 
 ---
 
