@@ -157,7 +157,12 @@ Minimum required entry:
 ```
 
 Add `"human_gate_label"` if `human_gate_after` is true.
-Add `"git_ops": { "commit_after": true }` if the agent writes files.
+Add `"git_ops": { "commit_after": true }` if the agent writes files — and when
+you do, the generated agent's own steps must tell it to `git add` and
+`git commit` its work before writing `result.json`, and never to push. The
+declaration and the instruction are one change, not two: a step that declares
+`commit_after` and is never told to commit writes files, commits nothing, and
+is failed by the orchestrator for having delivered nothing.
 Add `"type": "script"` and `"script": "path"` only for non-Claude script steps.
 
 ---
@@ -182,7 +187,27 @@ Compose the artefact body, substituting the runtime values yourself:
 
 ---
 
-## Step 6 — Write the result
+## Step 6 — Commit what you wrote
+
+You run in an isolated worktree already checked out to your branch. `git add`
+and `git commit` the agent file and the `pipeline.json` edit yourself. Your
+commit is the deliverable, not a side effect of finishing cleanly: anything
+left uncommitted is discarded with the worktree when the run ends, and the
+orchestrator reports the step as failed for having produced nothing.
+
+```bash
+git add .claude/agents/${PHASE}/${AGENT_NAME}.md pipeline/pipeline.json
+git commit -m "scaffold ${PHASE}/${AGENT_NAME}"
+```
+
+The orchestrator pushes the branch after you return. Never run `git push`,
+`git checkout`, `git merge` or `git rebase` — your worktree holds no
+credential that could reach the remote, so an attempt fails rather than
+succeeding somewhere unintended.
+
+---
+
+## Step 7 — Write the result
 
 Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json` — a heredoc
 cannot carry this body, since it contains backticks and an unquoted heredoc
@@ -208,3 +233,5 @@ body is scanned for command substitution, so the write would be refused:
 - **One agent per run.** If the issue describes multiple agents, emit `blocked` and ask the human to create one issue per agent.
 - **Validate before writing.** Complete Steps 1 and 2 before writing any files. A blocked condition in Step 1 or 2 means no files are created.
 - **Do not edit existing agents.** Only create new files. If the agent name conflicts, emit `blocked`.
+- **Commit in your worktree; never push.** `git add` and `git commit` are yours; `git push`, `git checkout`, `git merge` and `git rebase` are the orchestrator's.
+- **Never create a file at the repository root.** Working files go under `$AI_AGILE_SCRATCH`. A root file that reaches a commit is reported as a step failure after the push, and a human has to remove it from the branch.

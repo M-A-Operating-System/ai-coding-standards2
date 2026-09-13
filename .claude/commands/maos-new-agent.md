@@ -25,7 +25,7 @@ auto-detects a PR number too, when one is given instead.
    next step — a manual override that bypasses only the trigger-label check;
    unmet dependencies still block it (harmless if it's already eligible):
    ```bash
-   gh issue edit $ARGUMENTS --repo "$REPO" --add-label "00_ondemand/new-agent:requested"
+   gh issue edit $ARGUMENTS --repo "$REPO" --add-label "new-agent:requested"
    ```
 3. Run one orchestrator tick scoped to this issue — this spawns `00_ondemand/new-agent` as
    a real subprocess with native `--allowedTools`, identical to the headless
@@ -35,7 +35,7 @@ auto-detects a PR number too, when one is given instead.
    python3 "$SCRIPT" --repo "$REPO" --issue $ARGUMENTS
    ```
 4. Report what happened from the resulting labels — advanced, reached a
-   human gate, or halted. If `00_ondemand/new-agent:requested` is still present afterward,
+   human gate, or halted. If `new-agent:requested` is still present afterward,
    the step was not eligible this tick (most likely unmet dependencies or an
    existing terminal status) — check labels, or use `/unblock-agent` /
    `/retry-agent` first.

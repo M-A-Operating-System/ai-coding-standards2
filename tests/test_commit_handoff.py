@@ -231,6 +231,33 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
     # exception something a reader can see, rather than a hole in the check.
     _KNOWN_PUSHING_STEP = "03_execute/merge-conflict"
 
+    def test_every_committing_step_is_told_to_commit(self):
+        """The grant is necessary and not sufficient.
+
+        A step can hold `Bash(git commit *)` and never be told to use it. That
+        is not a smaller version of the same defect -- it is the whole defect:
+        the step writes its files, commits nothing, and the orchestrator
+        reports it failed for having delivered nothing, discarding the work
+        with the worktree. Exactly the loss this arrangement exists to stop.
+
+        Caught `00_ondemand/new-agent`, whose prompt was the one of three not
+        updated when committing moved into the step.
+        """
+        agents, _ = po.load_pipeline(po.PIPELINE_PATH)
+        prompts = Path(po.__file__).parent.parent / ".claude" / "agents"
+        for agent_def in (a for a in agents if a.commit_after):
+            path = prompts / f"{agent_def.agent}.md"
+            assert path.is_file(), f"{agent_def.agent} has no prompt at {path}"
+            text = " ".join(path.read_text().split())
+            assert "git commit" in text, (
+                f"{agent_def.agent} declares git_ops.commit_after but its prompt "
+                "never tells it to commit; it will deliver nothing"
+            )
+            assert "git push" in text, (
+                f"{agent_def.agent} commits but its prompt never says pushing is "
+                "the orchestrator's"
+            )
+
     def test_no_step_but_the_one_known_exception_is_granted_a_push(self):
         """Pushing is the orchestrator's. The allowlist says what the step is
         meant to do; the credential decides what it can do."""

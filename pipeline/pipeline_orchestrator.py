@@ -1147,6 +1147,10 @@ class GitHubClient:
 
     def post_comment(self, number: int, body: str) -> None:
         self._post(f"/repos/{self.repo}/issues/{number}/comments", {"body": body})
+        # The comment list for this item is now out of date. Dropping it here
+        # rather than only between ticks means a cached read can never answer
+        # with a list that predates a comment this run has already posted.
+        _TICK_COMMENTS.pop(number, None)
 
     def create_issue(self, title: str, body: str, labels: Optional[list] = None) -> int:
         """Raise a new work item and return its number.
@@ -5411,6 +5415,33 @@ def _announcement_payload(body: str) -> Optional[dict]:
     return payload if isinstance(payload, dict) else None
 
 
+# Comment bodies read during one tick, keyed by work-item number. The
+# supersession check runs for every :complete step declaring resolve_pr_number,
+# and each call would otherwise walk the item's whole comment list again --
+# paginated at 100, uncached, several requests per step on a long-running
+# issue, purely to decide that nothing changed.
+#
+# Safe because it is invalidated on write: post_comment drops the item's entry,
+# so a cached read can never answer with a list that predates a comment this
+# run has posted. It is also cleared at the start of each tick, which bounds
+# how long any entry can live.
+_TICK_COMMENTS: dict[int, list[str]] = {}
+
+
+def _reset_tick_caches() -> None:
+    """Drop per-tick caches. Called once at the start of each evaluation."""
+    _TICK_COMMENTS.clear()
+
+
+def _tick_comment_bodies(gh: "GitHubClient", number: int) -> list[str]:
+    """Comment bodies for one work item, read at most once per tick."""
+    cached = _TICK_COMMENTS.get(number)
+    if cached is None:
+        cached = gh.list_comment_bodies(number)
+        _TICK_COMMENTS[number] = cached
+    return cached
+
+
 def step_subject(
     gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem,
 ) -> Optional[str]:
@@ -5461,7 +5492,7 @@ def _recorded_subject(
     """
     marker = f"<!-- ai-agile/announcement/v1 by {agent_def.agent} -->"
     try:
-        bodies = gh.list_comment_bodies(work_item.number)
+        bodies = _tick_comment_bodies(gh, work_item.number)
     except Exception:
         return None
     latest: Optional[str] = None
@@ -6138,14 +6169,30 @@ def _root_additions(cwd: str, base: str) -> list:
     longer unstage the file before the commit is written, so it does not try:
     it reports, and the caller pushes anyway. Discarding a commit to punish a
     stray file would throw away the work the commit exists to protect.
+
+    Fails open by choice, and says so when it does: reporting a violation it
+    could not substantiate would fail a step over a guess. A git failure here
+    is logged rather than swallowed, so "the guard did not run" is never
+    indistinguishable from "the guard found nothing".
     """
     proc = _git_in(cwd, "diff", "--name-only", "--diff-filter=A", f"{base}..HEAD")
     if proc.returncode != 0:
+        log.warning(
+            "  commit-after: could not check for repo-root additions on %s: %s "
+            "-- the guard did not run for this push",
+            base, (proc.stderr or proc.stdout).strip()[:300],
+        )
         return []
     return [f for f in proc.stdout.splitlines() if f and "/" not in f]
 
 
-def _push_step_branch(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional[str] = None) -> Optional[str]:
+def _push_step_branch(
+    agent_def: AgentDef,
+    work_item: WorkItem,
+    *,
+    cwd: Optional[str] = None,
+    pushed: Optional[dict] = None,
+) -> Optional[str]:
     """Move the branch ref to what the step committed in its own worktree.
 
     PRODUCT.md, "What lands in git": the step owns committing, inside the
@@ -6166,6 +6213,13 @@ def _push_step_branch(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional
     reason can be returned *after* a successful push: a branch carrying
     commits no longer implies the step succeeded, which is the deliberate
     consequence of letting partial work land.
+
+    `pushed`, when given, receives {"sha": <the commit this push put on the
+    branch>}. The step's record names that SHA as its subject rather than a
+    fresh read of the pull request's head: GitHub is eventually consistent
+    with a push it has just received, and a read that lags by a moment would
+    record a subject that is already superseded -- making the next tick re-run
+    a step for no reason.
     """
     _branch = step_branch(agent_def, work_item)
     if not _branch:
@@ -6181,12 +6235,17 @@ def _push_step_branch(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional
 
     _base = f"origin/{_branch}"
     _ahead = _git_in(cwd, "rev-list", "--count", f"{_base}..HEAD")
-    if _ahead.returncode != 0:
+    _count = (_ahead.stdout or "").strip() or "0"
+    # Guarded exactly as _recover_unpushed_commits guards the same parse: git
+    # returning 0 with anything non-numeric on stdout would otherwise raise
+    # ValueError out of _apply_result and abort the tick, rather than failing
+    # this one step with something a person can act on.
+    if _ahead.returncode != 0 or not _count.isdigit():
         return (
             f"_could not read what {agent_def.agent} committed in its worktree: "
-            f"{(_ahead.stderr or _ahead.stdout).strip()[:500]}_"
+            f"{((_ahead.stderr or _ahead.stdout) or '').strip()[:500] or _count!r}_"
         )
-    _n = int(_ahead.stdout.strip() or "0")
+    _n = int(_count)
 
     # Work the step left uncommitted dies with the worktree. Saying so is the
     # whole point of moving the commit into the step: a step that edited files
@@ -6227,6 +6286,10 @@ def _push_step_branch(agent_def: AgentDef, work_item: WorkItem, *, cwd: Optional
             f"later tick pushes a branch left ahead of its remote. Error: {_out[:500]}_"
         )
     log.info("  commit-after: %s is now at %s", _branch, _n)
+    if pushed is not None:
+        _head = _git_in(cwd, "rev-parse", "HEAD")
+        if _head.returncode == 0 and _head.stdout.strip():
+            pushed["sha"] = _head.stdout.strip()
 
     if _stray:
         log.error(
@@ -6569,15 +6632,21 @@ def _announce_and_prompt(
     applied_status: str,
     sentinel_message: str,
     gh: "GitHubClient",
+    pushed_sha: Optional[str] = None,
 ) -> None:
-    """Post the closing announcement and, if awaiting a gate, the gate prompt."""
+    """Post the closing announcement and, if awaiting a gate, the gate prompt.
+
+    pushed_sha: the commit this run's own push put on the branch, when it
+    pushed one. Preferred over re-reading the pull request's head, which is
+    eventually consistent with a push just made -- see _push_step_branch.
+    """
     try:
         gh.post_comment(
             work_item.number,
             _build_closing_announcement(
                 agent_def, work_item, session_id, applied_status, sentinel_message,
                 expected_effect=agent_def.expected_effect,
-                subject=step_subject(gh, agent_def, work_item),
+                subject=pushed_sha or step_subject(gh, agent_def, work_item),
             ),
         )
     except Exception as exc:
@@ -6782,8 +6851,11 @@ def _apply_result(
     # the agent's own declared outcome, never the pr-reviewer human-review
     # override (that runs later, below, and only applies to review_loop
     # steps, none of which set commit_after).
+    _pushed: dict = {}
     if final_status in (STATUS_COMPLETE, STATUS_REVIEW) and agent_def.commit_after and work_item.kind == "issue":
-        _commit_fail_reason = _push_step_branch(agent_def, work_item, cwd=pre_agent_worktree or None)
+        _commit_fail_reason = _push_step_branch(
+            agent_def, work_item, cwd=pre_agent_worktree or None, pushed=_pushed,
+        )
         if _commit_fail_reason:
             _apply_failed(gh, agent_def, work_item, result, reason=_commit_fail_reason)
             final_status = STATUS_FAILED
@@ -6826,6 +6898,7 @@ def _apply_result(
 
     _announce_and_prompt(
         agent_def, work_item, session_id, applied_status, sentinel_message, gh,
+        pushed_sha=_pushed.get("sha"),
     )
 
     # Apply the step's requested label changes, filtered against its
@@ -8003,6 +8076,7 @@ def _wake(args) -> "Optional[RunContext]":
     work_items = [wi for tier in _tiers for wi in tier] + _other_items
 
     log.info("Work items to evaluate: %d", len(work_items))
+    _reset_tick_caches()
 
     if not args.dry_run:
         _emit_audit_event(_make_audit_event(

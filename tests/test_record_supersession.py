@@ -38,6 +38,18 @@ from pipeline_orchestrator import (  # noqa: E402
     step_subject,
 )
 
+
+@pytest.fixture(autouse=True)
+def _clear_tick_cache():
+    """_recorded_subject reads through a per-tick comment cache. Without this
+    every test after the first would be answered from the previous test's
+    stubbed comments."""
+    import pipeline_orchestrator as po
+    po._reset_tick_caches()
+    yield
+    po._reset_tick_caches()
+
+
 OLD_SHA = "913e407443ded418cac591f68fbfc10dbe101cf4"
 NEW_SHA = "fbeeb14d342bb808d251a7256b5e1b4662a98e48"
 
