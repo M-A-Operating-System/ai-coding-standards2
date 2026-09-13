@@ -447,6 +447,7 @@ mean something.
 | Part | Declared in `pipeline.json` as | What it is | Determinism |
 |---|---|---|---|
 | Allowed commands | `extra_allowedTools` | Everything this activity may do. Anything else is refused | Data |
+| Denied commands | `deniedTools` | Commands the step must not invoke; matched against the command as written; deny takes precedence over allow | Data |
 | Pre-actions | `defaults.agent_lifecycle.before` | Work performed before the activity — checking out the branch, preparing the scratch directory | Code |
 | The activity | `type` with `agent` or `script` | The work the step exists to do: an AI agent, or a script | Deterministic when a script; not deterministic when an agent |
 | Post-actions | `post_steps`, `git_ops`, `defaults.agent_lifecycle.after` | Work performed after — committing, pushing, labelling, posting the artefact | Code |
@@ -476,7 +477,10 @@ mid-run leaves debris the next run simply clears before it starts.
 Commands every step needs are declared once in
 `defaults.extra_allowedTools` rather than repeated on each step. A
 step's effective permission is exactly the global set plus its own
-`extra_allowedTools`, and nothing else. Budgets follow the same shape:
+`extra_allowedTools`, and nothing else. The same two-level shape applies
+to `deniedTools`: `defaults.deniedTools` plus the step's own `deniedTools`
+form the effective deny list; deny takes precedence over allow; a step
+cannot remove a default deny rule. Budgets follow the same shape:
 declared once in `pipeline.json`'s top-level `budgets`, overridable per
 step where a step genuinely differs, one wall independent of the other.
 A wrong number is not silently wrong — it surfaces as `exhausted`,
@@ -806,6 +810,16 @@ default because fetched content can carry text that steers the agent
 outbound URL (data exfiltration). A step that genuinely needs external
 content requests it through a controlled endpoint, as a documented
 exception.
+
+`deniedTools` uses the same pattern syntax to state what a step must
+not do. Deny takes precedence over allow: a command matching both a
+deny pattern and an allow pattern is refused. The deny list is matched
+against the command string as written — a command reached through an
+interpreter wrapper (e.g. `bash -c '...'`) is seen by the matcher as
+the wrapper invocation, not its payload, so a deny rule for the inner
+command does not fire. What actually prevents a disallowed operation
+is the environment: for git pushes, the absent credential (see "What
+lands in git" below).
 
 The body is seven required sections, in order:
 
@@ -1233,7 +1247,7 @@ nothing else defines any of them:
 | Process | step entries | Which steps exist, what each one is — including which model an agent step runs on — and which phase it belongs to |
 | Sequence | `trigger` | What triggers a step and what it emits |
 | Dependencies | `dependencies` | What must have completed before a step is eligible |
-| Entitled activities | `defaults.extra_allowedTools`, `extra_allowedTools`, `allowed_labels` | Everything a step may do, globally and per step, plus lifecycle actions, post-steps, and which labels it may ask the orchestrator to add or remove |
+| Entitled activities | `defaults.extra_allowedTools`, `extra_allowedTools`, `defaults.deniedTools`, `deniedTools`, `allowed_labels` | Everything a step may do and must not do, globally and per step, plus lifecycle actions, post-steps, and which labels it may ask the orchestrator to add or remove |
 | Expected effect | `expected_effect` | What the step is supposed to change — commits, files, labels, comments — or nothing, declared explicitly |
 | Flows | flow entries | Which kinds of work exist, what each applies to, what starts it, and what its branches and pull requests are called |
 | Budgets | `max_turns` and `max_wall_seconds`, declared once globally and overridable per step; a per-tick cap on work started, global only | What may be consumed: how much a step may attempt, how long it may hold the pipeline, and how much work a single tick takes on |
