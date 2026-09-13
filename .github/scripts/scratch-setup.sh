@@ -25,6 +25,19 @@ set -euo pipefail
 # runs rm -rf; a relative path, or one pointing into the working tree, would
 # delete real work.
 #
+# Reject a relative path on the string, BEFORE resolving. readlink -m resolves
+# a relative path against the caller's cwd, so "relative/path" passes the
+# resolved test whenever cwd is itself under a temp root -- which is the normal
+# case here, because the orchestrator gives each committing step a worktree
+# under /tmp. rm -rf then runs inside that worktree. Found on PR #462.
+case "$AI_AGILE_SCRATCH" in
+    /*) ;;
+    *)
+        echo "ERROR: AI_AGILE_SCRATCH must be an absolute path; got ${AI_AGILE_SCRATCH}" >&2
+        exit 1
+        ;;
+esac
+
 # Check the RESOLVED path, not the string. A literal prefix test passes
 # "/tmp/../etc/foo" -- ? consumes the dot, * takes the rest -- and rm -rf then
 # runs outside /tmp. readlink -m resolves without requiring the path to exist.
