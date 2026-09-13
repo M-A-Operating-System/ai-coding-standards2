@@ -39,24 +39,21 @@ commands.
 Check whether this is a first run or a revision after human rejection.
 
 ```bash
-PREV_ARTEFACT_TIME=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs '[.[]
-        | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater"))
-        ] | last | .created_at // ""')
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 01_product_docs/prd-docs-updater")) ] | last | .created_at // ""'
 ```
 
-If `$PREV_ARTEFACT_TIME` is **non-empty**, read the human feedback posted
-after the last artefact and keep it in mind when reassessing which doc
-changes are needed:
+Record that output as `PREV_ARTEFACT_TIME`. If it is **non-empty**, read the
+human feedback posted after the last artefact and keep it in mind when
+reassessing which doc changes are needed. Run this standalone call (not
+combined with the fetch above in the same invocation), writing the literal
+`PREV_ARTEFACT_TIME` value you just recorded directly into the `--arg since`
+argument (e.g. `--arg since "2026-09-01T12:00:00Z"`):
 
 ```bash
-HUMAN_FEEDBACK=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -s --arg since "$PREV_ARTEFACT_TIME" \
-  '[.[] | select(.created_at > $since)
-       | select(.body | startswith("<!-- ai-agile/") | not)
-       | "**\(.user.login):** \(.body)"
-  ] | join("\n\n---\n\n")')
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -s --arg since "{PREV_ARTEFACT_TIME}" '[.[] | select(.created_at > $since) | select(.body | startswith("<!-- ai-agile/") | not) | "**\(.user.login):** \(.body)"] | join("\n\n---\n\n")'
 ```
+
+Record that output as `HUMAN_FEEDBACK`.
 
 Incorporate the feedback when re-assessing in Step 2. If the reviewer
 pointed to a specific doc section or asked for a different framing,
