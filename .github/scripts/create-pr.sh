@@ -20,6 +20,45 @@
 
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# Leave the working tree on the branch we found it on.
+#
+# This script checks the issue branch out in the SHARED working tree to create
+# it and add the placeholder commit. Without restoring afterwards, the checkout
+# is left on that branch -- and the next commit_after step cannot then check the
+# same branch into its own isolated worktree, because git refuses to have one
+# branch checked out twice:
+#
+#   fatal: cannot force update the branch 'issue-N-docs' used by worktree at ...
+#
+# That hard-fails the step (correctly: #373 made the worktree setup fail rather
+# than fall back to the shared tree), and clearing it needs a person to restore
+# the branch by hand. Seen on issue #425, where create-docs-pr and
+# prd-docs-updater ran in the same tick.
+#
+# Restoring on every exit path -- including failure -- keeps the shared checkout
+# as this script found it, so what the script does to the tree is invisible to
+# whatever runs next.
+# ---------------------------------------------------------------------------
+_ENTRY_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+_restore_entry_ref() {
+    local _rc=$?
+    if [[ -n "${_ENTRY_REF}" && "${_ENTRY_REF}" != "HEAD" ]]; then
+        local _now
+        _now=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        if [[ "${_now}" != "${_ENTRY_REF}" ]]; then
+            if git checkout --quiet "${_ENTRY_REF}" 2>/dev/null; then
+                echo "create-pr: restored working tree to ${_ENTRY_REF}"
+            else
+                echo "create-pr: WARNING: could not restore working tree to ${_ENTRY_REF}; it is left on ${_now}. A commit_after step needing ${_now} in its own worktree will fail until this is restored." >&2
+            fi
+        fi
+    fi
+    return $_rc
+}
+trap _restore_entry_ref EXIT
+
 # The identity every headless system action on GitHub uses (MI-7): the
 # dedicated bot when the repository configures one, otherwise exactly the token
 # this script used before. Resolved in one place, never here.
