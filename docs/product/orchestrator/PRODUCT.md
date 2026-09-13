@@ -353,16 +353,25 @@ A step whose record names no subject cannot be superseded at all. It can
 only be repeated, or trusted indefinitely. That is a gap in the record,
 not a property of the step.
 
-Three things are unfinished target-state work here. `statuses.json`
-declares `complete`, `skipped` and `approved` all as
-`cleared_by: "never"` — right for the last two, wrong for the first in
-two ways, since a step must be able to replace its own superseded
-`:complete` and a person must be able to correct one that is wrong, and
-as written the field denies both and leaves only the hand-edit MI-4 rules
-out. Only one step records a subject at all today. And the orchestrator
-has no supersession check: a step carrying `:complete` is skipped, so a
-record describing a commit that has since moved keeps the step from
-running rather than prompting it to run again.
+This is how the pipeline works. `statuses.json` declares `skipped` and
+`approved` as `cleared_by: "never"`, and `complete` as cleared by the
+owning step when the subject its record named is no longer the current
+one, or by a person correcting a record that is wrong — the two paths
+this section requires, where a flat `"never"` would have denied both and
+left only the hand-edit MI-4 rules out.
+
+Every step that resolves a pull request records that pull request's head
+commit as its subject, in the closing announcement the orchestrator
+already writes. Eligibility compares the subject a step recorded against
+the subject now, and a step whose record has been superseded becomes
+eligible again rather than being skipped on the strength of a conclusion
+about something else.
+
+The comparison fails safe in the direction that matters: a subject the
+step never recorded, one that cannot be read back, and a step that has no
+subject at all each leave the record alone. Not being able to establish a
+subject is not evidence that a record is stale, and must never be read as
+such.
 
 ### Eligibility and order decide which item runs next
 
@@ -671,13 +680,21 @@ included. Assembling the material deterministically buys the economy;
 carrying the conversation forward buys only the conclusions, and the
 conclusions are the part that must not be carried.
 
-Today the material is fetched rather than told — the agent prompts
-instruct a step to go and read `standards/` itself — and a step's session
-is derived from its `(agent, work item)` pair alone, so every invocation
-for that item resumes the same conversation however much has changed
-underneath it. Assembling the material into the prompt, and making a
-session an optimisation a step cannot mistake for state, is unfinished
-target-state work.
+Whether a step resumes is now the step's own declaration rather than an
+accident of which transcripts happen to be on disk: a step that
+re-derives everything it needs declares that it carries nothing worth
+resuming, and gets a fresh session per invocation. `merge-conflict` is
+the first to declare it, having answered in one turn with no tool calls
+by repeating a conclusion it had reached about a different commit.
+
+The other half is unfinished target-state work. The material is still
+fetched rather than told — the agent prompts instruct a step to go and
+read `standards/` itself, which puts that material inside one
+conversation's history rather than in a prefix any invocation would
+send. Until it is assembled into the prompt, resuming is still the only
+thing keeping the material warm, so the default stays at resuming and a
+step opts out. Assembling the material is what lets that default
+invert.
 
 ### Headless and interactive ask two different questions
 
@@ -972,14 +989,30 @@ no longer implies the step succeeded.** Partial work landing is the point
 — it is what stops correct work being discarded — so what the step
 achieved is read from the record, never inferred from the branch.
 
-The pipeline does not work this way yet, in three places:
-`git_ops.commit_after` and the extraction script it names still hold this
-responsibility; the agent prompts still forbid a step from committing at
-all; and one step, `merge-conflict`, both pushes and force-pushes in its
-rebase path, which this section and the history rule below already
-disallow. Moving the commit into the step, moving that rebase to the
-orchestrator, and narrowing the worktree's credentials so the boundary
-above is enforced rather than asserted, is unfinished target-state work.
+This is how the pipeline works. The extraction script is gone,
+`git_ops.commit_after` now means "this step's deliverable is a commit",
+and the agent prompts say to commit and not to push.
+
+**The credential was never the part that needed building.** The
+orchestrator already clears the checkout's stored auth header and keeps
+the header in its own process environment, which a step does not inherit
+— and a worktree shares the repository's config, so a credential left
+there would have been one every step could push with. The boundary was a
+property of the environment before this section was written.
+
+That matters because **a step's tool allowlist never enforced it and
+cannot.** An allowlist matches command strings, and any grant that can
+start an interpreter — a shell, a build tool, a package manager — runs
+whatever that interpreter is handed. `coder`'s grant contains several.
+So the allowlist states what a step is meant to do, and the environment
+decides what it can do; reading the first as the second is how a narrowed
+grant comes to look like a boundary it is not
+([MI-3](#mi-3----an-agent-can-only-ever-do-what-you-allowed)).
+
+One thing remains unfinished target-state work: `merge-conflict` both
+pushes and force-pushes in its rebase path, which this section and the
+history rule below already disallow. That rebase belongs to the
+orchestrator.
 
 ### The environment can refuse more than the pipeline denies
 
