@@ -1150,7 +1150,8 @@ class GitHubClient:
         # The comment list for this item is now out of date. Dropping it here
         # rather than only between ticks means a cached read can never answer
         # with a list that predates a comment this run has already posted.
-        _TICK_COMMENTS.pop(number, None)
+        # Same key the read uses -- see _TICK_COMMENTS.
+        _TICK_COMMENTS.pop(_tick_comment_key(self.repo, number), None)
 
     def create_issue(self, title: str, body: str, labels: Optional[list] = None) -> int:
         """Raise a new work item and return its number.
@@ -5434,17 +5435,32 @@ def _announcement_payload(body: str) -> Optional[dict]:
     return payload if isinstance(payload, dict) else None
 
 
-# Comment bodies read during one tick, keyed by work-item number. The
-# supersession check runs for every :complete step declaring resolve_pr_number,
-# and each call would otherwise walk the item's whole comment list again --
-# paginated at 100, uncached, several requests per step on a long-running
-# issue, purely to decide that nothing changed.
+# Comment bodies read during one tick. The supersession check runs for every
+# :complete step declaring resolve_pr_number, and each call would otherwise walk
+# the item's whole comment list again -- paginated at 100, uncached, several
+# requests per step on a long-running issue, purely to decide nothing changed.
 #
-# Safe because it is invalidated on write: post_comment drops the item's entry,
-# so a cached read can never answer with a list that predates a comment this
-# run has posted. It is also cleared at the start of each tick, which bounds
-# how long any entry can live.
-_TICK_COMMENTS: dict[int, list[str]] = {}
+# Keyed by (repo, number), not by number alone. An issue number is only unique
+# within a repository, and the orchestrator is written to run against more than
+# one (see is_pipeline_stopped's `repo` parameter). Keyed on the number alone,
+# #42 in one repository would be answered with #42's comments from another --
+# and _recorded_subject would then decide supersession from a record belonging
+# to different work, failing toward "not superseded" and silently skipping a
+# step that should have run again. That is the failure the supersession check
+# exists to remove, so the cache that makes it cheap must not reintroduce it.
+#
+# INVALIDATION: GitHubClient.post_comment drops this item's entry, so a cached
+# read can never answer with a list predating a comment this run has posted.
+# That call site and this definition are far apart in the file and must change
+# together. Also cleared per tick by _reset_tick_caches, which bounds how long
+# any entry can live.
+_TICK_COMMENTS: dict[tuple[str, int], list[str]] = {}
+
+
+def _tick_comment_key(repo: str, number: int) -> tuple[str, int]:
+    """The cache key. One helper so the read, the write and the invalidation
+    cannot drift into disagreeing about what identifies a work item."""
+    return (repo or "", number)
 
 
 def _reset_tick_caches() -> None:
@@ -5454,10 +5470,11 @@ def _reset_tick_caches() -> None:
 
 def _tick_comment_bodies(gh: "GitHubClient", number: int) -> list[str]:
     """Comment bodies for one work item, read at most once per tick."""
-    cached = _TICK_COMMENTS.get(number)
+    key = _tick_comment_key(gh.repo, number)
+    cached = _TICK_COMMENTS.get(key)
     if cached is None:
         cached = gh.list_comment_bodies(number)
-        _TICK_COMMENTS[number] = cached
+        _TICK_COMMENTS[key] = cached
     return cached
 
 

@@ -26,6 +26,7 @@ These tests exercise the replacement end to end against real git repositories,
 because the failures being fixed were all in git's actual behaviour rather than
 in any decision the code made.
 """
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -258,16 +259,24 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
                 "the orchestrator's"
             )
 
-    # Phrases that tell a step the orchestrator will commit for it. Each is
-    # false since committing moved into the step, and each sits in a prompt
-    # long enough that a reader reaches one of them and not the other.
+    # The claim being guarded against is "something other than this step does
+    # the committing". Matched as whole phrases naming that actor, rather than
+    # on any appearance of the words: a prompt may legitimately say "you do not
+    # need to commit generated files", and a test that fails on a true sentence
+    # gets deleted rather than fixed.
+    #
+    # Each pattern below is a phrasing that was actually in coder.md after #443
+    # merged, or a near neighbour of one, and each asserts the orchestrator or
+    # some other party commits on the step's behalf.
     _CONTRADICTIONS = (
-        "orchestrator will commit",
-        "orchestrator owns all git",
-        "orchestrator will stage",
-        "will stage, commit",
-        "do not need to commit",
-        "Do not run any git commands",
+        r"orchestrator will commit",
+        r"orchestrator owns all git",
+        r"orchestrator will stage",
+        r"orchestrator (?:will |does )?(?:stage(?:s)?,? (?:and )?)?commits? (?:all )?(?:your |the )?(?:changes|work|files)",
+        # "you do not need to commit" only contradicts when it is about the
+        # step's own work, not about some particular category of file.
+        r"do not need to commit\s*(?:\.|$|between|at all|anything)",
+        r"[Dd]o not run any git commands",
     )
 
     def test_no_committing_step_is_also_told_the_orchestrator_commits(self):
@@ -287,11 +296,39 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
         prompts = Path(po.__file__).parent.parent / ".claude" / "agents"
         for agent_def in (a for a in agents if a.commit_after):
             text = " ".join((prompts / f"{agent_def.agent}.md").read_text().split())
-            found = [c for c in self._CONTRADICTIONS if c.lower() in text.lower()]
+            found = [
+                pat for pat in self._CONTRADICTIONS
+                if re.search(pat, text, re.IGNORECASE)
+            ]
             assert not found, (
                 f"{agent_def.agent} tells the step to commit and also says "
                 f"{found!r}; the step will believe the second"
             )
+
+    def test_the_contradiction_patterns_catch_what_they_were_written_for(self):
+        """The three phrasings coder.md actually carried, and one true sentence
+        that must not trip them. Without this, narrowing the patterns to stop
+        false positives could quietly stop catching the real thing."""
+        must_fail = (
+            "The orchestrator will commit all changes when you signal completion",
+            "The orchestrator owns all git operations (branch, commit, push)",
+            "you do not need to commit between sub-issues.",
+        )
+        must_pass = (
+            "Commit your own work; the orchestrator owns the branch and the push.",
+            "You do not need to commit generated files -- they are gitignored.",
+            "Commit as you go. The orchestrator pushes the branch after you return.",
+        )
+        for sentence in must_fail:
+            assert any(
+                re.search(p, sentence, re.IGNORECASE) for p in self._CONTRADICTIONS
+            ), f"no pattern catches {sentence!r}, which coder.md actually said"
+        for sentence in must_pass:
+            hit = [
+                p for p in self._CONTRADICTIONS
+                if re.search(p, sentence, re.IGNORECASE)
+            ]
+            assert not hit, f"{hit!r} falsely flags {sentence!r}"
 
     def test_no_step_but_the_one_known_exception_is_granted_a_push(self):
         """Pushing is the orchestrator's. The allowlist says what the step is
