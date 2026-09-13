@@ -5442,7 +5442,8 @@ def _announcement_payload(body: str) -> Optional[dict]:
 #
 # Keyed by (repo, number), not by number alone. An issue number is only unique
 # within a repository, and the orchestrator is written to run against more than
-# one (see is_pipeline_stopped's `repo` parameter). Keyed on the number alone,
+# one (see _check_controls's `repo` parameter, documented there as "accepted
+# for future multi-repo extensibility"). Keyed on the number alone,
 # #42 in one repository would be answered with #42's comments from another --
 # and _recorded_subject would then decide supersession from a record belonging
 # to different work, failing toward "not superseded" and silently skipping a

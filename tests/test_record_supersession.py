@@ -243,12 +243,18 @@ class TestTheCommentCacheCannotAnswerAcrossRepositories:
         this run just posted."""
         import pipeline_orchestrator as po
 
-        gh = self._gh("owner/first", [_closing_comment("03_execute/ci-gate", OLD_SHA)])
-        po._tick_comment_bodies(gh, 42)
+        first = self._gh("owner/first", [_closing_comment("03_execute/ci-gate", OLD_SHA)])
+        second = self._gh("owner/second", [_closing_comment("03_execute/ci-gate", NEW_SHA)])
+        po._tick_comment_bodies(first, 42)
+        po._tick_comment_bodies(second, 42)
         assert po._tick_comment_key("owner/first", 42) in po._TICK_COMMENTS
+        assert po._tick_comment_key("owner/second", 42) in po._TICK_COMMENTS
 
-        po.GitHubClient.post_comment(gh, 42, "a new comment")
+        po.GitHubClient.post_comment(first, 42, "a new comment")
         assert po._tick_comment_key("owner/first", 42) not in po._TICK_COMMENTS
+        assert po._tick_comment_key("owner/second", 42) in po._TICK_COMMENTS, (
+            "posting to one repository dropped another repository's entry"
+        )
 
 
 class TestSupersessionIsDecidedByComparison:

@@ -265,18 +265,31 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
     # need to commit generated files", and a test that fails on a true sentence
     # gets deleted rather than fixed.
     #
-    # Each pattern below is a phrasing that was actually in coder.md after #443
+    # Each pattern is a phrasing that was actually in coder.md after #443
     # merged, or a near neighbour of one, and each asserts the orchestrator or
-    # some other party commits on the step's behalf.
+    # some other party commits on the step's behalf. Every one of them is
+    # load-bearing: the test below pins at least one sentence that only that
+    # pattern catches, so none can be dropped as redundant without a failure
+    # saying what was lost.
     _CONTRADICTIONS = (
+        # Bare "will commit"/"will stage", no object -- the object-bearing
+        # pattern further down cannot see these.
         r"orchestrator will commit",
         r"orchestrator owns all git",
         r"orchestrator will stage",
+        # The orchestrator named as the committer of the step's own output.
+        # The object is required: without it this would also reject the true
+        # sentence "The orchestrator commits nothing".
         r"orchestrator (?:will |does )?(?:stage(?:s)?,? (?:and )?)?commits? (?:all )?(?:your |the )?(?:changes|work|files)",
+        # Same claim with a pronoun subject ("It will stage, commit and push"),
+        # which the pattern above misses because it anchors on "orchestrator".
+        r"will stage,? (?:and )?commits?",
         # "you do not need to commit" only contradicts when it is about the
-        # step's own work, not about some particular category of file.
-        r"do not need to commit\s*(?:\.|$|between|at all|anything)",
-        r"[Dd]o not run any git commands",
+        # step's own work, not about some particular category of file. Allow
+        # words between the verb and the qualifier ("commit your work between
+        # sub-issues"), but never across a sentence boundary -- hence [^.].
+        r"do not need to commit\b(?:[^.]{0,30}?\b(?:between|at all|anything)\b|\s*[.;])",
+        r"do not run any git commands",
     )
 
     def test_no_committing_step_is_also_told_the_orchestrator_commits(self):
@@ -305,30 +318,74 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
                 f"{found!r}; the step will believe the second"
             )
 
+    # Sentences a committing step's prompt must never contain, each asserting
+    # that someone other than the step does the committing. The first three
+    # are what coder.md actually carried after #443; the rest are the near
+    # neighbours that an earlier substring version of _CONTRADICTIONS caught
+    # and its first regex rewrite silently stopped catching.
+    _MUST_FAIL = (
+        "The orchestrator will commit all changes when you signal completion",
+        "The orchestrator owns all git operations (branch, commit, push)",
+        "you do not need to commit between sub-issues.",
+        "It will stage, commit and push for you.",
+        "you do not need to commit your work between sub-issues",
+        "You do not need to commit; the orchestrator handles it.",
+        "The orchestrator commits all changes on your behalf.",
+        "The orchestrator will commit.",
+        "The orchestrator will stage your files before pushing.",
+        "Do not run any git commands.",
+    )
+
+    # True sentences a prompt may legitimately contain. A guard that rejects
+    # these is worse than no guard: it gets deleted rather than fixed.
+    _MUST_PASS = (
+        "Commit your own work; the orchestrator owns the branch and the push.",
+        "You do not need to commit generated files -- they are gitignored.",
+        "Commit as you go. The orchestrator pushes the branch after you return.",
+        "The orchestrator commits nothing; the step commits its own work.",
+        "You do not need to commit generated files. Between runs they are rebuilt.",
+    )
+
     def test_the_contradiction_patterns_catch_what_they_were_written_for(self):
-        """The three phrasings coder.md actually carried, and one true sentence
-        that must not trip them. Without this, narrowing the patterns to stop
-        false positives could quietly stop catching the real thing."""
-        must_fail = (
-            "The orchestrator will commit all changes when you signal completion",
-            "The orchestrator owns all git operations (branch, commit, push)",
-            "you do not need to commit between sub-issues.",
-        )
-        must_pass = (
-            "Commit your own work; the orchestrator owns the branch and the push.",
-            "You do not need to commit generated files -- they are gitignored.",
-            "Commit as you go. The orchestrator pushes the branch after you return.",
-        )
-        for sentence in must_fail:
+        """Both directions of the guard, pinned by example.
+
+        Without this, narrowing the patterns to stop false positives could
+        quietly stop catching the real thing -- which is exactly what happened
+        once: replacing the substring "will stage, commit" with a regex
+        anchored on "orchestrator" stopped catching "It will stage, commit and
+        push for you", and nothing failed.
+        """
+        for sentence in self._MUST_FAIL:
             assert any(
                 re.search(p, sentence, re.IGNORECASE) for p in self._CONTRADICTIONS
-            ), f"no pattern catches {sentence!r}, which coder.md actually said"
-        for sentence in must_pass:
+            ), f"no pattern catches {sentence!r}, which a prompt must not say"
+        for sentence in self._MUST_PASS:
             hit = [
                 p for p in self._CONTRADICTIONS
                 if re.search(p, sentence, re.IGNORECASE)
             ]
             assert not hit, f"{hit!r} falsely flags {sentence!r}"
+
+    def test_every_contradiction_pattern_is_load_bearing(self):
+        """No pattern may be dropped as redundant without something failing.
+
+        Each pattern must be the only one catching at least one sentence in
+        _MUST_FAIL. A pattern that catches nothing on its own is either dead
+        weight or -- the case that matters -- a replacement that was assumed
+        to cover a deleted pattern and does not.
+        """
+        for pattern in self._CONTRADICTIONS:
+            others = [p for p in self._CONTRADICTIONS if p != pattern]
+            covered_only_by_this = [
+                s for s in self._MUST_FAIL
+                if re.search(pattern, s, re.IGNORECASE)
+                and not any(re.search(o, s, re.IGNORECASE) for o in others)
+            ]
+            assert covered_only_by_this, (
+                f"{pattern!r} catches nothing that another pattern does not; "
+                f"either drop it or add the sentence only it catches to "
+                f"_MUST_FAIL"
+            )
 
     def test_no_step_but_the_one_known_exception_is_granted_a_push(self):
         """Pushing is the orchestrator's. The allowlist says what the step is
