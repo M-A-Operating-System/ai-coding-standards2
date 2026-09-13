@@ -48,23 +48,12 @@ class TestCoderModeBAwarenessOfHumanReviewPending:
             "Run: python3 scripts/update_agent_files.py"
         )
 
-    def test_step_0_bash_checks_both_labels(self):
+    def test_step_0_names_human_review_pending_as_unconditional_mode_b(self):
         text = _load_coder_text()
         step = _extract_step_0(text)
-        assert "HUMAN_REVIEW_PENDING" in step, (
-            "coder.md Step 0 bash block must define HUMAN_REVIEW_PENDING variable. "
-            "Run: python3 scripts/update_agent_files.py"
-        )
-
-    def test_step_0_if_condition_includes_human_review_pending(self):
-        text = _load_coder_text()
-        step = _extract_step_0(text)
-        if_lines = [l for l in step.splitlines() if l.strip().startswith("if ")]
-        assert if_lines, "Step 0 must have an 'if' condition"
-        combined_condition = " ".join(if_lines)
-        assert "HUMAN_REVIEW_PENDING" in combined_condition, (
-            "Step 0 if-condition must include HUMAN_REVIEW_PENDING in the Mode B check. "
-            "Run: python3 scripts/update_agent_files.py"
+        assert "`human-review-pending` present: **MODE=B**" in step, (
+            "coder.md Step 0 must state that human-review-pending sets Mode B "
+            "unconditionally (issue #438 -- prose-driven, not a bash if-condition)."
         )
 
     def test_step_0_introductory_text_explains_both_triggers(self):
