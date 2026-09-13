@@ -1667,6 +1667,208 @@ class TestInvokeAgentRuntimeContext:
         )
 
 
+class TestInvokeAgentSessionResumeCheck:
+    """Tests for invoke_agent()'s --resume vs --session-id selection.
+
+    Scenarios from docs/features/pipeline.md:
+    - Worktree agent chooses --resume when a prior transcript exists
+    - New agent session is started when no prior transcript exists
+    """
+
+    def _make_agent_def(self, name: str = "03_execute/coder") -> "AgentDef":
+        import pipeline_orchestrator as orch
+        return orch.AgentDef(
+            agent=name,
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="Test agent",
+            session_scope="per_issue",
+        )
+
+    def _make_work_item(self, number: int = 42) -> "WorkItem":
+        import pipeline_orchestrator as orch
+        return orch.WorkItem(
+            number=number,
+            kind="issue",
+            title="Test issue",
+            labels=set(),
+            url=f"https://github.com/test/repo/issues/{number}",
+        )
+
+    # Scenario: Worktree agent chooses --resume when a prior transcript exists
+    def test_worktree_agent_chooses_resume_when_prior_transcript_exists(
+        self, monkeypatch, tmp_path
+    ):
+        """invoke_agent passes --resume when the session jsonl exists under any
+        .claude/projects/ subdir -- regardless of which cwd was used."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+
+        # Create a fake .claude/projects dir under tmp_path to simulate
+        # the CLI's project directory layout for a worktree cwd.
+        worktree_cwd = ".claude-worktrees-orchestrator-issue-42"
+        projects_dir = tmp_path / ".claude" / "projects" / worktree_cwd
+        projects_dir.mkdir(parents=True)
+
+        # Compute the session UUID the orchestrator will use for attempt=0.
+        import uuid
+        _SESSION_NAMESPACE = orch._SESSION_NAMESPACE
+        agent_def = self._make_agent_def()
+        work_item = self._make_work_item(42)
+        session_id = orch._compute_agent_session_id(agent_def, work_item, "test-org/test-repo")
+        agent_session_uuid = str(uuid.uuid5(_SESSION_NAMESPACE, session_id))
+
+        # Place the transcript file so the glob finds it.
+        (projects_dir / f"{agent_session_uuid}.jsonl").write_text("{}")
+
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+        captured_cmd: list = []
+
+        def fake_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                agent_def,
+                work_item,
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+                cwd=str(tmp_path / ".claude" / "worktrees" / "orchestrator" / "issue-42"),
+            )
+
+        assert "--resume" in captured_cmd, (
+            "invoke_agent must pass --resume when a session transcript exists "
+            "under any .claude/projects/ subdir (including worktree-encoded paths)"
+        )
+        assert "--session-id" not in captured_cmd
+
+    # Scenario: a step that declares it carries nothing does not resume, even
+    # when a transcript for it is sitting right there.
+    def test_declared_no_resume_wins_over_an_existing_transcript(
+        self, monkeypatch, tmp_path
+    ):
+        """The interaction between issue #439 and issue #450, which neither
+        change tested on its own.
+
+        #439 made an existing transcript findable for worktree agents (glob
+        across project dirs instead of rebuilding a path from os.getcwd()).
+        #450 made resuming a declaration rather than a filesystem accident.
+        Resolving the two by keeping only one would be a silent regression in
+        whichever direction it went, and nothing would have failed:
+
+          * keep only the glob -> session.resume: false is ignored, and a step
+            that re-derives everything still answers from last time;
+          * keep only the declaration -> a step that asked to resume never
+            can, because the path check it kept is the broken one.
+
+        So: transcript present AND findable, and the step declares it carries
+        nothing worth resuming. The declaration decides.
+        """
+        import pipeline_orchestrator as orch
+        import uuid
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+
+        projects_dir = tmp_path / ".claude" / "projects" / "any-encoded-cwd"
+        projects_dir.mkdir(parents=True)
+
+        agent_def = self._make_agent_def()
+        agent_def.session_resume = False
+        work_item = self._make_work_item(42)
+        session_id = orch._compute_agent_session_id(
+            agent_def, work_item, "test-org/test-repo",
+        )
+        agent_session_uuid = str(uuid.uuid5(orch._SESSION_NAMESPACE, session_id))
+        (projects_dir / f"{agent_session_uuid}.jsonl").write_text("{}")
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+        captured_cmd: list = []
+
+        def fake_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                agent_def, work_item, dry_run=False, repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        assert "--resume" not in captured_cmd, (
+            "session.resume: false must not resume, however findable the "
+            "transcript is"
+        )
+        assert "--session-id" in captured_cmd
+        # And the id it is given is a fresh one, not the deterministic uuid5
+        # whose transcript is sitting on disk -- otherwise "already in use".
+        assert agent_session_uuid not in captured_cmd, (
+            "a non-resuming step must get a distinct id per invocation"
+        )
+
+    # Scenario: New agent session is started when no prior transcript exists
+    def test_new_session_started_when_no_prior_transcript_exists(
+        self, monkeypatch, tmp_path
+    ):
+        """invoke_agent passes --session-id when no matching jsonl exists anywhere
+        under .claude/projects/ -- for any agent, worktree-based or not."""
+        import pipeline_orchestrator as orch
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.setattr(orch, "AGENT_TIMEOUT_SECONDS", 5)
+        monkeypatch.setattr(orch, "_claude_cli_usable", lambda env: True)
+
+        # Point CLAUDE_CONFIG_DIR at an empty tmp dir -- no transcript files exist.
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+
+        captured_cmd: list = []
+
+        def fake_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            proc = MagicMock()
+            proc.stdout = iter([])
+            proc.returncode = 0
+            proc.poll.return_value = 0
+            proc.wait.return_value = None
+            return proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen):
+            orch.invoke_agent(
+                self._make_agent_def(),
+                self._make_work_item(99),
+                dry_run=False,
+                repo="test-org/test-repo",
+                agent_text_override="---\ntools: []\n---\nTest agent body.",
+            )
+
+        assert "--session-id" in captured_cmd, (
+            "invoke_agent must pass --session-id when no session transcript "
+            "exists anywhere under .claude/projects/"
+        )
+        assert "--resume" not in captured_cmd
+
+
 class TestPromoteGatedAgents:
     """Tests for promote_gated_agents covering all label-state transitions."""
 

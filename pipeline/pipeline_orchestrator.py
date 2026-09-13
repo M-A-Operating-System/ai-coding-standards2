@@ -4531,22 +4531,41 @@ def invoke_agent(
     # Resume the session when it already exists; create it (--session-id) only
     # when it does not (first run, or a fresh -r{attempt} retry id).
     #
-    # Whether resuming is wanted at all is the step's own declaration, not an
-    # accident of which transcripts happen to be on disk. A step that re-derives
-    # everything it needs carries nothing worth resuming, and a resumed one
-    # answers from what it concluded last time instead of re-checking -- cheap,
-    # fast and wrong (issue #450). Such a step declares session.resume false and
-    # gets a distinct id per invocation, so "already in use" cannot arise either.
-    _proj_dir = os.getcwd().replace("/", "-")
-    _home = os.environ.get("HOME") or os.path.expanduser("~")
+    # Two separate questions, and the merge of #439 and #450 keeps both.
+    #
+    # WHETHER to resume is the step's own declaration, not an accident of which
+    # transcripts happen to be on disk. A step that re-derives everything it
+    # needs carries nothing worth resuming, and a resumed one answers from what
+    # it concluded last time instead of re-checking -- cheap, fast and wrong
+    # (issue #450). Such a step declares session.resume false and gets a
+    # distinct id per invocation, so "already in use" cannot arise either.
+    #
+    # WHETHER A SESSION EXISTS is a question about the filesystem, and the
+    # obvious way to ask it is wrong (issue #439). The CLI encodes the
+    # subprocess cwd into its project-directory path, and a worktree-based
+    # agent's cwd is not the orchestrator's, so a path rebuilt from
+    # os.getcwd() never matches the real transcript location -- making
+    # --resume unreachable for exactly the steps that run in worktrees. Glob
+    # across all project dirs instead, which is correct whatever the cwd or
+    # path-encoding scheme.
+    #
+    # Keeping only one of these would be a silent regression: the declaration
+    # without the glob means a step that asked to resume never can.
     if not agent_def.session_resume:
         agent_session_uuid = str(uuid.uuid4())
         _session_flag = "--session-id"
     else:
-        _session_file = os.path.join(
-            _home, ".claude", "projects", _proj_dir, f"{agent_session_uuid}.jsonl",
+        _claude_config_root = (
+            os.environ.get("CLAUDE_CONFIG_DIR")
+            or os.environ.get("HOME")
+            or os.path.expanduser("~")
         )
-        _session_flag = "--resume" if os.path.isfile(_session_file) else "--session-id"
+        _projects_dir = Path(_claude_config_root) / ".claude" / "projects"
+        _session_flag = "--session-id"
+        if _projects_dir.is_dir() and any(
+            _projects_dir.glob(f"*/{agent_session_uuid}.jsonl")
+        ):
+            _session_flag = "--resume"
 
     log.info("    Invoking agent: %s on %s #%d", agent_def.agent, work_item.kind, work_item.number)
     log.info("    session: %s (uuid: %s, scope=%s)", agent_session_id, agent_session_uuid, agent_def.session_scope)
