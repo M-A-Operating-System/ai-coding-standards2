@@ -39,6 +39,13 @@ set -euo pipefail
 # Restoring on every exit path -- including failure -- keeps the shared checkout
 # as this script found it, so what the script does to the tree is invisible to
 # whatever runs next.
+#
+# Everything the trap prints goes to STDERR. The trap runs after this script's
+# last statement, which is the `AI_AGILE_STATUS:` sentinel, and the orchestrator
+# requires that sentinel to be the final output line -- it searches only the last
+# five lines for it (_parse_agent_sentinel), a window narrowed to resist sentinel
+# spoofing rather than to absorb trailing diagnostics. A restore note on stdout
+# would spend that margin silently.
 # ---------------------------------------------------------------------------
 _ENTRY_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
@@ -49,7 +56,7 @@ _restore_entry_ref() {
         _now=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
         if [[ "${_now}" != "${_ENTRY_REF}" ]]; then
             if git checkout --quiet "${_ENTRY_REF}" 2>/dev/null; then
-                echo "create-pr: restored working tree to ${_ENTRY_REF}"
+                echo "create-pr: restored working tree to ${_ENTRY_REF}" >&2
             else
                 echo "create-pr: WARNING: could not restore working tree to ${_ENTRY_REF}; it is left on ${_now}. A commit_after step needing ${_now} in its own worktree will fail until this is restored." >&2
             fi

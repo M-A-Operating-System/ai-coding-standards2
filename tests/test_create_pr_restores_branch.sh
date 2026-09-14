@@ -35,6 +35,21 @@ else
     fail "create-pr.sh does not record the entry branch"
 fi
 
+# --- 1b. the trap must not write to stdout after the status sentinel --------
+# This script's last statement is `echo "AI_AGILE_STATUS: complete"`, and the
+# EXIT trap runs after it. The orchestrator requires the sentinel to be the
+# final output line and searches only the last five lines for it
+# (_parse_agent_sentinel) -- a window narrowed to resist sentinel spoofing, not
+# to absorb trailing diagnostics. A restore note on stdout works today only on
+# that margin; one more trailing line and a successful step reads as :failed.
+_TRAP_BODY=$(awk '/^_restore_entry_ref\(\) \{/,/^\}/' "$CREATE_PR")
+_STDOUT_ECHOES=$(printf '%s\n' "$_TRAP_BODY" | grep -E '^[[:space:]]*echo ' | grep -v '>&2' || true)
+if [[ -z "$_STDOUT_ECHOES" ]]; then
+    pass "the EXIT trap writes only to stderr, leaving the sentinel last on stdout"
+else
+    fail "the EXIT trap writes to stdout after AI_AGILE_STATUS:, spending the sentinel window; needs >&2: ${_STDOUT_ECHOES}"
+fi
+
 # --- 2. the failure it prevents, against real git ---------------------------
 # Guard rather than assert: this reproduces git's refusal, so if a future git
 # stopped refusing, the restore would still be correct and the test should say
