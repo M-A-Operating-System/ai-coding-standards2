@@ -42,12 +42,19 @@ fi
 # (_parse_agent_sentinel) -- a window narrowed to resist sentinel spoofing, not
 # to absorb trailing diagnostics. A restore note on stdout works today only on
 # that margin; one more trailing line and a successful step reads as :failed.
+# Matched on every command that writes to stdout, not just `echo`: an earlier
+# version of this check looked for `echo` alone, and swapping the compliant
+# line for a `printf` to stdout passed it while the trap printed after the
+# sentinel. A guard that names one spelling of a defect only stops that
+# spelling.
 _TRAP_BODY=$(awk '/^_restore_entry_ref\(\) \{/,/^\}/' "$CREATE_PR")
-_STDOUT_ECHOES=$(printf '%s\n' "$_TRAP_BODY" | grep -E '^[[:space:]]*echo ' | grep -v '>&2' || true)
-if [[ -z "$_STDOUT_ECHOES" ]]; then
+_STDOUT_WRITES=$(printf '%s\n' "$_TRAP_BODY" \
+    | grep -E '^[[:space:]]*(echo|printf|cat|tee)\b' \
+    | grep -v '>&2' || true)
+if [[ -z "$_STDOUT_WRITES" ]]; then
     pass "the EXIT trap writes only to stderr, leaving the sentinel last on stdout"
 else
-    fail "the EXIT trap writes to stdout after AI_AGILE_STATUS:, spending the sentinel window; needs >&2: ${_STDOUT_ECHOES}"
+    fail "the EXIT trap writes to stdout after AI_AGILE_STATUS:, spending the sentinel window; needs >&2: ${_STDOUT_WRITES}"
 fi
 
 # --- 2. the failure it prevents, against real git ---------------------------
