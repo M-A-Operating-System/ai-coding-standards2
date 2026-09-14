@@ -58,18 +58,18 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `01_product_docs/issue-classifier` | -- | -- |
-| `01_product_docs/prd-writer` | -- | -- |
-| `01_product_docs/create-docs-pr` | -- | `commit_after=false`, `commits_to="docs"` |
-| `01_product_docs/prd-docs-updater` | `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)` | `commit_after=true`, `commits_to="docs"` |
-| `01_product_docs/merge-docs-pr` | -- | `commit_after=false`, `commits_to="docs"` |
-| `01_product_docs/create-pr` | -- | `commit_after=false`, `commits_to="code"` |
-| `03_execute/coder` | `Bash(git log *)`, `Bash(git diff *)`, `Bash(git rev-parse *)`, `Bash(python *)`, `Bash(python3 *)`, `Bash(pip *)` _(+66 more)_ | `commit_after=true`, `commits_to="code"` |
-| `03_execute/ci-gate` | -- | -- |
-| `03_execute/merge-conflict` | `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh pr comment *)`, `Bash(gh run view *)`, `Bash(gh run list *)`, `Bash(git fetch *)` _(+8 more)_ | -- |
-| `03_execute/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | `commit_after=false` |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `01_product_docs/issue-classifier` | -- | -- | -- |
+| `01_product_docs/prd-writer` | -- | -- | -- |
+| `01_product_docs/create-docs-pr` | -- | -- | `commit_after=false`, `commits_to="docs"` |
+| `01_product_docs/prd-docs-updater` | `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)` | -- | `commit_after=true`, `commits_to="docs"` |
+| `01_product_docs/merge-docs-pr` | -- | -- | `commit_after=false`, `commits_to="docs"` |
+| `01_product_docs/create-pr` | -- | -- | `commit_after=false`, `commits_to="code"` |
+| `03_execute/coder` | `Bash(git log *)`, `Bash(git diff *)`, `Bash(git rev-parse *)`, `Bash(python *)`, `Bash(python3 *)`, `Bash(pip *)` _(+66 more)_ | `Bash(git reset --hard*)`, `Bash(git branch -D *)` | `commit_after=true`, `commits_to="code"` |
+| `03_execute/ci-gate` | -- | -- | -- |
+| `03_execute/merge-conflict` | `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh pr comment *)`, `Bash(gh run view *)`, `Bash(gh run list *)`, `Bash(git fetch *)` _(+8 more)_ | -- | -- |
+| `03_execute/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | -- | `commit_after=false` |
 
 ## Flow: `epic-completion`
 
@@ -87,9 +87,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `04_evaluate/epic-closer` | -- | -- |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `04_evaluate/epic-closer` | -- | -- | -- |
 
 ## Flow: `codebase-review`
 
@@ -107,9 +107,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `00_ondemand/codebase-reviewer` | `Bash(gh issue create *)`, `Bash(git log *)` | -- |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/codebase-reviewer` | `Bash(gh issue create *)`, `Bash(git log *)` | -- | -- |
 
 ## Flow: `sizer`
 
@@ -127,9 +127,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `00_ondemand/sizer` | `Bash(gh issue create *)`, `Bash(gh api *)` | -- |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/sizer` | `Bash(gh issue create *)`, `Bash(gh api *)` | -- | -- |
 
 ## Flow: `new-agent`
 
@@ -147,9 +147,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `00_ondemand/new-agent` | `Edit(.claude/agents/**)`, `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)` | `commit_after=true` |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/new-agent` | `Edit(.claude/agents/**)`, `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)` | -- | `commit_after=true` |
 
 ## Flow: `standards-migrator`
 
@@ -167,9 +167,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `00_ondemand/standards-migrator` | `Bash(gh issue create *)`, `Bash(python3 *)` | -- |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/standards-migrator` | `Bash(gh issue create *)`, `Bash(python3 *)` | -- | -- |
 
 ## Flow: `branch-cleanup`
 
@@ -187,9 +187,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `00_ondemand/branch-cleanup` | `Bash(gh api *)`, `Bash(gh pr list *)`, `Bash(gh issue comment *)`, `Bash(gh issue view *)` | -- |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/branch-cleanup` | `Bash(gh api *)`, `Bash(gh pr list *)`, `Bash(gh issue comment *)`, `Bash(gh issue view *)` | -- | -- |
 
 ## Flow: `issue-cleanup`
 
@@ -207,9 +207,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `00_ondemand/issue-cleanup` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue close *)`, `Bash(gh pr list *)` | -- |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/issue-cleanup` | `Bash(gh api *)`, `Bash(gh issue list *)`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue close *)`, `Bash(gh pr list *)` | -- | -- |
 
 ## Flow: `blocker`
 
@@ -227,9 +227,9 @@ authoritative and these tables are a view of it.
 
 ### Entitled activities
 
-| Step | Additional entitlements | Git operations |
-|---|---|---|
-| `00_ondemand/blocker` | -- | -- |
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `00_ondemand/blocker` | -- | -- | -- |
 
 ## Entitlements granted to every step
 
@@ -237,3 +237,7 @@ Under AS-1 the tables above must be complete: an entitlement that does
 not appear there or here is not granted.
 
 **Granted to every step:** `Write`, `Edit`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue edit *)`, `Bash(gh issue list *)`, `Bash(gh pr view *)`, `Bash(gh pr comment *)`, `Bash(gh pr list *)`, `Bash(gh pr diff *)`, `Bash(gh api repos/*/issues/*)`, `Bash(gh api repos/*/pulls/*)`, `Bash(gh api repos/*/issues*)`, `Bash(gh api repos/*/pulls*)`, `Bash(gh api "repos/*/issues/*)`, `Bash(gh api "repos/*/pulls/*)`, `Bash(gh api "repos/*/issues*)`, `Bash(gh api "repos/*/pulls*)`, `Bash(gh api --method * repos/*/issues*)`, `Bash(gh api --method * "repos/*/issues*)`, `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`, `Bash(cd *)`, `Read`, `Glob`, `Grep`
+
+Declared prohibitions state what a step must not do. They are matched
+against the command string as written; a command reached through an
+interpreter wrapper (e.g. `bash -c '...'`) is not matched.

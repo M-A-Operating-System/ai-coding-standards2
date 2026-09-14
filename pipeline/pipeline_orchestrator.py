@@ -226,6 +226,7 @@ class AgentDef:
     auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
     self_gates: bool = False  # if True, the agent's own AI_AGILE_STATUS (review vs complete) decides whether the gate fires -- :complete is NOT force-overridden to :review. human_gate_after/human_gate_label still apply for promotion when the agent itself emits :review.
     extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults.extra_allowedTools (AS-1: nowhere else)
+    denied_tools: list[str] = field(default_factory=list)  # effective deny list: defaults.deniedTools + step.deniedTools, merged in load_pipeline (AS-1: pipeline.json is sole source)
     model: Optional[str] = None         # agent-type steps only; which model this step runs on (AS-1: not a frontmatter field)
     max_turns: Optional[int] = None     # per-step override of budgets.max_turns; None means use the pipeline-wide default
     max_wall_seconds: Optional[int] = None  # per-step override of budgets.max_wall_seconds; None means use the pipeline-wide default
@@ -550,6 +551,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
                 self_gates=bool(entry.get("self_gates", False)),
                 extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
+                denied_tools=_coerce_tools(entry.get("deniedTools")),
                 model=entry.get("model"),
                 max_turns=_budgets.get("max_turns"),
                 max_wall_seconds=_budgets.get("max_wall_seconds"),
@@ -600,6 +602,14 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
         default_extra_tools: list[str] = _coerce_tools(
             raw.get("defaults", {}).get("extra_allowedTools")
         )
+
+        _default_denied: list[str] = _coerce_tools(
+            raw.get("defaults", {}).get("deniedTools")
+        )
+        for _agent in agents:
+            _agent.denied_tools = list(dict.fromkeys(
+                _default_denied + _agent.denied_tools
+            ))
 
         # Scripts the orchestrator runs around every agent invocation. Declared
         # here rather than named in this module because the pipeline describes
@@ -4337,6 +4347,7 @@ class ResolvedInvocation:
     """
     prompt: str
     allowed_tools: list[str]
+    denied_tools: list[str]
     model: Optional[str]
     max_turns: int
     session_id: str
@@ -4433,6 +4444,7 @@ def _resolve_agent_invocation(
     return ResolvedInvocation(
         prompt=prompt,
         allowed_tools=extra_tools,
+        denied_tools=list(agent_def.denied_tools),
         model=agent_model,
         max_turns=max_turns,
         session_id=agent_session_id,
@@ -4582,7 +4594,9 @@ def invoke_agent(
         # workspace the CLI exposes Task/Agent/Skill even though they are absent
         # from --allowedTools, which let prd-writer recursively re-invoke itself
         # via the maos-{agent}-i command (a ~440s nested sub-agent). Deny them explicitly.
-        "--disallowedTools", "Task,Agent,Skill",
+        # Step-level deniedTools (resolved.denied_tools) are appended after the fixed
+        # set; deny takes precedence over allow when both match a command string.
+        "--disallowedTools", ",".join(["Task", "Agent", "Skill"] + resolved.denied_tools),
         "--output-format", "stream-json",
         "--verbose",                    # required alongside stream-json in --print mode
         "--max-turns", str(max_turns),
@@ -7760,6 +7774,7 @@ def _run_print_prompt(args) -> None:
         "agent": agent_name,
         "session_id": resolved.session_id,
         "allowed_tools": resolved.allowed_tools,
+        "denied_tools": resolved.denied_tools,
         "model": resolved.model,
         "max_turns": resolved.max_turns,
         "env": printable_env,

@@ -218,6 +218,10 @@
             "Bash(export *)", "Bash(unset *)", "Bash(test *)",
             "Bash(git add *)", "Bash(git commit *)", "Bash(git status *)"
           ],
+          "deniedTools": [
+            "Bash(git reset --hard*)",
+            "Bash(git branch -D *)"
+          ],
           "git_ops": { "commit_after": true, "commits_to": "code" },
           "exclude_classifications": ["spike"],
           "exclude_labels": ["epic", "blocked"],

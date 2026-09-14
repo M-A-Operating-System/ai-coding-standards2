@@ -181,12 +181,17 @@ def render_steps(pipeline):
             )
 
         lines += ["", "### Entitled activities", ""]
-        lines += ["| Step | Additional entitlements | Git operations |", "|---|---|---|"]
+        lines += [
+            "| Step | Additional entitlements | Declared prohibitions | Git operations |",
+            "|---|---|---|---|",
+        ]
         for step in flow_steps:
             extra = step.get("extra_allowedTools") or []
+            denied = step.get("deniedTools") or []
             shown = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
             lines.append(
                 f"| `{step['agent']}` | {shown if extra else '--'} "
+                f"| {_cell(denied) if denied else '--'} "
                 f"| {_cell(step.get('git_ops'))} |"
             )
 
@@ -198,6 +203,15 @@ def render_steps(pipeline):
     ]
     defaults = pipeline.get("defaults", {}).get("extra_allowedTools", [])
     lines += [f"**Granted to every step:** {_cell(defaults)}"]
+    default_denied = pipeline.get("defaults", {}).get("deniedTools", [])
+    if default_denied:
+        lines += [f"**Declared prohibition for every step:** {_cell(default_denied)}"]
+    lines += [
+        "",
+        "Declared prohibitions state what a step must not do. They are matched",
+        "against the command string as written; a command reached through an",
+        "interpreter wrapper (e.g. `bash -c '...'`) is not matched.",
+    ]
 
     return "\n".join(lines).rstrip() + "\n"
 

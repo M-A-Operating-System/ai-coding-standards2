@@ -19,6 +19,12 @@
           "description": "Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- nothing else contributes.",
           "items": { "type": "string" }
         },
+        "deniedTools": {
+          "type": "array",
+          "description": "Commands a step must not invoke, matched against the command string as written. Deny takes precedence over allow. Effective deny list = defaults.deniedTools + step.deniedTools, deduplicated, deterministic order. A step cannot remove or override a default deny rule. The deny list states intent and is not enforcement: it matches the command as written and does not inspect commands reached through an interpreter wrapper (e.g. bash -c '...').",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
         "agent_lifecycle": {
           "type": "object",
           "description": "Scripts the orchestrator runs around every agent-type step to prepare and tear down its environment. Not steps themselves: no outcome, no label, and a non-zero exit is logged rather than failing the run.",
@@ -311,6 +317,13 @@
           "type": "array",
           "description": "Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged.",
           "items": { "type": "string" }
+        },
+
+        "deniedTools": {
+          "type": "array",
+          "description": "Commands this step must not invoke, merged with defaults.deniedTools to form the effective deny list. Deny takes precedence over allow. A step cannot remove a default deny rule by omitting it here -- the effective list is always defaults.deniedTools + step.deniedTools. Same pattern syntax as extra_allowedTools.",
+          "items": { "type": "string" },
+          "uniqueItems": true
         },
 
         "exclude_classifications": {
