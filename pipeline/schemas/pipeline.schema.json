@@ -326,6 +326,21 @@
           "uniqueItems": true
         },
 
+        "deny_groups": {
+          "type": "array",
+          "description": "Documentation-only grouping of deniedTools entries into named categories. Does not affect runtime enforcement; the flat deniedTools list is authoritative.",
+          "items": {
+            "type": "object",
+            "required": ["name", "purpose", "patterns"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "purpose": { "type": "string" },
+              "patterns": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+
         "exclude_classifications": {
           "type": "array",
           "uniqueItems": true,
