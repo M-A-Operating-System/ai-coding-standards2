@@ -17,3 +17,15 @@
 **Given** `pr-reviewer` requests changes 3 times in a row (the configured `max_cycles`)
 **When** the review loop runs its course
 **Then** the cycle limit still triggers human sign-off at the same point it does today -- the fix does not silently loosen or tighten `max_cycles`
+
+## Scenario: coder consumes orchestrator-supplied invocation mode
+
+**Given** the orchestrator has dispatched the coder with an invocation mode environment variable (e.g. `AI_AGILE_INVOCATION_MODE`) set to `initial` or `review`
+**When** the coder begins its run
+**Then** the coder uses that environment variable to determine its operating mode without inspecting `human-review-pending`, `review-cycle:N`, reviewer artefacts, PR existence, branch names, or issue labels
+
+## Scenario: confirmed pre-existing unrelated test failure does not block completion
+
+**Given** a test failure exists after the coder's change, the failure reproduces against the pre-change baseline with one targeted verification, and no file or behaviour touched by the coder's diff is exercised by that failing test
+**When** the coder has recorded the failure in `result.json` with baseline verification evidence
+**Then** the coder sets `outcome: complete` without further investigation or reverification of that failure in the same invocation
