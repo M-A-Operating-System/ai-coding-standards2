@@ -1680,6 +1680,17 @@ nothing to decide has inverted the rule: the common path is now the one
 that must be got around, and every failure of the suppression lands on a
 person as a question about something nobody needed to decide.
 
+The `self_gates` field is the corrected mechanism: a step that sets it
+decides for itself, on its own outcome, whether the run needed a person
+-- the orchestrator no longer force-overrides a self-reported `complete`
+to `review`, and never auto-applies the gate label on that step's
+behalf. `merge-conflict` and `sizer` (issue #425) moved to `self_gates`
+for exactly this reason -- both had paired an unconditional
+`human_gate_after: true` with `auto_approve_on_complete: true`, which is
+the anti-pattern this section describes: a gate that exists on paper and
+suppresses itself on every ordinary run, so a person is asked only when
+the suppression itself fails.
+
 **And gates inside the pipeline are not the last line.** The decision
 that admits work is the merge, so the branch that receives it is
 protected: no direct push, and a reviewed pull request to change it. That

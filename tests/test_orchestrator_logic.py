@@ -2142,6 +2142,21 @@ class TestSelfGates:
         assert agent.human_gate_after is True
         assert agent.human_gate_label == "prd-docs-updater:approved"
 
+    def test_shipped_pipeline_json_sets_self_gates_on_sizer(self):
+        """pipeline.json's real sizer entry has self_gates: true and no
+        auto_approve_on_complete (issue #425) -- sizer was named alongside
+        merge-conflict as self-defeating under the old declaration, and
+        merge-conflict already has this assertion (test_merge_conflict_pipeline.py);
+        sizer had none, so a regression here (e.g. a reverted or dropped
+        field) would go uncaught."""
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        agents, _ = load_pipeline(pipeline_path)
+        agent = pipeline_by_name(agents)["00_ondemand/sizer"]
+        assert agent.self_gates is True
+        assert agent.human_gate_after is True
+        assert agent.human_gate_label == "sizer:review"
+        assert agent.auto_approve_on_complete is False
+
     def _downstream_agent(self) -> AgentDef:
         """A single-dependency downstream agent, matching coder's real
         dependency on prd-docs-updater."""
