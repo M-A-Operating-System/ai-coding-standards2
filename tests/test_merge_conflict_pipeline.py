@@ -558,7 +558,7 @@ class TestSelfGatesDrivesProcessWorkItem:
         return merge_conflict.human_gate_label, merge_conflict.complete_label
 
     def test_complete_stands_without_gate_label(self):
-        """self_gates=True → the orchestrator applies :complete only; it never
+        """self_gates=True -- the orchestrator applies :complete only; it never
         writes the gate label itself (that would be the self-defeating
         auto-apply-then-reject loop issue #425 describes)."""
         gh = _make_gh()
@@ -567,9 +567,9 @@ class TestSelfGatesDrivesProcessWorkItem:
 
         added = [c.args[1] for c in gh.add_label.call_args_list]
         assert complete_label in added
-        # No auto-write of the gate label — self_gates just lets :complete stand.
+        # No auto-write of the gate label -- self_gates just lets :complete stand.
         assert gate_label not in added
-        # It must NOT land in :review either — self_gates never force-overrides :complete.
+        # It must NOT land in :review either -- self_gates never force-overrides :complete.
         assert merge_conflict_review_label() not in added
 
     def test_complete_state_not_demoted_to_review(self):
