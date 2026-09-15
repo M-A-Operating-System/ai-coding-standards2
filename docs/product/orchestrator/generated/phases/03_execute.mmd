@@ -4,7 +4,7 @@ flowchart TD
     n_03_execute__ci_gate("ci-gate")
     n_03_execute__merge_conflict["merge-conflict"]
     n_03_execute__pr_reviewer["pr-reviewer"]
-    gate__n_03_execute__merge_conflict{"merge-conflict:approved (auto)"}
+    gate__n_03_execute__merge_conflict{"merge-conflict:approved"}
     n_03_execute__merge_conflict --> gate__n_03_execute__merge_conflict
     n_01_product_docs__create_pr --> n_03_execute__coder
     n_03_execute__coder --> n_03_execute__ci_gate

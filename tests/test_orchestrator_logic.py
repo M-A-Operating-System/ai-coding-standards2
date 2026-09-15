@@ -2142,6 +2142,21 @@ class TestSelfGates:
         assert agent.human_gate_after is True
         assert agent.human_gate_label == "prd-docs-updater:approved"
 
+    def test_shipped_pipeline_json_sets_self_gates_on_sizer(self):
+        """pipeline.json's real sizer entry has self_gates: true and no
+        auto_approve_on_complete (issue #425) -- sizer was named alongside
+        merge-conflict as self-defeating under the old declaration, and
+        merge-conflict already has this assertion (test_merge_conflict_pipeline.py);
+        sizer had none, so a regression here (e.g. a reverted or dropped
+        field) would go uncaught."""
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        agents, _ = load_pipeline(pipeline_path)
+        agent = pipeline_by_name(agents)["00_ondemand/sizer"]
+        assert agent.self_gates is True
+        assert agent.human_gate_after is True
+        assert agent.human_gate_label == "sizer:review"
+        assert agent.auto_approve_on_complete is False
+
     def _downstream_agent(self) -> AgentDef:
         """A single-dependency downstream agent, matching coder's real
         dependency on prd-docs-updater."""
@@ -2209,6 +2224,52 @@ class TestSelfGates:
         labels = {"prd-docs-updater:complete", "prd-docs-updater:approved"}
 
         assert dependencies_complete(labels, coder, pipeline_map) is True
+
+
+# ---------------------------------------------------------------------------
+# TestAutoApproveOnCompleteGeneric: auto_approve_on_complete still exists as
+# a primitive (no shipped step uses it after issue #425 moved merge-conflict
+# and sizer to self_gates -- pairing it with human_gate_after was the
+# self-defeating declaration #425 describes), so its behaviour stays covered
+# against a synthetic AgentDef rather than the shipped pipeline.json.
+# ---------------------------------------------------------------------------
+
+class TestAutoApproveOnCompleteGeneric:
+    def _agent(self) -> AgentDef:
+        return AgentDef(
+            agent="00_ondemand/example",
+            phase="00_ondemand",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=True,
+            human_gate_label="example:approved",
+            description="test",
+            auto_approve_on_complete=True,
+        )
+
+    def test_auto_approve_applies_gate_label_on_complete(self):
+        agent = self._agent()
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_COMPLETE, gh)
+
+        assert applied == STATUS_COMPLETE
+        gh.add_label.assert_called_once_with(42, "example:approved")
+
+    def test_auto_approve_add_label_exception_does_not_raise(self):
+        """If gh.add_label raises on the gate label, the branch swallows it
+        and :complete still stands (the terminal-status write is a separate
+        call, exercised elsewhere)."""
+        agent = self._agent()
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+        gh.add_label.side_effect = RuntimeError("simulated GitHub 500")
+
+        applied = _resolve_applied_status(agent, wi, STATUS_COMPLETE, gh)
+
+        assert applied == STATUS_COMPLETE
 
 
 # ---------------------------------------------------------------------------

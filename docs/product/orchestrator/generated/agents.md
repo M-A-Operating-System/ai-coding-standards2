@@ -80,7 +80,7 @@ Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks 
 - **Kind:** agent
 - **Phase:** `03_execute`
 
-Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete and the orchestrator auto-applies merge-conflict:approved so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review -- the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues.
+Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied, so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review -- the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues.
 
 ### `03_execute/pr-reviewer`
 
@@ -130,7 +130,7 @@ On-demand sizing of an issue against a single development cycle, requested by a 
 - **Kind:** agent
 - **Phase:** `00_ondemand`
 
-Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note (sizer:complete -- auto-approved). Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue.
+Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note and emit complete directly; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied. Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown at the sizer:review gate. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue.
 
 ## Flow: `new-agent`
 
