@@ -2282,6 +2282,43 @@ class TestGatelessReviewAppliedAsBlocked:
 
         gh.add_label.assert_not_called()
 
+    def test_gateless_review_loop_step_review_stays_review(self):
+        """Regression guard: a gateless step with review_loop configured (e.g.
+        pr-reviewer) keeps :review untouched. pr-reviewer emits outcome:
+        "review" on REQUEST CHANGES specifically so the caller's
+        `applied_status == STATUS_REVIEW and agent_def.review_loop` check
+        triggers _handle_review_loop's automated re-invoke of the coder --
+        remapping this to :blocked would silently break that auto-retry."""
+        agent = AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            review_loop={"re_invoke": "03_execute/coder", "max_cycles": 3},
+        )
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_REVIEW, gh)
+
+        assert applied == STATUS_REVIEW
+
+    def test_shipped_pr_reviewer_has_review_loop_and_no_gate(self):
+        """pipeline.json's real pr-reviewer entry is gateless (no
+        human_gate_label) AND declares review_loop -- exactly the
+        combination test_gateless_review_loop_step_review_stays_review
+        guards, verified against the shipped config rather than a fixture
+        the test itself wrote."""
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        agents, _ = load_pipeline(pipeline_path)
+        agent = pipeline_by_name(agents)["03_execute/pr-reviewer"]
+        assert not agent.human_gate_label
+        assert agent.review_loop
+
 
 # ---------------------------------------------------------------------------
 # --phases flag: phase-scoped agent filtering
@@ -4815,11 +4852,13 @@ class TestApplyResultBehaviour:
         gh.add_label.assert_any_call(42, agent.status_label(STATUS_BLOCKED))
 
     def test_review_halts_and_never_applies_complete(self):
-        """This fixture's agent (pr-reviewer here) is gateless, so its
-        self-emitted :review is remapped to :blocked (issue #380) — a
-        gateless step has no human_gate_label a person could apply to clear
-        a bare :review. See TestGatelessReviewAppliedAsBlocked for the
-        remapping itself and its gated-step regression guard."""
+        """This fixture's agent (named pr-reviewer here, but built without
+        review_loop) is gateless, so its self-emitted :review is remapped to
+        :blocked (issue #380) -- a gateless step with no review_loop either
+        has no automated way to clear a bare :review. See
+        TestGatelessReviewAppliedAsBlocked for the remapping itself, its
+        gated-step regression guard, and the review_loop exemption (the real
+        pr-reviewer step has review_loop configured and is unaffected)."""
         agent, gh = self._agent(), _make_gh_mock()
         wi = _make_work_item_with_labels(42, set())
         stop = self._call(agent, wi, gh, STATUS_REVIEW)

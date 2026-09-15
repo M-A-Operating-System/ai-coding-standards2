@@ -6659,6 +6659,13 @@ def _resolve_applied_status(
     :blocked instead -- :blocked already has a documented human-clears-it path
     (remove the label; the step re-runs on the next tick), where :review on a
     gateless step had none.
+
+    Exception: a step with review_loop (e.g. pr-reviewer) already has its own
+    automated resolution path for a self-emitted :review -- the caller reads
+    applied_status == STATUS_REVIEW to trigger _handle_review_loop's re-invoke
+    of the review_loop's target agent, no human or label involved. That
+    :review is left untouched; only a step with neither a gate nor a review
+    loop to clear its own :review is stranded.
     """
     applied_status = final_status
     if (
@@ -6681,7 +6688,11 @@ def _resolve_applied_status(
                 )
         else:
             applied_status = STATUS_REVIEW
-    elif final_status == STATUS_REVIEW and not agent_def.human_gate_label:
+    elif (
+        final_status == STATUS_REVIEW
+        and not agent_def.human_gate_label
+        and not agent_def.review_loop
+    ):
         applied_status = STATUS_BLOCKED
         log.info(
             "  %-38s  no human_gate_label -- applying :blocked instead of "
