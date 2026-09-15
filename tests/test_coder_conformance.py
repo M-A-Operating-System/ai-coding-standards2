@@ -1,12 +1,14 @@
-"""Configuration conformance tests for coder agent — human-review-pending mode B trigger.
+"""Configuration conformance tests for coder agent.
 
-Covers PRD issue #100: coder must recognise `human-review-pending` label as a
-Mode B trigger, fetch unresolved human REQUEST_CHANGES reviews from the REST API,
-and classify them as Required feedback.
+Covers:
+- PRD issue #100: coder must read unresolved human REQUEST_CHANGES reviews in Mode B
+- Issue #463: coder uses bare Bash (replacing narrow git grants)
+- Issue #467: coder reads AI_AGILE_INVOCATION_MODE instead of inspecting labels
 
 Gherkin scenarios traced:
   - scenario_coder_reinvoked_with_human_review_context
   - scenario_coder_mode_b_description_updated
+  - coder_consumes_orchestrator_supplied_invocation_mode
 """
 import re
 from pathlib import Path
@@ -23,48 +25,70 @@ def _load_coder_text() -> str:
 
 
 def _extract_step_0(text: str) -> str:
-    match = re.search(r"## Step 0 — Detect mode\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    match = re.search(r"## Step 0[^\n]*\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
 def _extract_b1(text: str) -> str:
-    match = re.search(r"## Step 9 — Read all review feedback\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    match = re.search(r"## Step 9[^\n]*\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
 def _extract_b2(text: str) -> str:
-    match = re.search(r"## Step 10 — Categori[sz]e the feedback\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    match = re.search(r"## Step 10[^\n]*\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
-class TestCoderModeBAwarenessOfHumanReviewPending:
-    """Scenario: coder re-invoked with human-review-pending label is in Mode B"""
+class TestCoderConsumesOrchestratorSuppliedInvocationMode:
+    """Scenario: coder consumes orchestrator-supplied invocation mode
 
-    def test_step_0_checks_human_review_pending_label(self):
+    Given the orchestrator has dispatched the coder with AI_AGILE_INVOCATION_MODE
+    set to initial or review
+    When the coder begins its run
+    Then the coder uses that environment variable to determine its operating mode
+    without inspecting human-review-pending, review-cycle:N, reviewer artefacts,
+    PR existence, branch names, or issue labels
+    """
+
+    def test_step_0_reads_invocation_mode_env_var(self):
         text = _load_coder_text()
         step = _extract_step_0(text)
-        assert "human-review-pending" in step, (
-            "coder.md Step 0 must check for 'human-review-pending' label. "
-            "Run: python3 scripts/update_agent_files.py"
+        assert "AI_AGILE_INVOCATION_MODE" in step, (
+            "coder.md Step 0 must read AI_AGILE_INVOCATION_MODE from the environment"
         )
 
-    def test_step_0_names_human_review_pending_as_unconditional_mode_b(self):
+    def test_step_0_does_not_check_human_review_pending_label(self):
         text = _load_coder_text()
         step = _extract_step_0(text)
-        assert "`human-review-pending` present: **MODE=B**" in step, (
-            "coder.md Step 0 must state that human-review-pending sets Mode B "
-            "unconditionally (issue #438 -- prose-driven, not a bash if-condition)."
+        assert "human-review-pending" not in step, (
+            "coder.md Step 0 must not inspect human-review-pending; "
+            "the orchestrator injects AI_AGILE_INVOCATION_MODE instead"
         )
 
-    def test_step_0_introductory_text_explains_both_triggers(self):
+    def test_step_0_does_not_check_review_cycle_label(self):
         text = _load_coder_text()
         step = _extract_step_0(text)
-        assert "human-review-pending" in step, (
-            "Step 0 explanatory text must document the 'human-review-pending' trigger. "
-            "Run: python3 scripts/update_agent_files.py"
+        assert "review-cycle" not in step, (
+            "coder.md Step 0 must not inspect review-cycle:N labels; "
+            "the orchestrator injects AI_AGILE_INVOCATION_MODE instead"
         )
-        assert "review-cycle" in step, (
-            "Step 0 explanatory text must still document the 'review-cycle:N' trigger."
+
+    def test_step_0_does_not_check_reviewer_artefact(self):
+        text = _load_coder_text()
+        step = _extract_step_0(text)
+        assert "pr-reviewer" not in step, (
+            "coder.md Step 0 must not check for a pr-reviewer artefact; "
+            "the orchestrator injects AI_AGILE_INVOCATION_MODE instead"
+        )
+
+    def test_frontmatter_description_references_invocation_mode(self):
+        text = _load_coder_text()
+        frontmatter_match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+        assert frontmatter_match, "No frontmatter found in coder.md"
+        frontmatter = frontmatter_match.group(1)
+        assert "AI_AGILE_INVOCATION_MODE" in frontmatter, (
+            "coder.md frontmatter must reference AI_AGILE_INVOCATION_MODE "
+            "as the invocation mode mechanism"
         )
 
 
@@ -124,27 +148,8 @@ class TestCoderB2ClassifiesHumanReviewsAsRequired:
         )
 
 
-class TestCoderDescriptionMentionsHumanReviewPending:
-    """Scenario: coder description reflects human-review-pending Mode B trigger"""
-
-    def test_frontmatter_description_mentions_human_review_pending(self):
-        text = _load_coder_text()
-        frontmatter_match = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
-        assert frontmatter_match, "No frontmatter found in coder.md"
-        frontmatter = frontmatter_match.group(1)
-        assert "human-review-pending" in frontmatter, (
-            "coder.md frontmatter description must mention 'human-review-pending' label. "
-            "Run: python3 scripts/update_agent_files.py"
-        )
-
-
 # ---------------------------------------------------------------------------
 # Issue #463 -- coder uses bare Bash (replacing issue #407's narrow git grants)
-#
-# Issue #463 replaces the executable-by-executable Bash allowlist with a single
-# bare "Bash" entry. Dangerous operations are controlled via deniedTools instead
-# of a narrow allowlist. The prompt still forbids the commands the deny list
-# covers; the alignment guarantee comes from deniedTools, not the allowlist shape.
 # ---------------------------------------------------------------------------
 
 import json  # noqa: E402

@@ -1,8 +1,7 @@
-"""Conformance tests for coder.md Step 0 mode detection fix (issue #310).
+"""Conformance tests for coder.md mode detection (issue #310, #467).
 
-Verifies that coder.md Step 0 correctly distinguishes a genuine first dispatch
-(Mode A) from a genuine re-invocation after review feedback (Mode B), and that
-max_cycles enforcement is not changed.
+After issue #467, the orchestrator determines and injects AI_AGILE_INVOCATION_MODE
+so the coder reads it directly instead of inspecting labels or artefacts.
 
 Gherkin scenarios traced:
   - a_genuine_first_dispatch_runs_mode_a_even_though_the_dispatch_time_counter_is_non_zero
@@ -26,7 +25,7 @@ def _load_coder() -> str:
 
 
 def _extract_step0(text: str) -> str:
-    m = re.search(r"## Step 0 — Detect mode\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    m = re.search(r"## Step 0[^\n]*\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     return m.group(1) if m else ""
 
 
@@ -39,59 +38,63 @@ class TestGenuineFirstDispatchRunsModeA:
     """Scenario: A genuine first dispatch runs Mode A even though the dispatch-time counter is non-zero.
 
     Given coder is dispatched for the first time (no pr-reviewer artefact, no human REQUEST_CHANGES)
-    When coder runs Step 0
-    Then it detects Mode A regardless of whether review-cycle:1 was applied at dispatch
+    When the orchestrator computes AI_AGILE_INVOCATION_MODE and coder runs Step 0
+    Then coder detects Mode A, because the orchestrator injected AI_AGILE_INVOCATION_MODE=initial
     """
 
-    def test_step0_documents_dispatch_time_counter_caveat(self):
-        text = _load_coder()
-        step = _extract_step0(text)
-        assert "dispatch" in step.lower(), (
-            "Step 0 must document that review-cycle:N is applied at dispatch time"
+    def test_orchestrator_sets_initial_mode_for_first_dispatch(self):
+        """The orchestrator sets AI_AGILE_INVOCATION_MODE=initial when rc_cur == 0."""
+        text = ORCHESTRATOR_PY.read_text()
+        assert "AI_AGILE_INVOCATION_MODE" in text, (
+            "pipeline_orchestrator.py must set AI_AGILE_INVOCATION_MODE"
+        )
+        assert '"initial"' in text, (
+            "pipeline_orchestrator.py must set AI_AGILE_INVOCATION_MODE to 'initial' "
+            "for a first dispatch"
         )
 
-    def test_step0_review_cycle_not_sufficient_alone(self):
-        text = _load_coder()
-        step = _extract_step0(text)
-        assert "not a reliable" in step.lower() or "alone is not" in step.lower(), (
-            "Step 0 must state that review-cycle:N presence alone is not a reliable Mode B signal"
+    def test_orchestrator_initial_mode_uses_review_cycle_check(self):
+        """The orchestrator distinguishes first dispatch from re-invocation using
+        the review-cycle counter, so the coder does not need to."""
+        text = ORCHESTRATOR_PY.read_text()
+        assert "_get_review_cycle" in text, (
+            "pipeline_orchestrator.py must use _get_review_cycle to determine invocation mode"
         )
 
-    def test_step0_checks_pr_reviewer_artefact(self):
+    def test_step0_reads_invocation_mode_env_var(self):
+        """Step 0 reads AI_AGILE_INVOCATION_MODE instead of inspecting labels."""
         text = _load_coder()
         step = _extract_step0(text)
-        assert "pr-reviewer" in step and "artefact" in step.lower(), (
-            "Step 0 must check for a pr-reviewer artefact comment on the PR"
+        assert "AI_AGILE_INVOCATION_MODE" in step, (
+            "coder.md Step 0 must read AI_AGILE_INVOCATION_MODE "
+            "to determine its invocation mode"
         )
 
-    def test_step0_bash_fetches_pr_comments_for_artefact(self):
+    def test_step0_does_not_inspect_review_cycle_label(self):
+        """Detecting the review-cycle:N label is the orchestrator's job, not the coder's."""
         text = _load_coder()
         step = _extract_step0(text)
-        assert 'contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")' in step, (
-            "Step 0 must fetch PR comments and check for the pr-reviewer artefact marker"
+        assert "review-cycle" not in step, (
+            "coder.md Step 0 must not inspect review-cycle:N labels; "
+            "the orchestrator injects the mode via AI_AGILE_INVOCATION_MODE"
         )
 
-    def test_step0_bash_checks_artefact_marker_string(self):
+    def test_step0_does_not_check_pr_reviewer_artefact(self):
+        """Checking for a pr-reviewer artefact is the orchestrator's job, not the coder's."""
         text = _load_coder()
         step = _extract_step0(text)
-        assert "ai-agile/artefact/v1 by 03_execute/pr-reviewer" in step, (
-            "Step 0 must search for the canonical pr-reviewer artefact marker in PR comments"
+        assert "pr-reviewer" not in step, (
+            "coder.md Step 0 must not check for a pr-reviewer artefact; "
+            "the orchestrator injects the mode via AI_AGILE_INVOCATION_MODE"
         )
 
-    def test_step0_falls_through_to_mode_a_when_no_artefact(self):
+    def test_step0_identifies_mode_a_as_initial_build(self):
+        """Step 0 must map AI_AGILE_INVOCATION_MODE=initial to Mode A."""
         text = _load_coder()
         step = _extract_step0(text)
         lower = step.lower()
-        assert "mode a" in lower or 'mode=a' in lower or '"mode=a"' in lower, (
-            "Step 0 must fall through to Mode A when review-cycle:N is present but no artefact found"
-        )
-
-    def test_step0_human_review_pending_is_always_mode_b(self):
-        text = _load_coder()
-        step = _extract_step0(text)
-        assert "`human-review-pending` present: **MODE=B**" in step, (
-            "Step 0 must still handle the human-review-pending label as a reliable, "
-            "unconditional Mode B trigger"
+        assert "initial" in lower and ("mode a" in lower or "initial build" in lower), (
+            "coder.md Step 0 must map AI_AGILE_INVOCATION_MODE=initial to Mode A"
         )
 
 
@@ -99,50 +102,62 @@ class TestGenuineReInvocationRunsModeB:
     """Scenario: A genuine re-invocation after review feedback still runs Mode B.
 
     Given pr-reviewer posted REQUEST CHANGES (or a human left an unresolved REQUEST_CHANGES review)
-    When coder runs Step 0
-    Then it detects Mode B and reads the actual feedback
+    When the orchestrator computes AI_AGILE_INVOCATION_MODE and coder runs Step 0
+    Then coder detects Mode B, because the orchestrator injected AI_AGILE_INVOCATION_MODE=review
     """
 
-    def test_step0_still_handles_review_cycle_label(self):
-        text = _load_coder()
-        step = _extract_step0(text)
-        assert "review-cycle" in step, (
-            "Step 0 must still recognise review-cycle:N as input to Mode B detection"
+    def test_orchestrator_sets_review_mode_for_reinvocation(self):
+        """The orchestrator sets AI_AGILE_INVOCATION_MODE=review when rc_cur >= 1."""
+        text = ORCHESTRATOR_PY.read_text()
+        assert '"review"' in text, (
+            "pipeline_orchestrator.py must set AI_AGILE_INVOCATION_MODE to 'review' "
+            "for a re-invocation"
         )
 
-    def test_step0_mode_b_when_artefact_present(self):
-        text = _load_coder()
-        step = _extract_step0(text)
-        assert "MODE=B" in step or "mode=b" in step.lower(), (
-            "Step 0 bash block must set Mode B when the pr-reviewer artefact is found"
+    def test_orchestrator_review_mode_covers_human_review_pending(self):
+        """The orchestrator sets review mode when HUMAN_REVIEW_PENDING_LABEL is present."""
+        text = ORCHESTRATOR_PY.read_text()
+        assert "HUMAN_REVIEW_PENDING_LABEL" in text and "review" in text, (
+            "pipeline_orchestrator.py must handle HUMAN_REVIEW_PENDING_LABEL "
+            "when computing AI_AGILE_INVOCATION_MODE"
         )
 
-    def test_step0_human_review_pending_triggers_mode_b_unconditionally(self):
-        text = _load_coder()
-        step = _extract_step0(text)
-        # human-review-pending must set MODE=B and explicitly skip the artefact check,
-        # not require it -- unlike the review-cycle:N path a few lines below.
-        hrp_idx = step.index("`human-review-pending` present: **MODE=B**")
-        artefact_idx = step.index(
-            'contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")'
+    def test_orchestrator_invocation_mode_injected_into_flow_env(self):
+        """The orchestrator puts AI_AGILE_INVOCATION_MODE into flow_env so it
+        reaches the agent's environment."""
+        text = ORCHESTRATOR_PY.read_text()
+        assert "_invocation_mode" in text, (
+            "pipeline_orchestrator.py must compute _invocation_mode for injection"
         )
-        assert hrp_idx < artefact_idx, (
-            "human-review-pending's unconditional MODE=B must be stated before "
-            "the pr-reviewer artefact check that only review-cycle:N needs"
-        )
-        hrp_to_artefact = step[hrp_idx:artefact_idx]
-        assert "Skip to the PR lookup" in hrp_to_artefact, (
-            "human-review-pending must explicitly skip the artefact check, not require it"
+        assert '_flow_env["AI_AGILE_INVOCATION_MODE"]' in text, (
+            "pipeline_orchestrator.py must inject AI_AGILE_INVOCATION_MODE into _flow_env"
         )
 
-    def test_frontmatter_description_reflects_new_mode_b_triggers(self):
+    def test_step0_maps_review_mode_to_mode_b(self):
+        """Step 0 must map AI_AGILE_INVOCATION_MODE=review to Mode B."""
+        text = _load_coder()
+        step = _extract_step0(text)
+        lower = step.lower()
+        assert "review" in lower and ("mode b" in lower or "address feedback" in lower), (
+            "coder.md Step 0 must map AI_AGILE_INVOCATION_MODE=review to Mode B"
+        )
+
+    def test_step0_does_not_inspect_human_review_pending(self):
+        """Detecting human-review-pending is the orchestrator's job, not the coder's."""
+        text = _load_coder()
+        step = _extract_step0(text)
+        assert "human-review-pending" not in step, (
+            "coder.md Step 0 must not check for human-review-pending label; "
+            "the orchestrator injects the mode via AI_AGILE_INVOCATION_MODE"
+        )
+
+    def test_frontmatter_describes_invocation_mode_env_var(self):
+        """Frontmatter description must reference AI_AGILE_INVOCATION_MODE."""
         text = _load_coder()
         fm = _extract_frontmatter(text)
-        assert "human-review-pending" in fm, (
-            "Frontmatter description must mention human-review-pending as a Mode B trigger"
-        )
-        assert "pr-reviewer" in fm and "artefact" in fm.lower(), (
-            "Frontmatter description must mention the pr-reviewer artefact check"
+        assert "AI_AGILE_INVOCATION_MODE" in fm, (
+            "coder.md frontmatter description must reference AI_AGILE_INVOCATION_MODE "
+            "as the mode-selection mechanism"
         )
 
 
@@ -156,7 +171,6 @@ class TestMaxCyclesEnforcementIsUnaffected:
 
     def test_orchestrator_review_cycle_increment_unchanged(self):
         text = ORCHESTRATOR_PY.read_text()
-        # The dispatch-time increment logic must still exist
         assert "_get_review_cycle" in text, (
             "pipeline_orchestrator.py must still define _get_review_cycle"
         )
@@ -166,7 +180,6 @@ class TestMaxCyclesEnforcementIsUnaffected:
 
     def test_orchestrator_handle_review_loop_max_cycles_check_unchanged(self):
         text = ORCHESTRATOR_PY.read_text()
-        # max_cycles check in _handle_review_loop must still exist
         assert "next_cycle > max_cycles" in text, (
             "max_cycles escalation check in _handle_review_loop must be unchanged"
         )
@@ -174,7 +187,6 @@ class TestMaxCyclesEnforcementIsUnaffected:
     def test_coder_step0_does_not_alter_review_cycle_label(self):
         text = _load_coder()
         step = _extract_step0(text)
-        # Step 0 must not add or remove review-cycle labels
         assert "gh label" not in step.lower(), (
             "Step 0 must not create or delete labels"
         )
@@ -185,7 +197,6 @@ class TestMaxCyclesEnforcementIsUnaffected:
     def test_coder_step0_fix_is_read_only_detection(self):
         text = _load_coder()
         step = _extract_step0(text)
-        # The fix must only READ state (gh api GET), not mutate it
         mutating_patterns = ["--method POST", "--method PATCH", "--method DELETE", "gh pr review"]
         for pattern in mutating_patterns:
             assert pattern not in step, (

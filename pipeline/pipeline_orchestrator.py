@@ -5939,6 +5939,23 @@ def _run_agent(
     # :requested is a manual override — detect before removing the label below.
     _manual_trigger = agent_status(labels, agent_def.label_key) == STATUS_REQUESTED
 
+    # Determine invocation mode for re_invoke targets before _acquire_wip_and_announce
+    # increments the review-cycle counter, so the injected value reflects the mode
+    # the agent is actually entering. None for steps that are not re_invoke targets.
+    _is_reinvoke_target = any(
+        ad.review_loop and ad.review_loop.get("re_invoke") == agent_def.agent
+        for ad in pipeline_map.values()
+    )
+    if _is_reinvoke_target:
+        _pre_rc = _get_review_cycle(labels)
+        _invocation_mode: Optional[str] = (
+            "review"
+            if HUMAN_REVIEW_PENDING_LABEL in labels or _pre_rc >= 1
+            else "initial"
+        )
+    else:
+        _invocation_mode = None
+
     _acquire_wip_and_announce(
         agent_def, work_item, dry_run, _manual_trigger,
         repo, labels, concurrency, gh, pipeline_map,
@@ -5985,6 +6002,8 @@ def _run_agent(
     _flow_env = _flow_context_env(
         agent_def, work_item, sub_item_number=_sub_item, children=_children,
     )
+    if _invocation_mode is not None:
+        _flow_env["AI_AGILE_INVOCATION_MODE"] = _invocation_mode
 
     # For commit_after agents, check out the issue branch into its own
     # isolated worktree before invoking, so the agent reads accumulated state
