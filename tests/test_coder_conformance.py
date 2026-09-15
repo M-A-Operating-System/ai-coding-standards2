@@ -224,3 +224,90 @@ class TestCoderBroadBashGrantDesign:
                 f"coder deniedTools must contain {pattern!r} to compensate for "
                 "the broad Bash grant"
             )
+
+
+def _extract_mode_b_intro(text: str) -> str:
+    m = re.search(r"## MODE B[^\n]*\n(.*?)(?=\n## Step 9|\Z)", text, re.DOTALL)
+    return m.group(1) if m else ""
+
+
+class TestCoderMdModeBInstructionsRequireAddressingEachReviewFindingBeforeANoCommitExit:
+    """Scenario: coder.md Mode B instructions require addressing each review finding
+    before a no-commit exit.
+
+    Given coder.md contains a Mode B section describing when no-changes-needed is valid
+    When a reader follows the instructions for a re-invocation where the original
+    implementation is already present on the branch
+    Then the instructions require the agent to read and process each finding in the
+    pr-reviewer artefact, and only permit a zero-commit exit after each finding has
+    either been addressed by an existing commit or explicitly rebutted with stated
+    reasoning
+    """
+
+    def test_mode_b_intro_states_zero_commit_exit_rule(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        assert "zero-commit" in intro.lower() or "zero new commit" in intro.lower(), (
+            "coder.md Mode B intro must state the zero-commit exit rule"
+        )
+
+    def test_mode_b_intro_requires_enumerating_each_finding(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        assert "every finding" in intro.lower() or "each finding" in intro.lower(), (
+            "coder.md Mode B intro must require enumerating every finding in the "
+            "pr-reviewer artefact before a zero-commit exit"
+        )
+
+    def test_mode_b_intro_requires_existing_commit_or_explicit_rebuttal(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        lower = intro.lower()
+        assert "existing commit" in lower or "covered by" in lower, (
+            "coder.md Mode B intro must require each finding to be covered by an "
+            "existing commit or explicitly rebutted"
+        )
+        assert "rebutted" in lower or "rebuttal" in lower, (
+            "coder.md Mode B intro must require an explicit rebuttal path for findings "
+            "that are not addressed by a commit"
+        )
+
+    def test_mode_b_intro_requires_stated_reasoning_in_summary(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        assert "stated reasoning" in intro.lower() or "result.json" in intro, (
+            "coder.md Mode B intro must require stated reasoning in result.json summary "
+            "for any rebutted finding"
+        )
+
+
+class TestCoderModeBDoesNotExitCompleteWithNoCommitsWhileAFixableRequestChangesFindingRemainsOpen:
+    """Scenario: coder Mode B does not exit complete with no commits while a fixable
+    REQUEST_CHANGES finding remains open.
+
+    Given coder is re-invoked in Mode B with a pr-reviewer artefact listing at least
+    one REQUEST_CHANGES finding
+    When coder confirms the original issue's implementation commit is already present
+    on the branch
+    Then coder does not produce outcome complete with zero new commits unless every
+    finding in the pr-reviewer artefact is either covered by an existing commit or
+    explicitly rebutted with stated reasoning in the result
+    """
+
+    def test_mode_b_intro_prohibits_zero_commit_exit_without_per_finding_check(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        lower = intro.lower()
+        assert "do not exit" in lower or "only valid after" in lower, (
+            "coder.md Mode B intro must prohibit a zero-commit exit without a "
+            "per-finding check, not merely state the happy-path shortcut"
+        )
+
+    def test_mode_b_intro_disallows_exit_based_solely_on_implementation_presence(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        lower = intro.lower()
+        assert "already present" in lower or "original implementation" in lower, (
+            "coder.md Mode B intro must explicitly state that finding the original "
+            "implementation on the branch is not sufficient for a zero-commit exit"
+        )
