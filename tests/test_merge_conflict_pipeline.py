@@ -50,7 +50,7 @@ def _load_agent_from_pipeline(agent_name: str) -> AgentDef:
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
-def _make_merge_conflict_agent() -> AgentDef:
+def _make_merge_conflict_agent(self_gates: bool = False) -> AgentDef:
     """Build the merge-conflict AgentDef matching the pipeline.json entry."""
     return AgentDef(
         agent="03_execute/merge-conflict",
@@ -62,6 +62,7 @@ def _make_merge_conflict_agent() -> AgentDef:
         human_gate_label="merge-conflict:approved",
         description="Checks for merge conflicts on the issue PR after CI passes.",
         exclude_classifications=["spike"],
+        self_gates=self_gates,
     )
 
 
@@ -419,10 +420,12 @@ class TestCodingAgentTaskedAfterPlanApproval:
 class TestCleanPrIsNotAffectedByMergeConflictAgent:
     """For a clean PR (no conflicts), the agent emits complete immediately.
 
-    The orchestrator's auto_approve_on_complete=True on the merge-conflict entry
-    causes it to auto-apply merge-conflict:approved alongside :complete, so the
-    pipeline advances to pr-reviewer without any human action required.
-    promote_gated_agents is a no-op because :review is never set.
+    self_gates=True on the merge-conflict entry (issue #425) means the
+    agent's own :complete stands as-is -- human_gate_after/human_gate_label
+    are never force-overridden and no gate label is auto-applied, so the
+    pipeline advances to pr-reviewer on :complete alone, without any human
+    action required. promote_gated_agents is a no-op because :review is
+    never set.
     """
 
     def test_complete_without_review_does_not_trigger_promote(self):
@@ -439,20 +442,18 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
         gh.remove_label.assert_not_called()
         assert result == labels
 
-    def test_pr_reviewer_eligible_after_clean_pr_auto_approve(self):
-        """Clean PR: auto_approve_on_complete sets both :complete and :approved; pr-reviewer runs."""
-        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
-        # Both labels are present after orchestrator auto-approve
-        labels = {"merge-conflict:complete", "merge-conflict:approved"}
+    def test_pr_reviewer_eligible_after_clean_pr_self_gates(self):
+        """Clean PR: self_gates lets :complete alone (no :approved) satisfy
+        pr-reviewer's dependency on merge-conflict."""
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent(self_gates=True)}
+        labels = {"merge-conflict:complete"}
         assert dependencies_complete(labels, _make_pr_reviewer_agent(), pipeline_map) is True
 
-    def test_pr_reviewer_still_blocked_without_gate_label(self):
-        """dependencies_complete correctly blocks pr-reviewer when :approved is absent.
-
-        This scenario can't arise for auto_approve_on_complete agents in normal flow,
-        but the guard in dependencies_complete must remain correct for all agent types.
-        """
-        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent()}
+    def test_pr_reviewer_still_blocked_without_self_gates_and_no_approval(self):
+        """Regression guard: without self_gates, dependencies_complete still
+        requires the gate label -- the guard in dependencies_complete must
+        remain correct for non-self_gates agents."""
+        pipeline_map = {"03_execute/merge-conflict": _make_merge_conflict_agent(self_gates=False)}
         labels = {"merge-conflict:complete"}
         assert dependencies_complete(labels, _make_pr_reviewer_agent(), pipeline_map) is False
 
@@ -468,29 +469,9 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
             {"merge-conflict:wip"}, _make_pr_reviewer_agent()
         ) is False
 
-    def test_auto_approve_on_complete_applies_gate_label(self):
-        """Orchestrator auto-applies human_gate_label when auto_approve_on_complete=True."""
-        from unittest.mock import MagicMock, patch
-        import sys, os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
-        from pipeline_orchestrator import AgentDef, STATUS_COMPLETE
-
-        agent = AgentDef(
-            agent="03_execute/merge-conflict",
-            phase="03_execute",
-            objects=["issue"],
-            trigger={"label": "ci-gate:complete"},
-            dependencies=[],
-            human_gate_after=True,
-            human_gate_label="merge-conflict:approved",
-            description="test",
-            auto_approve_on_complete=True,
-        )
-        assert agent.auto_approve_on_complete is True
-        assert agent.human_gate_label == "merge-conflict:approved"
-
-    def test_auto_approve_on_complete_loaded_from_pipeline_json(self):
-        """pipeline.json merge-conflict entry has auto_approve_on_complete: true."""
+    def test_self_gates_true_loaded_from_pipeline_json(self):
+        """pipeline.json merge-conflict entry has self_gates: true (issue #425)
+        and no longer declares the self-defeating auto_approve_on_complete."""
         import json
         from pathlib import Path
         pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
@@ -501,23 +482,27 @@ class TestCleanPrIsNotAffectedByMergeConflictAgent:
             for step in flow["steps"]
         ]
         mc = next(e for e in steps if e["agent"] == "03_execute/merge-conflict")
-        assert mc.get("auto_approve_on_complete") is True
+        assert mc.get("self_gates") is True
+        assert "auto_approve_on_complete" not in mc
 
 
 # ---------------------------------------------------------------------------
-# Scenario 5 (orchestrator drive): auto_approve_on_complete actually applies
-# the gate label through process_work_item
+# Scenario 5 (orchestrator drive): self_gates (issue #425) lets a clean-PR
+# :complete stand as-is through process_work_item, with no gate label ever
+# written by the orchestrator -- unlike the old auto_approve_on_complete
+# design, there is no bot-authored write for the self-approval guard to
+# reject in the first place.
 # ---------------------------------------------------------------------------
 
-class TestAutoApproveOnCompleteDrivesProcessWorkItem:
-    """Drive the real process_work_item branch that auto-applies the gate label.
+class TestSelfGatesDrivesProcessWorkItem:
+    """Drive the real process_work_item branch for a self_gates agent.
 
-    The attribute-only test above proves the AgentDef carries the flag; these
-    tests prove the orchestrator actually calls gh.add_label(human_gate_label)
-    when an auto_approve agent emits :complete. invoke_agent is patched to
-    return a success AgentRunResult whose captured_tail carries the
-    AI_AGILE_STATUS: complete sentinel; gh is a MagicMock so all label/comment
-    calls are absorbed and inspectable.
+    The config test above proves the shipped AgentDef carries self_gates;
+    these tests prove the orchestrator actually leaves :complete alone --
+    never auto-applying the gate label and never demoting to :review --
+    when a self_gates agent emits :complete. invoke_agent is patched to
+    write a result.json carrying outcome: complete; gh is a MagicMock so all
+    label/comment calls are absorbed and inspectable.
     """
 
     def _run(self, gh):
@@ -572,21 +557,23 @@ class TestAutoApproveOnCompleteDrivesProcessWorkItem:
         mock_invoke.assert_called_once()
         return merge_conflict.human_gate_label, merge_conflict.complete_label
 
-    def test_gate_label_applied_on_complete(self):
-        """auto_approve_on_complete=True → orchestrator applies merge-conflict:approved."""
+    def test_complete_stands_without_gate_label(self):
+        """self_gates=True → the orchestrator applies :complete only; it never
+        writes the gate label itself (that would be the self-defeating
+        auto-apply-then-reject loop issue #425 describes)."""
         gh = _make_gh()
 
         gate_label, complete_label = self._run(gh)
 
         added = [c.args[1] for c in gh.add_label.call_args_list]
-        # The gate label is auto-applied, and the agent ends :complete (not :review).
-        assert gate_label in added
         assert complete_label in added
-        # It must NOT land in :review — auto_approve bypasses the human gate.
+        # No auto-write of the gate label — self_gates just lets :complete stand.
+        assert gate_label not in added
+        # It must NOT land in :review either — self_gates never force-overrides :complete.
         assert merge_conflict_review_label() not in added
 
     def test_complete_state_not_demoted_to_review(self):
-        """The work item is left in :complete (auto-approved), never halted at :review."""
+        """The work item is left in :complete, never halted at :review."""
         gh = _make_gh()
 
         gate_label, complete_label = self._run(gh)
@@ -594,29 +581,3 @@ class TestAutoApproveOnCompleteDrivesProcessWorkItem:
         added = [c.args[1] for c in gh.add_label.call_args_list]
         assert complete_label in added
         assert merge_conflict_review_label() not in added
-
-    def test_add_label_exception_on_gate_does_not_crash(self):
-        """If gh.add_label raises on the gate label, the branch swallows it and still completes.
-
-        The orchestrator logs a warning and proceeds — the agent must still be
-        driven to its terminal :complete via _apply_terminal_status, which uses
-        its own add_label call. We make only the gate-label add raise.
-        """
-        gh = _make_gh()
-        gate_label = "merge-conflict:approved"
-
-        def _raise_on_gate(number, label):
-            if label == gate_label:
-                raise RuntimeError("simulated GitHub 500 on gate label")
-            return None
-
-        gh.add_label.side_effect = _raise_on_gate
-
-        returned_gate, complete_label = self._run(gh)
-        assert returned_gate == gate_label
-
-        attempted = [c.args[1] for c in gh.add_label.call_args_list]
-        # The gate add was attempted (and raised)...
-        assert gate_label in attempted
-        # ...and the terminal :complete was still applied afterwards.
-        assert complete_label in attempted
