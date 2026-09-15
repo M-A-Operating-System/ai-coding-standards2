@@ -16,7 +16,7 @@
       "properties": {
         "extra_allowedTools": {
           "type": "array",
-          "description": "Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- nothing else contributes.",
+          "description": "Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- no other allow list contributes; deniedTools subtracts from this set (deny takes precedence over allow).",
           "items": { "type": "string" },
           "uniqueItems": true
         },

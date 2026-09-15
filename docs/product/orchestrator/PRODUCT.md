@@ -477,10 +477,11 @@ mid-run leaves debris the next run simply clears before it starts.
 Commands every step needs are declared once in
 `defaults.extra_allowedTools` rather than repeated on each step. A
 step's effective permission is exactly the global set plus its own
-`extra_allowedTools`, and nothing else. The same two-level shape applies
-to `deniedTools`: `defaults.deniedTools` plus the step's own `deniedTools`
-form the effective deny list; deny takes precedence over allow; a step
-cannot remove a default deny rule. Budgets follow the same shape:
+`extra_allowedTools`, less anything the effective deny list refuses. The
+same two-level shape applies to `deniedTools`: `defaults.deniedTools` plus
+the step's own `deniedTools` form the effective deny list; deny takes
+precedence over allow; a step cannot remove a default deny rule. Budgets
+follow the same shape:
 declared once in `pipeline.json`'s top-level `budgets`, overridable per
 step where a step genuinely differs, one wall independent of the other.
 A wrong number is not silently wrong — it surfaces as `exhausted`,
