@@ -212,17 +212,23 @@ class TestRecoveringABranchLeftAhead:
 class TestWhatTheStepIsAndIsNotToldItMayDo:
     def test_every_committing_step_is_granted_the_commands_to_commit(self):
         """A step whose deliverable is a commit and whose allowlist omits
-        `git commit` fails in a way no reader of pipeline.json could predict.
-        The declaration and the capability must agree (AS-1)."""
+        `git commit` capability fails in a way no reader of pipeline.json could predict.
+        The declaration and the capability must agree (AS-1).
+
+        After issue #463, the coder step uses bare 'Bash' (not individual git
+        patterns), which also covers git add and git commit. Both specific patterns
+        and the bare 'Bash' grant are accepted here.
+        """
         agents, defaults = po.load_pipeline(po.PIPELINE_PATH)
         committing = [a for a in agents if a.commit_after]
         assert committing, "no step declares git_ops.commit_after"
         for agent_def in committing:
             granted = set(defaults) | set(agent_def.extra_allowedTools)
+            has_bare_bash = "Bash" in granted
             for needed in ("Bash(git add *)", "Bash(git commit *)"):
-                assert needed in granted, (
+                assert needed in granted or has_bare_bash, (
                     f"{agent_def.agent} declares git_ops.commit_after but is not "
-                    f"granted {needed}"
+                    f"granted {needed} or bare 'Bash'"
                 )
 
     # PRODUCT.md names this as unfinished target-state work in as many words:

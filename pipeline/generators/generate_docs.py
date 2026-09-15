@@ -185,15 +185,38 @@ def render_steps(pipeline):
             "| Step | Additional entitlements | Declared prohibitions | Git operations |",
             "|---|---|---|---|",
         ]
+        deny_group_steps = []
         for step in flow_steps:
             extra = step.get("extra_allowedTools") or []
             denied = step.get("deniedTools") or []
-            shown = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
+            deny_groups = step.get("deny_groups") or []
+            shown_extra = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
+            shown_denied = _cell(denied[:4]) + (f" _(+{len(denied) - 4} more)_" if len(denied) > 4 else "")
             lines.append(
-                f"| `{step['agent']}` | {shown if extra else '--'} "
-                f"| {_cell(denied) if denied else '--'} "
+                f"| `{step['agent']}` | {shown_extra if extra else '--'} "
+                f"| {shown_denied if denied else '--'} "
                 f"| {_cell(step.get('git_ops'))} |"
             )
+            if deny_groups:
+                deny_group_steps.append(step)
+
+        for step in deny_group_steps:
+            lines += [
+                "",
+                f"### Deny rule groups: `{step['agent']}`",
+                "",
+                "The groups below are explanatory only. The authoritative enforcement is"
+                " the flat `deniedTools` list above. The matcher sees the command string"
+                " as written; a command reached through an interpreter wrapper"
+                " (e.g. `bash -c '...'`) is not matched and is documented as the"
+                " deny list's known limitation.",
+                "",
+            ]
+            for group in step.get("deny_groups", []):
+                lines += [f"**{group['name']}** -- {group['purpose']}", ""]
+                for pat in group.get("patterns", []):
+                    lines.append(f"- `{pat}`")
+                lines.append("")
 
     lines += ["", "## Entitlements granted to every step", ""]
     lines += [
