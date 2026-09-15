@@ -29,3 +29,15 @@
 **Given** a test failure exists after the coder's change, the failure reproduces against the pre-change baseline with one targeted verification, and no file or behaviour touched by the coder's diff is exercised by that failing test
 **When** the coder has recorded the failure in `result.json` with baseline verification evidence
 **Then** the coder sets `outcome: complete` without further investigation or reverification of that failure in the same invocation
+
+## Scenario: coder.md Mode B instructions require addressing each review finding before a no-commit exit
+
+**Given** coder.md contains a Mode B section describing when "no changes needed" is a valid outcome
+**When** a reader follows the instructions for a re-invocation where the original implementation is already present on the branch
+**Then** the instructions require the agent to read and process each finding in the pr-reviewer artefact, and only permit a zero-commit exit after each finding has either been addressed by an existing commit or explicitly rebutted with stated reasoning
+
+## Scenario: coder Mode B does not exit complete with no commits while a fixable REQUEST_CHANGES finding remains open
+
+**Given** coder is re-invoked in Mode B (review-cycle:N) with a pr-reviewer artefact listing at least one REQUEST_CHANGES finding
+**When** coder confirms the original issue's implementation commit is already present on the branch
+**Then** coder does not produce outcome "complete" with zero new commits unless every finding in the pr-reviewer artefact is either covered by an existing commit or explicitly rebutted with stated reasoning in the result
