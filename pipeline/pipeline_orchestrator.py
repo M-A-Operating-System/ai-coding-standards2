@@ -6651,6 +6651,14 @@ def _resolve_applied_status(
     decides per-run whether its work needs review by emitting
     AI_AGILE_STATUS: review itself; human_gate_after/human_gate_label still
     apply for promotion once the agent has emitted :review.
+
+    A step with no human_gate_label cannot resolve a :review it raises itself:
+    :review is defined as the gate status, promoted to :complete when the gate
+    label is applied, and a step with nothing to gate has no label a human
+    could apply (issue #380). Such a step's self-emitted :review is applied as
+    :blocked instead -- :blocked already has a documented human-clears-it path
+    (remove the label; the step re-runs on the next tick), where :review on a
+    gateless step had none.
     """
     applied_status = final_status
     if (
@@ -6673,6 +6681,13 @@ def _resolve_applied_status(
                 )
         else:
             applied_status = STATUS_REVIEW
+    elif final_status == STATUS_REVIEW and not agent_def.human_gate_label:
+        applied_status = STATUS_BLOCKED
+        log.info(
+            "  %-38s  no human_gate_label -- applying :blocked instead of "
+            ":review on #%d (issue #380)",
+            agent_def.agent, work_item.number,
+        )
     return applied_status
 
 
