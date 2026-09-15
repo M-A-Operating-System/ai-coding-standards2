@@ -4,11 +4,15 @@ Covers:
 - PRD issue #100: coder must read unresolved human REQUEST_CHANGES reviews in Mode B
 - Issue #463: coder uses bare Bash (replacing narrow git grants)
 - Issue #467: coder reads AI_AGILE_INVOCATION_MODE instead of inspecting labels
+- Issue #449: coder Mode B must address or rebut every pr-reviewer finding before
+  a zero-commit "complete" exit
 
 Gherkin scenarios traced:
   - scenario_coder_reinvoked_with_human_review_context
   - scenario_coder_mode_b_description_updated
   - coder_consumes_orchestrator_supplied_invocation_mode
+  - coder_md_mode_b_instructions_require_addressing_each_finding_before_no_commit_exit
+  - coder_mode_b_does_not_exit_complete_with_no_commits_while_fixable_finding_remains_open
 """
 import re
 from pathlib import Path
@@ -259,7 +263,7 @@ class TestCoderMdModeBInstructionsRequireAddressingEachReviewFindingBeforeANoCom
             "pr-reviewer artefact before a zero-commit exit"
         )
 
-    def test_mode_b_intro_requires_existing_commit_or_explicit_rebuttal(self):
+    def test_mode_b_intro_requires_existing_commit_coverage_path(self):
         text = _load_coder_text()
         intro = _extract_mode_b_intro(text)
         lower = intro.lower()
@@ -267,6 +271,11 @@ class TestCoderMdModeBInstructionsRequireAddressingEachReviewFindingBeforeANoCom
             "coder.md Mode B intro must require each finding to be covered by an "
             "existing commit or explicitly rebutted"
         )
+
+    def test_mode_b_intro_requires_explicit_rebuttal_path(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        lower = intro.lower()
         assert "rebutted" in lower or "rebuttal" in lower, (
             "coder.md Mode B intro must require an explicit rebuttal path for findings "
             "that are not addressed by a commit"
