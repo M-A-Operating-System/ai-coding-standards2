@@ -633,6 +633,7 @@ testable in isolation and portable between the two modes.
 | `AI_AGILE_ROOT` | Where the repository is |
 | `AI_AGILE_CONTEXT` | Where the shared agent protocol is |
 | `AI_AGILE_EXECUTION_MODE` | Whether *this step* has a human attached |
+| `AI_AGILE_INVOCATION_MODE` (when applicable) | The step's invocation mode: `initial` for a first build, `review` for a re-invocation after reviewer feedback. Set by the orchestrator on steps that need it, so those steps do not inspect labels or artefacts to determine their mode. |
 | `REPO` | Which GitHub repository to act on |
 | `ISSUE_NUMBER` | The issue this invocation is for -- resolved for every invocation, whether the work item is an issue or a PR; unset when the reverse lookup finds nothing (PR's head branch does not match issue-{N} and it carries no source-issue:{N} label) |
 | `PR_NUMBER` | The pull request this invocation is for -- resolved for every invocation, whether the work item is a PR or an issue with an associated open PR; unset when no PR exists yet |
