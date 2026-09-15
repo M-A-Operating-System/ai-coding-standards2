@@ -100,11 +100,22 @@ def test_resolve_only_matches_a_real_spawn_exactly(capsys):
 
 def test_the_comparison_is_against_a_substantial_allowlist():
     """A parity test between two short lists proves nothing. Guard the guard:
-    if the coder's grants ever shrink to near the pipeline-wide defaults, this
-    test's subject is gone and the parity assertion above stops meaning
-    anything."""
+    if the coder's grants ever shrink to exactly the pipeline-wide defaults,
+    the parity assertion above stops meaning anything.
+
+    After issue #463, the coder's extra_allowedTools is just ['Bash'] -- so the
+    effective list is defaults + 'Bash', which is defaults + 1 entry. The test
+    must confirm the coder has at least that one meaningful addition.
+    """
     _, default_extra_tools = po.load_pipeline(PIPELINE)
-    assert len(_real_spawn_allowlist()) > len(default_extra_tools) + 40
+    real_list = _real_spawn_allowlist()
+    assert len(real_list) > len(default_extra_tools), (
+        "coder's effective allowlist must be larger than the pipeline defaults alone; "
+        f"coder list: {len(real_list)}, defaults: {len(default_extra_tools)}"
+    )
+    assert "Bash" in real_list, (
+        "coder's effective allowlist must contain the bare 'Bash' grant (issue #463)"
+    )
 
 
 def test_pipeline_defaults_are_included(capsys):
@@ -114,9 +125,12 @@ def test_pipeline_defaults_are_included(capsys):
 
 
 def test_per_agent_grants_are_included(capsys):
+    """After issue #463, the coder's per-step grant is bare 'Bash' (not individual
+    command patterns). Verify 'Bash' appears in the resolved allowlist."""
     allowed = _resolve_only(capsys)["allowed_tools"]
-    for tool in ["Bash(git log *)", "Bash(rm *)", "Bash(sed *)", "Bash(pytest *)"]:
-        assert tool in allowed, f"pipeline.json per-agent grant {tool} was dropped"
+    assert "Bash" in allowed, (
+        "pipeline.json coder per-step grant 'Bash' was dropped from resolved allowlist"
+    )
 
 
 def test_an_unregistered_agent_still_resolves(capsys):

@@ -139,41 +139,17 @@ class TestCoderDescriptionMentionsHumanReviewPending:
 
 
 # ---------------------------------------------------------------------------
-# Issue #407 -- the git grant matches what the prompt actually tells coder to do
+# Issue #463 -- coder uses bare Bash (replacing issue #407's narrow git grants)
 #
-# coder.md forbids itself from running git commit / push / checkout, and every
-# git call it demonstrates is read-only. `Bash(git *)` granted exactly the
-# commands the prompt forbids, so AS-1/P-16 (permissions say the same thing the
-# step is told) and PRODUCT.md's "What a step must never do" were both false of
-# the shipped config. The fix is narrowing the grant, never relaxing the prompt.
+# Issue #463 replaces the executable-by-executable Bash allowlist with a single
+# bare "Bash" entry. Dangerous operations are controlled via deniedTools instead
+# of a narrow allowlist. The prompt still forbids the commands the deny list
+# covers; the alignment guarantee comes from deniedTools, not the allowlist shape.
 # ---------------------------------------------------------------------------
 
 import json  # noqa: E402
 
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
-
-# What coder's own prompt demonstrates. Read-only orientation: `git log
-# --oneline`, `git diff HEAD` for the self-review pass, `git rev-parse HEAD`
-# for the working-tree-vs-PR-head check in Mode B. Plus committing its own
-# work: coder runs in an isolated worktree already on its branch, and its
-# commit is the deliverable rather than a side effect of returning cleanly
-# (PRODUCT.md, "What lands in git").
-_EXPECTED_CODER_GIT_GRANTS = {
-    "Bash(git log *)",
-    "Bash(git diff *)",
-    "Bash(git rev-parse *)",
-    "Bash(git add *)",
-    "Bash(git commit *)",
-    "Bash(git status *)",
-}
-
-# Anything that moves the branch, reaches the remote, rewrites history, or
-# discards work. Committing is the step's; the ref is the orchestrator's.
-_FORBIDDEN_CODER_GIT_SUBCOMMANDS = (
-    "push", "checkout", "switch", "reset", "branch",
-    "merge", "rebase", "rm", "stash", "cherry-pick", "tag",
-    "clean", "restore", "worktree", "remote", "fetch", "pull",
-)
 
 
 def _coder_step() -> dict:
@@ -185,37 +161,37 @@ def _coder_step() -> dict:
     raise AssertionError("03_execute/coder is not declared in pipeline.json")
 
 
-def _coder_git_grants() -> set:
-    return {
-        tool for tool in _coder_step().get("extra_allowedTools", [])
-        if tool.startswith("Bash(git")
-    }
+class TestCoderBroadBashGrantDesign:
+    """Issue #463: coder now uses bare 'Bash' rather than a narrow per-executable list."""
 
-
-class TestCoderGitGrantMatchesItsInstructions:
-    def test_the_unnarrowed_git_glob_is_gone(self):
-        assert "Bash(git *)" not in _coder_git_grants(), (
-            "Bash(git *) permits exactly the commands coder.md forbids "
-            "(git commit / push / checkout) -- PRODUCT.md, "
-            "'What a step must never do'"
+    def test_coder_uses_bare_bash_not_narrow_list(self):
+        """extra_allowedTools must be exactly ['Bash'] -- the broad grant that
+        replaced the per-executable list (issue #463)."""
+        step = _coder_step()
+        extra = step.get("extra_allowedTools", [])
+        assert extra == ["Bash"], (
+            f"coder extra_allowedTools must be ['Bash'] after issue #463 simplification; "
+            f"found: {extra}"
         )
 
-    def test_only_the_read_only_subcommands_the_prompt_uses_are_granted(self):
-        assert _coder_git_grants() == _EXPECTED_CODER_GIT_GRANTS
+    def test_no_specific_git_patterns_in_extra_allowed_tools(self):
+        """With bare 'Bash', individual git subcommand patterns are redundant and
+        must not appear in extra_allowedTools."""
+        step = _coder_step()
+        extra = step.get("extra_allowedTools", [])
+        git_specific = [t for t in extra if t.startswith("Bash(git")]
+        assert not git_specific, (
+            f"extra_allowedTools must not contain individual git patterns when bare "
+            f"'Bash' is already granted; found: {git_specific}"
+        )
 
-    def test_no_write_or_history_rewriting_subcommand_is_granted(self):
-        for grant in _coder_git_grants():
-            for forbidden in _FORBIDDEN_CODER_GIT_SUBCOMMANDS:
-                assert not grant.startswith(f"Bash(git {forbidden}"), (
-                    f"{grant} grants a git subcommand that moves the branch, "
-                    "reaches the remote, rewrites history or discards work. A "
-                    "step commits; the orchestrator owns the ref (PRODUCT.md, "
-                    "'What lands in git')"
-                )
+    def test_prompt_still_forbids_dangerous_git_commands(self):
+        """Widening the grant does not relax the instruction.
 
-    def test_the_prompt_still_forbids_the_commands_the_grant_now_excludes(self):
-        """The grant widened to let coder commit; the instruction against
-        reaching the remote or moving the branch did not relax with it."""
+        coder.md must still forbid git push, checkout, merge, and rebase --
+        the deny list and the prompt must agree on what the coder must not do
+        (AS-1/P-16).
+        """
         text = " ".join(_load_coder_text().split())
         for forbidden in ("git push", "git checkout", "git merge", "git rebase"):
             assert f"Never run `{forbidden}`" in text or (
@@ -225,15 +201,21 @@ class TestCoderGitGrantMatchesItsInstructions:
             "coder.md no longer says who owns pushing"
         )
 
-    def test_every_git_command_the_prompt_demonstrates_is_still_permitted(self):
-        """A narrowed grant that breaks the prompt's own worked examples would
-        be a different bug, not a fix."""
-        text = _load_coder_text()
-        demonstrated = set(re.findall(r"^\s*(?:\w+=\$\()?git ([a-z-]+)", text, re.M))
-        granted = {
-            g[len("Bash(git "):-len(" *)")] for g in _coder_git_grants()
-        }
-        assert demonstrated <= granted, (
-            f"coder.md demonstrates git {sorted(demonstrated - granted)} "
-            "but the grant does not permit it"
-        )
+    def test_dangerous_operations_controlled_via_denied_tools(self):
+        """With broad Bash, dangerous operations are gated by deniedTools, not
+        by the absence of an allowlist entry. Key patterns must be declared."""
+        step = _coder_step()
+        denied = step.get("deniedTools", [])
+        required_denials = [
+            "Bash(git reset --hard*)",
+            "Bash(git commit --amend*)",
+            "Bash(git push --force*)",
+            "Bash(git branch -D *)",
+            "Bash(git config *)",
+            "Bash(ssh *)",
+        ]
+        for pattern in required_denials:
+            assert pattern in denied, (
+                f"coder deniedTools must contain {pattern!r} to compensate for "
+                "the broad Bash grant"
+            )

@@ -2258,6 +2258,115 @@ class TestAutoApproveOnCompleteGeneric:
 
 
 # ---------------------------------------------------------------------------
+# TestGatelessReviewAppliedAsBlocked (issue #380): a step with no
+# human_gate_label that emits :review itself has no gate a human could apply
+# to clear it -- :review is the gate status. _resolve_applied_status maps
+# such a self-emitted :review to :blocked instead, which already has a
+# documented human-clears-it path (remove the label to retry).
+# ---------------------------------------------------------------------------
+
+class TestGatelessReviewAppliedAsBlocked:
+    def test_gateless_review_applied_as_blocked(self):
+        """No human_gate_label at all: self-emitted :review becomes :blocked."""
+        agent = _make_agent_def()  # human_gate_after=False, human_gate_label=None
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_REVIEW, gh)
+
+        assert applied == STATUS_BLOCKED
+
+    def test_gated_step_review_stays_review(self):
+        """Regression guard: a step that DOES declare a gate keeps :review
+        untouched -- only the gateless case is redirected."""
+        agent = AgentDef(
+            agent="01_product_docs/prd-writer",
+            phase="01_product_docs",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=True,
+            human_gate_label="prd-writer:approved",
+            description="test",
+        )
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_REVIEW, gh)
+
+        assert applied == STATUS_REVIEW
+
+    def test_gateless_complete_stays_complete(self):
+        """Regression guard: the redirect only fires on :review -- a gateless
+        step's own :complete is untouched."""
+        agent = _make_agent_def()
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_COMPLETE, gh)
+
+        assert applied == STATUS_COMPLETE
+
+    def test_gateless_blocked_stays_blocked(self):
+        """Regression guard: an already-:blocked outcome is untouched."""
+        agent = _make_agent_def()
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_BLOCKED, gh)
+
+        assert applied == STATUS_BLOCKED
+
+    def test_gateless_review_does_not_write_any_label(self):
+        """The remap happens in the pure mapping function -- it must not
+        itself write to GitHub (label writing is _apply_terminal_status's job)."""
+        agent = _make_agent_def()
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        _resolve_applied_status(agent, wi, STATUS_REVIEW, gh)
+
+        gh.add_label.assert_not_called()
+
+    def test_gateless_review_loop_step_review_stays_review(self):
+        """Regression guard: a gateless step with review_loop configured (e.g.
+        pr-reviewer) keeps :review untouched. pr-reviewer emits outcome:
+        "review" on REQUEST CHANGES specifically so the caller's
+        `applied_status == STATUS_REVIEW and agent_def.review_loop` check
+        triggers _handle_review_loop's automated re-invoke of the coder --
+        remapping this to :blocked would silently break that auto-retry."""
+        agent = AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            review_loop={"re_invoke": "03_execute/coder", "max_cycles": 3},
+        )
+        wi = _make_work_item_with_labels(42, set())
+        gh = _make_gh_mock()
+
+        applied = _resolve_applied_status(agent, wi, STATUS_REVIEW, gh)
+
+        assert applied == STATUS_REVIEW
+
+    def test_shipped_pr_reviewer_has_review_loop_and_no_gate(self):
+        """pipeline.json's real pr-reviewer entry is gateless (no
+        human_gate_label) AND declares review_loop -- exactly the
+        combination test_gateless_review_loop_step_review_stays_review
+        guards, verified against the shipped config rather than a fixture
+        the test itself wrote."""
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        agents, _ = load_pipeline(pipeline_path)
+        agent = pipeline_by_name(agents)["03_execute/pr-reviewer"]
+        assert not agent.human_gate_label
+        assert agent.review_loop
+
+
+# ---------------------------------------------------------------------------
 # --phases flag: phase-scoped agent filtering
 # ---------------------------------------------------------------------------
 
@@ -4789,14 +4898,24 @@ class TestApplyResultBehaviour:
         gh.add_label.assert_any_call(42, agent.status_label(STATUS_BLOCKED))
 
     def test_review_halts_and_never_applies_complete(self):
+        """This fixture's agent (named pr-reviewer here, but built without
+        review_loop) is gateless, so its self-emitted :review is remapped to
+        :blocked (issue #380) -- a gateless step with no review_loop either
+        has no automated way to clear a bare :review. See
+        TestGatelessReviewAppliedAsBlocked for the remapping itself, its
+        gated-step regression guard, and the review_loop exemption (the real
+        pr-reviewer step has review_loop configured and is unaffected)."""
         agent, gh = self._agent(), _make_gh_mock()
         wi = _make_work_item_with_labels(42, set())
         stop = self._call(agent, wi, gh, STATUS_REVIEW)
         assert stop is True, ":review must halt the work item (return True)"
         applied = [c.args[1] for c in gh.add_label.call_args_list]
-        assert agent.status_label(STATUS_REVIEW) in applied
+        assert agent.status_label(STATUS_BLOCKED) in applied
         assert agent.status_label(STATUS_COMPLETE) not in applied, (
             ":review must never apply the :complete label"
+        )
+        assert agent.status_label(STATUS_REVIEW) not in applied, (
+            "a gateless step must never end up with a bare :review label (issue #380)"
         )
 
 

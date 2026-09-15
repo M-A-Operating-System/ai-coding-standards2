@@ -371,11 +371,22 @@ def test_resolve_only_output_exposes_denied_tools(capsys):
 
 
 def test_resolve_only_denied_tools_matches_coder_pipeline_json(capsys):
-    """The denied_tools in --print-prompt output must match the pipeline.json declaration."""
+    """The denied_tools in --print-prompt output must include the coder's declared deny patterns."""
     payload = _print_prompt_output(capsys, agent="03_execute/coder")
-    # pipeline.json declares two deny rules for coder
-    assert "Bash(git reset --hard*)" in payload["denied_tools"]
-    assert "Bash(git branch -D *)" in payload["denied_tools"]
+    # Core deny patterns from all seven deny groups (issue #463)
+    for pattern in (
+        "Bash(git reset --hard*)",
+        "Bash(git commit --amend*)",
+        "Bash(git push --force*)",
+        "Bash(git branch -D *)",
+        "Bash(git config *)",
+        "Bash(ssh *)",
+        "Bash(env)",
+        "Bash(printenv)",
+    ):
+        assert pattern in payload["denied_tools"], (
+            f"denied_tools must contain {pattern!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -447,12 +458,30 @@ def test_schema_rejects_denied_tools_as_non_array_in_step():
 # ---------------------------------------------------------------------------
 
 def test_shipped_pipeline_has_denied_tools_on_coder():
-    """pipeline.json must declare deniedTools on the 03_execute/coder step."""
+    """pipeline.json must declare deniedTools on the 03_execute/coder step.
+
+    After issue #463 the full deny list covers seven groups; verify a
+    representative pattern from each group is present.
+    """
     agents, _ = po.load_pipeline(PIPELINE)
     coder = next((a for a in agents if a.agent == "03_execute/coder"), None)
     assert coder is not None, "coder step not found in pipeline"
+    # Group 1: git history destruction
     assert "Bash(git reset --hard*)" in coder.denied_tools
+    assert "Bash(git commit --amend*)" in coder.denied_tools
+    # Group 2: destructive remote ops
+    assert "Bash(git push --force*)" in coder.denied_tools
+    # Group 3: branch/reference destruction
     assert "Bash(git branch -D *)" in coder.denied_tools
+    # Group 4: validation bypass
+    assert "Bash(git commit --no-verify*)" in coder.denied_tools
+    # Group 5: control-plane
+    assert "Bash(git config *)" in coder.denied_tools
+    # Group 6: credential disclosure
+    assert "Bash(env)" in coder.denied_tools
+    assert "Bash(printenv)" in coder.denied_tools
+    # Group 7: external shell
+    assert "Bash(ssh *)" in coder.denied_tools
 
 
 # ---------------------------------------------------------------------------
