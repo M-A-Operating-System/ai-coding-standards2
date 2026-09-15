@@ -223,6 +223,13 @@ Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool:
 > on `$PR_NUMBER`. If there are no actionable **Required** or **Expected** items
 > after reading and categorising, write `outcome: "complete"` noting nothing was
 > actionable.
+>
+> **Zero-commit exit rule:** A zero-commit `outcome: "complete"` is only valid
+> after enumerating every finding in the pr-reviewer artefact and confirming each
+> one is either covered by an existing commit on the branch or explicitly rebutted
+> with stated reasoning in `result.json`'s `summary`. Do not exit with zero new
+> commits because the original implementation is already present on the branch --
+> verify each finding in the pr-reviewer artefact individually first.
 
 Before editing, confirm the working tree matches the PR head:
 
