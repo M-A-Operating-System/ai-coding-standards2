@@ -371,11 +371,6 @@
           "type": "string",
           "description": "Required when human_gate_after is true."
         },
-        "auto_approve_on_complete": {
-          "type": "boolean",
-          "default": false,
-          "description": "When true and this step completes, the orchestrator applies human_gate_label itself without a human acting."
-        },
         "self_gates": {
           "type": "boolean",
           "default": false,

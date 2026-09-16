@@ -108,7 +108,6 @@ What this flow's branches and pull requests are called. Declared here, never com
 | `git_ops` | object | no | Declares that this step produces file output the orchestrator commits. Absent means it does not. |
 | `human_gate_after` | boolean | yes | Whether a named gate label is required before downstream steps see this one as satisfied. |
 | `human_gate_label` | string | no | Required when human_gate_after is true. |
-| `auto_approve_on_complete` | boolean | no | When true and this step completes, the orchestrator applies human_gate_label itself without a human acting. Default: `False`. |
 | `self_gates` | boolean | no | When true, the orchestrator trusts this step's own outcome (review vs complete) instead of forcing complete to review. Default: `False`. |
 | `resolve_pr_number` | boolean | no | Set true only on an issue-kind step whose own PR is guaranteed to already exist by the time it runs (coder, pr-reviewer, merge-conflict). The orchestrator resolves it once via the same branch/source-issue-label lookup body_write already uses, and injects it as PR_NUMBER -- additive to, never a replacement for, the invocation's own subject identity (ISSUE_NUMBER/PR_NUMBER). ISSUE_NUMBER is resolved the symmetric way for a PR-kind invocation, unconditionally, with no equivalent per-step flag (issue #431/#433). |
 | `review_gate` | boolean | no | Set true only on the step that is the final automated review gate before human merge approval. |

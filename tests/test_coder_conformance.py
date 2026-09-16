@@ -211,10 +211,14 @@ class TestCoderBroadBashGrantDesign:
         )
 
     def test_dangerous_operations_controlled_via_denied_tools(self):
-        """With broad Bash, dangerous operations are gated by deniedTools, not
-        by the absence of an allowlist entry. Key patterns must be declared."""
+        """With broad Bash, dangerous operations are gated by the effective
+        deny list, not by the absence of an allowlist entry. Key patterns
+        must be present, whether declared directly in deniedTools or
+        flattened from deny_groups."""
         step = _coder_step()
-        denied = step.get("deniedTools", [])
+        denied = step.get("deniedTools") or [
+            p for group in step.get("deny_groups", []) for p in group.get("patterns", [])
+        ]
         required_denials = [
             "Bash(git reset --hard*)",
             "Bash(git commit --amend*)",
@@ -225,8 +229,8 @@ class TestCoderBroadBashGrantDesign:
         ]
         for pattern in required_denials:
             assert pattern in denied, (
-                f"coder deniedTools must contain {pattern!r} to compensate for "
-                "the broad Bash grant"
+                f"coder's effective deny list must contain {pattern!r} to compensate "
+                "for the broad Bash grant"
             )
 
 

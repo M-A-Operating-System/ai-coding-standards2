@@ -63,6 +63,15 @@ def _coder_step() -> dict:
     raise AssertionError(f"{_CODER_AGENT} not found in pipeline.json")
 
 
+def _effective_denied(step: dict) -> list:
+    """A step's effective deny list: deniedTools when declared, else its
+    deny_groups' patterns flattened -- the two are alternatives, not
+    additive (mirrors pipeline_orchestrator._denied_tools_from_entry)."""
+    if "deniedTools" in step:
+        return step["deniedTools"]
+    return [p for group in step.get("deny_groups", []) for p in group.get("patterns", [])]
+
+
 def _tool_arg(pattern: str) -> str:
     """Extract the argument glob from a Bash(arg) pattern string.
 
@@ -142,20 +151,20 @@ class TestDirectFormOfADeniedCommandIsBlocked:
     """Scenario: Bash(git reset --hard*) in deniedTools blocks the direct call."""
 
     def test_coder_denied_tools_contains_git_reset_hard(self):
-        """The coder step must declare 'Bash(git reset --hard*)' in deniedTools."""
+        """The coder step's effective deny list must contain 'Bash(git reset --hard*)'."""
         step = _coder_step()
-        denied = step.get("deniedTools", [])
+        denied = _effective_denied(step)
         assert "Bash(git reset --hard*)" in denied, (
-            f"coder deniedTools must contain 'Bash(git reset --hard*)'. Found: {denied}"
+            f"coder's effective deny list must contain 'Bash(git reset --hard*)'. Found: {denied}"
         )
 
     def test_full_deny_list_declared(self):
-        """All seven deny groups' patterns must be declared in deniedTools."""
+        """All seven deny groups' patterns must be in the effective deny list."""
         step = _coder_step()
-        denied = step.get("deniedTools", [])
+        denied = _effective_denied(step)
         for pattern in _FULL_DENY_LIST:
             assert pattern in denied, (
-                f"coder deniedTools missing expected pattern: {pattern}"
+                f"coder's effective deny list missing expected pattern: {pattern}"
             )
 
     def test_direct_command_matches_deny_pattern(self):

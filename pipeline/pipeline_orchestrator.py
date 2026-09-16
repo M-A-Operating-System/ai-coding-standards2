@@ -223,7 +223,6 @@ class AgentDef:
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
-    auto_approve_on_complete: bool = False  # if True, orchestrator auto-applies human_gate_label when agent emits :complete
     self_gates: bool = False  # if True, the agent's own AI_AGILE_STATUS (review vs complete) decides whether the gate fires -- :complete is NOT force-overridden to :review. human_gate_after/human_gate_label still apply for promotion when the agent itself emits :review.
     extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults.extra_allowedTools (AS-1: nowhere else)
     denied_tools: list[str] = field(default_factory=list)  # effective deny list: defaults.deniedTools + step.deniedTools, merged in load_pipeline (AS-1: pipeline.json is sole source)
@@ -374,6 +373,20 @@ class ComponentClaims:
 # ---------------------------------------------------------------------------
 # Pipeline loader
 # ---------------------------------------------------------------------------
+
+def _denied_tools_from_entry(entry: dict) -> list[str]:
+    """Resolve a step's deny-list patterns.
+
+    `deniedTools` is authoritative when present. A step that instead groups
+    its patterns under `deny_groups` (name/purpose per group, for readability
+    on a long list) gets its effective deny list flattened from there instead
+    -- one list of pattern strings per step, not two kept in sync by hand.
+    """
+    if "deniedTools" in entry:
+        return _coerce_tools(entry.get("deniedTools"))
+    _groups = entry.get("deny_groups") or []
+    return [pattern for group in _groups for pattern in group.get("patterns", [])]
+
 
 def _coerce_tools(val: object) -> list[str]:
     """Coerce an extra_allowedTools value to a list of strings.
@@ -548,10 +561,9 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 script_timeout_seconds=int(
                     _budgets.get("max_wall_seconds") or SCRIPT_TIMEOUT_SECONDS
                 ),
-                auto_approve_on_complete=bool(entry.get("auto_approve_on_complete", False)),
                 self_gates=bool(entry.get("self_gates", False)),
                 extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
-                denied_tools=_coerce_tools(entry.get("deniedTools")),
+                denied_tools=_denied_tools_from_entry(entry),
                 model=entry.get("model"),
                 max_turns=_budgets.get("max_turns"),
                 max_wall_seconds=_budgets.get("max_wall_seconds"),
@@ -6667,13 +6679,12 @@ def _resolve_applied_status(
     """Map final_status to the status label actually applied.
 
     An agent with a human gate completing applies :review (the "needs human
-    action" state) instead of :complete, unless auto_approve_on_complete is set,
-    in which case the gate label is auto-applied and :complete stands. If
-    self_gates is set, the agent's own emitted status is trusted verbatim
-    instead -- :complete never gets force-overridden to :review. The agent
-    decides per-run whether its work needs review by emitting
-    AI_AGILE_STATUS: review itself; human_gate_after/human_gate_label still
-    apply for promotion once the agent has emitted :review.
+    action" state) instead of :complete. If self_gates is set, the agent's
+    own emitted status is trusted verbatim instead -- :complete never gets
+    force-overridden to :review. The agent decides per-run whether its work
+    needs review by emitting AI_AGILE_STATUS: review itself;
+    human_gate_after/human_gate_label still apply for promotion once the
+    agent has emitted :review.
 
     A step with no human_gate_label cannot resolve a :review it raises itself:
     :review is defined as the gate status, promoted to :complete when the gate
@@ -6697,20 +6708,7 @@ def _resolve_applied_status(
         and agent_def.human_gate_label
         and not agent_def.self_gates
     ):
-        if agent_def.auto_approve_on_complete:
-            try:
-                gh.add_label(work_item.number, agent_def.human_gate_label)
-                log.info(
-                    "  auto-approved  %-38s  applied %s on #%d",
-                    agent_def.agent, agent_def.human_gate_label, work_item.number,
-                )
-            except Exception as exc:
-                log.warning(
-                    "  could not auto-apply gate label %s on #%d: %s",
-                    agent_def.human_gate_label, work_item.number, exc,
-                )
-        else:
-            applied_status = STATUS_REVIEW
+        applied_status = STATUS_REVIEW
     elif (
         final_status == STATUS_REVIEW
         and not agent_def.human_gate_label
@@ -6984,9 +6982,6 @@ def _apply_result(
     # When an agent with a human gate completes, apply :review rather than
     # :complete so the "needs human action" state is visible consistently.
     # promote_gated_agents advances to :complete once the gate label is applied.
-    #
-    # Exception: auto_approve_on_complete=True — orchestrator auto-applies the
-    # gate label so downstream agents are not blocked.
     applied_status = _resolve_applied_status(agent_def, work_item, final_status, gh)
 
     _apply_terminal_status(gh, agent_def, work_item, applied_status)

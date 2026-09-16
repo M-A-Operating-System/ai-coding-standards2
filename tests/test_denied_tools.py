@@ -458,7 +458,8 @@ def test_schema_rejects_denied_tools_as_non_array_in_step():
 # ---------------------------------------------------------------------------
 
 def test_shipped_pipeline_has_denied_tools_on_coder():
-    """pipeline.json must declare deniedTools on the 03_execute/coder step.
+    """The 03_execute/coder step's effective deny list (declared via
+    deny_groups, flattened at load time) must resolve correctly.
 
     After issue #463 the full deny list covers seven groups; verify a
     representative pattern from each group is present.

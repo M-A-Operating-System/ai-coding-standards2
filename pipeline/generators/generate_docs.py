@@ -188,8 +188,10 @@ def render_steps(pipeline):
         deny_group_steps = []
         for step in flow_steps:
             extra = step.get("extra_allowedTools") or []
-            denied = step.get("deniedTools") or []
             deny_groups = step.get("deny_groups") or []
+            denied = step.get("deniedTools") or (
+                [p for group in deny_groups for p in group.get("patterns", [])]
+            )
             shown_extra = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
             shown_denied = _cell(denied[:4]) + (f" _(+{len(denied) - 4} more)_" if len(denied) > 4 else "")
             lines.append(
