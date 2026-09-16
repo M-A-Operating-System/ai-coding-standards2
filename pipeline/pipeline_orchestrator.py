@@ -5339,6 +5339,20 @@ def _should_run(
                 )
                 current_status = None
 
+    # :requested is a person's own instruction to run this step now (PRODUCT.md,
+    # "Run this step on this item now, whatever its normal trigger would say").
+    # agent_status() resolves ties by priority, so a coexisting terminal or halt
+    # label -- the common case, since the override is usually applied on top of
+    # a step that already finished -- would otherwise win and the override would
+    # never be seen below. Checked directly against the label set rather than
+    # current_status for that reason. The one label it must not override is
+    # :wip: a run is already in flight, and starting a second one would race it.
+    if (
+        agent_def.status_label(STATUS_REQUESTED) in labels
+        and current_status != STATUS_IN_PROGRESS
+    ):
+        current_status = STATUS_REQUESTED
+
     if current_status in (STATUS_COMPLETE, STATUS_FAILED, STATUS_EXHAUSTED, STATUS_SKIPPED):
         log.debug("  skip %-40s  [%s]", agent_def.agent, current_status)
         return False
@@ -5956,7 +5970,11 @@ def _run_agent(
     log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
 
     # :requested is a manual override — detect before removing the label below.
-    _manual_trigger = agent_status(labels, agent_def.label_key) == STATUS_REQUESTED
+    # Checked directly against the label set, not via agent_status() (which
+    # resolves ties by priority and would report the coexisting terminal
+    # status instead): _should_run already decided to dispatch on the same
+    # basis, and a False here would leave :requested uncleared indefinitely.
+    _manual_trigger = agent_def.status_label(STATUS_REQUESTED) in labels
 
     # Determine invocation mode for re_invoke targets before _acquire_wip_and_announce
     # increments the review-cycle counter, so the injected value reflects the mode
