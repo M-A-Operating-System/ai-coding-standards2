@@ -43,3 +43,15 @@
 **Given** `coder.md` and `pr-reviewer.md` have been updated
 **When** a reviewer reads the Step 0 section of each agent prompt file
 **Then** every `gh api` call in those sections appears as a standalone Bash command, not embedded in a variable assignment, `&&` chain, or `if` conditional on the same invocation
+
+## Scenario: stateless step re-checks PR state after commit change
+
+**Given** `merge-conflict` has previously been invoked for issue N and produced outcome "complete" for commit C1
+**When** the orchestrator invokes `merge-conflict` again for issue N with a new head commit C2
+**Then** the agent calls the GitHub API to check the current `mergeable_state` and writes `result.json` based on that fresh check, not the prior session's conclusion
+
+## Scenario: retry after stale-session failure reaches an unused session
+
+**Given** `merge-conflict` has failed because a resumed session replied without any fresh API calls
+**When** the orchestrator re-drives the step for the same issue in a subsequent run
+**Then** the step uses a session that has not previously concluded for this issue-step combination, giving it a genuine chance to produce a fresh result
