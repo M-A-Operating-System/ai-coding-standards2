@@ -4868,6 +4868,45 @@ class TestProcessWorkItemDecomposition:
             f"_should_run must return True for a fully eligible agent; got {result!r}"
         )
 
+    def test_should_run_returns_true_when_requested_coexists_with_stale_complete(self):
+        """A person applying :requested on top of a step's own prior :complete
+        must dispatch it -- agent_status() resolves the coexisting labels to
+        :complete (terminal statuses are checked first, PRODUCT.md), so the
+        override has to be detected against the label set directly rather
+        than through that resolved value, or it is silently swallowed.
+        """
+        agent_def = AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+        )
+        wi = _make_work_item_with_labels(
+            1, {"pr-reviewer:complete", "pr-reviewer:requested"}
+        )
+        result = _should_run(agent_def, wi, wi.labels, {agent_def.agent: agent_def}, None)
+        assert result is True, (
+            f"_should_run must dispatch when :requested coexists with a stale "
+            f":complete, even though the normal trigger label is absent; got {result!r}"
+        )
+
+    def test_should_run_returns_false_when_requested_coexists_with_wip(self):
+        """:requested must not override an in-flight :wip -- that would race
+        the run already claiming the mutex, not relay a person's decision."""
+        agent_def = _make_agent_def("03_execute/pr-reviewer")
+        wi = _make_work_item_with_labels(
+            1, {"pr-reviewer:wip", "pr-reviewer:requested"}
+        )
+        result = _should_run(agent_def, wi, wi.labels, {}, None)
+        assert result is False, (
+            f"_should_run must not dispatch a second run while :wip is set, "
+            f"even with :requested present; got {result!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Direct behavioural tests for the decomposition helpers.
@@ -4963,6 +5002,25 @@ class TestRunAgentBehaviour:
         assert sentinel_message == "all done", "the quoted sentinel message must be parsed"
         assert attempt == 0
         gh.add_label.assert_any_call(42, agent.status_label(STATUS_WIP))
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_requested_removed_even_when_stale_complete_coexists(self, mock_invoke):
+        """A :requested override applied alongside a prior :complete is
+        cleared once the re-run starts -- not left behind because
+        _manual_trigger detection resolved to the coexisting :complete
+        instead of the override that actually caused this dispatch."""
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        agent = _make_agent_def("03_execute/coder")
+        gh = _make_gh_mock()
+        wi = _make_work_item_with_labels(
+            42, {"issue-classifier:complete", "coder:complete", "coder:requested"}
+        )
+        with patch("subprocess.run", side_effect=self._git_side_effect()):
+            _run_agent(
+                agent, wi, False, "test/repo", set(wi.labels), "",
+                None, None, gh, {agent.agent: agent},
+            )
+        gh.remove_label.assert_any_call(42, agent.status_label(STATUS_REQUESTED))
 
 
 class TestCommitAfterExactlyOnce:
