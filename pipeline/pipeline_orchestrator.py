@@ -2277,6 +2277,16 @@ def _get_review_cycle(labels: set[str]) -> int:
     return 0
 
 
+def _is_manual_trigger(agent_def: "AgentDef", labels: set[str]) -> bool:
+    """True if a person applied {agent}:requested.
+
+    Checked directly against the label set rather than via agent_status()
+    (which resolves ties by priority and would report a coexisting terminal
+    or halt status instead) so the override is not silently lost.
+    """
+    return agent_def.status_label(STATUS_REQUESTED) in labels
+
+
 def _is_review_loop_reinvoke_target(
     agent_def: "AgentDef", pipeline_map: dict[str, "AgentDef"]
 ) -> bool:
@@ -5348,7 +5358,7 @@ def _should_run(
     # current_status for that reason. The one label it must not override is
     # :wip: a run is already in flight, and starting a second one would race it.
     if (
-        agent_def.status_label(STATUS_REQUESTED) in labels
+        _is_manual_trigger(agent_def, labels)
         and current_status != STATUS_IN_PROGRESS
     ):
         current_status = STATUS_REQUESTED
@@ -5974,7 +5984,7 @@ def _run_agent(
     # resolves ties by priority and would report the coexisting terminal
     # status instead): _should_run already decided to dispatch on the same
     # basis, and a False here would leave :requested uncleared indefinitely.
-    _manual_trigger = agent_def.status_label(STATUS_REQUESTED) in labels
+    _manual_trigger = _is_manual_trigger(agent_def, labels)
 
     # Determine invocation mode for re_invoke targets before _acquire_wip_and_announce
     # increments the review-cycle counter, so the injected value reflects the mode
