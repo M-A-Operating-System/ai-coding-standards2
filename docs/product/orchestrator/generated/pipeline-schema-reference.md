@@ -26,7 +26,7 @@ Pipeline-wide entitlement and lifecycle defaults merged into every step. Unaffec
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `extra_allowedTools` | array of string | no | Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- nothing else contributes. |
+| `extra_allowedTools` | array of string | no | Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- no other allow list contributes; deniedTools subtracts from this set (deny takes precedence over allow). |
 | `deniedTools` | array of string | no | Commands a step must not invoke, matched against the command string as written. Deny takes precedence over allow: a command matching both a deny pattern and an allow pattern is refused. Effective deny list = defaults.deniedTools + step.deniedTools, deduplicated, deterministic order. A step cannot remove or override a default deny rule. The deny list states intent; it matches the command as written and does not inspect commands reached through an interpreter wrapper (e.g. bash -c '...'). |
 | `agent_lifecycle` | object | no | Scripts the orchestrator runs around every agent-type step to prepare and tear down its environment. Not steps themselves: no outcome, no label, and a non-zero exit is logged rather than failing the run. |
 
