@@ -288,6 +288,37 @@ def test_deduplication_when_step_repeats_a_default_rule():
 
 
 # ---------------------------------------------------------------------------
+# _denied_tools_from_entry: deniedTools is authoritative over deny_groups
+# ---------------------------------------------------------------------------
+
+def test_denied_tools_from_entry_prefers_declared_denied_tools_over_deny_groups():
+    """When a step entry declares both deniedTools and deny_groups, deniedTools wins.
+
+    _denied_tools_from_entry must not flatten deny_groups when deniedTools is
+    present -- deny_groups is only a fallback for steps that source their
+    effective deny list from grouped patterns instead of a flat declaration.
+    """
+    entry = {
+        "deniedTools": ["Bash(git push --force*)"],
+        "deny_groups": [
+            {"name": "g", "purpose": "p", "patterns": ["Bash(git reset --hard*)"]}
+        ],
+    }
+    assert po._denied_tools_from_entry(entry) == ["Bash(git push --force*)"]
+
+
+def test_denied_tools_from_entry_flattens_deny_groups_when_no_denied_tools():
+    """Without a declared deniedTools, the effective list is deny_groups flattened."""
+    entry = {
+        "deny_groups": [
+            {"name": "g1", "purpose": "p1", "patterns": ["Bash(a*)", "Bash(b*)"]},
+            {"name": "g2", "purpose": "p2", "patterns": ["Bash(c*)"]},
+        ],
+    }
+    assert po._denied_tools_from_entry(entry) == ["Bash(a*)", "Bash(b*)", "Bash(c*)"]
+
+
+# ---------------------------------------------------------------------------
 # Scenario: Deny rule does not fire for a command reached through an interpreter wrapper
 # (AC-13: documents the limitation; tests the boundary)
 # ---------------------------------------------------------------------------

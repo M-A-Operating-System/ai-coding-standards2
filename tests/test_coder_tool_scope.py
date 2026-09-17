@@ -287,11 +287,12 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
                 f"pipeline-steps.md must include deny group '{name}'"
             )
 
-    def test_deny_groups_section_states_groups_are_explanatory(self):
-        """The generated docs must state the groups are explanatory only."""
+    def test_deny_groups_section_states_groups_are_authoritative(self):
+        """Coder has no flat deniedTools, so its deny groups are the authoritative list."""
         text = STEPS_MD.read_text()
-        assert "explanatory only" in text, (
-            "pipeline-steps.md must state that the deny groups are explanatory only"
+        assert "authoritative deny list" in text, (
+            "pipeline-steps.md must state that coder's deny groups are the "
+            "authoritative deny list, since coder declares no separate deniedTools"
         )
 
     def test_other_agents_retain_narrow_allowlists(self):
