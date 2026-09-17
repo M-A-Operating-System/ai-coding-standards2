@@ -566,3 +566,41 @@ def test_generate_docs_check_passes():
         f"`python3 pipeline/generators/generate_docs.py`\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
     )
+
+
+# ---------------------------------------------------------------------------
+# render_steps: deny-groups banner text depends on whether deniedTools is
+# declared directly (currently only exercised by the shipped pipeline's
+# deniedTools-absent case; this covers the deniedTools-present branch)
+# ---------------------------------------------------------------------------
+
+def test_render_steps_banner_is_explanatory_when_denied_tools_declared():
+    """A step with both deniedTools and deny_groups gets the 'explanatory only' banner."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "generate_docs", REPO_ROOT / "pipeline" / "generators" / "generate_docs.py"
+    )
+    generate_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generate_docs)
+
+    pipeline = {
+        "flows": {
+            "test-flow": {
+                "trigger": {"kind": "issue"},
+                "steps": [
+                    {
+                        "agent": "03_execute/coder",
+                        "deniedTools": ["Bash(git push --force*)"],
+                        "deny_groups": [
+                            {"name": "g", "purpose": "p", "patterns": ["Bash(git push --force*)"]}
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    text = generate_docs.render_steps(pipeline)
+    assert "explanatory only" in text, (
+        "when a step declares deniedTools directly, its deny_groups banner "
+        "must say the groups are explanatory only and deniedTools is authoritative"
+    )
