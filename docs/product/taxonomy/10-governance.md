@@ -60,6 +60,21 @@ Taxonomy changes arrive as pull requests carrying:
 - affected standards and decisions;
 - migration impact and compatibility assessment.
 
+The identifier is not chosen by hand. Counters run per level and never rewind,
+so the next free number depends on every number ever issued, deprecated ones
+included:
+
+```bash
+python3 pipeline/next_taxonomy_id.py subclass       # the next free SUB
+python3 pipeline/next_taxonomy_id.py class 3        # three consecutive
+```
+
+The script reads the tree and reports; it does not reserve. Two branches
+prepared in parallel are handed the same number, and the collision surfaces
+when the second merges and CI reports the identifier as reused. That is a
+deliberate trade: late detection by a check that already exists, rather than a
+reservation scheme that has to be kept correct.
+
 CI validates every change: JSON syntax, schema conformance against an
 explicit file-to-schema map, three-level consistency with each record's
 declared `path`, `parent`, and `level` matching its position, and referential

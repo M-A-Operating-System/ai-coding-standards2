@@ -36,6 +36,21 @@ The domain is the first part of the path but is not a level, and not a node eith
 
 Concrete technologies are implementations rather than a fourth semantic level. Provider/runtime realization is separate.
 
+## Assigning an identifier
+
+Identifiers are sequential within a level and never reused, so the next free
+number follows the highest ever issued rather than the count of live nodes.
+Ask for it rather than counting by hand:
+
+```bash
+python3 pipeline/next_taxonomy_id.py subclass       # the next free SUB
+python3 pipeline/next_taxonomy_id.py class 3        # three consecutive
+```
+
+This reports; it does not reserve. Two branches prepared in parallel get the
+same number, and `validate_taxonomy.py` reports the reuse when the second one
+merges.
+
 ## CALM alignment
 
 CALM remains the intended architecture standard. The canonical taxonomy provides finer semantic classification that both CALM intent and discovered CMDB objects can project into for deterministic comparison.
