@@ -96,7 +96,7 @@
 
         "trigger": {
           "type": "object",
-          "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
+          "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
           "oneOf": [
             {
               "type": "object",
@@ -108,7 +108,7 @@
                   "enum": ["issue", "pr"],
                   "description": "Which GitHub object kind this flow processes."
                 },
-                "type": {
+                "classification": {
                   "type": "array",
                   "uniqueItems": true,
                   "minItems": 1,
@@ -116,14 +116,14 @@
                     "type": "string",
                     "enum": ["security", "bug", "enhancement", "tech-debt", "spike"]
                   },
-                  "description": "Restrict this flow to work items carrying any one of these type: labels (OR within the dimension -- a work item carries exactly one type, never two, so this is 'any of', never 'all of'). Absent means every type. See AS-1, 'Selection by classification'."
+                  "description": "Restrict this flow to work items carrying any one of these classification: labels (OR within the dimension -- a work item carries exactly one classification, never two, so this is 'any of', never 'all of'). Absent means every classification. See AS-1, 'Selection by classification'."
                 },
                 "labels": {
                   "type": "array",
                   "uniqueItems": true,
                   "minItems": 1,
                   "items": { "type": "string" },
-                  "description": "Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['type: enhancement', 'priority: high'] if a flow ever needed to key off more than type and size). Combines with `type` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority')."
+                  "description": "Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['classification: enhancement', 'priority: high'] if a flow ever needed to key off more than classification and size). Combines with `classification` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority')."
                 }
               }
             },

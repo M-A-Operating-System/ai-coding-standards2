@@ -185,10 +185,9 @@ is what is required inside each section.
 |---|---|---|---|---|---|---|
 | `security` | 1 paragraph: the vulnerability, what it enables an attacker to do, and affected components | One sentence: the fix and the regression test proving the hole is closed | 1--2 (the affected persona) | 2--4 (exploit path is closed + at least one regression scenario) | Include: related hardening out of scope | Include: the regression test passes in CI |
 | `bug` | 1–2 sentences naming the drift from target state | One sentence: the corrected behaviour | 0–1 (omit if the existing story already covers it) | 1–2 (the regression + one related path at most) | Omit unless reviewers might over-correct | Omit; the bug being fixed is the metric |
-| `toil` | 1–2 sentences naming the operational pain | One sentence: the post-change state | 0–1 | 1–3 | Omit unless scope creep is likely | Omit unless there is a measurable target (perf, cost) |
+| `enhancement` | 1 paragraph | 1 paragraph | 1–5 | 2–7 | Include if scope ambiguity exists | Include if there is a measurable target |
+| `tech-debt` | 1–2 sentences naming the operational pain | One sentence: the post-change state | 0–1 | 1–3 | Omit unless scope creep is likely | Omit unless there is a measurable target (perf, cost) |
 | `spike` | 1–2 sentences naming the question and why now | One sentence: what artefact the spike delivers | 1 (the persona who consumes the findings) | 1–3 acceptance conditions on the **findings**, not on code | Often useful — list what is explicitly out of the spike's scope | Often omit — acceptance criteria already define "done" |
-| `enhancement` | 1 paragraph | 1 paragraph | 1–3 | 2–5 | Include if scope ambiguity exists | Include if there is a measurable target |
-| `feature` | 1 paragraph | 1 paragraph | 1–5 | 3–7 | Include | Include |
 
 A trivial issue produces a short PRD because the bands above demand
 less — not because section headers are removed. If a band says "0–1"
@@ -205,15 +204,15 @@ use them verbatim.
 
 ### Problem
 
-Bug/toil/spike: 1–2 sentences naming the specific broken, missing, or
-unknown behaviour. Enhancement/feature: one paragraph covering what
+Bug/tech-debt/spike: 1–2 sentences naming the specific broken, missing, or
+unknown behaviour. Enhancement: one paragraph covering what
 hurts, who feels it, and how often. Never "users want better UX" —
 name the specific behaviour.
 
 ### Goal
 
-Bug/toil/spike: one sentence naming the corrected behaviour or the
-artefact the spike delivers. Enhancement/feature: one paragraph naming
+Bug/tech-debt/spike: one sentence naming the corrected behaviour or the
+artefact the spike delivers. Enhancement: one paragraph naming
 the user-observable change. Phrase as what the user will experience,
 never the implementation.
 
@@ -288,7 +287,7 @@ Check the body for:
 - **Standards check** — a "Standards check" line citing any violated STD IDs
   (only relevant if product-layer standards files exist in
   `${AI_AGILE_ROOT}/standards/`)
-- **Correct title prefix** — `[BUG]`, `[FEATURE]`, `[ENHANCEMENT]`, etc.
+- **Correct title prefix** — `[BUG]`, `[ENHANCEMENT]`, `[TECH-DEBT]`, etc.
   (see 7a prefix table)
 
 ### 6b — Build the augmented body
@@ -354,10 +353,9 @@ band minimum from Step 5a:
 |---|---|
 | `security` | 2 |
 | `bug` | 1 |
-| `toil` | 1 |
-| `spike` | 1 |
 | `enhancement` | 2 |
-| `feature` | 3 |
+| `tech-debt` | 1 |
+| `spike` | 1 |
 
 If the existing count meets or exceeds the minimum, Step 6d is a no-op —
 go directly to **Step 8**.
@@ -423,9 +421,8 @@ Map classification to prefix:
 |---|---|
 | `security` | `[SECURITY]` |
 | `bug` | `[BUG]` |
-| `toil` | `[TOIL]` |
 | `enhancement` | `[ENHANCEMENT]` |
-| `feature` | `[FEATURE]` |
+| `tech-debt` | `[TECH-DEBT]` |
 | `spike` | `[SPIKE]` |
 
 Determine the **module** (optional): a short stable name for the
@@ -496,7 +493,7 @@ runtime values yourself:
   "outcome": "blocked",
   "summary": "Issue is too large for one PRD.",
   "message": "Issue is too large for one PRD. See decomposition recommendation.",
-  "output": "## Decomposition recommended — issue is too large for one PRD\n\nThis issue describes work that spans multiple distinct user outcomes (or bounded contexts, or weeks of effort). Drafting a single PRD here would produce a sprawling design that the rest of the pipeline cannot size, decompose, or test cleanly.\n\n**Suggested smaller issues:**\n\n1. **{Title for child 1}** — {one-sentence scope}\n2. **{Title for child 2}** — {one-sentence scope}\n3. **{Title for child 3}** — {one-sentence scope}\n\nEach child should have one user goal, touch one bounded context, and produce a PRD whose Gherkin scenario count matches the classification band in 5a (typically 2-5 for enhancements, 3-7 for features).\n\n**To proceed:** Open the suggested smaller issues (or narrow this one to a single child's scope) and remove the `prd-writer:blocked` label to re-run."
+  "output": "## Decomposition recommended — issue is too large for one PRD\n\nThis issue describes work that spans multiple distinct user outcomes (or bounded contexts, or weeks of effort). Drafting a single PRD here would produce a sprawling design that the rest of the pipeline cannot size, decompose, or test cleanly.\n\n**Suggested smaller issues:**\n\n1. **{Title for child 1}** — {one-sentence scope}\n2. **{Title for child 2}** — {one-sentence scope}\n3. **{Title for child 3}** — {one-sentence scope}\n\nEach child should have one user goal, touch one bounded context, and produce a PRD whose Gherkin scenario count matches the classification band in 5a (typically 2-7 for enhancements).\n\n**To proceed:** Open the suggested smaller issues (or narrow this one to a single child's scope) and remove the `prd-writer:blocked` label to re-run."
 }
 ```
 

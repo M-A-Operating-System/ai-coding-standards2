@@ -61,7 +61,7 @@ gh issue view "$ISSUE_NUMBER" --repo "$REPO" \
 ```
 
 Also read the classifier artefact from the comments — it tells you the
-classification (`bug`, `toil`, `enhancement`, `feature`, or `spike`).
+classification (`security`, `bug`, `enhancement`, `tech-debt`, or `spike`).
 
 ---
 

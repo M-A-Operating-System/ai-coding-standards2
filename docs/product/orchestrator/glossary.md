@@ -96,12 +96,12 @@ See [`14-standards.md`](../standards/14-standards.md).
 with a stated test, cited by ID from code and docs (e.g. MI-7 is the
 human-approval rule). See [`PRODUCT.md`](PRODUCT.md#the-promises).
 
-**Tech-debt** — One of the five `type:` values: enhancement-scale work that
-does not move the product forward -- routine operational/maintenance upkeep
-(dependency upgrades, refactors, pipeline fixes) and remediation of a
+**Tech-debt** — One of the five `classification:` values: enhancement-scale
+work that does not move the product forward -- routine operational/maintenance
+upkeep (dependency upgrades, refactors, pipeline fixes) and remediation of a
 previously made structural or architectural choice now recognised as
 costly, merged into one classification. (Formerly two separate concepts,
-"toil" and technical-debt remediation.) See [`PRODUCT.md`](PRODUCT.md#type-ranks-five-reasons-an-issue-exists)
+"toil" and technical-debt remediation.) See [`PRODUCT.md`](PRODUCT.md#classification-ranks-five-reasons-an-issue-exists)
 and [`lifecycle.md`](lifecycle.md#issue-classification-taxonomy).
 
 ## Artefacts and communication

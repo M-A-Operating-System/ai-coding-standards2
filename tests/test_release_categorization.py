@@ -5,7 +5,7 @@ Realises the Gherkin scenarios in docs/features/release.md:
   Scenario: A pipeline PR is categorized by its classification
   Scenario: release.yml categories match labels that PRs actually carry
   Scenario: Unlabeled hand-authored PRs still appear
-  Scenario: A doc-bearing / bug / toil PR lands in the right bucket
+  Scenario: A doc-bearing / bug / tech-debt PR lands in the right bucket
 """
 import subprocess
 import os
@@ -19,10 +19,9 @@ RELEASE_YML = REPO_ROOT / ".github" / "release.yml"
 LINK_SCRIPT = REPO_ROOT / ".github" / "scripts" / "link-pr-to-issue.sh"
 
 CLASSIFICATION_LABELS = {
-    "classification: feature",
     "classification: enhancement",
     "classification: bug",
-    "classification: toil",
+    "classification: tech-debt",
 }
 
 
@@ -59,13 +58,6 @@ class TestRelaseYmlMatchesPipelineLabels:
                 "release.yml references labels that pipeline does not apply to PRs"
             )
 
-    def test_classification_feature_is_in_features_category(self):
-        config = _load_release_yml()
-        cats = {cat["title"]: cat.get("labels", []) for cat in config["changelog"]["categories"]}
-        assert "classification: feature" in cats.get("Features", []), (
-            "classification: feature must appear in the Features category"
-        )
-
     def test_classification_enhancement_is_in_features_category(self):
         config = _load_release_yml()
         cats = {cat["title"]: cat.get("labels", []) for cat in config["changelog"]["categories"]}
@@ -80,11 +72,11 @@ class TestRelaseYmlMatchesPipelineLabels:
             "classification: bug must appear in the Fixes category"
         )
 
-    def test_classification_toil_is_in_maintenance_category(self):
+    def test_classification_tech_debt_is_in_maintenance_category(self):
         config = _load_release_yml()
         cats = {cat["title"]: cat.get("labels", []) for cat in config["changelog"]["categories"]}
-        assert "classification: toil" in cats.get("Maintenance", []), (
-            "classification: toil must appear in the Maintenance category"
+        assert "classification: tech-debt" in cats.get("Maintenance", []), (
+            "classification: tech-debt must appear in the Maintenance category"
         )
 
 
@@ -121,7 +113,7 @@ class TestUnlabeledPrsStillAppear:
 
 # ---------------------------------------------------------------------------
 # Scenario: A pipeline PR is categorized by its classification
-# Scenario: A doc-bearing / bug / toil PR lands in the right bucket
+# Scenario: A doc-bearing / bug / tech-debt PR lands in the right bucket
 # (link-pr-to-issue.sh: classification label is copied from issue to PR)
 # ---------------------------------------------------------------------------
 
@@ -177,32 +169,32 @@ def _run_link_script(tmp_path, classification):
 
 
 class TestLinkPrToIssueClassification:
-    def test_feature_classification_is_applied_to_pr(self, tmp_path):
-        """link-pr-to-issue.sh copies classification: feature from issue to PR.
+    def test_enhancement_classification_is_applied_to_pr(self, tmp_path):
+        """link-pr-to-issue.sh copies classification: enhancement from issue to PR.
 
         Realises: Scenario: A pipeline PR is categorized by its classification
         """
-        out, rc = _run_link_script(tmp_path, "classification: feature")
+        out, rc = _run_link_script(tmp_path, "classification: enhancement")
         assert rc == 0, f"Script failed: {out}"
-        assert "classification: feature" in out
+        assert "classification: enhancement" in out
 
     def test_bug_classification_is_applied_to_pr(self, tmp_path):
         """link-pr-to-issue.sh copies classification: bug from issue to PR.
 
-        Realises: Scenario: A doc-bearing / bug / toil PR lands in the right bucket
+        Realises: Scenario: A doc-bearing / bug / tech-debt PR lands in the right bucket
         """
         out, rc = _run_link_script(tmp_path, "classification: bug")
         assert rc == 0, f"Script failed: {out}"
         assert "classification: bug" in out
 
-    def test_toil_classification_is_applied_to_pr(self, tmp_path):
-        """link-pr-to-issue.sh copies classification: toil from issue to PR.
+    def test_tech_debt_classification_is_applied_to_pr(self, tmp_path):
+        """link-pr-to-issue.sh copies classification: tech-debt from issue to PR.
 
-        Realises: Scenario: A doc-bearing / bug / toil PR lands in the right bucket
+        Realises: Scenario: A doc-bearing / bug / tech-debt PR lands in the right bucket
         """
-        out, rc = _run_link_script(tmp_path, "classification: toil")
+        out, rc = _run_link_script(tmp_path, "classification: tech-debt")
         assert rc == 0, f"Script failed: {out}"
-        assert "classification: toil" in out
+        assert "classification: tech-debt" in out
 
     def test_no_classification_label_does_not_fail(self, tmp_path):
         """link-pr-to-issue.sh succeeds and skips label when issue has none.
@@ -218,6 +210,6 @@ class TestLinkPrToIssueClassification:
 
     def test_source_issue_label_always_applied(self, tmp_path):
         """source-issue:N is always applied regardless of classification presence."""
-        out, rc = _run_link_script(tmp_path, "classification: feature")
+        out, rc = _run_link_script(tmp_path, "classification: enhancement")
         assert rc == 0, f"Script failed: {out}"
         assert "source-issue:1" in out
