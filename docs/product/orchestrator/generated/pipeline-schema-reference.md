@@ -54,13 +54,13 @@ Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `description` | string | yes | What kind of work this is and why it is its own flow. |
-| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
+| `trigger` | object (one of) | yes | What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget. |
 | `naming` | object | no | What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit. |
 | `steps` | array of object | yes | This flow's steps, in execution order. |
 
 ### A flow -- `trigger`
 
-What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional type and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
+What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.
 
 Exactly one of the following shapes:
 
@@ -69,8 +69,8 @@ Exactly one of the following shapes:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `kind` | string | yes | Which GitHub object kind this flow processes. One of: `issue`, `pr`. |
-| `type` | array of string | no | Restrict this flow to work items carrying any one of these type: labels (OR within the dimension -- a work item carries exactly one type, never two, so this is 'any of', never 'all of'). Absent means every type. See AS-1, 'Selection by classification'. |
-| `labels` | array of string | no | Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['type: enhancement', 'priority: high'] if a flow ever needed to key off more than type and size). Combines with `type` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority'). |
+| `classification` | array of string | no | Restrict this flow to work items carrying any one of these classification: labels (OR within the dimension -- a work item carries exactly one classification, never two, so this is 'any of', never 'all of'). Absent means every classification. See AS-1, 'Selection by classification'. |
+| `labels` | array of string | no | Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['classification: enhancement', 'priority: high'] if a flow ever needed to key off more than classification and size). Combines with `classification` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority'). |
 
 **Shape 2:**
 

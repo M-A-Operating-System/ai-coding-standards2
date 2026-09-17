@@ -21,9 +21,10 @@ you need to understand the pipeline before making changes is in that folder.
 ## What happens when you open an issue
 
 This repo runs the AI Agile pipeline on itself. When you open an issue, an
-agent will classify it (bug / feature / enhancement / spike / toil) within a
-few minutes, and if it progresses, the `prd-writer` agent may restructure the
-issue body into PRD format (user stories and Gherkin acceptance criteria).
+agent will classify it (security / bug / enhancement / tech-debt / spike)
+within a few minutes, and if it progresses, the `prd-writer` agent may
+restructure the issue body into PRD format (user stories and Gherkin
+acceptance criteria).
 This is expected behaviour, not vandalism — your original intent is preserved
 and you can comment or edit at any time.
 

@@ -2,7 +2,7 @@
 
 ## Scenario: A pipeline PR is categorized by its classification
 
-**Given** an issue classified `feature` whose code PR is opened by the pipeline
+**Given** an issue classified `enhancement` whose code PR is opened by the pipeline
 **When** a release is cut that includes that PR
 **Then** the PR appears under the "Features" category in the generated notes, not under "Other"
 
@@ -18,7 +18,7 @@
 **When** a release is cut
 **Then** that PR still appears (under the `"*"` -> Other catch-all), i.e. nothing is dropped
 
-## Scenario: A doc-bearing / bug / toil PR lands in the right bucket
+## Scenario: A doc-bearing / bug / tech-debt PR lands in the right bucket
 
-**Given** PRs classified `bug` and `toil`
+**Given** PRs classified `bug` and `tech-debt`
 **Then** they appear under "Fixes" and "Maintenance" respectively

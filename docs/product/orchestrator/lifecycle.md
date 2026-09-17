@@ -2,7 +2,7 @@
 
 This document lists the pipeline's phases, its agents, and the flows a
 ticket moves through. What each label means as a product concept —
-`type:`, `size:`, `priority:`, blocking — is defined in
+`classification:`, `size:`, `priority:`, blocking — is defined in
 [`PRODUCT.md`](PRODUCT.md) and only referenced here. The authoritative
 list of agents per phase, their dependencies, triggers, and gates lives
 in [`pipeline/pipeline.json`](../../../pipeline/pipeline.json), and
@@ -86,7 +86,7 @@ way gate promotion already does.
 
 ## Flows
 
-`type:` and `size:` ([PRODUCT.md](PRODUCT.md#type-ranks-five-reasons-an-issue-exists),
+`classification:` and `size:` ([PRODUCT.md](PRODUCT.md#classification-ranks-five-reasons-an-issue-exists),
 [PRODUCT.md](PRODUCT.md#size-measures-how-much-work-there-is)) decide
 which flow below a ticket takes. Each flow's table names the gate and
 its approver inline, where one applies.
@@ -94,7 +94,7 @@ its approver inline, where one applies.
 ### Issue classification taxonomy
 
 Every issue enters at `01_product_docs/issue-classifier`, which assigns
-`type:` and starts whichever flow below matches.
+`classification:` and starts whichever flow below matches.
 
 ### Two-phase design-to-build delivery
 
@@ -131,7 +131,7 @@ carve-out that lets `prd-writer` edit issue title and body.
 ### End-to-end happy path
 
 A typical `size: M` security/bug/enhancement/tech-debt ticket, walked
-end to end, with no fork. **Spike issues** (`type: spike`) stop after
+end to end, with no fork. **Spike issues** (`classification: spike`) stop after
 `prd-writer:approved` — `create-pr`, `prd-docs-updater`, and `coder`
 are excluded, since there is no code to ship.
 

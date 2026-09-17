@@ -193,12 +193,12 @@ class TestMergeConflictAgentTriggeredWhenPrHasConflicts:
         assert get_work_item_classification(spike_issue) == "spike"
         assert "spike" in merge_conflict.exclude_classifications
 
-    def test_feature_classification_not_excluded(self):
-        """Feature issues are not excluded from the merge-conflict agent."""
-        feature_issue = _make_work_item(title="[FEATURE] - Add merge-conflict agent")
+    def test_tech_debt_classification_not_excluded(self):
+        """Tech-debt issues are not excluded from the merge-conflict agent."""
+        tech_debt_issue = _make_work_item(title="[TECH-DEBT] - Add merge-conflict agent")
         merge_conflict = _load_agent_from_pipeline("03_execute/merge-conflict")
-        assert get_work_item_classification(feature_issue) == "feature"
-        assert "feature" not in merge_conflict.exclude_classifications
+        assert get_work_item_classification(tech_debt_issue) == "tech-debt"
+        assert "tech-debt" not in merge_conflict.exclude_classifications
 
     def test_bug_classification_not_excluded(self):
         """Bug issues are not excluded from the merge-conflict agent."""

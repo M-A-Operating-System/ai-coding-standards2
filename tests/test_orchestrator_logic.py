@@ -3377,14 +3377,14 @@ class TestExcludeClassifications:
 
     @patch("pipeline_orchestrator.invoke_agent")
     def test_non_excluded_classification_still_dispatches(self, mock_invoke):
-        """classification 'feature' is NOT excluded → agent dispatches normally."""
+        """classification 'enhancement' is NOT excluded → agent dispatches normally."""
         mock_invoke.side_effect = _invoke_agent_writing_result("complete")
         agent = self._agent(exclude=["bug"])
         agents = [agent]
         pipeline_map = {agent.agent: agent}
         gh = _make_gh_mock()
         wi = _make_work_item_with_labels(
-            2, {"issue-classifier:complete", "classification: feature"}
+            2, {"issue-classifier:complete", "classification: enhancement"}
         )
         n = process_work_item(
             wi, agents, pipeline_map, gh, dry_run=False, repo="test/repo",
@@ -4607,12 +4607,14 @@ class TestPriorityScheduling:
         )
 
     def test_classification_types_includes_security(self):
-        """Given the security classification was added (PRD issue #280)
-        Then _CLASSIFICATION_TYPES includes "security" alongside the original five.
+        """Given PRODUCT.md's five-classification taxonomy (security, bug,
+        enhancement, tech-debt, spike; "toil" merged into "tech-debt" and
+        "feature" merged into "enhancement")
+        Then _CLASSIFICATION_TYPES matches it exactly.
         """
         import pipeline_orchestrator as orch
         assert orch._CLASSIFICATION_TYPES == {
-            "bug", "toil", "enhancement", "feature", "spike", "security",
+            "security", "bug", "enhancement", "tech-debt", "spike",
         }
 
     def test_load_statuses_returns_priority_ordering(self):

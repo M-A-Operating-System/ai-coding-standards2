@@ -14,14 +14,13 @@ changelog:
   categories:
     - title: Features
       labels:
-        - "classification: feature"
         - "classification: enhancement"
     - title: Fixes
       labels:
         - "classification: bug"
     - title: Maintenance
       labels:
-        - "classification: toil"
+        - "classification: tech-debt"
     - title: Other
       labels:
         - "*"

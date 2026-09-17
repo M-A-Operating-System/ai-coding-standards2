@@ -96,7 +96,7 @@ whether to approve it.
 **Extract the approved scenarios.** Find the `### Acceptance criteria
 (Gherkin)` section in the PRD (issue body) read in Step 1. Extract each
 `#### Scenario: {name}` block (its Given/When/Then lines) in order. If the
-PRD has no Gherkin acceptance criteria section — e.g. a bug/toil/spike PRD
+PRD has no Gherkin acceptance criteria section — e.g. a bug/tech-debt/spike PRD
 with no user-observable scenario — skip the rest of this step; there is
 nothing to copy.
 

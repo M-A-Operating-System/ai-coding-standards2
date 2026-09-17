@@ -63,7 +63,7 @@ in a prompt (see
 ## Contents
 
 **The work-item taxonomy**
-- [Type ranks five reasons an issue exists](#type-ranks-five-reasons-an-issue-exists)
+- [Classification ranks five reasons an issue exists](#classification-ranks-five-reasons-an-issue-exists)
 - [Size measures how much work there is](#size-measures-how-much-work-there-is)
 - [Priority orders pickup among eligible work](#priority-orders-pickup-among-eligible-work)
 - [Blocking declares an ordering dependency between issues](#blocking-declares-an-ordering-dependency-between-issues)
@@ -105,8 +105,8 @@ in a prompt (see
 
 Four independent label dimensions describe a work item. None chooses
 what a step *does* — the same `coder` runs identically regardless of any
-of them. `type` and `size` choose which flow and which steps apply;
-`priority` and blocking change only how the orchestrator schedules
+of them. `classification` and `size` choose which flow and which steps
+apply; `priority` and blocking change only how the orchestrator schedules
 eligible work. A fifth label, `component:`, is a different kind of
 thing entirely: not a classification of the work but a concurrency
 claim on the part of the system it touches (see [A component label lets
@@ -118,14 +118,14 @@ combination produces, is process — see
 [lifecycle.md](lifecycle.md), starting with [Issue classification
 taxonomy](lifecycle.md#issue-classification-taxonomy).
 
-### Type ranks five reasons an issue exists
+### Classification ranks five reasons an issue exists
 
 Product docs are the target state; code is the current state.
 `docs/product/` describes what should exist, and the gap between that
 and what has shipped is the issue backlog. No code change ships unless
 it is already described in `docs/product/` first.
 
-Every issue carries a `type:` label, exactly one of five. Four split on
+Every issue carries a `classification:` label, exactly one of five. Four split on
 one axis: does the work move the product forward, or not. `enhancement`
 is the baseline unit that does. `security`, `bug`, and `tech-debt` are
 the same scale and complexity but exist without moving the product
@@ -159,7 +159,7 @@ anything else on this list, it is not a spike.
 
 A second, independent dimension: `size:` answers how much work there is,
 never why it exists. Every issue carries exactly one, alongside its
-`type:`.
+`classification:`.
 
 | Size | Meaning |
 |---|---|
@@ -172,14 +172,15 @@ sizes: neither the small issue that gets grouped nor the large issue
 that gets split is itself what gets implemented. Each routes to a fresh
 work item — a super-issue for `S`, children for `L` — sized on its own
 merits, and the recursion bottoms out at `M` before any code-producing
-step runs. `size:` applies uniformly across every `type:`: there is no
-type that is big by definition; bigness is `size: L`, for anything.
+step runs. `size:` applies uniformly across every `classification:`:
+there is no classification that is big by definition; bigness is
+`size: L`, for anything.
 
 ### Priority orders pickup among eligible work
 
 A third, independent dimension: `priority: high`, `priority: medium`, or
 `priority: low`. Priority never changes which steps run or what a step
-does — unlike `type:` and `size:`, it only decides which of several
+does — unlike `classification:` and `size:`, it only decides which of several
 eligible issues the orchestrator works on first (see [Eligibility and
 order decide which item runs
 next](#eligibility-and-order-decide-which-item-runs-next)).
@@ -194,7 +195,7 @@ it just sorts behind anything carrying a `priority:` label.
 
 ### Blocking declares an ordering dependency between issues
 
-A separate mechanism from `type:`/`size:`/`priority:`, for an ordering
+A separate mechanism from `classification:`/`size:`/`priority:`, for an ordering
 dependency between two issues that has nothing to do with either one's
 classification. `blocks: {N}` on one issue and `blockedby: {N}` on the
 other declare it symmetrically, so the relationship reads off either
@@ -1281,21 +1282,22 @@ generated — applied to the pipeline itself. It matters most for allowed
 commands: a permission defined in two places is a security property
 that holds in one reading and not the other.
 
-A work item's `type:` and `size:` labels do not change what a step
-does — the same `coder` runs the same way regardless of either. What
-they change is which flow a work item enters and which steps within
-that flow are eligible, declared as a `type` and/or `labels`
-restriction on a flow's or a step's own trigger. A flow's trigger
-restricts which items enter it (`type` for the type dimension
-specifically, since a work item carries exactly one; `labels`, a
-general AND-combination, for everything else); a step's trigger
-restricts which of a flow's items make it eligible the same way.
-`type: enhancement` and `size: M` together is what a step's trigger
-checks to run only on a medium enhancement — the same `labels` array
-with two entries, not a special case. Selection is positive: a trigger
-states what it matches, so keeping `spike` out of the default flow
-means the default flow's `type` list omits it, not a rule kept in sync
-elsewhere. `priority:` and `blocks:`/`blockedby:` are deliberately never
+A work item's `classification:` and `size:` labels do not change what a
+step does — the same `coder` runs the same way regardless of either.
+What they change is which flow a work item enters and which steps
+within that flow are eligible, declared as a `classification` and/or
+`labels` restriction on a flow's or a step's own trigger. A flow's
+trigger restricts which items enter it (`classification` for the
+classification dimension specifically, since a work item carries
+exactly one; `labels`, a general AND-combination, for everything
+else); a step's trigger restricts which of a flow's items make it
+eligible the same way. `classification: enhancement` and `size: M`
+together is what a step's trigger checks to run only on a medium
+enhancement — the same `labels` array with two entries, not a special
+case. Selection is positive: a trigger states what it matches, so
+keeping `spike` out of the default flow means the default flow's
+`classification` list omits it, not a rule kept in sync elsewhere.
+`priority:` and `blocks:`/`blockedby:` are deliberately never
 a selection criterion, at either level — they answer a different
 question (see [Eligibility and order decide which item runs
 next](#eligibility-and-order-decide-which-item-runs-next)).

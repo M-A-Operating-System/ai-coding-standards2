@@ -1,10 +1,10 @@
 ---
 name: 01_product_docs/issue-classifier
 description: >
-  Classifies a newly opened issue as bug, toil, enhancement, feature,
-  or spike, and validates that required fields are present (problem
-  statement, acceptance criteria). Rejects malformed issues with a
-  corrective comment so the stakeholder can fix the issue and
+  Classifies a newly opened issue as security, bug, enhancement,
+  tech-debt, or spike, and validates that required fields are present
+  (problem statement, acceptance criteria). Rejects malformed issues
+  with a corrective comment so the stakeholder can fix the issue and
   re-trigger the pipeline by removing the failed label.
 ---
 
@@ -35,33 +35,30 @@ You need the title (`.title`), the body (`.body`), the labels
 
 ## Step 2 — Classify the issue
 
-Pick exactly one of the six classifications based on the body content:
+Pick exactly one of the five classifications based on the body content:
 
 | Classification | When | Title prefix (used by `prd-writer`) |
 |---|---|---|
 | `security` | The body describes a **concrete security vulnerability** with a clear exploit path: injection (SQL/command/template), authn/authz bypass or privilege escalation, secret/credential exposure, SSRF, path traversal, insecure deserialization, missing/incorrect access control, or a known-vulnerable dependency with an exploit path. Classify conservatively -- only when the security impact is **clear and concrete**. Ambiguous "might be a security concern" items are NOT `security`; classify them as `bug` or other. A human-applied `[SECURITY]` title prefix or `classification: security` label is honoured. | `[SECURITY]` |
 | `bug` | Broken behaviour, an unexpected error, or something that used to work and no longer does. By definition the code has drifted from the product-docs target ([product docs are the target state; code is the current state](../../docs/product/orchestrator/lifecycle.md#issue-classification-taxonomy)). | `[BUG]` |
-| `toil` | Operational / maintenance work that does not change product capability -- dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes. Tied to a non-functional requirement in the product docs, not a user-facing feature. | `[TOIL]` |
-| `enhancement` | An improvement to an **existing** capability -- making a feature richer, faster, more accessible, or more reliable. The capability exists in production today; the issue moves it closer to the target state. | `[ENHANCEMENT]` |
-| `feature` | A **new** capability the product cannot do today. Adds a fresh user-observable outcome to the target state. | `[FEATURE]` |
+| `enhancement` | A change to the product's capability, new or existing -- making an existing capability richer, faster, more accessible, or more reliable, or adding a fresh user-observable outcome the product cannot do today. Moves the target state forward. | `[ENHANCEMENT]` |
+| `tech-debt` | Enhancement-scale work that does not move the product forward -- dependency upgrades, infrastructure changes, refactors, internal API rewrites, doc-only fixes, or remediation of a previously made structural or architectural choice now recognised as costly. Tied to a non-functional requirement in the product docs, not a user-facing feature. | `[TECH-DEBT]` |
 | `spike` | Research or investigation whose primary output is knowledge -- a recommendation, an ADR, a prototype -- not shipped code. Time-boxed; the result feeds a later issue that ships the actual change. | `[SPIKE]` |
 
-The distinction between `feature` and `enhancement` matters because
-they have different review weight: a feature adds new product
-surface (heavier review); an enhancement refines an existing one
-(lighter review against the existing PRD).
-
 If the body is genuinely ambiguous between two of these, prefer the
-classification that has the higher review bar:
+classification that has the higher review bar -- this is a total
+order, highest first:
 
-- `security` over `bug` (a bug that is a concrete vulnerability is a
-  security item first; security items receive top scheduling priority)
-- `bug` over `toil` (a bug means the product has drifted; a toil is
-  preventative maintenance with no observed regression)
-- `feature` over `enhancement` (if the capability is genuinely new,
-  it deserves a fresh PRD)
-- `enhancement` over `toil` (if the change is user-observable, it is
-  not toil)
+- `security` over everything (a bug that is a concrete vulnerability is a
+  security item first; security items receive top scheduling priority,
+  but only when the impact is clear and concrete -- an ambiguous case
+  stays `bug`)
+- `bug` over `enhancement` and everything below it (a drift from the
+  documented target is the story, whatever capability it sits inside)
+- `enhancement` over `tech-debt` (a user-observable change is product
+  work, even if it also pays something down)
+- `tech-debt` over `spike` (real remediation work outranks "let's go
+  find out")
 
 ---
 
@@ -72,7 +69,7 @@ PRD without guessing. Required fields:
 
 | Field | What counts |
 |---|---|
-| **Problem statement** | At least one sentence stating what is wrong (bug) or what is needed (toil/enhancement/feature/spike) |
+| **Problem statement** | At least one sentence stating what is wrong (bug) or what is needed (enhancement/tech-debt/spike) |
 | **Acceptance criteria** OR **expected behaviour** | At least one bullet, sentence, or list item describing what "done" looks like |
 
 The fields do not need to be labelled with the exact words above — a
@@ -97,7 +94,7 @@ Substitute the runtime values yourself:
 {
   "outcome": "complete",
   "summary": "Classified issue #${ISSUE_NUMBER} as {classification}; required fields present.",
-  "output": "## Issue classification\n\n**Type:** {security | bug | toil | enhancement | feature | spike}\n\n**Rationale:** {one or two sentences naming the signals in the body that led to this classification}\n\nThis issue passes initial validation. `prd-writer` will run next.",
+  "output": "## Issue classification\n\n**Classification:** {security | bug | enhancement | tech-debt | spike}\n\n**Rationale:** {one or two sentences naming the signals in the body that led to this classification}\n\nThis issue passes initial validation. `prd-writer` will run next.",
   "label_requests": [
     {"issue": null, "add": ["classification: {classification}"], "remove": []}
   ]

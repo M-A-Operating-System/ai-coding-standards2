@@ -31,8 +31,8 @@ one question at a time, building on what's already been said:
    `prd-writer` would refuse to draft from one — ask for the specific
    behaviour.
 2. **Classification.** Once the problem is clear, form a working judgement:
-   does this read as a `security` fix, a `bug`, routine `toil`, a `spike`
-   (a question, not yet a build), an `enhancement`, or a `feature`? Say
+   does this read as a `security` fix, a `bug`, routine `tech-debt`, a
+   `spike` (a question, not yet a build), or an `enhancement`? Say
    which one you're assuming and why, so the person can correct you before
    you scale the rest of the conversation to it. This is your own estimate
    for shaping the PRD, not the pipeline's formal classification —
@@ -80,10 +80,10 @@ just had with a person. Leave the body clean; when the normal pipeline picks
 up the new issue (`issue.opened` → `issue-classifier` → `prd-writer`),
 `prd-writer` runs its own Section 3 signal count (Gherkin, an acceptance
 criteria heading, user stories, a problem section over two sentences, a goal
-statement, body length) against what you wrote. A `feature`/`enhancement`/
+statement, body length) against what you wrote. An `enhancement`/
 `security` draft reliably clears its four-signal threshold and lands in
 Augmentation mode, which only adds the governance header. A terse `bug`/
-`toil`/`spike` draft — 5a permits a one-sentence problem and zero user
+`tech-debt`/`spike` draft — 5a permits a one-sentence problem and zero user
 stories for these — can legitimately fall short and send `prd-writer` down
 its full-draft path instead, redrafting the PRD from the same facts you and
 the person already established. That's a minor, self-correcting redundancy,

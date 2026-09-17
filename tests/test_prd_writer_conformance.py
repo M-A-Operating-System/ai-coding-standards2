@@ -77,7 +77,7 @@ class TestStep6dBackfillsGherkinForWrongNotation:
         text = _load_prd_writer_text()
         step = _extract_step_6d(text)
         assert step, "Step 6d section not found"
-        assert "enhancement" in step and "feature" in step, (
+        assert "enhancement" in step and "tech-debt" in step, (
             "Step 6d must list the minimum scenario counts per classification band"
         )
 

@@ -215,7 +215,7 @@ class AgentDef:
     flow: str = ""                        # the flow's stable name (pipeline.json's flows key)
     flow_naming: dict = field(default_factory=dict)   # the flow's naming block: {"branch": ..., "base": ..., "pull_requests": [...]}; {} when the flow declares none
     flow_labels: list = field(default_factory=list)   # flow trigger.labels -- every one must be present for an item to enter this flow
-    flow_types: list = field(default_factory=list)    # flow trigger.type -- item must carry one of these type: labels; [] means every type
+    flow_classifications: list = field(default_factory=list)  # flow trigger.classification -- item must carry one of these classification: labels; [] means every classification
     flow_schedule: Optional[str] = None   # flow trigger.schedule (cron) -- this flow has no work item; it fires on cadence
     commits_to: Optional[str] = None      # git_ops.commits_to -- which of the flow's naming.pull_requests entries this step commits to
     unit: str = "item"                    # "item" | "sub_item" -- what one invocation of this step addresses
@@ -547,7 +547,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 flow=flow_name,
                 flow_naming=flow_naming,
                 flow_labels=list(flow_trigger.get("labels") or []),
-                flow_types=list(flow_trigger.get("type") or []),
+                flow_classifications=list(flow_trigger.get("classification") or []),
                 flow_schedule=flow_trigger.get("schedule"),
                 commits_to=_commits_to,
                 unit=entry.get("unit", "item"),
@@ -2692,13 +2692,13 @@ def trigger_label_present(labels: set[str], agent_def: AgentDef) -> bool:
     return label in labels
 
 
-_CLASSIFICATION_TYPES = {"bug", "toil", "enhancement", "feature", "spike", "security"}
+_CLASSIFICATION_TYPES = {"security", "bug", "enhancement", "tech-debt", "spike"}
 
 
 def get_work_item_classification(work_item: WorkItem) -> Optional[str]:
     """
-    Return the issue classification (bug/toil/enhancement/feature/spike), or
-    None if not determinable.
+    Return the issue classification (security/bug/enhancement/tech-debt/spike),
+    or None if not determinable.
 
     Detection order:
       1. A 'classification: {type}' label applied by issue-classifier.
@@ -2711,7 +2711,7 @@ def get_work_item_classification(work_item: WorkItem) -> Optional[str]:
             if cls in _CLASSIFICATION_TYPES:
                 return cls
 
-    m = re.match(r"^\[([A-Z]+)\]", work_item.title)
+    m = re.match(r"^\[([A-Z][A-Z-]*)\]", work_item.title)
     if m:
         cls = m.group(1).lower()
         if cls in _CLASSIFICATION_TYPES:
@@ -5268,12 +5268,12 @@ def _should_run(
         )
         return False
 
-    if agent_def.flow_types and work_item.kind == "issue":
-        _type = get_work_item_classification(work_item)
-        if _type not in agent_def.flow_types:
+    if agent_def.flow_classifications and work_item.kind == "issue":
+        _classification = get_work_item_classification(work_item)
+        if _classification not in agent_def.flow_classifications:
             log.debug(
-                "  skip %-40s  [flow %r requires type: %s]",
-                agent_def.agent, agent_def.flow, ", ".join(sorted(agent_def.flow_types)),
+                "  skip %-40s  [flow %r requires classification: %s]",
+                agent_def.agent, agent_def.flow, ", ".join(sorted(agent_def.flow_classifications)),
             )
             return False
 
