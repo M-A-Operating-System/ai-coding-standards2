@@ -123,6 +123,40 @@ Two forms you will see in older prompts. Neither works; do not copy them:
 | `gh pr comment` / `gh pr review` / `gh pr ready` | GraphQL. Returns 403 in a restricted session |
 | `--body "$(cat <<EOF ... EOF)"` | `$(` is command substitution, which scope enforcement refuses outright |
 
+### A GitHub error is not always a broken-access error -- read the body
+
+`gh` is authenticated. The credential in `GH_TOKEN` / `GITHUB_TOKEN` is issued
+by the session proxy, not GitHub, so it is short and does not look like a real
+token; the proxy substitutes real credentials on the way out. Anything that
+*inspects* the credential will therefore misdescribe what it can do.
+
+Two failures look identical from the outside and need opposite responses. The
+difference is always in the error body, so read it rather than the status code:
+
+| What the body says | What it means | What to do |
+|---|---|---|
+| `The token in GH_TOKEN is invalid` (from `gh auth status`) | False negative. `gh auth status` validates via GraphQL, which the session does not serve | Ignore it. Never use it as a preflight |
+| `This GraphQL query is not enabled for this session` | GraphQL is not served; REST is unaffected | Use the REST equivalent, `gh api repos/{owner}/{repo}/...` |
+| `sessions are bound to their configured repositories` | You used a non-repo-scoped path (e.g. `search/...`) | Re-issue against `repos/{owner}/{repo}/...` |
+| `Write access to this GitHub API path is not permitted through this proxy` | That specific write is blocked | Do not retry. Report it |
+| Anything naming repository access, authorisation, or a repo not being configured for the session | A real access problem. The repo is not in this session's scope | **Stop and report it.** Retrying cannot fix this, and no rewording of the call will |
+
+The first four are recoverable and you should carry on. The last is not, and
+treating it as recoverable wastes the whole step retrying a call that can never
+succeed. A consuming repo that has not been authorised for the session is a
+genuine blocker, and saying so plainly is the correct outcome -- do not
+improvise around it, and do not report it as a token problem.
+
+To check whether GitHub access works at all, run `gh api user`. It returns your
+login, costs one call, and is unaffected by any of the above.
+
+**Do not switch to MCP tools.** You have no `mcp__*` grant: agent tools come
+from your `tools:` frontmatter plus `defaults.extra_allowedTools`, and no MCP
+tool appears in either. Proposing one is proposing a tool you cannot call, and
+the step will stall rather than fail cleanly. `gh api` REST is the supported
+path for everything an agent does -- and where REST genuinely cannot reach,
+MCP would not have reached either.
+
 Two rules, and nothing else to remember:
 
 - **Never write to a relative path.** A bare filename resolves against the
