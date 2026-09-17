@@ -188,8 +188,10 @@ def render_steps(pipeline):
         deny_group_steps = []
         for step in flow_steps:
             extra = step.get("extra_allowedTools") or []
-            denied = step.get("deniedTools") or []
             deny_groups = step.get("deny_groups") or []
+            denied = step.get("deniedTools") or (
+                [p for group in deny_groups for p in group.get("patterns", [])]
+            )
             shown_extra = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
             shown_denied = _cell(denied[:4]) + (f" _(+{len(denied) - 4} more)_" if len(denied) > 4 else "")
             lines.append(
@@ -201,12 +203,21 @@ def render_steps(pipeline):
                 deny_group_steps.append(step)
 
         for step in deny_group_steps:
+            if step.get("deniedTools"):
+                authority_note = (
+                    "The groups below are explanatory only. The authoritative enforcement is"
+                    " the flat `deniedTools` list above."
+                )
+            else:
+                authority_note = (
+                    "The groups below are this step's authoritative deny list, flattened at"
+                    " load time (no separate `deniedTools` declared)."
+                )
             lines += [
                 "",
                 f"### Deny rule groups: `{step['agent']}`",
                 "",
-                "The groups below are explanatory only. The authoritative enforcement is"
-                " the flat `deniedTools` list above. The matcher sees the command string"
+                f"{authority_note} The matcher sees the command string"
                 " as written; a command reached through an interpreter wrapper"
                 " (e.g. `bash -c '...'`) is not matched and is documented as the"
                 " deny list's known limitation.",

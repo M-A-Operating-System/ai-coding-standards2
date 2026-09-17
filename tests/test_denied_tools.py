@@ -288,6 +288,37 @@ def test_deduplication_when_step_repeats_a_default_rule():
 
 
 # ---------------------------------------------------------------------------
+# _denied_tools_from_entry: deniedTools is authoritative over deny_groups
+# ---------------------------------------------------------------------------
+
+def test_denied_tools_from_entry_prefers_declared_denied_tools_over_deny_groups():
+    """When a step entry declares both deniedTools and deny_groups, deniedTools wins.
+
+    _denied_tools_from_entry must not flatten deny_groups when deniedTools is
+    present -- deny_groups is only a fallback for steps that source their
+    effective deny list from grouped patterns instead of a flat declaration.
+    """
+    entry = {
+        "deniedTools": ["Bash(git push --force*)"],
+        "deny_groups": [
+            {"name": "g", "purpose": "p", "patterns": ["Bash(git reset --hard*)"]}
+        ],
+    }
+    assert po._denied_tools_from_entry(entry) == ["Bash(git push --force*)"]
+
+
+def test_denied_tools_from_entry_flattens_deny_groups_when_no_denied_tools():
+    """Without a declared deniedTools, the effective list is deny_groups flattened."""
+    entry = {
+        "deny_groups": [
+            {"name": "g1", "purpose": "p1", "patterns": ["Bash(a*)", "Bash(b*)"]},
+            {"name": "g2", "purpose": "p2", "patterns": ["Bash(c*)"]},
+        ],
+    }
+    assert po._denied_tools_from_entry(entry) == ["Bash(a*)", "Bash(b*)", "Bash(c*)"]
+
+
+# ---------------------------------------------------------------------------
 # Scenario: Deny rule does not fire for a command reached through an interpreter wrapper
 # (AC-13: documents the limitation; tests the boundary)
 # ---------------------------------------------------------------------------
@@ -458,7 +489,8 @@ def test_schema_rejects_denied_tools_as_non_array_in_step():
 # ---------------------------------------------------------------------------
 
 def test_shipped_pipeline_has_denied_tools_on_coder():
-    """pipeline.json must declare deniedTools on the 03_execute/coder step.
+    """The 03_execute/coder step's effective deny list (declared via
+    deny_groups, flattened at load time) must resolve correctly.
 
     After issue #463 the full deny list covers seven groups; verify a
     representative pattern from each group is present.
@@ -533,4 +565,42 @@ def test_generate_docs_check_passes():
         f"generate_docs.py --check failed; regenerate with "
         f"`python3 pipeline/generators/generate_docs.py`\n"
         f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# render_steps: deny-groups banner text depends on whether deniedTools is
+# declared directly (currently only exercised by the shipped pipeline's
+# deniedTools-absent case; this covers the deniedTools-present branch)
+# ---------------------------------------------------------------------------
+
+def test_render_steps_banner_is_explanatory_when_denied_tools_declared():
+    """A step with both deniedTools and deny_groups gets the 'explanatory only' banner."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "generate_docs", REPO_ROOT / "pipeline" / "generators" / "generate_docs.py"
+    )
+    generate_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generate_docs)
+
+    pipeline = {
+        "flows": {
+            "test-flow": {
+                "trigger": {"kind": "issue"},
+                "steps": [
+                    {
+                        "agent": "03_execute/coder",
+                        "deniedTools": ["Bash(git push --force*)"],
+                        "deny_groups": [
+                            {"name": "g", "purpose": "p", "patterns": ["Bash(git push --force*)"]}
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    text = generate_docs.render_steps(pipeline)
+    assert "explanatory only" in text, (
+        "when a step declares deniedTools directly, its deny_groups banner "
+        "must say the groups are explanatory only and deniedTools is authoritative"
     )

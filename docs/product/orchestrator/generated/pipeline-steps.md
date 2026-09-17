@@ -73,7 +73,7 @@ authoritative and these tables are a view of it.
 
 ### Deny rule groups: `03_execute/coder`
 
-The groups below are explanatory only. The authoritative enforcement is the flat `deniedTools` list above. The matcher sees the command string as written; a command reached through an interpreter wrapper (e.g. `bash -c '...'`) is not matched and is documented as the deny list's known limitation.
+The groups below are this step's authoritative deny list, flattened at load time (no separate `deniedTools` declared). The matcher sees the command string as written; a command reached through an interpreter wrapper (e.g. `bash -c '...'`) is not matched and is documented as the deny list's known limitation.
 
 **Git history destruction** -- Prevent the coder from discarding or rewriting recoverable work.
 

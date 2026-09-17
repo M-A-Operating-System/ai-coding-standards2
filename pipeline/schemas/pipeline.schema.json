@@ -321,14 +321,14 @@
 
         "deniedTools": {
           "type": "array",
-          "description": "Commands this step must not invoke, merged with defaults.deniedTools to form the effective deny list. Deny takes precedence over allow. A step cannot remove a default deny rule by omitting it here -- the effective list is always defaults.deniedTools + step.deniedTools. Same pattern syntax as extra_allowedTools.",
+          "description": "Commands this step must not invoke, merged with defaults.deniedTools to form the effective deny list. Deny takes precedence over allow. A step cannot remove a default deny rule by omitting it here -- the effective list is always defaults.deniedTools + step.deniedTools. Same pattern syntax as extra_allowedTools. Omit in favour of deny_groups when the list is long enough that per-pattern rationale is worth grouping -- the two are alternatives, not additive: when deny_groups is present and this key is absent, the effective deny list is deny_groups' patterns flattened.",
           "items": { "type": "string" },
           "uniqueItems": true
         },
 
         "deny_groups": {
           "type": "array",
-          "description": "Documentation-only grouping of deniedTools entries into named categories. Does not affect runtime enforcement; the flat deniedTools list is authoritative.",
+          "description": "Named groups of deny patterns with a stated purpose each, for a deniedTools list long enough that per-pattern rationale is worth grouping. Alternative to deniedTools, not a duplicate of it: a step declares one or the other. When present without a sibling deniedTools key, its patterns (flattened, group order preserved) become the step's effective deny list.",
           "items": {
             "type": "object",
             "required": ["name", "purpose", "patterns"],
@@ -399,11 +399,6 @@
         "human_gate_label": {
           "type": "string",
           "description": "Required when human_gate_after is true."
-        },
-        "auto_approve_on_complete": {
-          "type": "boolean",
-          "default": false,
-          "description": "When true and this step completes, the orchestrator applies human_gate_label itself without a human acting."
         },
         "self_gates": {
           "type": "boolean",
