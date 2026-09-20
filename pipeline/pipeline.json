@@ -164,6 +164,10 @@
       "exclude_classifications": ["spike"],
       "exclude_labels": ["epic", "blocked"],
       "script_timeout_seconds": 900,
+      "review_loop": {
+        "re_invoke": "03_execute/coder",
+        "max_cycles": 3
+      },
       "description": "Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks pass (emits complete), any check fails (emits review -- the orchestrator re-invokes the coder up to 3 cycles), or the 14-minute timeout expires (emits blocked for human intervention). Posts a summary comment listing check outcomes before signalling status. Skipped for epic/blocked issues."
     },
 

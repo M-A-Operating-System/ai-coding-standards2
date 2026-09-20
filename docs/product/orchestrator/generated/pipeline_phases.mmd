@@ -58,8 +58,8 @@ flowchart TD
     n_03_execute__coder --> n_03_execute__ci_gate
     n_03_execute__ci_gate --> n_03_execute__merge_conflict
     gate__n_03_execute__merge_conflict --> n_03_execute__pr_reviewer
-    n_03_execute__pr_reviewer -. REQUEST_CHANGES ≤3 .-> n_03_execute__coder
-    n_03_execute__ci_gate -. fail ≤3 .-> n_03_execute__coder
+    n_03_execute__ci_gate -. review ≤3 .-> n_03_execute__coder
+    n_03_execute__pr_reviewer -. review ≤3 .-> n_03_execute__coder
     n_01_product_docs__issue_classifier -->|malformed| term_rejected
     n_03_execute__ci_gate -->|timeout| term_blocked
     n_03_execute__pr_reviewer -->|APPROVE| term_ready
