@@ -52,6 +52,7 @@ flowchart TD
     n_01_product_docs__prd_docs_updater --> gate__n_01_product_docs__prd_docs_updater
     n_03_execute__merge_conflict --> gate__n_03_execute__merge_conflict
     n_00_ondemand__sizer --> gate__n_00_ondemand__sizer
+    n_03_execute__ci_gate -. REQUEST_CHANGES ≤3 .-> n_03_execute__coder
     n_03_execute__pr_reviewer -. REQUEST_CHANGES ≤3 .-> n_03_execute__coder
     n_03_execute__ci_gate -. fail ≤3 .-> n_03_execute__coder
     n_01_product_docs__issue_classifier -->|malformed| term_rejected
