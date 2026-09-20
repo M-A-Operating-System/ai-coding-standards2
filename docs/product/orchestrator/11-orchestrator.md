@@ -610,6 +610,14 @@ can trigger a Mode B re-invocation:
 | `pr-reviewer` emits `REQUEST_CHANGES` | Yes | Standard automated quality loop |
 | Human posts `REQUEST_CHANGES` review; `pr-reviewer` issues APPROVE | **No** | Free re-invoke; ci-gate and `pr-reviewer` run again afterward |
 
+**What a cycle counts.** `review-cycle:N` counts coder runs, starting at 1 on
+the first automated re-invocation -- not the reason any given run happened.
+The counter is per-PR, not per-triggering-step: any step whose `review_loop`
+re-invokes `coder` shares this same counter, so it makes no difference which
+step (`pr-reviewer`, or any other `review_loop`-configured step) sent the PR
+back. A PR that has not converged after `max_cycles` coder runs escalates to
+a human regardless of which gate kept failing it.
+
 For the human-triggered edge case: when the `pr-reviewer` completes
 with APPROVE but one or more human `REQUEST_CHANGES` reviews remain
 open (from non-bot GitHub accounts), the orchestrator does **not** mark
