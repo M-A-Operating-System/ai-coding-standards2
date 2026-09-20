@@ -295,7 +295,7 @@ def test_build_chart_review_loop_dashed_edge():
 
 def test_build_chart_review_loop_max_cycles_label():
     chart = build_chart("ph_c", _LOOP_ENTRIES)
-    assert "REQUEST_CHANGES ≤3" in chart
+    assert "review ≤3" in chart
 
 
 def test_build_chart_no_review_loop_no_dashed_edge():
