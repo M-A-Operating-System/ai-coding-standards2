@@ -5193,6 +5193,10 @@ def _recover_unpushed_commits(issue_branch: str) -> None:
     remote refuses) is logged and left alone -- the run still needs its
     worktree, and failing the whole run over a previous run's leftovers would
     strand the branch rather than rescue it.
+
+    Complements _salvage_exhausted_worktree, which covers the same
+    already-committed case immediately at exhaustion, before the worktree is
+    torn down, rather than waiting for a next run of this branch to happen.
     """
     ahead = subprocess.run(
         ["git", "rev-list", "--count", f"origin/{issue_branch}..{issue_branch}"],
