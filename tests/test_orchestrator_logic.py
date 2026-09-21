@@ -43,6 +43,7 @@ from pipeline_orchestrator import (
     pipeline_by_name,
     main,
     _ensure_gh_cli,
+    _recover_unpushed_commits,
     RunContext,
     find_child_items,
     children_condition_met,
@@ -5856,6 +5857,68 @@ class TestEnsureGhCli:
         )):
             with caplog.at_level("WARNING", logger="orchestrator"):
                 _ensure_gh_cli()  # must not raise
+
+        assert "timed out" in caplog.text
+
+
+class TestRecoverUnpushedCommits:
+    """_recover_unpushed_commits(): thin dispatcher to
+    recover-unpushed-commits.sh (issue #495 -- STD-ARCH-035; the git logic
+    itself lives in the script, tested directly by
+    tests/test_recover_unpushed_commits.sh). Mirrors TestEnsureGhCli's
+    coverage of the same dispatcher shape."""
+
+    def test_dispatches_to_the_script_via_bash(self):
+        with patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            _recover_unpushed_commits("issue-42")
+
+        mock_run.assert_called_once()
+        args = mock_run.call_args.args[0]
+        assert args[0] == "bash"
+        assert args[1].endswith(".github/scripts/recover-unpushed-commits.sh")
+        assert args[2] == "issue-42"
+
+    def test_no_env_override_inherits_the_push_credential(self):
+        """ADR-003: a plain git push, no gh CLI -- inherits the calling
+        process's environment wholesale rather than a static GIT_CONFIG_*
+        allowlist, which cannot safely enumerate that dynamically-numbered
+        family (see the ADR for why a static allowlist here is a real bug,
+        not just a style preference)."""
+        with patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            _recover_unpushed_commits("issue-42")
+
+        assert "env" not in mock_run.call_args.kwargs
+
+    def test_stderr_is_logged_as_warning(self, caplog):
+        with patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="",
+                stderr="recover-unpushed-commits: issue-42 is 1 commit(s) ahead...\n",
+            )
+            with caplog.at_level("WARNING", logger="orchestrator"):
+                _recover_unpushed_commits("issue-42")
+
+        assert "issue-42 is 1 commit(s) ahead" in caplog.text
+
+    def test_missing_script_logs_warning_and_does_not_raise(self, caplog):
+        with patch(
+            "pipeline_orchestrator._orchestration_script_path",
+            return_value=Path("/nonexistent/recover-unpushed-commits.sh"),
+        ):
+            with caplog.at_level("WARNING", logger="orchestrator"):
+                _recover_unpushed_commits("issue-42")  # must not raise
+
+        assert "not found" in caplog.text
+
+    def test_timeout_is_caught_and_logged_as_warning(self, caplog):
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired(
+            cmd=["bash", "recover-unpushed-commits.sh"], timeout=60,
+        )):
+            with caplog.at_level("WARNING", logger="orchestrator"):
+                _recover_unpushed_commits("issue-42")  # must not raise
 
         assert "timed out" in caplog.text
 

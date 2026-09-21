@@ -5123,6 +5123,16 @@ def _recover_unpushed_commits(issue_branch: str) -> None:
     standalone script per STD-ARCH-035 (issue #495):
     .github/scripts/recover-unpushed-commits.sh. This function only resolves
     the script, invokes it, and relays its diagnostic output -- never raises.
+
+    Invoked with no env= override (STD-SEC-022 exception, ADR-002): the
+    GIT_CONFIG_COUNT/GIT_CONFIG_KEY_N/GIT_CONFIG_VALUE_N git-push auth
+    header main() sets up is a dynamically-numbered family, not a fixed set
+    of names -- a static allowlist naming only *_0 silently produces a
+    broken, inconsistent git config whenever more entries are present (this
+    is not hypothetical: it broke this exact function's own tests, since
+    this repo's sandboxed dev environment sets three GIT_CONFIG_* entries of
+    its own for git's github.com routing). Same shape as
+    _salvage_exhausted_worktree's call to salvage-exhausted-worktree.sh.
     """
     script = _orchestration_script_path(".github/scripts/recover-unpushed-commits.sh")
     if not script.exists():

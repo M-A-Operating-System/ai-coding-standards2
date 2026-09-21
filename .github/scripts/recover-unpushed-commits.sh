@@ -23,12 +23,15 @@
 #
 # Usage: recover-unpushed-commits.sh <branch>
 
-set -uo pipefail
+set -euo pipefail
 
 BRANCH="${1:?usage: recover-unpushed-commits.sh <branch>}"
 
-COUNT="$(git rev-list --count "origin/${BRANCH}..${BRANCH}" 2>/dev/null)"
-if [[ -z "$COUNT" || ! "$COUNT" =~ ^[0-9]+$ || "$COUNT" == "0" ]]; then
+# The read is folded into the `if` test (rather than a bare assignment) so
+# a failing `git rev-list` -- e.g. the branch does not exist on origin yet --
+# is handled by this same graceful exit under -e, not an abort.
+if ! COUNT="$(git rev-list --count "origin/${BRANCH}..${BRANCH}" 2>/dev/null)" \
+    || [[ -z "$COUNT" || ! "$COUNT" =~ ^[0-9]+$ || "$COUNT" == "0" ]]; then
     exit 0
 fi
 

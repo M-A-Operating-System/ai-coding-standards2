@@ -26,6 +26,18 @@
       "consequences": "pr-reviewer should not flag these four functions (or new code that follows the same shape -- a load-bearing git operation, or logic genuinely coupled to GitHubClient's retry machinery or the AgentDef/WorkItem type system) as an unaddressed STD-ARCH-035 finding on their own; this ADR is the citable waiver. A change that adds NEW inline process logic not matching one of these two reasoned categories is not covered and should still be flagged, per ADR-001's own consequences.",
       "approved_by": "agbush2",
       "approved_at": "2026-09-21"
+    },
+    {
+      "id": "ADR-003",
+      "title": "STD-SEC-022 exception: scripts doing a plain git push inherit the orchestrator's environment wholesale, not a named GIT_CONFIG_* allowlist",
+      "status": "accepted",
+      "authorises_exception_to": ["STD-SEC-022"],
+      "rationale": "STD-SEC-022 requires a named allowlist, but explicitly allows 'broad inheritance of the ambient environment by a first-party trusted script' as 'a deliberate, commented decision citing an ADR' (its own acceptance criteria). This is that ADR, for exactly one narrow pattern: a script whose only need is the git-push credential main() sets up as GIT_CONFIG_COUNT/GIT_CONFIG_KEY_N/GIT_CONFIG_VALUE_N.",
+      "context": "pr-reviewer flagged recover-unpushed-commits.sh's invocation (no env= override) as an unaddressed STD-SEC-022 finding on PR #497 (issue #495, cycle 4, finding SA-001). The fix attempted was a static named allowlist: _RECOVER_UNPUSHED_COMMITS_ENV_VARS = (\"PATH\", \"HOME\", \"GIT_CONFIG_COUNT\", \"GIT_CONFIG_KEY_0\", \"GIT_CONFIG_VALUE_0\"). This broke TestRecoveringABranchLeftAhead's own tests: GIT_CONFIG_COUNT/KEY_N/VALUE_N is a dynamically-numbered family, not a fixed set of three names. main() overwrites it to exactly one entry (COUNT=1, KEY_0/VALUE_0 the auth header) when it runs for real, but this repo's own sandboxed dev environment independently sets three entries of its own (COUNT=3, KEY_0..KEY_2) for git's github.com routing, unrelated to the orchestrator. A static allowlist naming only *_0 picked up the sandbox's COUNT=3 but forwarded just one of its three entries, producing a broken, inconsistent git config in the subprocess -- confirmed by reproducing the exact test failure this caused. The same fragility applies to any environment that sets its own baseline GIT_CONFIG_* entries for unrelated reasons; the risk is not specific to this one sandbox.",
+      "decision": "A script whose only environment need is this git-push credential (_salvage_exhausted_worktree's call to salvage-exhausted-worktree.sh, established in PR #493; _recover_unpushed_commits' call to recover-unpushed-commits.sh, this issue) is invoked with no env= override, inheriting the calling process's full environment, rather than attempting to enumerate GIT_CONFIG_COUNT's dynamically-numbered siblings by static name. This matches the pattern _git_in's own inline `git push` calls already use, unchanged by this issue.",
+      "consequences": "pr-reviewer should not flag a script matching this exact shape (a plain `git push`/`git fetch`, no `gh` CLI use, no auth header it builds itself) for a missing env= allowlist on its own; this ADR is the citable waiver, alongside each script's own MI-7 identity-exemption entry in test_sec022_env_allowlists.py's _IDENTITY_EXEMPT. A script that does anything beyond plain git operations over this one credential is not covered and should still build a named allowlist.",
+      "approved_by": "agbush2",
+      "approved_at": "2026-09-21"
     }
   ]
 }
