@@ -100,15 +100,60 @@ task lists in the body (`- [ ] #N` patterns).
 Gherkin scenarios are read from `docs/features/{feature}.md` below, not from
 the issue.
 
+### Confirmed root-cause fast path
+
+After reading the approved issue, determine whether it contains a confirmed,
+actionable root cause.
+
+The fast path applies only when all of the following are true:
+- The issue explicitly identifies the diagnosis as confirmed, or provides
+  equivalent evidence that the root cause has already been established.
+- The issue identifies at least one concrete affected file and, where
+  applicable, a function, symbol, or line range.
+- The issue states the required implementation change clearly enough to act on.
+- The cited code can be located and materially matches the issue description.
+- The proposed change does not conflict with an applicable standard, ADR,
+  security requirement, technical specification, or repository convention.
+- A focused regression test or validation approach can be identified before
+  editing.
+
+When all criteria are met, set `CONFIRMED_ROOT_CAUSE_FAST_PATH=true` and
+follow the fast-path instructions in Steps 2-5. Treat the confirmed diagnosis
+as verified implementation input. Do not independently reconstruct the
+complete causal chain from surrounding code unless something directly
+observed contradicts the approved issue.
+
+If any criterion is not met, use the normal investigation path.
+
 ---
 
-## Step 2 -- Read the feature file and authoritative standards
+## Step 2 -- Read authoritative requirements and applicable governance
 
-Determine `{feature}` from an explicit `feature:` label if present, else the
-module segment of the issue title, slugified. Read
-`docs/features/{feature}.md` -- its `## Scenario:` sections are the
-authoritative Gherkin acceptance criteria. If no such file exists, there are
-no scenarios to trace tests to; proceed without them.
+Always read the authoritative acceptance criteria for the issue. Determine
+`{feature}` from an explicit `feature:` label if present, else the module
+segment of the issue title, slugified, and read `docs/features/{feature}.md`
+when present -- its `## Scenario:` sections are the authoritative Gherkin
+acceptance criteria. If no such file exists, there are no scenarios to trace
+tests to; proceed without them.
+
+### Confirmed root-cause fast path
+
+When `CONFIRMED_ROOT_CAUSE_FAST_PATH=true`:
+- Inspect the technical specification, standards, and ADRs applicable to the
+  affected component and proposed change.
+- Do not read unrelated technical specifications or standards merely because
+  they exist in the repository.
+- Expand the governance inspection only when the proposed implementation
+  crosses another governed concern or an observed conflict requires it.
+
+The fast path does not permit ignoring applicable standards or ADRs. It
+avoids loading unrelated material.
+
+### Normal investigation path
+
+When the fast path does not apply, inspect the technical specifications,
+standards, and ADRs needed to understand and safely implement the issue,
+expanding scope as the investigation requires:
 
 ```bash
 find docs/tech-spec -name "*.md" 2>/dev/null | sort
@@ -121,33 +166,64 @@ cat "${AI_AGILE_ROOT}/adrs/adrs.json" 2>/dev/null || echo "(no adrs.json)"
 
 ---
 
-## Step 3 -- Read sub-issues
+## Step 3 -- Read applicable sub-issues
 
-```bash
-gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
-  --jq '.body' | grep -oE '#[0-9]+' | tr -d '#'
-```
+Use the issue body already read in Step 1 to identify explicit sub-issues
+from its task list (`- [ ] #N` patterns). Do not fetch the parent issue a
+second time solely to rediscover information already available from Step 1,
+and do not treat every arbitrary `#N` reference in the body as a sub-issue.
 
-For each sub-issue number:
+For each declared sub-issue number:
 
 ```bash
 gh api "repos/$REPO/issues/{N}" --jq '{number, title, body, state}'
 ```
 
 Build an ordered work list. Skip closed sub-issues. Work open ones in order.
+If no implementation sub-issues are declared, proceed directly to Step 4.
 
 ---
 
-## Step 4 -- Orient in the codebase
+## Step 4 -- Inspect implementation context
 
-```bash
-find . -maxdepth 3 -not -path './.git/*' -not -path './node_modules/*' \
-  -not -path './.venv/*' -not -path './__pycache__/*' | sort
-git log --oneline -15
-```
+### Confirmed root-cause fast path
 
-Read the files most relevant to the work. Match existing naming conventions
-and error-handling style.
+When `CONFIRMED_ROOT_CAUSE_FAST_PATH=true`:
+1. Open the file, function, symbol, or line range cited by the approved issue.
+2. Read only enough surrounding code to confirm that the implementation still
+   materially matches the documented root cause.
+3. Inspect immediate dependencies only where required to make the stated
+   change safely.
+4. Identify the focused regression test or validation command before editing.
+5. If the cited implementation matches, proceed directly to Step 5.
+
+Do not perform broad repository discovery and do not independently re-derive
+the complete causal chain. Expand investigation only if:
+- the cited code no longer matches;
+- the affected behaviour crosses an uncited dependency or interface;
+- directly observed code contradicts the issue;
+- the proposed fix conflicts with an applicable standard, ADR, security
+  requirement, technical specification, or repository convention; or
+- an appropriate regression test cannot be identified.
+
+### Normal investigation path
+
+When the confirmed root-cause fast path does not apply, orient in the
+relevant portion of the codebase using the repository tools appropriate to
+the task. Inspect enough surrounding implementation to establish the root
+cause and make the change safely. Match existing naming conventions and
+error-handling style.
+
+### Avoid repeated evidence gathering
+
+Do not repeatedly Grep and Read the same file to rediscover information
+already established during this invocation. Once a relevant symbol or code
+path has been located, retain that context and continue from it. Re-read a
+file only when: it has changed since the previous read; a different section
+is required for the implementation; validation identifies new evidence
+requiring inspection; or the previous read did not contain enough context to
+answer a specific implementation question. Repeated small-window reads must
+have a specific unresolved question they are intended to answer.
 
 ---
 
@@ -158,6 +234,22 @@ Work through each open sub-issue in order.
 **Understand the requirement** before editing. Read the sub-issue body and
 identify the specific behaviour to add, the files affected, and any tech-spec
 constraints.
+
+### Fast-path implementation
+
+If `CONFIRMED_ROOT_CAUSE_FAST_PATH=true`, the root-cause investigation is
+already complete. Do not repeat the diagnosis here. Confirm the cited
+implementation location, make the stated change, and proceed to the focused
+regression test and validation:
+
+```
+confirmed issue diagnosis -> inspect cited code -> identify regression
+validation -> edit -> run focused test -> run required broader validation
+-> commit
+```
+
+Re-open investigation only if new evidence directly contradicts the approved
+root cause or shows that the stated implementation is unsafe or incomplete.
 
 **Implement only the approved scope.** Follow applicable standards and ADRs.
 Validate external boundaries and meaningful failure paths. Match existing
