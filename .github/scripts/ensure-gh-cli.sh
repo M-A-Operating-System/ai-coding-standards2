@@ -25,7 +25,7 @@
 #   1 -- gh could not be installed, or is present but not authenticated
 #        (message on stderr)
 
-set -uo pipefail
+set -euo pipefail
 
 if ! command -v gh >/dev/null 2>&1; then
     echo "ensure-gh-cli: gh CLI not found on PATH -- installing via apt (script-type steps call \`gh api\`)" >&2

@@ -7463,6 +7463,23 @@ def _discover_human_github_token() -> str | None:
     return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
+# STD-SEC-022 -- env for ensure-gh-cli.sh: PATH/HOME to run bash and
+# apt-get, network/proxy/CA vars so `gh api user` and `apt-get` work in a
+# restricted or proxied environment, GH_TOKEN/GITHUB_TOKEN for `gh` itself
+# to authenticate with (the script never reads either directly -- `gh`
+# does). No AI_AGILE_BOT_TOKEN or GIT_CONFIG_*: this runs before main()
+# resolves either, and the script needs neither -- it never picks its own
+# identity (see its MI-7 exemption in test_sec022_env_allowlists.py).
+_ENSURE_GH_CLI_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
+    "GH_TOKEN", "GITHUB_TOKEN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+
 def _ensure_gh_cli() -> None:
     """Ensure `gh` is on PATH and can make authenticated REST calls.
 
@@ -7476,9 +7493,10 @@ def _ensure_gh_cli() -> None:
     if not script.exists():
         log.warning("ensure-gh-cli.sh not found at %s -- skipping gh CLI check", script)
         return
+    env = {k: os.environ[k] for k in _ENSURE_GH_CLI_ENV_VARS if k in os.environ}
     try:
         proc = subprocess.run(
-            ["bash", str(script)], capture_output=True, text=True, timeout=150,
+            ["bash", str(script)], env=env, capture_output=True, text=True, timeout=150,
         )
     except subprocess.TimeoutExpired:
         log.warning("ensure-gh-cli.sh timed out")

@@ -5826,7 +5826,36 @@ class TestEnsureGhCli:
             with caplog.at_level("WARNING", logger="orchestrator"):
                 _ensure_gh_cli()  # must not raise
 
-        assert "not found" in caplog.text
+    def test_call_site_passes_an_explicit_narrowed_env(self, monkeypatch):
+        """STD-SEC-022: subprocess.run must not inherit the orchestrator's
+        full environment (orchestrator-only secrets: AI_AGILE_BOT_TOKEN,
+        GIT_CONFIG_* the embedded git-push auth header)."""
+        monkeypatch.setenv("GH_TOKEN", "gh-secret")
+        monkeypatch.setenv("AI_AGILE_BOT_TOKEN", "bot-secret")
+        monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+        monkeypatch.setenv("EXTRA_SECRET", "should-never-appear")
+        with patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            _ensure_gh_cli()
+
+        assert "env" in mock_run.call_args.kwargs, (
+            "subprocess.run must be called with an explicit env= -- omitting "
+            "it inherits the full ambient environment"
+        )
+        env = mock_run.call_args.kwargs["env"]
+        assert env.get("GH_TOKEN") == "gh-secret"
+        assert "AI_AGILE_BOT_TOKEN" not in env
+        assert "GIT_CONFIG_COUNT" not in env
+        assert "EXTRA_SECRET" not in env
+
+    def test_timeout_is_caught_and_logged_as_warning(self, caplog):
+        with patch("pipeline_orchestrator.subprocess.run", side_effect=subprocess.TimeoutExpired(
+            cmd=["bash", "ensure-gh-cli.sh"], timeout=150,
+        )):
+            with caplog.at_level("WARNING", logger="orchestrator"):
+                _ensure_gh_cli()  # must not raise
+
+        assert "timed out" in caplog.text
 
 
 # ---------------------------------------------------------------------------
