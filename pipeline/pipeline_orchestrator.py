@@ -6653,13 +6653,15 @@ def _salvage_exhausted_worktree(
     Exhaustion never writes a result, so the normal commit_after path
     (_apply_result -> _push_step_branch) never runs, and _remove_run_worktree
     discards the worktree -- committed or not -- unconditionally right after
-    this returns (issue #445). Mirrors _push_step_branch's push mechanics and
-    stray-root-file check, and additionally commits whatever the step left
-    uncommitted under a `wip(exhausted):` message, since a step killed
-    mid-edit may not have reached its own next commit point yet.
+    this returns (issue #445). Complements _recover_unpushed_commits (the
+    deferred, next-retry path for the same already-committed case) by
+    surfacing the recovery immediately.
 
-    Complements _recover_unpushed_commits (the deferred, next-retry path for
-    the same already-committed case) by surfacing the recovery immediately.
+    Eligibility and branch resolution are coordination decisions and stay
+    here; the actual git/filesystem work (commit, push, stray-root-file
+    check) runs in .github/scripts/salvage-exhausted-worktree.sh per
+    STD-ARCH-035 -- ADR-001 does not waive new process logic landing in this
+    file (pr-reviewer finding SC-001, PR #493).
 
     Returns {"sha": <head after push>, "commits": <int>, "stray": [...]} on
     a successful push, or None when there is nothing to push or any step of
@@ -6674,51 +6676,62 @@ def _salvage_exhausted_worktree(
     if not _branch:
         return None
 
-    _dirty = _git_in(cwd, "status", "--porcelain")
-    if _dirty.returncode == 0 and any(ln.strip() for ln in _dirty.stdout.splitlines()):
-        _git_in(cwd, "add", "-A")
-        _commit = _git_in(
-            cwd, "commit", "-m",
-            f"wip(exhausted): uncommitted changes from a budget-exhausted "
-            f"{agent_def.agent} run",
-        )
-        if _commit.returncode != 0:
-            log.warning(
-                "  could not commit exhausted worktree's uncommitted changes "
-                "for %s on #%d: %s",
-                agent_def.agent, work_item.number,
-                (_commit.stderr or _commit.stdout).strip()[:500],
-            )
-
-    _base = f"origin/{_branch}"
-    _ahead = _git_in(cwd, "rev-list", "--count", f"{_base}..HEAD")
-    _count = (_ahead.stdout or "").strip()
-    if _ahead.returncode != 0 or not _count.isdigit() or _count == "0":
-        return None
-
-    _stray = _root_additions(cwd, _base)
-
-    _push = _git_in(cwd, "push", "origin", f"HEAD:{_branch}")
-    if _push.returncode != 0:
+    _script = _orchestration_script_path(
+        ".github/scripts/salvage-exhausted-worktree.sh"
+    )
+    if not _script.exists():
         log.warning(
-            "  could not push exhausted worktree's %s commit(s) for %s on #%d: %s",
-            _count, agent_def.agent, work_item.number,
-            (_push.stderr or _push.stdout).strip()[:500],
+            "  exhausted: salvage-exhausted-worktree.sh not found at %s -- "
+            "skipping salvage for %s on #%d",
+            _script, agent_def.agent, work_item.number,
         )
         return None
 
-    _head = _git_in(cwd, "rev-parse", "HEAD")
-    _sha = _head.stdout.strip() if _head.returncode == 0 else ""
-    if _stray:
-        log.error(
-            "  exhausted: %s committed %d file(s) at the repo root for #%d: %s",
-            agent_def.agent, len(_stray), work_item.number, ", ".join(_stray),
+    try:
+        _proc = subprocess.run(
+            ["bash", str(_script), cwd, _branch, agent_def.agent],
+            capture_output=True, text=True, timeout=300,
         )
+    except subprocess.TimeoutExpired:
+        log.warning(
+            "  exhausted: salvage-exhausted-worktree.sh timed out for %s on #%d",
+            agent_def.agent, work_item.number,
+        )
+        return None
+    except FileNotFoundError:
+        log.warning("  exhausted: bash not found in PATH -- skipping salvage")
+        return None
+
+    for _line in _proc.stderr.splitlines():
+        if _line.strip():
+            log.info("  exhausted: %s", _line.strip())
+
+    if _proc.returncode != 0:
+        log.warning(
+            "  exhausted: salvage-exhausted-worktree.sh exited %d for %s on #%d",
+            _proc.returncode, agent_def.agent, work_item.number,
+        )
+        return None
+
+    _stdout = _proc.stdout.strip()
+    if not _stdout:
+        return None
+
+    try:
+        _salvage = json.loads(_stdout)
+    except (json.JSONDecodeError, ValueError):
+        log.warning(
+            "  exhausted: could not parse salvage-exhausted-worktree.sh output "
+            "for %s on #%d: %s",
+            agent_def.agent, work_item.number, _stdout[:500],
+        )
+        return None
+
     log.info(
         "  exhausted: pushed %s commit(s) left by %s to %s for #%d",
-        _count, agent_def.agent, _branch, work_item.number,
+        _salvage.get("commits"), agent_def.agent, _branch, work_item.number,
     )
-    return {"sha": _sha, "commits": int(_count), "stray": _stray}
+    return _salvage
 
 
 def _finalize_run_exhaustion(
