@@ -45,7 +45,6 @@ import logging
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -5160,10 +5159,11 @@ def _create_run_worktree(issue_branch: str) -> str:
     _WORKTREE_ROOT.mkdir(parents=True, exist_ok=True)
     path = _run_worktree_path(issue_branch)
     if path.exists():
-        # Debris from a run killed mid-flight -- SIGTERM cleanup
-        # (_clear_inflight_wip_on_signal) is best-effort, so a prior worktree
-        # may still be registered here. Clear it before adding a fresh one
-        # rather than colliding with it.
+        # Debris from a run killed mid-flight -- a prior worktree may still
+        # be registered here regardless of how that run ended (issue #495:
+        # this is the sole cleanup path now, not a fallback behind a signal
+        # handler). Clear it before adding a fresh one rather than colliding
+        # with it.
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(path)],
             check=False, capture_output=True,
@@ -5185,8 +5185,6 @@ def _create_run_worktree(issue_branch: str) -> str:
         # captured it -- without this, the :failed diagnostic comment a human
         # reads never shows the actual git error.
         raise RuntimeError(f"{exc}: {(exc.stderr or '').strip()}") from exc
-    global _CURRENT_WORKTREE
-    _CURRENT_WORKTREE = str(path)
     return str(path)
 
 
@@ -5196,7 +5194,6 @@ def _remove_run_worktree(path: str) -> None:
     run's own outcome has already been decided."""
     if not path:
         return
-    global _CURRENT_WORKTREE
     try:
         subprocess.run(
             ["git", "worktree", "remove", "--force", path],
@@ -5205,8 +5202,6 @@ def _remove_run_worktree(path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
     except Exception as exc:
         log.warning("could not remove worktree %s: %s", path, exc)
-    if _CURRENT_WORKTREE == path:
-        _CURRENT_WORKTREE = None
 
 
 def _should_run(
@@ -5423,9 +5418,11 @@ def _should_run(
 #
 # A step can just stop existing: the machine running it is lost, or the process
 # is killed outright. Nothing is returned and the :wip it held stays where it
-# is, blocking the item forever. The SIGTERM/SIGINT handler
-# (_clear_inflight_wip_on_signal) only helps a process that gets to run a
-# handler -- kill -9, an OOM kill and a lost host all bypass it.
+# is, blocking the item forever. No in-process handler can help here -- kill
+# -9, an OOM kill and a lost host all bypass one, and issue #495 removed the
+# SIGTERM/SIGINT handler that used to make the graceful-kill case faster,
+# since it only ever raced this same reclaim rather than covering ground this
+# doesn't.
 #
 # So the reclaim is something a LATER tick does, by looking at the label rather
 # than the run: a :wip older than what that step could legitimately still be
@@ -5756,10 +5753,6 @@ def _acquire_wip_and_announce(
             gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
             labels.add(agent_def.status_label(STATUS_WIP))
             work_item.labels = labels
-            # Track the in-flight :wip so a termination signal can clear it
-            # rather than stranding the mutex (see _clear_inflight_wip_on_signal).
-            global _CURRENT_WIP
-            _CURRENT_WIP = (gh, work_item.number, agent_def.status_label(STATUS_WIP))
             # Claim only on successful label application — a failed
             # add_label means no :wip was set so nothing is actually running.
             if concurrency is not None:
@@ -7082,11 +7075,6 @@ def _apply_result(
     applied_status = _resolve_applied_status(agent_def, work_item, final_status, gh)
 
     _apply_terminal_status(gh, agent_def, work_item, applied_status)
-
-    # The step has transitioned off :wip -- clear the in-flight marker so the
-    # SIGTERM handler only ever acts on a genuinely running step.
-    global _CURRENT_WIP
-    _CURRENT_WIP = None
 
     _announce_and_prompt(
         agent_def, work_item, session_id, applied_status, sentinel_message, gh,
@@ -8452,58 +8440,25 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
         ))
 
 
-# Set to (gh, work_item_number, wip_label) while an agent is mid-flight so a
-# termination signal (e.g. a CI or interactive timeout sending SIGTERM) can
-# clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
-_CURRENT_WIP = None
-
-# Set to the absolute path of the isolated worktree (see _create_run_worktree)
-# while a commit_after run is mid-flight, so a termination signal can remove
-# it rather than leaving debris and a stale registration behind. Cleared by
-# _remove_run_worktree once the run's own cleanup runs normally.
-_CURRENT_WORKTREE = None
-
-
-def _clear_inflight_wip_on_signal(signum, _frame) -> None:
-    """Best-effort: drop the in-flight :wip label and worktree, then exit.
-
-    A killed tick (SIGTERM/SIGINT) otherwise leaves the work item stuck at :wip
-    -- the mutex blocks the next tick from re-triggering the agent. Clearing that
-    one label makes the item immediately retryable. Similarly, an isolated
-    worktree left behind by a kill would otherwise strand disk and a stale
-    `git worktree` registration; _create_run_worktree already clears debris
-    from a prior kill on its next use, but removing it here means a killed
-    run leaves nothing behind at all when the kill is clean.
-    """
-    wip = _CURRENT_WIP
-    if wip is not None:
-        gh, number, label = wip
-        try:
-            gh.remove_label(number, label)
-            log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
-        except Exception as exc:
-            log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
-    worktree = _CURRENT_WORKTREE
-    if worktree:
-        try:
-            subprocess.run(["git", "worktree", "remove", "--force", worktree],
-                            check=False, capture_output=True)
-            log.warning("signal %d: removed in-flight worktree %s before exit", signum, worktree)
-        except Exception as exc:
-            log.warning("signal %d: could not remove in-flight worktree %s: %s", signum, worktree, exc)
-    # No scratch cleanup here: scratch-setup.sh clears the directory at the
-    # start of every run, so a killed tick self-heals on the next one.
-    sys.exit(128 + signum)
+# issue #495 (STD-ARCH-035) removed the _CURRENT_WIP/_CURRENT_WORKTREE
+# module globals and the SIGTERM/SIGINT handler that used to read them
+# ("in-flight-state globals for signal-handler cleanup" is the standard's own
+# named anti-pattern). Both existed only to make a killed tick's cleanup
+# immediate; the item was never actually stuck without them:
+#   - a stranded :wip is reclaimed by _reclaim_stale_wip once its lease
+#     expires, on whatever later tick next considers that work item --
+#     unconditionally, whether or not a signal handler ever ran.
+#   - a leftover worktree is cleared by _create_run_worktree itself, the next
+#     time that branch is retried, regardless of how the prior run ended.
+# Removing the handler trades "cleared instantly on a graceful kill" for
+# "cleared on next use/lease-expiry" -- a bounded delay, not a functional
+# gap, and it already only ever covered SIGTERM/SIGINT: kill -9, an OOM
+# kill, and a lost host always bypassed it.
 
 
 def main() -> None:
     # Wake up -> do the work -> close down.
     args = parse_args()
-
-    # Clear an in-flight :wip if this process is terminated (timeout/cancel) so a
-    # killed tick does not strand the mutex and block the next run.
-    signal.signal(signal.SIGTERM, _clear_inflight_wip_on_signal)
-    signal.signal(signal.SIGINT, _clear_inflight_wip_on_signal)
 
     global _VERBOSE, _HEADLESS
     _VERBOSE = args.verbose

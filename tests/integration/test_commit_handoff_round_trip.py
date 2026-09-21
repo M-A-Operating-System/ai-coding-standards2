@@ -127,8 +127,11 @@ def test_a_killed_run_s_commits_are_recovered_by_the_next_run(checkout):
     first = po._create_run_worktree(BRANCH)
     stranded = _commit_in(first, "src/b.py", "committed, never pushed\n", "killed run")
     assert _remote_head(checkout) != stranded
-    # A run killed mid-flight leaves its worktree behind; SIGTERM cleanup is
-    # best-effort, so the next run finds it and clears it itself.
+    # A run killed mid-flight leaves its worktree behind; _create_run_worktree
+    # itself clears debris from a prior kill the next time this branch is
+    # used (issue #495 removed the SIGTERM handler that used to do this
+    # immediately -- it only ever raced this same cleanup, not covered
+    # ground this doesn't).
 
     second = po._create_run_worktree(BRANCH)
     try:
