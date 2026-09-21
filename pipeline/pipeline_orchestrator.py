@@ -5063,10 +5063,11 @@ def _apply_exhausted(
 
     `salvage`, when given (see _salvage_exhausted_worktree), describes
     partial work pushed from the run's worktree before it was torn down
-    (issue #445): {"sha": ..., "commits": ...}. When present, this also
-    applies {agent}:exhausted-partial alongside {agent}:exhausted and names
-    it in the recovery comment, so a human reviewing the exhaustion knows
-    there is something to inspect rather than starting from zero.
+    (issue #445): {"sha": ..., "commits": ..., "stray": [...]}. When
+    present, this also applies {agent}:exhausted-partial alongside
+    {agent}:exhausted and names it (and any stray root-level files) in the
+    recovery comment, so a human reviewing the exhaustion knows there is
+    something to inspect rather than starting from zero.
     """
     for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED, STATUS_REQUESTED):
         try:
@@ -5113,12 +5114,16 @@ def _apply_exhausted(
         "",
     ]
     if salvage:
+        _stray_note = (
+            f" **{len(salvage['stray'])} file(s) landed at the repository root: "
+            f"{', '.join(salvage['stray'])}.**" if salvage.get("stray") else ""
+        )
         body_parts += [
             f"**Partial work was recovered.** {salvage['commits']} commit(s) left in the "
             f"worktree were pushed to the branch (`{salvage['sha'][:12]}`) before it was "
             f"torn down, labeled `{_partial_label}`. This is unreviewed -- the step never "
             f"reached its own self-review (Step 6/validate) or wrote a result -- inspect "
-            f"before building on it or opening a PR from it.",
+            f"before building on it or opening a PR from it.{_stray_note}",
             "",
         ]
     body_parts += [
@@ -6644,16 +6649,17 @@ def _salvage_exhausted_worktree(
     Exhaustion never writes a result, so the normal commit_after path
     (_apply_result -> _push_step_branch) never runs, and _remove_run_worktree
     discards the worktree -- committed or not -- unconditionally right after
-    this returns (issue #445). This mirrors _push_step_branch's push
-    mechanics, and additionally commits whatever the step left uncommitted
-    under a `wip(exhausted):` message: a step killed mid-edit may not have
-    reached its own next "commit after each sub-issue" point, so there can be
-    real, otherwise-lost work sitting uncommitted as well as already committed.
+    this returns (issue #445). Mirrors _push_step_branch's push mechanics and
+    stray-root-file check, and additionally commits whatever the step left
+    uncommitted under a `wip(exhausted):` message, since a step killed
+    mid-edit may not have reached its own next commit point yet.
 
-    Returns {"sha": <head after push>, "commits": <int>} on a successful
-    push, or None when there is nothing to push or any step of this fails --
-    always best-effort, never raises, since this runs on the orchestrator's
-    own failure path and must not turn a clean exhaustion into a crash.
+    Complements _recover_unpushed_commits (the deferred, next-retry path for
+    the same already-committed case) by surfacing the recovery immediately.
+
+    Returns {"sha": <head after push>, "commits": <int>, "stray": [...]} on
+    a successful push, or None when there is nothing to push or any step of
+    this fails -- always best-effort, never raises.
     """
     if not (agent_def.commit_after and work_item.kind == "issue" and cwd):
         return None
@@ -6686,6 +6692,8 @@ def _salvage_exhausted_worktree(
     if _ahead.returncode != 0 or not _count.isdigit() or _count == "0":
         return None
 
+    _stray = _root_additions(cwd, _base)
+
     _push = _git_in(cwd, "push", "origin", f"HEAD:{_branch}")
     if _push.returncode != 0:
         log.warning(
@@ -6697,11 +6705,16 @@ def _salvage_exhausted_worktree(
 
     _head = _git_in(cwd, "rev-parse", "HEAD")
     _sha = _head.stdout.strip() if _head.returncode == 0 else ""
+    if _stray:
+        log.error(
+            "  exhausted: %s committed %d file(s) at the repo root for #%d: %s",
+            agent_def.agent, len(_stray), work_item.number, ", ".join(_stray),
+        )
     log.info(
         "  exhausted: pushed %s commit(s) left by %s to %s for #%d",
         _count, agent_def.agent, _branch, work_item.number,
     )
-    return {"sha": _sha, "commits": int(_count)}
+    return {"sha": _sha, "commits": int(_count), "stray": _stray}
 
 
 def _finalize_run_exhaustion(

@@ -5286,6 +5286,38 @@ class TestSalvageExhaustedWorktree:
         ).stdout.strip()
         assert pushed == head, "origin's branch must move to the salvaged commit"
 
+    def test_reports_a_stray_file_committed_at_the_repository_root(self, tmp_path):
+        """A working file landed at the repo root instead of $AI_AGILE_SCRATCH
+        (issue #321's failure mode) is still pushed -- discarding the commit
+        to punish it would throw away real work -- but salvage must report
+        it, same as _push_step_branch's _root_additions check does for a
+        normal completion, per PRODUCT.md's 'What lands in git' contract."""
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "stray_scratch.txt").write_text("oops\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "accidentally committed at repo root")
+
+        result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), str(work))
+
+        assert result is not None
+        assert result["stray"] == ["stray_scratch.txt"]
+        pushed = subprocess.run(
+            ["git", "rev-parse", "issue-445"], cwd=str(origin),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert pushed == result["sha"], "the commit is pushed despite the stray file"
+
+    def test_no_stray_files_reports_empty_list(self, tmp_path):
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "src").mkdir()
+        (work / "src" / "fix.py").write_text("x = 1\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "a normal commit under a real path")
+
+        result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), str(work))
+
+        assert result is not None and result["stray"] == []
+
     def test_commits_and_pushes_uncommitted_changes(self, tmp_path):
         """The step was killed mid-edit, before it reached its own next
         commit point -- there is real, valid work sitting uncommitted in the
