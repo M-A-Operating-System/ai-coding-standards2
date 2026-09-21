@@ -7552,46 +7552,37 @@ def _discover_human_github_token() -> str | None:
 
 
 def _ensure_gh_cli() -> None:
-    """Ensure `gh` is on PATH and can make authenticated REST calls, installing
-    it via apt if missing.
+    """Ensure `gh` is on PATH and can make authenticated REST calls.
 
-    Script-type pipeline steps (.github/scripts/*.sh) shell out to `gh api`
-    REST calls, not gh's GraphQL-backed subcommands (some of which 403 in
-    restricted sessions -- see #276/#284), so this only needs the binary plus
-    GITHUB_TOKEN/GH_TOKEN in the environment. Verification below uses
-    `gh api user` rather than `gh auth status`: the latter performs a
-    GraphQL-backed validation call that can 403 in a restricted session even
-    when `gh api` works fine, producing a false "not authenticated" reading.
+    The install/probe logic (apt-get bootstrap, `gh api user` verification)
+    is filesystem/process work and runs as a standalone script per
+    STD-ARCH-035 (issue #495): .github/scripts/ensure-gh-cli.sh. This
+    function only resolves the script and reports its result -- never
+    raises, matches the coordination-only contract ADR-001 states.
     """
-    if not shutil.which("gh"):
-        log.warning("gh CLI not found on PATH -- installing via apt (script-type steps call `gh api`)")
-        try:
-            subprocess.run(["apt-get", "update", "-qq"], check=True,
-                            capture_output=True, text=True, timeout=120)
-            subprocess.run(["apt-get", "install", "-y", "-qq", "gh"], check=True,
-                            capture_output=True, text=True, timeout=120)
-        except Exception as exc:
-            stderr = getattr(exc, "stderr", None) or ""
-            log.error("Could not install gh CLI automatically (%s; stderr: %s); script-type "
-                       "steps calling `gh api` will fail until it is installed manually",
-                       exc, stderr.strip())
-            return
-        if not shutil.which("gh"):
-            log.error("apt install of gh exited cleanly but `gh` is still not on PATH")
-            return
-        log.info("gh CLI installed")
-
-    try:
-        probe = subprocess.run(["gh", "api", "user", "--jq", ".login"],
-                                capture_output=True, text=True, timeout=30)
-    except Exception as exc:
-        log.warning("Could not probe gh CLI REST auth: %s", exc)
+    script = _orchestration_script_path(".github/scripts/ensure-gh-cli.sh")
+    if not script.exists():
+        log.warning("ensure-gh-cli.sh not found at %s -- skipping gh CLI check", script)
         return
-    if probe.returncode == 0:
-        log.info("gh CLI REST-authenticated as %s", probe.stdout.strip())
-    else:
-        log.warning("gh CLI present but `gh api user` failed -- script-type steps "
-                     "calling `gh api` may fail: %s", probe.stderr.strip())
+    try:
+        proc = subprocess.run(
+            ["bash", str(script)], capture_output=True, text=True, timeout=150,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("ensure-gh-cli.sh timed out")
+        return
+    except FileNotFoundError:
+        log.warning("bash not found in PATH -- skipping gh CLI check")
+        return
+
+    for line in proc.stderr.splitlines():
+        if line.strip():
+            log.warning(line.strip())
+
+    if proc.returncode == 0:
+        for line in proc.stdout.splitlines():
+            if line.strip():
+                log.info(line.strip())
 
 
 # ---------------------------------------------------------------------------

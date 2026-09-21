@@ -293,10 +293,18 @@ class TestOneIdentityBehindEverySystemWrite:
 #                         push` calls. It never reads GH_TOKEN/GITHUB_TOKEN
 #                         or builds its own auth header, so there is no
 #                         separate identity here to resolve.
+#   ensure-gh-cli.sh    -- a read-only `gh api user` probe of whoever is
+#                         already authenticated in the environment it
+#                         inherits, run once at orchestrator startup before
+#                         any step's identity is relevant. It never writes
+#                         to GitHub and never selects a credential itself,
+#                         so MI-7's decidability concern (attributing a
+#                         write to a consistent actor) does not apply.
 _IDENTITY_EXEMPT = {
     "status.sh",
     "drive-item.sh",
     "new-branch-pr.sh",
+    "ensure-gh-cli.sh",
     "rebaseline-branch.sh",
     "salvage-exhausted-worktree.sh",
 }

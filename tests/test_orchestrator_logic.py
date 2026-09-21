@@ -5780,53 +5780,53 @@ class TestTriggerLabelPresent:
 
 
 class TestEnsureGhCli:
-    """_ensure_gh_cli(): gh present/absent, REST auth probe success/failure."""
+    """_ensure_gh_cli(): thin dispatcher to ensure-gh-cli.sh (issue #495 --
+    STD-ARCH-035; the install/probe logic itself now lives in the script,
+    tested directly by tests/test_ensure_gh_cli.sh)."""
 
-    def test_gh_present_and_probe_succeeds_logs_info(self, caplog):
-        with patch("pipeline_orchestrator.shutil.which", return_value="/usr/bin/gh"), \
-             patch("pipeline_orchestrator.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="agbush2\n", stderr="")
-            with caplog.at_level("INFO", logger="orchestrator"):
-                _ensure_gh_cli()
-
-        mock_run.assert_called_once()
-        assert mock_run.call_args.args[0][:3] == ["gh", "api", "user"]
-        assert "REST-authenticated as agbush2" in caplog.text
-
-    def test_gh_missing_installs_via_apt_then_probes(self, caplog):
-        which_results = iter([None, "/usr/bin/gh"])
-        with patch("pipeline_orchestrator.shutil.which",
-                    side_effect=lambda *_a, **_k: next(which_results)), \
-             patch("pipeline_orchestrator.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="agbush2\n", stderr="")
-            with caplog.at_level("INFO", logger="orchestrator"):
-                _ensure_gh_cli()
-
-        assert mock_run.call_count == 3
-        assert mock_run.call_args_list[0].args[0][:2] == ["apt-get", "update"]
-        assert mock_run.call_args_list[1].args[0][:3] == ["apt-get", "install", "-y"]
-        assert mock_run.call_args_list[2].args[0][:3] == ["gh", "api", "user"]
-        assert "gh CLI installed" in caplog.text
-
-    def test_apt_install_failure_logs_captured_stderr(self, caplog):
-        error = subprocess.CalledProcessError(100, ["apt-get", "install", "-y", "-qq", "gh"])
-        error.stderr = "E: Unable to locate package gh\n"
-        with patch("pipeline_orchestrator.shutil.which", return_value=None), \
-             patch("pipeline_orchestrator.subprocess.run", side_effect=[MagicMock(), error]), \
-             caplog.at_level("ERROR", logger="orchestrator"):
+    def test_dispatches_to_the_script_via_bash(self):
+        with patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
             _ensure_gh_cli()
 
-        assert "Unable to locate package gh" in caplog.text
+        mock_run.assert_called_once()
+        args = mock_run.call_args.args[0]
+        assert args[0] == "bash"
+        assert args[1].endswith(".github/scripts/ensure-gh-cli.sh")
 
-    def test_probe_failure_logs_warning(self, caplog):
-        with patch("pipeline_orchestrator.shutil.which", return_value="/usr/bin/gh"), \
-             patch("pipeline_orchestrator.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="HTTP 401: Bad credentials")
+    def test_success_logs_script_stdout_as_info(self, caplog):
+        with patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="ensure-gh-cli: gh CLI REST-authenticated as agbush2\n",
+                stderr="",
+            )
+            with caplog.at_level("INFO", logger="orchestrator"):
+                _ensure_gh_cli()
+
+        assert "REST-authenticated as agbush2" in caplog.text
+
+    def test_failure_logs_script_stderr_as_warning(self, caplog):
+        with patch("pipeline_orchestrator.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="ensure-gh-cli: gh CLI present but `gh api user` failed: HTTP 401: Bad credentials\n",
+            )
             with caplog.at_level("WARNING", logger="orchestrator"):
                 _ensure_gh_cli()
 
-        assert "gh api user" in caplog.text
         assert "HTTP 401: Bad credentials" in caplog.text
+
+    def test_missing_script_logs_warning_and_does_not_raise(self, caplog):
+        with patch(
+            "pipeline_orchestrator._orchestration_script_path",
+            return_value=Path("/nonexistent/ensure-gh-cli.sh"),
+        ):
+            with caplog.at_level("WARNING", logger="orchestrator"):
+                _ensure_gh_cli()  # must not raise
+
+        assert "not found" in caplog.text
 
 
 # ---------------------------------------------------------------------------
