@@ -311,6 +311,12 @@ class TestOneIdentityBehindEverySystemWrite:
 #                         to GitHub and never selects a credential itself,
 #                         so MI-7's decidability concern (attributing a
 #                         write to a consistent actor) does not apply.
+#   recover-unpushed-commits.sh -- invoked directly by
+#                         _recover_unpushed_commits with no env= override,
+#                         the same inherited-GIT_CONFIG_* shape as
+#                         salvage-exhausted-worktree.sh, for the same reason:
+#                         a plain `git push`, no gh CLI, no auth header of
+#                         its own.
 _IDENTITY_EXEMPT = {
     "status.sh",
     "drive-item.sh",
@@ -318,4 +324,5 @@ _IDENTITY_EXEMPT = {
     "ensure-gh-cli.sh",
     "rebaseline-branch.sh",
     "salvage-exhausted-worktree.sh",
+    "recover-unpushed-commits.sh",
 }

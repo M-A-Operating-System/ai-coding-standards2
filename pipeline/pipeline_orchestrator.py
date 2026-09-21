@@ -5097,54 +5097,43 @@ def _run_worktree_path(issue_branch: str) -> Path:
 
 
 def _recover_unpushed_commits(issue_branch: str) -> None:
-    """Push commits a previous run committed but never got to push.
+    """Push commits a previous run committed but never got to push, before
+    the branch is reset for a fresh worktree.
 
-    A step commits into its worktree as it goes, and those commits move the
-    shared branch ref immediately -- but they only become durable when the ref
-    moves on the remote, which the orchestrator does after the step returns. A
-    step killed at its budget ceiling never returns, so its commits sit ahead
-    of origin with nothing having pushed them.
+    PRODUCT.md, "What lands in git": a later tick pushes a branch left ahead
+    of its remote, recovering by reading what is actually there rather than
+    what a record claims. Complements _salvage_exhausted_worktree, which
+    covers the same already-committed case immediately at exhaustion, before
+    the worktree is torn down, rather than waiting for a next run of this
+    branch to happen.
 
-    The next run for that branch is where they would otherwise be lost: the
-    `worktree add -B ... origin/{branch}` below resets the local branch to the
-    remote, discarding exactly the work the arrangement exists to protect. So
-    the ref is moved first. PRODUCT.md, "What lands in git": a later tick
-    pushes a branch left ahead of its remote, recovering by reading what is
-    actually there rather than what a record claims.
-
-    Best-effort by design. A branch that cannot be pushed (diverged, or the
-    remote refuses) is logged and left alone -- the run still needs its
-    worktree, and failing the whole run over a previous run's leftovers would
-    strand the branch rather than rescue it.
-
-    Complements _salvage_exhausted_worktree, which covers the same
-    already-committed case immediately at exhaustion, before the worktree is
-    torn down, rather than waiting for a next run of this branch to happen.
+    The actual git work (best-effort by design -- see the script) runs as a
+    standalone script per STD-ARCH-035 (issue #495):
+    .github/scripts/recover-unpushed-commits.sh. This function only resolves
+    the script, invokes it, and relays its diagnostic output -- never raises.
     """
-    ahead = subprocess.run(
-        ["git", "rev-list", "--count", f"origin/{issue_branch}..{issue_branch}"],
-        check=False, capture_output=True, text=True,
-    )
-    if ahead.returncode != 0 or not (ahead.stdout.strip() or "0").isdigit():
-        return
-    count = int(ahead.stdout.strip() or "0")
-    if count == 0:
-        return
-    log.warning(
-        "  worktree: %s is %d commit(s) ahead of its remote from an earlier run "
-        "-- pushing before the branch is reset", issue_branch, count,
-    )
-    pushed = subprocess.run(
-        ["git", "push", "origin", f"{issue_branch}:{issue_branch}"],
-        check=False, capture_output=True, text=True,
-    )
-    if pushed.returncode != 0:
-        log.error(
-            "  worktree: could not recover %d unpushed commit(s) on %s: %s",
-            count, issue_branch, (pushed.stderr or pushed.stdout).strip()[:500],
+    script = _orchestration_script_path(".github/scripts/recover-unpushed-commits.sh")
+    if not script.exists():
+        log.warning(
+            "recover-unpushed-commits.sh not found at %s -- skipping recovery for %s",
+            script, issue_branch,
         )
         return
-    log.info("  worktree: recovered %d unpushed commit(s) on %s", count, issue_branch)
+    try:
+        proc = subprocess.run(
+            ["bash", str(script), issue_branch],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("recover-unpushed-commits.sh timed out for %s", issue_branch)
+        return
+    except FileNotFoundError:
+        log.warning("bash not found in PATH -- skipping recovery for %s", issue_branch)
+        return
+
+    for line in proc.stderr.splitlines():
+        if line.strip():
+            log.warning("  worktree: %s", line.strip())
 
 
 def _create_run_worktree(issue_branch: str) -> str:
