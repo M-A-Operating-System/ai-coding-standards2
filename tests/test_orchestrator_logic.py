@@ -5826,6 +5826,8 @@ class TestEnsureGhCli:
             with caplog.at_level("WARNING", logger="orchestrator"):
                 _ensure_gh_cli()  # must not raise
 
+        assert "not found" in caplog.text
+
     def test_call_site_passes_an_explicit_narrowed_env(self, monkeypatch):
         """STD-SEC-022: subprocess.run must not inherit the orchestrator's
         full environment (orchestrator-only secrets: AI_AGILE_BOT_TOKEN,
