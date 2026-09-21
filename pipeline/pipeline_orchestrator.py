@@ -1413,6 +1413,10 @@ def _build_agent_metrics(
     Extra fields from system/init and result events (beyond the PRD-enumerated
     minimum) are included at their original CLI names so no field is silently
     dropped. Known canonical fields override any same-named extra field.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): takes AgentDef/
+    WorkItem/AgentRunResult directly and calls other orchestrator-internal
+    functions, unlike todos_patch.py's clean pure-function extraction.
     """
     init = result.init_event or {}
     result_ev = result.result_event or {}
@@ -1610,6 +1614,11 @@ def _ensure_metrics_branch(gh: "GitHubClient", repo: str) -> None:
     Initialises the branch from the repo's default branch and pushes the
     JSON schema file. A concurrent creation race is handled by swallowing
     the 422 response from GitHub.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): uses GitHubClient's
+    retry-with-backoff HTTP machinery, which a bash `gh api` rewrite would
+    lose or have to non-trivially reimplement, for a code path that runs at
+    most once per repository.
     """
     try:
         gh._get(f"/repos/{repo}/git/refs/heads/{METRICS_BRANCH}")
@@ -3572,6 +3581,9 @@ def _build_opening_announcement(
     work_item: WorkItem,
     session_id: str,
 ) -> str:
+    """Stays inline per ADR-002 (STD-ARCH-035 exception): takes AgentDef/
+    WorkItem directly and calls step_branch, unlike todos_patch.py's clean
+    pure-function extraction."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
         "session_id": session_id,
@@ -5144,6 +5156,11 @@ def _create_run_worktree(issue_branch: str) -> str:
     tree) so a concurrent run on a different issue cannot move this run's
     HEAD (#373). Raises on any failure -- the caller must fail the run
     loudly rather than fall back to the shared working tree.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): load-bearing with no
+    fallback -- a step cannot run at all without its worktree, so this must
+    not depend on a script being resolvable on the current branch (the same
+    reasoning that keeps _push_step_branch inline).
     """
     _WORKTREE_ROOT.mkdir(parents=True, exist_ok=True)
     path = _run_worktree_path(issue_branch)
@@ -5180,7 +5197,10 @@ def _create_run_worktree(issue_branch: str) -> str:
 def _remove_run_worktree(path: str) -> None:
     """Tear down a worktree created by _create_run_worktree. Best-effort --
     cleanup must never raise, since it runs on every break path after the
-    run's own outcome has already been decided."""
+    run's own outcome has already been decided.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception), grouped with
+    _create_run_worktree as its teardown counterpart."""
     if not path:
         return
     try:
@@ -6289,6 +6309,13 @@ def _push_step_branch(
     with a push it has just received, and a read that lags by a moment would
     record a subject that is already superseded -- making the next tick re-run
     a step for no reason.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): load-bearing with no
+    fallback -- a step's commit is not durable until this pushes it, so
+    routing this through the script-resolution mechanism used elsewhere in
+    that issue (which degrades gracefully if a script is unresolvable) would
+    reintroduce issue #196's exact regression class. See
+    test_pushing_a_step_s_commits_needs_no_script_on_the_branch.
     """
     _branch = step_branch(agent_def, work_item)
     if not _branch:
