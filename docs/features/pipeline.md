@@ -55,3 +55,21 @@
 **Given** `merge-conflict` has failed because a resumed session replied without any fresh API calls
 **When** the orchestrator re-drives the step for the same issue in a subsequent run
 **Then** the step uses a session that has not previously concluded for this issue-step combination, giving it a genuine chance to produce a fresh result
+
+## Scenario: pre_steps scripts execute before agent step
+
+**Given** a pipeline step declares a `pre_steps` list in `pipeline.json`
+**When** the orchestrator invokes that step
+**Then** each script in `pre_steps` runs in order and to completion before the step's agent or script is spawned
+
+## Scenario: interrupted run recovers idempotently on next run
+
+**Given** a step's worktree directory exists from a previous interrupted run
+**When** the orchestrator starts that step on the next pipeline run
+**Then** the worktree pre_steps script detects the stale worktree, removes it, and creates a fresh one without the signal handler having to read in-flight globals
+
+## Scenario: orchestrator delegates post-step git and filesystem work to post_steps scripts
+
+**Given** a step completes and its result file is present in the scratch directory
+**When** the orchestrator processes the step's result
+**Then** it reads only the exit code and result JSON, and all git push and worktree teardown operations are performed by post_steps scripts rather than inline orchestrator code

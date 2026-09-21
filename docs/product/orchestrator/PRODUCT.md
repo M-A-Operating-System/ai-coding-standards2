@@ -449,7 +449,7 @@ mean something.
 |---|---|---|---|
 | Allowed commands | `extra_allowedTools` | Everything this activity may do. Anything else is refused | Data |
 | Denied commands | `deniedTools` | Commands the step must not invoke; matched against the command as written; deny takes precedence over allow | Data |
-| Pre-actions | `defaults.agent_lifecycle.before` | Work performed before the activity — checking out the branch, preparing the scratch directory | Code |
+| Pre-actions | `pre_steps`, `defaults.agent_lifecycle.before` | Work performed before the activity — worktree creation, recovery, preparing the scratch directory | Code |
 | The activity | `type` with `agent` or `script` | The work the step exists to do: an AI agent, or a script | Deterministic when a script; not deterministic when an agent |
 | Post-actions | `post_steps`, `git_ops`, `defaults.agent_lifecycle.after` | Work performed after — committing, pushing, labelling, posting the artefact | Code |
 
@@ -468,12 +468,25 @@ own failure is logged and swallowed rather than failing the run. Use
 `agent_lifecycle` for work every agent needs done around it, win or
 lose.
 
-`agent_lifecycle.before` must be idempotent because it runs again on
-every retry, including one following a kill mid-run — there is no
-signal handler that can save it, since the kill that ends a background
-tick is uncatchable. `before` removes its scratch directory before
-creating it, rather than assuming it is absent, so a tick killed
-mid-run leaves debris the next run simply clears before it starts.
+`pre_steps` and `agent_lifecycle.before` are the symmetric counterparts
+on the setup side. `pre_steps` is an ordered list of scripts specific to
+one step, running before the step's agent or script is spawned, and a
+non-zero exit fails the step before it starts. `agent_lifecycle.before`
+wraps every agent step regardless of which step it is. Use `pre_steps`
+for setup specific to one step; use `agent_lifecycle` for setup every
+agent needs around it.
+
+`pre_steps` must be idempotent: a run interrupted mid-setup leaves state
+behind, and the next run executes `pre_steps` again from the start. A
+worktree-creation pre-step that checks for a stale existing worktree and
+removes it before creating a fresh one self-heals without a signal
+handler reading in-flight globals. `agent_lifecycle.before` carries the
+same requirement because it runs again on every retry, including one
+following a kill mid-run — there is no signal handler that can save it,
+since the kill that ends a background tick is uncatchable. `before`
+removes its scratch directory before creating it, rather than assuming
+it is absent, so a tick killed mid-run leaves debris the next run simply
+clears before it starts.
 
 Commands every step needs are declared once in
 `defaults.extra_allowedTools` rather than repeated on each step. A
