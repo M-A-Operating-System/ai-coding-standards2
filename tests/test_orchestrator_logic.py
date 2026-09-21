@@ -5369,6 +5369,36 @@ class TestSalvageExhaustedWorktree:
         assert result is None
         mock_sub.assert_not_called()
 
+    def test_apply_result_salvages_uncommitted_work_through_the_full_chain(self, tmp_path):
+        """End-to-end: _apply_result's own exhaustion branch -- not
+        _salvage_exhausted_worktree called directly -- must wire the
+        worktree through to salvage before _remove_run_worktree tears it
+        down. Proves the acceptance criterion (issue #445): an exhausted run
+        with uncommitted worktree changes does not lose them, exercised the
+        way a real exhaustion actually flows through _apply_result."""
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "fix.py").write_text("x = 1\n")
+
+        gh = _make_gh_mock()
+        agent = self._agent()
+        wi = self._wi()
+
+        stop = orch._apply_result(
+            agent, wi, AgentRunResult(success=False, timed_out=True),
+            None, "", str(work), 0.0, 0, set(), None, gh, "", "test/repo",
+            {agent.agent: agent}, exhausted=True,
+        )
+
+        assert stop is True, "exhaustion must halt the work item"
+        checked_out = tmp_path / "check"
+        self._git(tmp_path, "clone", "--branch", "issue-445", str(origin), str(checked_out))
+        assert (checked_out / "fix.py").read_text() == "x = 1\n", (
+            "the uncommitted file must have reached origin through _apply_result's "
+            "own exhaustion path, not just the extracted salvage function"
+        )
+        added = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "coder:exhausted-partial" in added
+
 
 class TestApplyExhaustedPartialLabel:
     """_apply_exhausted applies/clears the {agent}:exhausted-partial companion
