@@ -160,6 +160,147 @@ class TestStep6dNeverInventsRequirements:
 
 
 # ---------------------------------------------------------------------------
+# Scenario: issue #434 -- the band's minimum is a floor, not a ceiling
+# ---------------------------------------------------------------------------
+
+def _extract_step_5a(text: str) -> str:
+    match = re.search(r"### 5a[^\n]*\n(.*?)(?=\n### |\n---\n|\n## Step |\Z)", text, re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def _table_rows(section: str) -> list:
+    """Markdown table rows as lists of cell strings, header/separator dropped."""
+    rows = []
+    for line in section.splitlines():
+        line = line.strip()
+        if not line.startswith("|") or set(line.replace("|", "").strip()) <= set("- "):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        rows.append(cells)
+    return rows[1:] if rows else rows  # drop header row
+
+
+class TestStep6dTargetsMaximumNotMinimum:
+    """Issue #434: Step 6d's derivation algorithm must derive toward the
+    classification band's maximum, using the minimum only as a floor for a
+    thinly-specified issue -- never as a stopping condition once reached."""
+
+    def test_step_6d_lists_band_maximums(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert "Maximum scenarios" in step, (
+            "Step 6d must list the maximum scenario count per classification "
+            "band, alongside the minimum"
+        )
+
+    def test_step_6d_does_not_stop_at_minimum(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert "stop when the minimum is reached" not in step.lower(), (
+            "Step 6d must not treat reaching the minimum as a stopping "
+            "condition -- it should derive toward the band's maximum"
+        )
+        assert re.search(r"never a stopping condition|not a stopping condition", step), (
+            "Step 6d must explicitly say the minimum is not a stopping condition"
+        )
+
+    def test_step_6d_derives_up_to_maximum(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert re.search(r"up to the band'?s[\s\S]{0,20}maximum", step), (
+            "Step 6d's derivation rule must derive one scenario per remaining "
+            "distinct candidate up to the band's maximum"
+        )
+
+    def test_step_6d_and_step_5a_state_the_same_ranges(self):
+        """Reproduces the #433 shape: Step 5a's classification table and
+        Step 6d's backfill table must agree on every band's scenario count,
+        not just on the low end."""
+        text = _load_prd_writer_text()
+        step_5a = _extract_step_5a(text)
+        step_6d = _extract_step_6d(text)
+        assert step_5a and step_6d, "Step 5a or Step 6d section not found"
+
+        # Step 5a: | Classification | Problem | Goal | User stories | Gherkin scenarios | ... |
+        rows_5a = _table_rows(step_5a)
+        gherkin_by_band = {}
+        for row in rows_5a:
+            if len(row) < 5:
+                continue
+            band = row[0].strip("`")
+            m = re.match(r"(\d+)\D+(\d+)", row[4])
+            if m:
+                gherkin_by_band[band] = (int(m.group(1)), int(m.group(2)))
+        assert gherkin_by_band, "could not parse any band ranges out of Step 5a's table"
+
+        # Step 6d: | Classification | Minimum scenarios | Maximum scenarios |
+        rows_6d = _table_rows(step_6d)
+        range_by_band_6d = {}
+        for row in rows_6d:
+            if len(row) < 3:
+                continue
+            band = row[0].strip("`")
+            if not row[1].strip().isdigit() or not row[2].strip().isdigit():
+                continue
+            range_by_band_6d[band] = (int(row[1]), int(row[2]))
+        assert range_by_band_6d, "could not parse any band ranges out of Step 6d's table"
+
+        for band, rng_5a in gherkin_by_band.items():
+            assert band in range_by_band_6d, f"Step 6d's table is missing the {band!r} band"
+            assert range_by_band_6d[band] == rng_5a, (
+                f"{band!r} band: Step 5a says {rng_5a}, Step 6d says "
+                f"{range_by_band_6d[band]} -- the two tables must state the same numbers"
+            )
+
+
+class TestStep6dCoverageSelfCheck:
+    """Issue #434: before signalling review, Step 6d must verify every
+    enumerated requirement is cited by at least one scenario, and either
+    derive the gap or state it explicitly -- catching what a human reviewer
+    otherwise has to find by inspection (the #433 incident)."""
+
+    def test_step_6d_has_a_coverage_self_check(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert re.search(r"coverage self-check", step, re.IGNORECASE), (
+            "Step 6d must contain an explicit coverage self-check before Step 8"
+        )
+
+    def test_self_check_compares_requirement_tags_to_cited_scenarios(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert "requirement tags" in step or "cited" in step, (
+            "the coverage self-check must compare enumerated requirement tags "
+            "against the tags actually cited by scenarios in the body"
+        )
+
+    def test_self_check_requires_deriving_or_stating_gaps(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert "derive it now" in step, (
+            "a coverable gap must be derived before finishing, not just noted"
+        )
+        assert "artefact comment" in step, (
+            "an uncoverable gap must be stated explicitly in the artefact comment"
+        )
+
+    def test_self_check_forbids_signalling_review_with_a_known_gap(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert re.search(r"do not signal.*outcome.*review.*gap", step, re.IGNORECASE | re.DOTALL), (
+            "Step 6d must forbid signalling outcome: review while a known, "
+            "unstated coverage gap remains"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Scenario: Non-behavioural requirements are not padded into scenarios
 # ---------------------------------------------------------------------------
 

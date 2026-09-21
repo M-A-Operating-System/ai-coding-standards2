@@ -5212,6 +5212,247 @@ class TestWorktreeIsolationPreventsCorruption:
 
 
 # ---------------------------------------------------------------------------
+# TestSalvageExhaustedWorktree (issue #445)
+#
+# Exhaustion never writes a result, so the normal commit_after push
+# (_push_step_branch) never runs, and _remove_run_worktree tears the worktree
+# down unconditionally right after. _salvage_exhausted_worktree is the last
+# chance to keep whatever the run left there -- committed or not -- before
+# that happens.
+# ---------------------------------------------------------------------------
+
+class TestSalvageExhaustedWorktree:
+    def _git(self, cwd, *args):
+        subprocess.run(
+            ["git", *args], cwd=str(cwd), check=True,
+            capture_output=True, text=True,
+        )
+
+    def _origin_and_branch(self, tmp_path, branch):
+        """A bare origin plus a local clone already on `branch`, one commit
+        ahead of an initial `main`, mirroring what _create_run_worktree hands
+        a step: a real checkout of its own branch."""
+        origin = tmp_path / "origin.git"
+        self._git(tmp_path, "init", "--bare", "-b", "main", str(origin))
+        work = tmp_path / "work"
+        self._git(tmp_path, "clone", str(origin), str(work))
+        self._git(work, "config", "user.email", "t@t")
+        self._git(work, "config", "user.name", "t")
+        (work / "README.md").write_text("base\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "initial")
+        self._git(work, "push", "origin", "main")
+        self._git(work, "checkout", "-b", branch)
+        self._git(work, "push", "origin", branch)
+        return origin, work
+
+    def _agent(self, *, commit_after=True):
+        return AgentDef(
+            agent="03_execute/coder", phase="03_execute", objects=["issue"],
+            trigger={"label": "x:complete"}, dependencies=[],
+            human_gate_after=False, human_gate_label=None, description="t",
+            commit_after=commit_after,
+            flow="test-flow",
+            flow_naming={"branch": "issue-{number}"},
+        )
+
+    def _wi(self):
+        return WorkItem(
+            number=445, kind="issue", title="T", labels=set(),
+            url="https://github.com/test/repo/issues/445",
+        )
+
+    def test_pushes_a_commit_the_step_already_made_before_it_was_killed(self, tmp_path):
+        """The step followed its own 'commit after each sub-issue' discipline
+        and had already committed when the budget ran out -- only the push,
+        which normally happens after a written result, never got a chance to
+        run. Salvage must still push it."""
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "fix.py").write_text("x = 1\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "the step's own commit before SIGKILL")
+
+        result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), str(work))
+
+        assert result is not None and result["commits"] == 1
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(work),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert result["sha"] == head
+        pushed = subprocess.run(
+            ["git", "rev-parse", "issue-445"], cwd=str(origin),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert pushed == head, "origin's branch must move to the salvaged commit"
+
+    def test_reports_a_stray_file_committed_at_the_repository_root(self, tmp_path):
+        """A working file landed at the repo root instead of $AI_AGILE_SCRATCH
+        (issue #321's failure mode) is still pushed -- discarding the commit
+        to punish it would throw away real work -- but salvage must report
+        it, same as _push_step_branch's _root_additions check does for a
+        normal completion, per PRODUCT.md's 'What lands in git' contract."""
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "stray_scratch.txt").write_text("oops\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "accidentally committed at repo root")
+
+        result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), str(work))
+
+        assert result is not None
+        assert result["stray"] == ["stray_scratch.txt"]
+        pushed = subprocess.run(
+            ["git", "rev-parse", "issue-445"], cwd=str(origin),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert pushed == result["sha"], "the commit is pushed despite the stray file"
+
+    def test_no_stray_files_reports_empty_list(self, tmp_path):
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "src").mkdir()
+        (work / "src" / "fix.py").write_text("x = 1\n")
+        self._git(work, "add", "-A")
+        self._git(work, "commit", "-m", "a normal commit under a real path")
+
+        result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), str(work))
+
+        assert result is not None and result["stray"] == []
+
+    def test_commits_and_pushes_uncommitted_changes(self, tmp_path):
+        """The step was killed mid-edit, before it reached its own next
+        commit point -- there is real, valid work sitting uncommitted in the
+        worktree. Salvage must commit it (as recovered, unreviewed work) and
+        push, not just check for commits that already exist."""
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "fix.py").write_text("x = 1\n")
+
+        result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), str(work))
+
+        assert result is not None and result["commits"] == 1
+        log = subprocess.run(
+            ["git", "log", "-1", "--format=%s"], cwd=str(work),
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert log.startswith("wip(exhausted):"), (
+            f"expected a clearly-marked wip(exhausted) commit, got {log!r}"
+        )
+        checked_out = tmp_path / "check"
+        self._git(tmp_path, "clone", "--branch", "issue-445", str(origin), str(checked_out))
+        assert (checked_out / "fix.py").read_text() == "x = 1\n", (
+            "the uncommitted file must have reached origin, not been discarded"
+        )
+
+    def test_returns_none_when_worktree_is_clean(self, tmp_path):
+        """Nothing to salvage: no uncommitted changes, no commits ahead of
+        origin. Must not fabricate a push."""
+        _origin, work = self._origin_and_branch(tmp_path, "issue-445")
+
+        result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), str(work))
+
+        assert result is None
+
+    def test_returns_none_when_step_does_not_commit_after(self):
+        """A step that never declares commit_after has no branch of its own
+        to salvage onto -- must short-circuit without touching git."""
+        with patch("subprocess.run") as mock_sub:
+            result = orch._salvage_exhausted_worktree(
+                self._agent(commit_after=False), self._wi(), "/some/worktree",
+            )
+        assert result is None
+        mock_sub.assert_not_called()
+
+    def test_returns_none_without_a_worktree(self):
+        """No worktree was ever created for this run (e.g. setup itself
+        failed) -- nothing to salvage."""
+        with patch("subprocess.run") as mock_sub:
+            result = orch._salvage_exhausted_worktree(self._agent(), self._wi(), "")
+        assert result is None
+        mock_sub.assert_not_called()
+
+    def test_apply_result_salvages_uncommitted_work_through_the_full_chain(self, tmp_path):
+        """End-to-end: _apply_result's own exhaustion branch -- not
+        _salvage_exhausted_worktree called directly -- must wire the
+        worktree through to salvage before _remove_run_worktree tears it
+        down. Proves the acceptance criterion (issue #445): an exhausted run
+        with uncommitted worktree changes does not lose them, exercised the
+        way a real exhaustion actually flows through _apply_result."""
+        origin, work = self._origin_and_branch(tmp_path, "issue-445")
+        (work / "fix.py").write_text("x = 1\n")
+
+        gh = _make_gh_mock()
+        agent = self._agent()
+        wi = self._wi()
+
+        stop = orch._apply_result(
+            agent, wi, AgentRunResult(success=False, timed_out=True),
+            None, "", str(work), 0.0, 0, set(), None, gh, "", "test/repo",
+            {agent.agent: agent}, exhausted=True,
+        )
+
+        assert stop is True, "exhaustion must halt the work item"
+        checked_out = tmp_path / "check"
+        self._git(tmp_path, "clone", "--branch", "issue-445", str(origin), str(checked_out))
+        assert (checked_out / "fix.py").read_text() == "x = 1\n", (
+            "the uncommitted file must have reached origin through _apply_result's "
+            "own exhaustion path, not just the extracted salvage function"
+        )
+        added = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "coder:exhausted-partial" in added
+
+
+class TestApplyExhaustedPartialLabel:
+    """_apply_exhausted applies/clears the {agent}:exhausted-partial companion
+    label from its `salvage` argument, and names the recovery in the
+    exhaustion comment, so a human doesn't start from zero when there was
+    something to look at (issue #445)."""
+
+    def _agent(self):
+        return AgentDef(
+            agent="03_execute/coder", phase="03_execute", objects=["issue"],
+            trigger={"label": "x:complete"}, dependencies=[],
+            human_gate_after=False, human_gate_label=None, description="t",
+            commit_after=True, flow="test-flow",
+        )
+
+    def _wi(self):
+        return WorkItem(
+            number=445, kind="issue", title="T", labels=set(),
+            url="https://github.com/test/repo/issues/445",
+        )
+
+    def test_applies_partial_label_and_names_it_when_salvage_present(self):
+        gh = _make_gh_mock()
+        result = AgentRunResult(success=False, timed_out=True)
+
+        orch._apply_exhausted(
+            gh, self._agent(), self._wi(), result,
+            salvage={"sha": "abc123def456", "commits": 2},
+        )
+
+        added = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "coder:exhausted-partial" in added
+        comment_body = gh.post_comment.call_args[0][1]
+        assert "Partial work was recovered" in comment_body
+        assert "abc123def456"[:12] in comment_body
+
+    def test_no_partial_label_and_stale_one_cleared_when_nothing_salvaged(self):
+        gh = _make_gh_mock()
+        result = AgentRunResult(success=False, timed_out=True)
+
+        orch._apply_exhausted(gh, self._agent(), self._wi(), result, salvage=None)
+
+        added = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "coder:exhausted-partial" not in added
+        removed = [c.args[1] for c in gh.remove_label.call_args_list]
+        assert "coder:exhausted-partial" in removed, (
+            "a prior run's partial-work label must not survive describing a "
+            "worktree this run already discarded"
+        )
+        comment_body = gh.post_comment.call_args[0][1]
+        assert "Partial work was recovered" not in comment_body
+
+
+# ---------------------------------------------------------------------------
 # TestOrchestrationScriptResolution (issue #196)
 #
 # Orchestration helper scripts must resolve from origin/main, not the

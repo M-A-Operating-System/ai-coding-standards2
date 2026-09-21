@@ -1,0 +1,19 @@
+{
+  "$schema": "../pipeline/schemas/standards.schema.json",
+  "version": "1.0.0",
+  "scope": "project",
+  "description": "Project ADRs for ai-coding-standards2 itself -- this repo dogfoods its own orchestrator, so it records its own architectural decisions here the same way any consuming repo would.",
+  "adrs": [
+    {
+      "id": "ADR-001",
+      "title": "The orchestrator coordinates only -- it decides completion, sequencing, and controls; it does not implement process logic",
+      "status": "accepted",
+      "rationale": "STD-ARCH-035 already states this ('pipeline/pipeline_orchestrator.py decides which step runs next and records the outcome. It must not contain business-process logic.'); this ADR exists to make the boundary concrete and actionable rather than aspirational, and to give future coder/pr-reviewer runs a specific line to hold new code against.",
+      "context": "A survey of pipeline_orchestrator.py (issue #445 review cycle, 2026-09-21) found roughly 900-1000 of its ~8600 lines (~11%) are process/business logic rather than coordination: git worktree creation/removal and the module-level globals a signal handler uses to undo them mid-run (STD-ARCH-035's own named anti-pattern), the push/salvage/stray-file-detection sequence, a `gh` CLI apt-get bootstrap, GitHub Actions metrics-record construction, a hand-rolled todos-block markdown patcher, and announcement/artefact comment formatting. Some of this predates the standard and has already been partially addressed (e.g. `_append_metrics_record` and `_run_lifecycle_scripts` already delegate to `.github/scripts/*.sh`). The immediate trigger: while addressing a pr-reviewer finding on PR #493 (issue #445), the fix under consideration was to add a code comment to pipeline_orchestrator.py justifying why more git logic was being added inline, rather than questioning whether it should be inline at all.",
+      "decision": "pipeline_orchestrator.py's job is limited to three things: (1) deciding what has completed -- reading labels and artefact records, comparing a step's recorded subject against the current one to detect staleness; (2) deciding what runs next -- evaluating triggers, dependencies, exclusions, and eligibility; (3) owning the controls -- the `:wip` mutex, retries, human gates, and review-loop cycle counting. Everything else is process logic and belongs in a script under `.github/scripts/` or an agent prompt under `.claude/agents/`, per STD-ARCH-035: filesystem setup/teardown, git operations (worktree, commit, push, recovery), GitHub API workflows beyond reading label/comment state (branch bootstrap, metrics-record construction), and generating step-specific artefact content (comment bodies, todos-block patches). A change that adds new process logic to pipeline_orchestrator.py is not justified by matching existing inline precedent in the same file -- that precedent is itself the debt this ADR names, not a pattern to extend.",
+      "consequences": "New pipeline capabilities are built as scripts or agents first; a change that cannot avoid touching pipeline_orchestrator.py should extend dispatch/state logic only, not add a new process-logic function. Existing inline process logic (the worktree/git family, the two in-flight-state globals and their signal handler, the metrics/comment/todos-patch formatting helpers) is tracked as pre-existing debt against this decision, not additional precedent for future inline logic. pr-reviewer should treat new process logic landing in pipeline_orchestrator.py as a standards finding (STD-ARCH-035) on its own terms, independent of whether it resembles code already in the file.",
+      "approved_by": "agbush2",
+      "approved_at": "2026-09-21"
+    }
+  ]
+}

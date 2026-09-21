@@ -703,6 +703,20 @@ thing keeping the material warm, so the default stays at resuming and a
 step opts out. Assembling the material is what lets that default
 invert.
 
+**A narrower version of the same waste has a fix that does not wait for
+assembly.** Even with material fetched rather than told, an issue can
+already state its own diagnosis — the affected file, the required
+change, evidence the root cause is confirmed. A step that re-derives what
+the issue already says is spending turns re-reading its own material,
+the same failure this section names, just inside a single invocation
+rather than across resumed ones. `coder` is the first to declare this: a
+confirmed, concretely-evidenced diagnosis is treated as told rather than
+rediscovered, and only the standards, ADRs, and code the diagnosis
+actually touches are inspected — narrowing what Step 2's governance
+reading and Step 4's orientation do, not skipping them. This does not
+assemble anyone's material into a prompt; it stops a step from spending
+its own turns re-proving material an issue already handed it.
+
 ### Headless and interactive ask two different questions
 
 "Headless or interactive" means two different things depending on what
@@ -991,6 +1005,19 @@ shared store. The orchestrator pushes the branch after the step returns.
 If the step never returns, the branch is still ahead of its remote, and a
 later tick pushes it — recovering by reading what is actually there
 rather than what a record claims.
+
+**Exhaustion is the case where there is no later tick to rely on.** A
+step killed at its budget ceiling never writes a result, so nothing
+declares it should be retried, and a later tick recovering an unpushed
+commit only helps if one happens anyway. So the orchestrator salvages
+what the worktree holds at the moment of exhaustion, before tearing it
+down: it commits anything still uncommitted, under a marker that says the
+commit is the orchestrator's own act of recovery, not the step's, then
+pushes whatever is ahead of the remote. The result is labelled distinctly
+from the step's own `:exhausted` — recovered work is not reviewed work,
+and the label says so — and the commit or its absence is named on the
+exhaustion record itself, so a human does not have to go looking for
+whether there was anything to find.
 
 **What this replaces.** Extracting a step's work after the fact — stash
 it, reset the branch to the remote, replay the stash, commit whatever

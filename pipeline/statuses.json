@@ -99,6 +99,20 @@
       "orchestrator_behaviour": "Halt pipeline for this item. Do not retry automatically -- require a human to remove the label."
     },
     {
+      "status": "exhausted-partial",
+      "label_suffix": "exhausted-partial",
+      "colour": "5319E7",
+      "colour_name": "purple-dark",
+      "meaning": "Companion label applied alongside exhausted, never on its own: the run's isolated worktree held uncommitted or unpushed changes when the budget ran out, and the orchestrator pushed them to the branch before the worktree was torn down (issue #445) rather than discarding them. Unreviewed -- the run never reached its own self-review step or wrote a result -- so this marks recovered, not vetted, work.",
+      "set_by": "orchestrator",
+      "cleared_by": "orchestrator, superseded on the run's next exhaustion (removed first, then re-applied only if that run also has something to salvage) -- otherwise stays until a human clears exhausted and the retry lands a normal outcome",
+      "blocks_pipeline": false,
+      "terminal": false,
+      "human_action_required": false,
+      "human_instruction": "Inspect the commit(s) pushed to the branch before treating exhausted's own recovery instructions as a clean slate -- there may be real, unreviewed work already there.",
+      "orchestrator_behaviour": "Informational only; exhausted is what halts the pipeline and requires human action. Never applied by a step's own allowed_labels -- only the orchestrator's exhaustion handling sets or clears it."
+    },
+    {
       "status": "skipped",
       "label_suffix": "skipped",
       "colour": "BFD4F2",

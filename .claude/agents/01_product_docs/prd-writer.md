@@ -347,20 +347,20 @@ If `$ALREADY_APPROVED` is non-zero, skip to **Step 8** immediately.
 **Check for existing Gherkin coverage:**
 
 Count `#### Scenario:` blocks already in the body. Look up the classification
-band minimum from Step 5a:
+band's range from Step 5a — the same range, not a separate number:
 
-| Classification | Minimum scenarios |
-|---|---|
-| `security` | 2 |
-| `bug` | 1 |
-| `enhancement` | 2 |
-| `tech-debt` | 1 |
-| `spike` | 1 |
+| Classification | Minimum scenarios | Maximum scenarios |
+|---|---|---|
+| `security` | 2 | 4 |
+| `bug` | 1 | 2 |
+| `enhancement` | 2 | 7 |
+| `tech-debt` | 1 | 3 |
+| `spike` | 1 | 3 |
 
-If the existing count meets or exceeds the minimum, Step 6d is a no-op —
+If the existing count meets or exceeds the maximum, Step 6d is a no-op —
 go directly to **Step 8**.
 
-**Derivation algorithm (only runs when count is below minimum):**
+**Derivation algorithm (runs whenever count is below the maximum):**
 
 1. Enumerate atomic, falsifiable requirements from the body: numbered list
    items (`R1`, `R2`, … or `1.`, `2.`, …), checklist items (`- [ ]`), or
@@ -370,16 +370,21 @@ go directly to **Step 8**.
 3. Discard non-behavioural candidates — items that describe only internal
    structure with no user-observable surface. They may support a scenario
    but are not one themselves.
-4. For each remaining candidate, write one `#### Scenario:` block with
-   Given/When/Then. The Then-clause must be falsifiable. Tag each scenario
-   with a trailing comment citing the source requirement for traceability
-   (e.g. `<!-- R24 -->`). When the source states only a behaviour with no
-   explicit precondition, infer the Given from surrounding context using the
-   same technique Step 5 uses when drafting from a looser problem statement.
-5. Stop when the minimum is reached or when candidates are exhausted,
-   whichever comes first. Never invent scenarios beyond what the source
-   material supports.
-6. If fewer scenarios can be derived than the minimum (e.g. a schema-only
+4. For each remaining candidate not already covered by an existing scenario,
+   write one `#### Scenario:` block with Given/When/Then. The Then-clause
+   must be falsifiable. Tag each scenario with a trailing comment citing the
+   source requirement for traceability (e.g. `<!-- R24 -->`). When the
+   source states only a behaviour with no explicit precondition, infer the
+   Given from surrounding context using the same technique Step 5 uses when
+   drafting from a looser problem statement.
+5. Derive one scenario per remaining distinct candidate, up to the band's
+   **maximum** — the minimum only guarantees the low end for a thinly
+   specified issue, it is never a stopping condition on its own. Stop early
+   only when candidates are exhausted or the maximum is reached, whichever
+   comes first. Never invent scenarios beyond what the source material
+   supports, and never split one behaviour into several scenarios to reach
+   the maximum artificially (rule 2 still applies).
+6. If fewer scenarios can be derived than the **minimum** (e.g. a schema-only
    or infrastructure-only sub-issue), derive however many are legitimate and
    append one note line:
    `<!-- backfill-note: N of MINIMUM scenarios derivable; remaining requirements are non-behavioural -->`
@@ -401,6 +406,21 @@ content (do not interleave with or renumber the original list):
 
 The section label ("Derived by prd-writer") distinguishes machine-derived
 scenarios from human-authored content.
+
+**Coverage self-check (before Step 8):** Compare the requirement tags
+enumerated in step 1 above against the tags actually cited across *all*
+`#### Scenario:` blocks in the body — pre-existing and just-derived alike.
+A requirement enumerated but cited by no scenario is a gap. For each gap:
+- If it is behavioural and a scenario can legitimately be derived for it
+  (rules 2–4 above), derive it now, even if the maximum has already been
+  reached — coverage of a real requirement takes priority over the band's
+  ceiling.
+- If it genuinely cannot (non-behavioural, or already accounted for by rule
+  6's under-minimum note), name the uncovered requirement(s) explicitly in
+  the artefact comment posted at Step 8.
+
+Do not signal `outcome: "review"` with a known, unstated coverage gap —
+catch what a human reviewer would otherwise have to find by inspection.
 
 Then go to **Step 8** — signal review.
 

@@ -5049,7 +5049,10 @@ def _apply_failed(
         )
 
 
-def _apply_exhausted(gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem, result: AgentRunResult) -> None:
+def _apply_exhausted(
+    gh: "GitHubClient", agent_def: AgentDef, work_item: WorkItem, result: AgentRunResult,
+    *, salvage: Optional[dict] = None,
+) -> None:
     """Apply :exhausted -- the step ran out of turn or wall-clock budget
     before it could write a result. Distinct from :failed (a crash): the
     step didn't break, it just didn't finish inside the budget it was
@@ -5057,6 +5060,14 @@ def _apply_exhausted(gh: "GitHubClient", agent_def: AgentDef, work_item: WorkIte
     step", not "read the logs" (PRODUCT.md, "A step returns exactly one of
     five outcomes"). Mirrors _apply_failed's structure and best-effort
     error handling.
+
+    `salvage`, when given (see _salvage_exhausted_worktree), describes
+    partial work pushed from the run's worktree before it was torn down
+    (issue #445): {"sha": ..., "commits": ..., "stray": [...]}. When
+    present, this also applies {agent}:exhausted-partial alongside
+    {agent}:exhausted and names it (and any stray root-level files) in the
+    recovery comment, so a human reviewing the exhaustion knows there is
+    something to inspect rather than starting from zero.
     """
     for stale in (STATUS_WIP, STATUS_REVIEW, STATUS_BLOCKED, STATUS_REQUESTED):
         try:
@@ -5075,6 +5086,25 @@ def _apply_exhausted(gh: "GitHubClient", agent_def: AgentDef, work_item: WorkIte
             agent_def.exhausted_label, work_item.number, exc,
         )
 
+    # Cleared unconditionally first so a prior exhaustion's partial-work
+    # label never survives describing a worktree this run already discarded.
+    _partial_label = f"{agent_def.label_key}:exhausted-partial"
+    try:
+        gh.remove_label(work_item.number, _partial_label)
+    except Exception as exc:  # pragma: no cover — best-effort cleanup
+        log.debug(
+            "  could not remove stale %s during exhausted transition: %s",
+            _partial_label, exc,
+        )
+    if salvage:
+        try:
+            gh.add_label(work_item.number, _partial_label)
+        except Exception as exc:
+            log.error(
+                "  could not apply %s on #%d: %s",
+                _partial_label, work_item.number, exc,
+            )
+
     _which_budget = "wall-clock" if result.timed_out else "turn"
     detail = result.captured_tail or "(no captured output)"
     body_parts = [
@@ -5082,6 +5112,21 @@ def _apply_exhausted(gh: "GitHubClient", agent_def: AgentDef, work_item: WorkIte
         "",
         f"Return code: `{result.returncode if result.returncode is not None else 'unknown'}`",
         "",
+    ]
+    if salvage:
+        _stray_note = (
+            f" **{len(salvage['stray'])} file(s) landed at the repository root: "
+            f"{', '.join(salvage['stray'])}.**" if salvage.get("stray") else ""
+        )
+        body_parts += [
+            f"**Partial work was recovered.** {salvage['commits']} commit(s) left in the "
+            f"worktree were pushed to the branch (`{salvage['sha'][:12]}`) before it was "
+            f"torn down, labeled `{_partial_label}`. This is unreviewed -- the step never "
+            f"reached its own self-review (Step 6/validate) or wrote a result -- inspect "
+            f"before building on it or opening a PR from it.{_stray_note}",
+            "",
+        ]
+    body_parts += [
         "**Last output (tail):**",
         "",
         "```",
@@ -5148,6 +5193,10 @@ def _recover_unpushed_commits(issue_branch: str) -> None:
     remote refuses) is logged and left alone -- the run still needs its
     worktree, and failing the whole run over a previous run's leftovers would
     strand the branch rather than rescue it.
+
+    Complements _salvage_exhausted_worktree, which covers the same
+    already-committed case immediately at exhaustion, before the worktree is
+    torn down, rather than waiting for a next run of this branch to happen.
     """
     ahead = subprocess.run(
         ["git", "rev-list", "--count", f"origin/{issue_branch}..{issue_branch}"],
@@ -6596,6 +6645,95 @@ def _finalize_run_failure(
         ))
 
 
+def _salvage_exhausted_worktree(
+    agent_def: AgentDef, work_item: WorkItem, cwd: str,
+) -> Optional[dict]:
+    """Best-effort push of whatever a budget-exhausted run left in its worktree.
+
+    Exhaustion never writes a result, so the normal commit_after path
+    (_apply_result -> _push_step_branch) never runs, and _remove_run_worktree
+    discards the worktree -- committed or not -- unconditionally right after
+    this returns (issue #445). Complements _recover_unpushed_commits (the
+    deferred, next-retry path for the same already-committed case) by
+    surfacing the recovery immediately.
+
+    Eligibility and branch resolution are coordination decisions and stay
+    here; the actual git/filesystem work (commit, push, stray-root-file
+    check) runs in .github/scripts/salvage-exhausted-worktree.sh per
+    STD-ARCH-035 -- ADR-001 does not waive new process logic landing in this
+    file (pr-reviewer finding SC-001, PR #493).
+
+    Returns {"sha": <head after push>, "commits": <int>, "stray": [...]} on
+    a successful push, or None when there is nothing to push or any step of
+    this fails -- always best-effort, never raises.
+    """
+    if not (agent_def.commit_after and work_item.kind == "issue" and cwd):
+        return None
+    try:
+        _branch = step_branch(agent_def, work_item)
+    except ValueError:
+        return None
+    if not _branch:
+        return None
+
+    _script = _orchestration_script_path(
+        ".github/scripts/salvage-exhausted-worktree.sh"
+    )
+    if not _script.exists():
+        log.warning(
+            "  exhausted: salvage-exhausted-worktree.sh not found at %s -- "
+            "skipping salvage for %s on #%d",
+            _script, agent_def.agent, work_item.number,
+        )
+        return None
+
+    try:
+        _proc = subprocess.run(
+            ["bash", str(_script), cwd, _branch, agent_def.agent],
+            capture_output=True, text=True, timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning(
+            "  exhausted: salvage-exhausted-worktree.sh timed out for %s on #%d",
+            agent_def.agent, work_item.number,
+        )
+        return None
+    except FileNotFoundError:
+        log.warning("  exhausted: bash not found in PATH -- skipping salvage")
+        return None
+
+    for _line in _proc.stderr.splitlines():
+        if _line.strip():
+            log.info("  exhausted: %s", _line.strip())
+
+    if _proc.returncode != 0:
+        log.warning(
+            "  exhausted: salvage-exhausted-worktree.sh exited %d for %s on #%d",
+            _proc.returncode, agent_def.agent, work_item.number,
+        )
+        return None
+
+    _stdout = _proc.stdout.strip()
+    if not _stdout:
+        return None
+
+    try:
+        _salvage = json.loads(_stdout)
+    except (json.JSONDecodeError, ValueError):
+        log.warning(
+            "  exhausted: could not parse salvage-exhausted-worktree.sh output "
+            "for %s on #%d: %s",
+            agent_def.agent, work_item.number, _stdout[:500],
+        )
+        return None
+
+    log.info(
+        "  exhausted: pushed %s commit(s) left by %s to %s for #%d",
+        _salvage.get("commits"), agent_def.agent, _branch, work_item.number,
+    )
+    return _salvage
+
+
 def _finalize_run_exhaustion(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -6604,11 +6742,17 @@ def _finalize_run_exhaustion(
     gh: "GitHubClient",
     session_id: str,
     repo: str,
+    worktree: str = "",
 ) -> None:
     """Apply :exhausted and emit agent.exhausted. Never varies by attempt --
     exhaustion always breaks the retry loop on the first hit (_invoke_with_retries).
+
+    Salvages whatever the worktree still holds before the terminal label is
+    applied (issue #445) -- the caller removes that worktree unconditionally
+    right after this returns, so this is the last chance to keep it.
     """
-    _apply_exhausted(gh, agent_def, work_item, result)
+    _salvage = _salvage_exhausted_worktree(agent_def, work_item, worktree)
+    _apply_exhausted(gh, agent_def, work_item, result, salvage=_salvage)
     log.error(
         "  EXHAUSTED  %-35s  on #%d (%s budget)",
         agent_def.agent, work_item.number,
@@ -6936,6 +7080,7 @@ def _apply_result(
     elif exhausted:
         _finalize_run_exhaustion(
             agent_def, work_item, result, invoked_at, gh, session_id, repo,
+            worktree=pre_agent_worktree,
         )
         _metrics_record = _build_step_metrics(
             agent_def, work_item, result,

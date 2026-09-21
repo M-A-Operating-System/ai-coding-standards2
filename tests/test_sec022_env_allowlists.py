@@ -285,9 +285,18 @@ class TestOneIdentityBehindEverySystemWrite:
 #   new-branch-pr.sh   -- an adapter; create-pr.sh, which it execs into,
 #                         resolves the identity
 #   rebaseline-branch.sh -- a local git utility that needs no credential
+#   salvage-exhausted-worktree.sh -- invoked directly by
+#                         _salvage_exhausted_worktree with no env= override,
+#                         so it inherits the orchestrator's own process
+#                         environment -- the same GIT_CONFIG_* credential
+#                         main() already set up for _git_in's plain `git
+#                         push` calls. It never reads GH_TOKEN/GITHUB_TOKEN
+#                         or builds its own auth header, so there is no
+#                         separate identity here to resolve.
 _IDENTITY_EXEMPT = {
     "status.sh",
     "drive-item.sh",
     "new-branch-pr.sh",
     "rebaseline-branch.sh",
+    "salvage-exhausted-worktree.sh",
 }

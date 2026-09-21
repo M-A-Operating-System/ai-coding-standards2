@@ -6,6 +6,10 @@ Covers:
 - Issue #467: coder reads AI_AGILE_INVOCATION_MODE instead of inspecting labels
 - Issue #449: coder Mode B must address or rebut every pr-reviewer finding before
   a zero-commit "complete" exit
+- Issue #445: the confirmed root-cause fast path -- declared before Step 2 (not
+  discovered after a full Step 4 investigation), no unconditional repository-wide
+  scan in the normal path, Step 3 does not re-fetch the parent issue, and repeated
+  evidence gathering within one invocation is guarded against
 
 Gherkin scenarios traced:
   - scenario_coder_reinvoked_with_human_review_context
@@ -323,4 +327,118 @@ class TestCoderModeBDoesNotExitCompleteWithNoCommitsWhileAFixableRequestChangesF
         assert "already present" in lower or "original implementation" in lower, (
             "coder.md Mode B intro must explicitly state that finding the original "
             "implementation on the branch is not sufficient for a zero-commit exit"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Issue #445 -- confirmed root-cause fast path
+# ---------------------------------------------------------------------------
+
+def _extract_numbered_step(text: str, step_number: int) -> str:
+    match = re.search(
+        rf"## Step {step_number} [^\n]*\n(.*?)(?=\n---\n|\n## Step |\n## MODE |\Z)",
+        text, re.DOTALL,
+    )
+    return match.group(1) if match else ""
+
+
+class TestFastPathDeclaredBeforeStep2:
+    """The confirmed root-cause gate must be evaluated once, right after
+    reading the issue in Step 1 -- not rediscovered partway through the
+    normal investigation (Step 4), which would defeat the point of skipping
+    that investigation."""
+
+    def test_confirmed_root_cause_section_exists(self):
+        text = _load_coder_text()
+        assert "CONFIRMED_ROOT_CAUSE_FAST_PATH" in text, (
+            "coder.md must declare CONFIRMED_ROOT_CAUSE_FAST_PATH"
+        )
+
+    def test_gate_declaration_appears_before_step_2(self):
+        text = _load_coder_text()
+        gate_idx = text.find("### Confirmed root-cause fast path")
+        step_2_idx = text.find("## Step 2 ")
+        assert gate_idx != -1, "fast-path gate subsection not found"
+        assert step_2_idx != -1, "Step 2 heading not found"
+        assert gate_idx < step_2_idx, (
+            "the fast-path gate must be declared before Step 2, not "
+            "discovered later in the investigation"
+        )
+
+    def test_gate_declaration_is_within_step_1(self):
+        text = _load_coder_text()
+        step_1 = _extract_numbered_step(text, 1)
+        assert step_1, "Step 1 section not found"
+        assert "CONFIRMED_ROOT_CAUSE_FAST_PATH" in step_1, (
+            "the fast-path gate must be set within Step 1, immediately after "
+            "reading the issue"
+        )
+
+
+class TestNoUnconditionalRepositoryScan:
+    """An unconditional `find . -maxdepth 3` or `git log --oneline` in the
+    normal investigation path defeats the fast path's purpose even when it
+    isn't taken, and burns turns on every invocation regardless of mode."""
+
+    def test_no_unconditional_find_maxdepth_scan(self):
+        text = _load_coder_text()
+        assert "find . -maxdepth 3" not in text, (
+            "coder.md must not run an unconditional repository-wide "
+            "'find . -maxdepth 3' scan"
+        )
+
+    def test_no_unconditional_git_log_oneline_scan(self):
+        text = _load_coder_text()
+        assert "git log --oneline" not in text, (
+            "coder.md must not run an unconditional 'git log --oneline' scan"
+        )
+
+
+class TestStep3DoesNotRefetchParentIssue:
+    """Step 1 already read the issue body and its sub-issue references;
+    Step 3 re-fetching the same issue to rediscover sub-issue numbers is
+    the same wasted-turn pattern the fast path exists to avoid."""
+
+    def test_step_3_has_no_refetch_of_parent_issue(self):
+        text = _load_coder_text()
+        step_3 = _extract_numbered_step(text, 3)
+        assert step_3, "Step 3 section not found"
+        assert "issues/$ISSUE_NUMBER" not in step_3, (
+            "Step 3 must not re-fetch the parent issue via $ISSUE_NUMBER -- "
+            "sub-issue numbers come from Step 1's already-read body"
+        )
+
+    def test_step_3_says_not_to_refetch(self):
+        text = _load_coder_text()
+        step_3 = _extract_numbered_step(text, 3)
+        assert step_3, "Step 3 section not found"
+        assert "second time" in step_3 or "do not fetch" in step_3.lower(), (
+            "Step 3 must explicitly say not to re-fetch the parent issue "
+            "Step 1 already read"
+        )
+
+
+class TestRepeatedEvidenceGatheringGuard:
+    """Without an explicit guard, an agent can re-Grep and re-Read the same
+    file across a long investigation, burning turns re-discovering what it
+    already established this same invocation."""
+
+    def test_repeated_read_guard_section_exists(self):
+        text = _load_coder_text()
+        assert "### Avoid repeated evidence gathering" in text, (
+            "coder.md must contain a section guarding against repeated "
+            "evidence gathering"
+        )
+
+    def test_guard_names_when_a_re_read_is_allowed(self):
+        text = _load_coder_text()
+        match = re.search(
+            r"### Avoid repeated evidence gathering\n(.*?)(?=\n---\n|\n## |\Z)",
+            text, re.DOTALL,
+        )
+        assert match, "Avoid repeated evidence gathering section not found"
+        section = match.group(1)
+        assert "repeated" in section.lower() and "re-read" in section.lower(), (
+            "the guard must name what counts as a repeated read and when "
+            "re-reading a file already established this invocation is allowed"
         )
