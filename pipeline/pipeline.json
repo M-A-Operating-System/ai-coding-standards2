@@ -335,7 +335,7 @@
           "resolve_pr_number": true,
           "dependencies": ["03_execute/merge-conflict"],
           "max_retries": 1,
-          "session": { "scope": "per_issue" },
+          "session": { "scope": "per_issue", "resume": false },
           "extra_allowedTools": [
             "Bash(gh pr review *)",
             "Bash(gh pr ready *)",
