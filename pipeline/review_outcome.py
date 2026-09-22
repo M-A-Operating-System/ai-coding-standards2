@@ -25,10 +25,15 @@ def adr_exception_index(adr_records: list[dict]) -> dict[str, set[str]]:
     only ADRs that actually list a standard in authorises_exception_to grant
     an exception for it (adrs.json's own rule, restated in CLAUDE.md and in
     pr-reviewer.md's own "ADR coverage" instruction). A plain decision record
-    with no authorises_exception_to contributes no entries.
+    with no authorises_exception_to contributes no entries. A record whose
+    own status is not "accepted" (proposed, deprecated, superseded) grants
+    no exception either -- a withdrawn or not-yet-approved decision cannot
+    still be waiving a standard.
     """
     index: dict[str, set[str]] = {}
     for record in adr_records:
+        if record.get("status") != "accepted":
+            continue
         adr_id = record.get("id")
         standards = record.get("authorises_exception_to") or []
         if adr_id and standards:
@@ -156,12 +161,13 @@ def render_review_comment(
         fid = f.get("id", "")
         severity = f.get("severity", "")
         category = f.get("category", "")
-        path = f.get("path", "")
-        line_no = f.get("line", "")
+        path = f.get("path")
+        line_no = f.get("line")
         tag = "BLOCKING" if blocking else "non-blocking"
         lines.append(f"### {fid} -- {title}   [{severity}] [{tag}]")
         lines.append("")
-        lines.append(f"**File:** `{path}:{line_no}`")
+        if path:
+            lines.append(f"**File:** `{path}:{line_no}`" if line_no else f"**File:** `{path}`")
         lines.append(f"**Category:** {category}")
         if f.get("standard"):
             adr_note = f" [ADR: {f['adr']}]" if f.get("adr") else ""

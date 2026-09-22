@@ -353,12 +353,17 @@ gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
 ```
 
 `$LATEST_REVIEW` is the artefact the orchestrator rendered (issue #512) -- it
-embeds a fenced ```` ```json ```` block with the exact findings it computed a
-`blocking` status for. Parse that block; never re-derive severity/confidence/
-ADR rules yourself from the prose above it:
+embeds a fenced ```` ```json ```` block, always the last thing in the
+comment, with the exact findings it computed a `blocking` status for. Parse
+that block; never re-derive severity/confidence/ADR rules yourself from the
+prose above it. Extract from the *last* opening fence to the end, not a
+`sed` range to the next ```` ``` ````: a finding's own `fix`/`evidence` text
+can legitimately contain a triple-backtick snippet, which would end a naive
+range early and truncate the JSON.
 
 ```bash
-REVIEW_JSON=$(printf '%s' "$LATEST_REVIEW" | sed -n '/```json/,/```/p' | sed '1d;$d')
+JSON_START_LINE=$(printf '%s' "$LATEST_REVIEW" | grep -n '^```json$' | tail -1 | cut -d: -f1)
+REVIEW_JSON=$(printf '%s' "$LATEST_REVIEW" | tail -n +"$((JSON_START_LINE + 1))" | sed '$d')
 echo "$REVIEW_JSON" | jq -c '.findings[] | select(.blocking == true)'
 ```
 

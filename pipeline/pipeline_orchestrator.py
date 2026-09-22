@@ -7082,7 +7082,11 @@ def _apply_outcome_policy(
     if not review:
         return final_status, None, "result.review is missing or empty", False
 
-    schema_path = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / agent_def.outcome_policy["schema"]
+    # SUBMODULE_ROOT, never AI_AGILE_ROOT: pipeline/schemas/ ships with the
+    # orchestrator itself, and AI_AGILE_ROOT points at the consuming repo
+    # root in a submodule install -- a different directory that has no
+    # pipeline/ at all (see SUBMODULE_ROOT's own comment above).
+    schema_path = SUBMODULE_ROOT / agent_def.outcome_policy["schema"]
     try:
         schema = json.loads(schema_path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
@@ -7099,10 +7103,28 @@ def _apply_outcome_policy(
     if duplicates:
         return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False
 
-    pr_env = _related_work_item_env(gh, agent_def, work_item)
+    # Same PR-resolution shape as _compute_human_review_override/
+    # _mark_pr_ready_if_requested: work_item.number directly for a PR-kind
+    # invocation, branch/label lookup for an issue-kind one.
+    # _related_work_item_env is the wrong tool here -- for a PR-kind work
+    # item it resolves ISSUE_NUMBER, never PR_NUMBER (issue #512 PR review).
+    pr_number: Optional[int] = None
+    if work_item.kind == "pr":
+        pr_number = work_item.number
+    elif work_item.kind == "issue":
+        try:
+            _branch = step_branch(agent_def, work_item)
+            pr_number = gh.find_pr_by_branch(_branch) if _branch else None
+            if pr_number is None:
+                pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
+        except Exception as exc:
+            log.warning(
+                "  could not look up PR for outcome_policy human-review check on #%d: %s",
+                work_item.number, exc,
+            )
     human_blockers: list = []
-    if "PR_NUMBER" in pr_env:
-        human_blockers = _fetch_unresolved_human_review_requests(gh, int(pr_env["PR_NUMBER"]))
+    if pr_number is not None:
+        human_blockers = _fetch_unresolved_human_review_requests(gh, pr_number)
 
     adr_records = _load_adr_records()
     verdict = _derive_review_verdict(findings, human_blockers, adr_records)
@@ -7213,8 +7235,11 @@ def _apply_result(
     # which still applies to any other review_gate step. Either way, a
     # missing/inconsistent/invalid result fails the step closed rather than
     # let it reach _mark_pr_ready_if_requested below.
+    # STATUS_BLOCKED is left untouched: a step that cannot proceed (ambiguous
+    # spec, missing data) has nothing to compute a verdict from, and
+    # outcome_policy must never turn that into a false APPROVE/REQUEST CHANGES.
     _outcome_overridden = False
-    if agent_def.outcome_policy and step_result is not None:
+    if agent_def.outcome_policy and step_result is not None and final_status in (STATUS_COMPLETE, STATUS_REVIEW):
         final_status, _rendered, _policy_failure, _outcome_overridden = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, final_status,
         )

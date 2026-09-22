@@ -42,8 +42,8 @@ def _finding(**overrides):
 class TestAdrExceptionIndex:
     def test_builds_index_from_authorises_exception_to(self):
         records = [
-            {"id": "ADR-002", "authorises_exception_to": ["STD-ARCH-035"]},
-            {"id": "ADR-001", "rationale": "plain decision, no exception"},
+            {"id": "ADR-002", "status": "accepted", "authorises_exception_to": ["STD-ARCH-035"]},
+            {"id": "ADR-001", "status": "accepted", "rationale": "plain decision, no exception"},
         ]
         index = adr_exception_index(records)
         assert index == {"ADR-002": {"STD-ARCH-035"}}
@@ -51,6 +51,19 @@ class TestAdrExceptionIndex:
     def test_plain_decision_record_contributes_nothing(self):
         records = [{"id": "ADR-001"}]
         assert adr_exception_index(records) == {}
+
+    def test_non_accepted_status_contributes_nothing(self):
+        """A deprecated, superseded, or merely-proposed ADR cannot still be
+        waiving a standard."""
+        for status in ("proposed", "deprecated", "superseded", None):
+            records = [{"id": "ADR-002", "status": status,
+                        "authorises_exception_to": ["STD-ARCH-035"]}]
+            assert adr_exception_index(records) == {}, f"status={status!r} must not grant an exception"
+
+    def test_accepted_status_contributes_normally(self):
+        records = [{"id": "ADR-002", "status": "accepted",
+                    "authorises_exception_to": ["STD-ARCH-035"]}]
+        assert adr_exception_index(records) == {"ADR-002": {"STD-ARCH-035"}}
 
 
 class TestFindingBlocks:

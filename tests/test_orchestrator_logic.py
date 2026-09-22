@@ -6628,3 +6628,57 @@ class TestCheckReviewVerdictConsistency:
         """review_gate steps have no verdict rule for :blocked."""
         reason = orch._check_review_verdict_consistency(STATUS_BLOCKED, "")
         assert reason == ""
+
+
+# ---------------------------------------------------------------------------
+# TestOutcomePolicySkipsBlocked -- Gherkin-traced regression test for the
+# /code-review finding on PR #513: STATUS_BLOCKED must never reach
+# _apply_outcome_policy, or a step with nothing to review (ambiguous spec)
+# could have its :blocked silently turned into a computed APPROVE/REQUEST
+# CHANGES, or fail closed for lacking a review field it was never asked to
+# write.
+# ---------------------------------------------------------------------------
+
+class TestOutcomePolicySkipsBlocked:
+    def _agent(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+            review_gate=True,
+            outcome_policy={"kind": "review_findings", "schema": "pipeline/schemas/pr-review.schema.json"},
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_blocked_outcome_with_no_review_field_is_preserved(self, mock_invoke):
+        """A model that legitimately blocks (ambiguous spec) writes no
+        review field at all -- outcome_policy must not touch :blocked."""
+        mock_invoke.side_effect = _invoke_agent_writing_result(
+            "blocked", message="spec is ambiguous",
+        )
+        agent = self._agent()
+        gh = _make_gh_mock()
+        gh.find_pr_by_branch = MagicMock(return_value=None)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+        wi = WorkItem(
+            number=61, kind="issue", title="T", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/61",
+        )
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert any(l == "pr-reviewer:blocked" for l in applied), (
+            f"expected pr-reviewer:blocked applied, got: {applied}"
+        )
+        assert not any(l == "pr-reviewer:failed" for l in applied), (
+            "a legitimate :blocked must not be turned into :failed by outcome_policy"
+        )

@@ -20,7 +20,7 @@
     "Finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "title", "severity", "category", "confidence", "path", "line", "evidence", "fix"],
+      "required": ["id", "title", "severity", "category", "confidence", "evidence", "fix"],
       "properties": {
         "id": {
           "type": "string",
@@ -48,11 +48,12 @@
         },
         "path": {
           "type": "string",
-          "description": "Repo-relative file path this finding is about."
+          "description": "Repo-relative file path this finding is about. Omit for a finding that is not scoped to one file (e.g. a merge-conflict or missing-base-doc finding)."
         },
         "line": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Omit alongside path for a finding that is not scoped to one file."
         },
         "evidence": {
           "type": "string",

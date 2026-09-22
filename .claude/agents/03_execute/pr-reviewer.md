@@ -72,8 +72,11 @@ gh api "repos/$REPO/pulls?head=${REPO%%/*}:issue-${ISSUE_NUMBER}&state=open&per_
 ```
 
 If `$PR_NUMBER` is empty, write `$AI_AGILE_SCRATCH/result.json` with
-`{"outcome": "complete", "summary": "No open PR found for issue-$ISSUE_NUMBER — nothing to review."}`
-and stop; do not proceed to the steps below.
+`{"outcome": "complete", "summary": "No open PR found for issue-$ISSUE_NUMBER — nothing to review.", "review": {"head_sha": "", "findings": []}}`
+and stop; do not proceed to the steps below. `review` must still be present
+and schema-valid even here -- an empty `findings` array computes APPROVE
+with nothing to act on, which is exactly "nothing to review" (issue #512);
+omitting `review` entirely fails the step closed instead.
 
 ```bash
 gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty'
