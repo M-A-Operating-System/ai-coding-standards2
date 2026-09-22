@@ -62,7 +62,7 @@ EOF
   if echo "${OUT}" | grep -q "REST-authenticated as agbush2"; then
     pass "gh present + probe succeeds: reports authenticated identity"
   else
-    fail "gh present + probe succeeds: missing identity in output — got: ${OUT}"
+    fail "gh present + probe succeeds: missing identity in output -- got: ${OUT}"
   fi
 
   teardown_mock_dir
@@ -97,17 +97,17 @@ EOF
   if [[ "${RC}" -eq 0 ]]; then
     pass "gh missing: installs via apt then succeeds"
   else
-    fail "gh missing: expected exit 0 after install, got ${RC} — output: ${OUT}"
+    fail "gh missing: expected exit 0 after install, got ${RC} -- output: ${OUT}"
   fi
   if echo "${OUT}" | grep -q "gh CLI installed"; then
     pass "gh missing: reports install"
   else
-    fail "gh missing: missing install message — got: ${OUT}"
+    fail "gh missing: missing install message -- got: ${OUT}"
   fi
   if echo "${OUT}" | grep -q "REST-authenticated as agbush2"; then
     pass "gh missing: probes newly-installed gh successfully"
   else
-    fail "gh missing: missing post-install probe success — got: ${OUT}"
+    fail "gh missing: missing post-install probe success -- got: ${OUT}"
   fi
 
   teardown_mock_dir
@@ -138,7 +138,7 @@ EOF
   if echo "${OUT}" | grep -q "Unable to locate package gh"; then
     pass "apt install failure: reports captured stderr"
   else
-    fail "apt install failure: missing captured stderr — got: ${OUT}"
+    fail "apt install failure: missing captured stderr -- got: ${OUT}"
   fi
 
   teardown_mock_dir
@@ -169,7 +169,7 @@ EOF
   if echo "${OUT}" | grep -q "HTTP 401: Bad credentials"; then
     pass "probe failure: reports captured stderr"
   else
-    fail "probe failure: missing captured stderr — got: ${OUT}"
+    fail "probe failure: missing captured stderr -- got: ${OUT}"
   fi
 
   teardown_mock_dir

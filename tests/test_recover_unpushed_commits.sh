@@ -48,7 +48,7 @@ test_unpushed_commit_is_recovered() {
   if [[ "${RC}" -eq 0 ]]; then
     pass "unpushed commit: exits 0"
   else
-    fail "unpushed commit: expected exit 0, got ${RC} — output: ${OUT}"
+    fail "unpushed commit: expected exit 0, got ${RC} -- output: ${OUT}"
   fi
   remote_head="$(git -C "${ORIGIN}" rev-parse issue-42)"
   if [[ "${remote_head}" == "${local_head}" ]]; then
@@ -59,7 +59,7 @@ test_unpushed_commit_is_recovered() {
   if echo "${OUT}" | grep -q "recovered 1 unpushed commit(s)"; then
     pass "unpushed commit: reports recovery"
   else
-    fail "unpushed commit: missing recovery message — got: ${OUT}"
+    fail "unpushed commit: missing recovery message -- got: ${OUT}"
   fi
 
   teardown_repo
@@ -75,7 +75,7 @@ test_clean_branch_is_a_noop() {
   if [[ "${RC}" -eq 0 ]]; then
     pass "clean branch: exits 0"
   else
-    fail "clean branch: expected exit 0, got ${RC} — output: ${OUT}"
+    fail "clean branch: expected exit 0, got ${RC} -- output: ${OUT}"
   fi
   after="$(git -C "${ORIGIN}" rev-parse issue-42)"
   if [[ "${after}" == "${before}" ]]; then
@@ -103,7 +103,7 @@ test_branch_missing_on_origin_exits_cleanly() {
   if [[ "${RC}" -eq 0 ]]; then
     pass "branch missing on origin: exits 0 under set -e, not an abort"
   else
-    fail "branch missing on origin: expected exit 0, got ${RC} — output: ${OUT}"
+    fail "branch missing on origin: expected exit 0, got ${RC} -- output: ${OUT}"
   fi
 
   teardown_repo
@@ -125,12 +125,12 @@ test_push_failure_is_reported_not_fatal() {
   if [[ "${RC}" -eq 0 ]]; then
     pass "push failure: still exits 0 (best-effort, never fails the caller)"
   else
-    fail "push failure: expected exit 0, got ${RC} — output: ${OUT}"
+    fail "push failure: expected exit 0, got ${RC} -- output: ${OUT}"
   fi
   if echo "${OUT}" | grep -q "could not recover"; then
     pass "push failure: reports the failure"
   else
-    fail "push failure: missing failure message — got: ${OUT}"
+    fail "push failure: missing failure message -- got: ${OUT}"
   fi
 
   teardown_repo
