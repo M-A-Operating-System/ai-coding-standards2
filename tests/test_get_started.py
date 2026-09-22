@@ -1777,3 +1777,235 @@ class TestGuardExistingClaude:
         (consuming / ".claude").mkdir(parents=True)
         (consuming / ".claude" / "settings.json").write_text("{}")
         get_started._guard_existing_claude(consuming)  # no exception
+
+
+# ---------------------------------------------------------------------------
+# TestLockUnlockClaudeTree -- .claude/ read-only enforcement (issue #446)
+# ---------------------------------------------------------------------------
+
+def _make_claude_tree(base: "Path") -> "Path":
+    """Create a minimal .claude tree with nested files and return the root."""
+    root = base / ".claude"
+    (root / "agents" / "01_product_docs").mkdir(parents=True)
+    (root / "agents" / "01_product_docs" / "prd-writer.md").write_text("# prd-writer")
+    (root / "commands").mkdir(parents=True)
+    (root / "commands" / "run.md").write_text("# run")
+    (root / "CLAUDE.md").write_text("# rules")
+    return root
+
+
+class TestLockUnlockClaudeTree:
+    """R2: write to locked .claude symlink target fails with permission error.
+    R3: submodule update succeeds and re-applies read-only lock (toggle).
+    R5: agent self-edit is not blocked (lock only applies in consuming repos).
+    """
+
+    def test_lock_removes_write_bits_from_files(self, tmp_path):
+        """R2: after _lock_claude_tree, existing files are not writable."""
+        import stat as st
+        root = _make_claude_tree(tmp_path)
+
+        get_started._lock_claude_tree(root, dry_run=False)
+
+        for p in root.rglob("*"):
+            if p.is_file():
+                mode = p.stat().st_mode
+                assert not (mode & st.S_IWUSR), f"{p} still has user-write bit"
+
+    def test_lock_removes_write_bits_from_directories(self, tmp_path):
+        """R2: after _lock_claude_tree, directories are not writable (blocks
+        creating new files inside them)."""
+        import stat as st
+        root = _make_claude_tree(tmp_path)
+
+        get_started._lock_claude_tree(root, dry_run=False)
+
+        for p in [root] + [d for d in root.rglob("*") if d.is_dir()]:
+            mode = p.stat().st_mode
+            assert not (mode & st.S_IWUSR), f"{p} still has user-write bit"
+
+    @pytest.mark.skipif(os.getuid() == 0, reason="root bypasses permission checks")
+    def test_locked_file_write_raises_permission_error(self, tmp_path):
+        """R2: attempting to open a locked file for writing fails with
+        PermissionError -- OS-level enforcement, not just a convention."""
+        root = _make_claude_tree(tmp_path)
+        target = root / "CLAUDE.md"
+
+        get_started._lock_claude_tree(root, dry_run=False)
+
+        with pytest.raises((PermissionError, OSError)):
+            target.open("w").write("should fail")
+
+    def test_unlock_restores_write_bits(self, tmp_path):
+        """R3: _unlock_claude_tree restores write access after a prior lock."""
+        import stat as st
+        root = _make_claude_tree(tmp_path)
+
+        get_started._lock_claude_tree(root, dry_run=False)
+        get_started._unlock_claude_tree(root)
+
+        for p in [root] + list(root.rglob("*")):
+            mode = p.stat().st_mode
+            assert mode & st.S_IWUSR, f"{p} still lacks user-write bit after unlock"
+
+    def test_unlock_allows_file_write(self, tmp_path):
+        """R3: after unlock, files inside the tree are writable again."""
+        root = _make_claude_tree(tmp_path)
+        target = root / "CLAUDE.md"
+
+        get_started._lock_claude_tree(root, dry_run=False)
+        get_started._unlock_claude_tree(root)
+
+        target.write_text("updated")
+        assert target.read_text() == "updated"
+
+    def test_lock_dry_run_does_not_change_permissions(self, tmp_path):
+        """dry_run=True: _lock_claude_tree must not change any permissions."""
+        import stat as st
+        root = _make_claude_tree(tmp_path)
+        before_modes = {p: p.stat().st_mode for p in root.rglob("*") if p.is_file()}
+
+        get_started._lock_claude_tree(root, dry_run=True)
+
+        for p, before in before_modes.items():
+            assert p.stat().st_mode == before, f"{p} mode changed during dry_run"
+        # Files must still be writable.
+        for p in before_modes:
+            assert p.stat().st_mode & st.S_IWUSR
+
+    def test_lock_noop_when_src_missing(self, tmp_path):
+        """_lock_claude_tree with a non-existent directory is a no-op."""
+        get_started._lock_claude_tree(tmp_path / "nonexistent", dry_run=False)
+
+    def test_unlock_noop_when_src_missing(self, tmp_path):
+        """_unlock_claude_tree with a non-existent directory is a no-op."""
+        get_started._unlock_claude_tree(tmp_path / "nonexistent")
+
+    def test_lock_unlock_idempotent(self, tmp_path):
+        """Locking twice and unlocking twice must not raise."""
+        root = _make_claude_tree(tmp_path)
+
+        get_started._lock_claude_tree(root, dry_run=False)
+        get_started._lock_claude_tree(root, dry_run=False)  # second lock
+
+        get_started._unlock_claude_tree(root)
+        get_started._unlock_claude_tree(root)  # second unlock
+
+        (root / "CLAUDE.md").write_text("ok")  # must be writable
+
+    def test_run_full_locks_claude_target_at_end(self, tmp_path, monkeypatch):
+        """R2: run_full() must lock the .claude/ target after all installs
+        complete (verified by checking that write bits are cleared)."""
+        import stat as st
+        fake_src = _make_claude_src(tmp_path)
+        (fake_src / "standards").mkdir(parents=True, exist_ok=True)
+        (fake_src / "requirements.txt").write_text("requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.run_full(consuming, force=True, dry_run=False)
+
+        # On POSIX, the lock target is SUBMODULE_ROOT/.claude (the source).
+        lock_target = fake_src / ".claude"
+        for p in [lock_target] + list(lock_target.rglob("*")):
+            if p.is_file() or p.is_dir():
+                mode = p.stat().st_mode
+                assert not (mode & st.S_IWUSR), (
+                    f"{p} still has user-write bit after run_full"
+                )
+
+    def test_run_full_unlocks_at_start_and_relocks_at_end(self, tmp_path, monkeypatch):
+        """R3: run_full() with a prior lock unlocks at start (so git submodule
+        update could write) and re-locks at end."""
+        import stat as st
+        fake_src = _make_claude_src(tmp_path)
+        (fake_src / "standards").mkdir(parents=True, exist_ok=True)
+        (fake_src / "requirements.txt").write_text("requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        # First run: install and lock.
+        get_started.run_full(consuming, force=True, dry_run=False)
+
+        lock_target = fake_src / ".claude"
+        # Confirm locked after first run.
+        assert not (lock_target.stat().st_mode & st.S_IWUSR)
+
+        # Second run: must unlock at start and re-lock at end (R3 toggle).
+        get_started.run_full(consuming, force=True, dry_run=False)
+
+        assert not (lock_target.stat().st_mode & st.S_IWUSR), (
+            ".claude/ must be locked again after the re-run"
+        )
+        # Verify it WAS writable at some point during the second run by
+        # confirming the run completed (it would fail on install writes if still locked).
+        assert (consuming / ".claude").is_symlink()
+
+    def test_run_full_dry_run_does_not_lock(self, tmp_path, monkeypatch):
+        """dry_run=True: run_full must not change any permissions."""
+        import stat as st
+        fake_src = _make_claude_src(tmp_path)
+        (fake_src / "standards").mkdir(parents=True, exist_ok=True)
+        (fake_src / "requirements.txt").write_text("requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.run_full(consuming, force=True, dry_run=True)
+
+        lock_target = fake_src / ".claude"
+        for p in [lock_target] + list(lock_target.rglob("*")):
+            if p.is_file() or p.is_dir():
+                mode = p.stat().st_mode
+                assert mode & st.S_IWUSR, (
+                    f"{p} lost write bit during dry_run -- must not change permissions"
+                )
+
+    def test_run_full_windows_locks_copy(self, tmp_path, monkeypatch):
+        """R4 (Windows): run_full() on Windows must lock the .claude/ copy
+        (not the source) so the copy-tree path also gets write protection."""
+        import stat as st
+        fake_src = _make_claude_src(tmp_path)
+        (fake_src / "standards").mkdir(parents=True, exist_ok=True)
+        (fake_src / "requirements.txt").write_text("requests==2.33.1\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        monkeypatch.setattr(sys, "platform", "win32")
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.run_full(consuming, force=True, dry_run=False)
+
+        lock_target = consuming / ".claude"
+        assert lock_target.is_dir()
+        assert not lock_target.is_symlink()
+        for p in lock_target.rglob("*"):
+            if p.is_file():
+                mode = p.stat().st_mode
+                assert not (mode & st.S_IWUSR), (
+                    f"{p} still has user-write bit after Windows run_full"
+                )
+
+    def test_resolve_claude_lock_target_posix(self, tmp_path, monkeypatch):
+        """On POSIX, the lock target is SUBMODULE_ROOT/.claude."""
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", tmp_path / "submodule")
+        monkeypatch.setattr(sys, "platform", "linux")
+        consuming = tmp_path / "consuming"
+
+        result = get_started._resolve_claude_lock_target(consuming)
+
+        assert result == tmp_path / "submodule" / ".claude"
+
+    def test_resolve_claude_lock_target_windows(self, tmp_path, monkeypatch):
+        """On Windows, the lock target is consuming_root/.claude (the copy)."""
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", tmp_path / "submodule")
+        monkeypatch.setattr(sys, "platform", "win32")
+        consuming = tmp_path / "consuming"
+
+        result = get_started._resolve_claude_lock_target(consuming)
+
+        assert result == consuming / ".claude"

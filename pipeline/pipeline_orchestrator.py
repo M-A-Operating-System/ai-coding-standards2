@@ -5095,11 +5095,16 @@ def _apply_exhausted(
 # Per-run git worktree isolation (issue #373, #404). Each commit_after run
 # checks out its issue branch into its own worktree here rather than the
 # orchestrator's own shared checkout, so a concurrent run on a different
-# issue cannot move this run's HEAD out from under it. Nested under
-# .claude/worktrees/ (already gitignored for Claude Code's own background-
-# agent worktrees) with an "orchestrator" subdirectory so the two unrelated
-# mechanisms never collide on the same path.
-_WORKTREE_ROOT = SUBMODULE_ROOT / ".claude" / "worktrees" / "orchestrator"
+# issue cannot move this run's HEAD out from under it. Placed under
+# AI_AGILE_ROOT/.worktrees/orchestrator/ (outside the framework-managed
+# .claude/ tree so the .claude/ read-only lock from issue #446 does not
+# prevent git worktree add from creating new subdirectories here).
+# Falls back to SUBMODULE_ROOT when AI_AGILE_ROOT is not set (self-hosting).
+_WORKTREE_ROOT = (
+    Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT)))
+    / ".worktrees"
+    / "orchestrator"
+)
 
 
 def _run_worktree_path(issue_branch: str) -> Path:
