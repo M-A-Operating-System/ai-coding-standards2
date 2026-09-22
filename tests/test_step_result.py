@@ -221,6 +221,16 @@ class TestReadStepResult:
         assert result is None
         assert "verdict" in reason
 
+    def test_verdict_non_string_value_rejected(self, tmp_path):
+        """A falsy non-string (e.g. []) must not slip past the `if verdict and ...`
+        enum check the way it would slip past a naive truthiness guard --
+        verdict gets the same isinstance(str) check every sibling field gets."""
+        payload = {"outcome": "complete", "summary": "ok", "verdict": []}
+        (tmp_path / "result.json").write_text(json.dumps(payload))
+        result, reason = _read_step_result(str(tmp_path))
+        assert result is None
+        assert "verdict" in reason
+
 
 # ---------------------------------------------------------------------------
 # TestIsExhausted

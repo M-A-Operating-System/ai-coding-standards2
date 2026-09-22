@@ -51,7 +51,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Mapping, Optional
@@ -69,6 +69,17 @@ from todos_patch import (
     todos_subsection_markers as _todos_subsection_markers,
     checked_items_would_be_lost as _checked_items_would_be_lost,
     apply_todos_patch as _apply_todos_patch,
+)
+
+# The review-verdict computation itself lives in review_outcome.py (issue
+# #512 Part 2, STD-ARCH-035) -- pure functions, no GitHub or orchestrator
+# coupling. Imported under their original names so every call site and test
+# import here is unchanged.
+from review_outcome import (
+    APPROVE as _REVIEW_APPROVE,
+    derive_review_verdict as _derive_review_verdict,
+    find_duplicate_finding_ids as _find_duplicate_finding_ids,
+    render_review_comment as _render_review_comment,
 )
 
 logging.basicConfig(
@@ -234,6 +245,7 @@ class AgentDef:
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
+    outcome_policy: Optional[dict] = None  # {"kind": "review_findings", "schema": str} -- the orchestrator computes this step's outcome from result.review, never trusts the model's own outcome field (issue #512 Part 2)
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     self_gates: bool = False  # if True, the agent's own AI_AGILE_STATUS (review vs complete) decides whether the gate fires -- :complete is NOT force-overridden to :review. human_gate_after/human_gate_label still apply for promotion when the agent itself emits :review.
     extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults.extra_allowedTools (AS-1: nowhere else)
@@ -566,6 +578,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
                 review_loop=entry.get("review_loop"),
+                outcome_policy=entry.get("outcome_policy"),
                 # A script step's wall-clock budget is budgets.max_wall_seconds,
                 # the same field an agent step uses (the schema: "for every step,
                 # agent or script"). A script declaring none keeps the script
@@ -2945,6 +2958,7 @@ class StepResult:
     message: str = ""               # short message for review/blocked (what a person must act on)
     output: str = ""                # artefact content; the orchestrator posts this, the step doesn't
     verdict: str = ""               # "" | "APPROVE" | "REQUEST CHANGES" -- structured, issue #512; a review_gate step's own outcome checked against this field, never prose in `output`
+    review: dict = field(default_factory=dict)             # {} = none; {"head_sha": str, "findings": [...]} -- issue #512 Part 2, validated against a step's declared outcome_policy.schema; see _apply_outcome_policy
     expected_effect: dict = field(default_factory=dict)   # the step's own belief about what it changed this run
     label_requests: list = field(default_factory=list)    # [{"issue": int|None, "add": [...], "remove": [...]}]
     body_write: dict = field(default_factory=dict)        # {} = none; see _read_step_result for the two shapes
@@ -2987,7 +3001,7 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
     if not isinstance(summary, str):
         return None, "result.summary must be a string"
 
-    for _field in ("undone", "message", "output"):
+    for _field in ("undone", "message", "output", "verdict"):
         _val = raw.get(_field, "")
         if not isinstance(_val, str):
             return None, f"result.{_field} must be a string"
@@ -2995,6 +3009,10 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
     verdict = raw.get("verdict", "")
     if verdict and verdict not in ("APPROVE", "REQUEST CHANGES"):
         return None, f'result.verdict must be "APPROVE" or "REQUEST CHANGES" when present, got {verdict!r}'
+
+    review = raw.get("review", {})
+    if not isinstance(review, dict):
+        return None, "result.review must be an object"
 
     expected_effect = raw.get("expected_effect", {})
     if not isinstance(expected_effect, dict):
@@ -3054,6 +3072,7 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         message=raw.get("message", ""),
         output=raw.get("output", ""),
         verdict=verdict,
+        review=review,
         expected_effect=expected_effect,
         label_requests=label_requests,
         body_write=body_write,
@@ -6129,7 +6148,11 @@ def _run_agent(
         # false "retry limit exhausted -- failed N time(s)" message.
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
-        _post_artefact_if_present(gh, agent_def, work_item, step_result)
+        # outcome_policy steps post the orchestrator's own rendered comment,
+        # computed from result.review, once _apply_result has resolved the
+        # verdict (issue #512 Part 2) -- never the model's raw output here.
+        if not agent_def.outcome_policy:
+            _post_artefact_if_present(gh, agent_def, work_item, step_result)
     else:
         result, step_result, exhausted, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
@@ -6138,7 +6161,8 @@ def _run_agent(
         )
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
-        _post_artefact_if_present(gh, agent_def, work_item, step_result)
+        if not agent_def.outcome_policy:
+            _post_artefact_if_present(gh, agent_def, work_item, step_result)
 
     # Run the declared "after" scripts once all retries are done, whatever the
     # outcome. load_pipeline leaves these empty for script steps, which are
@@ -7011,6 +7035,101 @@ def _check_review_verdict_consistency(final_status: str, verdict: str) -> str:
     return ""
 
 
+def _load_adr_records() -> list[dict]:
+    """adrs.json's own records -- an exception is verified against these,
+    never trusted from a finding's own claim (review_outcome.py's
+    adr_exception_index). A missing file means no ADRs exist yet; that is
+    not a failure (issue #512 Part 2)."""
+    path = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / "adrs" / "adrs.json"
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text()).get("adrs", [])
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("  could not load adrs.json for outcome_policy verdict computation: %s", exc)
+        return []
+
+
+def _apply_outcome_policy(
+    gh: "GitHubClient",
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    step_result: StepResult,
+    final_status: str,
+) -> tuple[str, Optional[StepResult], str, bool]:
+    """Issue #512 Part 2: for a step declaring outcome_policy, validate
+    result.review against its declared schema and compute the verdict from
+    its findings via review_outcome.derive_review_verdict -- never the
+    model's own outcome/verdict fields, which are advisory only. All actual
+    decision and rendering logic lives in review_outcome.py (STD-ARCH-035);
+    this function is dispatch only -- read structured data, call the pure
+    functions, apply the GitHub side effect -- the same shape as
+    _apply_body_write and _mark_pr_ready_if_requested.
+
+    Returns (resolved_status, rendered_step_result, failure_reason,
+    outcome_overridden):
+      - failure_reason is non-empty when result.review is missing, fails its
+        schema, or has duplicate finding ids -- the caller applies :failed
+        and never marks the PR ready (Scenario: Invalid review object).
+        rendered_step_result is None in this case; nothing is posted.
+      - Otherwise rendered_step_result is a copy of step_result with output
+        replaced by the orchestrator's own rendered comment, ready to post
+        via _post_artefact_if_present, and resolved_status is the computed
+        verdict's status -- overriding the model's own final_status when
+        they disagree (Scenario: Code-computed verdict overrides the model).
+    """
+    review = step_result.review
+    if not review:
+        return final_status, None, "result.review is missing or empty", False
+
+    schema_path = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / agent_def.outcome_policy["schema"]
+    try:
+        schema = json.loads(schema_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return final_status, None, f"could not load outcome_policy schema {schema_path}: {exc}", False
+
+    import jsonschema  # imported here: only outcome_policy steps need it, same as the pipeline-override validation path
+    validator = jsonschema.Draft7Validator(schema)
+    errors = sorted(validator.iter_errors(review), key=lambda e: list(e.path))
+    if errors:
+        return final_status, None, f"result.review failed schema validation: {errors[0].message}", False
+
+    findings = review.get("findings", [])
+    duplicates = _find_duplicate_finding_ids(findings)
+    if duplicates:
+        return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False
+
+    pr_env = _related_work_item_env(gh, agent_def, work_item)
+    human_blockers: list = []
+    if "PR_NUMBER" in pr_env:
+        human_blockers = _fetch_unresolved_human_review_requests(gh, int(pr_env["PR_NUMBER"]))
+
+    adr_records = _load_adr_records()
+    verdict = _derive_review_verdict(findings, human_blockers, adr_records)
+    computed_status = STATUS_COMPLETE if verdict == _REVIEW_APPROVE else STATUS_REVIEW
+
+    outcome_overridden = computed_status != final_status
+    if outcome_overridden:
+        log.warning(
+            "  outcome_overridden: %s wrote outcome %r but the computed verdict (%s) is %r on #%d",
+            agent_def.agent, final_status, verdict, computed_status, work_item.number,
+        )
+
+    _prior_marker = f"ai-agile/artefact/v1 by {agent_def.agent}"
+    try:
+        _prior_rerun = any(_prior_marker in b for b in gh.list_comment_bodies(work_item.number))
+    except Exception:
+        _prior_rerun = False
+
+    rendered = replace(
+        step_result,
+        output=_render_review_comment(
+            verdict, review.get("head_sha", ""), findings, adr_records, prior_rerun=_prior_rerun,
+        ),
+    )
+    return computed_status, rendered, "", outcome_overridden
+
+
 def _apply_result(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -7089,12 +7208,33 @@ def _apply_result(
         _remove_run_worktree(pre_agent_worktree)
         return True
 
-    # Issue #512 Part 1: a review_gate step's outcome is model-written and
-    # otherwise unchecked -- the wrong-by-default result.json template made
-    # copying "complete" onto a REQUEST CHANGES review a one-line mistake.
-    # Fail closed rather than let an inconsistent or missing verdict field
-    # reach _mark_pr_ready_if_requested below.
-    if agent_def.review_gate and step_result is not None:
+    # Issue #512: an outcome_policy step's outcome is code-computed from its
+    # findings (Part 2), superseding Part 1's simpler consistency check,
+    # which still applies to any other review_gate step. Either way, a
+    # missing/inconsistent/invalid result fails the step closed rather than
+    # let it reach _mark_pr_ready_if_requested below.
+    _outcome_overridden = False
+    if agent_def.outcome_policy and step_result is not None:
+        final_status, _rendered, _policy_failure, _outcome_overridden = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, final_status,
+        )
+        if _policy_failure:
+            _apply_failed(gh, agent_def, work_item, result, reason=_policy_failure)
+            log.error(
+                "  FAILED  %-38s  outcome_policy on #%d: %s",
+                agent_def.agent, work_item.number, _policy_failure,
+            )
+            _metrics_record = _build_step_metrics(
+                agent_def, work_item, result,
+                timestamp_start, timestamp_end, cycle_id,
+                is_error_override=True,
+            )
+            _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
+            _remove_run_worktree(pre_agent_worktree)
+            return True
+        step_result = _rendered
+        _post_artefact_if_present(gh, agent_def, work_item, step_result)
+    elif agent_def.review_gate and step_result is not None:
         _verdict_mismatch = _check_review_verdict_consistency(final_status, step_result.verdict)
         if _verdict_mismatch:
             _apply_failed(gh, agent_def, work_item, result, reason=_verdict_mismatch)
@@ -7204,6 +7344,12 @@ def _apply_result(
         agent_def, work_item, result,
         timestamp_start, timestamp_end, cycle_id,
     )
+    if _outcome_overridden:
+        # issue #512 Part 2: the model's own outcome disagreed with the
+        # code-computed verdict, which won. Recorded as a metric, not just
+        # a log line, so the pattern is visible across runs (Scenario:
+        # Code-computed verdict overrides the model).
+        _metrics_record["outcome_overridden"] = True
     _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
 
     # Mark the PR ready-for-review if the agent declares it (P-16).

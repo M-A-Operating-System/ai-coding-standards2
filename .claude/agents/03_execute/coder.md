@@ -334,8 +334,9 @@ conclusion about "nothing to do" without first knowing what the reviewer
 actually found.
 
 ```bash
-gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
+LATEST_REVIEW=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty')
+echo "$LATEST_REVIEW"
 
 gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --jq '.[]' \
   | jq -s '[.[] | {author: .user.login, state: .state, body: .body}]'
@@ -349,6 +350,16 @@ HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" --pag
 
 gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
   | jq -s '[.[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .user.login, body: .body}]'
+```
+
+`$LATEST_REVIEW` is the artefact the orchestrator rendered (issue #512) -- it
+embeds a fenced ```` ```json ```` block with the exact findings it computed a
+`blocking` status for. Parse that block; never re-derive severity/confidence/
+ADR rules yourself from the prose above it:
+
+```bash
+REVIEW_JSON=$(printf '%s' "$LATEST_REVIEW" | sed -n '/```json/,/```/p' | sed '1d;$d')
+echo "$REVIEW_JSON" | jq -c '.findings[] | select(.blocking == true)'
 ```
 
 ---
@@ -375,12 +386,13 @@ the actual PR before acting.
 
 | Category | What it means | Must address? |
 |---|---|---|
-| **Required** | Correctness bug, security issue, spec violation, failing test, unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any pr-reviewer finding tagged `[fix-now]` | Yes |
-| **Expected** | Design improvement, missing guard clause, error handling gap | Yes |
-| **Suggested** | Style preference, future improvement, nice-to-have | No |
+| **Required** | Correctness bug, security issue, spec violation, failing test, unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` | Yes |
+| **Expected** | Design improvement, missing guard clause, error handling gap raised as non-blocking | Yes |
+| **Suggested** | `"category": "improvement"`, or any other non-blocking finding that is a style preference or nice-to-have | No |
 
-A `[fix-now]`-tagged finding is Required regardless of its severity label --
-STD-ARCH-006 applies. It is never Suggested.
+A finding's `blocking` field is the orchestrator's own computation (issue
+#512) -- Required is never something you re-derive from severity or
+confidence yourself.
 
 Do not address Suggested items in code. If a suggestion looks valuable, open
 a follow-up issue.

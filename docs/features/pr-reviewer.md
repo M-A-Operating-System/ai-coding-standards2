@@ -1,5 +1,14 @@
 # Feature: Pr Reviewer
 
+> Issue #512 Part 2 moved verdict enforcement for the scenarios below from
+> pr-reviewer.md's Step 10 prose into code
+> (`pipeline/review_outcome.py::derive_review_verdict`/`finding_blocks`).
+> `[fix-now]`/`[defer-ok]` are unchanged as finding metadata (`effort` field),
+> but the REQUEST CHANGES/APPROVE decision they used to drive directly is now
+> code-computed from severity, confidence, category, and verified ADR
+> exceptions -- see issue #512 for the full rule. The scenarios below still
+> describe the intended behaviour; only where it is enforced has changed.
+
 ## Scenario: A trivially-fixable Low finding forces a fix cycle
 
 **Given** a PR review whose only findings are Low severity, one of which meets the fix-now bar (e.g. a stale comment, an unused import, a broken relative link)

@@ -3,10 +3,12 @@ name: 03_execute/pr-reviewer
 description: >
   Runs after coder completes. Finds the open PR for issue-{N}, reads the
   diff and spec through four independent personas — Defensive Programmer,
-  Security Analyst, QA Engineer, Standards Compliance — then posts a
-  prioritised finding list with an APPROVE or REQUEST CHANGES verdict.
-  Issues REQUEST_CHANGES for any Critical, High, or Medium finding; issues
-  APPROVE only when all findings are Low or Informational severity.
+  Security Analyst, QA Engineer, Standards Compliance — then reports
+  findings as structured data; the orchestrator computes the APPROVE or
+  REQUEST CHANGES verdict from them (outcome_policy: review_findings). A
+  Critical finding always blocks; a non-Critical finding below 0.8
+  confidence, an improvement-category finding, or one covered by a verified
+  ADR exception does not.
   Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on
   the PR -- this is a hard block regardless of automated findings. On APPROVE
   with no unresolved human reviews, marks the PR ready for human review.
@@ -77,9 +79,11 @@ and stop; do not proceed to the steps below.
 gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty'
 ```
 
-Record that output as `PRIOR` -- your previous artefact on this issue, if any. If it is set, head this
-run's artefact `## PR Review (Re-run)` and read the prior one to see what you
-found last time. It is not an edit target -- artefacts are append-only (P-11).
+Record that output as `PRIOR` -- your previous artefact on this issue, if any.
+If it is set, read the prior one to see what you found last time -- it is
+not an edit target -- artefacts are append-only (P-11) -- and the
+orchestrator renders this round's comment itself (Step 11), heading it as
+a re-run when a prior artefact exists.
 
 ---
 
@@ -141,25 +145,11 @@ HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" \
     | join(", ")')
 ```
 
-If `$HUMAN_BLOCK_REVIEWERS` is non-empty:
-
-- Set `VERDICT=REQUEST CHANGES` (hard block — takes priority over all other findings).
-- Prepend the following to `FINDING_BODY` **before** any automated findings:
-
-```
-### HR-001 — Unresolved human REQUEST_CHANGES block APPROVE   [High]
-
-**Persona:** Human Review Block
-**Reviewer(s):** $HUMAN_BLOCK_REVIEWERS
-
-**Description:** One or more human reviewers have submitted REQUEST_CHANGES
-reviews that are not resolved (not yet dismissed or superseded by an APPROVE).
-The pr-reviewer cannot issue APPROVE while unresolved human reviews exist,
-regardless of automated findings.
-
-**Remediation:** Address the human reviewer's feedback. Each listed reviewer
-must submit an APPROVE or DISMISSED review to clear the block.
-```
+If `$HUMAN_BLOCK_REVIEWERS` is non-empty, set `VERDICT=REQUEST CHANGES`
+(hard block — takes priority over all other findings) for your own advisory
+account (Step 10). This is not a `findings` entry -- it isn't scoped to a
+file/line, and the orchestrator checks it independently of `findings` by
+its own lookup (issue #512), so nothing here needs to represent it as one.
 
 Do **not** skip the remaining review steps — continue reading the diff so the
 combined report is useful to the coder.
@@ -193,7 +183,8 @@ assume nothing works until you verify it.
 - Resource management: file handles and subprocess pipes released on all exit paths including exceptions
 - Shell hygiene: `set -euo pipefail`, all variables quoted, `[[` not `[`
 
-Record each finding as `DP-NNN`.
+Note each finding informally for now (e.g. `DP-1`, `DP-2`) -- Step 9 assigns
+the final `RV-NNN` id across every persona's findings.
 
 ---
 
@@ -213,7 +204,8 @@ may authorise a specific design choice that appears risky.
 - **Supply chain**: unpinned `pip install`, `npm install`, or `@main`/`@master` Actions refs
 - **Trust boundary crossings**: untrusted data (API response, user-controlled field) entering a shell argument or file path without validation
 
-Record each finding as `SA-NNN`. Append `[ADR: {id}]` where an ADR authorises the design.
+Note each finding informally for now (e.g. `SA-1`, `SA-2`); record which ADR
+ID authorises the design, if any -- Step 9's `adr` field.
 
 ---
 
@@ -230,7 +222,8 @@ API eventual consistency, partial pipeline failures. UI edge cases do not apply.
 - Data shapes from upstream (GitHub API responses, pipeline labels, env vars) handled correctly at every integration point
 - Correct execution is observable: labels, comments, or audit log entries confirm what happened
 
-Record each finding as `QA-NNN`.
+Note each finding informally for now (e.g. `QA-1`, `QA-2`) -- Step 9 assigns
+the final `RV-NNN` id.
 
 ---
 
@@ -260,19 +253,23 @@ Cite the P-N or STD ID in every finding.
 | P-15 Product-led | Behaviour introduced with no corresponding `docs/product/` entry **on the PR base**. Under two-phase delivery the entry lands via the already-merged design PR (`issue-{N}-docs`), so it is on `main` (the code PR's base), not in the code PR diff — confirm it on the base before flagging, don't require it in the diff | High |
 | Any STD in `standards/*.json` | Check the standard's `acceptance_criteria` field | Per standard's `severity` |
 
-ADR coverage: if the ADR lists the standard ID in `authorises_exception_to`,
-append `[ADR: {id}]` and downgrade to Informational. If the ADR has no
-`authorises_exception_to` or does not list this standard, the ADR is context
-only — do not downgrade.
-Record each finding as `SC-NNN`.
+ADR coverage: record the finding's real severity and cite the ADR in its
+`adr`/`standard` fields when one claims to cover it -- do not downgrade the
+severity yourself. The orchestrator verifies the citation against
+`authorises_exception_to` in `adrs.json` and treats it as non-blocking only
+when the ADR actually lists that standard (issue #512); a claimed exception
+that does not check out still blocks.
+
+Note each finding informally for now (e.g. `SC-1`, `SC-2`) -- Step 9 assigns
+the final `RV-NNN` id.
 
 ---
 
 ## Step 8 — Cross-artefact consistency (CA)
 
 This step catches issues that single-persona review misses because they require
-reasoning across multiple parts of the diff simultaneously. Record each finding
-as `CA-NNN`.
+reasoning across multiple parts of the diff simultaneously. Note each finding
+informally for now (e.g. `CA-1`, `CA-2`) -- Step 9 assigns the final `RV-NNN` id.
 
 **8a — Doc claims must match what the diff does.**
 Read every prose claim in new or updated documentation. Verify the claim is
@@ -320,96 +317,98 @@ documented type, nullability, and name match exactly. A field documented as
 
 ## Step 9 — Consolidate
 
-Assemble all findings from Steps 4–8 into `FINDING_BODY`.
+Assemble all findings from Steps 4–8 into a single `findings` array -- this
+becomes `result.review.findings` (Step 11). You report findings; the
+orchestrator computes the verdict from them (issue #512) -- never assemble
+a rendered comment yourself.
 
 **Cross-persona agreement**: where two or more personas flagged the same
-`file:line` flaw, merge into one entry tagged with both personas (e.g.
-`DP-001[DP+SA]`) and escalate exactly one severity level. Never suppress.
+`file:line` flaw, merge into one finding and escalate exactly one severity
+level. Never suppress.
 
-**Sort**: Critical → High → Medium → Low → Informational.
+**Numbering**: assign each finding a unique `id` in one sequence across all
+personas: `RV-001`, `RV-002`, ... (never per-persona prefixes -- one
+finding, one id).
 
-**Effort tag** (required on every finding): classify each finding as
-`[fix-now]` if ALL of the following are true; classify as `[defer-ok]` otherwise:
-- The fix is mechanically obvious from the Remediation text -- no design
-  judgment or human decision is required.
+**Each finding is an object**:
+```json
+{
+  "id": "RV-001",
+  "title": "short imperative title",
+  "severity": "Critical | High | Medium | Low | Informational",
+  "category": "correctness | spec | security | tests | standard | consistency | improvement",
+  "confidence": 0.0-1.0,
+  "path": "path/to/file.ext",
+  "line": 123,
+  "evidence": "What in the diff or PR head supports this finding. Name the exact variable, function, or line.",
+  "fix": "Step-by-step fix precise enough for the coder agent to implement.",
+  "standard": "P-N or STD ID -- required for category \"standard\"",
+  "adr": "ADR ID this finding claims covers it -- optional; the orchestrator verifies this against adrs.json itself, never trusts the claim alone",
+  "effort": "fix-now | defer-ok"
+}
+```
+
+`confidence` is your own confidence this finding is real, not its severity.
+A non-Critical finding below 0.8 confidence does not block APPROVE -- rate
+it honestly rather than inflating it to force a block.
+
+`effort` (temporary, while the code still uses it): `fix-now` if ALL of the
+following are true, `defer-ok` otherwise. A `defer-ok` finding blocks
+unless it is also Low or Informational severity.
+- The fix is mechanically obvious from `fix` -- no design judgment required.
 - The fix is small: fewer than 30 lines (reusing STD-ARCH-007's threshold).
 - The fix carries no risk of an externally-observable behaviour change that
   would require a new test written from scratch.
 
-Genuinely subjective findings (style preferences, naming suggestions, "consider
-refactoring X") are always `[defer-ok]` regardless of severity. `[fix-now]`
-applies to mechanical correctness defects only.
-
-**Format**:
-```
-### {ID} -- {short imperative title}   [{severity}] [{fix-now|defer-ok}]
-
-**File:** `path/to/file.ext:{line}`
-**Persona:** DP | SA | QA | SC | DP+SA | ...
-**Standard:** {P-N or STD ID} [ADR: {id}]        <- SC findings only
-
-**Description:** What is wrong. Name the exact variable, function, or line.
-
-**Remediation:** Step-by-step fix precise enough for the coder agent to implement.
-```
-
-Single-persona findings use bare IDs (`DP-001`). Cross-persona use brackets (`DP-001[DP+SA]`).
+Genuinely subjective findings (style preferences, naming suggestions,
+"consider refactoring X") are always `category: "improvement"` -- these
+never block, regardless of severity.
 
 ---
 
-## Step 10 — Verdict
+## Step 10 — Verdict (advisory)
 
-- `$HUMAN_BLOCK_REVIEWERS` is non-empty → **REQUEST CHANGES** (hard block; takes priority over all other findings)
-- Any `[fix-now]`-tagged finding → **REQUEST CHANGES** (regardless of severity; STD-ARCH-006 -- fix now, not later)
-- Any Critical, High, or Medium finding → **REQUEST CHANGES**
-- Low or Informational only (or zero findings) AND `$HUMAN_BLOCK_REVIEWERS` is empty → **APPROVE**
-- ADR-covered findings downgraded to Informational never block APPROVE (but human block still does)
+The orchestrator computes the actual verdict from your `findings` array
+(issue #512): a Critical finding always blocks; a non-Critical finding
+below 0.8 confidence, an `improvement`-category finding, or one covered by
+a verified ADR exception does not; `$HUMAN_BLOCK_REVIEWERS` is checked
+independently of your findings. Your own `$VERDICT`/`outcome` are advisory
+-- set `$VERDICT` to your best-effort read of the same rule (REQUEST
+CHANGES if `$HUMAN_BLOCK_REVIEWERS` is non-empty or any finding looks
+blocking by the rule above; APPROVE otherwise) so a disagreement between
+your call and the computed one is visible, but the computed value is what
+is applied.
 
 ---
 
 ## Step 11 — Write the result
 
-Compose the review body (this becomes `result.json`'s `output` field, which
-the orchestrator posts as the artefact comment — you do not post it yourself):
+You report findings; you do not compose or post the review comment. The
+orchestrator computes the verdict from `review.findings` (issue #512) and
+renders the artefact comment itself (`review_outcome.render_review_comment`)
+— never write a `## PR Review` body, never assemble `FINDING_BODY`.
 
-```
-## PR Review${PRIOR:+ (Re-run)}
-
-**Verdict: $VERDICT**
-**Summary:** $N_CRITICAL Critical · $N_HIGH High · $N_MEDIUM Medium · $N_LOW Low · $N_INFO Informational
-
-$FINDING_BODY
-
----
-_On APPROVE: PR is marked ready for human review. On REQUEST CHANGES: the orchestrator will automatically re-invoke the coder (up to 3 cycles). After 3 cycles without agreement, human sign-off is required._
-```
-
-Never rewrite a previous artefact's content into this one — each round's
-findings are the record of what was wrong at that head, and a human reading
-the thread needs to see them change between rounds (P-11, P-12); this
-review body is always a fresh account of the current head, not a diff
-against the prior round.
-
-Use the Write tool to create `$AI_AGILE_SCRATCH/result.json`. `outcome` follows
-`$VERDICT` exactly as the old sentinel did: `"complete"` on APPROVE,
-`"review"` on REQUEST CHANGES — the orchestrator's `review_loop` reads
-`outcome: "review"` here to auto-re-invoke the coder, so getting this right
-is load-bearing, not cosmetic. `verdict` reports the same decision again as
-its own structured field — set it to `$VERDICT` exactly (`"APPROVE"` or
-`"REQUEST CHANGES"`). The orchestrator cross-checks `outcome` against
-`verdict` and fails the step closed on any mismatch or omission (issue
-#512) — never read from prose in `output`, only from this field, so the two
-must always agree.
+Use the Write tool to create `$AI_AGILE_SCRATCH/result.json`:
 
 ```json
 {
-  "outcome": "<complete if APPROVE, review if REQUEST CHANGES>",
+  "outcome": "<complete if APPROVE, review if REQUEST CHANGES -- advisory, see Step 10>",
   "verdict": "$VERDICT",
-  "summary": "Verdict: $VERDICT. $N_CRITICAL Critical, $N_HIGH High, $N_MEDIUM Medium, $N_LOW Low, $N_INFO Informational.",
-  "message": "Verdict: $VERDICT.",
-  "output": "<the review body composed above>"
+  "summary": "Verdict (advisory): $VERDICT. $N_CRITICAL Critical, $N_HIGH High, $N_MEDIUM Medium, $N_LOW Low, $N_INFO Informational.",
+  "message": "Verdict (advisory): $VERDICT.",
+  "review": {
+    "head_sha": "$HEAD_SHA",
+    "findings": [ /* every finding from Step 9, as the object shape shown there */ ]
+  }
 }
 ```
+
+`outcome`/`verdict`/`summary`/`message` are your own advisory account —
+useful for a human comparing your read against the computed one, never
+authoritative. `review` is what the orchestrator actually acts on:
+missing, failing its schema, or containing duplicate `id`s ends the step
+`:failed` and the PR is never marked ready (issue #512). Leave `output`
+unset — there is nothing for you to render.
 
 ---
 
@@ -417,7 +416,7 @@ must always agree.
 
 - **The diff and the PR head ref are the only source of truth — never the local working tree.** Do not raise "missing/undefined symbol", "dead code", "not introduced", or "X doesn't exist" from a local-disk read; the local checkout may be a different branch that lacks this PR's changes. Confirm against the unified diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`) and `read_pr_file` (PR head) before any such finding. A false finding of this kind is itself a review defect.
 - **Read-only.** Never write or modify source files, even for trivial fixes.
-- **Output via `result.json`'s `output` field only** (see Step 11) — never post a comment yourself, never write findings to stdout.
+- **Output via `result.json`'s `review` field only** (see Step 11) — never post a comment yourself, never write findings to stdout, never render the artefact body yourself.
 - **Findings describe fixes; never apply them.**
 - **Never edit PR body, issue body, or apply/remove labels.**
 - **Never change PR state.** The orchestrator marks the PR ready on APPROVE — do not call `gh pr ready`.

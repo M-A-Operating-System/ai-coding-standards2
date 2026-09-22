@@ -995,9 +995,17 @@ class TestPrReviewerArtefactsAreAppendOnly:
         )
 
     def test_prior_heads_the_rerun_but_is_not_an_edit_target(self):
+        """Issue #512 Part 2: the orchestrator renders this round's comment
+        (review_outcome.render_review_comment), not the prompt -- so the
+        re-run heading now lives there, not as a literal template string in
+        pr-reviewer.md. The prompt still states PRIOR is not an edit
+        target."""
         text = self.PROMPT.read_text()
-        assert "## PR Review${PRIOR:+ (Re-run)}" in text
         assert "not an edit target" in text
+        review_outcome_text = (
+            Path(__file__).parent.parent / "pipeline" / "review_outcome.py"
+        ).read_text()
+        assert "(Re-run)" in review_outcome_text
 
     def test_prior_is_not_scoped_to_today(self):
         """A date-scoped lookup mislabels the second day's re-run as a first run."""
