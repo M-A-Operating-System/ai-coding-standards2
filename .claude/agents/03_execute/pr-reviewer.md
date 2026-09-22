@@ -394,11 +394,17 @@ Use the Write tool to create `$AI_AGILE_SCRATCH/result.json`. `outcome` follows
 `$VERDICT` exactly as the old sentinel did: `"complete"` on APPROVE,
 `"review"` on REQUEST CHANGES — the orchestrator's `review_loop` reads
 `outcome: "review"` here to auto-re-invoke the coder, so getting this right
-is load-bearing, not cosmetic.
+is load-bearing, not cosmetic. `verdict` reports the same decision again as
+its own structured field — set it to `$VERDICT` exactly (`"APPROVE"` or
+`"REQUEST CHANGES"`). The orchestrator cross-checks `outcome` against
+`verdict` and fails the step closed on any mismatch or omission (issue
+#512) — never read from prose in `output`, only from this field, so the two
+must always agree.
 
 ```json
 {
-  "outcome": "complete",
+  "outcome": "<complete if APPROVE, review if REQUEST CHANGES>",
+  "verdict": "$VERDICT",
   "summary": "Verdict: $VERDICT. $N_CRITICAL Critical, $N_HIGH High, $N_MEDIUM Medium, $N_LOW Low, $N_INFO Informational.",
   "message": "Verdict: $VERDICT.",
   "output": "<the review body composed above>"

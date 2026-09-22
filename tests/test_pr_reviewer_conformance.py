@@ -212,3 +212,64 @@ class TestPrReviewerPriorArtefactLookupReadsFromIssueNotPr:
             "issues/$PR_NUMBER/comments -- that thread never receives its "
             "artefact (issue #510)"
         )
+
+
+def _extract_step_11(text: str) -> str:
+    # Stop at the next real step/section heading, not the first "---" or "##"
+    # -- Step 11's own result-body example embeds both inside its fenced
+    # blocks ("## PR Review..." and a "---" divider).
+    match = re.search(
+        r"## Step 11 \u2014 Write the result(.+?)(?=\n## (?:Step \d|Rules)|\Z)",
+        text,
+        re.DOTALL,
+    )
+    return match.group(1) if match else ""
+
+
+class TestPrReviewerStep11OutcomeIsNotHardCodedComplete:
+    """Issue #512 Part 1: the result.json example in Step 11 used to hard-code
+    "outcome": "complete", so a model that copied the example literally
+    reported a failing (REQUEST CHANGES) review as a pass. The example must
+    show the outcome as conditional on the verdict, not a literal value.
+
+    Given pr-reviewer.md's Step 11 result.json example
+    When a reader inspects the "outcome" field
+    Then it is not the literal string "complete"
+    And it names both possible outcomes (complete and review)
+    """
+
+    def test_step_11_exists(self):
+        text = _load_pr_reviewer_text()
+        assert _extract_step_11(text), "Step 11 section not found"
+
+    def test_outcome_example_is_not_hard_coded_complete(self):
+        text = _load_pr_reviewer_text()
+        step = _extract_step_11(text)
+        assert step, "Step 11 section is missing"
+        assert '"outcome": "complete"' not in step, (
+            "Step 11's result.json example must not hard-code "
+            '"outcome": "complete" -- a REQUEST CHANGES verdict copied '
+            "literally would report a failing review as a pass (issue #512)"
+        )
+
+    def test_outcome_example_names_both_outcomes(self):
+        text = _load_pr_reviewer_text()
+        step = _extract_step_11(text)
+        assert step, "Step 11 section is missing"
+        assert "complete" in step and "review" in step, (
+            "Step 11's result.json example must show outcome as conditional "
+            "on the verdict (complete on APPROVE, review on REQUEST CHANGES)"
+        )
+
+    def test_result_json_includes_structured_verdict_field(self):
+        """Issue #512: the orchestrator cross-checks outcome against a
+        structured result.verdict field, never against prose parsed back out
+        of `output` (PRODUCT.md, "What a step must return")."""
+        text = _load_pr_reviewer_text()
+        step = _extract_step_11(text)
+        assert step, "Step 11 section is missing"
+        assert '"verdict": "$VERDICT"' in step, (
+            "Step 11's result.json example must include a structured "
+            '"verdict": "$VERDICT" field for the orchestrator to check '
+            "outcome against (issue #512)"
+        )

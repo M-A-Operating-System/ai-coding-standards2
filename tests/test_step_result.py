@@ -191,6 +191,36 @@ class TestReadStepResult:
         assert reason == ""
         assert result == StepResult(**payload)
 
+    def test_verdict_absent_defaults_to_empty_string(self, tmp_path):
+        payload = {"outcome": "complete", "summary": "ok"}
+        (tmp_path / "result.json").write_text(json.dumps(payload))
+        result, reason = _read_step_result(str(tmp_path))
+        assert reason == ""
+        assert result.verdict == ""
+
+    def test_verdict_approve_accepted(self, tmp_path):
+        payload = {"outcome": "complete", "summary": "ok", "verdict": "APPROVE"}
+        (tmp_path / "result.json").write_text(json.dumps(payload))
+        result, reason = _read_step_result(str(tmp_path))
+        assert reason == ""
+        assert result.verdict == "APPROVE"
+
+    def test_verdict_request_changes_accepted(self, tmp_path):
+        payload = {"outcome": "review", "summary": "ok", "verdict": "REQUEST CHANGES"}
+        (tmp_path / "result.json").write_text(json.dumps(payload))
+        result, reason = _read_step_result(str(tmp_path))
+        assert reason == ""
+        assert result.verdict == "REQUEST CHANGES"
+
+    def test_verdict_invalid_value_rejected(self, tmp_path):
+        """Issue #512: verdict is a structured, closed-vocabulary field --
+        never prose parsed back out of `output`."""
+        payload = {"outcome": "complete", "summary": "ok", "verdict": "LGTM"}
+        (tmp_path / "result.json").write_text(json.dumps(payload))
+        result, reason = _read_step_result(str(tmp_path))
+        assert result is None
+        assert "verdict" in reason
+
 
 # ---------------------------------------------------------------------------
 # TestIsExhausted

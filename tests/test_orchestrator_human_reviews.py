@@ -40,6 +40,7 @@ def _invoke_agent_writing_result(outcome="complete", **fields):
                 "undone": fields.get("undone", ""),
                 "message": fields.get("message", ""),
                 "output": fields.get("output", ""),
+                "verdict": fields.get("verdict", ""),
                 "expected_effect": fields.get("expected_effect", {}),
                 "label_requests": fields.get("label_requests", []),
             }
@@ -479,7 +480,7 @@ class TestProcessWorkItemHumanReviewGuard:
     def test_once_only_guard_cleanup_removes_pending_label(self, mock_invoke):
         """When HUMAN_REVIEW_PENDING_LABEL is already present and pr-reviewer emits
         :complete, the elif cleanup path removes the label — no second free re-invoke."""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         reviewer = self._make_pr_reviewer_def()
         coder = self._make_coder_def()
         pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
@@ -503,7 +504,7 @@ class TestProcessWorkItemHumanReviewGuard:
     def test_pr_lookup_fallback_uses_source_issue_label(self, mock_invoke):
         """When find_pr_by_branch returns None, find_pr_by_label is called with
         source-issue:{number} so rebased branches are still found."""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         reviewer = self._make_pr_reviewer_def()
         coder = self._make_coder_def()
         pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
@@ -524,7 +525,7 @@ class TestProcessWorkItemHumanReviewGuard:
     def test_no_human_reviews_leaves_status_complete(self, mock_invoke):
         """When _fetch_unresolved_human_review_requests returns [], final_status stays
         :complete — the post_steps script runs, no review-cycle label is applied."""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         reviewer = self._make_pr_reviewer_def()
         coder = self._make_coder_def()
         pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}

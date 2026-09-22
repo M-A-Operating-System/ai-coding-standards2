@@ -2944,6 +2944,7 @@ class StepResult:
     undone: str = ""                # what's left; empty when nothing was left
     message: str = ""               # short message for review/blocked (what a person must act on)
     output: str = ""                # artefact content; the orchestrator posts this, the step doesn't
+    verdict: str = ""               # "" | "APPROVE" | "REQUEST CHANGES" -- structured, issue #512; a review_gate step's own outcome checked against this field, never prose in `output`
     expected_effect: dict = field(default_factory=dict)   # the step's own belief about what it changed this run
     label_requests: list = field(default_factory=list)    # [{"issue": int|None, "add": [...], "remove": [...]}]
     body_write: dict = field(default_factory=dict)        # {} = none; see _read_step_result for the two shapes
@@ -2990,6 +2991,10 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         _val = raw.get(_field, "")
         if not isinstance(_val, str):
             return None, f"result.{_field} must be a string"
+
+    verdict = raw.get("verdict", "")
+    if verdict and verdict not in ("APPROVE", "REQUEST CHANGES"):
+        return None, f'result.verdict must be "APPROVE" or "REQUEST CHANGES" when present, got {verdict!r}'
 
     expected_effect = raw.get("expected_effect", {})
     if not isinstance(expected_effect, dict):
@@ -3048,6 +3053,7 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         undone=raw.get("undone", ""),
         message=raw.get("message", ""),
         output=raw.get("output", ""),
+        verdict=verdict,
         expected_effect=expected_effect,
         label_requests=label_requests,
         body_write=body_write,
@@ -6978,6 +6984,33 @@ def _mark_pr_ready_if_requested(
         )
 
 
+def _check_review_verdict_consistency(final_status: str, verdict: str) -> str:
+    """Issue #512 Part 1: a review_gate step's model-written `outcome` is
+    trusted nowhere else in the pipeline -- catch the case where it disagrees
+    with (or omits) the structured `result.verdict` field the same step
+    wrote, so a REQUEST CHANGES review can never mark the PR ready as a
+    `complete` outcome. `verdict` is a field of result.json, never prose
+    parsed back out of `output` (PRODUCT.md, "What a step must return": "It
+    does not announce its outcome in prose that something else has to parse
+    back out").
+
+    Returns a non-empty mismatch reason, or "" when consistent or not
+    applicable. Only STATUS_COMPLETE/STATUS_REVIEW are checked -- a
+    review_gate step has no verdict rule for STATUS_BLOCKED.
+    """
+    if final_status not in (STATUS_COMPLETE, STATUS_REVIEW):
+        return ""
+    if not verdict:
+        return "result.verdict is missing -- a review_gate step must report APPROVE or REQUEST CHANGES"
+    expected = STATUS_COMPLETE if verdict == "APPROVE" else STATUS_REVIEW
+    if final_status != expected:
+        return (
+            f"result.outcome ({final_status!r}) disagrees with result.verdict "
+            f"({verdict!r}, expected outcome {expected!r})"
+        )
+    return ""
+
+
 def _apply_result(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -7055,6 +7088,28 @@ def _apply_result(
         _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
         _remove_run_worktree(pre_agent_worktree)
         return True
+
+    # Issue #512 Part 1: a review_gate step's outcome is model-written and
+    # otherwise unchecked -- the wrong-by-default result.json template made
+    # copying "complete" onto a REQUEST CHANGES review a one-line mistake.
+    # Fail closed rather than let an inconsistent or missing verdict field
+    # reach _mark_pr_ready_if_requested below.
+    if agent_def.review_gate and step_result is not None:
+        _verdict_mismatch = _check_review_verdict_consistency(final_status, step_result.verdict)
+        if _verdict_mismatch:
+            _apply_failed(gh, agent_def, work_item, result, reason=_verdict_mismatch)
+            log.error(
+                "  FAILED  %-38s  verdict/outcome mismatch on #%d: %s",
+                agent_def.agent, work_item.number, _verdict_mismatch,
+            )
+            _metrics_record = _build_step_metrics(
+                agent_def, work_item, result,
+                timestamp_start, timestamp_end, cycle_id,
+                is_error_override=True,
+            )
+            _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
+            _remove_run_worktree(pre_agent_worktree)
+            return True
 
     # commit-after: push what the step committed in its own worktree when
     # git_ops.commit_after: true. Guard: the branch is an issue branch, so only
