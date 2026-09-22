@@ -317,31 +317,21 @@ Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool:
 > actionable.
 >
 > **Zero-commit exit rule:** A zero-commit `outcome: "complete"` is only valid
-> after enumerating every finding in the pr-reviewer artefact and confirming each
-> one is either covered by an existing commit on the branch or explicitly rebutted
-> with stated reasoning in `result.json`'s `summary`. Do not exit with zero new
-> commits because the original implementation is already present on the branch --
-> verify each finding in the pr-reviewer artefact individually first.
+> after Step 9 below has run and you have enumerated every finding in the
+> pr-reviewer artefact it read, confirming each one is either covered by an
+> existing commit on the branch or explicitly rebutted with stated reasoning
+> in `result.json`'s `summary`. Do not exit with zero new commits because the
+> original implementation is already present on the branch, and do not reach
+> that conclusion from `git log`/`git status`/the test suite in place of
+> Step 9 -- verify each finding in the pr-reviewer artefact individually first.
 
-Before editing, confirm the working tree matches the PR head:
+## Step 9 -- Read all review feedback (mandatory first action)
 
-```bash
-HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
-LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
-[ "$LOCAL_SHA" = "$HEAD_SHA" ] && echo "working tree == PR head" \
-  || echo "WARNING: local tree does not match PR head"
-```
-
-If the working tree does not match the PR head, write `outcome: "blocked"` with
-`message: "infra: local working tree is not checked out to PR head; cannot edit safely"`.
-
-When the tree matches, the diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`)
-is the authority on what this PR changed -- verify "missing/dead code" findings against
-the actual PR before acting.
-
----
-
-## Step 9 -- Read all review feedback
+**This is the first thing Mode B does.** Do not run `git log`, `git status`,
+`git diff`, or the test suite before the commands below have executed and you
+have read their output -- there is no valid path through Mode B that reaches a
+conclusion about "nothing to do" without first knowing what the reviewer
+actually found.
 
 ```bash
 gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
@@ -360,6 +350,24 @@ HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" --pag
 gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
   | jq -s '[.[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .user.login, body: .body}]'
 ```
+
+---
+
+## Step 9a -- Confirm the working tree matches the PR head
+
+```bash
+HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
+LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+[ "$LOCAL_SHA" = "$HEAD_SHA" ] && echo "working tree == PR head" \
+  || echo "WARNING: local tree does not match PR head"
+```
+
+If the working tree does not match the PR head, write `outcome: "blocked"` with
+`message: "infra: local working tree is not checked out to PR head; cannot edit safely"`.
+
+When the tree matches, the diff (`gh api "repos/$REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff"`)
+is the authority on what this PR changed -- verify "missing/dead code" findings against
+the actual PR before acting.
 
 ---
 
