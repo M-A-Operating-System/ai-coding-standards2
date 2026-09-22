@@ -93,6 +93,15 @@ class TestTheStepThatCarriesNothing:
         merge_conflict = loaded["03_execute/merge-conflict"]
         assert merge_conflict.session_resume is False
 
+    def test_pr_reviewer_declares_no_resume(self):
+        """It re-reads the PR diff, standards, and ADRs from scratch on every
+        invocation, so a resumed conversation can only answer from a prior
+        cycle's cached conclusion about a diff that has since changed (issue
+        #500, the same failure mode as issue #450)."""
+        loaded = _loaded()
+        pr_reviewer = loaded["03_execute/pr-reviewer"]
+        assert pr_reviewer.session_resume is False
+
     def test_the_declaration_survives_loading(self):
         """A declared false that the loader drops would fail silently -- the
         step would resume exactly as before and nothing would say so."""
@@ -115,7 +124,7 @@ class TestScopeAndResumeAreSeparateQuestions:
     it continues one at all. Conflating them is what made "per_issue" imply
     "carries its conclusions forward"."""
 
-    @pytest.mark.parametrize("agent", ["03_execute/merge-conflict"])
+    @pytest.mark.parametrize("agent", ["03_execute/merge-conflict", "03_execute/pr-reviewer"])
     def test_a_step_can_keep_its_scope_and_still_not_resume(self, agent):
         loaded = _loaded()
         assert loaded[agent].session_scope == "per_issue"
