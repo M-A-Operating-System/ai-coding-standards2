@@ -17,6 +17,7 @@ from pipeline_orchestrator import (
     _SCRIPT_AGENT_ENV_VARS,
     _POST_STEPS_ENV_VARS,
     _DELETE_BRANCH_ENV_VARS,
+    _ENSURE_GH_CLI_ENV_VARS,
 )
 
 _ALL_SITE_VARS = [
@@ -24,6 +25,7 @@ _ALL_SITE_VARS = [
     ("script_agent", _SCRIPT_AGENT_ENV_VARS),
     ("post_steps", _POST_STEPS_ENV_VARS),
     ("delete_branch", _DELETE_BRANCH_ENV_VARS),
+    ("ensure_gh_cli", _ENSURE_GH_CLI_ENV_VARS),
 ]
 
 _POISON_ENV = {
@@ -55,7 +57,7 @@ class TestEachCallSiteBuildsEnvFromANamedVariableList:
 
     def test_each_site_has_its_own_distinct_named_constant(self):
         # Each call site must reference a separately-named module-level constant
-        # (not a hard-coded inline literal or shared alias), so the five lists
+        # (not a hard-coded inline literal or shared alias), so these lists
         # are independently revisable. We verify the expected names are importable
         # and are all proper tuples.
         import pipeline.pipeline_orchestrator as _orch
@@ -64,6 +66,7 @@ class TestEachCallSiteBuildsEnvFromANamedVariableList:
             "_SCRIPT_AGENT_ENV_VARS",
             "_POST_STEPS_ENV_VARS",
             "_DELETE_BRANCH_ENV_VARS",
+            "_ENSURE_GH_CLI_ENV_VARS",
         ]
         for name in expected_names:
             assert hasattr(_orch, name), f"Module is missing {name}"
@@ -121,6 +124,13 @@ class TestANarrowedScriptStillWorks:
         assert "GH_TOKEN" in var_names
         assert "GITHUB_TOKEN" in var_names
 
+    def test_ensure_gh_cli_allowlist_includes_gh_auth_vars(self):
+        var_names = set(_ENSURE_GH_CLI_ENV_VARS)
+        assert "GH_TOKEN" in var_names
+        assert "GITHUB_TOKEN" in var_names
+        assert "PATH" in var_names
+        assert "HOME" in var_names
+
     def test_post_steps_carries_the_system_identity(self):
         """Was: post_steps excludes the bot token. A post_step writes to GitHub,
         and MI-7 wants one identity behind every system write (issue #407)."""
@@ -142,6 +152,7 @@ class TestANarrowedScriptStillWorks:
             ("script_agent", _SCRIPT_AGENT_ENV_VARS),
                     ("post_steps", _POST_STEPS_ENV_VARS),
             ("delete_branch", _DELETE_BRANCH_ENV_VARS),
+            ("ensure_gh_cli", _ENSURE_GH_CLI_ENV_VARS),
         ]
         for name, var_set in network_sites:
             var_names = set(var_set)
@@ -293,10 +304,25 @@ class TestOneIdentityBehindEverySystemWrite:
 #                         push` calls. It never reads GH_TOKEN/GITHUB_TOKEN
 #                         or builds its own auth header, so there is no
 #                         separate identity here to resolve.
+#   ensure-gh-cli.sh    -- a read-only `gh api user` probe of whoever is
+#                         already authenticated in the environment it
+#                         inherits, run once at orchestrator startup before
+#                         any step's identity is relevant. It never writes
+#                         to GitHub and never selects a credential itself,
+#                         so MI-7's decidability concern (attributing a
+#                         write to a consistent actor) does not apply.
+#   recover-unpushed-commits.sh -- invoked directly by
+#                         _recover_unpushed_commits with no env= override,
+#                         the same inherited-GIT_CONFIG_* shape as
+#                         salvage-exhausted-worktree.sh, for the same reason:
+#                         a plain `git push`, no gh CLI, no auth header of
+#                         its own.
 _IDENTITY_EXEMPT = {
     "status.sh",
     "drive-item.sh",
     "new-branch-pr.sh",
+    "ensure-gh-cli.sh",
     "rebaseline-branch.sh",
     "salvage-exhausted-worktree.sh",
+    "recover-unpushed-commits.sh",
 }

@@ -56,20 +56,14 @@
 **When** the orchestrator re-drives the step for the same issue in a subsequent run
 **Then** the step uses a session that has not previously concluded for this issue-step combination, giving it a genuine chance to produce a fresh result
 
-## Scenario: pre_steps scripts execute before agent step
-
-**Given** a pipeline step declares a `pre_steps` list in `pipeline.json`
-**When** the orchestrator invokes that step
-**Then** each script in `pre_steps` runs in order and to completion before the step's agent or script is spawned
-
 ## Scenario: interrupted run recovers idempotently on next run
 
 **Given** a step's worktree directory exists from a previous interrupted run
 **When** the orchestrator starts that step on the next pipeline run
-**Then** the worktree pre_steps script detects the stale worktree, removes it, and creates a fresh one without the signal handler having to read in-flight globals
+**Then** `_create_run_worktree` detects the stale worktree, removes it, and creates a fresh one -- with no signal handler and no in-flight globals to read (issue #495: `_CURRENT_WIP`/`_CURRENT_WORKTREE` and the SIGTERM/SIGINT handler that used to read them were removed; a stranded `:wip` self-heals separately via `_reclaim_stale_wip`'s lease expiry)
 
-## Scenario: orchestrator delegates post-step git and filesystem work to post_steps scripts
+## Scenario: filesystem/process logic runs as extracted scripts where genuinely separable, and stays inline where load-bearing
 
 **Given** a step completes and its result file is present in the scratch directory
 **When** the orchestrator processes the step's result
-**Then** it reads only the exit code and result JSON, and all git push and worktree teardown operations are performed by post_steps scripts rather than inline orchestrator code
+**Then** logic with no orchestrator-internal coupling and a safe degrade path -- the `gh` CLI bootstrap (`ensure-gh-cli.sh`), unpushed-commit recovery (`recover-unpushed-commits.sh`), and todos-block patching (`pipeline/todos_patch.py`) -- runs as a standalone script or module (issue #495), while the git push and worktree teardown that make a step's commit durable (`_push_step_branch`, `_create_run_worktree`, `_remove_run_worktree`) and the metrics/announcement builders that share orchestrator-internal types stay inline in `pipeline_orchestrator.py` as a cited STD-ARCH-035 exception (`adrs/adrs.json` ADR-002) -- routing a load-bearing push through the same script-resolution fallback used for best-effort operations would reintroduce issue #196's regression class (see `test_pushing_a_step_s_commits_needs_no_script_on_the_branch`)

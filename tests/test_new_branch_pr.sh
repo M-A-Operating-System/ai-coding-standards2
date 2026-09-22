@@ -28,6 +28,7 @@ setup() {
   mkdir -p "${WORK_DIR}/.github/scripts" "${WORK_DIR}/pipeline"
   cp "${REPO_ROOT}/${SCRIPT_REL}" "${WORK_DIR}/.github/scripts/"
   cp "${REPO_ROOT}/pipeline/pipeline_orchestrator.py" "${WORK_DIR}/pipeline/"
+  cp "${REPO_ROOT}/pipeline/todos_patch.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/pipeline.json" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/statuses.json" "${WORK_DIR}/pipeline/"
   cp -r "${REPO_ROOT}/pipeline/schemas" "${WORK_DIR}/pipeline/" 2>/dev/null || true

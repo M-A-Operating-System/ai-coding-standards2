@@ -45,7 +45,6 @@ import logging
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -58,6 +57,19 @@ from pathlib import Path
 from typing import Literal, Mapping, Optional
 
 import requests
+
+# The todos-block patching algorithm itself lives in todos_patch.py (issue
+# #495, STD-ARCH-035) -- pure string transforms, no GitHub or orchestrator
+# coupling. Imported under their original names so every call site and test
+# import here is unchanged.
+from todos_patch import (
+    TODOS_HEADING as _TODOS_HEADING,
+    TODOS_OUTER_START as _TODOS_OUTER_START,
+    TODOS_OUTER_END as _TODOS_OUTER_END,
+    todos_subsection_markers as _todos_subsection_markers,
+    checked_items_would_be_lost as _checked_items_would_be_lost,
+    apply_todos_patch as _apply_todos_patch,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1401,6 +1413,10 @@ def _build_agent_metrics(
     Extra fields from system/init and result events (beyond the PRD-enumerated
     minimum) are included at their original CLI names so no field is silently
     dropped. Known canonical fields override any same-named extra field.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): takes AgentDef/
+    WorkItem/AgentRunResult directly and calls other orchestrator-internal
+    functions, unlike todos_patch.py's clean pure-function extraction.
     """
     init = result.init_event or {}
     result_ev = result.result_event or {}
@@ -1598,6 +1614,11 @@ def _ensure_metrics_branch(gh: "GitHubClient", repo: str) -> None:
     Initialises the branch from the repo's default branch and pushes the
     JSON schema file. A concurrent creation race is handled by swallowing
     the 422 response from GitHub.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): uses GitHubClient's
+    retry-with-backoff HTTP machinery, which a bash `gh api` rewrite would
+    lose or have to non-trivially reimplement, for a code path that runs at
+    most once per repository.
     """
     try:
         gh._get(f"/repos/{repo}/git/refs/heads/{METRICS_BRANCH}")
@@ -3229,96 +3250,7 @@ def _post_artefact_if_present(
 # body_write field, and the orchestrator applies it here.
 # ---------------------------------------------------------------------------
 
-_TODOS_HEADING = "## AI Agile -- Tasks"
-_TODOS_OUTER_START = "<!-- ai-agile/todos/v1 START -->"
-_TODOS_OUTER_END = "<!-- ai-agile/todos/v1 END -->"
-
 _BODY_WRITE_MAX_ATTEMPTS = 3
-
-
-def _todos_subsection_markers(subsection: str) -> tuple[str, str]:
-    return (
-        f"<!-- ai-agile/todos/{subsection}/v1 START -->",
-        f"<!-- ai-agile/todos/{subsection}/v1 END -->",
-    )
-
-
-_CHECKED_ITEM_RE = re.compile(r"^[ \t]*-\s*\[x\]\s*(.+?)\s*$", re.IGNORECASE | re.MULTILINE)
-
-
-def _checked_items_would_be_lost(old_content: str, new_content: str) -> str:
-    """Return a non-empty refusal reason if any `- [x]` line in old_content
-    is missing, or no longer checked, in new_content -- comparing by the
-    checkbox's own text, so a step that only appends new entries or ticks
-    more boxes never trips this. A checked item's text is terminal (AGENTS.md:
-    a `done`/`blocked`/`skipped` event is appended once and it never changes
-    again), so an exact-text comparison is the whole check.
-    """
-    old_checked = set(_CHECKED_ITEM_RE.findall(old_content))
-    if not old_checked:
-        return ""
-    lost = old_checked - set(_CHECKED_ITEM_RE.findall(new_content))
-    if not lost:
-        return ""
-    shown = sorted(lost)[:3]
-    return (
-        f"patch would un-check or drop {len(lost)} previously checked item(s): "
-        + "; ".join(shown) + ("; ..." if len(lost) > len(shown) else "")
-    )
-
-
-def _apply_todos_patch(body: str, subsection: str, content: str) -> tuple[Optional[str], str]:
-    """Compute a new body with `subsection`'s todos-block content replaced by
-    `content`, creating the outer/subsection marker blocks if either is
-    absent yet (PRODUCT.md, "What lands on the issue"). Returns (new_body,
-    "") on success, or (None, reason) when the patch would silently drop a
-    previously checked item -- the caller keeps the old body unchanged.
-
-    Touches only the named subsection; every other subsection's content,
-    and everything outside the outer block, passes through byte-for-byte.
-    """
-    sub_start, sub_end = _todos_subsection_markers(subsection)
-
-    outer_start_idx = body.find(_TODOS_OUTER_START)
-    if outer_start_idx == -1:
-        # No todos block at all yet -- create it, with just this subsection.
-        block = (
-            f"\n\n{_TODOS_HEADING}\n\n{_TODOS_OUTER_START}\n"
-            f"{sub_start}\n{content}\n{sub_end}\n"
-            f"{_TODOS_OUTER_END}\n"
-        )
-        return body.rstrip("\n") + block, ""
-
-    outer_end_idx = body.find(_TODOS_OUTER_END, outer_start_idx)
-    if outer_end_idx == -1:
-        return None, "found an unterminated todos block (START with no matching END)"
-
-    outer_inner_start = outer_start_idx + len(_TODOS_OUTER_START)
-    outer_content = body[outer_inner_start:outer_end_idx]
-
-    sub_start_idx = outer_content.find(sub_start)
-    if sub_start_idx == -1:
-        # Subsection doesn't exist yet within the outer block -- append it,
-        # leaving every existing subsection untouched.
-        new_outer_content = outer_content.rstrip("\n") + f"\n{sub_start}\n{content}\n{sub_end}\n"
-        return body[:outer_inner_start] + new_outer_content + body[outer_end_idx:], ""
-
-    sub_end_idx = outer_content.find(sub_end, sub_start_idx)
-    if sub_end_idx == -1:
-        return None, f"found an unterminated {subsection} subsection (START with no matching END)"
-
-    sub_inner_start = sub_start_idx + len(sub_start)
-    old_content = outer_content[sub_inner_start:sub_end_idx]
-
-    refusal = _checked_items_would_be_lost(old_content, content)
-    if refusal:
-        return None, refusal
-
-    # Same "\n{content}\n" wrapping as the create-from-scratch and
-    # new-subsection paths above, so a subsection's on-disk shape doesn't
-    # depend on whether this is its first patch or a later one.
-    new_outer_content = outer_content[:sub_inner_start] + f"\n{content}\n" + outer_content[sub_end_idx:]
-    return body[:outer_inner_start] + new_outer_content + body[outer_end_idx:], ""
 
 
 def _resolve_body_write_target(
@@ -3649,6 +3581,9 @@ def _build_opening_announcement(
     work_item: WorkItem,
     session_id: str,
 ) -> str:
+    """Stays inline per ADR-002 (STD-ARCH-035 exception): takes AgentDef/
+    WorkItem directly and calls step_branch, unlike todos_patch.py's clean
+    pure-function extraction."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
         "session_id": session_id,
@@ -5174,54 +5109,53 @@ def _run_worktree_path(issue_branch: str) -> Path:
 
 
 def _recover_unpushed_commits(issue_branch: str) -> None:
-    """Push commits a previous run committed but never got to push.
+    """Push commits a previous run committed but never got to push, before
+    the branch is reset for a fresh worktree.
 
-    A step commits into its worktree as it goes, and those commits move the
-    shared branch ref immediately -- but they only become durable when the ref
-    moves on the remote, which the orchestrator does after the step returns. A
-    step killed at its budget ceiling never returns, so its commits sit ahead
-    of origin with nothing having pushed them.
+    PRODUCT.md, "What lands in git": a later tick pushes a branch left ahead
+    of its remote, recovering by reading what is actually there rather than
+    what a record claims. Complements _salvage_exhausted_worktree, which
+    covers the same already-committed case immediately at exhaustion, before
+    the worktree is torn down, rather than waiting for a next run of this
+    branch to happen.
 
-    The next run for that branch is where they would otherwise be lost: the
-    `worktree add -B ... origin/{branch}` below resets the local branch to the
-    remote, discarding exactly the work the arrangement exists to protect. So
-    the ref is moved first. PRODUCT.md, "What lands in git": a later tick
-    pushes a branch left ahead of its remote, recovering by reading what is
-    actually there rather than what a record claims.
+    The actual git work (best-effort by design -- see the script) runs as a
+    standalone script per STD-ARCH-035 (issue #495):
+    .github/scripts/recover-unpushed-commits.sh. This function only resolves
+    the script, invokes it, and relays its diagnostic output -- never raises.
 
-    Best-effort by design. A branch that cannot be pushed (diverged, or the
-    remote refuses) is logged and left alone -- the run still needs its
-    worktree, and failing the whole run over a previous run's leftovers would
-    strand the branch rather than rescue it.
-
-    Complements _salvage_exhausted_worktree, which covers the same
-    already-committed case immediately at exhaustion, before the worktree is
-    torn down, rather than waiting for a next run of this branch to happen.
+    Invoked with no env= override (STD-SEC-022 exception, ADR-003): the
+    GIT_CONFIG_COUNT/GIT_CONFIG_KEY_N/GIT_CONFIG_VALUE_N git-push auth
+    header main() sets up is a dynamically-numbered family, not a fixed set
+    of names -- a static allowlist naming only *_0 silently produces a
+    broken, inconsistent git config whenever more entries are present (this
+    is not hypothetical: it broke this exact function's own tests, since
+    this repo's sandboxed dev environment sets three GIT_CONFIG_* entries of
+    its own for git's github.com routing). Same shape as
+    _salvage_exhausted_worktree's call to salvage-exhausted-worktree.sh.
     """
-    ahead = subprocess.run(
-        ["git", "rev-list", "--count", f"origin/{issue_branch}..{issue_branch}"],
-        check=False, capture_output=True, text=True,
-    )
-    if ahead.returncode != 0 or not (ahead.stdout.strip() or "0").isdigit():
-        return
-    count = int(ahead.stdout.strip() or "0")
-    if count == 0:
-        return
-    log.warning(
-        "  worktree: %s is %d commit(s) ahead of its remote from an earlier run "
-        "-- pushing before the branch is reset", issue_branch, count,
-    )
-    pushed = subprocess.run(
-        ["git", "push", "origin", f"{issue_branch}:{issue_branch}"],
-        check=False, capture_output=True, text=True,
-    )
-    if pushed.returncode != 0:
-        log.error(
-            "  worktree: could not recover %d unpushed commit(s) on %s: %s",
-            count, issue_branch, (pushed.stderr or pushed.stdout).strip()[:500],
+    script = _orchestration_script_path(".github/scripts/recover-unpushed-commits.sh")
+    if not script.exists():
+        log.warning(
+            "recover-unpushed-commits.sh not found at %s -- skipping recovery for %s",
+            script, issue_branch,
         )
         return
-    log.info("  worktree: recovered %d unpushed commit(s) on %s", count, issue_branch)
+    try:
+        proc = subprocess.run(
+            ["bash", str(script), issue_branch],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("recover-unpushed-commits.sh timed out for %s", issue_branch)
+        return
+    except FileNotFoundError:
+        log.warning("bash not found in PATH -- skipping recovery for %s", issue_branch)
+        return
+
+    for line in proc.stderr.splitlines():
+        if line.strip():
+            log.warning("  worktree: %s", line.strip())
 
 
 def _create_run_worktree(issue_branch: str) -> str:
@@ -5232,14 +5166,20 @@ def _create_run_worktree(issue_branch: str) -> str:
     tree) so a concurrent run on a different issue cannot move this run's
     HEAD (#373). Raises on any failure -- the caller must fail the run
     loudly rather than fall back to the shared working tree.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): load-bearing with no
+    fallback -- a step cannot run at all without its worktree, so this must
+    not depend on a script being resolvable on the current branch (the same
+    reasoning that keeps _push_step_branch inline).
     """
     _WORKTREE_ROOT.mkdir(parents=True, exist_ok=True)
     path = _run_worktree_path(issue_branch)
     if path.exists():
-        # Debris from a run killed mid-flight -- SIGTERM cleanup
-        # (_clear_inflight_wip_on_signal) is best-effort, so a prior worktree
-        # may still be registered here. Clear it before adding a fresh one
-        # rather than colliding with it.
+        # Debris from a run killed mid-flight -- a prior worktree may still
+        # be registered here regardless of how that run ended (issue #495:
+        # this is the sole cleanup path now, not a fallback behind a signal
+        # handler). Clear it before adding a fresh one rather than colliding
+        # with it.
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(path)],
             check=False, capture_output=True,
@@ -5261,18 +5201,18 @@ def _create_run_worktree(issue_branch: str) -> str:
         # captured it -- without this, the :failed diagnostic comment a human
         # reads never shows the actual git error.
         raise RuntimeError(f"{exc}: {(exc.stderr or '').strip()}") from exc
-    global _CURRENT_WORKTREE
-    _CURRENT_WORKTREE = str(path)
     return str(path)
 
 
 def _remove_run_worktree(path: str) -> None:
     """Tear down a worktree created by _create_run_worktree. Best-effort --
     cleanup must never raise, since it runs on every break path after the
-    run's own outcome has already been decided."""
+    run's own outcome has already been decided.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception), grouped with
+    _create_run_worktree as its teardown counterpart."""
     if not path:
         return
-    global _CURRENT_WORKTREE
     try:
         subprocess.run(
             ["git", "worktree", "remove", "--force", path],
@@ -5281,8 +5221,6 @@ def _remove_run_worktree(path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
     except Exception as exc:
         log.warning("could not remove worktree %s: %s", path, exc)
-    if _CURRENT_WORKTREE == path:
-        _CURRENT_WORKTREE = None
 
 
 def _should_run(
@@ -5499,9 +5437,11 @@ def _should_run(
 #
 # A step can just stop existing: the machine running it is lost, or the process
 # is killed outright. Nothing is returned and the :wip it held stays where it
-# is, blocking the item forever. The SIGTERM/SIGINT handler
-# (_clear_inflight_wip_on_signal) only helps a process that gets to run a
-# handler -- kill -9, an OOM kill and a lost host all bypass it.
+# is, blocking the item forever. No in-process handler can help here -- kill
+# -9, an OOM kill and a lost host all bypass one, and issue #495 removed the
+# SIGTERM/SIGINT handler that used to make the graceful-kill case faster,
+# since it only ever raced this same reclaim rather than covering ground this
+# doesn't.
 #
 # So the reclaim is something a LATER tick does, by looking at the label rather
 # than the run: a :wip older than what that step could legitimately still be
@@ -5832,10 +5772,6 @@ def _acquire_wip_and_announce(
             gh.add_label(work_item.number, agent_def.status_label(STATUS_WIP))
             labels.add(agent_def.status_label(STATUS_WIP))
             work_item.labels = labels
-            # Track the in-flight :wip so a termination signal can clear it
-            # rather than stranding the mutex (see _clear_inflight_wip_on_signal).
-            global _CURRENT_WIP
-            _CURRENT_WIP = (gh, work_item.number, agent_def.status_label(STATUS_WIP))
             # Claim only on successful label application — a failed
             # add_label means no :wip was set so nothing is actually running.
             if concurrency is not None:
@@ -6383,6 +6319,13 @@ def _push_step_branch(
     with a push it has just received, and a read that lags by a moment would
     record a subject that is already superseded -- making the next tick re-run
     a step for no reason.
+
+    Stays inline per ADR-002 (STD-ARCH-035 exception): load-bearing with no
+    fallback -- a step's commit is not durable until this pushes it, so
+    routing this through the script-resolution mechanism used elsewhere in
+    that issue (which degrades gracefully if a script is unresolvable) would
+    reintroduce issue #196's exact regression class. See
+    test_pushing_a_step_s_commits_needs_no_script_on_the_branch.
     """
     _branch = step_branch(agent_def, work_item)
     if not _branch:
@@ -7159,11 +7102,6 @@ def _apply_result(
 
     _apply_terminal_status(gh, agent_def, work_item, applied_status)
 
-    # The step has transitioned off :wip -- clear the in-flight marker so the
-    # SIGTERM handler only ever acts on a genuinely running step.
-    global _CURRENT_WIP
-    _CURRENT_WIP = None
-
     _announce_and_prompt(
         agent_def, work_item, session_id, applied_status, sentinel_message, gh,
         pushed_sha=_pushed.get("sha"),
@@ -7551,47 +7489,56 @@ def _discover_human_github_token() -> str | None:
     return os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
 
+# STD-SEC-022 -- env for ensure-gh-cli.sh: PATH/HOME to run bash and
+# apt-get, network/proxy/CA vars so `gh api user` and `apt-get` work in a
+# restricted or proxied environment, GH_TOKEN/GITHUB_TOKEN for `gh` itself
+# to authenticate with (the script never reads either directly -- `gh`
+# does). No AI_AGILE_BOT_TOKEN or GIT_CONFIG_*: this runs before main()
+# resolves either, and the script needs neither -- it never picks its own
+# identity (see its MI-7 exemption in test_sec022_env_allowlists.py).
+_ENSURE_GH_CLI_ENV_VARS = (
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE",
+    "GH_TOKEN", "GITHUB_TOKEN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+
 def _ensure_gh_cli() -> None:
-    """Ensure `gh` is on PATH and can make authenticated REST calls, installing
-    it via apt if missing.
+    """Ensure `gh` is on PATH and can make authenticated REST calls.
 
-    Script-type pipeline steps (.github/scripts/*.sh) shell out to `gh api`
-    REST calls, not gh's GraphQL-backed subcommands (some of which 403 in
-    restricted sessions -- see #276/#284), so this only needs the binary plus
-    GITHUB_TOKEN/GH_TOKEN in the environment. Verification below uses
-    `gh api user` rather than `gh auth status`: the latter performs a
-    GraphQL-backed validation call that can 403 in a restricted session even
-    when `gh api` works fine, producing a false "not authenticated" reading.
+    The install/probe logic (apt-get bootstrap, `gh api user` verification)
+    is filesystem/process work and runs as a standalone script per
+    STD-ARCH-035 (issue #495): .github/scripts/ensure-gh-cli.sh. This
+    function only resolves the script and reports its result -- never
+    raises, matches the coordination-only contract ADR-001 states.
     """
-    if not shutil.which("gh"):
-        log.warning("gh CLI not found on PATH -- installing via apt (script-type steps call `gh api`)")
-        try:
-            subprocess.run(["apt-get", "update", "-qq"], check=True,
-                            capture_output=True, text=True, timeout=120)
-            subprocess.run(["apt-get", "install", "-y", "-qq", "gh"], check=True,
-                            capture_output=True, text=True, timeout=120)
-        except Exception as exc:
-            stderr = getattr(exc, "stderr", None) or ""
-            log.error("Could not install gh CLI automatically (%s; stderr: %s); script-type "
-                       "steps calling `gh api` will fail until it is installed manually",
-                       exc, stderr.strip())
-            return
-        if not shutil.which("gh"):
-            log.error("apt install of gh exited cleanly but `gh` is still not on PATH")
-            return
-        log.info("gh CLI installed")
-
-    try:
-        probe = subprocess.run(["gh", "api", "user", "--jq", ".login"],
-                                capture_output=True, text=True, timeout=30)
-    except Exception as exc:
-        log.warning("Could not probe gh CLI REST auth: %s", exc)
+    script = _orchestration_script_path(".github/scripts/ensure-gh-cli.sh")
+    if not script.exists():
+        log.warning("ensure-gh-cli.sh not found at %s -- skipping gh CLI check", script)
         return
-    if probe.returncode == 0:
-        log.info("gh CLI REST-authenticated as %s", probe.stdout.strip())
-    else:
-        log.warning("gh CLI present but `gh api user` failed -- script-type steps "
-                     "calling `gh api` may fail: %s", probe.stderr.strip())
+    env = {k: os.environ[k] for k in _ENSURE_GH_CLI_ENV_VARS if k in os.environ}
+    try:
+        proc = subprocess.run(
+            ["bash", str(script)], env=env, capture_output=True, text=True, timeout=150,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("ensure-gh-cli.sh timed out")
+        return
+    except FileNotFoundError:
+        log.warning("bash not found in PATH -- skipping gh CLI check")
+        return
+
+    for line in proc.stderr.splitlines():
+        if line.strip():
+            log.warning(line.strip())
+
+    if proc.returncode == 0:
+        for line in proc.stdout.splitlines():
+            if line.strip():
+                log.info(line.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -8537,58 +8484,25 @@ def _close_down(ctx: "RunContext", total_triggered: int) -> None:
         ))
 
 
-# Set to (gh, work_item_number, wip_label) while an agent is mid-flight so a
-# termination signal (e.g. a CI or interactive timeout sending SIGTERM) can
-# clear the :wip mutex it would otherwise strand. Updated by the :wip ceremony.
-_CURRENT_WIP = None
-
-# Set to the absolute path of the isolated worktree (see _create_run_worktree)
-# while a commit_after run is mid-flight, so a termination signal can remove
-# it rather than leaving debris and a stale registration behind. Cleared by
-# _remove_run_worktree once the run's own cleanup runs normally.
-_CURRENT_WORKTREE = None
-
-
-def _clear_inflight_wip_on_signal(signum, _frame) -> None:
-    """Best-effort: drop the in-flight :wip label and worktree, then exit.
-
-    A killed tick (SIGTERM/SIGINT) otherwise leaves the work item stuck at :wip
-    -- the mutex blocks the next tick from re-triggering the agent. Clearing that
-    one label makes the item immediately retryable. Similarly, an isolated
-    worktree left behind by a kill would otherwise strand disk and a stale
-    `git worktree` registration; _create_run_worktree already clears debris
-    from a prior kill on its next use, but removing it here means a killed
-    run leaves nothing behind at all when the kill is clean.
-    """
-    wip = _CURRENT_WIP
-    if wip is not None:
-        gh, number, label = wip
-        try:
-            gh.remove_label(number, label)
-            log.warning("signal %d: cleared in-flight %s on #%d before exit", signum, label, number)
-        except Exception as exc:
-            log.warning("signal %d: could not clear in-flight %s on #%d: %s", signum, label, number, exc)
-    worktree = _CURRENT_WORKTREE
-    if worktree:
-        try:
-            subprocess.run(["git", "worktree", "remove", "--force", worktree],
-                            check=False, capture_output=True)
-            log.warning("signal %d: removed in-flight worktree %s before exit", signum, worktree)
-        except Exception as exc:
-            log.warning("signal %d: could not remove in-flight worktree %s: %s", signum, worktree, exc)
-    # No scratch cleanup here: scratch-setup.sh clears the directory at the
-    # start of every run, so a killed tick self-heals on the next one.
-    sys.exit(128 + signum)
+# issue #495 (STD-ARCH-035) removed the _CURRENT_WIP/_CURRENT_WORKTREE
+# module globals and the SIGTERM/SIGINT handler that used to read them
+# ("in-flight-state globals for signal-handler cleanup" is the standard's own
+# named anti-pattern). Both existed only to make a killed tick's cleanup
+# immediate; the item was never actually stuck without them:
+#   - a stranded :wip is reclaimed by _reclaim_stale_wip once its lease
+#     expires, on whatever later tick next considers that work item --
+#     unconditionally, whether or not a signal handler ever ran.
+#   - a leftover worktree is cleared by _create_run_worktree itself, the next
+#     time that branch is retried, regardless of how the prior run ended.
+# Removing the handler trades "cleared instantly on a graceful kill" for
+# "cleared on next use/lease-expiry" -- a bounded delay, not a functional
+# gap, and it already only ever covered SIGTERM/SIGINT: kill -9, an OOM
+# kill, and a lost host always bypassed it.
 
 
 def main() -> None:
     # Wake up -> do the work -> close down.
     args = parse_args()
-
-    # Clear an in-flight :wip if this process is terminated (timeout/cancel) so a
-    # killed tick does not strand the mutex and block the next run.
-    signal.signal(signal.SIGTERM, _clear_inflight_wip_on_signal)
-    signal.signal(signal.SIGINT, _clear_inflight_wip_on_signal)
 
     global _VERBOSE, _HEADLESS
     _VERBOSE = args.verbose
