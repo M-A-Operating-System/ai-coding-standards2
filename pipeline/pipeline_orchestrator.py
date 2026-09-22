@@ -6815,6 +6815,51 @@ def _compute_human_review_override(
     return final_status, _human_review_override, _human_review_list
 
 
+def _human_review_override_from_outcome_policy(
+    work_item: WorkItem,
+    final_status: str,
+    labels: set,
+    human_only_block: bool,
+    human_blockers: list,
+    gh: "GitHubClient",
+) -> tuple:
+    """Same issue-#100 once-only-free-re-invoke semantics as
+    _compute_human_review_override, for an outcome_policy step -- driven by
+    the PR/review data _apply_outcome_policy already fetched for the verdict
+    itself, rather than a second independent lookup and
+    _fetch_unresolved_human_review_requests call for the same fact.
+
+    final_status here is already _apply_outcome_policy's computed status
+    (STATUS_REVIEW when human_only_block is True) -- this does not need to
+    override it the way _compute_human_review_override does; it only
+    decides whether that STATUS_REVIEW gets the free-cycle exemption.
+
+    Returns (final_status, human_review_override, human_review_list) --
+    same shape as _compute_human_review_override so callers treat them
+    identically.
+    """
+    if human_only_block and HUMAN_REVIEW_PENDING_LABEL not in labels:
+        log.info(
+            "  HUMAN   outcome_policy  %d unresolved REQUEST_CHANGES on #%d -- "
+            "overriding to :review for free re-invoke",
+            len(human_blockers), work_item.number,
+        )
+        return final_status, True, human_blockers
+    if HUMAN_REVIEW_PENDING_LABEL in labels and final_status == STATUS_COMPLETE:
+        # Free re-invoke already ran (label present) and the computed verdict
+        # is clean again -- remove the label before the PR is marked ready.
+        try:
+            gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
+            labels.discard(HUMAN_REVIEW_PENDING_LABEL)
+            work_item.labels = labels
+        except Exception as exc:
+            log.debug(
+                "  could not remove %s on #%d: %s",
+                HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
+            )
+    return final_status, False, []
+
+
 def _resolve_applied_status(
     agent_def: AgentDef,
     work_item: WorkItem,
@@ -7056,7 +7101,7 @@ def _apply_outcome_policy(
     work_item: "WorkItem",
     step_result: StepResult,
     final_status: str,
-) -> tuple[str, Optional[StepResult], str, bool]:
+) -> tuple[str, Optional[StepResult], str, bool, bool, list]:
     """Issue #512 Part 2: for a step declaring outcome_policy, validate
     result.review against its declared schema and compute the verdict from
     its findings via review_outcome.derive_review_verdict -- never the
@@ -7066,8 +7111,15 @@ def _apply_outcome_policy(
     functions, apply the GitHub side effect -- the same shape as
     _apply_body_write and _mark_pr_ready_if_requested.
 
+    Also resolves the issue-#100 human-review free-re-invoke question
+    (human_only_block, human_blockers) using the same PR/review data this
+    function already fetched for the verdict itself, rather than let the
+    caller re-derive it via a second _fetch_unresolved_human_review_requests
+    call (see _apply_result, which skips _compute_human_review_override for
+    an outcome_policy step for exactly this reason).
+
     Returns (resolved_status, rendered_step_result, failure_reason,
-    outcome_overridden):
+    outcome_overridden, human_only_block, human_blockers):
       - failure_reason is non-empty when result.review is missing, fails its
         schema, or has duplicate finding ids -- the caller applies :failed
         and never marks the PR ready (Scenario: Invalid review object).
@@ -7077,10 +7129,15 @@ def _apply_outcome_policy(
         via _post_artefact_if_present, and resolved_status is the computed
         verdict's status -- overriding the model's own final_status when
         they disagree (Scenario: Code-computed verdict overrides the model).
+      - human_only_block is True when an unresolved human REQUEST_CHANGES
+        review is the sole reason resolved_status is STATUS_REVIEW (the
+        findings alone would have computed APPROVE) -- the caller grants
+        the same once-only free re-invoke issue #100 established, instead
+        of counting it against review_loop.max_cycles.
     """
     review = step_result.review
     if not review:
-        return final_status, None, "result.review is missing or empty", False
+        return final_status, None, "result.review is missing or empty", False, False, []
 
     # SUBMODULE_ROOT, never AI_AGILE_ROOT: pipeline/schemas/ ships with the
     # orchestrator itself, and AI_AGILE_ROOT points at the consuming repo
@@ -7090,18 +7147,18 @@ def _apply_outcome_policy(
     try:
         schema = json.loads(schema_path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        return final_status, None, f"could not load outcome_policy schema {schema_path}: {exc}", False
+        return final_status, None, f"could not load outcome_policy schema {schema_path}: {exc}", False, False, []
 
     import jsonschema  # imported here: only outcome_policy steps need it, same as the pipeline-override validation path
     validator = jsonschema.Draft7Validator(schema)
     errors = sorted(validator.iter_errors(review), key=lambda e: list(e.path))
     if errors:
-        return final_status, None, f"result.review failed schema validation: {errors[0].message}", False
+        return final_status, None, f"result.review failed schema validation: {errors[0].message}", False, False, []
 
     findings = review.get("findings", [])
     duplicates = _find_duplicate_finding_ids(findings)
     if duplicates:
-        return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False
+        return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False, False, []
 
     # Same PR-resolution shape as _compute_human_review_override/
     # _mark_pr_ready_if_requested: work_item.number directly for a PR-kind
@@ -7122,6 +7179,12 @@ def _apply_outcome_policy(
                 "  could not look up PR for outcome_policy human-review check on #%d: %s",
                 work_item.number, exc,
             )
+        if pr_number is None:
+            log.warning(
+                "  outcome_policy: no PR found for #%d -- human-review check skipped, "
+                "verdict computed from findings alone",
+                work_item.number,
+            )
     human_blockers: list = []
     if pr_number is not None:
         human_blockers = _fetch_unresolved_human_review_requests(gh, pr_number)
@@ -7129,6 +7192,16 @@ def _apply_outcome_policy(
     adr_records = _load_adr_records()
     verdict = _derive_review_verdict(findings, human_blockers, adr_records)
     computed_status = STATUS_COMPLETE if verdict == _REVIEW_APPROVE else STATUS_REVIEW
+
+    # issue #100: a human blocker with otherwise-clean findings gets a free
+    # re-invoke (not counted against review_loop.max_cycles) -- distinguish
+    # that from findings themselves blocking, which is a normal cycle.
+    findings_only_verdict = _derive_review_verdict(findings, [], adr_records)
+    human_only_block = (
+        bool(human_blockers)
+        and findings_only_verdict == _REVIEW_APPROVE
+        and verdict != _REVIEW_APPROVE
+    )
 
     outcome_overridden = computed_status != final_status
     if outcome_overridden:
@@ -7140,16 +7213,21 @@ def _apply_outcome_policy(
     _prior_marker = f"ai-agile/artefact/v1 by {agent_def.agent}"
     try:
         _prior_rerun = any(_prior_marker in b for b in gh.list_comment_bodies(work_item.number))
-    except Exception:
+    except Exception as exc:
+        log.warning(
+            "  could not check for a prior artefact on #%d: %s -- rendering as a first run",
+            work_item.number, exc,
+        )
         _prior_rerun = False
 
     rendered = replace(
         step_result,
         output=_render_review_comment(
-            verdict, review.get("head_sha", ""), findings, adr_records, prior_rerun=_prior_rerun,
+            verdict, review.get("head_sha", ""), findings, adr_records,
+            human_blockers=human_blockers, prior_rerun=_prior_rerun,
         ),
     )
-    return computed_status, rendered, "", outcome_overridden
+    return computed_status, rendered, "", outcome_overridden, human_only_block, human_blockers
 
 
 def _apply_result(
@@ -7239,8 +7317,14 @@ def _apply_result(
     # spec, missing data) has nothing to compute a verdict from, and
     # outcome_policy must never turn that into a false APPROVE/REQUEST CHANGES.
     _outcome_overridden = False
+    _outcome_policy_applied = False
+    _human_only_block = False
+    _human_blockers_from_policy: list = []
     if agent_def.outcome_policy and step_result is not None and final_status in (STATUS_COMPLETE, STATUS_REVIEW):
-        final_status, _rendered, _policy_failure, _outcome_overridden = _apply_outcome_policy(
+        (
+            final_status, _rendered, _policy_failure, _outcome_overridden,
+            _human_only_block, _human_blockers_from_policy,
+        ) = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, final_status,
         )
         if _policy_failure:
@@ -7258,6 +7342,7 @@ def _apply_result(
             _remove_run_worktree(pre_agent_worktree)
             return True
         step_result = _rendered
+        _outcome_policy_applied = True
         _post_artefact_if_present(gh, agent_def, work_item, step_result)
     elif agent_def.review_gate and step_result is not None:
         _verdict_mismatch = _check_review_verdict_consistency(final_status, step_result.verdict)
@@ -7310,10 +7395,18 @@ def _apply_result(
     # unresolved human REQUEST_CHANGES reviews exist on the PR. Override
     # final_status to STATUS_REVIEW so _handle_review_loop triggers a free
     # coder re-invoke. HUMAN_REVIEW_PENDING_LABEL guards against a second
-    # free cycle (once-only).
-    final_status, _human_review_override, _human_review_list = _compute_human_review_override(
-        agent_def, work_item, final_status, labels, gh,
-    )
+    # free cycle (once-only). An outcome_policy step already resolved this
+    # above (_apply_outcome_policy folds human_blockers into the computed
+    # verdict itself) -- reuse that data instead of a second independent
+    # PR lookup and reviews fetch for the same fact.
+    if _outcome_policy_applied:
+        final_status, _human_review_override, _human_review_list = _human_review_override_from_outcome_policy(
+            work_item, final_status, labels, _human_only_block, _human_blockers_from_policy, gh,
+        )
+    else:
+        final_status, _human_review_override, _human_review_list = _compute_human_review_override(
+            agent_def, work_item, final_status, labels, gh,
+        )
 
     # When an agent with a human gate completes, apply :review rather than
     # :complete so the "needs human action" state is visible consistently.

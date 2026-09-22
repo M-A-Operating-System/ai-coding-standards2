@@ -87,7 +87,7 @@ class TestSchemaPathResolution:
         step_result = _step_result_with_review()
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -103,7 +103,7 @@ class TestMissingOrEmptyReview:
         step_result = StepResult(outcome="complete", summary="done", review={})
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -118,7 +118,7 @@ class TestMissingOrEmptyReview:
         step_result = _step_result_with_review(head_sha="", findings=[])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -138,7 +138,7 @@ class TestDuplicateFindingIds:
         step_result = _step_result_with_review(findings=[finding, dict(finding)])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -157,7 +157,7 @@ class TestSchemaValidation:
         step_result = _step_result_with_review(findings=[finding])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -177,12 +177,34 @@ class TestSchemaValidation:
         step_result = _step_result_with_review(findings=[finding])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
         assert failure == ""
         assert status == STATUS_REVIEW  # Critical finding blocks
+
+    def test_standard_category_without_standard_field_fails_closed(self):
+        """A schema-valid-but-nonsensical finding: category "standard" with
+        no standard cited. Without this, an ADR exception naming a real
+        standard could never match (finding_blocks needs both adr and
+        standard set), so a valid exception would silently fail to apply --
+        better to reject the finding upfront than let that happen quietly."""
+        agent_def = _pr_reviewer_agent_def()
+        work_item = _issue_work_item()
+        finding = {
+            "id": "RV-001", "title": "t", "severity": "High", "category": "standard",
+            "confidence": 1.0, "evidence": "e", "fix": "f",
+        }
+        step_result = _step_result_with_review(findings=[finding])
+        gh = _make_gh_mock()
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE,
+        )
+
+        assert failure != ""
+        assert rendered is None
 
 
 class TestHumanBlockerPrNumberResolution:
@@ -201,12 +223,16 @@ class TestHumanBlockerPrNumberResolution:
              "submitted_at": "2026-01-01T00:00:00Z"},
         ]
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
         gh.get_pr_reviews.assert_called_once_with(99)
         assert status == STATUS_REVIEW, "an unresolved human REQUEST_CHANGES must block"
+        assert "@alice" in rendered.output, (
+            "the rendered comment must name the blocking reviewer, not just say "
+            "REQUEST CHANGES with zero findings and no explanation"
+        )
 
     def test_issue_kind_work_item_resolves_pr_via_branch_lookup(self):
         agent_def = _pr_reviewer_agent_def()
@@ -245,7 +271,7 @@ class TestOutcomeOverride:
         step_result = _step_result_with_review(findings=[finding])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -259,9 +285,77 @@ class TestOutcomeOverride:
         step_result = _step_result_with_review(findings=[])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
         assert status == STATUS_COMPLETE
         assert overridden is False
+
+
+class TestHumanOnlyBlock:
+    """issue #100's once-only free-re-invoke exemption, reworked for
+    outcome_policy: distinguishes "a human blocker is the sole reason for
+    REQUEST CHANGES" (free cycle, HUMAN_REVIEW_PENDING_LABEL-guarded, once)
+    from "findings also block" (a normal review-loop cycle) -- without this,
+    every cycle spent waiting on a human reviewer to re-approve would count
+    against review_loop.max_cycles and could escalate to human sign-off from
+    cycle exhaustion alone (found independently by two /code-review angles
+    on PR #513)."""
+
+    def test_human_blocker_with_clean_findings_is_human_only_block(self):
+        agent_def = _pr_reviewer_agent_def()
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(findings=[])
+        gh = _make_gh_mock()
+        gh.find_pr_by_branch.return_value = 77
+        gh.get_pr_reviews.return_value = [
+            {"user": {"login": "alice", "type": "User"}, "state": "CHANGES_REQUESTED",
+             "submitted_at": "2026-01-01T00:00:00Z"},
+        ]
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE,
+        )
+
+        assert status == STATUS_REVIEW
+        assert human_only_block is True
+        assert len(human_blockers_out) == 1
+
+    def test_human_blocker_with_blocking_finding_is_not_human_only_block(self):
+        """A human blocker AND a blocking finding both push to REQUEST
+        CHANGES, but the cycle is not "free" -- there's a real finding for
+        coder to act on."""
+        agent_def = _pr_reviewer_agent_def()
+        work_item = _issue_work_item()
+        finding = {
+            "id": "RV-001", "title": "t", "severity": "Critical", "category": "correctness",
+            "confidence": 1.0, "evidence": "e", "fix": "f",
+        }
+        step_result = _step_result_with_review(findings=[finding])
+        gh = _make_gh_mock()
+        gh.find_pr_by_branch.return_value = 77
+        gh.get_pr_reviews.return_value = [
+            {"user": {"login": "alice", "type": "User"}, "state": "CHANGES_REQUESTED",
+             "submitted_at": "2026-01-01T00:00:00Z"},
+        ]
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE,
+        )
+
+        assert status == STATUS_REVIEW
+        assert human_only_block is False
+
+    def test_no_human_blocker_is_not_human_only_block(self):
+        agent_def = _pr_reviewer_agent_def()
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(findings=[])
+        gh = _make_gh_mock()
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE,
+        )
+
+        assert status == STATUS_COMPLETE
+        assert human_only_block is False

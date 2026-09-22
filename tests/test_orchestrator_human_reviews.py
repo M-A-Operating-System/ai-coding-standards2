@@ -41,6 +41,7 @@ def _invoke_agent_writing_result(outcome="complete", **fields):
                 "message": fields.get("message", ""),
                 "output": fields.get("output", ""),
                 "verdict": fields.get("verdict", ""),
+                "review": fields.get("review", {}),
                 "expected_effect": fields.get("expected_effect", {}),
                 "label_requests": fields.get("label_requests", []),
             }
@@ -553,6 +554,155 @@ class TestProcessWorkItemHumanReviewGuard:
         applied = [c.args[1] for c in gh.add_label.call_args_list]
         assert not any(l.startswith("review-cycle:") for l in applied), (
             "Empty human reviews must not trigger a free re-invoke"
+        )
+
+
+# ---------------------------------------------------------------------------
+# issue #100's once-only free re-invoke, exercised against the actual
+# production shape of pr-reviewer's AgentDef -- pipeline.json sets both
+# review_gate and outcome_policy on the one review_gate step, so
+# TestProcessWorkItemHumanReviewGuard above (review_gate only, no
+# outcome_policy) never drives the code path production actually uses.
+# Found independently by two /code-review angles on PR #513: without this,
+# a human blocker with otherwise-clean findings would silently consume a
+# normal review-loop cycle instead of the once-only free one, risking
+# premature escalation to human sign-off purely from cycle exhaustion.
+# ---------------------------------------------------------------------------
+
+class TestOutcomePolicyHumanReviewGuard:
+    def _make_pr_reviewer_def(self):
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test pr-reviewer",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            review_gate=True,
+            outcome_policy={"kind": "review_findings", "schema": "pipeline/schemas/pr-review.schema.json"},
+            review_loop={
+                "re_invoke": "03_execute/coder",
+                "max_cycles": 3,
+                "also_clear": [],
+            },
+        )
+
+    def _make_coder_def(self):
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "prd-writer:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test coder",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+        )
+
+    def _make_gh_for_process(self, *, find_pr_branch_return=99, reviews=None, current_labels=None):
+        gh = MagicMock()
+        gh.add_label = MagicMock()
+        gh.remove_label = MagicMock()
+        gh.post_comment = MagicMock()
+        # _handle_review_loop's own HUMAN_REVIEW_PENDING_LABEL cleanup reads
+        # the *refreshed* label set (gh.get_issue_labels, called after
+        # outcome_policy runs), not the work item's initial labels -- so
+        # this must reflect what is actually still on the issue at that
+        # point, same as a real gh.get_issue_labels call would.
+        gh.get_issue_labels = MagicMock(return_value=current_labels or set())
+        gh.find_pr_by_branch = MagicMock(return_value=find_pr_branch_return)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+        gh.mark_pr_ready = MagicMock()
+        gh.list_comment_bodies = MagicMock(return_value=[])
+        gh.get_pr_reviews = MagicMock(return_value=reviews if reviews is not None else [])
+        return gh
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_human_blocker_with_clean_findings_grants_free_cycle_not_normal_one(self, mock_invoke):
+        """The verdict is computed complete/APPROVE-equivalent from findings
+        alone (empty review.findings), but an unresolved human REQUEST_CHANGES
+        review still applies HUMAN_REVIEW_PENDING_LABEL and does not consume
+        a review-cycle slot."""
+        mock_invoke.side_effect = _invoke_agent_writing_result(
+            "complete", verdict="APPROVE", review={"head_sha": "abc", "findings": []},
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process(reviews=[
+            {"user": {"login": "alice", "type": "User"}, "state": "CHANGES_REQUESTED",
+             "submitted_at": "2026-01-01T00:00:00Z"},
+        ])
+        wi = WorkItem(
+            # A distinctive issue number: _scratch_path is a real, unmocked
+            # /tmp path keyed on (agent, number, repo, kind) with no cleanup
+            # between tests -- a small/common number here has previously
+            # collided with an unrelated test's own real result.json for the
+            # same agent, silently reading its stale outcome.
+            number=590155, kind="issue", title="test issue",
+            labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/590155",
+        )
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert HUMAN_REVIEW_PENDING_LABEL in applied, (
+            "an unresolved human REQUEST_CHANGES with clean findings must "
+            "still grant the once-only free re-invoke"
+        )
+        assert not any(l.startswith("review-cycle:") for l in applied), (
+            "a human-only block must not consume a normal review-loop cycle"
+        )
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_second_occurrence_with_label_present_is_a_normal_cycle(self, mock_invoke):
+        """Once HUMAN_REVIEW_PENDING_LABEL is already present, a second
+        unresolved human review does not get a second free pass."""
+        mock_invoke.side_effect = _invoke_agent_writing_result(
+            "complete", verdict="APPROVE", review={"head_sha": "abc", "findings": []},
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process(
+            reviews=[
+                {"user": {"login": "alice", "type": "User"}, "state": "CHANGES_REQUESTED",
+                 "submitted_at": "2026-01-01T00:00:00Z"},
+            ],
+            current_labels={"merge-conflict:complete", HUMAN_REVIEW_PENDING_LABEL, "pr-reviewer:review"},
+        )
+        wi = WorkItem(
+            number=590156, kind="issue", title="test issue",
+            labels={"merge-conflict:complete", HUMAN_REVIEW_PENDING_LABEL},
+            url="https://github.com/test/repo/issues/590156",
+        )
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        # review-cycle:N is applied at the *next* dispatch of the re_invoke
+        # target (coder), not synchronously inside this one pr-reviewer tick
+        # -- so the observable signal here is that the stale
+        # HUMAN_REVIEW_PENDING_LABEL from the spent free cycle gets removed,
+        # not re-applied a second time, because _handle_review_loop's normal
+        # (non-free) path superseded it.
+        added = [c.args[1] for c in gh.add_label.call_args_list]
+        removed = [c.args[1] for c in gh.remove_label.call_args_list]
+        assert HUMAN_REVIEW_PENDING_LABEL not in added, (
+            "a second consecutive human block must not grant a second free cycle"
+        )
+        assert HUMAN_REVIEW_PENDING_LABEL in removed, (
+            "the spent free-cycle label must be cleared, not left in place, "
+            "once a normal (non-free) cycle supersedes it"
         )
 
 

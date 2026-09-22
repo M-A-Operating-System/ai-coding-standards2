@@ -193,6 +193,19 @@ class TestRenderReviewComment:
         body = render_review_comment(APPROVE, "abc123", [], [])
         assert "No findings." in body
 
+    def test_human_blockers_are_named_even_with_no_findings(self):
+        """A REQUEST CHANGES verdict driven purely by an unresolved human
+        review must not read as unexplained -- the old HR-001 finding this
+        replaces named the blocking reviewer; the render must too."""
+        blockers = [{"user": {"login": "alice", "type": "User"}, "state": "CHANGES_REQUESTED"}]
+        body = render_review_comment(REQUEST_CHANGES, "abc123", [], [], human_blockers=blockers)
+        assert "@alice" in body
+        assert "REQUEST_CHANGES" in body or "REQUEST CHANGES" in body
+
+    def test_no_human_blockers_line_when_none_present(self):
+        body = render_review_comment(APPROVE, "abc123", [], [], human_blockers=[])
+        assert "Unresolved human" not in body
+
     def test_rerun_flag_headers_as_rerun(self):
         body = render_review_comment(APPROVE, "abc123", [], [], prior_rerun=True)
         assert "(Re-run)" in body

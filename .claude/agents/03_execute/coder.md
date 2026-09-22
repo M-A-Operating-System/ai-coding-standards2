@@ -363,9 +363,20 @@ range early and truncate the JSON.
 
 ```bash
 JSON_START_LINE=$(printf '%s' "$LATEST_REVIEW" | grep -n '^```json$' | tail -1 | cut -d: -f1)
-REVIEW_JSON=$(printf '%s' "$LATEST_REVIEW" | tail -n +"$((JSON_START_LINE + 1))" | sed '$d')
-echo "$REVIEW_JSON" | jq -c '.findings[] | select(.blocking == true)'
+if [ -n "$JSON_START_LINE" ]; then
+  REVIEW_JSON=$(printf '%s' "$LATEST_REVIEW" | tail -n +"$((JSON_START_LINE + 1))" | sed '$d')
+  echo "$REVIEW_JSON" | jq -c '.findings[] | select(.blocking == true)'
+fi
 ```
+
+No fenced JSON block found (`$JSON_START_LINE` empty) means one of two things:
+no prior pr-reviewer artefact exists yet (nothing to filter -- proceed as
+normal), or `$LATEST_REVIEW` is non-empty but predates issue #512's
+structured format (an artefact posted by the old prompt, prose only). In
+the second case, do not pipe `$LATEST_REVIEW` into `jq` -- it is not JSON
+and will error. Read it as prose instead, the way Mode B always used to,
+and treat every non-trivial finding in it as Required -- the old format
+carried no `blocking` computation to defer to.
 
 ---
 

@@ -13,6 +13,7 @@ it does not grow the one file ADR-001 already tracks as over its own
 line budget.
 """
 import json
+from typing import Optional
 
 APPROVE = "APPROVE"
 REQUEST_CHANGES = "REQUEST CHANGES"
@@ -119,6 +120,7 @@ def render_review_comment(
     findings: list[dict],
     adr_records: list[dict],
     *,
+    human_blockers: Optional[list] = None,
     prior_rerun: bool = False,
 ) -> str:
     """Render the artefact body the orchestrator posts on APPROVE would-be
@@ -133,7 +135,13 @@ def render_review_comment(
     coder.md's Mode B never has to re-derive which findings block from
     severity/confidence/ADR data on its own (issue #512, "Coder reads the
     rendered findings").
+
+    human_blockers (raw GitHub review objects, unresolved REQUEST_CHANGES)
+    take priority over every finding in derive_review_verdict; the render
+    must say so too, or a REQUEST CHANGES verdict with zero findings reads
+    as unexplained -- and gives coder's Mode B nothing to act on.
     """
+    human_blockers = human_blockers or []
     adr_index = adr_exception_index(adr_records)
     ordered = sort_findings(findings)
     counts: dict[str, int] = {}
@@ -147,6 +155,15 @@ def render_review_comment(
     lines = [f"## PR Review{' (Re-run)' if prior_rerun else ''}", ""]
     lines.append(f"**Verdict: {verdict}**")
     lines.append(f"**Reviewed SHA:** `{head_sha}`")
+    if human_blockers:
+        reviewers = ", ".join(
+            f"@{b.get('user', {}).get('login', '?')}" for b in human_blockers
+        )
+        lines.append(
+            f"**Unresolved human REQUEST_CHANGES:** {reviewers} -- takes priority "
+            "over automated findings; each reviewer must APPROVE or have their "
+            "review dismissed to clear the block."
+        )
     lines.append(f"**Summary:** {summary}")
     lines.append("")
 

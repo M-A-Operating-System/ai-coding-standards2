@@ -78,6 +78,12 @@
           "enum": ["fix-now", "defer-ok"],
           "description": "Temporary field, kept only while the prompt still classifies findings this way (issue #512 Part 2 notes). A Low/Informational defer-ok finding does not block."
         }
+      },
+      "if": {
+        "properties": { "category": { "const": "standard" } }
+      },
+      "then": {
+        "required": ["standard"]
       }
     }
   }
