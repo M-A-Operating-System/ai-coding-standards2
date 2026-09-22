@@ -76,6 +76,7 @@ a Linux runner (as `--full --force`), and what you would run locally with
 | Link CLAUDE.md | Links the root-level `CLAUDE.md` to `.claude/CLAUDE.md` (a byte-copy on Windows). Also runs during `--seed`, so this step is a no-op here for a repo onboarded that way; it exists here too for a developer who runs `--full` directly. Never overwrites a project's own pre-existing `CLAUDE.md` without `--force` |
 | Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`, `CLAUDE.md`) so they are not committed as normal files; the setup job force-commits the symlink blobs. The `adrs/` folder is NOT gitignored — it stays committed |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
+| Lock .claude read-only | On Linux/macOS: removes write permission from the submodule's `.claude/` directory and each file under it (directory: `0o555`; files: `0o444`), so any write attempt against the real target fails with a permission error rather than silently succeeding. On Windows: sets the read-only file attribute on each file under the `.claude/` copy. **Skipped when `get_started.py` detects it is running inside `ai-coding-standards2` itself** — the framework source repo, where `.claude/` is a real version-controlled directory that agents must be able to edit. |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 
 Use `--force` to overwrite existing files; `--dry-run` to preview without writing.
@@ -93,6 +94,7 @@ the managed paths.
 | `.claude` | Whole-folder directory symlink into the submodule — committed by the setup job as a tiny git blob; gitignored as a normal path | Full copy of the tree — gitignored, committed by the setup job |
 | `standards` | Whole-folder directory symlink into the submodule — committed by the setup job; gitignored as a normal path | Full copy of the tree — gitignored, committed by the setup job |
 | `adrs/` | Real local folder, committed normally (never symlinked, never overwritten) | Real local folder, committed normally |
+| `.claude` read-only lock | Directory (`0o555`) and files (`0o444`) locked after `--full` onboarding; toggled off before `git submodule update` and re-applied after, when the Onboard job re-runs | Read-only file attribute set on each file after `--full` onboarding; cleared and re-set when the Onboard job re-runs after a pointer bump |
 | Bootstrap path | `--seed` commit → trigger setup job | `--seed` commit → trigger setup job |
 
 ### Why the split?
@@ -189,6 +191,13 @@ consuming repo ever needs its symlinks re-laid or new-agent labels created after
 such a bump, re-run the Onboard job (`get_started.py --full --force` + label
 bootstrap).
 
+**Updating a locked consuming repo.** After onboarding, the submodule's `.claude/`
+directory is locked read-only (see "Lock .claude read-only" in the `--full` table
+above). On Linux/macOS, bumping the submodule pointer is enough — the symlinks
+resolve live and there are no locked files to update. On Windows, the copied tree
+must be refreshed: the Onboard job (`get_started.py --full --force`) temporarily
+restores write permission, re-copies the updated tree, then re-applies the lock.
+
 ---
 
 ## Managed paths and .gitignore
@@ -243,7 +252,7 @@ The orchestrator resolves two kinds of path, from two different roots:
 | Root | How it is derived | Used for |
 |---|---|---|
 | `SUBMODULE_ROOT` | From `__file__` (the location of `pipeline_orchestrator.py`), **never** from an env var | The framework's own files: agent prompts (`.claude/agents/*.md`), agent scripts, `status.sh`, `AGENTS.md`, `pipeline.json` |
-| `AI_AGILE_ROOT` env var | The consuming repo root (set to `${{ github.workspace }}` by the installed `ai_orchestrator.yml`; falls back to `SUBMODULE_ROOT` when unset) | Repo-root data and runtime markers: the `standards/` symlink, the local `adrs/adrs.json`, the `.pipeline-stop` / `.pipeline-pause` markers, and the value passed to each agent subprocess |
+| `AI_AGILE_ROOT` env var | The consuming repo root (set to `${{ github.workspace }}` by the installed `ai_orchestrator.yml`; falls back to `SUBMODULE_ROOT` when unset) | Repo-root data and runtime markers: the `standards/` symlink, the local `adrs/adrs.json`, the `.pipeline-stop` / `.pipeline-pause` markers, agent worktrees (relocated off `.claude/` so the read-only lock does not block worktree creation), and the value passed to each agent subprocess |
 
 The split is what makes the framework self-contained: because agent
 prompts, scripts, and `status.sh` always resolve from `SUBMODULE_ROOT`, the
