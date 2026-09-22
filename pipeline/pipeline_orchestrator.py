@@ -5124,7 +5124,7 @@ def _recover_unpushed_commits(issue_branch: str) -> None:
     .github/scripts/recover-unpushed-commits.sh. This function only resolves
     the script, invokes it, and relays its diagnostic output -- never raises.
 
-    Invoked with no env= override (STD-SEC-022 exception, ADR-002): the
+    Invoked with no env= override (STD-SEC-022 exception, ADR-003): the
     GIT_CONFIG_COUNT/GIT_CONFIG_KEY_N/GIT_CONFIG_VALUE_N git-push auth
     header main() sets up is a dynamically-numbered family, not a fixed set
     of names -- a static allowlist naming only *_0 silently produces a
