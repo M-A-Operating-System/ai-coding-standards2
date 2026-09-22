@@ -10,6 +10,10 @@ Covers:
   discovered after a full Step 4 investigation), no unconditional repository-wide
   scan in the normal path, Step 3 does not re-fetch the parent issue, and repeated
   evidence gathering within one invocation is guarded against
+- Issue #502: Mode B's Step 9 (read review feedback) must be the first
+  instructed action, ahead of the working-tree check, so a run cannot reach
+  a "nothing to do" conclusion from git log/git status/tests without ever
+  reading the pr-reviewer artefact
 
 Gherkin scenarios traced:
   - scenario_coder_reinvoked_with_human_review_context
@@ -17,6 +21,7 @@ Gherkin scenarios traced:
   - coder_consumes_orchestrator_supplied_invocation_mode
   - coder_md_mode_b_instructions_require_addressing_each_finding_before_no_commit_exit
   - coder_mode_b_does_not_exit_complete_with_no_commits_while_fixable_finding_remains_open
+  - coder_md_mode_b_reads_feedback_before_any_other_action
 """
 import re
 from pathlib import Path
@@ -327,6 +332,61 @@ class TestCoderModeBDoesNotExitCompleteWithNoCommitsWhileAFixableRequestChangesF
         assert "already present" in lower or "original implementation" in lower, (
             "coder.md Mode B intro must explicitly state that finding the original "
             "implementation on the branch is not sufficient for a zero-commit exit"
+        )
+
+
+class TestCoderMdModeBReadsFeedbackBeforeAnyOtherAction:
+    """Scenario: coder Mode B reads review feedback before any other action.
+
+    Issue #502: a zero-commit-exit check applied only at exit does not stop a
+    run that never reaches it -- two consecutive Mode B invocations declared
+    `outcome: "complete"` after only `git log`/`git status`/the test suite,
+    never calling the Step 9 `gh api` reads at all. Step 9 (reading the
+    pr-reviewer artefact and PR reviews) must be the first instructed action
+    of Mode B, ahead of any other check, with an explicit directive naming
+    the shortcut it forbids.
+
+    Given coder.md's Mode B section
+    When a reader follows it in document order
+    Then Step 9's reads are the first action, before the working-tree check,
+    and the step explicitly forbids running git log/git status/git diff/tests
+    first
+    """
+
+    def test_step_9_precedes_the_working_tree_check(self):
+        text = _load_coder_text()
+        step_9_idx = text.index("## Step 9 ")
+        tree_check_idx = text.index("Confirm the working tree matches the PR head")
+        assert step_9_idx < tree_check_idx, (
+            "coder.md Step 9 (read review feedback) must appear before the "
+            "working-tree-matches-PR-head check in Mode B, so reading "
+            "feedback cannot be skipped by reaching that check first"
+        )
+
+    def test_step_9_is_stated_as_the_first_action(self):
+        text = _load_coder_text()
+        b1 = _extract_b1(text)
+        lower = b1.lower()
+        assert "first" in lower, (
+            "coder.md Step 9 must state that it is the first action of Mode B"
+        )
+
+    def test_step_9_forbids_git_status_and_tests_before_it(self):
+        text = _load_coder_text()
+        b1 = _extract_b1(text)
+        lower = b1.lower()
+        assert "git log" in lower and "git status" in lower, (
+            "coder.md Step 9 must explicitly name git log/git status as "
+            "commands not to run before its reads"
+        )
+
+    def test_zero_commit_exit_rule_cross_references_step_9(self):
+        text = _load_coder_text()
+        intro = _extract_mode_b_intro(text)
+        assert "step 9" in intro.lower(), (
+            "coder.md's zero-commit exit rule must reference Step 9 by name, "
+            "so it reads as presuming Step 9 has already run rather than a "
+            "rule that could be satisfied without having read anything"
         )
 
 
