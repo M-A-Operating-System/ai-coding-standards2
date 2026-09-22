@@ -172,3 +172,43 @@ class TestPrReviewerDescriptionMentionsHumanBlock:
             "pr-reviewer.md description must mention the human review hard block. "
             "Run: python3 scripts/update_agent_files.py"
         )
+
+
+class TestPrReviewerPriorArtefactLookupReadsFromIssueNotPr:
+    """Issue #510: _post_artefact_if_present posts every step's artefact to
+    work_item.number, which for the issue-kind pr-reviewer step is the
+    issue -- never the PR. pr-reviewer's own PRIOR lookup (Step 0) queried
+    issues/$PR_NUMBER/comments instead, so it could never find its own prior
+    artefact, defeating the re-run detection this lookup exists for.
+
+    Given pr-reviewer.md's Step 0 PRIOR-artefact lookup
+    When a reader inspects the gh api call carrying the
+    "ai-agile/artefact/v1 by 03_execute/pr-reviewer" marker
+    Then it queries issues/$ISSUE_NUMBER/comments, not issues/$PR_NUMBER/comments
+    """
+
+    def _artefact_lookup_line(self, text: str) -> str:
+        for line in text.splitlines():
+            if "ai-agile/artefact/v1 by 03_execute/pr-reviewer" in line:
+                return line
+        return ""
+
+    def test_prior_lookup_queries_issue_number(self):
+        text = _load_pr_reviewer_text()
+        line = self._artefact_lookup_line(text)
+        assert line, "PRIOR-artefact lookup line not found in pr-reviewer.md"
+        assert "issues/$ISSUE_NUMBER/comments" in line, (
+            "pr-reviewer.md's PRIOR-artefact lookup must query "
+            "issues/$ISSUE_NUMBER/comments -- its own artefact is posted "
+            "to the issue, not the PR (issue #510)"
+        )
+
+    def test_prior_lookup_does_not_query_pr_number(self):
+        text = _load_pr_reviewer_text()
+        line = self._artefact_lookup_line(text)
+        assert line, "PRIOR-artefact lookup line not found in pr-reviewer.md"
+        assert "issues/$PR_NUMBER/comments" not in line, (
+            "pr-reviewer.md's PRIOR-artefact lookup must not query "
+            "issues/$PR_NUMBER/comments -- that thread never receives its "
+            "artefact (issue #510)"
+        )

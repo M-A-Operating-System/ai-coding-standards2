@@ -334,7 +334,7 @@ conclusion about "nothing to do" without first knowing what the reviewer
 actually found.
 
 ```bash
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
   | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
 
 gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --jq '.[]' \

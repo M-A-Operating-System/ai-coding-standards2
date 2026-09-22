@@ -74,10 +74,10 @@ If `$PR_NUMBER` is empty, write `$AI_AGILE_SCRATCH/result.json` with
 and stop; do not proceed to the steps below.
 
 ```bash
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty'
+gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .id] | last // empty'
 ```
 
-Record that output as `PRIOR` -- your previous artefact on this PR, if any. If it is set, head this
+Record that output as `PRIOR` -- your previous artefact on this issue, if any. If it is set, head this
 run's artefact `## PR Review (Re-run)` and read the prior one to see what you
 found last time. It is not an edit target -- artefacts are append-only (P-11).
 
