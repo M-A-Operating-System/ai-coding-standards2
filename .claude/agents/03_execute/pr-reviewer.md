@@ -80,6 +80,9 @@ Read only those relevant records from `${AI_AGILE_ROOT}/standards` and
 `authorises_exception_to` explicitly names the cited standard; otherwise it is
 context, not an exemption.
 
+If `standards/` is absent or empty, the P-1 to P-16 principles in `AGENTS.md`
+are the only standards in force.
+
 ## Step 3 — Review the change once
 
 Evaluate the same evidence in one integrated pass. Report only defects supported

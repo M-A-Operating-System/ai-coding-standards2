@@ -133,12 +133,10 @@ class TestFindingBlocks:
                       standard="STD-ARCH-035", adr="ADR-999")
         assert finding_blocks(f, {}) is True
 
-    def test_defer_ok_low_severity_does_not_block(self):
+    def test_obsolete_effort_metadata_does_not_change_the_outcome(self):
+        """Older producers may still send effort until all callers update;
+        outcome computation is based only on the supported dimensions."""
         f = _finding(severity="Low", confidence=1.0, effort="defer-ok")
-        assert finding_blocks(f, {}) is False
-
-    def test_defer_ok_medium_severity_still_blocks(self):
-        f = _finding(severity="Medium", confidence=1.0, effort="defer-ok")
         assert finding_blocks(f, {}) is True
 
 

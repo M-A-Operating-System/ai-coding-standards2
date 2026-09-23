@@ -73,11 +73,6 @@
         "adr": {
           "type": "string",
           "description": "An ADR ID the finding claims covers it. Verified against adrs.json's own authorises_exception_to, never trusted from this claim alone (review_outcome.adr_exception_index)."
-        },
-        "effort": {
-          "type": "string",
-          "enum": ["fix-now", "defer-ok"],
-          "description": "Temporary field, kept only while the prompt still classifies findings this way (issue #512 Part 2 notes). A Low/Informational defer-ok finding does not block."
         }
       },
       "if": {

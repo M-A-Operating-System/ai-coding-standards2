@@ -62,9 +62,7 @@ def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     - it cites an ADR whose authorises_exception_to actually lists the
       finding's standard, verified against adrs.json rather than trusted
       from the finding's own claim;
-    - it is not Critical and its confidence is below 0.8;
-    - (temporary, while the prompt still uses fix-now/defer-ok) it is
-      "defer-ok" and its severity is Low or Informational.
+    - it is not Critical and its confidence is below 0.8.
     """
     severity = finding.get("severity")
 
@@ -78,9 +76,6 @@ def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
 
     confidence = finding.get("confidence", 1.0)
     if severity != "Critical" and confidence < _NON_BLOCKING_CONFIDENCE_THRESHOLD:
-        return False
-
-    if finding.get("effort") == "defer-ok" and severity in ("Low", "Informational"):
         return False
 
     return True
