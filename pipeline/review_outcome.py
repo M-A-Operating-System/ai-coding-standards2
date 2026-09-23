@@ -55,7 +55,10 @@ def adr_exception_index(adr_records: list[dict], standards_by_id: dict[str, dict
 def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     """A finding blocks APPROVE unless one of these holds (issue #512):
 
-    - its category is "improvement";
+    - it is not Critical and its category is "improvement" -- "Critical" and
+      "improvement" are contradictory (severity says how bad; category says
+      what kind), so a Critical finding always blocks regardless of its
+      self-reported category, same as every other exemption below;
     - it cites an ADR whose authorises_exception_to actually lists the
       finding's standard, verified against adrs.json rather than trusted
       from the finding's own claim;
@@ -63,7 +66,9 @@ def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     - (temporary, while the prompt still uses fix-now/defer-ok) it is
       "defer-ok" and its severity is Low or Informational.
     """
-    if finding.get("category") == "improvement":
+    severity = finding.get("severity")
+
+    if finding.get("category") == "improvement" and severity != "Critical":
         return False
 
     adr_id = finding.get("adr")
@@ -71,7 +76,6 @@ def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     if adr_id and standard and standard in adr_index.get(adr_id, ()):
         return False
 
-    severity = finding.get("severity")
     confidence = finding.get("confidence", 1.0)
     if severity != "Critical" and confidence < _NON_BLOCKING_CONFIDENCE_THRESHOLD:
         return False

@@ -87,13 +87,22 @@ class TestAdrExceptionIndex:
 
 
 class TestFindingBlocks:
-    def test_improvement_category_never_blocks(self):
-        f = _finding(category="improvement", severity="Critical", confidence=1.0)
+    def test_improvement_category_does_not_block_for_non_critical_severity(self):
+        f = _finding(category="improvement", severity="Medium", confidence=1.0)
         assert finding_blocks(f, {}) is False
 
     def test_critical_finding_always_blocks_regardless_of_confidence(self):
         """Gherkin: Critical finding always blocks."""
         f = _finding(severity="Critical", confidence=0.3)
+        assert finding_blocks(f, {}) is True
+
+    def test_critical_finding_blocks_even_when_labeled_improvement(self):
+        """"Critical" and "improvement" are contradictory -- severity says
+        how bad a finding is, category says what kind it is. A finding
+        cannot be both "so bad it must block" and "purely optional." Closes
+        the gap /code-review found: a real Critical bug mislabeled
+        category="improvement" must not silently exempt itself."""
+        f = _finding(category="improvement", severity="Critical", confidence=1.0)
         assert finding_blocks(f, {}) is True
 
     def test_low_confidence_non_critical_finding_does_not_block(self):

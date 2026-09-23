@@ -7,8 +7,8 @@ description: >
   findings as structured data; the orchestrator computes the APPROVE or
   REQUEST CHANGES verdict from them (outcome_policy: review_findings). A
   Critical finding always blocks; a non-Critical finding below 0.8
-  confidence, an improvement-category finding, or one covered by a verified
-  ADR exception does not.
+  confidence, a non-Critical improvement-category finding, or one covered by
+  a verified ADR exception does not.
   Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on
   the PR -- this is a hard block regardless of automated findings. On APPROVE
   with no unresolved human reviews, marks the PR ready for human review.
@@ -367,8 +367,12 @@ unless it is also Low or Informational severity.
   would require a new test written from scratch.
 
 Genuinely subjective findings (style preferences, naming suggestions,
-"consider refactoring X") are always `category: "improvement"` -- these
-never block, regardless of severity.
+"consider refactoring X") are `category: "improvement"` -- these never block
+at non-Critical severity. "Critical" and "improvement" are contradictory,
+though: if a finding is truly optional, don't rate it Critical to make a
+point, and if it is genuinely Critical, it isn't an "improvement" -- label
+it by what it actually is (correctness, security, etc.) so it blocks like
+any other Critical finding.
 
 ---
 
@@ -376,8 +380,8 @@ never block, regardless of severity.
 
 The orchestrator computes the actual verdict from your `findings` array
 (issue #512): a Critical finding always blocks; a non-Critical finding
-below 0.8 confidence, an `improvement`-category finding, or one covered by
-a verified ADR exception does not; `$HUMAN_BLOCK_REVIEWERS` is checked
+below 0.8 confidence, a non-Critical `improvement`-category finding, or one
+covered by a verified ADR exception does not; `$HUMAN_BLOCK_REVIEWERS` is checked
 independently of your findings. Your own `$VERDICT`/`outcome` are advisory
 -- set `$VERDICT` to your best-effort read of the same rule (REQUEST
 CHANGES if `$HUMAN_BLOCK_REVIEWERS` is non-empty or any finding looks
