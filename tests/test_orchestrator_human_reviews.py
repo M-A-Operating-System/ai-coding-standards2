@@ -719,6 +719,50 @@ class TestOutcomePolicyHumanReviewGuard:
         )
 
     @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_overridden_outcome_updates_closing_announcement_summary(self, mock_invoke):
+        """Found by /code-review: when the code-computed verdict overrides
+        the model's own report, the closing-announcement audit-trail comment
+        must not pair the corrected outcome with the model's now-stale
+        advisory summary."""
+        critical_finding = {
+            "id": "RV-001", "title": "t", "severity": "Critical", "category": "correctness",
+            "confidence": 1.0, "evidence": "e", "fix": "f",
+        }
+        mock_invoke.side_effect = _invoke_agent_writing_result(
+            "complete", verdict="APPROVE", message="Verdict (advisory): APPROVE.",
+            review={"head_sha": "abc", "findings": [critical_finding]},
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process()
+        wi = WorkItem(
+            number=590157, kind="issue", title="test issue",
+            labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/590157",
+        )
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        # "ai-agile/announcement/v1" also marks the opening announcement
+        # (_build_opening_announcement) -- filter to the closing one.
+        announcement_calls = [
+            c for c in gh.post_comment.call_args_list
+            if "ai-agile/announcement/v1" in c.args[1] and '"phase": "end"' in c.args[1]
+        ]
+        assert len(announcement_calls) == 1
+        announcement_body = announcement_calls[0].args[1]
+        assert '"outcome": "review"' in announcement_body, (
+            "a Critical finding must compute REQUEST CHANGES (:review), "
+            "overriding the model's own :complete report"
+        )
+        assert "Verdict (advisory): APPROVE." not in announcement_body, (
+            "the closing announcement must not carry the model's stale "
+            "advisory summary once outcome_policy has overridden it"
+        )
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
     def test_second_occurrence_with_label_present_is_a_normal_cycle(self, mock_invoke):
         """Once HUMAN_REVIEW_PENDING_LABEL is already present, a second
         unresolved human review does not get a second free pass."""

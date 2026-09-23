@@ -6825,16 +6825,24 @@ def _compute_human_review_override(
     ):
         # Free re-invoke already ran (label present) and pr-reviewer APPROVEs
         # again — remove the label before the PR is marked ready.
-        try:
-            gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
-            labels.discard(HUMAN_REVIEW_PENDING_LABEL)
-            work_item.labels = labels
-        except Exception as exc:
-            log.debug(
-                "  could not remove %s on #%d: %s",
-                HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
-            )
+        _clear_human_review_pending_label(gh, work_item, labels)
     return final_status, _human_review_override, _human_review_list
+
+
+def _clear_human_review_pending_label(gh: "GitHubClient", work_item: WorkItem, labels: set) -> None:
+    """Remove HUMAN_REVIEW_PENDING_LABEL once its once-only free cycle is
+    spent -- shared by _compute_human_review_override and
+    _human_review_override_from_outcome_policy, whose cleanup step is
+    otherwise identical."""
+    try:
+        gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
+        labels.discard(HUMAN_REVIEW_PENDING_LABEL)
+        work_item.labels = labels
+    except Exception as exc:
+        log.debug(
+            "  could not remove %s on #%d: %s",
+            HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
+        )
 
 
 def _human_review_override_from_outcome_policy(
@@ -6870,15 +6878,7 @@ def _human_review_override_from_outcome_policy(
     if HUMAN_REVIEW_PENDING_LABEL in labels and final_status == STATUS_COMPLETE:
         # Free re-invoke already ran (label present) and the computed verdict
         # is clean again -- remove the label before the PR is marked ready.
-        try:
-            gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
-            labels.discard(HUMAN_REVIEW_PENDING_LABEL)
-            work_item.labels = labels
-        except Exception as exc:
-            log.debug(
-                "  could not remove %s on #%d: %s",
-                HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
-            )
+        _clear_human_review_pending_label(gh, work_item, labels)
     return final_status, False, []
 
 
@@ -7381,6 +7381,16 @@ def _apply_result(
         step_result = _rendered
         _outcome_policy_applied = True
         _post_artefact_if_present(gh, agent_def, work_item, step_result)
+        if _outcome_overridden:
+            # sentinel_message still holds the model's own stale advisory
+            # text (e.g. "Verdict (advisory): APPROVE.") -- without this,
+            # the closing-announcement audit-trail comment would pair the
+            # corrected outcome with that stale, now-wrong summary.
+            sentinel_message = (
+                f"outcome_policy override: code-computed verdict is "
+                f"{final_status!r}, not the model's own report -- see the "
+                f"posted review comment for findings"
+            )
     elif agent_def.review_gate and step_result is not None:
         _verdict_mismatch = _check_review_verdict_consistency(final_status, step_result.verdict)
         if _verdict_mismatch:
