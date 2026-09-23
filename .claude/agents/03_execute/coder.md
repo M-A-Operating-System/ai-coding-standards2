@@ -334,8 +334,9 @@ conclusion about "nothing to do" without first knowing what the reviewer
 actually found.
 
 ```bash
-gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
-  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty'
+LATEST_REVIEW=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
+  | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty')
+echo "$LATEST_REVIEW"
 
 gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --jq '.[]' \
   | jq -s '[.[] | {author: .user.login, state: .state, body: .body}]'
@@ -350,6 +351,32 @@ HUMAN_BLOCK_REVIEWERS=$(gh api "/repos/${REPO}/pulls/${PR_NUMBER}/reviews" --pag
 gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate --jq '.[]' \
   | jq -s '[.[] | select(.body | contains("ai-agile/artefact/v1") | not) | {author: .user.login, body: .body}]'
 ```
+
+`$LATEST_REVIEW` is the artefact the orchestrator rendered (issue #512) -- it
+embeds a fenced ```` ```json ```` block, always the last thing in the
+comment, with the exact findings it computed a `blocking` status for. Parse
+that block; never re-derive severity/confidence/ADR rules yourself from the
+prose above it. Extract from the *last* opening fence to the end, not a
+`sed` range to the next ```` ``` ````: a finding's own `fix`/`evidence` text
+can legitimately contain a triple-backtick snippet, which would end a naive
+range early and truncate the JSON.
+
+```bash
+JSON_START_LINE=$(printf '%s' "$LATEST_REVIEW" | grep -n '^```json$' | tail -1 | cut -d: -f1)
+if [ -n "$JSON_START_LINE" ]; then
+  REVIEW_JSON=$(printf '%s' "$LATEST_REVIEW" | tail -n +"$((JSON_START_LINE + 1))" | sed '$d')
+  echo "$REVIEW_JSON" | jq -c '.findings[] | select(.blocking == true)'
+fi
+```
+
+No fenced JSON block found (`$JSON_START_LINE` empty) means one of two things:
+no prior pr-reviewer artefact exists yet (nothing to filter -- proceed as
+normal), or `$LATEST_REVIEW` is non-empty but predates issue #512's
+structured format (an artefact posted by the old prompt, prose only). In
+the second case, do not pipe `$LATEST_REVIEW` into `jq` -- it is not JSON
+and will error. Read it as prose instead, the way Mode B always used to,
+and treat every non-trivial finding in it as Required -- the old format
+carried no `blocking` computation to defer to.
 
 ---
 
@@ -375,12 +402,13 @@ the actual PR before acting.
 
 | Category | What it means | Must address? |
 |---|---|---|
-| **Required** | Correctness bug, security issue, spec violation, failing test, unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any pr-reviewer finding tagged `[fix-now]` | Yes |
-| **Expected** | Design improvement, missing guard clause, error handling gap | Yes |
-| **Suggested** | Style preference, future improvement, nice-to-have | No |
+| **Required** | Correctness bug, security issue, spec violation, failing test, unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` | Yes |
+| **Expected** | Design improvement, missing guard clause, error handling gap raised as non-blocking | Yes |
+| **Suggested** | `"category": "improvement"`, or any other non-blocking finding that is a style preference or nice-to-have | No |
 
-A `[fix-now]`-tagged finding is Required regardless of its severity label --
-STD-ARCH-006 applies. It is never Suggested.
+A finding's `blocking` field is the orchestrator's own computation (issue
+#512) -- Required is never something you re-derive from severity or
+confidence yourself.
 
 Do not address Suggested items in code. If a suggestion looks valuable, open
 a follow-up issue.

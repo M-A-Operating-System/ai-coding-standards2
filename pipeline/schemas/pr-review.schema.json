@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "pr-review.schema.json",
+  "title": "AI Agile PR Review",
+  "description": "Schema for result.json's `review` field on a step whose pipeline.json entry declares outcome_policy.kind == \"review_findings\" (issue #512 Part 2). The model reports findings; pipeline_orchestrator.py's review_outcome.derive_review_verdict computes the verdict from them, never the model's own outcome field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["head_sha", "findings"],
+  "properties": {
+    "head_sha": {
+      "type": "string",
+      "description": "The PR head commit SHA this review was performed against. Carried through so a later part can compare it with the live PR head before marking ready (issue #512 Part 3); unused by Part 2's own verdict computation."
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Finding" }
+    }
+  },
+  "definitions": {
+    "Finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "severity", "category", "confidence", "evidence", "fix"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^RV-[0-9]{3,}$",
+          "description": "Unique within this review's findings array -- duplicates are a malformed review (review_outcome.find_duplicate_finding_ids)."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Short imperative title."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["Critical", "High", "Medium", "Low", "Informational"]
+        },
+        "category": {
+          "type": "string",
+          "enum": ["correctness", "spec", "security", "tests", "standard", "consistency", "improvement"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "The reviewer's own confidence this finding is real. A non-Critical finding below 0.8 does not block (review_outcome.finding_blocks)."
+        },
+        "path": {
+          "type": "string",
+          "description": "Repo-relative file path this finding is about. Omit for a finding that is not scoped to one file (e.g. a merge-conflict or missing-base-doc finding)."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Omit alongside path for a finding that is not scoped to one file."
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What in the diff or PR head supports this finding."
+        },
+        "fix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Step-by-step fix precise enough for the coder agent to implement."
+        },
+        "standard": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The P-N or STD ID this finding cites. Required for category \"standard\"; optional otherwise."
+        },
+        "adr": {
+          "type": "string",
+          "description": "An ADR ID the finding claims covers it. Verified against adrs.json's own authorises_exception_to, never trusted from this claim alone (review_outcome.adr_exception_index)."
+        },
+        "effort": {
+          "type": "string",
+          "enum": ["fix-now", "defer-ok"],
+          "description": "Temporary field, kept only while the prompt still classifies findings this way (issue #512 Part 2 notes). A Low/Informational defer-ok finding does not block."
+        }
+      },
+      "if": {
+        "properties": { "category": { "const": "standard" } }
+      },
+      "then": {
+        "required": ["standard"]
+      }
+    }
+  }
+}

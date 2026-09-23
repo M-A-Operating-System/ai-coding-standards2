@@ -334,7 +334,7 @@ def _git_one_clean_commit(cmd, **kwargs):
 
 def _invoke_agent_writing_result(outcome, *, message="", summary=None, output="",
                                   undone="", expected_effect=None, label_requests=None,
-                                  agent_run_result=None):
+                                  agent_run_result=None, verdict=""):
     """side_effect for a mocked invoke_agent: writes a real result.json to the
     real scratch dir (computed the same way production code computes it) so
     the unmocked _read_step_result finds it, then returns the AgentRunResult.
@@ -354,6 +354,7 @@ def _invoke_agent_writing_result(outcome, *, message="", summary=None, output=""
                 "undone": undone,
                 "message": message,
                 "output": output,
+                "verdict": verdict,
                 "expected_effect": expected_effect or {},
                 "label_requests": label_requests or [],
             }
@@ -3496,7 +3497,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator.invoke_agent")
     def test_post_steps_script_runs_on_complete(self, mock_invoke):
         """post_steps script is invoked via subprocess.run when the agent signals :complete."""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         bash_ok = MagicMock()
         bash_ok.returncode = 0
         bash_ok.stdout = ""
@@ -3565,7 +3566,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_nonzero_exit_posts_warning_keeps_complete(self, mock_failed, mock_invoke):
         """When a post_steps script exits non-zero, :complete is preserved and a warning comment is posted."""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         bash_fail = MagicMock()
         bash_fail.returncode = 1
         bash_fail.stdout = "error output"
@@ -3590,7 +3591,7 @@ class TestPostSteps:
         """When a post_steps script times out, :complete is preserved and a warning comment is posted."""
         import subprocess as _sp
 
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
 
         def _timeout_side_effect(cmd, **kwargs):
             if isinstance(cmd, list) and cmd and cmd[0] == "git":
@@ -3615,7 +3616,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator._apply_failed")
     def test_post_steps_script_not_found_posts_warning_keeps_complete(self, mock_failed, mock_invoke):
         """When a post_steps script does not exist on disk, :complete is preserved and a warning comment is posted."""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         import subprocess as _sp
 
         def _git_fail(cmd, **kwargs):
@@ -3786,7 +3787,7 @@ class TestPostSteps:
     @patch("pipeline_orchestrator.invoke_agent")
     def test_post_steps_issue_kind_sets_issue_number_env(self, mock_invoke):
         """When work item kind is 'issue', ISSUE_NUMBER is set in _ps_env (not PR_NUMBER)."""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         bash_ok = MagicMock()
         bash_ok.returncode = 0
         bash_ok.stdout = ""
@@ -3879,7 +3880,7 @@ class TestPostStepFailureDecoupling:
         When a subsequent post_steps script for that same pipeline entry fails
         Then the issue does not end up labeled {agent}:failed
         """
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         bash_fail = MagicMock()
         bash_fail.returncode = 1
         bash_fail.stdout = "gh pr ready: GraphQL error"
@@ -3929,7 +3930,7 @@ class TestPostStepFailureDecoupling:
         bash_ok.returncode = 0
         bash_ok.stdout = ""
         bash_ok.stderr = ""
-        mock_invoke.side_effect = _invoke_agent_writing_result("complete")
+        mock_invoke.side_effect = _invoke_agent_writing_result("complete", verdict="APPROVE")
         agent = self._pr_reviewer_agent()
         gh = _make_gh_mock()
         wi = WorkItem(
@@ -4949,7 +4950,7 @@ class TestRunAgentBehaviour:
         gh = _make_gh_mock()
         wi = _make_work_item_with_labels(42, {"issue-classifier:complete"})
         with patch("subprocess.run", side_effect=self._git_side_effect()):
-            result, sentinel_status, sentinel_message, _pre, _at, attempt, _exhausted, _step_result = _run_agent(
+            result, sentinel_status, sentinel_message, _pre, _at, attempt, _exhausted, _step_result, _pr_number = _run_agent(
                 agent, wi, False, "test/repo", set(wi.labels), "",
                 None, None, gh, {agent.agent: agent},
             )
@@ -5120,7 +5121,7 @@ class TestRunAgentWorktreeIsolation:
 
         (
             result, sentinel_status, sentinel_message, pre_agent_worktree,
-            _invoked_at, _attempt, _exhausted, step_result,
+            _invoked_at, _attempt, _exhausted, step_result, _pr_number,
         ) = _run_agent(
             agent, wi, False, "test/repo", set(wi.labels), "",
             None, None, gh, {agent.agent: agent},
@@ -6466,23 +6467,56 @@ class TestRelatedWorkItemEnv:
     def test_coder_gets_pr_number_by_branch(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = 430
+        gh._get.return_value = {"head": {"sha": "deadbeef"}}
         env = orch._related_work_item_env(gh, self._agent_def("03_execute/coder"), self._work_item())
-        assert env == {"PR_NUMBER": "430"}
+        assert env == {"PR_NUMBER": "430", "PR_HEAD_SHA": "deadbeef"}
         gh.find_pr_by_branch.assert_called_once_with("issue-431")
 
     def test_pr_reviewer_gets_pr_number_by_branch(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = 430
+        gh._get.return_value = {"head": {"sha": "deadbeef"}}
         env = orch._related_work_item_env(gh, self._agent_def("03_execute/pr-reviewer"), self._work_item())
-        assert env == {"PR_NUMBER": "430"}
+        assert env == {"PR_NUMBER": "430", "PR_HEAD_SHA": "deadbeef"}
 
     def test_falls_back_to_label_lookup(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = None
         gh.find_pr_by_label.return_value = 430
+        gh._get.return_value = {"head": {"sha": "deadbeef"}}
+        env = orch._related_work_item_env(gh, self._agent_def("03_execute/coder"), self._work_item())
+        assert env == {"PR_NUMBER": "430", "PR_HEAD_SHA": "deadbeef"}
+        gh.find_pr_by_label.assert_called_once_with("source-issue:431")
+
+    def test_pr_head_sha_omitted_when_fetch_fails(self):
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = 430
+        gh._get.side_effect = RuntimeError("boom")
         env = orch._related_work_item_env(gh, self._agent_def("03_execute/coder"), self._work_item())
         assert env == {"PR_NUMBER": "430"}
-        gh.find_pr_by_label.assert_called_once_with("source-issue:431")
+
+    def test_include_head_sha_false_skips_the_fetch_for_issue_kind(self):
+        """_invoke_post_steps's hooks (e.g. mark-pr-ready.sh) never read
+        PR_HEAD_SHA -- include_head_sha=False must skip that API call
+        entirely rather than fetching and discarding it."""
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = 430
+        env = orch._related_work_item_env(
+            gh, self._agent_def("03_execute/coder"), self._work_item(), include_head_sha=False,
+        )
+        assert env == {"PR_NUMBER": "430"}
+        gh._get.assert_not_called()
+
+    def test_include_head_sha_false_skips_the_fetch_for_pr_kind(self):
+        gh = MagicMock()
+        gh.repo = "test/repo"
+        gh._get.return_value = {"head": {"ref": "issue-431", "sha": "deadbeef"}}
+        env = orch._related_work_item_env(
+            gh, self._agent_def("03_execute/pr-reviewer"),
+            self._work_item(kind="pr", number=430),
+            include_head_sha=False,
+        )
+        assert env == {"ISSUE_NUMBER": "431"}
 
     def test_no_pr_yet_returns_empty(self):
         gh = MagicMock()
@@ -6641,4 +6675,94 @@ class TestWorktreeRootLocation:
         import pipeline_orchestrator as po
         assert ".worktrees" in str(po._WORKTREE_ROOT), (
             f"_WORKTREE_ROOT ({po._WORKTREE_ROOT}) does not use .worktrees path"
+        )
+
+
+class TestCheckReviewVerdictConsistency:
+    """Issue #512 Part 1: a review_gate step's model-written outcome is
+    cross-checked against the structured result.verdict field -- never
+    prose parsed back out of the artefact output (PRODUCT.md, "What a step
+    must return"). Any disagreement or omission must fail closed rather
+    than let an inconsistent outcome reach _mark_pr_ready_if_requested."""
+
+    def test_approve_verdict_with_complete_outcome_is_consistent(self):
+        reason = orch._check_review_verdict_consistency(STATUS_COMPLETE, "APPROVE")
+        assert reason == ""
+
+    def test_request_changes_verdict_with_review_outcome_is_consistent(self):
+        reason = orch._check_review_verdict_consistency(STATUS_REVIEW, "REQUEST CHANGES")
+        assert reason == ""
+
+    def test_request_changes_verdict_with_complete_outcome_is_a_mismatch(self):
+        """The exact copy-paste trap issue #512 describes: template literal
+        outcome 'complete' left in place under a REQUEST CHANGES verdict."""
+        reason = orch._check_review_verdict_consistency(STATUS_COMPLETE, "REQUEST CHANGES")
+        assert reason != ""
+        assert "REQUEST CHANGES" in reason
+
+    def test_approve_verdict_with_review_outcome_is_a_mismatch(self):
+        reason = orch._check_review_verdict_consistency(STATUS_REVIEW, "APPROVE")
+        assert reason != ""
+
+    def test_missing_verdict_field_is_a_mismatch(self):
+        reason = orch._check_review_verdict_consistency(STATUS_COMPLETE, "")
+        assert reason != ""
+
+    def test_blocked_outcome_is_not_checked(self):
+        """review_gate steps have no verdict rule for :blocked."""
+        reason = orch._check_review_verdict_consistency(STATUS_BLOCKED, "")
+        assert reason == ""
+
+
+# ---------------------------------------------------------------------------
+# TestOutcomePolicySkipsBlocked -- Gherkin-traced regression test for the
+# /code-review finding on PR #513: STATUS_BLOCKED must never reach
+# _apply_outcome_policy, or a step with nothing to review (ambiguous spec)
+# could have its :blocked silently turned into a computed APPROVE/REQUEST
+# CHANGES, or fail closed for lacking a review field it was never asked to
+# write.
+# ---------------------------------------------------------------------------
+
+class TestOutcomePolicySkipsBlocked:
+    def _agent(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+            review_gate=True,
+            outcome_policy={"kind": "review_findings", "schema": "pipeline/schemas/pr-review.schema.json"},
+        )
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_blocked_outcome_with_no_review_field_is_preserved(self, mock_invoke):
+        """A model that legitimately blocks (ambiguous spec) writes no
+        review field at all -- outcome_policy must not touch :blocked."""
+        mock_invoke.side_effect = _invoke_agent_writing_result(
+            "blocked", message="spec is ambiguous",
+        )
+        agent = self._agent()
+        gh = _make_gh_mock()
+        gh.find_pr_by_branch = MagicMock(return_value=None)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+        wi = WorkItem(
+            number=61, kind="issue", title="T", labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/61",
+        )
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [agent], {agent.agent: agent}, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert any(l == "pr-reviewer:blocked" for l in applied), (
+            f"expected pr-reviewer:blocked applied, got: {applied}"
+        )
+        assert not any(l == "pr-reviewer:failed" for l in applied), (
+            "a legitimate :blocked must not be turned into :failed by outcome_policy"
         )

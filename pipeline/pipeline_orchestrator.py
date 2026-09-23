@@ -51,7 +51,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Mapping, Optional
@@ -69,6 +69,17 @@ from todos_patch import (
     todos_subsection_markers as _todos_subsection_markers,
     checked_items_would_be_lost as _checked_items_would_be_lost,
     apply_todos_patch as _apply_todos_patch,
+)
+
+# The review-verdict computation itself lives in review_outcome.py (issue
+# #512 Part 2, STD-ARCH-035) -- pure functions, no GitHub or orchestrator
+# coupling. Imported under their original names so every call site and test
+# import here is unchanged.
+from review_outcome import (
+    APPROVE as _REVIEW_APPROVE,
+    derive_review_verdict as _derive_review_verdict,
+    find_duplicate_finding_ids as _find_duplicate_finding_ids,
+    render_review_comment as _render_review_comment,
 )
 
 logging.basicConfig(
@@ -234,6 +245,7 @@ class AgentDef:
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
     exclude_labels: list = field(default_factory=list)           # skip if any of these labels is on the work item
     review_loop: Optional[dict] = None  # {"re_invoke": str, "max_cycles": int, "also_clear": [...]} — auto-retry on :review
+    outcome_policy: Optional[dict] = None  # {"kind": "review_findings", "schema": str} -- the orchestrator computes this step's outcome from result.review, never trusts the model's own outcome field (issue #512 Part 2)
     script_timeout_seconds: int = SCRIPT_TIMEOUT_SECONDS  # override default timeout for script-type steps
     self_gates: bool = False  # if True, the agent's own AI_AGILE_STATUS (review vs complete) decides whether the gate fires -- :complete is NOT force-overridden to :review. human_gate_after/human_gate_label still apply for promotion when the agent itself emits :review.
     extra_allowedTools: list[str] = field(default_factory=list)  # per-agent tools from pipeline.json; merged with defaults.extra_allowedTools (AS-1: nowhere else)
@@ -566,6 +578,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
                 exclude_labels=list(entry.get("exclude_labels", [])),
                 review_loop=entry.get("review_loop"),
+                outcome_policy=entry.get("outcome_policy"),
                 # A script step's wall-clock budget is budgets.max_wall_seconds,
                 # the same field an agent step uses (the schema: "for every step,
                 # agent or script"). A script declaring none keeps the script
@@ -2944,6 +2957,8 @@ class StepResult:
     undone: str = ""                # what's left; empty when nothing was left
     message: str = ""               # short message for review/blocked (what a person must act on)
     output: str = ""                # artefact content; the orchestrator posts this, the step doesn't
+    verdict: str = ""               # "" | "APPROVE" | "REQUEST CHANGES" -- structured, issue #512; a review_gate step's own outcome checked against this field, never prose in `output`
+    review: dict = field(default_factory=dict)             # {} = none; {"head_sha": str, "findings": [...]} -- issue #512 Part 2, validated against a step's declared outcome_policy.schema; see _apply_outcome_policy
     expected_effect: dict = field(default_factory=dict)   # the step's own belief about what it changed this run
     label_requests: list = field(default_factory=list)    # [{"issue": int|None, "add": [...], "remove": [...]}]
     body_write: dict = field(default_factory=dict)        # {} = none; see _read_step_result for the two shapes
@@ -2986,10 +3001,18 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
     if not isinstance(summary, str):
         return None, "result.summary must be a string"
 
-    for _field in ("undone", "message", "output"):
+    for _field in ("undone", "message", "output", "verdict"):
         _val = raw.get(_field, "")
         if not isinstance(_val, str):
             return None, f"result.{_field} must be a string"
+
+    verdict = raw.get("verdict", "")
+    if verdict and verdict not in ("APPROVE", "REQUEST CHANGES"):
+        return None, f'result.verdict must be "APPROVE" or "REQUEST CHANGES" when present, got {verdict!r}'
+
+    review = raw.get("review", {})
+    if not isinstance(review, dict):
+        return None, "result.review must be an object"
 
     expected_effect = raw.get("expected_effect", {})
     if not isinstance(expected_effect, dict):
@@ -3048,6 +3071,8 @@ def _read_step_result(scratch_dir: str) -> tuple[Optional[StepResult], str]:
         undone=raw.get("undone", ""),
         message=raw.get("message", ""),
         output=raw.get("output", ""),
+        verdict=verdict,
+        review=review,
         expected_effect=expected_effect,
         label_requests=label_requests,
         body_write=body_write,
@@ -3253,23 +3278,27 @@ def _post_artefact_if_present(
 _BODY_WRITE_MAX_ATTEMPTS = 3
 
 
-def _resolve_body_write_target(
-    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", target: str,
-) -> Optional[int]:
-    """Resolve body_write's declared target ("issue" or "pr") to a real
-    number. Mirrors _mark_pr_ready_if_requested's PR lookup: a step running
-    against an issue work item but targeting "pr" (e.g. coder ticking a PR's
-    build-plan) needs the PR found by branch/label the same way review-gate
-    promotion does. The branch it looks the PR up by is this step's own, from
-    its flow's naming (issue #406) -- never a name built here.
+def _resolve_pr_number(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> Optional[int]:
+    """The one place that resolves which PR a step's work item concerns:
+    work_item.number directly for a PR-kind invocation, or a branch/label
+    lookup (this step's own branch, from its flow's naming -- issue #406;
+    falling back to the source-issue:{N} label every coder-created PR
+    carries) for an issue-kind one. None when not applicable or nothing
+    resolves -- every caller already has its own way to log or handle that.
+
+    The canonical Python-side version of what $PR_NUMBER already gives a
+    step's own shell environment (_related_work_item_env, resolve_pr_number,
+    issue #431/#433): resolved once, here, and reused -- not re-derived by
+    each of body_write, the human-review override, mark-pr-ready, and
+    outcome_policy independently.
     """
-    if target == "issue":
-        return work_item.number if work_item.kind == "issue" else None
     if work_item.kind == "pr":
         return work_item.number
+    if work_item.kind != "issue":
+        return None
     try:
-        _branch = step_branch(agent_def, work_item)
-        pr_number = gh.find_pr_by_branch(_branch) if _branch else None
+        branch = step_branch(agent_def, work_item)
+        pr_number = gh.find_pr_by_branch(branch) if branch else None
         if pr_number is None:
             pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
         return pr_number
@@ -3277,57 +3306,109 @@ def _resolve_body_write_target(
         return None
 
 
-def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> dict[str, str]:
-    """Whichever of ISSUE_NUMBER/PR_NUMBER this invocation's own subject
-    identity (WORK_ITEM_NUMBER) does not already give it (PRODUCT.md, "A step
-    learns its situation only from what it's told") -- additive context, not
-    a replacement for that subject identity. Resolves ISSUE_NUMBER and
-    PR_NUMBER independently of work-item kind, so a step reads either bare name
-    directly instead of re-deriving it -- coder and pr-reviewer each
-    re-derived this themselves via up to six sequential gh api/gh pr list
-    attempts before this existed (issue #431); same lookup
-    _resolve_body_write_target already uses.
+def _resolve_body_write_target(
+    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", target: str,
+) -> Optional[int]:
+    """Resolve body_write's declared target ("issue" or "pr") to a real
+    number. For "pr", this is _resolve_pr_number -- the same lookup
+    review-gate promotion and the human-review override use.
+    """
+    if target == "issue":
+        return work_item.number if work_item.kind == "issue" else None
+    return _resolve_pr_number(gh, agent_def, work_item)
 
-    Issue-kind (PR_NUMBER): declared per-step in pipeline.json via
-    resolve_pr_number (AS-2: the orchestrator names no step of its own) --
-    not extended to every issue-kind step by default: most run before any PR
-    exists, so attempting the lookup would just burn an API call for
-    nothing.
 
-    PR-kind (ISSUE_NUMBER): always attempted (issue #433) -- no equivalent
-    cost concern, since a PR-kind invocation is already the exceptional,
+def _fetch_pr_head_sha(gh: "GitHubClient", pr_number: int) -> Optional[str]:
+    """The PR's current head commit SHA, or None on any failure (issue #512
+    Part 3). A fresh read every call -- callers needing a live value (the
+    require_head_match check) must not cache this across a run."""
+    try:
+        return gh._get(f"/repos/{gh.repo}/pulls/{pr_number}")["head"]["sha"] or None
+    except Exception:
+        return None
+
+
+def _related_work_item_env(
+    gh: "GitHubClient",
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    include_head_sha: bool = True,
+) -> dict[str, str]:
+    """Whichever of ISSUE_NUMBER/PR_NUMBER/PR_HEAD_SHA this invocation's own
+    subject identity (WORK_ITEM_NUMBER) does not already give it (PRODUCT.md,
+    "A step learns its situation only from what it's told") -- additive
+    context, not a replacement for that subject identity. Resolves
+    ISSUE_NUMBER and PR_NUMBER independently of work-item kind, so a step
+    reads either bare name directly instead of re-deriving it -- coder and
+    pr-reviewer each re-derived this themselves via up to six sequential gh
+    api/gh pr list attempts before this existed (issue #431); same lookup as
+    _resolve_pr_number.
+
+    Issue-kind (PR_NUMBER, PR_HEAD_SHA): declared per-step in pipeline.json
+    via resolve_pr_number (AS-2: the orchestrator names no step of its own)
+    -- not extended to every issue-kind step by default: most run before any
+    PR exists, so attempting the lookup would just burn an API call for
+    nothing. PR_HEAD_SHA (issue #512 Part 3) is a convenience export only --
+    a step copying it into its own result (e.g. pr-reviewer's review.head_sha)
+    is still describing the commit it actually reviewed; the orchestrator's
+    own require_head_match check re-fetches the live head at apply time
+    rather than trusting this dispatch-time snapshot.
+
+    PR-kind (ISSUE_NUMBER always; PR_HEAD_SHA gated the same as above):
+    ISSUE_NUMBER is always attempted (issue #433) -- no equivalent cost
+    concern, since a PR-kind invocation is already the exceptional,
     manually-dispatched case rather than a scheduled flow step. Parses the
     PR's own head branch against the issue-{N} pattern, falling back to the
     source-issue:{N} label already applied to every coder-created PR.
 
     Empty when not applicable or nothing resolves -- a step reading it falls
     back to its own lookup rather than failing.
+
+    include_head_sha=False skips the PR_HEAD_SHA fetch entirely -- for a
+    caller that only needs ISSUE_NUMBER/PR_NUMBER (e.g. _invoke_post_steps,
+    whose hooks never read PR_HEAD_SHA), fetching it would just be a wasted
+    API call.
     """
     if work_item.kind == "issue":
         if not agent_def.resolve_pr_number:
             return {}
-        try:
-            _branch = step_branch(agent_def, work_item)
-            pr_number = gh.find_pr_by_branch(_branch) if _branch else None
-            if pr_number is None:
-                pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
-        except Exception:
+        pr_number = _resolve_pr_number(gh, agent_def, work_item)
+        if pr_number is None:
             return {}
-        return {"PR_NUMBER": str(pr_number)} if pr_number is not None else {}
+        env = {"PR_NUMBER": str(pr_number)}
+        if include_head_sha:
+            head_sha = _fetch_pr_head_sha(gh, pr_number)
+            if head_sha:
+                env["PR_HEAD_SHA"] = head_sha
+        return env
 
     if work_item.kind == "pr":
+        env: dict[str, str] = {}
+        issue_number: Optional[int] = None
+        _pr: Optional[dict] = None
         try:
-            _head_ref = gh._get(f"/repos/{gh.repo}/pulls/{work_item.number}")["head"]["ref"]
-            _match = re.match(r"^issue-(\d+)", _head_ref)
-            issue_number = int(_match.group(1)) if _match else None
-            if issue_number is None:
-                for _label in work_item.labels:
-                    if _label.startswith("source-issue:"):
-                        issue_number = int(_label.removeprefix("source-issue:"))
-                        break
+            _pr = gh._get(f"/repos/{gh.repo}/pulls/{work_item.number}")
         except Exception:
-            return {}
-        return {"ISSUE_NUMBER": str(issue_number)} if issue_number is not None else {}
+            _pr = None
+        if _pr is not None:
+            try:
+                _match = re.match(r"^issue-(\d+)", _pr.get("head", {}).get("ref") or "")
+                if _match:
+                    issue_number = int(_match.group(1))
+            except Exception:
+                pass
+        if issue_number is None:
+            for _label in work_item.labels:
+                if _label.startswith("source-issue:"):
+                    issue_number = int(_label.removeprefix("source-issue:"))
+                    break
+        if issue_number is not None:
+            env["ISSUE_NUMBER"] = str(issue_number)
+        if include_head_sha and agent_def.resolve_pr_number and _pr is not None:
+            head_sha = _pr.get("head", {}).get("sha")
+            if head_sha:
+                env["PR_HEAD_SHA"] = head_sha
+        return env
 
     return {}
 
@@ -5965,7 +6046,14 @@ def _run_agent(
     Modifies labels and work_item.labels in-place (review-cycle tracking).
 
     Returns: (result, sentinel_status, sentinel_message,
-              pre_agent_worktree, invoked_at, attempt, exhausted, step_result)
+              pre_agent_worktree, invoked_at, attempt, exhausted, step_result,
+              pr_number)
+
+    pr_number is resolved once here (_resolve_pr_number), whenever the
+    agent's own step would resolve PR_NUMBER for its shell environment
+    (resolve_pr_number, or a PR-kind work item) -- the caller passes it to
+    _apply_result so outcome_policy/human-review-override/mark-pr-ready
+    reuse it instead of each re-deriving it.
     """
     log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
 
@@ -6039,6 +6127,16 @@ def _run_agent(
     if _invocation_mode is not None:
         _flow_env["AI_AGILE_INVOCATION_MODE"] = _invocation_mode
 
+    # Resolved once per run, for every invocation mode (issue #512
+    # code-review): the same lookup _related_work_item_env's PR_NUMBER
+    # injection uses for the agent's own shell environment. _apply_result
+    # passes this through to outcome_policy/human-review-override/
+    # mark-pr-ready so none of them re-derives it independently.
+    _pr_number = (
+        _resolve_pr_number(gh, agent_def, work_item)
+        if (agent_def.resolve_pr_number or work_item.kind == "pr") else None
+    )
+
     # For commit_after agents, check out the issue branch into its own
     # isolated worktree before invoking, so the agent reads accumulated state
     # without disturbing (or being disturbed by) a concurrent run on a
@@ -6064,7 +6162,7 @@ def _run_agent(
                         f"flow {agent_def.flow!r} declares no naming.branch"
                     ),
                 ),
-                None, "", "", _invoked_at, 0, False, None,
+                None, "", "", _invoked_at, 0, False, None, _pr_number,
             )
         try:
             _pre_agent_worktree = _create_run_worktree(_issue_branch)
@@ -6085,7 +6183,7 @@ def _run_agent(
                     success=False,
                     captured_tail=f"pre-agent worktree setup failed: {_pre_exc}",
                 ),
-                None, "", "", _invoked_at, 0, False, None,
+                None, "", "", _invoked_at, 0, False, None, _pr_number,
             )
 
     sentinel_status: Optional[str] = None
@@ -6128,7 +6226,14 @@ def _run_agent(
         # false "retry limit exhausted -- failed N time(s)" message.
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
-        _post_artefact_if_present(gh, agent_def, work_item, step_result)
+        # outcome_policy steps post the orchestrator's own rendered comment,
+        # computed from result.review, once _apply_result has resolved the
+        # verdict (issue #512 Part 2) -- never the model's raw output here.
+        # STATUS_BLOCKED has no verdict to compute (_apply_outcome_policy is
+        # never reached for it), so its own diagnostic output is posted here
+        # same as any other step's, or a legitimate block would go unreported.
+        if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
+            _post_artefact_if_present(gh, agent_def, work_item, step_result)
     else:
         result, step_result, exhausted, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
@@ -6137,7 +6242,8 @@ def _run_agent(
         )
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
-        _post_artefact_if_present(gh, agent_def, work_item, step_result)
+        if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
+            _post_artefact_if_present(gh, agent_def, work_item, step_result)
 
     # Run the declared "after" scripts once all retries are done, whatever the
     # outcome. load_pipeline leaves these empty for script steps, which are
@@ -6156,7 +6262,7 @@ def _run_agent(
 
     return (
         result, sentinel_status, sentinel_message, _pre_agent_worktree,
-        _invoked_at, _attempt, exhausted, step_result,
+        _invoked_at, _attempt, exhausted, step_result, _pr_number,
     )
 
 
@@ -6468,7 +6574,9 @@ def _invoke_post_steps(
     # itself used (issue #433) -- e.g. mark-pr-ready.sh reads PR_NUMBER
     # directly instead of branching on work-item kind.
     _ps_env.update(_flow_context_env(agent_def, work_item))
-    _ps_env.update(_related_work_item_env(gh, agent_def, work_item))
+    # include_head_sha=False -- no post_step script (e.g. mark-pr-ready.sh)
+    # reads PR_HEAD_SHA, so fetching it here would be a wasted API call.
+    _ps_env.update(_related_work_item_env(gh, agent_def, work_item, include_head_sha=False))
     for _ps_path_str in agent_def.post_steps:
         # Escape check on the DECLARED (working-tree) path: rejects a
         # pipeline.json entry that tries to point outside the repo root. This
@@ -6725,12 +6833,16 @@ def _compute_human_review_override(
     final_status: str,
     labels: set,
     gh: "GitHubClient",
+    pr_number: Optional[int] = None,
 ) -> tuple:
     """Resolve the issue-#100 human-review override.
 
     When pr-reviewer APPROVEs but unresolved human REQUEST_CHANGES reviews exist,
     override final_status to :review for a free coder re-invoke (once-only, guarded
     by HUMAN_REVIEW_PENDING_LABEL). On the second approve, clears the label.
+
+    pr_number: resolved once by _run_agent (_resolve_pr_number) and passed
+    in; re-derived here only when a caller didn't have it.
 
     Returns (final_status, human_review_override, human_review_list).
     """
@@ -6742,24 +6854,12 @@ def _compute_human_review_override(
         and agent_def.review_loop
         and HUMAN_REVIEW_PENDING_LABEL not in labels
     ):
-        _hr_pr_number: Optional[int] = None
-        if work_item.kind == "pr":
-            _hr_pr_number = work_item.number
-        elif work_item.kind == "issue":
-            try:
-                _hr_branch = step_branch(agent_def, work_item)
-                _hr_pr_number = (
-                    gh.find_pr_by_branch(_hr_branch) if _hr_branch else None
-                )
-                if _hr_pr_number is None:
-                    _hr_pr_number = gh.find_pr_by_label(
-                        f"source-issue:{work_item.number}"
-                    )
-            except Exception as exc:
-                log.warning(
-                    "  could not look up PR for human review check on #%d: %s",
-                    work_item.number, exc,
-                )
+        _hr_pr_number = pr_number if pr_number is not None else _resolve_pr_number(gh, agent_def, work_item)
+        if _hr_pr_number is None and work_item.kind == "issue":
+            log.warning(
+                "  could not look up PR for human review check on #%d",
+                work_item.number,
+            )
         if _hr_pr_number is not None:
             _human_review_list = _fetch_unresolved_human_review_requests(gh, _hr_pr_number)
             if _human_review_list:
@@ -6778,16 +6878,61 @@ def _compute_human_review_override(
     ):
         # Free re-invoke already ran (label present) and pr-reviewer APPROVEs
         # again — remove the label before the PR is marked ready.
-        try:
-            gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
-            labels.discard(HUMAN_REVIEW_PENDING_LABEL)
-            work_item.labels = labels
-        except Exception as exc:
-            log.debug(
-                "  could not remove %s on #%d: %s",
-                HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
-            )
+        _clear_human_review_pending_label(gh, work_item, labels)
     return final_status, _human_review_override, _human_review_list
+
+
+def _clear_human_review_pending_label(gh: "GitHubClient", work_item: WorkItem, labels: set) -> None:
+    """Remove HUMAN_REVIEW_PENDING_LABEL once its once-only free cycle is
+    spent -- shared by _compute_human_review_override and
+    _human_review_override_from_outcome_policy, whose cleanup step is
+    otherwise identical."""
+    try:
+        gh.remove_label(work_item.number, HUMAN_REVIEW_PENDING_LABEL)
+        labels.discard(HUMAN_REVIEW_PENDING_LABEL)
+        work_item.labels = labels
+    except Exception as exc:
+        log.debug(
+            "  could not remove %s on #%d: %s",
+            HUMAN_REVIEW_PENDING_LABEL, work_item.number, exc,
+        )
+
+
+def _human_review_override_from_outcome_policy(
+    work_item: WorkItem,
+    final_status: str,
+    labels: set,
+    human_only_block: bool,
+    human_blockers: list,
+    gh: "GitHubClient",
+) -> tuple:
+    """Same issue-#100 once-only-free-re-invoke semantics as
+    _compute_human_review_override, for an outcome_policy step -- driven by
+    the PR/review data _apply_outcome_policy already fetched for the verdict
+    itself, rather than a second independent lookup and
+    _fetch_unresolved_human_review_requests call for the same fact.
+
+    final_status here is already _apply_outcome_policy's computed status
+    (STATUS_REVIEW when human_only_block is True) -- this does not need to
+    override it the way _compute_human_review_override does; it only
+    decides whether that STATUS_REVIEW gets the free-cycle exemption.
+
+    Returns (final_status, human_review_override, human_review_list) --
+    same shape as _compute_human_review_override so callers treat them
+    identically.
+    """
+    if human_only_block and HUMAN_REVIEW_PENDING_LABEL not in labels:
+        log.info(
+            "  HUMAN   outcome_policy  %d unresolved REQUEST_CHANGES on #%d -- "
+            "overriding to :review for free re-invoke",
+            len(human_blockers), work_item.number,
+        )
+        return final_status, True, human_blockers
+    if HUMAN_REVIEW_PENDING_LABEL in labels and final_status == STATUS_COMPLETE:
+        # Free re-invoke already ran (label present) and the computed verdict
+        # is clean again -- remove the label before the PR is marked ready.
+        _clear_human_review_pending_label(gh, work_item, labels)
+    return final_status, False, []
 
 
 def _resolve_applied_status(
@@ -6941,28 +7086,19 @@ def _mark_pr_ready_if_requested(
     agent_def: AgentDef,
     work_item: WorkItem,
     gh: "GitHubClient",
+    pr_number: Optional[int] = None,
 ) -> None:
-    """Locate the PR for a review_gate agent and mark it ready for review."""
-    if work_item.kind == "pr":
-        _ready_pr_number = work_item.number
-    elif work_item.kind == "issue":
-        try:
-            _ready_branch = step_branch(agent_def, work_item)
-            _ready_pr_number = (
-                gh.find_pr_by_branch(_ready_branch) if _ready_branch else None
-            )
-            if _ready_pr_number is None:
-                _ready_pr_number = gh.find_pr_by_label(
-                    f"source-issue:{work_item.number}"
-                )
-        except Exception as exc:
-            log.warning(
-                "  could not look up PR for issue #%d: %s",
-                work_item.number, exc,
-            )
-            _ready_pr_number = None
-    else:
-        _ready_pr_number = None
+    """Locate the PR for a review_gate agent and mark it ready for review.
+
+    pr_number: resolved once by _run_agent (_resolve_pr_number) and passed
+    in; re-derived here only when a caller didn't have it.
+    """
+    _ready_pr_number = pr_number if pr_number is not None else _resolve_pr_number(gh, agent_def, work_item)
+    if _ready_pr_number is None and work_item.kind == "issue":
+        log.warning(
+            "  could not look up PR for issue #%d",
+            work_item.number,
+        )
 
     if _ready_pr_number:
         try:
@@ -6981,6 +7117,268 @@ def _mark_pr_ready_if_requested(
             "  review_gate set on %s but no PR found for #%d — skipped",
             agent_def.agent, work_item.number,
         )
+
+
+def _check_review_verdict_consistency(final_status: str, verdict: str) -> str:
+    """Issue #512 Part 1: a review_gate step's model-written `outcome` is
+    trusted nowhere else in the pipeline -- catch the case where it disagrees
+    with (or omits) the structured `result.verdict` field the same step
+    wrote, so a REQUEST CHANGES review can never mark the PR ready as a
+    `complete` outcome. `verdict` is a field of result.json, never prose
+    parsed back out of `output` (PRODUCT.md, "What a step must return": "It
+    does not announce its outcome in prose that something else has to parse
+    back out").
+
+    Returns a non-empty mismatch reason, or "" when consistent or not
+    applicable. Only STATUS_COMPLETE/STATUS_REVIEW are checked -- a
+    review_gate step has no verdict rule for STATUS_BLOCKED.
+    """
+    if final_status not in (STATUS_COMPLETE, STATUS_REVIEW):
+        return ""
+    if not verdict:
+        return "result.verdict is missing -- a review_gate step must report APPROVE or REQUEST CHANGES"
+    expected = STATUS_COMPLETE if verdict == "APPROVE" else STATUS_REVIEW
+    if final_status != expected:
+        return (
+            f"result.outcome ({final_status!r}) disagrees with result.verdict "
+            f"({verdict!r}, expected outcome {expected!r})"
+        )
+    return ""
+
+
+def _load_adr_records() -> list[dict]:
+    """adrs.json's own records -- an exception is verified against these,
+    never trusted from a finding's own claim (review_outcome.py's
+    adr_exception_index). A missing file means no ADRs exist yet; that is
+    not a failure (issue #512 Part 2)."""
+    path = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / "adrs" / "adrs.json"
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text()).get("adrs", [])
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("  could not load adrs.json for outcome_policy verdict computation: %s", exc)
+        return []
+
+
+def _load_standard_records() -> dict[str, dict]:
+    """standards/*.json's own records, keyed by id -- adr_exception_index
+    checks a cited standard's own adr_overridable flag against these before
+    honoring an ADR's authorises_exception_to claim (docs/product/standards/
+    14-standards.md: "adr_overridable: false -- always blocks; no exception
+    is possible"). A missing directory means no standards exist yet; that is
+    not a failure (mirrors _load_adr_records)."""
+    standards_dir = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / "standards"
+    if not standards_dir.exists():
+        return {}
+    by_id: dict[str, dict] = {}
+    for path in sorted(standards_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("  could not load %s for outcome_policy verdict computation: %s", path, exc)
+            continue
+        for std in data.get("standards", []):
+            std_id = std.get("id")
+            if std_id:
+                by_id[std_id] = std
+    return by_id
+
+
+def _apply_outcome_policy(
+    gh: "GitHubClient",
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    step_result: StepResult,
+    final_status: str,
+    pr_number: Optional[int] = None,
+) -> tuple[str, Optional[StepResult], str, bool, bool, list, bool, Optional[int]]:
+    """Issue #512 Part 2: for a step declaring outcome_policy, validate
+    result.review against its declared schema and compute the verdict from
+    its findings via review_outcome.derive_review_verdict -- never the
+    model's own outcome/verdict fields, which are advisory only. All actual
+    decision and rendering logic lives in review_outcome.py (STD-ARCH-035);
+    this function is dispatch only -- read structured data, call the pure
+    functions, apply the GitHub side effect -- the same shape as
+    _apply_body_write and _mark_pr_ready_if_requested.
+
+    Also resolves the issue-#100 human-review free-re-invoke question
+    (human_only_block, human_blockers) using the same PR/review data this
+    function already fetched for the verdict itself, rather than let the
+    caller re-derive it via a second _fetch_unresolved_human_review_requests
+    call (see _apply_result, which skips _compute_human_review_override for
+    an outcome_policy step for exactly this reason).
+
+    Also enforces require_head_match (issue #512 Part 3): a step whose
+    policy declares it can only reach :complete for the exact commit it
+    reviewed. Checked here, against a fresh live-head fetch, rather than
+    left to the general subject-supersession mechanism (_should_run/
+    step_subject), because that mechanism only notices staleness on a
+    *later* tick -- after this run's own APPROVE has already marked the PR
+    ready for a commit nobody reviewed. This check exists to make that
+    window unreachable in the first place.
+
+    Returns (resolved_status, rendered_step_result, failure_reason,
+    outcome_overridden, human_only_block, human_blockers, stale_head,
+    resolved_pr_number):
+      - failure_reason is non-empty when result.review is missing, fails its
+        schema, or has duplicate finding ids -- the caller applies :failed
+        and never marks the PR ready (Scenario: Invalid review object).
+        rendered_step_result is None in this case; nothing is posted.
+      - stale_head is True when the verdict computed APPROVE but
+        review.head_sha does not provably still match the PR's live head --
+        a push landed during or after this run, review.head_sha came back
+        empty, or the live-head fetch itself failed. Any of those is treated
+        the same way: fail closed, not open -- an APPROVE this check cannot
+        actually verify is exactly the case require_head_match exists to
+        catch, not a reason to let it through unchecked. rendered_step_result
+        then carries a short note (not the full rendered review) as its
+        output, and resolved_status is unchanged from the caller's own
+        final_status: the caller must apply neither :complete nor any other
+        terminal status, so the step is picked up again next tick
+        undiminished (Scenario: Stale review is not approved).
+      - Otherwise rendered_step_result is a copy of step_result with output
+        replaced by the orchestrator's own rendered comment, ready to post
+        via _post_artefact_if_present, and resolved_status is the computed
+        verdict's status -- overriding the model's own final_status when
+        they disagree (Scenario: Code-computed verdict overrides the model).
+      - human_only_block is True when an unresolved human REQUEST_CHANGES
+        review is the sole reason resolved_status is STATUS_REVIEW (the
+        findings alone would have computed APPROVE) -- the caller grants
+        the same once-only free re-invoke issue #100 established, instead
+        of counting it against review_loop.max_cycles.
+      - resolved_pr_number is this function's own resolution of pr_number
+        (the passed-in value, or this call's own fallback resolution when
+        that was None) -- the caller must reuse it for _mark_pr_ready_if_
+        requested rather than let that function re-resolve independently,
+        or a transient failure here (silently skipping this human-blocker
+        and require_head_match protection) paired with success there would
+        mark the PR ready with neither check having actually run.
+    """
+    review = step_result.review
+    if not review:
+        return final_status, None, "result.review is missing or empty", False, False, [], False, pr_number
+
+    kind = agent_def.outcome_policy.get("kind")
+    if kind != "review_findings":
+        return final_status, None, f"outcome_policy.kind {kind!r} is not implemented", False, False, [], False, pr_number
+
+    # SUBMODULE_ROOT, never AI_AGILE_ROOT: pipeline/schemas/ ships with the
+    # orchestrator itself, and AI_AGILE_ROOT points at the consuming repo
+    # root in a submodule install -- a different directory that has no
+    # pipeline/ at all (see SUBMODULE_ROOT's own comment above).
+    schema_path = SUBMODULE_ROOT / agent_def.outcome_policy["schema"]
+    try:
+        schema = json.loads(schema_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        return final_status, None, f"could not load outcome_policy schema {schema_path}: {exc}", False, False, [], False, pr_number
+
+    try:
+        import jsonschema  # imported here: only outcome_policy steps need it, same as the pipeline-override validation path
+    except ImportError as exc:
+        return final_status, None, f"jsonschema is not installed: {exc}", False, False, [], False, pr_number
+    validator = jsonschema.Draft7Validator(schema)
+    errors = sorted(validator.iter_errors(review), key=lambda e: list(e.path))
+    if errors:
+        return final_status, None, f"result.review failed schema validation: {errors[0].message}", False, False, [], False, pr_number
+
+    findings = review.get("findings", [])
+    duplicates = _find_duplicate_finding_ids(findings)
+    if duplicates:
+        return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False, False, [], False, pr_number
+
+    # pr_number is resolved once by _run_agent (_resolve_pr_number) and
+    # passed in; only re-derive here when a caller didn't have it (e.g. a
+    # direct unit-test call).
+    if pr_number is None:
+        pr_number = _resolve_pr_number(gh, agent_def, work_item)
+        if pr_number is None and work_item.kind == "issue":
+            log.warning(
+                "  outcome_policy: no PR found for #%d -- human-review check skipped, "
+                "verdict computed from findings alone",
+                work_item.number,
+            )
+    human_blockers: list = []
+    if pr_number is not None:
+        human_blockers = _fetch_unresolved_human_review_requests(gh, pr_number)
+
+    adr_records = _load_adr_records()
+    standards_by_id = _load_standard_records()
+    verdict = _derive_review_verdict(findings, human_blockers, adr_records, standards_by_id)
+    computed_status = STATUS_COMPLETE if verdict == _REVIEW_APPROVE else STATUS_REVIEW
+
+    # issue #512 Part 3: an APPROVE must be about the exact commit reviewed.
+    # Checked against a *fresh* fetch, never review.head_sha's own dispatch-
+    # time snapshot or anything cached earlier in this call -- the race this
+    # closes is a push landing between that snapshot and this very check.
+    if (
+        computed_status == STATUS_COMPLETE
+        and agent_def.outcome_policy.get("require_head_match")
+        and pr_number is not None
+    ):
+        _live_head_sha = _fetch_pr_head_sha(gh, pr_number)
+        _reviewed_sha = review.get("head_sha", "")
+        if not _reviewed_sha or not _live_head_sha or _live_head_sha != _reviewed_sha:
+            if not _reviewed_sha:
+                _log_reason = "review.head_sha is empty -- cannot confirm what was reviewed"
+                _note_text = (
+                    "This review reported no reviewed commit (review.head_sha "
+                    "was empty). Re-running against the current head."
+                )
+            elif not _live_head_sha:
+                _log_reason = f"could not fetch PR #{pr_number}'s live head"
+                _note_text = (
+                    f"Could not confirm PR #{pr_number}'s current head. "
+                    "Re-running against the current head."
+                )
+            else:
+                _log_reason = f"reviewed {_reviewed_sha[:12]} but head is now {_live_head_sha[:12]}"
+                _note_text = (
+                    f"Reviewed commit `{_reviewed_sha}` is no longer this PR's head "
+                    f"(now `{_live_head_sha}`). Re-running against the current head."
+                )
+            log.info(
+                "  STALE   %-38s  #%d: %s -- withholding :complete, re-dispatching",
+                agent_def.agent, pr_number, _log_reason,
+            )
+            note = replace(step_result, output=_note_text)
+            return final_status, note, "", False, False, [], True, pr_number
+
+    # issue #100: a human blocker with otherwise-clean findings gets a free
+    # re-invoke (not counted against review_loop.max_cycles) -- distinguish
+    # that from findings themselves blocking, which is a normal cycle.
+    findings_only_verdict = _derive_review_verdict(findings, [], adr_records, standards_by_id)
+    human_only_block = (
+        bool(human_blockers)
+        and findings_only_verdict == _REVIEW_APPROVE
+        and verdict != _REVIEW_APPROVE
+    )
+
+    outcome_overridden = computed_status != final_status
+    if outcome_overridden:
+        log.warning(
+            "  outcome_overridden: %s wrote outcome %r but the computed verdict (%s) is %r on #%d",
+            agent_def.agent, final_status, verdict, computed_status, work_item.number,
+        )
+
+    _prior_marker = f"ai-agile/artefact/v1 by {agent_def.agent}"
+    try:
+        _prior_rerun = any(_prior_marker in b for b in gh.list_comment_bodies(work_item.number))
+    except Exception as exc:
+        log.warning(
+            "  could not check for a prior artefact on #%d: %s -- rendering as a first run",
+            work_item.number, exc,
+        )
+        _prior_rerun = False
+
+    rendered = replace(
+        step_result,
+        output=_render_review_comment(
+            verdict, review.get("head_sha", ""), findings, adr_records,
+            standards_by_id=standards_by_id, human_blockers=human_blockers, prior_rerun=_prior_rerun,
+        ),
+    )
+    return computed_status, rendered, "", outcome_overridden, human_only_block, human_blockers, False, pr_number
 
 
 def _apply_result(
@@ -7006,8 +7404,13 @@ def _apply_result(
     exhausted: bool = False,
     step_result: Optional[StepResult] = None,
     performed_by: str = "agent",
+    pr_number: Optional[int] = None,
 ) -> bool:
     """Apply GitHub side-effects for a completed agent run.
+
+    pr_number: resolved once by _run_agent (_resolve_pr_number), reused here
+    by outcome_policy/human-review-override/mark-pr-ready instead of each
+    re-deriving it via its own branch/label lookup.
 
     Handles rate-limit short-circuit, final status determination, commit-after
     invocation, human review override, terminal label application, closing
@@ -7061,6 +7464,117 @@ def _apply_result(
         _remove_run_worktree(pre_agent_worktree)
         return True
 
+    # Issue #512: an outcome_policy step's outcome is code-computed from its
+    # findings (Part 2), superseding Part 1's simpler consistency check,
+    # which still applies to any other review_gate step. Either way, a
+    # missing/inconsistent/invalid result fails the step closed rather than
+    # let it reach _mark_pr_ready_if_requested below.
+    # STATUS_BLOCKED is left untouched: a step that cannot proceed (ambiguous
+    # spec, missing data) has nothing to compute a verdict from, and
+    # outcome_policy must never turn that into a false APPROVE/REQUEST CHANGES.
+    _outcome_overridden = False
+    _outcome_policy_applied = False
+    _human_only_block = False
+    _human_blockers_from_policy: list = []
+    if agent_def.outcome_policy and step_result is not None and final_status in (STATUS_COMPLETE, STATUS_REVIEW):
+        (
+            final_status, _rendered, _policy_failure, _outcome_overridden,
+            _human_only_block, _human_blockers_from_policy, _stale_head, pr_number,
+        ) = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, final_status, pr_number,
+        )
+        # pr_number is now _apply_outcome_policy's own resolution (its
+        # fallback when the caller's was None) -- reused below for
+        # _mark_pr_ready_if_requested so that call can't independently
+        # re-resolve to a different outcome than what this policy check
+        # itself used (issue #512 Part 3 /code-review).
+        if _policy_failure:
+            _apply_failed(gh, agent_def, work_item, result, reason=_policy_failure)
+            log.error(
+                "  FAILED  %-38s  outcome_policy on #%d: %s",
+                agent_def.agent, work_item.number, _policy_failure,
+            )
+            _metrics_record = _build_step_metrics(
+                agent_def, work_item, result,
+                timestamp_start, timestamp_end, cycle_id,
+                is_error_override=True,
+            )
+            _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
+            _remove_run_worktree(pre_agent_worktree)
+            return True
+        if _stale_head:
+            # issue #512 Part 3: an APPROVE for a commit that is no longer
+            # the PR's head is not applied at all -- no terminal status, no
+            # rendered review comment, just the short note
+            # _apply_outcome_policy already put in step_result.output. Posted
+            # as a plain comment, not through _post_artefact_if_present: its
+            # ai-agile/artefact/v1 marker feeds _prior_rerun detection, and
+            # this note is not the artefact a real review produces. Only :wip
+            # comes off, so the step's own trigger label is still unconsumed
+            # and _should_run picks it up again next tick, same as if it had
+            # not run this cycle -- never :failed, and review_loop.max_cycles
+            # is untouched (Scenario: Stale review is not approved).
+            if _rendered and _rendered.output:
+                try:
+                    gh.post_comment(work_item.number, _rendered.output)
+                except Exception as exc:
+                    log.warning(
+                        "  could not post stale-head note for %s on #%d: %s",
+                        agent_def.agent, work_item.number, exc,
+                    )
+            try:
+                gh.remove_label(work_item.number, agent_def.status_label(STATUS_WIP))
+            except Exception as exc:
+                log.debug(
+                    "  could not remove :wip for %s on #%d: %s",
+                    agent_def.agent, work_item.number, exc,
+                )
+            log.info(
+                "  STALE   %-38s  #%d re-dispatched next tick, no terminal status applied",
+                agent_def.agent, work_item.number,
+            )
+            # is_error_override=True to match every other "no terminal status
+            # applied this cycle" branch in this function -- without it a
+            # withheld, re-dispatched cycle reads as an ordinary successful
+            # completion in metrics/dashboards built on this data.
+            _metrics_record = _build_step_metrics(
+                agent_def, work_item, result,
+                timestamp_start, timestamp_end, cycle_id,
+                is_error_override=True,
+            )
+            _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
+            _remove_run_worktree(pre_agent_worktree)
+            return True
+        step_result = _rendered
+        _outcome_policy_applied = True
+        _post_artefact_if_present(gh, agent_def, work_item, step_result)
+        if _outcome_overridden:
+            # sentinel_message still holds the model's own stale advisory
+            # text (e.g. "Verdict (advisory): APPROVE.") -- without this,
+            # the closing-announcement audit-trail comment would pair the
+            # corrected outcome with that stale, now-wrong summary.
+            sentinel_message = (
+                f"outcome_policy override: code-computed verdict is "
+                f"{final_status!r}, not the model's own report -- see the "
+                f"posted review comment for findings"
+            )
+    elif agent_def.review_gate and step_result is not None:
+        _verdict_mismatch = _check_review_verdict_consistency(final_status, step_result.verdict)
+        if _verdict_mismatch:
+            _apply_failed(gh, agent_def, work_item, result, reason=_verdict_mismatch)
+            log.error(
+                "  FAILED  %-38s  verdict/outcome mismatch on #%d: %s",
+                agent_def.agent, work_item.number, _verdict_mismatch,
+            )
+            _metrics_record = _build_step_metrics(
+                agent_def, work_item, result,
+                timestamp_start, timestamp_end, cycle_id,
+                is_error_override=True,
+            )
+            _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
+            _remove_run_worktree(pre_agent_worktree)
+            return True
+
     # commit-after: push what the step committed in its own worktree when
     # git_ops.commit_after: true. Guard: the branch is an issue branch, so only
     # for issue work items.
@@ -7095,10 +7609,18 @@ def _apply_result(
     # unresolved human REQUEST_CHANGES reviews exist on the PR. Override
     # final_status to STATUS_REVIEW so _handle_review_loop triggers a free
     # coder re-invoke. HUMAN_REVIEW_PENDING_LABEL guards against a second
-    # free cycle (once-only).
-    final_status, _human_review_override, _human_review_list = _compute_human_review_override(
-        agent_def, work_item, final_status, labels, gh,
-    )
+    # free cycle (once-only). An outcome_policy step already resolved this
+    # above (_apply_outcome_policy folds human_blockers into the computed
+    # verdict itself) -- reuse that data instead of a second independent
+    # PR lookup and reviews fetch for the same fact.
+    if _outcome_policy_applied:
+        final_status, _human_review_override, _human_review_list = _human_review_override_from_outcome_policy(
+            work_item, final_status, labels, _human_only_block, _human_blockers_from_policy, gh,
+        )
+    else:
+        final_status, _human_review_override, _human_review_list = _compute_human_review_override(
+            agent_def, work_item, final_status, labels, gh, pr_number,
+        )
 
     # When an agent with a human gate completes, apply :review rather than
     # :complete so the "needs human action" state is visible consistently.
@@ -7154,12 +7676,18 @@ def _apply_result(
         agent_def, work_item, result,
         timestamp_start, timestamp_end, cycle_id,
     )
+    if _outcome_overridden:
+        # issue #512 Part 2: the model's own outcome disagreed with the
+        # code-computed verdict, which won. Recorded as a metric, not just
+        # a log line, so the pattern is visible across runs (Scenario:
+        # Code-computed verdict overrides the model).
+        _metrics_record["outcome_overridden"] = True
     _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
 
     # Mark the PR ready-for-review if the agent declares it (P-16).
     # Only fires on true completion — not when awaiting a human gate.
     if applied_status == STATUS_COMPLETE and agent_def.review_gate:
-        _mark_pr_ready_if_requested(agent_def, work_item, gh)
+        _mark_pr_ready_if_requested(agent_def, work_item, gh, pr_number)
 
     # post_steps: run per-agent completion hooks after the agent signals :complete.
     # Each hook is a repo-relative path to a bash script. A non-zero exit is
@@ -7387,7 +7915,7 @@ def process_work_item(
 
         (
             result, sentinel_status, sentinel_message, pre_worktree, invoked_at,
-            attempt, exhausted, step_result,
+            attempt, exhausted, step_result, pr_number,
         ) = _run_agent(
             agent_def, work_item, dry_run, repo, labels,
             session_id, default_extra_tools, concurrency, gh, pipeline_map,
@@ -7427,6 +7955,7 @@ def process_work_item(
                 timestamp_start=_timestamp_start, timestamp_end=_timestamp_end,
                 exhausted=exhausted, step_result=step_result,
                 performed_by="human" if interactive_result else "agent",
+                pr_number=pr_number,
             )
             labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
             if stop:

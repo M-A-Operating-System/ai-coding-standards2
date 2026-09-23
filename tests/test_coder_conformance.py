@@ -390,6 +390,51 @@ class TestCoderMdModeBReadsFeedbackBeforeAnyOtherAction:
         )
 
 
+class TestCoderMdStep9ReadsPrReviewerArtefactFromIssueNotPr:
+    """Issue #510: _post_artefact_if_present posts every step's artefact to
+    work_item.number, which for the issue-kind pr-reviewer step is the
+    issue -- never the PR. Step 9's pr-reviewer-artefact lookup queried
+    issues/$PR_NUMBER/comments instead, so it found nothing on every
+    REQUEST CHANGES cycle.
+
+    Given coder.md's Step 9 pr-reviewer-artefact lookup
+    When a reader inspects the gh api call carrying the
+    "ai-agile/artefact/v1 by 03_execute/pr-reviewer" marker
+    Then it queries issues/$ISSUE_NUMBER/comments, not issues/$PR_NUMBER/comments
+    """
+
+    def _artefact_lookup_line(self, text: str) -> str:
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if "ai-agile/artefact/v1 by 03_execute/pr-reviewer" in line:
+                # The gh api call and its jq continuation may span two lines
+                # joined by a trailing backslash -- join with the preceding
+                # line when that's the case, so the whole logical statement
+                # is checked together.
+                if i > 0 and lines[i - 1].rstrip().endswith("\\"):
+                    return lines[i - 1] + " " + line
+                return line
+        return ""
+
+    def test_artefact_lookup_queries_issue_number(self):
+        text = _load_coder_text()
+        line = self._artefact_lookup_line(_extract_b1(text))
+        assert "issues/$ISSUE_NUMBER/comments" in line, (
+            "coder.md Step 9's pr-reviewer-artefact lookup must query "
+            "issues/$ISSUE_NUMBER/comments -- pr-reviewer's artefact is "
+            "posted to the issue, not the PR (issue #510)"
+        )
+
+    def test_artefact_lookup_does_not_query_pr_number(self):
+        text = _load_coder_text()
+        line = self._artefact_lookup_line(_extract_b1(text))
+        assert "issues/$PR_NUMBER/comments" not in line, (
+            "coder.md Step 9 must not look for pr-reviewer's artefact under "
+            "issues/$PR_NUMBER/comments -- that thread never receives it "
+            "(issue #510)"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Issue #445 -- confirmed root-cause fast path
 # ---------------------------------------------------------------------------
