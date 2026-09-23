@@ -6467,23 +6467,33 @@ class TestRelatedWorkItemEnv:
     def test_coder_gets_pr_number_by_branch(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = 430
+        gh._get.return_value = {"head": {"sha": "deadbeef"}}
         env = orch._related_work_item_env(gh, self._agent_def("03_execute/coder"), self._work_item())
-        assert env == {"PR_NUMBER": "430"}
+        assert env == {"PR_NUMBER": "430", "PR_HEAD_SHA": "deadbeef"}
         gh.find_pr_by_branch.assert_called_once_with("issue-431")
 
     def test_pr_reviewer_gets_pr_number_by_branch(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = 430
+        gh._get.return_value = {"head": {"sha": "deadbeef"}}
         env = orch._related_work_item_env(gh, self._agent_def("03_execute/pr-reviewer"), self._work_item())
-        assert env == {"PR_NUMBER": "430"}
+        assert env == {"PR_NUMBER": "430", "PR_HEAD_SHA": "deadbeef"}
 
     def test_falls_back_to_label_lookup(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = None
         gh.find_pr_by_label.return_value = 430
+        gh._get.return_value = {"head": {"sha": "deadbeef"}}
+        env = orch._related_work_item_env(gh, self._agent_def("03_execute/coder"), self._work_item())
+        assert env == {"PR_NUMBER": "430", "PR_HEAD_SHA": "deadbeef"}
+        gh.find_pr_by_label.assert_called_once_with("source-issue:431")
+
+    def test_pr_head_sha_omitted_when_fetch_fails(self):
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = 430
+        gh._get.side_effect = RuntimeError("boom")
         env = orch._related_work_item_env(gh, self._agent_def("03_execute/coder"), self._work_item())
         assert env == {"PR_NUMBER": "430"}
-        gh.find_pr_by_label.assert_called_once_with("source-issue:431")
 
     def test_no_pr_yet_returns_empty(self):
         gh = MagicMock()

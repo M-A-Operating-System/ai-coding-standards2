@@ -451,6 +451,10 @@
             "schema": {
               "type": "string",
               "description": "Repo-relative path to the JSON Schema result.review is validated against."
+            },
+            "require_head_match": {
+              "type": "boolean",
+              "description": "Issue #512 Part 3: before applying an APPROVE verdict, compare result.review.head_sha with the PR's live head. A mismatch (a push landed after this run captured its own head_sha) withholds :complete -- no terminal status is applied, no artefact is posted, and the step is re-dispatched on the next tick without advancing review_loop's cycle count."
             }
           }
         },

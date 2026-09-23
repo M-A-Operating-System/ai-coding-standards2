@@ -102,15 +102,23 @@ gh api "repos/$REPO/pulls/$PR_NUMBER/commits" --paginate \
 
 Capture the PR head once, and use `read_pr_file` whenever you need a file's
 contents beyond the diff hunks — it reads the file **at the PR's version**, not
-the local working tree (which may be a different branch entirely):
+the local working tree (which may be a different branch entirely). The
+orchestrator already resolves this the same way it resolves `$PR_NUMBER`
+(issue #512 Part 3) -- `$PR_HEAD_SHA` arrives already set; use it directly
+and skip the `gh api` lookup, which exists only as a fallback for the
+(should not happen in practice) case where it's unset:
 
 ```bash
-HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
+HEAD_SHA="${PR_HEAD_SHA:-$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')}"
 
 read_pr_file() {  # usage: read_pr_file path/to/file
   gh api "/repos/${REPO}/contents/$1?ref=${HEAD_SHA}" --jq '.content' | base64 -d
 }
 ```
+
+`review.head_sha` (Step 11) is this same `$HEAD_SHA` -- the orchestrator
+compares it against the PR's live head before ever applying an APPROVE
+(`require_head_match`); it is not just descriptive.
 
 Check whether the branch has unresolved merge conflicts against its base
 using the GitHub API (authoritative; no local git operations required):
