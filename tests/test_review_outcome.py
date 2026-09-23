@@ -39,18 +39,21 @@ def _finding(**overrides):
     return base
 
 
+_OVERRIDABLE_STD = {"STD-ARCH-035": {"adr_overridable": True}}
+
+
 class TestAdrExceptionIndex:
     def test_builds_index_from_authorises_exception_to(self):
         records = [
             {"id": "ADR-002", "status": "accepted", "authorises_exception_to": ["STD-ARCH-035"]},
             {"id": "ADR-001", "status": "accepted", "rationale": "plain decision, no exception"},
         ]
-        index = adr_exception_index(records)
+        index = adr_exception_index(records, _OVERRIDABLE_STD)
         assert index == {"ADR-002": {"STD-ARCH-035"}}
 
     def test_plain_decision_record_contributes_nothing(self):
         records = [{"id": "ADR-001"}]
-        assert adr_exception_index(records) == {}
+        assert adr_exception_index(records, _OVERRIDABLE_STD) == {}
 
     def test_non_accepted_status_contributes_nothing(self):
         """A deprecated, superseded, or merely-proposed ADR cannot still be
@@ -58,12 +61,29 @@ class TestAdrExceptionIndex:
         for status in ("proposed", "deprecated", "superseded", None):
             records = [{"id": "ADR-002", "status": status,
                         "authorises_exception_to": ["STD-ARCH-035"]}]
-            assert adr_exception_index(records) == {}, f"status={status!r} must not grant an exception"
+            assert adr_exception_index(records, _OVERRIDABLE_STD) == {}, f"status={status!r} must not grant an exception"
 
     def test_accepted_status_contributes_normally(self):
         records = [{"id": "ADR-002", "status": "accepted",
                     "authorises_exception_to": ["STD-ARCH-035"]}]
-        assert adr_exception_index(records) == {"ADR-002": {"STD-ARCH-035"}}
+        assert adr_exception_index(records, _OVERRIDABLE_STD) == {"ADR-002": {"STD-ARCH-035"}}
+
+    def test_standard_marked_non_overridable_contributes_nothing(self):
+        """docs/product/standards/14-standards.md: "adr_overridable: false --
+        always blocks; no exception is possible" -- an ADR cannot waive a
+        standard that says it can never be waived, no matter what its own
+        authorises_exception_to claims."""
+        records = [{"id": "ADR-002", "status": "accepted",
+                    "authorises_exception_to": ["STD-SEC-013"]}]
+        standards_by_id = {"STD-SEC-013": {"adr_overridable": False}}
+        assert adr_exception_index(records, standards_by_id) == {}
+
+    def test_standard_missing_from_standards_by_id_contributes_nothing(self):
+        """A standard the loader couldn't find (stale id, removed standard)
+        is treated as non-overridable, not as silently exempt."""
+        records = [{"id": "ADR-002", "status": "accepted",
+                    "authorises_exception_to": ["STD-ARCH-035"]}]
+        assert adr_exception_index(records, {}) == {}
 
 
 class TestFindingBlocks:
@@ -124,6 +144,24 @@ class TestDeriveReviewVerdict:
     def test_any_blocking_finding_requests_changes(self):
         f = _finding(severity="Critical", confidence=1.0)
         assert derive_review_verdict([f], [], []) == REQUEST_CHANGES
+
+    def test_verified_adr_exception_for_overridable_standard_approves(self):
+        f = _finding(severity="High", confidence=1.0, category="standard",
+                      standard="STD-ARCH-035", adr="ADR-002")
+        records = [{"id": "ADR-002", "status": "accepted",
+                    "authorises_exception_to": ["STD-ARCH-035"]}]
+        assert derive_review_verdict([f], [], records, _OVERRIDABLE_STD) == APPROVE
+
+    def test_adr_exception_for_non_overridable_standard_still_blocks(self):
+        """An ADR cannot waive a standard marked adr_overridable: false, even
+        if its own authorises_exception_to lists it -- the standard's own
+        flag is checked, never trusted from the ADR's claim alone."""
+        f = _finding(severity="High", confidence=1.0, category="standard",
+                      standard="STD-SEC-013", adr="ADR-002")
+        records = [{"id": "ADR-002", "status": "accepted",
+                    "authorises_exception_to": ["STD-SEC-013"]}]
+        standards_by_id = {"STD-SEC-013": {"adr_overridable": False}}
+        assert derive_review_verdict([f], [], records, standards_by_id) == REQUEST_CHANGES
 
     def test_only_non_blocking_findings_approves(self):
         f = _finding(severity="Medium", confidence=0.5)

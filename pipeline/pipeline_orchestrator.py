@@ -6151,7 +6151,10 @@ def _run_agent(
         # outcome_policy steps post the orchestrator's own rendered comment,
         # computed from result.review, once _apply_result has resolved the
         # verdict (issue #512 Part 2) -- never the model's raw output here.
-        if not agent_def.outcome_policy:
+        # STATUS_BLOCKED has no verdict to compute (_apply_outcome_policy is
+        # never reached for it), so its own diagnostic output is posted here
+        # same as any other step's, or a legitimate block would go unreported.
+        if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
             _post_artefact_if_present(gh, agent_def, work_item, step_result)
     else:
         result, step_result, exhausted, _attempt = _invoke_with_retries(
@@ -6161,7 +6164,7 @@ def _run_agent(
         )
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
-        if not agent_def.outcome_policy:
+        if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
             _post_artefact_if_present(gh, agent_def, work_item, step_result)
 
     # Run the declared "after" scripts once all retries are done, whatever the
@@ -7095,6 +7098,30 @@ def _load_adr_records() -> list[dict]:
         return []
 
 
+def _load_standard_records() -> dict[str, dict]:
+    """standards/*.json's own records, keyed by id -- adr_exception_index
+    checks a cited standard's own adr_overridable flag against these before
+    honoring an ADR's authorises_exception_to claim (docs/product/standards/
+    14-standards.md: "adr_overridable: false -- always blocks; no exception
+    is possible"). A missing directory means no standards exist yet; that is
+    not a failure (mirrors _load_adr_records)."""
+    standards_dir = Path(os.environ.get("AI_AGILE_ROOT", str(SUBMODULE_ROOT))) / "standards"
+    if not standards_dir.exists():
+        return {}
+    by_id: dict[str, dict] = {}
+    for path in sorted(standards_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("  could not load %s for outcome_policy verdict computation: %s", path, exc)
+            continue
+        for std in data.get("standards", []):
+            std_id = std.get("id")
+            if std_id:
+                by_id[std_id] = std
+    return by_id
+
+
 def _apply_outcome_policy(
     gh: "GitHubClient",
     agent_def: "AgentDef",
@@ -7139,6 +7166,10 @@ def _apply_outcome_policy(
     if not review:
         return final_status, None, "result.review is missing or empty", False, False, []
 
+    kind = agent_def.outcome_policy.get("kind")
+    if kind != "review_findings":
+        return final_status, None, f"outcome_policy.kind {kind!r} is not implemented", False, False, []
+
     # SUBMODULE_ROOT, never AI_AGILE_ROOT: pipeline/schemas/ ships with the
     # orchestrator itself, and AI_AGILE_ROOT points at the consuming repo
     # root in a submodule install -- a different directory that has no
@@ -7149,7 +7180,10 @@ def _apply_outcome_policy(
     except (OSError, json.JSONDecodeError) as exc:
         return final_status, None, f"could not load outcome_policy schema {schema_path}: {exc}", False, False, []
 
-    import jsonschema  # imported here: only outcome_policy steps need it, same as the pipeline-override validation path
+    try:
+        import jsonschema  # imported here: only outcome_policy steps need it, same as the pipeline-override validation path
+    except ImportError as exc:
+        return final_status, None, f"jsonschema is not installed: {exc}", False, False, []
     validator = jsonschema.Draft7Validator(schema)
     errors = sorted(validator.iter_errors(review), key=lambda e: list(e.path))
     if errors:
@@ -7190,13 +7224,14 @@ def _apply_outcome_policy(
         human_blockers = _fetch_unresolved_human_review_requests(gh, pr_number)
 
     adr_records = _load_adr_records()
-    verdict = _derive_review_verdict(findings, human_blockers, adr_records)
+    standards_by_id = _load_standard_records()
+    verdict = _derive_review_verdict(findings, human_blockers, adr_records, standards_by_id)
     computed_status = STATUS_COMPLETE if verdict == _REVIEW_APPROVE else STATUS_REVIEW
 
     # issue #100: a human blocker with otherwise-clean findings gets a free
     # re-invoke (not counted against review_loop.max_cycles) -- distinguish
     # that from findings themselves blocking, which is a normal cycle.
-    findings_only_verdict = _derive_review_verdict(findings, [], adr_records)
+    findings_only_verdict = _derive_review_verdict(findings, [], adr_records, standards_by_id)
     human_only_block = (
         bool(human_blockers)
         and findings_only_verdict == _REVIEW_APPROVE
@@ -7224,7 +7259,7 @@ def _apply_outcome_policy(
         step_result,
         output=_render_review_comment(
             verdict, review.get("head_sha", ""), findings, adr_records,
-            human_blockers=human_blockers, prior_rerun=_prior_rerun,
+            standards_by_id=standards_by_id, human_blockers=human_blockers, prior_rerun=_prior_rerun,
         ),
     )
     return computed_status, rendered, "", outcome_overridden, human_only_block, human_blockers

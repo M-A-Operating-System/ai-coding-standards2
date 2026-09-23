@@ -67,6 +67,7 @@
         },
         "standard": {
           "type": "string",
+          "minLength": 1,
           "description": "The P-N or STD ID this finding cites. Required for category \"standard\"; optional otherwise."
         },
         "adr": {

@@ -121,13 +121,16 @@ MERGEABLE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state')
 # clean/blocked/behind/unstable (all conflict-free)
 ```
 
-If `$MERGEABLE` is `dirty`, raise it as a Critical finding
-`DP-001[DP+SA] — Unresolved merge conflicts block clean merge` and set
-`VERDICT=REQUEST CHANGES` immediately (skip remaining review steps).
+If `$MERGEABLE` is `dirty`, raise it as a Critical finding, title
+"Unresolved merge conflicts block clean merge" (note it informally for now,
+e.g. `DP-1` -- Step 9 assigns the final `RV-NNN` id, same as every other
+persona's findings), and set `VERDICT=REQUEST CHANGES` immediately (skip
+remaining review steps).
 
 If `$MERGEABLE` is `unknown` (GitHub is still computing mergeability),
-raise it as a High finding `DP-001[DP+SA] — Merge status unknown; recheck
-before merge` but do not skip remaining review steps.
+raise it as a High finding, title "Merge status unknown; recheck before
+merge" (same informal-note-then-Step-9-id convention) but do not skip
+remaining review steps.
 
 
 ---

@@ -21,7 +21,7 @@ REQUEST_CHANGES = "REQUEST CHANGES"
 _NON_BLOCKING_CONFIDENCE_THRESHOLD = 0.8
 
 
-def adr_exception_index(adr_records: list[dict]) -> dict[str, set[str]]:
+def adr_exception_index(adr_records: list[dict], standards_by_id: dict[str, dict]) -> dict[str, set[str]]:
     """Build {adr_id: {standard_id, ...}} from adrs.json's own records --
     only ADRs that actually list a standard in authorises_exception_to grant
     an exception for it (adrs.json's own rule, restated in CLAUDE.md and in
@@ -30,13 +30,23 @@ def adr_exception_index(adr_records: list[dict]) -> dict[str, set[str]]:
     own status is not "accepted" (proposed, deprecated, superseded) grants
     no exception either -- a withdrawn or not-yet-approved decision cannot
     still be waiving a standard.
+
+    A standard is only included if standards_by_id (standards/*.json's own
+    records, keyed by id) says its own adr_overridable is True -- verified
+    the same way the ADR citation itself is, never trusted from the ADR's
+    own listing alone (docs/product/standards/14-standards.md: "adr_overridable:
+    false -- always blocks; no exception is possible"). A standard missing
+    from standards_by_id is treated as non-overridable.
     """
     index: dict[str, set[str]] = {}
     for record in adr_records:
         if record.get("status") != "accepted":
             continue
         adr_id = record.get("id")
-        standards = record.get("authorises_exception_to") or []
+        standards = [
+            std_id for std_id in (record.get("authorises_exception_to") or [])
+            if standards_by_id.get(std_id, {}).get("adr_overridable") is True
+        ]
         if adr_id and standards:
             index[adr_id] = set(standards)
     return index
@@ -76,14 +86,19 @@ def derive_review_verdict(
     findings: list[dict],
     human_blockers: list,
     adr_records: list[dict],
+    standards_by_id: Optional[dict] = None,
 ) -> str:
     """The verdict is REQUEST_CHANGES if any finding blocks or any human
     blocker exists; otherwise APPROVE. Code decides; the model's own
     outcome/verdict fields are advisory only (issue #512 Part 2).
+
+    standards_by_id feeds adr_exception_index's own adr_overridable check;
+    omitting it means no ADR exception is ever granted (fail closed), never
+    a silent bypass of a standard that cannot be waived.
     """
     if human_blockers:
         return REQUEST_CHANGES
-    adr_index = adr_exception_index(adr_records)
+    adr_index = adr_exception_index(adr_records, standards_by_id or {})
     if any(finding_blocks(f, adr_index) for f in findings):
         return REQUEST_CHANGES
     return APPROVE
@@ -120,6 +135,7 @@ def render_review_comment(
     findings: list[dict],
     adr_records: list[dict],
     *,
+    standards_by_id: Optional[dict] = None,
     human_blockers: Optional[list] = None,
     prior_rerun: bool = False,
 ) -> str:
@@ -142,7 +158,7 @@ def render_review_comment(
     as unexplained -- and gives coder's Mode B nothing to act on.
     """
     human_blockers = human_blockers or []
-    adr_index = adr_exception_index(adr_records)
+    adr_index = adr_exception_index(adr_records, standards_by_id or {})
     ordered = sort_findings(findings)
     counts: dict[str, int] = {}
     for f in ordered:
