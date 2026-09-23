@@ -806,6 +806,144 @@ class TestOutcomePolicyHumanReviewGuard:
 
 
 # ---------------------------------------------------------------------------
+# require_head_match end-to-end (issue #512 Part 3): an APPROVE for a commit
+# that is no longer the PR's head must never reach :complete or mark-pr-ready,
+# exercised through the real process_work_item path a production pr-reviewer
+# dispatch actually takes.
+# ---------------------------------------------------------------------------
+
+class TestRequireHeadMatchEndToEnd:
+    def _make_pr_reviewer_def(self):
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test pr-reviewer",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            review_gate=True,
+            outcome_policy={
+                "kind": "review_findings",
+                "schema": "pipeline/schemas/pr-review.schema.json",
+                "require_head_match": True,
+            },
+            review_loop={
+                "re_invoke": "03_execute/coder",
+                "max_cycles": 3,
+                "also_clear": [],
+            },
+        )
+
+    def _make_coder_def(self):
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "prd-writer:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test coder",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+        )
+
+    def _make_gh_for_process(self, *, live_head_sha, find_pr_branch_return=99):
+        gh = MagicMock()
+        gh.repo = "test/repo"
+        gh.add_label = MagicMock()
+        gh.remove_label = MagicMock()
+        gh.post_comment = MagicMock()
+        gh.get_issue_labels = MagicMock(return_value=set())
+        gh.find_pr_by_branch = MagicMock(return_value=find_pr_branch_return)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+        gh.mark_pr_ready = MagicMock()
+        gh.list_comment_bodies = MagicMock(return_value=[])
+        gh.get_pr_reviews = MagicMock(return_value=[])
+        gh._get = MagicMock(return_value={"head": {"sha": live_head_sha}})
+        return gh
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_stale_head_withholds_ready_and_terminal_status(self, mock_invoke):
+        """Scenario: Stale review is not approved -- a push landed after
+        this run captured review.head_sha, so the live PR head has moved on.
+        The PR must not be marked ready, no pr-reviewer status label may be
+        applied (so it is re-dispatched next tick), and review-cycle:N must
+        not advance."""
+        mock_invoke.side_effect = _invoke_agent_writing_result(
+            "complete", verdict="APPROVE",
+            review={"head_sha": "reviewed0000", "findings": []},
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process(live_head_sha="livehead0001")
+        wi = WorkItem(
+            number=590158, kind="issue", title="test issue",
+            labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/590158",
+        )
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        gh.mark_pr_ready.assert_not_called()
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        _terminal = {
+            reviewer.status_label(s) for s in ("complete", "review", "blocked", "failed")
+        }
+        assert not (_terminal & set(applied)), (
+            "no terminal pr-reviewer status label may be applied on a "
+            "stale-head result -- the step must be re-dispatched next tick "
+            f"exactly as if it had not run this cycle; got {applied}"
+        )
+        assert not any(l.startswith("review-cycle:") for l in applied), (
+            "a stale head is not a review cycle and must not consume one"
+        )
+        removed = [c.args[1] for c in gh.remove_label.call_args_list]
+        assert reviewer.status_label("wip") in removed, (
+            ":wip must come off so the step is eligible to run again"
+        )
+        note_calls = [c for c in gh.post_comment.call_args_list if "reviewed0000" in c.args[1]]
+        assert len(note_calls) == 1
+        assert "ai-agile/artefact/v1" not in note_calls[0].args[1], (
+            "the stale-head note must not carry the artefact marker, or a "
+            "later genuine review would misread it as a prior real review "
+            "and render itself as a spurious (Re-run)"
+        )
+
+    @patch("pipeline.pipeline_orchestrator.invoke_agent")
+    def test_matching_head_marks_ready_normally(self, mock_invoke):
+        """Control case: same policy, but the reviewed commit is still the
+        PR's live head -- require_head_match must not interfere."""
+        mock_invoke.side_effect = _invoke_agent_writing_result(
+            "complete", verdict="APPROVE",
+            review={"head_sha": "livehead0001", "findings": []},
+        )
+        reviewer = self._make_pr_reviewer_def()
+        coder = self._make_coder_def()
+        pipeline_map = {reviewer.agent: reviewer, coder.agent: coder}
+        gh = self._make_gh_for_process(live_head_sha="livehead0001")
+        wi = WorkItem(
+            number=590159, kind="issue", title="test issue",
+            labels={"merge-conflict:complete"},
+            url="https://github.com/test/repo/issues/590159",
+        )
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            process_work_item(wi, [reviewer], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        gh.mark_pr_ready.assert_called_once_with(99)
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        assert "pr-reviewer:complete" in applied
+
+
+# ---------------------------------------------------------------------------
 # _ensure_label_exists — standalone label colour (SC-002)
 # ---------------------------------------------------------------------------
 

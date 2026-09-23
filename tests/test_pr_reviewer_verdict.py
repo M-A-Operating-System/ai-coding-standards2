@@ -101,6 +101,27 @@ class TestPipelineJsonDeclaresOutcomePolicy:
         schema_path = REPO_ROOT / entry["outcome_policy"]["schema"]
         assert schema_path.exists(), f"outcome_policy.schema path does not exist: {schema_path}"
 
+    def test_outcome_policy_declares_require_head_match(self):
+        """Scenario: Stale review is not approved -- issue #512 Part 3.
+        Without this, an APPROVE could mark the PR ready for a commit a push
+        landed after the review actually covered."""
+        pipeline = _load_pipeline_json()
+        entry = _find_pr_reviewer_entry(pipeline)
+        assert entry["outcome_policy"].get("require_head_match") is True
+
+
+class TestPrReviewerMdDocumentsPrHeadSha:
+    """$PR_HEAD_SHA is the same dispatch-time convenience export $PR_NUMBER
+    already is (issue #512 Part 3) -- pr-reviewer.md must use it rather than
+    re-deriving its own HEAD_SHA from scratch."""
+
+    def test_step_1_reads_pr_head_sha_env_var(self):
+        text = _load_pr_reviewer_text()
+        assert "$PR_HEAD_SHA" in text, (
+            "Step 1 must read $PR_HEAD_SHA, the orchestrator's own "
+            "dispatch-time export, instead of always making its own gh api call"
+        )
+
 
 class TestStep9UnifiedFindingIds:
     """Scenario: Coder reads the rendered findings -- findings carry one

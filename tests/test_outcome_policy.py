@@ -87,7 +87,7 @@ class TestSchemaPathResolution:
         step_result = _step_result_with_review()
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -103,7 +103,7 @@ class TestMissingOrEmptyReview:
         step_result = StepResult(outcome="complete", summary="done", review={})
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -118,7 +118,7 @@ class TestMissingOrEmptyReview:
         step_result = _step_result_with_review(head_sha="", findings=[])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -138,7 +138,7 @@ class TestDuplicateFindingIds:
         step_result = _step_result_with_review(findings=[finding, dict(finding)])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -157,7 +157,7 @@ class TestSchemaValidation:
         step_result = _step_result_with_review(findings=[finding])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -177,7 +177,7 @@ class TestSchemaValidation:
         step_result = _step_result_with_review(findings=[finding])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -199,7 +199,7 @@ class TestSchemaValidation:
         step_result = _step_result_with_review(findings=[finding])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -223,7 +223,7 @@ class TestHumanBlockerPrNumberResolution:
              "submitted_at": "2026-01-01T00:00:00Z"},
         ]
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -277,6 +277,22 @@ class TestPrNumberReuse:
         gh.find_pr_by_label.assert_not_called()
         gh.get_pr_reviews.assert_called_once_with(77)
 
+    def test_resolved_pr_number_is_returned_to_caller(self):
+        """When the caller passes pr_number=None, _apply_outcome_policy's
+        own fallback resolution must come back in the return tuple, so a
+        caller's later _mark_pr_ready_if_requested call reuses this same
+        value instead of independently re-resolving to a possibly different
+        one (issue #512 Part 3 /code-review fix)."""
+        agent_def = _pr_reviewer_agent_def()
+        work_item = _issue_work_item(number=42)
+        step_result = _step_result_with_review()
+        gh = _make_gh_mock()
+        gh.find_pr_by_branch.return_value = 77
+
+        result = _apply_outcome_policy(gh, agent_def, work_item, step_result, STATUS_COMPLETE)
+
+        assert result[-1] == 77
+
 
 class TestOutcomeOverride:
     def test_computed_verdict_overrides_model_outcome(self):
@@ -289,7 +305,7 @@ class TestOutcomeOverride:
         step_result = _step_result_with_review(findings=[finding])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -303,7 +319,7 @@ class TestOutcomeOverride:
         step_result = _step_result_with_review(findings=[])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -332,7 +348,7 @@ class TestHumanOnlyBlock:
              "submitted_at": "2026-01-01T00:00:00Z"},
         ]
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -358,7 +374,7 @@ class TestHumanOnlyBlock:
              "submitted_at": "2026-01-01T00:00:00Z"},
         ]
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
@@ -371,9 +387,129 @@ class TestHumanOnlyBlock:
         step_result = _step_result_with_review(findings=[])
         gh = _make_gh_mock()
 
-        status, rendered, failure, overridden, human_only_block, human_blockers_out = _apply_outcome_policy(
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, STATUS_COMPLETE,
         )
 
         assert status == STATUS_COMPLETE
         assert human_only_block is False
+
+
+class TestRequireHeadMatch:
+    """Issue #512 Part 3: an APPROVE must be about the exact commit
+    reviewed, checked against a fresh live-head fetch, never a cached or
+    dispatch-time value."""
+
+    def _agent_def_with_head_match(self, **overrides):
+        return _pr_reviewer_agent_def(
+            outcome_policy={
+                "kind": "review_findings",
+                "schema": "pipeline/schemas/pr-review.schema.json",
+                "require_head_match": True,
+            },
+            **overrides,
+        )
+
+    def test_matching_head_sha_applies_complete_normally(self):
+        agent_def = self._agent_def_with_head_match()
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(head_sha="abc123")
+        gh = _make_gh_mock()
+        gh._get.return_value = {"head": {"sha": "abc123"}}
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert stale_head_out is False
+        assert status == STATUS_COMPLETE
+        assert failure == ""
+
+    def test_mismatched_head_sha_withholds_complete(self):
+        """Scenario: Stale review is not approved."""
+        agent_def = self._agent_def_with_head_match()
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(head_sha="abc123")
+        gh = _make_gh_mock()
+        gh._get.return_value = {"head": {"sha": "def456"}}
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert stale_head_out is True
+        assert failure == "", "a stale head is not a malformed-result failure"
+        assert "abc123" in rendered.output
+        assert "def456" in rendered.output
+
+    def test_not_checked_when_verdict_is_request_changes(self):
+        """A REQUEST CHANGES verdict never reaches _mark_pr_ready_if_requested
+        anyway, so a stale head is irrelevant to it -- the issue's own Part 3
+        text scopes this check to "before applying complete"."""
+        agent_def = self._agent_def_with_head_match()
+        work_item = _issue_work_item()
+        finding = {
+            "id": "RV-001", "title": "t", "severity": "Critical", "category": "correctness",
+            "confidence": 1.0, "evidence": "e", "fix": "f",
+        }
+        step_result = _step_result_with_review(head_sha="abc123", findings=[finding])
+        gh = _make_gh_mock()
+        gh._get.return_value = {"head": {"sha": "def456"}}
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert status == STATUS_REVIEW
+        assert stale_head_out is False
+
+    def test_not_checked_when_policy_does_not_declare_it(self):
+        agent_def = _pr_reviewer_agent_def()  # no require_head_match
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(head_sha="abc123")
+        gh = _make_gh_mock()
+        gh._get.return_value = {"head": {"sha": "def456"}}
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert stale_head_out is False
+        assert status == STATUS_COMPLETE
+
+    def test_live_head_fetch_failure_withholds_approval(self):
+        """require_head_match exists to prevent a bad approval, so any
+        inability to positively confirm a match -- a failed live fetch
+        included -- must be treated as "cannot verify, defer", never as
+        "check passed, proceed." An API hiccup withholds :complete and lets
+        the step re-dispatch next tick rather than silently approving."""
+        agent_def = self._agent_def_with_head_match()
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(head_sha="abc123")
+        gh = _make_gh_mock()
+        gh._get.side_effect = RuntimeError("boom")
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert stale_head_out is True
+        assert failure == "", "a failed live-head fetch is not a malformed-result failure"
+
+    def test_empty_reviewed_head_sha_withholds_approval(self):
+        """review.head_sha empty means the step never confirmed what it
+        reviewed (e.g. the "no open PR found" early exit) -- there is
+        nothing to compare against the live head, so this must fail closed
+        exactly like a genuine mismatch, not skip the check entirely."""
+        agent_def = self._agent_def_with_head_match()
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(head_sha="")
+        gh = _make_gh_mock()
+        gh._get.return_value = {"head": {"sha": "def456"}}
+
+        status, rendered, failure, overridden, human_only_block, human_blockers_out, stale_head_out, pr_number_out = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert stale_head_out is True
+        assert failure == ""
