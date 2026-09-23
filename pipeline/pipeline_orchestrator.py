@@ -3328,7 +3328,12 @@ def _fetch_pr_head_sha(gh: "GitHubClient", pr_number: int) -> Optional[str]:
         return None
 
 
-def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> dict[str, str]:
+def _related_work_item_env(
+    gh: "GitHubClient",
+    agent_def: "AgentDef",
+    work_item: "WorkItem",
+    include_head_sha: bool = True,
+) -> dict[str, str]:
     """Whichever of ISSUE_NUMBER/PR_NUMBER/PR_HEAD_SHA this invocation's own
     subject identity (WORK_ITEM_NUMBER) does not already give it (PRODUCT.md,
     "A step learns its situation only from what it's told") -- additive
@@ -3358,6 +3363,11 @@ def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item:
 
     Empty when not applicable or nothing resolves -- a step reading it falls
     back to its own lookup rather than failing.
+
+    include_head_sha=False skips the PR_HEAD_SHA fetch entirely -- for a
+    caller that only needs ISSUE_NUMBER/PR_NUMBER (e.g. _invoke_post_steps,
+    whose hooks never read PR_HEAD_SHA), fetching it would just be a wasted
+    API call.
     """
     if work_item.kind == "issue":
         if not agent_def.resolve_pr_number:
@@ -3366,28 +3376,36 @@ def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item:
         if pr_number is None:
             return {}
         env = {"PR_NUMBER": str(pr_number)}
-        head_sha = _fetch_pr_head_sha(gh, pr_number)
-        if head_sha:
-            env["PR_HEAD_SHA"] = head_sha
+        if include_head_sha:
+            head_sha = _fetch_pr_head_sha(gh, pr_number)
+            if head_sha:
+                env["PR_HEAD_SHA"] = head_sha
         return env
 
     if work_item.kind == "pr":
         env: dict[str, str] = {}
+        issue_number: Optional[int] = None
+        _pr: Optional[dict] = None
         try:
-            _head_ref = gh._get(f"/repos/{gh.repo}/pulls/{work_item.number}")["head"]["ref"]
-            _match = re.match(r"^issue-(\d+)", _head_ref)
-            issue_number = int(_match.group(1)) if _match else None
-            if issue_number is None:
-                for _label in work_item.labels:
-                    if _label.startswith("source-issue:"):
-                        issue_number = int(_label.removeprefix("source-issue:"))
-                        break
-            if issue_number is not None:
-                env["ISSUE_NUMBER"] = str(issue_number)
+            _pr = gh._get(f"/repos/{gh.repo}/pulls/{work_item.number}")
         except Exception:
-            pass
-        if agent_def.resolve_pr_number:
-            head_sha = _fetch_pr_head_sha(gh, work_item.number)
+            _pr = None
+        if _pr is not None:
+            try:
+                _match = re.match(r"^issue-(\d+)", _pr.get("head", {}).get("ref") or "")
+                if _match:
+                    issue_number = int(_match.group(1))
+            except Exception:
+                pass
+        if issue_number is None:
+            for _label in work_item.labels:
+                if _label.startswith("source-issue:"):
+                    issue_number = int(_label.removeprefix("source-issue:"))
+                    break
+        if issue_number is not None:
+            env["ISSUE_NUMBER"] = str(issue_number)
+        if include_head_sha and agent_def.resolve_pr_number and _pr is not None:
+            head_sha = _pr.get("head", {}).get("sha")
             if head_sha:
                 env["PR_HEAD_SHA"] = head_sha
         return env
@@ -6551,7 +6569,9 @@ def _invoke_post_steps(
     # itself used (issue #433) -- e.g. mark-pr-ready.sh reads PR_NUMBER
     # directly instead of branching on work-item kind.
     _ps_env.update(_flow_context_env(agent_def, work_item))
-    _ps_env.update(_related_work_item_env(gh, agent_def, work_item))
+    # include_head_sha=False -- no post_step script (e.g. mark-pr-ready.sh)
+    # reads PR_HEAD_SHA, so fetching it here would be a wasted API call.
+    _ps_env.update(_related_work_item_env(gh, agent_def, work_item, include_head_sha=False))
     for _ps_path_str in agent_def.post_steps:
         # Escape check on the DECLARED (working-tree) path: rejects a
         # pipeline.json entry that tries to point outside the repo root. This
@@ -7167,7 +7187,7 @@ def _apply_outcome_policy(
     step_result: StepResult,
     final_status: str,
     pr_number: Optional[int] = None,
-) -> tuple[str, Optional[StepResult], str, bool, bool, list, bool]:
+) -> tuple[str, Optional[StepResult], str, bool, bool, list, bool, Optional[int]]:
     """Issue #512 Part 2: for a step declaring outcome_policy, validate
     result.review against its declared schema and compute the verdict from
     its findings via review_outcome.derive_review_verdict -- never the
@@ -7194,19 +7214,24 @@ def _apply_outcome_policy(
     window unreachable in the first place.
 
     Returns (resolved_status, rendered_step_result, failure_reason,
-    outcome_overridden, human_only_block, human_blockers, stale_head):
+    outcome_overridden, human_only_block, human_blockers, stale_head,
+    resolved_pr_number):
       - failure_reason is non-empty when result.review is missing, fails its
         schema, or has duplicate finding ids -- the caller applies :failed
         and never marks the PR ready (Scenario: Invalid review object).
         rendered_step_result is None in this case; nothing is posted.
       - stale_head is True when the verdict computed APPROVE but
-        review.head_sha no longer matches the PR's live head -- a push
-        landed during or after this run. rendered_step_result then carries a
-        short note (not the full rendered review) as its output, and
-        resolved_status is unchanged from the caller's own final_status:
-        the caller must apply neither :complete nor any other terminal
-        status, so the step is picked up again next tick undiminished
-        (Scenario: Stale review is not approved).
+        review.head_sha does not provably still match the PR's live head --
+        a push landed during or after this run, review.head_sha came back
+        empty, or the live-head fetch itself failed. Any of those is treated
+        the same way: fail closed, not open -- an APPROVE this check cannot
+        actually verify is exactly the case require_head_match exists to
+        catch, not a reason to let it through unchecked. rendered_step_result
+        then carries a short note (not the full rendered review) as its
+        output, and resolved_status is unchanged from the caller's own
+        final_status: the caller must apply neither :complete nor any other
+        terminal status, so the step is picked up again next tick
+        undiminished (Scenario: Stale review is not approved).
       - Otherwise rendered_step_result is a copy of step_result with output
         replaced by the orchestrator's own rendered comment, ready to post
         via _post_artefact_if_present, and resolved_status is the computed
@@ -7217,14 +7242,21 @@ def _apply_outcome_policy(
         findings alone would have computed APPROVE) -- the caller grants
         the same once-only free re-invoke issue #100 established, instead
         of counting it against review_loop.max_cycles.
+      - resolved_pr_number is this function's own resolution of pr_number
+        (the passed-in value, or this call's own fallback resolution when
+        that was None) -- the caller must reuse it for _mark_pr_ready_if_
+        requested rather than let that function re-resolve independently,
+        or a transient failure here (silently skipping this human-blocker
+        and require_head_match protection) paired with success there would
+        mark the PR ready with neither check having actually run.
     """
     review = step_result.review
     if not review:
-        return final_status, None, "result.review is missing or empty", False, False, [], False
+        return final_status, None, "result.review is missing or empty", False, False, [], False, pr_number
 
     kind = agent_def.outcome_policy.get("kind")
     if kind != "review_findings":
-        return final_status, None, f"outcome_policy.kind {kind!r} is not implemented", False, False, [], False
+        return final_status, None, f"outcome_policy.kind {kind!r} is not implemented", False, False, [], False, pr_number
 
     # SUBMODULE_ROOT, never AI_AGILE_ROOT: pipeline/schemas/ ships with the
     # orchestrator itself, and AI_AGILE_ROOT points at the consuming repo
@@ -7234,21 +7266,21 @@ def _apply_outcome_policy(
     try:
         schema = json.loads(schema_path.read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        return final_status, None, f"could not load outcome_policy schema {schema_path}: {exc}", False, False, [], False
+        return final_status, None, f"could not load outcome_policy schema {schema_path}: {exc}", False, False, [], False, pr_number
 
     try:
         import jsonschema  # imported here: only outcome_policy steps need it, same as the pipeline-override validation path
     except ImportError as exc:
-        return final_status, None, f"jsonschema is not installed: {exc}", False, False, [], False
+        return final_status, None, f"jsonschema is not installed: {exc}", False, False, [], False, pr_number
     validator = jsonschema.Draft7Validator(schema)
     errors = sorted(validator.iter_errors(review), key=lambda e: list(e.path))
     if errors:
-        return final_status, None, f"result.review failed schema validation: {errors[0].message}", False, False, [], False
+        return final_status, None, f"result.review failed schema validation: {errors[0].message}", False, False, [], False, pr_number
 
     findings = review.get("findings", [])
     duplicates = _find_duplicate_finding_ids(findings)
     if duplicates:
-        return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False, False, [], False
+        return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False, False, [], False, pr_number
 
     # pr_number is resolved once by _run_agent (_resolve_pr_number) and
     # passed in; only re-derive here when a caller didn't have it (e.g. a
@@ -7281,20 +7313,31 @@ def _apply_outcome_policy(
     ):
         _live_head_sha = _fetch_pr_head_sha(gh, pr_number)
         _reviewed_sha = review.get("head_sha", "")
-        if _live_head_sha and _reviewed_sha and _live_head_sha != _reviewed_sha:
-            log.info(
-                "  STALE   %-38s  reviewed %s but PR #%d's head is now %s -- "
-                "withholding :complete, re-dispatching",
-                agent_def.agent, _reviewed_sha[:12], pr_number, _live_head_sha[:12],
-            )
-            note = replace(
-                step_result,
-                output=(
+        if not _reviewed_sha or not _live_head_sha or _live_head_sha != _reviewed_sha:
+            if not _reviewed_sha:
+                _log_reason = "review.head_sha is empty -- cannot confirm what was reviewed"
+                _note_text = (
+                    "This review reported no reviewed commit (review.head_sha "
+                    "was empty). Re-running against the current head."
+                )
+            elif not _live_head_sha:
+                _log_reason = f"could not fetch PR #{pr_number}'s live head"
+                _note_text = (
+                    f"Could not confirm PR #{pr_number}'s current head. "
+                    "Re-running against the current head."
+                )
+            else:
+                _log_reason = f"reviewed {_reviewed_sha[:12]} but head is now {_live_head_sha[:12]}"
+                _note_text = (
                     f"Reviewed commit `{_reviewed_sha}` is no longer this PR's head "
                     f"(now `{_live_head_sha}`). Re-running against the current head."
-                ),
+                )
+            log.info(
+                "  STALE   %-38s  #%d: %s -- withholding :complete, re-dispatching",
+                agent_def.agent, pr_number, _log_reason,
             )
-            return final_status, note, "", False, False, [], True
+            note = replace(step_result, output=_note_text)
+            return final_status, note, "", False, False, [], True, pr_number
 
     # issue #100: a human blocker with otherwise-clean findings gets a free
     # re-invoke (not counted against review_loop.max_cycles) -- distinguish
@@ -7330,7 +7373,7 @@ def _apply_outcome_policy(
             standards_by_id=standards_by_id, human_blockers=human_blockers, prior_rerun=_prior_rerun,
         ),
     )
-    return computed_status, rendered, "", outcome_overridden, human_only_block, human_blockers, False
+    return computed_status, rendered, "", outcome_overridden, human_only_block, human_blockers, False, pr_number
 
 
 def _apply_result(
@@ -7431,10 +7474,15 @@ def _apply_result(
     if agent_def.outcome_policy and step_result is not None and final_status in (STATUS_COMPLETE, STATUS_REVIEW):
         (
             final_status, _rendered, _policy_failure, _outcome_overridden,
-            _human_only_block, _human_blockers_from_policy, _stale_head,
+            _human_only_block, _human_blockers_from_policy, _stale_head, pr_number,
         ) = _apply_outcome_policy(
             gh, agent_def, work_item, step_result, final_status, pr_number,
         )
+        # pr_number is now _apply_outcome_policy's own resolution (its
+        # fallback when the caller's was None) -- reused below for
+        # _mark_pr_ready_if_requested so that call can't independently
+        # re-resolve to a different outcome than what this policy check
+        # itself used (issue #512 Part 3 /code-review).
         if _policy_failure:
             _apply_failed(gh, agent_def, work_item, result, reason=_policy_failure)
             log.error(
@@ -7480,9 +7528,14 @@ def _apply_result(
                 "  STALE   %-38s  #%d re-dispatched next tick, no terminal status applied",
                 agent_def.agent, work_item.number,
             )
+            # is_error_override=True to match every other "no terminal status
+            # applied this cycle" branch in this function -- without it a
+            # withheld, re-dispatched cycle reads as an ordinary successful
+            # completion in metrics/dashboards built on this data.
             _metrics_record = _build_step_metrics(
                 agent_def, work_item, result,
                 timestamp_start, timestamp_end, cycle_id,
+                is_error_override=True,
             )
             _post_cycle_metrics(gh, repo, work_item, _metrics_record, dry_run)
             _remove_run_worktree(pre_agent_worktree)

@@ -6495,6 +6495,29 @@ class TestRelatedWorkItemEnv:
         env = orch._related_work_item_env(gh, self._agent_def("03_execute/coder"), self._work_item())
         assert env == {"PR_NUMBER": "430"}
 
+    def test_include_head_sha_false_skips_the_fetch_for_issue_kind(self):
+        """_invoke_post_steps's hooks (e.g. mark-pr-ready.sh) never read
+        PR_HEAD_SHA -- include_head_sha=False must skip that API call
+        entirely rather than fetching and discarding it."""
+        gh = MagicMock()
+        gh.find_pr_by_branch.return_value = 430
+        env = orch._related_work_item_env(
+            gh, self._agent_def("03_execute/coder"), self._work_item(), include_head_sha=False,
+        )
+        assert env == {"PR_NUMBER": "430"}
+        gh._get.assert_not_called()
+
+    def test_include_head_sha_false_skips_the_fetch_for_pr_kind(self):
+        gh = MagicMock()
+        gh.repo = "test/repo"
+        gh._get.return_value = {"head": {"ref": "issue-431", "sha": "deadbeef"}}
+        env = orch._related_work_item_env(
+            gh, self._agent_def("03_execute/pr-reviewer"),
+            self._work_item(kind="pr", number=430),
+            include_head_sha=False,
+        )
+        assert env == {"ISSUE_NUMBER": "431"}
+
     def test_no_pr_yet_returns_empty(self):
         gh = MagicMock()
         gh.find_pr_by_branch.return_value = None
