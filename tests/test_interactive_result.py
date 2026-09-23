@@ -148,7 +148,7 @@ class TestRunAgentInteractiveResultDispatch:
         }))
         try:
             (result, sentinel_status, sentinel_message, pre_branch,
-             invoked_at, attempt, exhausted, step_result) = self._run(
+             invoked_at, attempt, exhausted, step_result, _pr_number) = self._run(
                 monkeypatch, agent_def, work_item,
             )
             assert result.success is True
@@ -169,7 +169,7 @@ class TestRunAgentInteractiveResultDispatch:
         scratch = _scratch_for(agent_def, work_item)
         shutil.rmtree(scratch, ignore_errors=True)  # ensure absent
         (result, sentinel_status, sentinel_message, pre_branch,
-         invoked_at, attempt, exhausted, step_result) = self._run(
+         invoked_at, attempt, exhausted, step_result, _pr_number) = self._run(
             monkeypatch, agent_def, work_item,
         )
         assert step_result is None
@@ -191,7 +191,7 @@ class TestRunAgentInteractiveResultDispatch:
         (scratch / "result.json").write_text("{not valid json")
         try:
             (result, sentinel_status, sentinel_message, pre_branch,
-             invoked_at, attempt, exhausted, step_result) = self._run(
+             invoked_at, attempt, exhausted, step_result, _pr_number) = self._run(
                 monkeypatch, agent_def, work_item,
             )
             assert step_result is None

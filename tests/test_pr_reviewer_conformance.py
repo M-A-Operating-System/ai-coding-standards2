@@ -34,7 +34,7 @@ def _extract_step_2(text: str) -> str:
 
 
 def _extract_verdict_section(text: str) -> str:
-    match = re.search(r"## Step 10 — Verdict\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    match = re.search(r"## Step 10 \u2014 Verdict[^\n]*\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
@@ -90,47 +90,36 @@ class TestPrReviewerHumanReviewStep:
 
 
 class TestPrReviewerVerdictHumanBlock:
-    """Scenario: pr-reviewer hard block on unresolved human feedback (Step 8 updated)"""
+    """Scenario: pr-reviewer hard block on unresolved human feedback.
 
-    def test_verdict_section_has_human_block_rule(self):
+    Issue #512 Part 2: the orchestrator computes the actual verdict from
+    result.review.findings and an independently-fetched human-blocker list
+    (review_outcome.derive_review_verdict; see
+    tests/test_review_outcome.py::TestDeriveReviewVerdict for the
+    behavioural guarantee that a human blocker forces REQUEST CHANGES
+    ahead of any finding). Step 10 is advisory prose, not a rule list, so
+    these tests check that the prompt still surfaces HUMAN_BLOCK_REVIEWERS
+    to the model's own advisory account, not a specific rule ordering.
+    """
+
+    def test_verdict_section_mentions_human_block_reviewers(self):
         text = _load_pr_reviewer_text()
         section = _extract_verdict_section(text)
         assert section, "Step 10 — Verdict section not found"
         assert "HUMAN_BLOCK_REVIEWERS" in section, (
-            "Step 8 verdict must check HUMAN_BLOCK_REVIEWERS for the hard block. "
-            "Run: python3 scripts/update_agent_files.py"
+            "Step 10 must still mention HUMAN_BLOCK_REVIEWERS so the model's "
+            "own advisory verdict reflects it, even though the orchestrator "
+            "computes the actual verdict independently (issue #512)"
         )
 
-    def test_verdict_human_block_listed_before_automated_findings(self):
+    def test_verdict_section_states_orchestrator_computes_verdict(self):
         text = _load_pr_reviewer_text()
         section = _extract_verdict_section(text)
         assert section, "Step 10 — Verdict section not found"
-        lines = [l.strip() for l in section.splitlines() if l.strip().startswith("-")]
-        human_block_idx = next(
-            (i for i, l in enumerate(lines) if "HUMAN_BLOCK_REVIEWERS" in l), None
-        )
-        automated_idx = next(
-            (i for i, l in enumerate(lines) if "Critical" in l and "High" in l), None
-        )
-        assert human_block_idx is not None, (
-            "Step 8 must have a rule line checking HUMAN_BLOCK_REVIEWERS"
-        )
-        assert automated_idx is not None, (
-            "Step 8 must have the automated finding rule (Critical/High/Medium)"
-        )
-        assert human_block_idx < automated_idx, (
-            "Human block rule must appear before the automated finding rule in Step 8 "
-            "(human block takes priority)"
-        )
-
-    def test_approve_requires_empty_human_block_reviewers(self):
-        text = _load_pr_reviewer_text()
-        section = _extract_verdict_section(text)
-        assert section, "Step 10 — Verdict section not found"
-        approve_lines = [l for l in section.splitlines() if "APPROVE" in l]
-        assert any("HUMAN_BLOCK_REVIEWERS" in l for l in approve_lines), (
-            "The APPROVE rule in Step 8 must require HUMAN_BLOCK_REVIEWERS to be empty. "
-            "Run: python3 scripts/update_agent_files.py"
+        assert "orchestrator" in section.lower(), (
+            "Step 10 must state that the orchestrator computes the actual "
+            "verdict -- the model's own outcome/verdict fields are advisory "
+            "only (issue #512)"
         )
 
 
@@ -211,4 +200,68 @@ class TestPrReviewerPriorArtefactLookupReadsFromIssueNotPr:
             "pr-reviewer.md's PRIOR-artefact lookup must not query "
             "issues/$PR_NUMBER/comments -- that thread never receives its "
             "artefact (issue #510)"
+        )
+
+
+def _extract_step_11(text: str) -> str:
+    # Stop at the next real step/section heading, not the first "---" or "##"
+    # -- Step 11's own result-body example embeds both inside its fenced
+    # blocks ("## PR Review..." and a "---" divider).
+    match = re.search(
+        r"## Step 11 \u2014 Write the result(.+?)(?=\n## (?:Step \d|Rules)|\Z)",
+        text,
+        re.DOTALL,
+    )
+    return match.group(1) if match else ""
+
+
+class TestPrReviewerStep11OutcomeIsNotHardCodedComplete:
+    """Issue #512 Part 1: the result.json example in Step 11 used to hard-code
+    "outcome": "complete", so a model that copied the example literally
+    reported a failing (REQUEST CHANGES) review as a pass. The example must
+    show the outcome as conditional on the verdict, not a literal value.
+
+    Given pr-reviewer.md's Step 11 result.json example
+    When a reader inspects the "outcome" field
+    Then it is not the literal string "complete"
+    And it names both possible outcomes (complete and review)
+    """
+
+    def test_step_11_exists(self):
+        text = _load_pr_reviewer_text()
+        assert _extract_step_11(text), "Step 11 section not found"
+
+    def test_outcome_example_is_not_hard_coded_complete(self):
+        text = _load_pr_reviewer_text()
+        step = _extract_step_11(text)
+        assert step, "Step 11 section is missing"
+        assert '"outcome": "complete"' not in step, (
+            "Step 11's result.json example must not hard-code "
+            '"outcome": "complete" -- a REQUEST CHANGES verdict copied '
+            "literally would report a failing review as a pass (issue #512)"
+        )
+
+    def test_outcome_example_names_both_outcomes(self):
+        """"review" alone would pass trivially -- Step 11's surrounding prose
+        already says "the review body" regardless of the outcome example.
+        Anchor on the exact conditional the template must show."""
+        text = _load_pr_reviewer_text()
+        step = _extract_step_11(text)
+        assert step, "Step 11 section is missing"
+        assert "complete if APPROVE, review if REQUEST CHANGES" in step, (
+            "Step 11's result.json example must show outcome as conditional "
+            "on the verdict (complete on APPROVE, review on REQUEST CHANGES)"
+        )
+
+    def test_result_json_includes_structured_verdict_field(self):
+        """Issue #512: the orchestrator cross-checks outcome against a
+        structured result.verdict field, never against prose parsed back out
+        of `output` (PRODUCT.md, "What a step must return")."""
+        text = _load_pr_reviewer_text()
+        step = _extract_step_11(text)
+        assert step, "Step 11 section is missing"
+        assert '"verdict": "$VERDICT"' in step, (
+            "Step 11's result.json example must include a structured "
+            '"verdict": "$VERDICT" field for the orchestrator to check '
+            "outcome against (issue #512)"
         )

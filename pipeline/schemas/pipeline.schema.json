@@ -437,6 +437,23 @@
             }
           }
         },
+        "outcome_policy": {
+          "type": "object",
+          "description": "Declares that this step's outcome is code-computed from structured findings, not trusted from the model's own outcome field (issue #512 Part 2, AS-1/AS-2: the orchestrator keys off this declared field, never the agent name). Requires result.review (validated against `schema`); the computed verdict overrides the model's own outcome, which is advisory only.",
+          "additionalProperties": false,
+          "required": ["kind", "schema"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["review_findings"],
+              "description": "review_findings: result.review.findings[] is run through review_outcome.derive_review_verdict."
+            },
+            "schema": {
+              "type": "string",
+              "description": "Repo-relative path to the JSON Schema result.review is validated against."
+            }
+          }
+        },
 
         "max_retries": {
           "type": "integer",
