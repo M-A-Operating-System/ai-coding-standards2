@@ -3278,28 +3278,44 @@ def _post_artefact_if_present(
 _BODY_WRITE_MAX_ATTEMPTS = 3
 
 
-def _resolve_body_write_target(
-    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", target: str,
-) -> Optional[int]:
-    """Resolve body_write's declared target ("issue" or "pr") to a real
-    number. Mirrors _mark_pr_ready_if_requested's PR lookup: a step running
-    against an issue work item but targeting "pr" (e.g. coder ticking a PR's
-    build-plan) needs the PR found by branch/label the same way review-gate
-    promotion does. The branch it looks the PR up by is this step's own, from
-    its flow's naming (issue #406) -- never a name built here.
+def _resolve_pr_number(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> Optional[int]:
+    """The one place that resolves which PR a step's work item concerns:
+    work_item.number directly for a PR-kind invocation, or a branch/label
+    lookup (this step's own branch, from its flow's naming -- issue #406;
+    falling back to the source-issue:{N} label every coder-created PR
+    carries) for an issue-kind one. None when not applicable or nothing
+    resolves -- every caller already has its own way to log or handle that.
+
+    The canonical Python-side version of what $PR_NUMBER already gives a
+    step's own shell environment (_related_work_item_env, resolve_pr_number,
+    issue #431/#433): resolved once, here, and reused -- not re-derived by
+    each of body_write, the human-review override, mark-pr-ready, and
+    outcome_policy independently.
     """
-    if target == "issue":
-        return work_item.number if work_item.kind == "issue" else None
     if work_item.kind == "pr":
         return work_item.number
+    if work_item.kind != "issue":
+        return None
     try:
-        _branch = step_branch(agent_def, work_item)
-        pr_number = gh.find_pr_by_branch(_branch) if _branch else None
+        branch = step_branch(agent_def, work_item)
+        pr_number = gh.find_pr_by_branch(branch) if branch else None
         if pr_number is None:
             pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
         return pr_number
     except Exception:
         return None
+
+
+def _resolve_body_write_target(
+    gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", target: str,
+) -> Optional[int]:
+    """Resolve body_write's declared target ("issue" or "pr") to a real
+    number. For "pr", this is _resolve_pr_number -- the same lookup
+    review-gate promotion and the human-review override use.
+    """
+    if target == "issue":
+        return work_item.number if work_item.kind == "issue" else None
+    return _resolve_pr_number(gh, agent_def, work_item)
 
 
 def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem") -> dict[str, str]:
@@ -3310,8 +3326,8 @@ def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item:
     PR_NUMBER independently of work-item kind, so a step reads either bare name
     directly instead of re-deriving it -- coder and pr-reviewer each
     re-derived this themselves via up to six sequential gh api/gh pr list
-    attempts before this existed (issue #431); same lookup
-    _resolve_body_write_target already uses.
+    attempts before this existed (issue #431); same lookup as
+    _resolve_pr_number.
 
     Issue-kind (PR_NUMBER): declared per-step in pipeline.json via
     resolve_pr_number (AS-2: the orchestrator names no step of its own) --
@@ -3331,13 +3347,7 @@ def _related_work_item_env(gh: "GitHubClient", agent_def: "AgentDef", work_item:
     if work_item.kind == "issue":
         if not agent_def.resolve_pr_number:
             return {}
-        try:
-            _branch = step_branch(agent_def, work_item)
-            pr_number = gh.find_pr_by_branch(_branch) if _branch else None
-            if pr_number is None:
-                pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
-        except Exception:
-            return {}
+        pr_number = _resolve_pr_number(gh, agent_def, work_item)
         return {"PR_NUMBER": str(pr_number)} if pr_number is not None else {}
 
     if work_item.kind == "pr":
@@ -5985,7 +5995,14 @@ def _run_agent(
     Modifies labels and work_item.labels in-place (review-cycle tracking).
 
     Returns: (result, sentinel_status, sentinel_message,
-              pre_agent_worktree, invoked_at, attempt, exhausted, step_result)
+              pre_agent_worktree, invoked_at, attempt, exhausted, step_result,
+              pr_number)
+
+    pr_number is resolved once here (_resolve_pr_number), whenever the
+    agent's own step would resolve PR_NUMBER for its shell environment
+    (resolve_pr_number, or a PR-kind work item) -- the caller passes it to
+    _apply_result so outcome_policy/human-review-override/mark-pr-ready
+    reuse it instead of each re-deriving it.
     """
     log.info("  TRIGGER %-38s  [%s]", agent_def.agent, agent_def.step_type)
 
@@ -6059,6 +6076,16 @@ def _run_agent(
     if _invocation_mode is not None:
         _flow_env["AI_AGILE_INVOCATION_MODE"] = _invocation_mode
 
+    # Resolved once per run, for every invocation mode (issue #512
+    # code-review): the same lookup _related_work_item_env's PR_NUMBER
+    # injection uses for the agent's own shell environment. _apply_result
+    # passes this through to outcome_policy/human-review-override/
+    # mark-pr-ready so none of them re-derives it independently.
+    _pr_number = (
+        _resolve_pr_number(gh, agent_def, work_item)
+        if (agent_def.resolve_pr_number or work_item.kind == "pr") else None
+    )
+
     # For commit_after agents, check out the issue branch into its own
     # isolated worktree before invoking, so the agent reads accumulated state
     # without disturbing (or being disturbed by) a concurrent run on a
@@ -6084,7 +6111,7 @@ def _run_agent(
                         f"flow {agent_def.flow!r} declares no naming.branch"
                     ),
                 ),
-                None, "", "", _invoked_at, 0, False, None,
+                None, "", "", _invoked_at, 0, False, None, _pr_number,
             )
         try:
             _pre_agent_worktree = _create_run_worktree(_issue_branch)
@@ -6105,7 +6132,7 @@ def _run_agent(
                     success=False,
                     captured_tail=f"pre-agent worktree setup failed: {_pre_exc}",
                 ),
-                None, "", "", _invoked_at, 0, False, None,
+                None, "", "", _invoked_at, 0, False, None, _pr_number,
             )
 
     sentinel_status: Optional[str] = None
@@ -6184,7 +6211,7 @@ def _run_agent(
 
     return (
         result, sentinel_status, sentinel_message, _pre_agent_worktree,
-        _invoked_at, _attempt, exhausted, step_result,
+        _invoked_at, _attempt, exhausted, step_result, _pr_number,
     )
 
 
@@ -6753,12 +6780,16 @@ def _compute_human_review_override(
     final_status: str,
     labels: set,
     gh: "GitHubClient",
+    pr_number: Optional[int] = None,
 ) -> tuple:
     """Resolve the issue-#100 human-review override.
 
     When pr-reviewer APPROVEs but unresolved human REQUEST_CHANGES reviews exist,
     override final_status to :review for a free coder re-invoke (once-only, guarded
     by HUMAN_REVIEW_PENDING_LABEL). On the second approve, clears the label.
+
+    pr_number: resolved once by _run_agent (_resolve_pr_number) and passed
+    in; re-derived here only when a caller didn't have it.
 
     Returns (final_status, human_review_override, human_review_list).
     """
@@ -6770,24 +6801,12 @@ def _compute_human_review_override(
         and agent_def.review_loop
         and HUMAN_REVIEW_PENDING_LABEL not in labels
     ):
-        _hr_pr_number: Optional[int] = None
-        if work_item.kind == "pr":
-            _hr_pr_number = work_item.number
-        elif work_item.kind == "issue":
-            try:
-                _hr_branch = step_branch(agent_def, work_item)
-                _hr_pr_number = (
-                    gh.find_pr_by_branch(_hr_branch) if _hr_branch else None
-                )
-                if _hr_pr_number is None:
-                    _hr_pr_number = gh.find_pr_by_label(
-                        f"source-issue:{work_item.number}"
-                    )
-            except Exception as exc:
-                log.warning(
-                    "  could not look up PR for human review check on #%d: %s",
-                    work_item.number, exc,
-                )
+        _hr_pr_number = pr_number if pr_number is not None else _resolve_pr_number(gh, agent_def, work_item)
+        if _hr_pr_number is None and work_item.kind == "issue":
+            log.warning(
+                "  could not look up PR for human review check on #%d",
+                work_item.number,
+            )
         if _hr_pr_number is not None:
             _human_review_list = _fetch_unresolved_human_review_requests(gh, _hr_pr_number)
             if _human_review_list:
@@ -7014,28 +7033,19 @@ def _mark_pr_ready_if_requested(
     agent_def: AgentDef,
     work_item: WorkItem,
     gh: "GitHubClient",
+    pr_number: Optional[int] = None,
 ) -> None:
-    """Locate the PR for a review_gate agent and mark it ready for review."""
-    if work_item.kind == "pr":
-        _ready_pr_number = work_item.number
-    elif work_item.kind == "issue":
-        try:
-            _ready_branch = step_branch(agent_def, work_item)
-            _ready_pr_number = (
-                gh.find_pr_by_branch(_ready_branch) if _ready_branch else None
-            )
-            if _ready_pr_number is None:
-                _ready_pr_number = gh.find_pr_by_label(
-                    f"source-issue:{work_item.number}"
-                )
-        except Exception as exc:
-            log.warning(
-                "  could not look up PR for issue #%d: %s",
-                work_item.number, exc,
-            )
-            _ready_pr_number = None
-    else:
-        _ready_pr_number = None
+    """Locate the PR for a review_gate agent and mark it ready for review.
+
+    pr_number: resolved once by _run_agent (_resolve_pr_number) and passed
+    in; re-derived here only when a caller didn't have it.
+    """
+    _ready_pr_number = pr_number if pr_number is not None else _resolve_pr_number(gh, agent_def, work_item)
+    if _ready_pr_number is None and work_item.kind == "issue":
+        log.warning(
+            "  could not look up PR for issue #%d",
+            work_item.number,
+        )
 
     if _ready_pr_number:
         try:
@@ -7128,6 +7138,7 @@ def _apply_outcome_policy(
     work_item: "WorkItem",
     step_result: StepResult,
     final_status: str,
+    pr_number: Optional[int] = None,
 ) -> tuple[str, Optional[StepResult], str, bool, bool, list]:
     """Issue #512 Part 2: for a step declaring outcome_policy, validate
     result.review against its declared schema and compute the verdict from
@@ -7194,26 +7205,12 @@ def _apply_outcome_policy(
     if duplicates:
         return final_status, None, f"result.review has duplicate finding ids: {duplicates}", False, False, []
 
-    # Same PR-resolution shape as _compute_human_review_override/
-    # _mark_pr_ready_if_requested: work_item.number directly for a PR-kind
-    # invocation, branch/label lookup for an issue-kind one.
-    # _related_work_item_env is the wrong tool here -- for a PR-kind work
-    # item it resolves ISSUE_NUMBER, never PR_NUMBER (issue #512 PR review).
-    pr_number: Optional[int] = None
-    if work_item.kind == "pr":
-        pr_number = work_item.number
-    elif work_item.kind == "issue":
-        try:
-            _branch = step_branch(agent_def, work_item)
-            pr_number = gh.find_pr_by_branch(_branch) if _branch else None
-            if pr_number is None:
-                pr_number = gh.find_pr_by_label(f"source-issue:{work_item.number}")
-        except Exception as exc:
-            log.warning(
-                "  could not look up PR for outcome_policy human-review check on #%d: %s",
-                work_item.number, exc,
-            )
-        if pr_number is None:
+    # pr_number is resolved once by _run_agent (_resolve_pr_number) and
+    # passed in; only re-derive here when a caller didn't have it (e.g. a
+    # direct unit-test call).
+    if pr_number is None:
+        pr_number = _resolve_pr_number(gh, agent_def, work_item)
+        if pr_number is None and work_item.kind == "issue":
             log.warning(
                 "  outcome_policy: no PR found for #%d -- human-review check skipped, "
                 "verdict computed from findings alone",
@@ -7288,8 +7285,13 @@ def _apply_result(
     exhausted: bool = False,
     step_result: Optional[StepResult] = None,
     performed_by: str = "agent",
+    pr_number: Optional[int] = None,
 ) -> bool:
     """Apply GitHub side-effects for a completed agent run.
+
+    pr_number: resolved once by _run_agent (_resolve_pr_number), reused here
+    by outcome_policy/human-review-override/mark-pr-ready instead of each
+    re-deriving it via its own branch/label lookup.
 
     Handles rate-limit short-circuit, final status determination, commit-after
     invocation, human review override, terminal label application, closing
@@ -7360,7 +7362,7 @@ def _apply_result(
             final_status, _rendered, _policy_failure, _outcome_overridden,
             _human_only_block, _human_blockers_from_policy,
         ) = _apply_outcome_policy(
-            gh, agent_def, work_item, step_result, final_status,
+            gh, agent_def, work_item, step_result, final_status, pr_number,
         )
         if _policy_failure:
             _apply_failed(gh, agent_def, work_item, result, reason=_policy_failure)
@@ -7440,7 +7442,7 @@ def _apply_result(
         )
     else:
         final_status, _human_review_override, _human_review_list = _compute_human_review_override(
-            agent_def, work_item, final_status, labels, gh,
+            agent_def, work_item, final_status, labels, gh, pr_number,
         )
 
     # When an agent with a human gate completes, apply :review rather than
@@ -7508,7 +7510,7 @@ def _apply_result(
     # Mark the PR ready-for-review if the agent declares it (P-16).
     # Only fires on true completion — not when awaiting a human gate.
     if applied_status == STATUS_COMPLETE and agent_def.review_gate:
-        _mark_pr_ready_if_requested(agent_def, work_item, gh)
+        _mark_pr_ready_if_requested(agent_def, work_item, gh, pr_number)
 
     # post_steps: run per-agent completion hooks after the agent signals :complete.
     # Each hook is a repo-relative path to a bash script. A non-zero exit is
@@ -7736,7 +7738,7 @@ def process_work_item(
 
         (
             result, sentinel_status, sentinel_message, pre_worktree, invoked_at,
-            attempt, exhausted, step_result,
+            attempt, exhausted, step_result, pr_number,
         ) = _run_agent(
             agent_def, work_item, dry_run, repo, labels,
             session_id, default_extra_tools, concurrency, gh, pipeline_map,
@@ -7776,6 +7778,7 @@ def process_work_item(
                 timestamp_start=_timestamp_start, timestamp_end=_timestamp_end,
                 exhausted=exhausted, step_result=step_result,
                 performed_by="human" if interactive_result else "agent",
+                pr_number=pr_number,
             )
             labels = normalize_skipped_labels(work_item.labels, pipeline_map)  # re-normalize after _apply_result refresh
             if stop:

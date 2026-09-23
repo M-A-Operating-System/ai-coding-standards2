@@ -10,8 +10,11 @@ from unittest.mock import MagicMock, patch
 from pipeline.pipeline_orchestrator import (
     _fetch_unresolved_human_review_requests,
     _handle_review_loop,
+    _compute_human_review_override,
+    _mark_pr_ready_if_requested,
     HUMAN_REVIEW_PENDING_LABEL,
     STANDALONE_LABEL_COLOURS,
+    STATUS_COMPLETE,
     GitHubClient,
     process_work_item,
     AgentDef,
@@ -555,6 +558,58 @@ class TestProcessWorkItemHumanReviewGuard:
         assert not any(l.startswith("review-cycle:") for l in applied), (
             "Empty human reviews must not trigger a free re-invoke"
         )
+
+
+class TestPrNumberReuse:
+    """_run_agent resolves the PR number once (_resolve_pr_number) and
+    passes it to _apply_result; _compute_human_review_override and
+    _mark_pr_ready_if_requested must reuse it rather than re-deriving via
+    their own branch/label lookup."""
+
+    def _make_reviewer_def(self):
+        return AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test pr-reviewer",
+            flow="standard-delivery",
+            flow_naming={"branch": "issue-{number}"},
+            review_gate=True,
+            review_loop={"re_invoke": "03_execute/coder", "max_cycles": 3, "also_clear": []},
+        )
+
+    def test_compute_human_review_override_skips_lookup_when_pr_number_given(self):
+        agent_def = self._make_reviewer_def()
+        wi = WorkItem(number=42, kind="issue", title="t", labels=set(),
+                      url="https://github.com/test/repo/issues/42")
+        gh = _make_gh(reviews=[])
+        gh.find_pr_by_branch = MagicMock(return_value=None)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+
+        _compute_human_review_override(agent_def, wi, STATUS_COMPLETE, set(), gh, 77)
+
+        gh.find_pr_by_branch.assert_not_called()
+        gh.find_pr_by_label.assert_not_called()
+        gh.get_pr_reviews.assert_called_once_with(77)
+
+    def test_mark_pr_ready_skips_lookup_when_pr_number_given(self):
+        agent_def = self._make_reviewer_def()
+        wi = WorkItem(number=42, kind="issue", title="t", labels=set(),
+                      url="https://github.com/test/repo/issues/42")
+        gh = _make_gh()
+        gh.find_pr_by_branch = MagicMock(return_value=None)
+        gh.find_pr_by_label = MagicMock(return_value=None)
+        gh.mark_pr_ready = MagicMock()
+
+        _mark_pr_ready_if_requested(agent_def, wi, gh, 77)
+
+        gh.find_pr_by_branch.assert_not_called()
+        gh.find_pr_by_label.assert_not_called()
+        gh.mark_pr_ready.assert_called_once_with(77)
 
 
 # ---------------------------------------------------------------------------

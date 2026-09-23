@@ -260,6 +260,24 @@ class TestHumanBlockerPrNumberResolution:
         gh.get_pr_reviews.assert_called_once_with(88)
 
 
+class TestPrNumberReuse:
+    """_run_agent resolves the PR number once (_resolve_pr_number) and
+    passes it in; _apply_outcome_policy must reuse it rather than
+    re-deriving via its own branch/label lookup."""
+
+    def test_passed_pr_number_skips_branch_and_label_lookup(self):
+        agent_def = _pr_reviewer_agent_def()
+        work_item = _issue_work_item(number=42)
+        step_result = _step_result_with_review()
+        gh = _make_gh_mock()
+
+        _apply_outcome_policy(gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77)
+
+        gh.find_pr_by_branch.assert_not_called()
+        gh.find_pr_by_label.assert_not_called()
+        gh.get_pr_reviews.assert_called_once_with(77)
+
+
 class TestOutcomeOverride:
     def test_computed_verdict_overrides_model_outcome(self):
         agent_def = _pr_reviewer_agent_def()

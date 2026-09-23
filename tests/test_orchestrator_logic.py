@@ -4950,7 +4950,7 @@ class TestRunAgentBehaviour:
         gh = _make_gh_mock()
         wi = _make_work_item_with_labels(42, {"issue-classifier:complete"})
         with patch("subprocess.run", side_effect=self._git_side_effect()):
-            result, sentinel_status, sentinel_message, _pre, _at, attempt, _exhausted, _step_result = _run_agent(
+            result, sentinel_status, sentinel_message, _pre, _at, attempt, _exhausted, _step_result, _pr_number = _run_agent(
                 agent, wi, False, "test/repo", set(wi.labels), "",
                 None, None, gh, {agent.agent: agent},
             )
@@ -5121,7 +5121,7 @@ class TestRunAgentWorktreeIsolation:
 
         (
             result, sentinel_status, sentinel_message, pre_agent_worktree,
-            _invoked_at, _attempt, _exhausted, step_result,
+            _invoked_at, _attempt, _exhausted, step_result, _pr_number,
         ) = _run_agent(
             agent, wi, False, "test/repo", set(wi.labels), "",
             None, None, gh, {agent.agent: agent},
