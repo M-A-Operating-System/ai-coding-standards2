@@ -18,17 +18,19 @@ def test_severity_escalation_and_no_escalation_do_not_both_appear():
     corroboration may inform confidence instead."""
     text = _text()
     assert "escalate its severity" not in text
-    assert "corroboration does not" in text
+    assert "corroboration across lenses does not" in text or "corroboration does not" in text
 
 
-def test_review_is_one_pass_across_lenses_without_personas():
-    """The four lenses (Step 2) are checkpoints within a single model
-    invocation -- no separate context per lens, no persona flavor text --
-    not a return to the four-persona structure this PR removed."""
+def test_review_is_one_integrated_examination_without_personas():
+    """The four lenses (Step 2) are coverage criteria applied within a
+    single integrated examination -- not a full-diff sweep per lens, no
+    separate context per lens, no persona flavor text -- not a return to
+    the four-persona structure this PR removed."""
     text = _text()
-    assert "in one pass" in text
+    assert "one integrated examination" in text or "one integrated pass" in text
     assert "four lenses" in text
-    assert "do not re-fetch evidence or\nrestart between lenses" in text
+    assert "restart the review, refetch the same evidence" in text
+    assert "sweep the diff once per lens" not in text
     assert "Defensive Programmer" not in text
     assert "Security Analyst" not in text
     assert "QA Engineer" not in text
@@ -36,13 +38,16 @@ def test_review_is_one_pass_across_lenses_without_personas():
 
 
 def test_review_includes_a_verification_step():
-    """Step 3: a cheap, single-context self-check against the same evidence
-    -- not a second independent reviewer, not new research -- that a draft
-    finding must survive before Step 4 reports it."""
+    """Step 3: a targeted self-check against evidence already gathered --
+    not an unrestricted second review of the entire PR -- that a draft
+    finding must survive before Step 4 reports it. A genuinely new concrete
+    defect surfaced while verifying is recorded, not suppressed."""
     text = _text()
     assert "Verify each draft finding" in text
     assert "drop the finding" in text
-    assert "introduce no new findings here" in text
+    assert "not an\nunrestricted second review of the entire PR" in text or \
+        "not an unrestricted second review of the entire PR" in text
+    assert "record and verify that defect too rather than suppressing it" in text
 
 
 def test_prompt_keeps_required_review_inputs():

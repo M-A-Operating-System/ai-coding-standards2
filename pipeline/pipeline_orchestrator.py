@@ -7239,7 +7239,7 @@ def _apply_outcome_policy(
         verdict's status -- overriding the model's own final_status when
         they disagree (Scenario: Code-computed verdict overrides the model).
         Also carries creates_issue: when the step declares
-        expected_effect.creates_issues, any Low-severity/High-complexity
+        expected_effect.creates_issues, any complex-effort improvement
         findings are bundled into one follow-up issue request, computed
         here from the same findings the verdict used (issue #506) -- never
         left to the model to remember to ask for.
@@ -7372,7 +7372,7 @@ def _apply_outcome_policy(
         )
         _prior_rerun = False
 
-    # issue #506: bundle any Low-severity/High-complexity findings into a
+    # issue #506: bundle any complex-effort improvement findings into a
     # single follow-up issue request -- orchestrator-computed from the same
     # findings the verdict itself used, never left to the model to remember
     # to ask for (P-14). Only when the step actually declared

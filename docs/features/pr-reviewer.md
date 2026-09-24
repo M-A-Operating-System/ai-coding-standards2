@@ -1,50 +1,74 @@
 # Feature: PR reviewer
 
-The PR reviewer supplies evidence-backed structured findings. The orchestrator
-computes the verdict through `pipeline/review_outcome.py`; it also owns current
-human-review state, comment rendering, and PR state changes.
+The PR reviewer supplies evidence-backed structured findings, each a
+`defect` (something that must be true) or an `improvement` (genuinely
+optional). The orchestrator computes the verdict through
+`pipeline/review_outcome.py`; it also owns current human-review state,
+comment rendering, and PR state changes.
 
-## Scenario: A blocking finding starts a fix cycle
+## Scenario: A blocking defect starts a fix cycle
 
-**Given** a high-confidence finding that is not an optional improvement or
-covered by a verified ADR exception
+**Given** a high-confidence defect finding not covered by a verified ADR
+exception, with severity Critical, High, or Medium
 **When** the reviewer writes it to `result.review.findings`
 **Then** the orchestrator marks it `blocking: true` and requests changes
 
-## Scenario: An optional improvement does not block
+## Scenario: A non-blocking defect does not request changes
 
-**Given** a non-Critical finding categorized as `improvement`
+**Given** a defect finding with severity Low or Informational
 **When** the orchestrator computes the review outcome
 **Then** the finding is marked `blocking: false`
 
-## Scenario: The coder follows the computed result
+## Scenario: An improvement never blocks approval
+
+**Given** any finding categorized as `improvement`
+**When** the orchestrator computes the review outcome
+**Then** the finding is marked `blocking: false`, regardless of its effort
+
+## Scenario: A simple improvement is eligible for an already-required coder pass
+
+**Given** an improvement finding with `effort: "simple"`
+**When** the orchestrator computes the review outcome
+**Then** the finding's disposition is `fix-if-coder-cycle` -- eligible to be
+implemented during a coder pass a Required item already triggered, never a
+reason to start one by itself
+
+## Scenario: A medium improvement requires a human decision
+
+**Given** an improvement finding with `effort: "medium"`
+**When** the orchestrator computes the review outcome
+**Then** the finding's disposition is `ask-human` and it is flagged
+prominently in the rendered review -- a human who agrees it matters leaves a
+real REQUEST_CHANGES review, which independently hard-blocks
+
+## Scenario: A complex improvement is deferred
+
+**Given** an improvement finding with `effort: "complex"`
+**When** the orchestrator computes the review outcome
+**Then** the finding's disposition is `defer` and it is bundled into a
+follow-up GitHub issue the orchestrator raises on the reviewer's behalf
+
+## Scenario: The coder obeys the computed blocking status and disposition
 
 **Given** structured review feedback reaches the coder through the review loop
 **When** the coder categorizes feedback
-**Then** findings marked `blocking: true` are Required and non-blocking findings
-are Suggested -- the coder never reclassifies a non-blocking finding back
-into something to fix now
-
-## Scenario: A Low-severity finding's complexity decides its disposition
-
-**Given** a Low-severity finding with `complexity: low`
-**When** the orchestrator computes the review outcome
-**Then** the finding is marked `blocking: true`, same as any other blocking finding
-
-**Given** a Low-severity finding with `complexity: medium`
-**When** the orchestrator computes the review outcome
-**Then** the finding is marked `blocking: false` and flagged prominently in the
-rendered review for a human to decide -- a human who agrees it matters leaves
-a real REQUEST_CHANGES review, which independently hard-blocks
-
-**Given** a Low-severity finding with `complexity: high`
-**When** the orchestrator computes the review outcome
-**Then** the finding is marked `blocking: false` and bundled into a follow-up
-GitHub issue the orchestrator raises on the reviewer's behalf (STD-ARCH-007)
+**Then** findings marked `blocking: true` are Required, a simple improvement
+disposed `fix-if-coder-cycle` is eligible for this pass only, and every other
+finding is not required -- the coder never recomputes severity, confidence,
+ADR validity, or improvement disposition to reclassify a finding
 
 ## Scenario: Review state is deterministic
 
 **Given** structured findings, current human blockers, standards, and ADRs
 **When** the review step completes
-**Then** the orchestrator computes APPROVE or REQUEST CHANGES without relying on
-an advisory model verdict or effort classification
+**Then** the orchestrator computes APPROVE or REQUEST CHANGES without relying
+on an advisory model verdict
+
+## Scenario: The reviewer produces one finding per distinct issue and verifies its evidence
+
+**Given** the same defect independently observed through two or more review
+lenses
+**When** the reviewer produces structured findings
+**Then** it appears once, with severity based on technical impact alone, and
+its evidence has been re-checked against the diff or PR-head content before
+being reported

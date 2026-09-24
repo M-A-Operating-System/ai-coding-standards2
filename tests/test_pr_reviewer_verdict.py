@@ -49,5 +49,7 @@ def test_prompt_writes_review_result_without_advisory_verdict():
     assert '"output"' not in text
 
 
-def test_prompt_does_not_classify_finding_effort():
-    assert '"effort"' not in _text()
+def test_prompt_does_not_reintroduce_fix_now_defer_ok():
+    text = _text()
+    assert "fix-now" not in text
+    assert "defer-ok" not in text

@@ -132,7 +132,7 @@ class TestDuplicateFindingIds:
         agent_def = _pr_reviewer_agent_def()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "t", "severity": "Medium", "category": "correctness",
+            "id": "RV-001", "title": "t", "category": "defect", "type": "correctness", "severity": "Medium",
             "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         step_result = _step_result_with_review(findings=[finding, dict(finding)])
@@ -151,7 +151,7 @@ class TestSchemaValidation:
         agent_def = _pr_reviewer_agent_def()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "t", "severity": "Severe", "category": "correctness",
+            "id": "RV-001", "title": "t", "category": "defect", "type": "correctness", "severity": "Severe",
             "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         step_result = _step_result_with_review(findings=[finding])
@@ -170,8 +170,8 @@ class TestSchemaValidation:
         agent_def = _pr_reviewer_agent_def()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "merge conflict", "severity": "Critical",
-            "category": "correctness", "confidence": 1.0,
+            "id": "RV-001", "title": "merge conflict", "category": "defect",
+            "type": "correctness", "severity": "Critical", "confidence": 1.0,
             "evidence": "mergeable_state is dirty", "fix": "resolve the conflict",
         }
         step_result = _step_result_with_review(findings=[finding])
@@ -185,15 +185,15 @@ class TestSchemaValidation:
         assert status == STATUS_REVIEW  # Critical finding blocks
 
     def test_standard_category_without_standard_field_fails_closed(self):
-        """A schema-valid-but-nonsensical finding: category "standard" with
-        no standard cited. Without this, an ADR exception naming a real
+        """A schema-invalid finding: a defect with type "standard" and no
+        standard cited. Without this, an ADR exception naming a real
         standard could never match (finding_blocks needs both adr and
         standard set), so a valid exception would silently fail to apply --
         better to reject the finding upfront than let that happen quietly."""
         agent_def = _pr_reviewer_agent_def()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "t", "severity": "High", "category": "standard",
+            "id": "RV-001", "title": "t", "category": "defect", "type": "standard", "severity": "High",
             "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         step_result = _step_result_with_review(findings=[finding])
@@ -299,7 +299,7 @@ class TestOutcomeOverride:
         agent_def = _pr_reviewer_agent_def()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "t", "severity": "Critical", "category": "correctness",
+            "id": "RV-001", "title": "t", "category": "defect", "type": "correctness", "severity": "Critical",
             "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         step_result = _step_result_with_review(findings=[finding])
@@ -363,7 +363,7 @@ class TestHumanOnlyBlock:
         agent_def = _pr_reviewer_agent_def()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "t", "severity": "Critical", "category": "correctness",
+            "id": "RV-001", "title": "t", "category": "defect", "type": "correctness", "severity": "Critical",
             "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         step_result = _step_result_with_review(findings=[finding])
@@ -449,7 +449,7 @@ class TestRequireHeadMatch:
         agent_def = self._agent_def_with_head_match()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "t", "severity": "Critical", "category": "correctness",
+            "id": "RV-001", "title": "t", "category": "defect", "type": "correctness", "severity": "Critical",
             "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         step_result = _step_result_with_review(head_sha="abc123", findings=[finding])
@@ -516,16 +516,15 @@ class TestRequireHeadMatch:
 
 
 class TestDeferredFindingsIssueSynthesis:
-    """Issue #506: a Low-severity/High-complexity finding gets bundled into
-    a creates_issue request the orchestrator itself computes, never left to
+    """Issue #506: a complex-effort improvement gets bundled into a
+    creates_issue request the orchestrator itself computes, never left to
     the model to remember to ask for (P-14) -- gated by the step's own
     expected_effect.creates_issues declaration, same as every other
     creates_issue consumer."""
 
     _deferred_finding = {
-        "id": "RV-001", "title": "large refactor needed", "severity": "Low",
-        "category": "consistency", "confidence": 1.0, "evidence": "e", "fix": "f",
-        "complexity": "high",
+        "id": "RV-001", "title": "large refactor needed", "category": "improvement",
+        "effort": "complex", "confidence": 1.0, "evidence": "e", "fix": "f",
     }
 
     def test_declared_and_deferred_finding_populates_creates_issue(self):

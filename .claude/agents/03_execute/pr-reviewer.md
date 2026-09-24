@@ -83,12 +83,13 @@ context, not an exemption.
 If `standards/` is absent or empty, the P-1 to P-16 principles in `AGENTS.md`
 are the only standards in force.
 
-## Step 2 — Survey the change across four lenses, in one pass
+## Step 2 — Examine the change in one integrated pass, using four lenses as coverage
 
-Using the evidence already gathered, sweep the diff once per lens below,
-adding to a single running list of draft findings. These are checkpoints
-within the same pass, not separate reviews — do not re-fetch evidence or
-restart between lenses:
+Using the evidence already gathered, examine each changed file or coherent
+change once, applying every lens below as a coverage criterion rather than a
+separate sweep. Maintain a single running list of draft findings. Do not
+restart the review, refetch the same evidence, or run four separate
+persona-style passes over the diff:
 
 1. **Correctness & failure handling** — boundaries, error paths, and
    integration data shapes.
@@ -101,7 +102,8 @@ restart between lenses:
    schemas, and documentation against each other, plus test coverage for
    changed behavior, error paths, and relevant regressions.
 
-Report only defects supported by the diff or PR-head content. A defect
+Report only defects and, separately, genuinely optional improvements —
+both must be supported by the diff or PR-head content. A defect
 independently flagged by two or more lenses is one finding, not several —
 merge it, never suppress it. Base severity solely on technical impact;
 corroboration across lenses may inform your `confidence` that the finding
@@ -116,67 +118,90 @@ manual checklist.
 
 ## Step 3 — Verify each draft finding
 
-Before finalizing, re-read each draft finding's evidence against the actual
-diff or PR-head file content one more time:
+Before finalizing, re-check each draft finding's evidence against the diff
+or PR-head content already gathered:
 
 - If the evidence still holds exactly as stated, keep the finding.
 - If the evidence is weaker than stated, or the path/line is wrong, correct
   it and adjust `confidence` accordingly.
 - If the evidence does not hold at all, drop the finding — a finding drafted
   in Step 2 is not final until it survives this check.
+- Fetch additional PR-head content only when needed to resolve a specific
+  uncertainty about a draft finding — not as a routine second read of files
+  already covered in Step 1.
+- If checking a draft finding's evidence surfaces a different, concrete
+  defect, record and verify that defect too rather than suppressing it.
 
-This is a check against evidence already gathered, not new research —
-introduce no new findings here.
+This is a targeted check against evidence already gathered, not an
+unrestricted second review of the entire PR.
 
 ## Step 4 — Produce structured findings
 
-Create one entry per distinct defect and sort entries by severity: Critical,
-High, Medium, Low, then Informational. Assign stable IDs in order (`RV-001`,
-`RV-002`, ...). Severity reflects technical impact only; corroboration does not
+Every finding is either a **defect** (something that must be true) or an
+**improvement** (genuinely optional). If a change is necessary to satisfy the
+approved PDD or to correct a security, correctness, standards, or testing
+defect, it is a defect — never relabel a required fix as an improvement to
+soften it.
+
+Create one entry per distinct finding. Sort defects first, by severity
+(Critical, High, Medium, Low, then Informational), followed by improvements.
+Assign stable IDs in order (`RV-001`, `RV-002`, ...). A defect's severity
+reflects technical impact only; corroboration across lenses does not
 automatically raise it.
 
-Each finding must use this shape:
+A defect uses this shape:
 
 ```json
 {
   "id": "RV-001",
   "title": "short imperative title",
+  "category": "defect",
+  "type": "correctness | spec | security | tests | standard | consistency",
   "severity": "Critical | High | Medium | Low | Informational",
-  "category": "correctness | spec | security | tests | standard | consistency | improvement",
   "confidence": 0.0,
   "path": "path/to/file.ext",
   "line": 123,
   "evidence": "Specific evidence from the diff or PR-head file content.",
   "fix": "A precise, actionable remediation.",
-  "standard": "P-N or STD ID; required only for category standard",
-  "adr": "ADR ID; include only for a claimed exception",
-  "complexity": "low | medium | high; required only for severity Low"
+  "standard": "P-N or STD ID; required only for type standard",
+  "adr": "ADR ID; include only for a claimed exception"
 }
 ```
 
-Use `confidence` for confidence that the defect is real, not for impact. Use
-`category: improvement` only for genuinely optional suggestions. Omit optional
-`standard` and `adr` fields when they do not apply.
+An improvement uses this shape:
 
-`complexity` is required only on a `severity: Low` finding — Critical/High/
-Medium always warrant fixing now regardless of complexity, and Informational
-never blocks regardless of it. For a Low finding, rate the fix itself against
-STD-ARCH-007 (the standard governing when work belongs in this PR versus a
-new issue):
+```json
+{
+  "id": "RV-002",
+  "title": "short imperative title",
+  "category": "improvement",
+  "effort": "simple | medium | complex",
+  "confidence": 0.0,
+  "path": "path/to/file.ext",
+  "line": 145,
+  "evidence": "Specific evidence from the diff or PR-head file content.",
+  "fix": "A precise, actionable remediation."
+}
+```
 
-- `low` — resolvable inline: mechanically obvious from `fix`, under ~30 lines,
-  no externally-observable behavior change requiring a new test design. Fixed
-  now, same as any other blocking finding.
-- `high` — issue-worthy under STD-ARCH-007's own bar: needs a separate
-  product decision, a different owner, a human gate, or is genuinely outside
-  this issue's scope. Not fixed now — the orchestrator bundles it into a
-  follow-up issue.
-- `medium` — neither: a real judgment call, or a test whose shape isn't
-  obvious, or a small cross-file ripple, but not requiring the kind of
-  decision that justifies a whole new issue. Not fixed now — flagged in the
-  review for a human to decide.
+A defect never carries `effort`; an improvement never carries `type` or
+`severity` — the two shapes are mutually exclusive, not a shared superset.
+Use `confidence` for confidence that the finding is real, not for impact.
+Omit optional `standard` and `adr` fields when they do not apply.
 
-Do not add any other effort or difficulty classification beyond `complexity`.
+For an improvement, rate the work itself:
+
+- `simple` — small and mechanical, eligible for an already-required coder
+  pass on this PR. Never grounds for starting a coder pass by itself.
+- `medium` — a real judgment call whose value isn't obvious. Flagged for a
+  human to decide whether it's worth doing at all, not auto-implemented.
+- `complex` — needs a separate product decision, a different owner, or is
+  genuinely outside this issue's scope (STD-ARCH-007's own bar for when a
+  new issue is justified). Recorded as future work, not fixed now.
+
+Do not add any other effort or difficulty classification beyond `effort`,
+and never apply `effort` to a defect — a defect's disposition comes from its
+severity alone.
 
 ## Step 5 — Write the result
 

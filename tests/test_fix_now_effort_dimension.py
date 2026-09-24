@@ -1,4 +1,8 @@
-"""Conformance tests for retiring the obsolete finding effort dimension."""
+"""Conformance tests for retiring the obsolete fix-now/defer-ok finding
+effort dimension. Issue #506 later reintroduced `effort` with different
+semantics (simple/medium/complex, scoped to `category: "improvement"`
+only) -- these tests guard against the old two-value contract coming back,
+not against the field name itself."""
 import json
 from pathlib import Path
 
@@ -9,21 +13,19 @@ OUTCOME = REPO_ROOT / "pipeline" / "review_outcome.py"
 CODER = REPO_ROOT / ".claude" / "agents" / "03_execute" / "coder.md"
 
 
-def test_prompt_does_not_produce_effort_metadata():
+def test_prompt_does_not_reintroduce_fix_now_defer_ok():
     text = PR_REVIEWER.read_text()
-    assert '"effort"' not in text
     assert "fix-now" not in text
     assert "defer-ok" not in text
 
 
-def test_schema_rejects_obsolete_effort_metadata():
+def test_schema_effort_enum_excludes_obsolete_values():
     finding_properties = json.loads(SCHEMA.read_text())["definitions"]["Finding"]["properties"]
-    assert "effort" not in finding_properties
+    assert set(finding_properties["effort"]["enum"]) == {"simple", "medium", "complex"}
 
 
-def test_outcome_does_not_branch_on_effort():
+def test_outcome_does_not_reintroduce_fix_now_defer_ok():
     text = OUTCOME.read_text()
-    assert 'finding.get("effort")' not in text
     assert "fix-now" not in text
     assert "defer-ok" not in text
 

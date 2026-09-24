@@ -401,19 +401,29 @@ the actual PR before acting.
 
 | Category | What it means | Must address? |
 |---|---|---|
-| **Required** | Unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` | Yes |
-| **Suggested** | Any finding `$REVIEW_JSON` marks `"blocking": false` | No |
+| **Required** | Unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` (only a `category: "defect"` finding can be blocking) | Yes |
+| **Eligible this pass** | A `category: "improvement"` finding `$REVIEW_JSON` marks non-blocking with disposition `fix-if-coder-cycle` (`effort: "simple"`) | Only alongside Required items -- never the sole reason this pass exists |
+| **Not required** | A non-blocking `category: "defect"` finding, or an improvement with disposition `ask-human` (`effort: "medium"`) or `defer` (`effort: "complex"`) | No |
 
 A finding's `blocking` field is the orchestrator's own computation (issue
 #512) -- Required is never something you re-derive from severity, category,
-or confidence yourself. A non-blocking finding stays non-blocking: it may be
-flagged for a human's own decision or already bundled into a follow-up issue
-(issue #506) -- either way, the orchestrator already decided it does not
-need a coder cycle, and this step does not reclassify that decision back
-into something to fix now.
+confidence, or effort yourself. This step never recomputes which findings
+are Required or Eligible this pass -- it reads `blocking` and the disposition
+already rendered. A non-blocking defect stays non-blocking; an improvement
+flagged `ask-human` may be a human's own decision to make, and one flagged
+`defer` is already bundled into a follow-up issue (issue #506) -- in every
+case the orchestrator already decided it does not need a mandatory fix, and
+this step does not reclassify that decision back into something to fix now.
 
-Do not address Suggested items in code. If a suggestion looks valuable and
-isn't already tracked, open a follow-up issue.
+This pass only ever runs because a Required item exists (Mode B is only
+re-invoked on REQUEST CHANGES, and an improvement never causes that verdict
+by itself) -- so an "Eligible this pass" item found alongside a Required item
+may be implemented in the same pass. Do not treat an Eligible item as a
+reason to do anything beyond what the Required items already require; if no
+Required items remain to justify this pass, do not implement it here either.
+
+Do not address items in the "Not required" row in code. If one looks
+valuable and isn't already tracked, open a follow-up issue.
 
 ---
 
@@ -434,11 +444,12 @@ that contradicts the PRD, tech-spec, or an ADR, do not implement it -- write
 
 ---
 
-## Step 12 -- Address required items
+## Step 12 -- Address required and eligible items
 
 Work through every Required item. For each: understand the root cause, apply
-the fix defensively, add or update tests. After all fixes are applied, run
-the full test suite.
+the fix defensively, add or update tests. Once every Required item is
+addressed, also implement any "Eligible this pass" items found in Step 10.
+After all fixes are applied, run the full test suite.
 
 Pre-existing unrelated failure policy applies here too (see Step 6).
 
@@ -452,7 +463,7 @@ Commit your fixes before signalling complete.
 {
   "outcome": "complete",
   "summary": "Addressed review feedback on PR #...",
-  "output": "## Feedback addressed\n\n**Required items fixed:**\n- ...\n\n**Suggested items (not implemented):**\n- ...",
+  "output": "## Feedback addressed\n\n**Required items fixed:**\n- ...\n\n**Eligible items implemented:**\n- ...\n\n**Not required (not implemented):**\n- ...",
   "expected_effect": {"commits": true}
 }
 ```

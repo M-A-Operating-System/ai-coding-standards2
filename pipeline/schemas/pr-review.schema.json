@@ -20,7 +20,7 @@
     "Finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "title", "severity", "category", "confidence", "evidence", "fix"],
+      "required": ["id", "title", "category", "confidence", "evidence", "fix"],
       "properties": {
         "id": {
           "type": "string",
@@ -32,19 +32,31 @@
           "minLength": 1,
           "description": "Short imperative title."
         },
-        "severity": {
-          "type": "string",
-          "enum": ["Critical", "High", "Medium", "Low", "Informational"]
-        },
         "category": {
           "type": "string",
-          "enum": ["correctness", "spec", "security", "tests", "standard", "consistency", "improvement"]
+          "enum": ["defect", "improvement"],
+          "description": "The fundamental classification: a defect is something that must be true (correctness, spec, security, tests, standards, or cross-file/test consistency); an improvement is genuinely optional -- if a change is necessary to satisfy the approved PDD or correct a security, correctness, standards, or testing defect, it is a defect, not an improvement (issue #506)."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["correctness", "spec", "security", "tests", "standard", "consistency"],
+          "description": "The technical area a defect relates to. Required for category \"defect\"; must be omitted for category \"improvement\"."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["Critical", "High", "Medium", "Low", "Informational"],
+          "description": "Technical impact of a defect. Required for category \"defect\"; must be omitted for category \"improvement\" -- an improvement has no severity, only an effort."
+        },
+        "effort": {
+          "type": "string",
+          "enum": ["simple", "medium", "complex"],
+          "description": "How much work an improvement takes to action, deciding its disposition (review_outcome.improvement_disposition): simple -> fix-if-coder-cycle, medium -> ask-human, complex -> defer. Required for category \"improvement\"; must be omitted for category \"defect\"."
         },
         "confidence": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "The reviewer's own confidence this finding is real. A non-Critical finding below 0.8 does not block (review_outcome.finding_blocks)."
+          "description": "The reviewer's own confidence this finding is real. On a defect, a non-Critical finding below 0.8 does not block (review_outcome.finding_blocks)."
         },
         "path": {
           "type": "string",
@@ -68,33 +80,46 @@
         "standard": {
           "type": "string",
           "minLength": 1,
-          "description": "The P-N or STD ID this finding cites. Required for category \"standard\"; optional otherwise."
+          "description": "The P-N or STD ID this finding cites. Required for a defect with type \"standard\"; optional otherwise."
         },
         "adr": {
           "type": "string",
           "description": "An ADR ID the finding claims covers it. Verified against adrs.json's own authorises_exception_to, never trusted from this claim alone (review_outcome.adr_exception_index)."
-        },
-        "complexity": {
-          "type": "string",
-          "enum": ["low", "medium", "high"],
-          "description": "STD-ARCH-007's own inline-fixable/issue-worthy bar, made explicit per finding. Required for severity \"Low\" only -- Critical/High/Medium always block regardless, and Informational never does. \"low\": resolvable inline (STD-ARCH-007's own bar) -- blocks like any other Low finding. \"medium\": flagged for human decision, not auto-blocked. \"high\": deferred to a new issue (STD-ARCH-007's own bar for when one is justified), not auto-blocked. Missing or unrecognised value on a Low finding fails closed to blocking (review_outcome.finding_blocks)."
         }
       },
       "allOf": [
         {
           "if": {
-            "properties": { "category": { "const": "standard" } }
+            "properties": { "category": { "const": "defect" } },
+            "required": ["category"]
           },
           "then": {
-            "required": ["standard"]
+            "required": ["type", "severity"],
+            "not": { "required": ["effort"] }
           }
         },
         {
           "if": {
-            "properties": { "severity": { "const": "Low" } }
+            "properties": { "category": { "const": "improvement" } },
+            "required": ["category"]
           },
           "then": {
-            "required": ["complexity"]
+            "required": ["effort"],
+            "not": {
+              "anyOf": [
+                { "required": ["type"] },
+                { "required": ["severity"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "standard" } },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["standard"]
           }
         }
       ]
