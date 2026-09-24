@@ -4,7 +4,7 @@ Work through the `03_execute/coder` pipeline step's own instructions directly, w
 the chat-AI, in this session. This is not an agent invocation (MI-3,
 "Headless and interactive") — no subprocess is spawned, and no tool-access
 enforcement is attempted; this session's own normal permissions apply
-throughout. Implements one GitHub issue in the consuming repository.
+throughout. Implements a GitHub issue and its sub-issues as a defensive programmer.
 
 The orchestrator still performs every label transition, artefact comment,
 body write, and commit — never this command by hand (same core rule as
