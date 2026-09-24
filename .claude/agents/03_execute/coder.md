@@ -75,7 +75,7 @@ PR lifecycle.
 
 Read `$AI_AGILE_INVOCATION_MODE` from the environment:
 - `initial` -> **Mode A (initial build)**. Proceed to Step 1.
-- `review` -> **Mode B (address feedback)**. Proceed to Step 9.
+- `review` -> **Mode B (address feedback)**. Proceed to Step 8.
 
 If the variable is absent, assume Mode A.
 
@@ -312,20 +312,19 @@ Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool:
 ## MODE B -- Address feedback
 
 > Scope this run to THIS PR only. Address only the unresolved review findings
-> on `$PR_NUMBER`. If there are no actionable **Required** or **Expected** items
-> after reading and categorising, write `outcome: "complete"` noting nothing was
-> actionable.
+> on `$PR_NUMBER`. If there are no actionable **Required** items after reading
+> and categorising, write `outcome: "complete"` noting nothing was actionable.
 >
 > **Zero-commit exit rule:** A zero-commit `outcome: "complete"` is only valid
-> after Step 9 below has run and you have enumerated every finding in the
+> after Step 8 below has run and you have enumerated every finding in the
 > pr-reviewer artefact it read, confirming each one is either covered by an
 > existing commit on the branch or explicitly rebutted with stated reasoning
 > in `result.json`'s `summary`. Do not exit with zero new commits because the
 > original implementation is already present on the branch, and do not reach
 > that conclusion from `git log`/`git status`/the test suite in place of
-> Step 9 -- verify each finding in the pr-reviewer artefact individually first.
+> Step 8 -- verify each finding in the pr-reviewer artefact individually first.
 
-## Step 9 -- Read all review feedback (mandatory first action)
+## Step 8 -- Read all review feedback (mandatory first action)
 
 **This is the first thing Mode B does.** Do not run `git log`, `git status`,
 `git diff`, or the test suite before the commands below have executed and you
@@ -380,7 +379,7 @@ carried no `blocking` computation to defer to.
 
 ---
 
-## Step 9a -- Confirm the working tree matches the PR head
+## Step 9 -- Confirm the working tree matches the PR head
 
 ```bash
 HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
@@ -402,16 +401,29 @@ the actual PR before acting.
 
 | Category | What it means | Must address? |
 |---|---|---|
-| **Required** | Correctness bug, security issue, spec violation, failing test, unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` | Yes |
-| **Expected** | Design improvement, missing guard clause, error handling gap raised as non-blocking | Yes |
-| **Suggested** | `"category": "improvement"`, or any other non-blocking finding that is a style preference or nice-to-have | No |
+| **Required** | Unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` (only a `category: "defect"` finding can be blocking) | Yes |
+| **Eligible this pass** | A `category: "improvement"` finding `$REVIEW_JSON` marks non-blocking with disposition `fix-if-coder-cycle` (`effort: "simple"`) | Only alongside Required items -- never the sole reason this pass exists |
+| **Not required** | A non-blocking `category: "defect"` finding, or an improvement with disposition `ask-human` (`effort: "medium"`) or `defer` (`effort: "complex"`) | No |
 
 A finding's `blocking` field is the orchestrator's own computation (issue
-#512) -- Required is never something you re-derive from severity or
-confidence yourself.
+#512) -- Required is never something you re-derive from severity, category,
+confidence, or effort yourself. This step never recomputes which findings
+are Required or Eligible this pass -- it reads `blocking` and the disposition
+already rendered. A non-blocking defect stays non-blocking; an improvement
+flagged `ask-human` may be a human's own decision to make, and one flagged
+`defer` is already bundled into a follow-up issue (issue #506) -- in every
+case the orchestrator already decided it does not need a mandatory fix, and
+this step does not reclassify that decision back into something to fix now.
 
-Do not address Suggested items in code. If a suggestion looks valuable, open
-a follow-up issue.
+This pass only ever runs because a Required item exists (Mode B is only
+re-invoked on REQUEST CHANGES, and an improvement never causes that verdict
+by itself) -- so an "Eligible this pass" item found alongside a Required item
+may be implemented in the same pass. Do not treat an Eligible item as a
+reason to do anything beyond what the Required items already require; if no
+Required items remain to justify this pass, do not implement it here either.
+
+Do not address items in the "Not required" row in code. If one looks
+valuable and isn't already tracked, open a follow-up issue.
 
 ---
 
@@ -432,11 +444,12 @@ that contradicts the PRD, tech-spec, or an ADR, do not implement it -- write
 
 ---
 
-## Step 12 -- Address required and expected items
+## Step 12 -- Address required and eligible items
 
-Work through Required items first, then Expected. For each: understand the
-root cause, apply the fix defensively, add or update tests. After all fixes
-are applied, run the full test suite.
+Work through every Required item. For each: understand the root cause, apply
+the fix defensively, add or update tests. Once every Required item is
+addressed, also implement any "Eligible this pass" items found in Step 10.
+After all fixes are applied, run the full test suite.
 
 Pre-existing unrelated failure policy applies here too (see Step 6).
 
@@ -450,7 +463,7 @@ Commit your fixes before signalling complete.
 {
   "outcome": "complete",
   "summary": "Addressed review feedback on PR #...",
-  "output": "## Feedback addressed\n\n**Required items fixed:**\n- ...\n\n**Expected items fixed:**\n- ...\n\n**Suggested items (not implemented):**\n- ...",
+  "output": "## Feedback addressed\n\n**Required items fixed:**\n- ...\n\n**Eligible items implemented:**\n- ...\n\n**Not required (not implemented):**\n- ...",
   "expected_effect": {"commits": true}
 }
 ```

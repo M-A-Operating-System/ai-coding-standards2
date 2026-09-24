@@ -994,14 +994,12 @@ class TestPrReviewerArtefactsAreAppendOnly:
             "the artefact must never be rewritten -- the trail is the record"
         )
 
-    def test_prior_heads_the_rerun_but_is_not_an_edit_target(self):
-        """Issue #512 Part 2: the orchestrator renders this round's comment
-        (review_outcome.render_review_comment), not the prompt -- so the
-        re-run heading now lives there, not as a literal template string in
-        pr-reviewer.md. The prompt still states PRIOR is not an edit
-        target."""
+    def test_prior_review_retrieval_is_owned_by_the_orchestrator(self):
+        """The prompt does not spend a GitHub request retrieving its prior
+        review; the orchestrator owns rendering and re-run presentation."""
         text = self.PROMPT.read_text()
-        assert "not an edit target" in text
+        assert "PRIOR=" not in text
+        assert "retrieve prior reviews" in text
         review_outcome_text = (
             Path(__file__).parent.parent / "pipeline" / "review_outcome.py"
         ).read_text()

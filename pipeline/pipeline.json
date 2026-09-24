@@ -347,7 +347,7 @@
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 80 },
-          "expected_effect": { "commits": false },
+          "expected_effect": { "commits": false, "creates_issues": true },
           "review_loop": {
             "re_invoke": "03_execute/coder",
             "max_cycles": 3,
@@ -363,7 +363,7 @@
             "schema": "pipeline/schemas/pr-review.schema.json",
             "require_head_match": true
           },
-          "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then reports findings covering correctness, design alignment, standards compliance, and security -- the orchestrator computes the verdict from those findings (outcome_policy: review_findings), never trusting the model's own outcome field. A Critical finding always blocks; a non-Critical finding below 0.8 confidence, a non-Critical improvement-category finding, or one covered by a verified ADR exception does not. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR -- this is a hard block regardless of automated findings. On APPROVE, the orchestrator compares the reviewed head_sha with the PR's live head (require_head_match, issue #512 Part 3); a mismatch withholds ready-marking and re-dispatches this step on the next tick rather than approving a commit that was never reviewed. On APPROVE with a matching head and no unresolved human reviews, the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
+          "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then reports each finding as either a defect (correctness, spec, security, tests, standards, or cross-file consistency) or a genuinely optional improvement -- the orchestrator computes the verdict from those findings (outcome_policy: review_findings), never trusting the model's own outcome field. A defect blocks unless its severity is Low or Informational, its confidence is below 0.8 (non-Critical only), or it is covered by a verified ADR exception; a Critical defect always blocks regardless of confidence. An improvement never blocks -- its effort instead decides its disposition (issue #506): simple is eligible for an already-required coder pass, medium is flagged for a human decision, complex is deferred into a follow-up GitHub issue the orchestrator raises. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR -- this is a hard block regardless of automated findings. On APPROVE, the orchestrator compares the reviewed head_sha with the PR's live head (require_head_match, issue #512 Part 3); a mismatch withholds ready-marking and re-dispatches this step on the next tick rather than approving a commit that was never reviewed. On APPROVE with a matching head and no unresolved human reviews, the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
         }
 
       ]

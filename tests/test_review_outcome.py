@@ -1,4 +1,4 @@
-"""Tests for pipeline/review_outcome.py (issue #512 Part 2).
+"""Tests for pipeline/review_outcome.py (issue #512 Part 2, revised issue #506).
 
 Gherkin scenarios traced (issue #512):
   - Code-computed verdict overrides the model
@@ -15,23 +15,42 @@ from review_outcome import (
     APPROVE,
     REQUEST_CHANGES,
     adr_exception_index,
+    build_deferred_findings_issue,
     derive_review_verdict,
     find_duplicate_finding_ids,
     finding_blocks,
+    improvement_disposition,
     render_review_comment,
     sort_findings,
 )
 
 
-def _finding(**overrides):
+def _defect(**overrides):
     base = {
         "id": "RV-001",
         "title": "example finding",
+        "category": "defect",
+        "type": "correctness",
         "severity": "Medium",
-        "category": "correctness",
         "confidence": 0.9,
         "path": "foo.py",
         "line": 10,
+        "evidence": "...",
+        "fix": "...",
+    }
+    base.update(overrides)
+    return base
+
+
+def _improvement(**overrides):
+    base = {
+        "id": "RV-002",
+        "title": "example improvement",
+        "category": "improvement",
+        "effort": "simple",
+        "confidence": 0.9,
+        "path": "foo.py",
+        "line": 20,
         "evidence": "...",
         "fix": "...",
     }
@@ -87,59 +106,133 @@ class TestAdrExceptionIndex:
 
 
 class TestFindingBlocks:
-    def test_improvement_category_does_not_block_for_non_critical_severity(self):
-        f = _finding(category="improvement", severity="Medium", confidence=1.0)
+    def test_improvement_never_blocks(self):
+        f = _improvement(effort="simple")
         assert finding_blocks(f, {}) is False
 
-    def test_critical_finding_always_blocks_regardless_of_confidence(self):
+    def test_improvement_with_medium_effort_never_blocks(self):
+        f = _improvement(effort="medium")
+        assert finding_blocks(f, {}) is False
+
+    def test_improvement_with_complex_effort_never_blocks(self):
+        f = _improvement(effort="complex")
+        assert finding_blocks(f, {}) is False
+
+    def test_critical_defect_always_blocks_regardless_of_confidence(self):
         """Gherkin: Critical finding always blocks."""
-        f = _finding(severity="Critical", confidence=0.3)
+        f = _defect(severity="Critical", confidence=0.3)
         assert finding_blocks(f, {}) is True
 
-    def test_critical_finding_blocks_even_when_labeled_improvement(self):
-        """"Critical" and "improvement" are contradictory -- severity says
-        how bad a finding is, category says what kind it is. A finding
-        cannot be both "so bad it must block" and "purely optional." Closes
-        the gap /code-review found: a real Critical bug mislabeled
-        category="improvement" must not silently exempt itself."""
-        f = _finding(category="improvement", severity="Critical", confidence=1.0)
-        assert finding_blocks(f, {}) is True
-
-    def test_low_confidence_non_critical_finding_does_not_block(self):
+    def test_low_confidence_non_critical_defect_does_not_block(self):
         """Gherkin: Low-confidence non-critical finding does not block."""
-        f = _finding(severity="Medium", confidence=0.5)
+        f = _defect(severity="Medium", confidence=0.5)
         assert finding_blocks(f, {}) is False
 
-    def test_high_confidence_non_critical_finding_blocks(self):
-        f = _finding(severity="Medium", confidence=0.9)
+    def test_high_confidence_non_critical_defect_blocks(self):
+        f = _defect(severity="Medium", confidence=0.9)
         assert finding_blocks(f, {}) is True
 
     def test_adr_exception_verified_against_index_is_non_blocking(self):
         """Gherkin: ADR exception is verified, not trusted (grant present)."""
-        f = _finding(severity="High", confidence=1.0, category="standard",
-                      standard="STD-ARCH-035", adr="ADR-002")
+        f = _defect(severity="High", confidence=1.0, type="standard",
+                     standard="STD-ARCH-035", adr="ADR-002")
         index = {"ADR-002": {"STD-ARCH-035"}}
         assert finding_blocks(f, index) is False
 
     def test_adr_not_covering_this_standard_still_blocks(self):
         """Gherkin: ADR exception is verified, not trusted (grant absent)."""
-        f = _finding(severity="High", confidence=1.0, category="standard",
-                      standard="STD-SEC-022", adr="ADR-002")
+        f = _defect(severity="High", confidence=1.0, type="standard",
+                     standard="STD-SEC-022", adr="ADR-002")
         index = {"ADR-002": {"STD-ARCH-035"}}
         assert finding_blocks(f, index) is True
 
     def test_citing_an_unknown_adr_still_blocks(self):
-        f = _finding(severity="High", confidence=1.0, category="standard",
-                      standard="STD-ARCH-035", adr="ADR-999")
+        f = _defect(severity="High", confidence=1.0, type="standard",
+                     standard="STD-ARCH-035", adr="ADR-999")
         assert finding_blocks(f, {}) is True
 
-    def test_defer_ok_low_severity_does_not_block(self):
-        f = _finding(severity="Low", confidence=1.0, effort="defer-ok")
+    def test_informational_defect_never_blocks_regardless_of_confidence(self):
+        f = _defect(severity="Informational", confidence=1.0)
         assert finding_blocks(f, {}) is False
 
-    def test_defer_ok_medium_severity_still_blocks(self):
-        f = _finding(severity="Medium", confidence=1.0, effort="defer-ok")
+    def test_low_severity_defect_does_not_block(self):
+        """Issue #506: the defect-blocking table's default -- Low never
+        blocks, with no complexity/effort dimension on defects at all."""
+        f = _defect(severity="Low", confidence=1.0)
+        assert finding_blocks(f, {}) is False
+
+    def test_medium_severity_defect_blocks(self):
+        """Issue #506's defect-blocking table: Critical/High/Medium block."""
+        f = _defect(severity="Medium", confidence=1.0)
         assert finding_blocks(f, {}) is True
+
+    def test_high_severity_defect_blocks(self):
+        f = _defect(severity="High", confidence=1.0)
+        assert finding_blocks(f, {}) is True
+
+    def test_critical_severity_defect_blocks(self):
+        f = _defect(severity="Critical", confidence=1.0)
+        assert finding_blocks(f, {}) is True
+
+
+class TestImprovementDisposition:
+    def test_simple_effort_maps_to_fix_if_coder_cycle(self):
+        f = _improvement(effort="simple")
+        assert improvement_disposition(f) == "fix-if-coder-cycle"
+
+    def test_medium_effort_maps_to_ask_human(self):
+        f = _improvement(effort="medium")
+        assert improvement_disposition(f) == "ask-human"
+
+    def test_complex_effort_maps_to_defer(self):
+        f = _improvement(effort="complex")
+        assert improvement_disposition(f) == "defer"
+
+    def test_defect_has_no_disposition(self):
+        f = _defect(severity="Low")
+        assert improvement_disposition(f) is None
+
+    def test_missing_effort_returns_none(self):
+        f = _improvement()
+        del f["effort"]
+        assert improvement_disposition(f) is None
+
+    def test_unrecognised_effort_returns_none(self):
+        f = _improvement(effort="urgent")
+        assert improvement_disposition(f) is None
+
+
+class TestBuildDeferredFindingsIssue:
+    def test_no_deferred_findings_returns_empty_dict(self):
+        findings = [_defect(severity="Critical"), _improvement(effort="simple")]
+        assert build_deferred_findings_issue(findings, 42) == {}
+
+    def test_bundles_every_deferred_finding_into_one_issue(self):
+        f1 = _improvement(id="RV-001", title="first", effort="complex")
+        f2 = _improvement(id="RV-002", title="second", effort="complex")
+        request = build_deferred_findings_issue([f1, f2], 42)
+        assert request["title"]
+        assert "RV-001" in request["body"] and "RV-002" in request["body"]
+        assert "first" in request["body"] and "second" in request["body"]
+
+    def test_excludes_non_deferred_findings(self):
+        f1 = _improvement(id="RV-001", effort="complex")
+        f2 = _improvement(id="RV-002", effort="medium")
+        f3 = _defect(id="RV-003", severity="Critical")
+        request = build_deferred_findings_issue([f1, f2, f3], 42)
+        assert "RV-001" in request["body"]
+        assert "RV-002" not in request["body"]
+        assert "RV-003" not in request["body"]
+
+    def test_title_includes_pr_number(self):
+        f = _improvement(effort="complex")
+        request = build_deferred_findings_issue([f], 42)
+        assert "42" in request["title"]
+
+    def test_labels_include_tech_debt_classification(self):
+        f = _improvement(effort="complex")
+        request = build_deferred_findings_issue([f], 42)
+        assert "classification: tech-debt" in request["labels"]
 
 
 class TestDeriveReviewVerdict:
@@ -151,12 +244,24 @@ class TestDeriveReviewVerdict:
         assert derive_review_verdict([], ["@alice"], []) == REQUEST_CHANGES
 
     def test_any_blocking_finding_requests_changes(self):
-        f = _finding(severity="Critical", confidence=1.0)
+        f = _defect(severity="Critical", confidence=1.0)
         assert derive_review_verdict([f], [], []) == REQUEST_CHANGES
 
+    def test_low_severity_defect_approves(self):
+        f = _defect(severity="Low", confidence=1.0)
+        assert derive_review_verdict([f], [], []) == APPROVE
+
+    def test_improvements_of_every_effort_approve(self):
+        """Issue #506: no improvement disposition forces a coder cycle by
+        itself."""
+        simple = _improvement(id="RV-001", effort="simple")
+        medium = _improvement(id="RV-002", effort="medium")
+        complex_ = _improvement(id="RV-003", effort="complex")
+        assert derive_review_verdict([simple, medium, complex_], [], []) == APPROVE
+
     def test_verified_adr_exception_for_overridable_standard_approves(self):
-        f = _finding(severity="High", confidence=1.0, category="standard",
-                      standard="STD-ARCH-035", adr="ADR-002")
+        f = _defect(severity="High", confidence=1.0, type="standard",
+                     standard="STD-ARCH-035", adr="ADR-002")
         records = [{"id": "ADR-002", "status": "accepted",
                     "authorises_exception_to": ["STD-ARCH-035"]}]
         assert derive_review_verdict([f], [], records, _OVERRIDABLE_STD) == APPROVE
@@ -165,15 +270,15 @@ class TestDeriveReviewVerdict:
         """An ADR cannot waive a standard marked adr_overridable: false, even
         if its own authorises_exception_to lists it -- the standard's own
         flag is checked, never trusted from the ADR's claim alone."""
-        f = _finding(severity="High", confidence=1.0, category="standard",
-                      standard="STD-SEC-013", adr="ADR-002")
+        f = _defect(severity="High", confidence=1.0, type="standard",
+                     standard="STD-SEC-013", adr="ADR-002")
         records = [{"id": "ADR-002", "status": "accepted",
                     "authorises_exception_to": ["STD-SEC-013"]}]
         standards_by_id = {"STD-SEC-013": {"adr_overridable": False}}
         assert derive_review_verdict([f], [], records, standards_by_id) == REQUEST_CHANGES
 
     def test_only_non_blocking_findings_approves(self):
-        f = _finding(severity="Medium", confidence=0.5)
+        f = _defect(severity="Medium", confidence=0.5)
         assert derive_review_verdict([f], [], []) == APPROVE
 
     def test_model_outcome_is_never_consulted(self):
@@ -186,11 +291,11 @@ class TestDeriveReviewVerdict:
 
 class TestFindDuplicateFindingIds:
     def test_no_duplicates_returns_empty(self):
-        findings = [_finding(id="RV-001"), _finding(id="RV-002")]
+        findings = [_defect(id="RV-001"), _defect(id="RV-002")]
         assert find_duplicate_finding_ids(findings) == []
 
     def test_duplicate_id_detected(self):
-        findings = [_finding(id="RV-001"), _finding(id="RV-001")]
+        findings = [_defect(id="RV-001"), _defect(id="RV-001")]
         assert find_duplicate_finding_ids(findings) == ["RV-001"]
 
     def test_findings_missing_id_are_ignored(self):
@@ -201,20 +306,28 @@ class TestFindDuplicateFindingIds:
 class TestSortFindings:
     def test_sorts_critical_first(self):
         findings = [
-            _finding(id="RV-001", severity="Low"),
-            _finding(id="RV-002", severity="Critical"),
-            _finding(id="RV-003", severity="Medium"),
+            _defect(id="RV-001", severity="Low"),
+            _defect(id="RV-002", severity="Critical"),
+            _defect(id="RV-003", severity="Medium"),
         ]
         ordered = sort_findings(findings)
         assert [f["id"] for f in ordered] == ["RV-002", "RV-003", "RV-001"]
 
     def test_stable_within_same_severity(self):
         findings = [
-            _finding(id="RV-001", severity="High"),
-            _finding(id="RV-002", severity="High"),
+            _defect(id="RV-001", severity="High"),
+            _defect(id="RV-002", severity="High"),
         ]
         ordered = sort_findings(findings)
         assert [f["id"] for f in ordered] == ["RV-001", "RV-002"]
+
+    def test_improvements_sort_after_every_defect(self):
+        findings = [
+            _improvement(id="RV-001"),
+            _defect(id="RV-002", severity="Low"),
+        ]
+        ordered = sort_findings(findings)
+        assert [f["id"] for f in ordered] == ["RV-002", "RV-001"]
 
 
 class TestRenderReviewComment:
@@ -227,7 +340,7 @@ class TestRenderReviewComment:
         assert "abc123" in body
 
     def test_includes_fenced_json_block_with_head_sha_and_findings(self):
-        f = _finding(id="RV-001")
+        f = _defect(id="RV-001")
         body = render_review_comment(REQUEST_CHANGES, "deadbeef", [f], [])
         assert "```json" in body
         start = body.index("```json") + len("```json")
@@ -261,8 +374,8 @@ class TestRenderReviewComment:
         """Issue #512, Scenario: Coder reads the rendered findings -- coder.md
         must not re-derive severity/confidence/ADR rules itself; the rendered
         JSON already says which findings block."""
-        blocking_finding = _finding(id="RV-001", severity="Critical", confidence=1.0)
-        non_blocking_finding = _finding(id="RV-002", severity="Medium", confidence=0.5)
+        blocking_finding = _defect(id="RV-001", severity="Critical", confidence=1.0)
+        non_blocking_finding = _defect(id="RV-002", severity="Medium", confidence=0.5)
         body = render_review_comment(
             REQUEST_CHANGES, "deadbeef", [blocking_finding, non_blocking_finding], [],
         )
@@ -272,3 +385,34 @@ class TestRenderReviewComment:
         by_id = {f["id"]: f["blocking"] for f in payload["findings"]}
         assert by_id["RV-001"] is True
         assert by_id["RV-002"] is False
+
+    def test_ask_human_improvement_is_tagged_distinctly(self):
+        """Issue #506: a medium-effort improvement must read differently
+        from an ordinary non-blocking finding -- it's the mechanism by which
+        a human is expected to actually notice and decide."""
+        f = _improvement(id="RV-001", effort="medium")
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "FLAGGED FOR HUMAN DECISION" in body
+        assert "[non-blocking]" not in body
+
+    def test_deferred_improvement_is_tagged_distinctly(self):
+        f = _improvement(id="RV-001", effort="complex")
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "DEFERRED" in body
+        assert "[non-blocking]" not in body
+
+    def test_simple_improvement_is_tagged_eligible(self):
+        f = _improvement(id="RV-001", effort="simple")
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "eligible for the next required coder pass" in body
+        assert "[non-blocking]" not in body
+
+    def test_ordinary_non_blocking_defect_still_tagged_non_blocking(self):
+        f = _defect(id="RV-001", severity="Low", confidence=1.0)
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "[non-blocking]" in body
+
+    def test_improvement_finding_omits_severity_bracket(self):
+        f = _improvement(id="RV-001", effort="simple")
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "RV-001 -- example improvement [eligible for the next required coder pass]" in body

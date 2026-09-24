@@ -166,7 +166,7 @@ is available as context but does not downgrade any finding.
 | `true` | No | **Blocks** — REQUEST_CHANGES |
 | `true` | Yes | **Informational** — noted in findings, does not block APPROVE |
 
-The pr-reviewer verdict rule (issue #512 Part 2: computed by `pipeline/review_outcome.py`, never the model): a finding blocks **REQUEST CHANGES** unless it is non-Critical and `category: "improvement"`, is covered by a verified ADR exception, is non-Critical with confidence below 0.8, or is tagged `defer-ok` at Low/Informational severity. A Critical finding always blocks, regardless of category. **APPROVE** only when no finding blocks and no unresolved human REQUEST_CHANGES review exists.
+The pr-reviewer verdict rule (issue #512 Part 2, revised issue #506: computed by `pipeline/review_outcome.py`, never the model): every finding is a `category: "defect"` or a `category: "improvement"`. An improvement never blocks, unconditionally — its `effort` instead decides its disposition: `simple` is eligible for an already-required coder pass (`fix-if-coder-cycle`), `medium` is flagged for a human decision (`ask-human`), `complex` is deferred into a follow-up GitHub issue the orchestrator raises (`defer`, STD-ARCH-007). A defect blocks **REQUEST CHANGES** unless its severity is Low or Informational, it is covered by a verified ADR exception, or it is non-Critical with confidence below 0.8 — a Critical defect always blocks regardless of confidence. **APPROVE** only when no finding blocks and no unresolved human REQUEST_CHANGES review exists.
 
 ---
 

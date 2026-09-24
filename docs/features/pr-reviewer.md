@@ -1,40 +1,74 @@
-# Feature: Pr Reviewer
+# Feature: PR reviewer
 
-> Issue #512 Part 2 moved verdict enforcement for the scenarios below from
-> pr-reviewer.md's Step 10 prose into code
-> (`pipeline/review_outcome.py::derive_review_verdict`/`finding_blocks`).
-> `[fix-now]`/`[defer-ok]` are unchanged as finding metadata (`effort` field),
-> but the REQUEST CHANGES/APPROVE decision they used to drive directly is now
-> code-computed from severity, confidence, category, and verified ADR
-> exceptions -- see issue #512 for the full rule. The scenarios below still
-> describe the intended behaviour; only where it is enforced has changed.
+The PR reviewer supplies evidence-backed structured findings, each a
+`defect` (something that must be true) or an `improvement` (genuinely
+optional). The orchestrator computes the verdict through
+`pipeline/review_outcome.py`; it also owns current human-review state,
+comment rendering, and PR state changes.
 
-## Scenario: A trivially-fixable Low finding forces a fix cycle
+## Scenario: A blocking defect starts a fix cycle
 
-**Given** a PR review whose only findings are Low severity, one of which meets the fix-now bar (e.g. a stale comment, an unused import, a broken relative link)
-**When** `pr-reviewer` posts its verdict
-**Then** the finding is tagged `[fix-now]` and `VERDICT=REQUEST CHANGES`, so `coder` is re-invoked to fix it in this cycle rather than the PR being marked ready with the defect still present
+**Given** a high-confidence defect finding not covered by a verified ADR
+exception, with severity Critical, High, or Medium
+**When** the reviewer writes it to `result.review.findings`
+**Then** the orchestrator marks it `blocking: true` and requests changes
 
-## Scenario: A genuinely subjective Low finding does not block
+## Scenario: A non-blocking defect does not request changes
 
-**Given** a Low finding that is a style preference or requires a judgement call (e.g. "consider renaming this variable for clarity")
-**When** `pr-reviewer` posts its verdict
-**Then** the finding is tagged `[defer-ok]` and does not force `REQUEST CHANGES` on its own
+**Given** a defect finding with severity Low or Informational
+**When** the orchestrator computes the review outcome
+**Then** the finding is marked `blocking: false`
 
-## Scenario: coder treats a fix-now finding as Required, not Suggested
+## Scenario: An improvement never blocks approval
 
-**Given** a `[fix-now]`-tagged finding reaches `coder` via the review loop
-**When** `coder` categorises feedback (Step 10)
-**Then** the finding is bucketed as Required (must fix), not Suggested (do not address in code / open a follow-up issue)
+**Given** any finding categorized as `improvement`
+**When** the orchestrator computes the review outcome
+**Then** the finding is marked `blocking: false`, regardless of its effort
 
-## Scenario: No new pipeline machinery is introduced
+## Scenario: A simple improvement is eligible for an already-required coder pass
 
-**Given** the existing `review_loop` (max_cycles, coder re-invoke, ci-gate re-check)
-**When** this change lands
-**Then** `pipeline.json` and `pipeline_orchestrator.py` are unchanged -- the fix-now mechanism is expressed entirely in `pr-reviewer.md` and `coder.md`'s prompts
+**Given** an improvement finding with `effort: "simple"`
+**When** the orchestrator computes the review outcome
+**Then** the finding's disposition is `fix-if-coder-cycle` -- eligible to be
+implemented during a coder pass a Required item already triggered, never a
+reason to start one by itself
 
-## Scenario: Cycle budget is not abused
+## Scenario: A medium improvement requires a human decision
 
-**Given** a `[fix-now]` finding gets fixed by coder in one cycle
-**When** `pr-reviewer` re-reviews
-**Then** it does not re-flag the same finding (existing Step 9 consolidation / re-diff behaviour already ensures this), so fix-now-only reviews resolve in one extra cycle in the normal case
+**Given** an improvement finding with `effort: "medium"`
+**When** the orchestrator computes the review outcome
+**Then** the finding's disposition is `ask-human` and it is flagged
+prominently in the rendered review -- a human who agrees it matters leaves a
+real REQUEST_CHANGES review, which independently hard-blocks
+
+## Scenario: A complex improvement is deferred
+
+**Given** an improvement finding with `effort: "complex"`
+**When** the orchestrator computes the review outcome
+**Then** the finding's disposition is `defer` and it is bundled into a
+follow-up GitHub issue the orchestrator raises on the reviewer's behalf
+
+## Scenario: The coder obeys the computed blocking status and disposition
+
+**Given** structured review feedback reaches the coder through the review loop
+**When** the coder categorizes feedback
+**Then** findings marked `blocking: true` are Required, a simple improvement
+disposed `fix-if-coder-cycle` is eligible for this pass only, and every other
+finding is not required -- the coder never recomputes severity, confidence,
+ADR validity, or improvement disposition to reclassify a finding
+
+## Scenario: Review state is deterministic
+
+**Given** structured findings, current human blockers, standards, and ADRs
+**When** the review step completes
+**Then** the orchestrator computes APPROVE or REQUEST CHANGES without relying
+on an advisory model verdict
+
+## Scenario: The reviewer produces one finding per distinct issue and verifies its evidence
+
+**Given** the same defect independently observed through two or more review
+lenses
+**When** the reviewer produces structured findings
+**Then** it appears once, with severity based on technical impact alone, and
+its evidence has been re-checked against the diff or PR-head content before
+being reported

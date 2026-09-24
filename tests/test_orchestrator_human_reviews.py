@@ -725,8 +725,8 @@ class TestOutcomePolicyHumanReviewGuard:
         must not pair the corrected outcome with the model's now-stale
         advisory summary."""
         critical_finding = {
-            "id": "RV-001", "title": "t", "severity": "Critical", "category": "correctness",
-            "confidence": 1.0, "evidence": "e", "fix": "f",
+            "id": "RV-001", "title": "t", "category": "defect", "type": "correctness",
+            "severity": "Critical", "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         mock_invoke.side_effect = _invoke_agent_writing_result(
             "complete", verdict="APPROVE", message="Verdict (advisory): APPROVE.",

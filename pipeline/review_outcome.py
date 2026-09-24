@@ -53,22 +53,30 @@ def adr_exception_index(adr_records: list[dict], standards_by_id: dict[str, dict
 
 
 def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
-    """A finding blocks APPROVE unless one of these holds (issue #512):
+    """A finding blocks APPROVE unless one of these holds (issue #506):
 
-    - it is not Critical and its category is "improvement" -- "Critical" and
-      "improvement" are contradictory (severity says how bad; category says
-      what kind), so a Critical finding always blocks regardless of its
-      self-reported category, same as every other exemption below;
+    - its category is "improvement" -- improvements are unconditionally
+      non-blocking; the schema (pr-review.schema.json) forbids an
+      improvement from carrying a severity at all, so there is no
+      "Critical improvement" to defend against here;
+    - its severity is "Low" or "Informational" -- the defect-blocking
+      policy's own default table (issue #506): Critical/High/Medium block,
+      Low/Informational do not;
     - it cites an ADR whose authorises_exception_to actually lists the
       finding's standard, verified against adrs.json rather than trusted
       from the finding's own claim;
-    - it is not Critical and its confidence is below 0.8;
-    - (temporary, while the prompt still uses fix-now/defer-ok) it is
-      "defer-ok" and its severity is Low or Informational.
+    - it is not Critical and its confidence is below 0.8.
+
+    Critical findings are handled explicitly (checked before the confidence
+    gate applies) so a low confidence value can never silently make one
+    non-blocking.
     """
+    if finding.get("category") == "improvement":
+        return False
+
     severity = finding.get("severity")
 
-    if finding.get("category") == "improvement" and severity != "Critical":
+    if severity in ("Low", "Informational"):
         return False
 
     adr_id = finding.get("adr")
@@ -80,10 +88,69 @@ def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     if severity != "Critical" and confidence < _NON_BLOCKING_CONFIDENCE_THRESHOLD:
         return False
 
-    if finding.get("effort") == "defer-ok" and severity in ("Low", "Informational"):
-        return False
-
     return True
+
+
+_IMPROVEMENT_DISPOSITIONS = {
+    "simple": "fix-if-coder-cycle",
+    "medium": "ask-human",
+    "complex": "defer",
+}
+
+
+def improvement_disposition(finding: dict) -> Optional[str]:
+    """Map an improvement's effort to how it gets actioned (issue #506):
+
+    - "simple" -> "fix-if-coder-cycle": eligible for an already-required
+      coder pass; does not by itself trigger one (a coder pass only ever
+      runs on a REQUEST CHANGES verdict, and finding_blocks never returns
+      True for an improvement, so this can never be the sole reason a pass
+      exists).
+    - "medium" -> "ask-human": flagged for a human's own decision on
+      whether to do it at all, never auto-blocked.
+    - "complex" -> "defer": recorded as future work via
+      build_deferred_findings_issue, never fixed inline and never blocking.
+
+    None for a non-improvement finding, or for an improvement whose effort
+    is missing or unrecognised (the schema requires a valid effort on every
+    improvement, so this should not occur in practice)."""
+    if finding.get("category") != "improvement":
+        return None
+    return _IMPROVEMENT_DISPOSITIONS.get(finding.get("effort"))
+
+
+def build_deferred_findings_issue(findings: list[dict], pr_number: Optional[int] = None) -> dict:
+    """Bundle every "defer" disposition improvement (effort: complex) from
+    one review round into a single creates_issue request (issue #506).
+    AGENTS.md's result.json contract has one creates_issue slot per step
+    run, not a list, so multiple deferred improvements become sections of
+    one issue rather than one issue each. {} (no request) when nothing is
+    deferred -- most runs have nothing to defer, and the orchestrator's own
+    MI-6 consistency check already logs (not fails) an empty request
+    against a step that declares expected_effect.creates_issues, the same
+    way 00_ondemand/sizer's own conditional issue creation does."""
+    deferred = [f for f in findings if improvement_disposition(f) == "defer"]
+    if not deferred:
+        return {}
+    title = (
+        f"Deferred review findings from PR #{pr_number}" if pr_number is not None
+        else "Deferred review findings"
+    )
+    body_lines = [
+        "The following optional improvements were raised during review but are "
+        "too large to implement inline -- deferred here as future work rather "
+        "than blocking the PR.",
+        "",
+    ]
+    for f in deferred:
+        body_lines.append(f"## {f.get('id', '')} -- {f.get('title', '')}")
+        if f.get("path"):
+            location = f"{f['path']}:{f['line']}" if f.get("line") else f["path"]
+            body_lines.append(f"**File:** `{location}`")
+        body_lines.append(f"**Evidence:** {f.get('evidence', '')}")
+        body_lines.append(f"**Suggested fix:** {f.get('fix', '')}")
+        body_lines.append("")
+    return {"title": title, "body": "\n".join(body_lines), "labels": ["classification: tech-debt"]}
 
 
 def derive_review_verdict(
@@ -129,7 +196,8 @@ _SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Information
 
 def sort_findings(findings: list[dict]) -> list[dict]:
     """Critical -> High -> Medium -> Low -> Informational, stable within a
-    severity (preserves the order the step reported them in)."""
+    severity (preserves the order the step reported them in). Improvements
+    carry no severity and sort after every defect, stable among themselves."""
     return sorted(findings, key=lambda f: _SEVERITY_ORDER.get(f.get("severity"), len(_SEVERITY_ORDER)))
 
 
@@ -166,10 +234,10 @@ def render_review_comment(
     ordered = sort_findings(findings)
     counts: dict[str, int] = {}
     for f in ordered:
-        sev = f.get("severity", "Informational")
+        sev = "Improvement" if f.get("category") == "improvement" else f.get("severity", "Informational")
         counts[sev] = counts.get(sev, 0) + 1
     summary = " * ".join(
-        f"{counts.get(sev, 0)} {sev}" for sev in _SEVERITY_ORDER
+        f"{counts.get(sev, 0)} {sev}" for sev in list(_SEVERITY_ORDER) + ["Improvement"]
     )
 
     lines = [f"## PR Review{' (Re-run)' if prior_rerun else ''}", ""]
@@ -192,20 +260,36 @@ def render_review_comment(
         lines.append("No findings.")
     for f in ordered:
         blocking = finding_blocks(f, adr_index)
+        disposition = improvement_disposition(f)
         annotated.append({**f, "blocking": blocking})
 
         title = f.get("title", "")
         fid = f.get("id", "")
-        severity = f.get("severity", "")
+        severity = f.get("severity")
         category = f.get("category", "")
         path = f.get("path")
         line_no = f.get("line")
-        tag = "BLOCKING" if blocking else "non-blocking"
-        lines.append(f"### {fid} -- {title}   [{severity}] [{tag}]")
+        if blocking:
+            tag = "BLOCKING"
+        elif disposition == "ask-human":
+            tag = "FLAGGED FOR HUMAN DECISION"
+        elif disposition == "defer":
+            tag = "DEFERRED to a new issue"
+        elif disposition == "fix-if-coder-cycle":
+            tag = "eligible for the next required coder pass"
+        else:
+            tag = "non-blocking"
+        sev_bracket = f" [{severity}]" if severity else ""
+        lines.append(f"### {fid} -- {title}{sev_bracket} [{tag}]")
         lines.append("")
         if path:
             lines.append(f"**File:** `{path}:{line_no}`" if line_no else f"**File:** `{path}`")
-        lines.append(f"**Category:** {category}")
+        if category == "defect" and f.get("type"):
+            lines.append(f"**Category:** defect ({f['type']})")
+        elif category == "improvement" and f.get("effort"):
+            lines.append(f"**Category:** improvement (effort: {f['effort']})")
+        else:
+            lines.append(f"**Category:** {category}")
         if f.get("standard"):
             adr_note = f" [ADR: {f['adr']}]" if f.get("adr") else ""
             lines.append(f"**Standard:** {f['standard']}{adr_note}")
