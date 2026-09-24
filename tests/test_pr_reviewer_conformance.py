@@ -11,6 +11,16 @@ def _text() -> str:
     return PROMPT.read_text()
 
 
+def test_severity_escalation_and_no_escalation_do_not_both_appear():
+    """Step 2 once said corroboration escalates severity by one level while
+    Step 4 said corroboration does not automatically raise it -- a direct
+    contradiction. Severity must be based on technical impact only, and
+    corroboration may inform confidence instead."""
+    text = _text()
+    assert "escalate its severity" not in text
+    assert "corroboration does not" in text
+
+
 def test_review_is_one_pass_across_lenses_without_personas():
     """The four lenses (Step 2) are checkpoints within a single model
     invocation -- no separate context per lens, no persona flavor text --

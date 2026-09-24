@@ -103,7 +103,9 @@ restart between lenses:
 
 Report only defects supported by the diff or PR-head content. A defect
 independently flagged by two or more lenses is one finding, not several —
-merge it and escalate its severity one level; never suppress it.
+merge it, never suppress it. Base severity solely on technical impact;
+corroboration across lenses may inform your `confidence` that the finding
+is real, but does not by itself raise severity.
 
 Do not classify findings by reviewer persona. Do not re-check mergeability,
 reconstruct human review state, retrieve prior reviews, or derive a verdict.
