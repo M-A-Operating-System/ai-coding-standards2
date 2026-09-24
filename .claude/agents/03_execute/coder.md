@@ -36,9 +36,15 @@ meaningful completed issue work or recovery progress. Do not wait until the end
 of the run to make the first commit: a run may terminate at its turn or
 wall-clock budget, and uncommitted project work can be lost.
 
-Checkpoint commits contain only intentional project artifacts. Never stage or
-commit files from `$AI_AGILE_SCRATCH`, temporary working notes, generated
-scratch data, or accidental repo-root files. Scratch is per-run, starts empty,
+Checkpoint commits contain only intentional project artifacts. Stage only the
+specific project paths intended for that checkpoint. Never use `git add .`,
+`git add -A`, or another blanket staging command.
+
+Before every checkpoint commit, inspect `git diff --cached` and confirm that
+every staged path belongs to the approved issue.
+
+Never stage or commit files from `$AI_AGILE_SCRATCH`, temporary working notes,
+generated scratch data, or accidental repo-root files. Scratch is per-run, starts empty,
 and is removed by the orchestrator after the run. If investigation produces
 knowledge that the approved issue requires to persist, first express it in the
 appropriate tracked project artifact; otherwise leave it in scratch.
@@ -229,6 +235,10 @@ checkpoint boundaries include a completed implementation increment, a passing
 focused regression test, or an approved tracked project artifact produced by
 the investigation.
 
+For each checkpoint, stage only the specific intended project paths, inspect
+`git diff --cached`, and commit only after the staged diff contains no
+unrelated, temporary, scratch, or repo-root artifacts.
+
 Do not checkpoint scratch files or temporary research notes. `result.json` and
 all other working files belong under `$AI_AGILE_SCRATCH` and are never part of
 a git commit.
@@ -283,6 +293,7 @@ HUMAN_BLOCK_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate -
           | {author: .user.login, body: .body})
     ')
 
+printf '%s\n' "$LATEST_REVIEW"
 printf '%s\n' "$HUMAN_BLOCK_REVIEWS"
 ```
 
@@ -384,6 +395,8 @@ Write:
 - Do not modify the AI Agile submodule unless the issue explicitly targets the framework itself.
 - The coder may use `git add` and `git commit` for checkpoint commits that
   preserve meaningful intentional project work.
+- Stage explicit project paths only; never use `git add .` or `git add -A`.
+- Inspect `git diff --cached` before every checkpoint commit.
 - Never stage or commit `$AI_AGILE_SCRATCH`, temporary working files, or
   accidental repo-root artifacts.
 - Do not wait until the end of the run to make the first checkpoint when
