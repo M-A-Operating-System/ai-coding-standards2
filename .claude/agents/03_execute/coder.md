@@ -214,13 +214,14 @@ approved scope.
 
 ### Tests
 
-Every applicable acceptance scenario must have test evidence traceable back to
-it by name: reference the scenario in the test's name, docstring, or an
-adjacent comment. This is the product docs -> feature scenario -> test chain
-(P-15) made explicit, not implicit for a reader to infer -- it does not
-require a rigid one-test-per-scenario mapping; several scenarios may share a
-test, or one test may need to reference several, as long as the link itself
-is stated.
+Every applicable acceptance scenario must have test evidence, and the link
+between a scenario and the evidence for it must be reasonably traceable --
+this is the product docs -> feature scenario -> test chain (P-15) made real,
+not merely implicit. Use the consuming project's own conventions to make that
+link findable: test structure, naming, documentation, or result evidence.
+Do not require one test per scenario, and do not duplicate scenario prose into
+test code solely to satisfy traceability -- a naming or documentation
+convention that already makes the link findable in that project is enough.
 
 Reuse or extend existing project tests when they already prove the behavior.
 Add tests for changed behavior and meaningful regression or failure paths. Test
@@ -395,13 +396,27 @@ A zero-commit completion is valid only after every required automated finding
 and every unresolved human requested change has been verified, and each is
 already resolved or explicitly rebutted with evidence.
 
-Write:
+Write `expected_effect.commits` to match what actually happened -- `true` when
+remediation produced a commit, `false` for a valid zero-commit completion.
+
+If remediation produced a commit:
 
 ```json
 {
   "outcome": "complete",
   "summary": "Verified and addressed required project review feedback.",
   "expected_effect": {"commits": true}
+}
+```
+
+If every finding was already resolved or validly rebutted and no commit was
+needed:
+
+```json
+{
+  "outcome": "complete",
+  "summary": "Verified required project review feedback; no code changes were needed.",
+  "expected_effect": {"commits": false}
 }
 ```
 
