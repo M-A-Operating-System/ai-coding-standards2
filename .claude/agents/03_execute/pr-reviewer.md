@@ -126,9 +126,9 @@ or PR-head content already gathered:
   it and adjust `confidence` accordingly.
 - If the evidence does not hold at all, drop the finding — a finding drafted
   in Step 2 is not final until it survives this check.
-- Fetch additional PR-head content only when needed to resolve a specific
-  uncertainty about a draft finding — not as a routine second read of files
-  already covered in Step 1.
+- Use `read_pr_file` to fetch additional PR-head content only when needed
+  to resolve a specific uncertainty about a draft finding — not as a
+  routine second read of files already covered in Step 1.
 - If checking a draft finding's evidence surfaces a different, concrete
   defect, record and verify that defect too rather than suppressing it.
 
@@ -141,7 +141,9 @@ Every finding is either a **defect** (something that must be true) or an
 **improvement** (genuinely optional). If a change is necessary to satisfy the
 approved PDD or to correct a security, correctness, standards, or testing
 defect, it is a defect — never relabel a required fix as an improvement to
-soften it.
+soften it. When genuinely uncertain which it is, classify it as a defect —
+the same fail-closed default the rest of this contract uses for anything
+that cannot be positively confirmed safe to let through.
 
 Create one entry per distinct finding. Sort defects first, by severity
 (Critical, High, Medium, Low, then Informational), followed by improvements.
@@ -191,13 +193,15 @@ Omit optional `standard` and `adr` fields when they do not apply.
 
 For an improvement, rate the work itself:
 
-- `simple` — small and mechanical, eligible for an already-required coder
-  pass on this PR. Never grounds for starting a coder pass by itself.
-- `medium` — a real judgment call whose value isn't obvious. Flagged for a
-  human to decide whether it's worth doing at all, not auto-implemented.
+- `simple` — small and mechanical, obvious from `fix` alone.
+- `medium` — a real judgment call whose value isn't obvious, or a change
+  whose right shape isn't fully settled.
 - `complex` — needs a separate product decision, a different owner, or is
   genuinely outside this issue's scope (STD-ARCH-007's own bar for when a
-  new issue is justified). Recorded as future work, not fixed now.
+  new issue is justified).
+
+How each effort level gets actioned afterward is the orchestrator's
+decision, not this step's concern.
 
 Do not add any other effort or difficulty classification beyond `effort`,
 and never apply `effort` to a defect — a defect's disposition comes from its
