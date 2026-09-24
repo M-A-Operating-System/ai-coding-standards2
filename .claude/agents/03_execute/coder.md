@@ -37,8 +37,11 @@ make a project change pass. Modify the submodule only when the assigned work
 unit explicitly targets the AI Agile framework itself.
 
 The orchestrator owns branch management, push, PR state, labels, comments, and
-merge. Commit completed work before returning; uncommitted work does not survive
-the worktree lifecycle.
+merge. Never run `git push`, `git checkout`, `git merge`, `git rebase`,
+`gh pr create`, or `gh pr edit`.
+
+Commit completed work before returning; uncommitted work does not survive the
+worktree lifecycle.
 
 Do not speculate about code you have not inspected. Reuse facts already
 established during this invocation instead of repeatedly rediscovering them.
@@ -238,6 +241,10 @@ must be read before deciding that no work is required.
 
 ## Step 7 — Read authoritative review feedback
 
+**This is the first action Mode B takes.** Read the review feedback before
+running `git log`, `git status`, `git diff`, tests, or making any conclusion
+about whether work is required.
+
 Read the latest pr-reviewer artifact and current human review state from the
 consuming/project repo:
 
@@ -245,8 +252,16 @@ consuming/project repo:
 LATEST_REVIEW=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' \
   | jq -rs '[.[] | select(.body | contains("ai-agile/artefact/v1 by 03_execute/pr-reviewer")) | .body] | last // empty')
 
-gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --jq '.[]' \
-  | jq -s '[.[] | {author: .user.login, state: .state, body: .body}]'
+HUMAN_BLOCK_REVIEWS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate --jq '.[]' \
+  | jq -rs '
+      [.[] | select(.user.type != "Bot")]
+      | group_by(.user.login)
+      | map(sort_by(.submitted_at) | last)
+      | map(select(.state == "CHANGES_REQUESTED")
+          | {author: .user.login, body: .body})
+    ')
+
+printf '%s\n' "$HUMAN_BLOCK_REVIEWS"
 ```
 
 The pr-reviewer agent definition lives in the AI Agile submodule, but its
@@ -255,6 +270,16 @@ artifact and the PR it reviews belong to the consuming project.
 When the reviewer artifact contains structured JSON, use the orchestrator's
 computed `blocking` status and any supplied disposition. Do not recompute
 blocking from severity, confidence, category, ADR, or effort.
+
+Required Mode B work consists of both:
+
+1. every automated finding the orchestrator marks blocking; and
+2. every unresolved latest human `CHANGES_REQUESTED` review in
+   `$HUMAN_BLOCK_REVIEWS`.
+
+Treat each unresolved human requested change as mandatory review feedback. The
+latest-review-per-human calculation is authoritative for whether that reviewer
+still blocks; stale earlier requests from a reviewer who later approved do not.
 
 Support the legacy prose-only artifact only as a compatibility fallback until
 the orchestrator guarantees normalized structured findings.
@@ -275,7 +300,7 @@ If they do not match, return:
 {"outcome":"blocked","message":"infra: consuming-project worktree is not at the current PR head"}
 ```
 
-For each actionable finding:
+For each required automated finding and each unresolved human requested change:
 
 1. Verify it against the current consuming-project implementation.
 2. If already resolved, record the evidence and do not change code.
@@ -290,7 +315,8 @@ verify and resolve the supplied findings.
 
 ## Step 9 — Apply required work
 
-Address every finding the orchestrator marks as required/blocking.
+Address every automated finding the orchestrator marks as required/blocking and
+every unresolved human `CHANGES_REQUESTED` review in `$HUMAN_BLOCK_REVIEWS`.
 
 If the structured review contract supplies an optional simple improvement as
 eligible for the current pass, it may be included only when this remediation
@@ -306,8 +332,9 @@ broader validation before completion.
 
 Commit completed remediation in the consuming-project worktree before returning.
 
-A zero-commit completion is valid only after every actionable finding has been
-verified and each is already resolved or explicitly rebutted with evidence.
+A zero-commit completion is valid only after every required automated finding
+and every unresolved human requested change has been verified, and each is
+already resolved or explicitly rebutted with evidence.
 
 Write:
 
@@ -330,5 +357,7 @@ Write:
 - Do not repeatedly rediscover established facts.
 - Do not modify the AI Agile submodule unless the assigned work explicitly targets the framework itself.
 - The orchestrator owns branch, push, PR, labels, comments, and merge.
+- Never run `git push`, `git checkout`, `git merge`, `git rebase`,
+  `gh pr create`, or `gh pr edit`.
 - Commit durable work before returning.
 - Always write `result.json`.
