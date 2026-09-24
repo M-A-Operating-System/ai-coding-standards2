@@ -83,17 +83,27 @@ context, not an exemption.
 If `standards/` is absent or empty, the P-1 to P-16 principles in `AGENTS.md`
 are the only standards in force.
 
-## Step 3 — Review the change once
+## Step 2 — Survey the change across four lenses, in one pass
 
-Evaluate the same evidence in one integrated pass. Report only defects supported
-by the diff or PR-head content. Check:
+Using the evidence already gathered, sweep the diff once per lens below,
+adding to a single running list of draft findings. These are checkpoints
+within the same pass, not separate reviews — do not re-fetch evidence or
+restart between lenses:
 
-- correctness and failure handling, including boundaries and integration data;
-- alignment with the approved PDD, acceptance criteria, and non-functional requirements;
-- security at the actual trust boundaries of GitHub Actions and shell execution;
-- test coverage for changed behavior, error paths, and relevant regressions;
-- compliance with the selected standards and any applicable ADR exceptions;
-- consistency across changed code, tests, configuration, schemas, and documentation.
+1. **Correctness & failure handling** — boundaries, error paths, and
+   integration data shapes.
+2. **Security & trust boundaries** — the actual trust boundaries of GitHub
+   Actions and shell execution (see the threat model above).
+3. **Spec & standards compliance** — approved PDD alignment, acceptance
+   criteria, non-functional requirements, and compliance with the
+   selected standards and ADRs from Step 1.
+4. **Cross-file & test consistency** — changed code, tests, configuration,
+   schemas, and documentation against each other, plus test coverage for
+   changed behavior, error paths, and relevant regressions.
+
+Report only defects supported by the diff or PR-head content. A defect
+independently flagged by two or more lenses is one finding, not several —
+merge it and escalate its severity one level; never suppress it.
 
 Do not classify findings by reviewer persona. Do not re-check mergeability,
 reconstruct human review state, retrieve prior reviews, or derive a verdict.
@@ -102,7 +112,21 @@ owned by repository tooling. Run or inspect focused validation when it provides
 direct evidence, and report the concrete defect rather than the absence of a
 manual checklist.
 
-## Step 9 — Produce structured findings
+## Step 3 — Verify each draft finding
+
+Before finalizing, re-read each draft finding's evidence against the actual
+diff or PR-head file content one more time:
+
+- If the evidence still holds exactly as stated, keep the finding.
+- If the evidence is weaker than stated, or the path/line is wrong, correct
+  it and adjust `confidence` accordingly.
+- If the evidence does not hold at all, drop the finding — a finding drafted
+  in Step 2 is not final until it survives this check.
+
+This is a check against evidence already gathered, not new research —
+introduce no new findings here.
+
+## Step 4 — Produce structured findings
 
 Create one entry per distinct defect and sort entries by severity: Critical,
 High, Medium, Low, then Informational. Assign stable IDs in order (`RV-001`,
@@ -132,7 +156,7 @@ Use `confidence` for confidence that the defect is real, not for impact. Use
 `standard` and `adr` fields when they do not apply. Do not add an effort
 classification.
 
-## Step 11 — Write the result
+## Step 5 — Write the result
 
 Use the Write tool to create `$AI_AGILE_SCRATCH/result.json`:
 
@@ -142,7 +166,7 @@ Use the Write tool to create `$AI_AGILE_SCRATCH/result.json`:
   "summary": "Reviewed PR head $HEAD_SHA and reported $N_FINDINGS structured findings.",
   "review": {
     "head_sha": "$HEAD_SHA",
-    "findings": [ /* every finding from Step 9 */ ]
+    "findings": [ /* every finding from Step 4 */ ]
   }
 }
 ```

@@ -11,13 +11,28 @@ def _text() -> str:
     return PROMPT.read_text()
 
 
-def test_review_is_one_integrated_pass_without_personas():
+def test_review_is_one_pass_across_lenses_without_personas():
+    """The four lenses (Step 2) are checkpoints within a single model
+    invocation -- no separate context per lens, no persona flavor text --
+    not a return to the four-persona structure this PR removed."""
     text = _text()
-    assert "one integrated pass" in text
+    assert "in one pass" in text
+    assert "four lenses" in text
+    assert "do not re-fetch evidence or\nrestart between lenses" in text
     assert "Defensive Programmer" not in text
     assert "Security Analyst" not in text
     assert "QA Engineer" not in text
     assert "Standards Compliance" not in text
+
+
+def test_review_includes_a_verification_step():
+    """Step 3: a cheap, single-context self-check against the same evidence
+    -- not a second independent reviewer, not new research -- that a draft
+    finding must survive before Step 4 reports it."""
+    text = _text()
+    assert "Verify each draft finding" in text
+    assert "drop the finding" in text
+    assert "introduce no new findings here" in text
 
 
 def test_prompt_keeps_required_review_inputs():
