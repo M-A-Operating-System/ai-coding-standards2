@@ -338,10 +338,9 @@ Write:
 
 ## Rules
 
-- Implement one orchestrator-issue unit per invocation.
+- Implement exactly one `ISSUE_NUMBER` per invocation.
 - `REPO` and `AI_AGILE_ROOT` refer to the consuming/project repo.
-- If `SUB_ITEM_NUMBER` is supplied, implement that sub-item only.
-- Never discover or sequence sibling sub-items yourself.
+- Do not discover, decompose, sequence, or implement other issues.
 - Prefer the smallest correct project change.
 - Inspect relevant project code before editing.
 - Do not repeatedly rediscover established facts.
