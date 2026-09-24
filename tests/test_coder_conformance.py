@@ -10,7 +10,7 @@ Covers:
   discovered after a full Step 4 investigation), no unconditional repository-wide
   scan in the normal path, Step 3 does not re-fetch the parent issue, and repeated
   evidence gathering within one invocation is guarded against
-- Issue #502: Mode B's Step 9 (read review feedback) must be the first
+- Issue #502: Mode B's Step 8 (read review feedback) must be the first
   instructed action, ahead of the working-tree check, so a run cannot reach
   a "nothing to do" conclusion from git log/git status/tests without ever
   reading the pr-reviewer artefact
@@ -43,7 +43,7 @@ def _extract_step_0(text: str) -> str:
 
 
 def _extract_b1(text: str) -> str:
-    match = re.search(r"## Step 9[^\n]*\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
+    match = re.search(r"## Step 8[^\n]*\n(.*?)(?=\n---|\Z)", text, re.DOTALL)
     return match.group(1) if match else ""
 
 
@@ -111,36 +111,36 @@ class TestCoderB1FetchesHumanBlockReviewers:
     def test_b1_fetches_human_block_reviewers_via_api(self):
         text = _load_coder_text()
         b1 = _extract_b1(text)
-        assert b1, "Step 9 (B1) section not found in coder.md"
+        assert b1, "Step 8 (B1) section not found in coder.md"
         assert "HUMAN_BLOCK_REVIEWERS" in b1, (
-            "coder.md Step 9 must define HUMAN_BLOCK_REVIEWERS. "
+            "coder.md Step 8 must define HUMAN_BLOCK_REVIEWERS. "
             "Run: python3 scripts/update_agent_files.py"
         )
 
     def test_b1_uses_gh_api_for_rest_reviews_endpoint(self):
         text = _load_coder_text()
         b1 = _extract_b1(text)
-        assert b1, "Step 9 (B1) section not found in coder.md"
+        assert b1, "Step 8 (B1) section not found in coder.md"
         assert "gh api" in b1, (
-            "coder.md Step 9 must use 'gh api' to fetch the PR reviews endpoint. "
+            "coder.md Step 8 must use 'gh api' to fetch the PR reviews endpoint. "
             "Run: python3 scripts/update_agent_files.py"
         )
 
     def test_b1_excludes_bots(self):
         text = _load_coder_text()
         b1 = _extract_b1(text)
-        assert b1, "Step 9 (B1) section not found in coder.md"
+        assert b1, "Step 8 (B1) section not found in coder.md"
         assert "Bot" in b1, (
-            "coder.md Step 9 must exclude bot accounts (.user.type != 'Bot'). "
+            "coder.md Step 8 must exclude bot accounts (.user.type != 'Bot'). "
             "Run: python3 scripts/update_agent_files.py"
         )
 
     def test_b1_uses_reviews_endpoint_path(self):
         text = _load_coder_text()
         b1 = _extract_b1(text)
-        assert b1, "Step 9 (B1) section not found in coder.md"
+        assert b1, "Step 8 (B1) section not found in coder.md"
         assert "reviews" in b1, (
-            "coder.md Step 9 must reference the /reviews REST endpoint. "
+            "coder.md Step 8 must reference the /reviews REST endpoint. "
             "Run: python3 scripts/update_agent_files.py"
         )
 
@@ -244,7 +244,7 @@ class TestCoderBroadBashGrantDesign:
 
 
 def _extract_mode_b_intro(text: str) -> str:
-    m = re.search(r"## MODE B[^\n]*\n(.*?)(?=\n## Step 9|\Z)", text, re.DOTALL)
+    m = re.search(r"## MODE B[^\n]*\n(.*?)(?=\n## Step 8|\Z)", text, re.DOTALL)
     return m.group(1) if m else ""
 
 
@@ -341,63 +341,63 @@ class TestCoderMdModeBReadsFeedbackBeforeAnyOtherAction:
     Issue #502: a zero-commit-exit check applied only at exit does not stop a
     run that never reaches it -- two consecutive Mode B invocations declared
     `outcome: "complete"` after only `git log`/`git status`/the test suite,
-    never calling the Step 9 `gh api` reads at all. Step 9 (reading the
+    never calling the Step 8 `gh api` reads at all. Step 8 (reading the
     pr-reviewer artefact and PR reviews) must be the first instructed action
     of Mode B, ahead of any other check, with an explicit directive naming
     the shortcut it forbids.
 
     Given coder.md's Mode B section
     When a reader follows it in document order
-    Then Step 9's reads are the first action, before the working-tree check,
+    Then Step 8's reads are the first action, before the working-tree check,
     and the step explicitly forbids running git log/git status/git diff/tests
     first
     """
 
-    def test_step_9_precedes_the_working_tree_check(self):
+    def test_step_8_precedes_the_working_tree_check(self):
         text = _load_coder_text()
-        step_9_idx = text.index("## Step 9 ")
+        step_8_idx = text.index("## Step 8 ")
         tree_check_idx = text.index("Confirm the working tree matches the PR head")
-        assert step_9_idx < tree_check_idx, (
-            "coder.md Step 9 (read review feedback) must appear before the "
+        assert step_8_idx < tree_check_idx, (
+            "coder.md Step 8 (read review feedback) must appear before the "
             "working-tree-matches-PR-head check in Mode B, so reading "
             "feedback cannot be skipped by reaching that check first"
         )
 
-    def test_step_9_is_stated_as_the_first_action(self):
+    def test_step_8_is_stated_as_the_first_action(self):
         text = _load_coder_text()
         b1 = _extract_b1(text)
         lower = b1.lower()
         assert "first" in lower, (
-            "coder.md Step 9 must state that it is the first action of Mode B"
+            "coder.md Step 8 must state that it is the first action of Mode B"
         )
 
-    def test_step_9_forbids_git_status_and_tests_before_it(self):
+    def test_step_8_forbids_git_status_and_tests_before_it(self):
         text = _load_coder_text()
         b1 = _extract_b1(text)
         lower = b1.lower()
         assert "git log" in lower and "git status" in lower, (
-            "coder.md Step 9 must explicitly name git log/git status as "
+            "coder.md Step 8 must explicitly name git log/git status as "
             "commands not to run before its reads"
         )
 
-    def test_zero_commit_exit_rule_cross_references_step_9(self):
+    def test_zero_commit_exit_rule_cross_references_step_8(self):
         text = _load_coder_text()
         intro = _extract_mode_b_intro(text)
-        assert "step 9" in intro.lower(), (
-            "coder.md's zero-commit exit rule must reference Step 9 by name, "
-            "so it reads as presuming Step 9 has already run rather than a "
+        assert "step 8" in intro.lower(), (
+            "coder.md's zero-commit exit rule must reference Step 8 by name, "
+            "so it reads as presuming Step 8 has already run rather than a "
             "rule that could be satisfied without having read anything"
         )
 
 
-class TestCoderMdStep9ReadsPrReviewerArtefactFromIssueNotPr:
+class TestCoderMdStep8ReadsPrReviewerArtefactFromIssueNotPr:
     """Issue #510: _post_artefact_if_present posts every step's artefact to
     work_item.number, which for the issue-kind pr-reviewer step is the
-    issue -- never the PR. Step 9's pr-reviewer-artefact lookup queried
+    issue -- never the PR. Step 8's pr-reviewer-artefact lookup queried
     issues/$PR_NUMBER/comments instead, so it found nothing on every
     REQUEST CHANGES cycle.
 
-    Given coder.md's Step 9 pr-reviewer-artefact lookup
+    Given coder.md's Step 8 pr-reviewer-artefact lookup
     When a reader inspects the gh api call carrying the
     "ai-agile/artefact/v1 by 03_execute/pr-reviewer" marker
     Then it queries issues/$ISSUE_NUMBER/comments, not issues/$PR_NUMBER/comments
@@ -420,7 +420,7 @@ class TestCoderMdStep9ReadsPrReviewerArtefactFromIssueNotPr:
         text = _load_coder_text()
         line = self._artefact_lookup_line(_extract_b1(text))
         assert "issues/$ISSUE_NUMBER/comments" in line, (
-            "coder.md Step 9's pr-reviewer-artefact lookup must query "
+            "coder.md Step 8's pr-reviewer-artefact lookup must query "
             "issues/$ISSUE_NUMBER/comments -- pr-reviewer's artefact is "
             "posted to the issue, not the PR (issue #510)"
         )
@@ -429,7 +429,7 @@ class TestCoderMdStep9ReadsPrReviewerArtefactFromIssueNotPr:
         text = _load_coder_text()
         line = self._artefact_lookup_line(_extract_b1(text))
         assert "issues/$PR_NUMBER/comments" not in line, (
-            "coder.md Step 9 must not look for pr-reviewer's artefact under "
+            "coder.md Step 8 must not look for pr-reviewer's artefact under "
             "issues/$PR_NUMBER/comments -- that thread never receives it "
             "(issue #510)"
         )

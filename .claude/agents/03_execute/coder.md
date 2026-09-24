@@ -75,7 +75,7 @@ PR lifecycle.
 
 Read `$AI_AGILE_INVOCATION_MODE` from the environment:
 - `initial` -> **Mode A (initial build)**. Proceed to Step 1.
-- `review` -> **Mode B (address feedback)**. Proceed to Step 9.
+- `review` -> **Mode B (address feedback)**. Proceed to Step 8.
 
 If the variable is absent, assume Mode A.
 
@@ -316,15 +316,15 @@ Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool:
 > and categorising, write `outcome: "complete"` noting nothing was actionable.
 >
 > **Zero-commit exit rule:** A zero-commit `outcome: "complete"` is only valid
-> after Step 9 below has run and you have enumerated every finding in the
+> after Step 8 below has run and you have enumerated every finding in the
 > pr-reviewer artefact it read, confirming each one is either covered by an
 > existing commit on the branch or explicitly rebutted with stated reasoning
 > in `result.json`'s `summary`. Do not exit with zero new commits because the
 > original implementation is already present on the branch, and do not reach
 > that conclusion from `git log`/`git status`/the test suite in place of
-> Step 9 -- verify each finding in the pr-reviewer artefact individually first.
+> Step 8 -- verify each finding in the pr-reviewer artefact individually first.
 
-## Step 9 -- Read all review feedback (mandatory first action)
+## Step 8 -- Read all review feedback (mandatory first action)
 
 **This is the first thing Mode B does.** Do not run `git log`, `git status`,
 `git diff`, or the test suite before the commands below have executed and you
@@ -379,7 +379,7 @@ carried no `blocking` computation to defer to.
 
 ---
 
-## Step 9a -- Confirm the working tree matches the PR head
+## Step 9 -- Confirm the working tree matches the PR head
 
 ```bash
 HEAD_SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
