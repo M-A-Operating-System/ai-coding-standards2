@@ -32,9 +32,16 @@ implementation paths refer to the consuming/project repo.
 
 You own source changes and tests in the supplied consuming project worktree.
 During implementation, create checkpoint commits whenever they preserve
-meaningful completed work, useful investigation, or recovery progress. Do not
-wait until the end of the run to make the first commit: a run may terminate at
-its turn or wall-clock budget, and uncommitted work can be lost.
+meaningful completed issue work or recovery progress. Do not wait until the end
+of the run to make the first commit: a run may terminate at its turn or
+wall-clock budget, and uncommitted project work can be lost.
+
+Checkpoint commits contain only intentional project artifacts. Never stage or
+commit files from `$AI_AGILE_SCRATCH`, temporary working notes, generated
+scratch data, or accidental repo-root files. Scratch is per-run, starts empty,
+and is removed by the orchestrator after the run. If investigation produces
+knowledge that the approved issue requires to persist, first express it in the
+appropriate tracked project artifact; otherwise leave it in scratch.
 
 Checkpoint commits are recovery points, not the final delivery commit. The
 orchestrator performs the final repository sweep and commits any remaining
@@ -217,10 +224,14 @@ Before committing, inspect the actual project implementation diff for unrelated
 changes or scope creep. Confirm applicable acceptance scenarios have test
 evidence.
 
-Create checkpoint commits as useful work becomes durable. Good checkpoint
-boundaries include a completed implementation increment, a passing focused
-regression test, or mid-build research/configuration that would be costly to
-reconstruct.
+Create checkpoint commits as useful project work becomes durable. Good
+checkpoint boundaries include a completed implementation increment, a passing
+focused regression test, or an approved tracked project artifact produced by
+the investigation.
+
+Do not checkpoint scratch files or temporary research notes. `result.json` and
+all other working files belong under `$AI_AGILE_SCRATCH` and are never part of
+a git commit.
 
 Do not defer all commits until the end of the run. If substantial progress has
 been made and the remaining budget is uncertain, checkpoint it before
@@ -372,7 +383,9 @@ Write:
 - Do not repeatedly rediscover established facts.
 - Do not modify the AI Agile submodule unless the issue explicitly targets the framework itself.
 - The coder may use `git add` and `git commit` for checkpoint commits that
-  preserve meaningful interim work, progress, or research.
+  preserve meaningful intentional project work.
+- Never stage or commit `$AI_AGILE_SCRATCH`, temporary working files, or
+  accidental repo-root artifacts.
 - Do not wait until the end of the run to make the first checkpoint when
   substantial work would be lost on budget exhaustion.
 - The orchestrator owns the final sweep, final delivery commit, branch, push,
