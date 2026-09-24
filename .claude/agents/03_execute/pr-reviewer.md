@@ -147,14 +147,34 @@ Each finding must use this shape:
   "evidence": "Specific evidence from the diff or PR-head file content.",
   "fix": "A precise, actionable remediation.",
   "standard": "P-N or STD ID; required only for category standard",
-  "adr": "ADR ID; include only for a claimed exception"
+  "adr": "ADR ID; include only for a claimed exception",
+  "complexity": "low | medium | high; required only for severity Low"
 }
 ```
 
 Use `confidence` for confidence that the defect is real, not for impact. Use
 `category: improvement` only for genuinely optional suggestions. Omit optional
-`standard` and `adr` fields when they do not apply. Do not add an effort
-classification.
+`standard` and `adr` fields when they do not apply.
+
+`complexity` is required only on a `severity: Low` finding — Critical/High/
+Medium always warrant fixing now regardless of complexity, and Informational
+never blocks regardless of it. For a Low finding, rate the fix itself against
+STD-ARCH-007 (the standard governing when work belongs in this PR versus a
+new issue):
+
+- `low` — resolvable inline: mechanically obvious from `fix`, under ~30 lines,
+  no externally-observable behavior change requiring a new test design. Fixed
+  now, same as any other blocking finding.
+- `high` — issue-worthy under STD-ARCH-007's own bar: needs a separate
+  product decision, a different owner, a human gate, or is genuinely outside
+  this issue's scope. Not fixed now — the orchestrator bundles it into a
+  follow-up issue.
+- `medium` — neither: a real judgment call, or a test whose shape isn't
+  obvious, or a small cross-file ripple, but not requiring the kind of
+  decision that justifies a whole new issue. Not fixed now — flagged in the
+  review for a human to decide.
+
+Do not add any other effort or difficulty classification beyond `complexity`.
 
 ## Step 5 — Write the result
 

@@ -22,7 +22,25 @@ covered by a verified ADR exception
 **Given** structured review feedback reaches the coder through the review loop
 **When** the coder categorizes feedback
 **Then** findings marked `blocking: true` are Required and non-blocking findings
-are Suggested
+are Suggested -- the coder never reclassifies a non-blocking finding back
+into something to fix now
+
+## Scenario: A Low-severity finding's complexity decides its disposition
+
+**Given** a Low-severity finding with `complexity: low`
+**When** the orchestrator computes the review outcome
+**Then** the finding is marked `blocking: true`, same as any other blocking finding
+
+**Given** a Low-severity finding with `complexity: medium`
+**When** the orchestrator computes the review outcome
+**Then** the finding is marked `blocking: false` and flagged prominently in the
+rendered review for a human to decide -- a human who agrees it matters leaves
+a real REQUEST_CHANGES review, which independently hard-blocks
+
+**Given** a Low-severity finding with `complexity: high`
+**When** the orchestrator computes the review outcome
+**Then** the finding is marked `blocking: false` and bundled into a follow-up
+GitHub issue the orchestrator raises on the reviewer's behalf (STD-ARCH-007)
 
 ## Scenario: Review state is deterministic
 

@@ -312,9 +312,8 @@ Write your result to `$AI_AGILE_SCRATCH/result.json` using the Write tool:
 ## MODE B -- Address feedback
 
 > Scope this run to THIS PR only. Address only the unresolved review findings
-> on `$PR_NUMBER`. If there are no actionable **Required** or **Expected** items
-> after reading and categorising, write `outcome: "complete"` noting nothing was
-> actionable.
+> on `$PR_NUMBER`. If there are no actionable **Required** items after reading
+> and categorising, write `outcome: "complete"` noting nothing was actionable.
 >
 > **Zero-commit exit rule:** A zero-commit `outcome: "complete"` is only valid
 > after Step 9 below has run and you have enumerated every finding in the
@@ -402,16 +401,19 @@ the actual PR before acting.
 
 | Category | What it means | Must address? |
 |---|---|---|
-| **Required** | Correctness bug, security issue, spec violation, failing test, unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` | Yes |
-| **Expected** | Design improvement, missing guard clause, error handling gap raised as non-blocking | Yes |
-| **Suggested** | `"category": "improvement"`, or any other non-blocking finding that is a style preference or nice-to-have | No |
+| **Required** | Unresolved human REQUEST_CHANGES review (listed in `$HUMAN_BLOCK_REVIEWERS`), or any finding `$REVIEW_JSON` marks `"blocking": true` | Yes |
+| **Suggested** | Any finding `$REVIEW_JSON` marks `"blocking": false` | No |
 
 A finding's `blocking` field is the orchestrator's own computation (issue
-#512) -- Required is never something you re-derive from severity or
-confidence yourself.
+#512) -- Required is never something you re-derive from severity, category,
+or confidence yourself. A non-blocking finding stays non-blocking: it may be
+flagged for a human's own decision or already bundled into a follow-up issue
+(issue #506) -- either way, the orchestrator already decided it does not
+need a coder cycle, and this step does not reclassify that decision back
+into something to fix now.
 
-Do not address Suggested items in code. If a suggestion looks valuable, open
-a follow-up issue.
+Do not address Suggested items in code. If a suggestion looks valuable and
+isn't already tracked, open a follow-up issue.
 
 ---
 
@@ -432,11 +434,11 @@ that contradicts the PRD, tech-spec, or an ADR, do not implement it -- write
 
 ---
 
-## Step 12 -- Address required and expected items
+## Step 12 -- Address required items
 
-Work through Required items first, then Expected. For each: understand the
-root cause, apply the fix defensively, add or update tests. After all fixes
-are applied, run the full test suite.
+Work through every Required item. For each: understand the root cause, apply
+the fix defensively, add or update tests. After all fixes are applied, run
+the full test suite.
 
 Pre-existing unrelated failure policy applies here too (see Step 6).
 
@@ -450,7 +452,7 @@ Commit your fixes before signalling complete.
 {
   "outcome": "complete",
   "summary": "Addressed review feedback on PR #...",
-  "output": "## Feedback addressed\n\n**Required items fixed:**\n- ...\n\n**Expected items fixed:**\n- ...\n\n**Suggested items (not implemented):**\n- ...",
+  "output": "## Feedback addressed\n\n**Required items fixed:**\n- ...\n\n**Suggested items (not implemented):**\n- ...",
   "expected_effect": {"commits": true}
 }
 ```

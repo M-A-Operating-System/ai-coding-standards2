@@ -166,7 +166,7 @@ is available as context but does not downgrade any finding.
 | `true` | No | **Blocks** — REQUEST_CHANGES |
 | `true` | Yes | **Informational** — noted in findings, does not block APPROVE |
 
-The pr-reviewer verdict rule (issue #512 Part 2: computed by `pipeline/review_outcome.py`, never the model): a finding blocks **REQUEST CHANGES** unless it is non-Critical and `category: "improvement"`, is covered by a verified ADR exception, or is non-Critical with confidence below 0.8. A Critical finding always blocks, regardless of category. **APPROVE** only when no finding blocks and no unresolved human REQUEST_CHANGES review exists.
+The pr-reviewer verdict rule (issue #512 Part 2: computed by `pipeline/review_outcome.py`, never the model): a finding blocks **REQUEST CHANGES** unless it is Informational, is non-Critical and `category: "improvement"`, is covered by a verified ADR exception, or is non-Critical with confidence below 0.8. A Critical finding always blocks, regardless of category. A Low-severity finding additionally does not block when its self-reported `complexity` is `medium` (flagged for a human decision) or `high` (deferred to a follow-up issue the orchestrator raises, STD-ARCH-007) — issue #506; a Low finding with `complexity: low`, missing, or unrecognised still blocks. **APPROVE** only when no finding blocks and no unresolved human REQUEST_CHANGES review exists.
 
 ---
 

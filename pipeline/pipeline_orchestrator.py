@@ -77,6 +77,7 @@ from todos_patch import (
 # import here is unchanged.
 from review_outcome import (
     APPROVE as _REVIEW_APPROVE,
+    build_deferred_findings_issue as _build_deferred_findings_issue,
     derive_review_verdict as _derive_review_verdict,
     find_duplicate_finding_ids as _find_duplicate_finding_ids,
     render_review_comment as _render_review_comment,
@@ -7237,6 +7238,11 @@ def _apply_outcome_policy(
         via _post_artefact_if_present, and resolved_status is the computed
         verdict's status -- overriding the model's own final_status when
         they disagree (Scenario: Code-computed verdict overrides the model).
+        Also carries creates_issue: when the step declares
+        expected_effect.creates_issues, any Low-severity/High-complexity
+        findings are bundled into one follow-up issue request, computed
+        here from the same findings the verdict used (issue #506) -- never
+        left to the model to remember to ask for.
       - human_only_block is True when an unresolved human REQUEST_CHANGES
         review is the sole reason resolved_status is STATUS_REVIEW (the
         findings alone would have computed APPROVE) -- the caller grants
@@ -7366,12 +7372,24 @@ def _apply_outcome_policy(
         )
         _prior_rerun = False
 
+    # issue #506: bundle any Low-severity/High-complexity findings into a
+    # single follow-up issue request -- orchestrator-computed from the same
+    # findings the verdict itself used, never left to the model to remember
+    # to ask for (P-14). Only when the step actually declared
+    # expected_effect.creates_issues; otherwise a future outcome_policy step
+    # that never opted in would get an unrequested creates_issue synthesized
+    # here, disagreeing with its own declaration (MI-6) for no reason.
+    _deferred_issue_request: dict = {}
+    if bool((agent_def.expected_effect or {}).get("creates_issues", False)):
+        _deferred_issue_request = _build_deferred_findings_issue(findings, pr_number)
+
     rendered = replace(
         step_result,
         output=_render_review_comment(
             verdict, review.get("head_sha", ""), findings, adr_records,
             standards_by_id=standards_by_id, human_blockers=human_blockers, prior_rerun=_prior_rerun,
         ),
+        creates_issue=_deferred_issue_request,
     )
     return computed_status, rendered, "", outcome_overridden, human_only_block, human_blockers, False, pr_number
 

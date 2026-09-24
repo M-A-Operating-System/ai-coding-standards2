@@ -132,7 +132,7 @@ class TestDuplicateFindingIds:
         agent_def = _pr_reviewer_agent_def()
         work_item = _issue_work_item()
         finding = {
-            "id": "RV-001", "title": "t", "severity": "Low", "category": "correctness",
+            "id": "RV-001", "title": "t", "severity": "Medium", "category": "correctness",
             "confidence": 1.0, "evidence": "e", "fix": "f",
         }
         step_result = _step_result_with_review(findings=[finding, dict(finding)])
@@ -513,3 +513,64 @@ class TestRequireHeadMatch:
 
         assert stale_head_out is True
         assert failure == ""
+
+
+class TestDeferredFindingsIssueSynthesis:
+    """Issue #506: a Low-severity/High-complexity finding gets bundled into
+    a creates_issue request the orchestrator itself computes, never left to
+    the model to remember to ask for (P-14) -- gated by the step's own
+    expected_effect.creates_issues declaration, same as every other
+    creates_issue consumer."""
+
+    _deferred_finding = {
+        "id": "RV-001", "title": "large refactor needed", "severity": "Low",
+        "category": "consistency", "confidence": 1.0, "evidence": "e", "fix": "f",
+        "complexity": "high",
+    }
+
+    def test_declared_and_deferred_finding_populates_creates_issue(self):
+        agent_def = _pr_reviewer_agent_def(
+            expected_effect={"commits": False, "creates_issues": True},
+        )
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(findings=[self._deferred_finding])
+        gh = _make_gh_mock()
+
+        _, rendered, failure, *_ = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert failure == ""
+        assert rendered.creates_issue
+        assert "RV-001" in rendered.creates_issue["body"]
+
+    def test_not_declared_stays_empty_even_with_a_deferred_finding(self):
+        """expected_effect.creates_issues defaults False -- a step that
+        never opted in gets no synthesized request, matching
+        _create_requested_issue's own refuse-not-declared behaviour."""
+        agent_def = _pr_reviewer_agent_def()
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(findings=[self._deferred_finding])
+        gh = _make_gh_mock()
+
+        _, rendered, failure, *_ = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert failure == ""
+        assert rendered.creates_issue == {}
+
+    def test_declared_but_nothing_deferred_stays_empty(self):
+        agent_def = _pr_reviewer_agent_def(
+            expected_effect={"commits": False, "creates_issues": True},
+        )
+        work_item = _issue_work_item()
+        step_result = _step_result_with_review(findings=[])
+        gh = _make_gh_mock()
+
+        _, rendered, failure, *_ = _apply_outcome_policy(
+            gh, agent_def, work_item, step_result, STATUS_COMPLETE, 77,
+        )
+
+        assert failure == ""
+        assert rendered.creates_issue == {}

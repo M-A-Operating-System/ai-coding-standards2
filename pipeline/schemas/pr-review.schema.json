@@ -73,14 +73,31 @@
         "adr": {
           "type": "string",
           "description": "An ADR ID the finding claims covers it. Verified against adrs.json's own authorises_exception_to, never trusted from this claim alone (review_outcome.adr_exception_index)."
+        },
+        "complexity": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "STD-ARCH-007's own inline-fixable/issue-worthy bar, made explicit per finding. Required for severity \"Low\" only -- Critical/High/Medium always block regardless, and Informational never does. \"low\": resolvable inline (STD-ARCH-007's own bar) -- blocks like any other Low finding. \"medium\": flagged for human decision, not auto-blocked. \"high\": deferred to a new issue (STD-ARCH-007's own bar for when one is justified), not auto-blocked. Missing or unrecognised value on a Low finding fails closed to blocking (review_outcome.finding_blocks)."
         }
       },
-      "if": {
-        "properties": { "category": { "const": "standard" } }
-      },
-      "then": {
-        "required": ["standard"]
-      }
+      "allOf": [
+        {
+          "if": {
+            "properties": { "category": { "const": "standard" } }
+          },
+          "then": {
+            "required": ["standard"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "severity": { "const": "Low" } }
+          },
+          "then": {
+            "required": ["complexity"]
+          }
+        }
+      ]
     }
   }
 }

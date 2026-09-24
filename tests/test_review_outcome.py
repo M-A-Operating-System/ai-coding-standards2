@@ -15,9 +15,12 @@ from review_outcome import (
     APPROVE,
     REQUEST_CHANGES,
     adr_exception_index,
+    build_deferred_findings_issue,
     derive_review_verdict,
     find_duplicate_finding_ids,
     finding_blocks,
+    finding_needs_human_flag,
+    finding_needs_new_issue,
     render_review_comment,
     sort_findings,
 )
@@ -139,6 +142,122 @@ class TestFindingBlocks:
         f = _finding(severity="Low", confidence=1.0, effort="defer-ok")
         assert finding_blocks(f, {}) is True
 
+    def test_informational_never_blocks_regardless_of_confidence(self):
+        """Issue #506: Informational is below the threshold this policy
+        applies at all -- unlike Low, it has no complexity escape hatch to
+        check because it never needs one."""
+        f = _finding(severity="Informational", confidence=1.0)
+        assert finding_blocks(f, {}) is False
+
+    def test_informational_never_blocks_even_with_high_complexity(self):
+        f = _finding(severity="Informational", confidence=1.0, complexity="high")
+        assert finding_blocks(f, {}) is False
+
+    def test_low_severity_low_complexity_blocks(self):
+        """STD-ARCH-007's own bar: resolvable inline, fixed now like any
+        other blocking finding."""
+        f = _finding(severity="Low", confidence=1.0, complexity="low")
+        assert finding_blocks(f, {}) is True
+
+    def test_low_severity_medium_complexity_does_not_block(self):
+        """Issue #506: flagged for a human decision, not auto-blocked."""
+        f = _finding(severity="Low", confidence=1.0, complexity="medium")
+        assert finding_blocks(f, {}) is False
+
+    def test_low_severity_high_complexity_does_not_block(self):
+        """Issue #506: deferred to a follow-up issue, not auto-blocked."""
+        f = _finding(severity="Low", confidence=1.0, complexity="high")
+        assert finding_blocks(f, {}) is False
+
+    def test_low_severity_missing_complexity_fails_closed_to_blocking(self):
+        """A Low finding the schema should have required complexity on, but
+        didn't get it -- treated the same as complexity: low, not silently
+        let through as non-blocking."""
+        f = _finding(severity="Low", confidence=1.0)
+        assert "complexity" not in f
+        assert finding_blocks(f, {}) is True
+
+    def test_low_severity_unrecognised_complexity_fails_closed_to_blocking(self):
+        f = _finding(severity="Low", confidence=1.0, complexity="urgent")
+        assert finding_blocks(f, {}) is True
+
+    def test_medium_severity_complexity_is_ignored(self):
+        """complexity only matters for severity Low -- a Medium finding
+        blocks the same regardless of what complexity says."""
+        f = _finding(severity="Medium", confidence=1.0, complexity="high")
+        assert finding_blocks(f, {}) is True
+
+    def test_critical_finding_blocks_regardless_of_complexity(self):
+        f = _finding(severity="Critical", confidence=1.0, complexity="high")
+        assert finding_blocks(f, {}) is True
+
+
+class TestFindingNeedsHumanFlag:
+    def test_low_severity_medium_complexity_needs_human_flag(self):
+        f = _finding(severity="Low", complexity="medium")
+        assert finding_needs_human_flag(f) is True
+
+    def test_low_severity_low_complexity_does_not_need_human_flag(self):
+        f = _finding(severity="Low", complexity="low")
+        assert finding_needs_human_flag(f) is False
+
+    def test_low_severity_high_complexity_does_not_need_human_flag(self):
+        f = _finding(severity="Low", complexity="high")
+        assert finding_needs_human_flag(f) is False
+
+    def test_medium_severity_medium_complexity_does_not_need_human_flag(self):
+        """The medium/high complexity dispositions only apply to Low
+        severity -- a Medium-severity finding always blocks outright."""
+        f = _finding(severity="Medium", complexity="medium")
+        assert finding_needs_human_flag(f) is False
+
+
+class TestFindingNeedsNewIssue:
+    def test_low_severity_high_complexity_needs_new_issue(self):
+        f = _finding(severity="Low", complexity="high")
+        assert finding_needs_new_issue(f) is True
+
+    def test_low_severity_medium_complexity_does_not_need_new_issue(self):
+        f = _finding(severity="Low", complexity="medium")
+        assert finding_needs_new_issue(f) is False
+
+    def test_low_severity_low_complexity_does_not_need_new_issue(self):
+        f = _finding(severity="Low", complexity="low")
+        assert finding_needs_new_issue(f) is False
+
+
+class TestBuildDeferredFindingsIssue:
+    def test_no_deferred_findings_returns_empty_dict(self):
+        findings = [_finding(severity="Critical"), _finding(severity="Low", complexity="low")]
+        assert build_deferred_findings_issue(findings, 42) == {}
+
+    def test_bundles_every_deferred_finding_into_one_issue(self):
+        f1 = _finding(id="RV-001", title="first", severity="Low", complexity="high")
+        f2 = _finding(id="RV-002", title="second", severity="Low", complexity="high")
+        request = build_deferred_findings_issue([f1, f2], 42)
+        assert request["title"]
+        assert "RV-001" in request["body"] and "RV-002" in request["body"]
+        assert "first" in request["body"] and "second" in request["body"]
+
+    def test_excludes_non_deferred_findings(self):
+        f1 = _finding(id="RV-001", severity="Low", complexity="high")
+        f2 = _finding(id="RV-002", severity="Low", complexity="medium")
+        f3 = _finding(id="RV-003", severity="Critical")
+        request = build_deferred_findings_issue([f1, f2, f3], 42)
+        assert "RV-001" in request["body"]
+        assert "RV-002" not in request["body"]
+        assert "RV-003" not in request["body"]
+
+    def test_title_includes_pr_number(self):
+        f = _finding(severity="Low", complexity="high")
+        request = build_deferred_findings_issue([f], 42)
+        assert "42" in request["title"]
+
+    def test_labels_include_tech_debt_classification(self):
+        f = _finding(severity="Low", complexity="high")
+        request = build_deferred_findings_issue([f], 42)
+        assert "classification: tech-debt" in request["labels"]
+
 
 class TestDeriveReviewVerdict:
     def test_no_findings_no_human_blockers_approves(self):
@@ -151,6 +270,13 @@ class TestDeriveReviewVerdict:
     def test_any_blocking_finding_requests_changes(self):
         f = _finding(severity="Critical", confidence=1.0)
         assert derive_review_verdict([f], [], []) == REQUEST_CHANGES
+
+    def test_low_severity_medium_or_high_complexity_approves(self):
+        """Issue #506: neither the human-flagged nor the deferred
+        disposition forces a coder cycle by itself."""
+        flagged = _finding(id="RV-001", severity="Low", confidence=1.0, complexity="medium")
+        deferred = _finding(id="RV-002", severity="Low", confidence=1.0, complexity="high")
+        assert derive_review_verdict([flagged, deferred], [], []) == APPROVE
 
     def test_verified_adr_exception_for_overridable_standard_approves(self):
         f = _finding(severity="High", confidence=1.0, category="standard",
@@ -270,3 +396,23 @@ class TestRenderReviewComment:
         by_id = {f["id"]: f["blocking"] for f in payload["findings"]}
         assert by_id["RV-001"] is True
         assert by_id["RV-002"] is False
+
+    def test_human_flag_finding_is_tagged_distinctly(self):
+        """Issue #506: a Low/Medium-complexity finding must read differently
+        from an ordinary non-blocking finding -- it's the mechanism by which
+        a human is expected to actually notice and decide."""
+        f = _finding(id="RV-001", severity="Low", confidence=1.0, complexity="medium")
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "FLAGGED FOR HUMAN DECISION" in body
+        assert "[non-blocking]" not in body
+
+    def test_deferred_finding_is_tagged_distinctly(self):
+        f = _finding(id="RV-001", severity="Low", confidence=1.0, complexity="high")
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "DEFERRED" in body
+        assert "[non-blocking]" not in body
+
+    def test_ordinary_non_blocking_finding_still_tagged_non_blocking(self):
+        f = _finding(id="RV-001", severity="Medium", confidence=0.5)
+        body = render_review_comment(APPROVE, "abc123", [f], [])
+        assert "[non-blocking]" in body

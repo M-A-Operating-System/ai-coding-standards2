@@ -55,6 +55,8 @@ def adr_exception_index(adr_records: list[dict], standards_by_id: dict[str, dict
 def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     """A finding blocks APPROVE unless one of these holds (issue #512):
 
+    - its severity is "Informational" -- below the threshold this policy
+      applies at all;
     - it is not Critical and its category is "improvement" -- "Critical" and
       "improvement" are contradictory (severity says how bad; category says
       what kind), so a Critical finding always blocks regardless of its
@@ -62,9 +64,19 @@ def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     - it cites an ADR whose authorises_exception_to actually lists the
       finding's standard, verified against adrs.json rather than trusted
       from the finding's own claim;
-    - it is not Critical and its confidence is below 0.8.
+    - it is not Critical and its confidence is below 0.8;
+    - its severity is "Low" and its complexity is "medium" (flagged for a
+      human decision, finding_needs_human_flag) or "high" (deferred to a
+      new issue, finding_needs_new_issue) -- STD-ARCH-007's own
+      inline-fixable/issue-worthy bar, made explicit per finding (issue
+      #506). A Low finding with complexity "low", missing, or unrecognised
+      still blocks -- fails closed rather than silently letting an
+      unclassified Low finding through as non-blocking.
     """
     severity = finding.get("severity")
+
+    if severity == "Informational":
+        return False
 
     if finding.get("category") == "improvement" and severity != "Critical":
         return False
@@ -78,7 +90,63 @@ def finding_blocks(finding: dict, adr_index: dict[str, set[str]]) -> bool:
     if severity != "Critical" and confidence < _NON_BLOCKING_CONFIDENCE_THRESHOLD:
         return False
 
+    if severity == "Low" and finding.get("complexity") in ("medium", "high"):
+        return False
+
     return True
+
+
+def finding_needs_human_flag(finding: dict) -> bool:
+    """A Low-severity, Medium-complexity finding (issue #506): STD-ARCH-007
+    as written is binary (inline-fixable or issue-worthy) and has no middle
+    tier -- this is that tier, made explicit. Flagged prominently in the
+    rendered review, never auto-blocked and never auto-deferred to a new
+    issue. A human who judges it does matter leaves a real REQUEST_CHANGES
+    review, which already hard-blocks independently of this (issue #100)."""
+    return finding.get("severity") == "Low" and finding.get("complexity") == "medium"
+
+
+def finding_needs_new_issue(finding: dict) -> bool:
+    """A Low-severity, High-complexity finding (issue #506): STD-ARCH-007's
+    own bar for when a new issue is justified -- work that needs a separate
+    product decision, a different owner, a human gate, or a scope genuinely
+    outside the current issue's acceptance criteria. Deferred, not fixed
+    now and not blocking."""
+    return finding.get("severity") == "Low" and finding.get("complexity") == "high"
+
+
+def build_deferred_findings_issue(findings: list[dict], pr_number: Optional[int] = None) -> dict:
+    """Bundle every finding_needs_new_issue finding from one review round
+    into a single creates_issue request (issue #506). AGENTS.md's
+    result.json contract has one creates_issue slot per step run, not a
+    list, so multiple deferred findings become sections of one issue
+    rather than one issue each. {} (no request) when nothing is deferred --
+    most runs have nothing to defer, and the orchestrator's own MI-6
+    consistency check already logs (not fails) an empty request against a
+    step that declares expected_effect.creates_issues, the same way
+    00_ondemand/sizer's own conditional issue creation does."""
+    deferred = [f for f in findings if finding_needs_new_issue(f)]
+    if not deferred:
+        return {}
+    title = (
+        f"Deferred review findings from PR #{pr_number}" if pr_number is not None
+        else "Deferred review findings"
+    )
+    body_lines = [
+        "The following Low-severity findings were raised during review but are "
+        "too large to fix inline (STD-ARCH-007) -- deferred here rather than "
+        "blocking the PR.",
+        "",
+    ]
+    for f in deferred:
+        body_lines.append(f"## {f.get('id', '')} -- {f.get('title', '')}")
+        if f.get("path"):
+            location = f"{f['path']}:{f['line']}" if f.get("line") else f["path"]
+            body_lines.append(f"**File:** `{location}`")
+        body_lines.append(f"**Evidence:** {f.get('evidence', '')}")
+        body_lines.append(f"**Suggested fix:** {f.get('fix', '')}")
+        body_lines.append("")
+    return {"title": title, "body": "\n".join(body_lines), "labels": ["classification: tech-debt"]}
 
 
 def derive_review_verdict(
@@ -195,7 +263,14 @@ def render_review_comment(
         category = f.get("category", "")
         path = f.get("path")
         line_no = f.get("line")
-        tag = "BLOCKING" if blocking else "non-blocking"
+        if blocking:
+            tag = "BLOCKING"
+        elif finding_needs_human_flag(f):
+            tag = "FLAGGED FOR HUMAN DECISION"
+        elif finding_needs_new_issue(f):
+            tag = "DEFERRED to a new issue"
+        else:
+            tag = "non-blocking"
         lines.append(f"### {fid} -- {title}   [{severity}] [{tag}]")
         lines.append("")
         if path:
