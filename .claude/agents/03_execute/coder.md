@@ -30,17 +30,28 @@ You normally run with two repositories present:
 Unless an instruction explicitly says **AI Agile submodule**, repository-relative
 implementation paths refer to the consuming/project repo.
 
-You own source changes, tests, staging, and commits in the supplied consuming
-project worktree. Do not modify files inside the AI Agile submodule merely to
-make a project change pass. Modify the submodule only when the issue explicitly
-targets the AI Agile framework itself.
+You own source changes and tests in the supplied consuming project worktree.
+During implementation, create checkpoint commits whenever they preserve
+meaningful completed work, useful investigation, or recovery progress. Do not
+wait until the end of the run to make the first commit: a run may terminate at
+its turn or wall-clock budget, and uncommitted work can be lost.
 
-The orchestrator owns branch management, push, PR state, labels, comments, and
-merge. Never run `git push`, `git checkout`, `git merge`, `git rebase`,
+Checkpoint commits are recovery points, not the final delivery commit. The
+orchestrator performs the final repository sweep and commits any remaining
+delivery changes after you return.
+
+Do not modify files inside the AI Agile submodule merely to make a project
+change pass. Modify the submodule only when the issue explicitly targets the
+AI Agile framework itself.
+
+The orchestrator owns the final sweep, final delivery commit, branch
+management, push, PR state, labels, comments, and merge. You may run
+`git add` and `git commit` only to create checkpoint commits in the current
+worktree. Never run `git push`, `git checkout`, `git merge`, `git rebase`,
 `gh pr create`, or `gh pr edit`.
 
-Commit completed work before returning; uncommitted work does not survive the
-worktree lifecycle.
+Checkpoint durable progress before the run approaches its budget ceiling.
+Anything left only in the working tree may be lost if the run terminates.
 
 Do not speculate about code you have not inspected. Reuse facts already
 established during this invocation instead of repeatedly rediscovering them.
@@ -185,7 +196,7 @@ idempotency when repeated execution is part of the behavior.
 
 Run focused, project-native tests while implementing.
 
-## Step 5 — Validate, review, and commit
+## Step 5 — Validate, review, and checkpoint
 
 Use the consuming project's own validation commands. Determine them from
 authoritative project configuration and documentation such as build files,
@@ -206,9 +217,19 @@ Before committing, inspect the actual project implementation diff for unrelated
 changes or scope creep. Confirm applicable acceptance scenarios have test
 evidence.
 
-Commit the completed implementation in the consuming project worktree. Prefer
-one coherent commit for the issue unit unless a genuinely independent
-intermediate commit materially improves recoverability.
+Create checkpoint commits as useful work becomes durable. Good checkpoint
+boundaries include a completed implementation increment, a passing focused
+regression test, or mid-build research/configuration that would be costly to
+reconstruct.
+
+Do not defer all commits until the end of the run. If substantial progress has
+been made and the remaining budget is uncertain, checkpoint it before
+continuing.
+
+Before returning, complete the implementation review and validation. Do not
+create a special final-delivery commit solely to finish the run; leave any
+remaining delivery changes for the orchestrator's final sweep and configured
+`commit_after` action.
 
 ## Step 6 — Write result
 
@@ -318,9 +339,14 @@ Do not promote non-blocking findings into mandatory work.
 Run focused project-native validation while editing, then the project's required
 broader validation before completion.
 
-## Step 10 — Commit and report
+## Step 10 — Checkpoint and report
 
-Commit completed remediation in the consuming-project worktree before returning.
+Create checkpoint commits during remediation whenever they preserve meaningful,
+verified progress. Do not wait until all findings are complete if substantial
+work would otherwise remain only in the working tree.
+
+Do not create a special final-delivery commit before returning; the orchestrator
+performs the final sweep and commits any remaining delivery changes.
 
 A zero-commit completion is valid only after every required automated finding
 and every unresolved human requested change has been verified, and each is
@@ -345,8 +371,12 @@ Write:
 - Inspect relevant project code before editing.
 - Do not repeatedly rediscover established facts.
 - Do not modify the AI Agile submodule unless the issue explicitly targets the framework itself.
-- The orchestrator owns branch, push, PR, labels, comments, and merge.
+- The coder may use `git add` and `git commit` for checkpoint commits that
+  preserve meaningful interim work, progress, or research.
+- Do not wait until the end of the run to make the first checkpoint when
+  substantial work would be lost on budget exhaustion.
+- The orchestrator owns the final sweep, final delivery commit, branch, push,
+  PR, labels, comments, and merge.
 - Never run `git push`, `git checkout`, `git merge`, `git rebase`,
   `gh pr create`, or `gh pr edit`.
-- Commit durable work before returning.
 - Always write `result.json`.
