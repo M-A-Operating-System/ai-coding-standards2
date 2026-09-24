@@ -280,7 +280,7 @@ Write `$AI_AGILE_SCRATCH/result.json`:
 ```json
 {
   "outcome": "complete",
-  "summary": "Implemented the issue and validation.",
+  "summary": "Implemented the issue and validated it.",
   "expected_effect": {"commits": true}
 }
 ```
