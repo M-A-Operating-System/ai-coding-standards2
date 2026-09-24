@@ -65,7 +65,7 @@ Scripted step: creates the CODE branch (issue-{N}) and opens a draft PR with 'Cl
 - **Kind:** agent
 - **Phase:** `03_execute`
 
-Implements one GitHub issue in the consuming repository. Reads the approved scope and relevant project context, modifies and tests that issue's code, and may create checkpoint commits to preserve meaningful progress during a long run. Checkpoints contain intentional project work only; the orchestrator performs the final sweep, final delivery commit, push, and PR lifecycle after the agent returns. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues -- spikes produce research findings, not code. Skipped for epic/blocked issues.
+Implements a GitHub issue and its sub-issues as a defensive programmer. Reads the approved PRD, docs/tech-spec/, and each sub-issue in order. Writes code using its Write/Edit tools and commits it in its own worktree as it goes; the orchestrator then pushes the shared issue branch (issue-{N}) after the agent signals complete. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues -- spikes produce research findings, not code. Skipped for epic/blocked issues.
 
 ### `03_execute/ci-gate`
 
