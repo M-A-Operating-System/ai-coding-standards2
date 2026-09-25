@@ -4,7 +4,7 @@ Reset this session's local repo checkout to match the current state of the
 remote default branch (normally `main`), so subsequent work starts from a
 known-clean, up-to-date baseline. This is a **deterministic script**, not an
 agent -- there is no LLM judgement in a rebaseline. It runs
-`.github/scripts/rebaseline-branch.sh`, which refuses to run over uncommitted
+`scripts/rebaseline-branch.sh`, which refuses to run over uncommitted
 work, resolves the target branch, says which local-only commits it is about to
 discard, and hard-resets to the remote.
 
@@ -23,8 +23,8 @@ logic. Locate it (standalone repo first, then the submodule) and execute it
 with the argument:
 
 ```bash
-SCRIPT=.github/scripts/rebaseline-branch.sh
-[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/.github/scripts/rebaseline-branch.sh
+SCRIPT=scripts/rebaseline-branch.sh
+[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/scripts/rebaseline-branch.sh
 bash "$SCRIPT" $ARGUMENTS
 ```
 
