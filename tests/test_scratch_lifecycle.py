@@ -217,7 +217,7 @@ def _run_script(name, scratch, cwd=None):
 
 
 class TestScratchScripts:
-    """The work lives in .github/scripts/, so it is testable standalone."""
+    """The work lives in scripts/, so it is testable standalone."""
 
     def test_setup_creates_the_directory_empty(self):
         d = Path("/tmp/ais-test-setup-empty")
@@ -335,8 +335,8 @@ class TestOrchestratorDelegatesToScripts:
         # The repo-root sweep joined the same lifecycle in issue #407 (AS-2),
         # so these lists are no longer scratch-only; scratch setup still opens
         # "before" and scratch teardown still closes "after".
-        assert lifecycle["before"][0] == ".github/scripts/scratch-setup.sh"
-        assert lifecycle["after"][-1] == ".github/scripts/scratch-teardown.sh"
+        assert lifecycle["before"][0] == "scripts/scratch-setup.sh"
+        assert lifecycle["after"][-1] == "scripts/scratch-teardown.sh"
 
     def test_every_declared_lifecycle_script_exists_and_runs(self):
         """A declared path that does not exist is skipped with a warning, so a
