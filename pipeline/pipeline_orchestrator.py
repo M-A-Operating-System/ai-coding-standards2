@@ -544,7 +544,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
             if _git_ops.get("mark_ready_on_complete"):
                 log.warning(
                     "pipeline.json: agent %r uses deprecated git_ops.mark_ready_on_complete; "
-                    "migrate to post_steps: [\".github/scripts/mark-pr-ready.sh\"]",
+                    "migrate to post_steps: [\"scripts/mark-pr-ready.sh\"]",
                     entry.get("agent", "<unknown>"),
                 )
             _budgets = entry.get("budgets") or {}
@@ -1681,7 +1681,7 @@ def _ensure_metrics_branch(gh: "GitHubClient", repo: str) -> None:
 _GIT_PLUMBING_ENV_VARS = ("PATH", "HOME")
 
 # The declared script that owns the metrics ledger append (AS-2, issue #407).
-_METRICS_APPEND_SCRIPT = ".github/scripts/append-metrics-record.sh"
+_METRICS_APPEND_SCRIPT = "scripts/append-metrics-record.sh"
 
 # STD-SEC-022 — env for append-metrics-record.sh. It runs the same git plumbing
 # _GIT_PLUMBING_ENV_VARS covers, plus `git fetch`/`git push` against the metrics
@@ -1715,7 +1715,7 @@ def _append_metrics_record(
 
     The orchestrator decides WHAT the record says -- it knows the step, the
     outcome and the timing -- and hands the finished line to
-    .github/scripts/append-metrics-record.sh, which owns the git plumbing that
+    scripts/append-metrics-record.sh, which owns the git plumbing that
     puts it on the branch. Committing is not coordination (AS-2, issue #407),
     so the fetch/hash-object/commit-tree/push-with-retry sequence that used to
     live here is a script now, invoked as a subprocess with its own named env
@@ -2759,7 +2759,7 @@ def get_work_item_classification(work_item: WorkItem) -> Optional[str]:
 # Agent execution
 # ---------------------------------------------------------------------------
 
-STATUS_SH = SUBMODULE_ROOT / ".github/scripts/status.sh"
+STATUS_SH = SUBMODULE_ROOT / "scripts/status.sh"
 
 # Shared agent context — every agent reads this before starting. It
 # distils the principles, lifecycle, status contract, and "must not"
@@ -3799,7 +3799,7 @@ _SCRIPT_AGENT_ENV_VARS = (
 # depending on which step wrote, and MI-7 needs "a person applied this label"
 # to be a fact rather than a guess. So every script that talks to GitHub is
 # handed the same credential and resolves it through one place --
-# .github/scripts/lib/github-identity.sh -- falling back to GITHUB_TOKEN in a
+# scripts/lib/github-identity.sh -- falling back to GITHUB_TOKEN in a
 # repository that configures no PAT.
 #
 # The narrowing that remains is which variables a script is handed at all
@@ -4214,7 +4214,7 @@ def _run_lifecycle_scripts(
     label, and cannot fail a run. See
     docs/product/orchestrator/PRODUCT.md, "Every step has the same four parts".
 
-    The work lives in .github/scripts/ and the list lives in pipeline.json, so
+    The work lives in scripts/ and the list lives in pipeline.json, so
     the orchestrator neither performs the work nor names the scripts (P-14,
     STD-ARCH-035). Failure is logged and swallowed: the "before" scripts are
     idempotent, so a missed "after" self-heals on the next run and must never
@@ -4301,7 +4301,7 @@ def _build_agent_env(
     agent_env.update(dict(flow_env) if flow_env is not None else {})
     # Per-run scratch directory under /tmp — outside the working tree, so it
     # can never appear in git status or be swept into a commit. Creation and
-    # removal are done by .github/scripts/scratch-{setup,teardown}.sh, which
+    # removal are done by scripts/scratch-{setup,teardown}.sh, which
     # the orchestrator runs around each agent invocation.
     agent_env["AI_AGILE_SCRATCH"] = _scratch_path(agent_session_id)
     # An interactive run authenticates its agents the same way the surrounding
@@ -5208,7 +5208,7 @@ def _recover_unpushed_commits(issue_branch: str) -> None:
 
     The actual git work (best-effort by design -- see the script) runs as a
     standalone script per STD-ARCH-035 (issue #495):
-    .github/scripts/recover-unpushed-commits.sh. This function only resolves
+    scripts/recover-unpushed-commits.sh. This function only resolves
     the script, invokes it, and relays its diagnostic output -- never raises.
 
     Invoked with no env= override (STD-SEC-022 exception, ADR-003): the
@@ -5221,7 +5221,7 @@ def _recover_unpushed_commits(issue_branch: str) -> None:
     its own for git's github.com routing). Same shape as
     _salvage_exhausted_worktree's call to salvage-exhausted-worktree.sh.
     """
-    script = _orchestration_script_path(".github/scripts/recover-unpushed-commits.sh")
+    script = _orchestration_script_path("scripts/recover-unpushed-commits.sh")
     if not script.exists():
         log.warning(
             "recover-unpushed-commits.sh not found at %s -- skipping recovery for %s",
@@ -6716,7 +6716,7 @@ def _salvage_exhausted_worktree(
 
     Eligibility and branch resolution are coordination decisions and stay
     here; the actual git/filesystem work (commit, push, stray-root-file
-    check) runs in .github/scripts/salvage-exhausted-worktree.sh per
+    check) runs in scripts/salvage-exhausted-worktree.sh per
     STD-ARCH-035 -- ADR-001 does not waive new process logic landing in this
     file (pr-reviewer finding SC-001, PR #493).
 
@@ -6734,7 +6734,7 @@ def _salvage_exhausted_worktree(
         return None
 
     _script = _orchestration_script_path(
-        ".github/scripts/salvage-exhausted-worktree.sh"
+        "scripts/salvage-exhausted-worktree.sh"
     )
     if not _script.exists():
         log.warning(
@@ -8063,11 +8063,11 @@ def _ensure_gh_cli() -> None:
 
     The install/probe logic (apt-get bootstrap, `gh api user` verification)
     is filesystem/process work and runs as a standalone script per
-    STD-ARCH-035 (issue #495): .github/scripts/ensure-gh-cli.sh. This
+    STD-ARCH-035 (issue #495): scripts/ensure-gh-cli.sh. This
     function only resolves the script and reports its result -- never
     raises, matches the coordination-only contract ADR-001 states.
     """
-    script = _orchestration_script_path(".github/scripts/ensure-gh-cli.sh")
+    script = _orchestration_script_path("scripts/ensure-gh-cli.sh")
     if not script.exists():
         log.warning("ensure-gh-cli.sh not found at %s -- skipping gh CLI check", script)
         return
@@ -8327,7 +8327,7 @@ def _call_delete_branch(repo: str, branch: str) -> None:
         log.warning("_call_delete_branch: REPO is empty -- skipping")
         return
 
-    script = SUBMODULE_ROOT / ".github/scripts/delete-branch.sh"
+    script = SUBMODULE_ROOT / "scripts/delete-branch.sh"
     if not script.exists():
         log.warning(
             "delete-branch.sh not found at %s -- branch '%s' not cleaned up",
