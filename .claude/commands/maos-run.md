@@ -5,7 +5,7 @@ by invoking the real orchestrator repeatedly -- same sequence, same
 dependencies, same human gates, same label transitions -- stopping whenever a
 person has to decide something. This is a **deterministic script**, not an
 agent: the drive loop is mechanical. It runs
-`.github/scripts/drive-item.sh`, which ticks the orchestrator
+`scripts/drive-item.sh`, which ticks the orchestrator
 (`pipeline/pipeline_orchestrator.py`) against the issue, reads the resulting
 labels, and stops at a halt.
 
@@ -27,8 +27,8 @@ with the repo and the issue number, from the repo root:
 
 ```bash
 REPO=$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
-SCRIPT=.github/scripts/drive-item.sh
-[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/.github/scripts/drive-item.sh
+SCRIPT=scripts/drive-item.sh
+[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/scripts/drive-item.sh
 REPO="$REPO" bash "$SCRIPT" $ARGUMENTS
 ```
 
