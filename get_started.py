@@ -85,6 +85,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -172,6 +173,86 @@ def rewrite_paths(text: str) -> str:
     for pattern, replacement in PATH_REWRITES:
         out = re.sub(pattern, replacement, out)
     return out
+
+
+# ---------------------------------------------------------------------------
+# .claude/ read-only enforcement (issue #446)
+# ---------------------------------------------------------------------------
+
+def _chmod_remove_write(path: Path) -> None:
+    """Remove all write bits from a single path (file or directory)."""
+    try:
+        current = path.stat().st_mode
+        path.chmod(current & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+    except OSError:
+        pass
+
+
+def _chmod_add_write(path: Path) -> None:
+    """Add owner-write bit to a single path (file or directory)."""
+    try:
+        current = path.stat().st_mode
+        path.chmod(current | stat.S_IWUSR)
+    except OSError:
+        pass
+
+
+def _lock_claude_tree(src_dir: Path, dry_run: bool) -> None:
+    """Remove write permission from every file and directory under src_dir.
+
+    Called at the end of a successful --full onboarding run in a consuming
+    repo to back the 'framework-managed, never edit' convention with an
+    OS-level enforcement. Walk order is bottom-up (topdown=False) so inner
+    directories are locked before their parents -- the parent directory's
+    write bit is the last to go, blocking new entry creation.
+
+    On Windows the file write attribute is cleared via the same chmod call;
+    directory-level protection is not available on Windows (no meaningful
+    write-bit equivalent for directories there), so only file content is
+    protected on that platform.
+    """
+    if dry_run:
+        print(f"  WOULD  lock {src_dir}  (remove write bits from all files and dirs)")
+        return
+    if not src_dir.is_dir():
+        return
+    for dirpath_str, _dirnames, filenames in os.walk(str(src_dir), topdown=False):
+        dirpath = Path(dirpath_str)
+        for fname in filenames:
+            _chmod_remove_write(dirpath / fname)
+        _chmod_remove_write(dirpath)
+    print(f"  LOCKED {src_dir}  (read-only; write bits removed)")
+
+
+def _unlock_claude_tree(src_dir: Path) -> None:
+    """Restore owner-write permission to every file and directory under src_dir.
+
+    Called at the start of a --full run so that git submodule update can
+    modify tracked files if a read-only lock from a prior onboarding run is
+    in place. Walk order is top-down (topdown=True) so the parent directory
+    is made writable before its children are traversed.
+    """
+    if not src_dir.is_dir():
+        return
+    for dirpath_str, _dirnames, filenames in os.walk(str(src_dir), topdown=True):
+        dirpath = Path(dirpath_str)
+        _chmod_add_write(dirpath)
+        for fname in filenames:
+            _chmod_add_write(dirpath / fname)
+    print(f"  UNLOCKED {src_dir}  (write bits restored)")
+
+
+def _resolve_claude_lock_target(consuming_root: Path) -> Path:
+    """Return the physical .claude/ directory to lock or unlock.
+
+    On POSIX: the symlink target (SUBMODULE_ROOT/.claude) -- the one real
+    directory shared by all symlinks pointing to this submodule checkout.
+    On Windows: the copy in the consuming repo (.claude/) -- there is no
+    symlink, so the copy IS the target.
+    """
+    if sys.platform == "win32":
+        return consuming_root / ".claude"
+    return SUBMODULE_ROOT / ".claude"
 
 
 def install_standards(
@@ -1032,10 +1113,25 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_claude_md() also runs here (not just in run_seed()) so a developer
     who runs --full directly, without ever running --seed first, still gets
     the root-level CLAUDE.md link.
+
+    Lock/unlock toggle (issue #446): the .claude/ target is unlocked at the
+    start of every full run so that a prior read-only lock does not block git
+    submodule update or the install steps themselves. It is re-locked at the
+    end once all writes are complete. The toggle point for a local developer
+    updating their consuming repo is therefore:
+        python ai-coding-standards2/get_started.py --full --force  # unlocks
+        git submodule update -- ai-coding-standards2                # update
+        python ai-coding-standards2/get_started.py --full --force  # re-locks
     """
     # Pre-flight: refuse to clobber a consuming repo's own .claude. Runs before
     # any writes so a rejected onboard leaves no partial state.
     _guard_existing_claude(consuming_root)
+
+    # Unlock before any install work so a prior read-only lock does not block
+    # git submodule update or file writes. No-op when .claude/ is not yet
+    # present (initial onboard) or not locked (already writable).
+    if not dry_run:
+        _unlock_claude_tree(_resolve_claude_lock_target(consuming_root))
 
     install_orchestrator_workflows(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
@@ -1047,6 +1143,10 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_requirements(consuming_root, dry_run)
     add_gitignore_entries(consuming_root, dry_run)
     untrack_managed_paths(consuming_root, dry_run)
+
+    # Re-apply the read-only lock after all writes complete.
+    _lock_claude_tree(_resolve_claude_lock_target(consuming_root), dry_run)
+
     print_followup(consuming_root)
 
 

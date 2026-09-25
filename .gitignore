@@ -25,6 +25,8 @@ venv/
 
 # Claude Code agent worktrees (temporary checkouts used by background agents)
 .claude/worktrees/
+# Orchestrator commit_after worktrees (relocated outside .claude/ by issue #446)
+.worktrees/
 aicodingstandardsandprocess.zip
 
 # one-off agent cleanup scripts (not source, never committed)
