@@ -440,7 +440,7 @@ class TestProcessWorkItemHumanReviewGuard:
             description="test pr-reviewer",
             flow="standard-delivery",
             flow_naming={"branch": "issue-{number}"},
-            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            post_steps=["scripts/mark-pr-ready.sh"],
             review_gate=True,
             review_loop={
                 "re_invoke": "03_execute/coder",
@@ -637,7 +637,7 @@ class TestOutcomePolicyHumanReviewGuard:
             description="test pr-reviewer",
             flow="standard-delivery",
             flow_naming={"branch": "issue-{number}"},
-            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            post_steps=["scripts/mark-pr-ready.sh"],
             review_gate=True,
             outcome_policy={"kind": "review_findings", "schema": "pipeline/schemas/pr-review.schema.json"},
             review_loop={
@@ -825,7 +825,7 @@ class TestRequireHeadMatchEndToEnd:
             description="test pr-reviewer",
             flow="standard-delivery",
             flow_naming={"branch": "issue-{number}"},
-            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            post_steps=["scripts/mark-pr-ready.sh"],
             review_gate=True,
             outcome_policy={
                 "kind": "review_findings",
