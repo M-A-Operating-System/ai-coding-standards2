@@ -16,7 +16,7 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="${REPO_ROOT}/.github/scripts/ensure-gh-cli.sh"
+SCRIPT="${REPO_ROOT}/scripts/ensure-gh-cli.sh"
 # Resolved once, up front, with the real PATH -- the mock dir used per test
 # deliberately excludes the real system bash from its own PATH.
 BASH_BIN="$(command -v bash)"
