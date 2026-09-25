@@ -8,7 +8,7 @@ Twelve `/maos-*` commands are generated from `pipeline.json` and carry the
 generator's marker. Four are hand-authored -- `maos-merge`,
 `maos-new-branch-pr`, `maos-rebaseline`, `maos-run` -- and each must name a
 single script and pass its arguments through, with the procedure itself living
-in `.github/scripts/` where it can be tested.
+in `scripts/` where it can be tested.
 """
 import re
 from pathlib import Path
@@ -76,7 +76,7 @@ class TestEachHandAuthoredCommandNamesASingleScript:
         numbered = re.findall(r"^\s*\d+\.\s+\*\*", text, re.M)
         assert not numbered, (
             f"{name} contains a numbered procedure ({len(numbered)} step(s)); "
-            "the steps belong in .github/scripts/, where they can be tested"
+            "the steps belong in scripts/, where they can be tested"
         )
 
     def test_it_contains_no_shell_conditional_or_loop(self, name, script):
