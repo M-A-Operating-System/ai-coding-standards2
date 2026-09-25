@@ -14,7 +14,7 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CREATE_PR_SCRIPT="${REPO_ROOT}/.github/scripts/create-pr.sh"
+CREATE_PR_SCRIPT="${REPO_ROOT}/scripts/create-pr.sh"
 
 PR_NUM=42
 ISSUE_NUM=66
