@@ -14,7 +14,7 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="${REPO_ROOT}/.github/scripts/recover-unpushed-commits.sh"
+SCRIPT="${REPO_ROOT}/scripts/recover-unpushed-commits.sh"
 
 setup_repo() {
   WORK_DIR="$(mktemp -d)"
