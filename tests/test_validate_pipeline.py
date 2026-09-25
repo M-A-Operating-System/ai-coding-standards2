@@ -115,20 +115,20 @@ class TestNamedScriptsExist:
 
     def test_a_script_step_pointing_at_nothing_is_caught(self, tmp_path):
         errors = validate_named_scripts_exist(
-            _step(type="script", script=".github/scripts/not-here.sh"), tmp_path,
+            _step(type="script", script="scripts/not-here.sh"), tmp_path,
         )
         assert len(errors) == 1
         assert "not-here.sh" in errors[0] and "03_execute/coder" in errors[0]
 
     def test_a_post_step_pointing_at_nothing_is_caught(self, tmp_path):
         errors = validate_named_scripts_exist(
-            _step(post_steps=[".github/scripts/gone.sh"]), tmp_path,
+            _step(post_steps=["scripts/gone.sh"]), tmp_path,
         )
         assert len(errors) == 1 and "post_steps" in errors[0]
 
     def test_a_lifecycle_hook_pointing_at_nothing_is_caught(self, tmp_path):
         raw = _step()
-        raw["defaults"] = {"agent_lifecycle": {"before": [".github/scripts/gone.sh"]}}
+        raw["defaults"] = {"agent_lifecycle": {"before": ["scripts/gone.sh"]}}
         errors = validate_named_scripts_exist(raw, tmp_path)
         assert len(errors) == 1 and "agent_lifecycle.before" in errors[0]
 
@@ -137,7 +137,7 @@ class TestNamedScriptsExist:
         script.parent.mkdir(parents=True)
         script.write_text("#!/usr/bin/env bash\n")
         assert validate_named_scripts_exist(
-            _step(type="script", script=".github/scripts/here.sh"), tmp_path,
+            _step(type="script", script="scripts/here.sh"), tmp_path,
         ) == []
 
     def test_an_agent_steps_absent_script_field_is_not_a_finding(self, tmp_path):
