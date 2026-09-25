@@ -101,11 +101,11 @@ SUBMODULE_NAME = SUBMODULE_ROOT.name  # actual dir name, not hard-coded
 # to the submodule-relative form so they resolve when a developer runs
 # them from the consuming repo's root.
 PATH_REWRITES = [
-    # Bare ".github/scripts/status.sh" -> "ai-coding-standards2/.github/scripts/status.sh"
+    # Bare "scripts/status.sh" -> "ai-coding-standards2/scripts/status.sh"
     # Negative lookbehind prevents double-prefixing already-submodule-qualified paths.
-    (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/.github/scripts/status.sh"),
-    # Bare ".github/scripts/migrate_labels.py" -> "ai-coding-standards2/.github/scripts/migrate_labels.py"
-    (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/migrate_labels\.py", f"{SUBMODULE_NAME}/.github/scripts/migrate_labels.py"),
+    (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/status\.sh", f"{SUBMODULE_NAME}/scripts/status.sh"),
+    # Bare "scripts/migrate_labels.py" -> "ai-coding-standards2/scripts/migrate_labels.py"
+    (rf"(?<!{SUBMODULE_NAME}/)\.github/scripts/migrate_labels\.py", f"{SUBMODULE_NAME}/scripts/migrate_labels.py"),
     # Bare ".claude/agents/..." -> "ai-coding-standards2/.claude/agents/..."
     (rf"(?<!{SUBMODULE_NAME}/)\.claude/agents/", f"{SUBMODULE_NAME}/.claude/agents/"),
     # Bare "pipeline/..." -> "ai-coding-standards2/pipeline/..."
