@@ -36,12 +36,12 @@
     ],
     "agent_lifecycle": {
       "before": [
-        ".github/scripts/scratch-setup.sh",
-        ".github/scripts/sweep-repo-root-snapshot.sh"
+        "scripts/scratch-setup.sh",
+        "scripts/sweep-repo-root-snapshot.sh"
       ],
       "after": [
-        ".github/scripts/sweep-repo-root.sh",
-        ".github/scripts/scratch-teardown.sh"
+        "scripts/sweep-repo-root.sh",
+        "scripts/scratch-teardown.sh"
       ]
     }
   },
@@ -109,7 +109,7 @@
         {
           "agent": "01_product_docs/create-docs-pr",
           "type": "script",
-          "script": ".github/scripts/create-docs-pr.sh",
+          "script": "scripts/create-docs-pr.sh",
           "phase": "01_product_docs",
           "trigger": {
             "label": "prd-writer:complete"
@@ -148,7 +148,7 @@
         {
           "agent": "01_product_docs/merge-docs-pr",
           "type": "script",
-          "script": ".github/scripts/merge-docs-pr.sh",
+          "script": "scripts/merge-docs-pr.sh",
           "phase": "01_product_docs",
           "trigger": {
             "label": "prd-docs-updater:complete"
@@ -165,7 +165,7 @@
         {
           "agent": "01_product_docs/create-pr",
           "type": "script",
-          "script": ".github/scripts/create-pr.sh",
+          "script": "scripts/create-pr.sh",
           "phase": "01_product_docs",
           "trigger": {
             "label": "merge-docs-pr:complete"
@@ -273,7 +273,7 @@
         {
           "agent": "03_execute/ci-gate",
           "type": "script",
-          "script": ".github/scripts/ci-gate.sh",
+          "script": "scripts/ci-gate.sh",
           "phase": "03_execute",
           "trigger": {
             "label": "coder:complete"
@@ -356,7 +356,7 @@
           "git_ops": {
             "commit_after": false
           },
-          "post_steps": [".github/scripts/mark-pr-ready.sh"],
+          "post_steps": ["scripts/mark-pr-ready.sh"],
           "review_gate": true,
           "outcome_policy": {
             "kind": "review_findings",
@@ -379,7 +379,7 @@
         {
           "agent": "04_evaluate/epic-closer",
           "type": "script",
-          "script": ".github/scripts/epic-closer.sh",
+          "script": "scripts/epic-closer.sh",
           "phase": "04_evaluate",
           "trigger": {
             "children": "all_closed"
@@ -579,7 +579,7 @@
         {
           "agent": "00_ondemand/blocker",
           "type": "script",
-          "script": ".github/scripts/blocker.sh",
+          "script": "scripts/blocker.sh",
           "phase": "00_ondemand",
           "trigger": {
             "label": "blocker:requested"
