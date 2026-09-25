@@ -19,25 +19,25 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT_REL=".github/scripts/new-branch-pr.sh"
+SCRIPT_REL="scripts/new-branch-pr.sh"
 
 # A checkout-shaped sandbox: the real orchestrator and pipeline.json, the real
 # adapter, and a stub create-pr.sh that only records the env it was handed.
 setup() {
   WORK_DIR="$(mktemp -d)"
   mkdir -p "${WORK_DIR}/.github/scripts" "${WORK_DIR}/pipeline"
-  cp "${REPO_ROOT}/${SCRIPT_REL}" "${WORK_DIR}/.github/scripts/"
+  cp "${REPO_ROOT}/${SCRIPT_REL}" "${WORK_DIR}/scripts/"
   cp "${REPO_ROOT}/pipeline/pipeline_orchestrator.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/todos_patch.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/review_outcome.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/pipeline.json" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/statuses.json" "${WORK_DIR}/pipeline/"
   cp -r "${REPO_ROOT}/pipeline/schemas" "${WORK_DIR}/pipeline/" 2>/dev/null || true
-  cat >"${WORK_DIR}/.github/scripts/create-pr.sh" <<'STUB'
+  cat >"${WORK_DIR}/scripts/create-pr.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "create-pr REPO=${REPO} ISSUE_NUMBER=${ISSUE_NUMBER} BRANCH=${BRANCH} PR_CLOSES_ISSUE=${PR_CLOSES_ISSUE}"
 STUB
-  chmod +x "${WORK_DIR}/.github/scripts/create-pr.sh"
+  chmod +x "${WORK_DIR}/scripts/create-pr.sh"
 }
 
 teardown() { rm -rf "${WORK_DIR}"; }
