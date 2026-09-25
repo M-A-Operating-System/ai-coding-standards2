@@ -1,4 +1,4 @@
-"""Tests for .github/scripts/append-metrics-record.sh (issue #407).
+"""Tests for scripts/append-metrics-record.sh (issue #407).
 
 The git plumbing that puts a record on the `ai-agile/metrics` branch used to be
 inline Python in `pipeline_orchestrator.py` (`_append_metrics_record`). AS-2
