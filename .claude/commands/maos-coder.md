@@ -2,7 +2,7 @@
 
 Run the `03_execute/coder` pipeline agent as a real subprocess, spawned by the
 orchestrator exactly as the headless (GitHub Actions) path does -- native
-`--allowedTools` enforcement, nothing emulated (MI-3). Implements a GitHub issue and its sub-issues as a defensive programmer.
+`--allowedTools` enforcement, nothing emulated (MI-3). Implements one GitHub issue in the consuming repository as a defensive programmer.
 
 This command never applies labels, posts artefacts, or performs the step's
 own work -- the orchestrator does that, in `pipeline_orchestrator.py`, the
