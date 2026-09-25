@@ -14,8 +14,8 @@ declared agent-lifecycle scripts (AS-2: the orchestrator only coordinates), so
 the same behaviours are asserted here against the scripts and against the
 `defaults.agent_lifecycle` wiring that runs them:
 
-    .github/scripts/sweep-repo-root-snapshot.sh   the "before" baseline
-    .github/scripts/sweep-repo-root.sh            the "after" removal
+    scripts/sweep-repo-root-snapshot.sh   the "before" baseline
+    scripts/sweep-repo-root.sh            the "after" removal
 
 The sweep is deliberately conservative: it removes only files that were absent
 before the invocation, so a file a human left in the tree is never touched.
@@ -257,22 +257,22 @@ class TestTheSweepIsADeclaredLifecycleHookNotOrchestratorCode:
         defaults = json.loads(
             (REPO_ROOT / "pipeline" / "pipeline.json").read_text()
         )["defaults"]["agent_lifecycle"]
-        assert ".github/scripts/sweep-repo-root-snapshot.sh" in defaults["before"]
-        assert ".github/scripts/sweep-repo-root.sh" in defaults["after"]
+        assert "scripts/sweep-repo-root-snapshot.sh" in defaults["before"]
+        assert "scripts/sweep-repo-root.sh" in defaults["after"]
 
     def test_the_sweep_runs_before_the_scratch_is_torn_down(self):
         after = json.loads(
             (REPO_ROOT / "pipeline" / "pipeline.json").read_text()
         )["defaults"]["agent_lifecycle"]["after"]
-        assert after.index(".github/scripts/sweep-repo-root.sh") < \
-            after.index(".github/scripts/scratch-teardown.sh")
+        assert after.index("scripts/sweep-repo-root.sh") < \
+            after.index("scripts/scratch-teardown.sh")
 
     def test_the_orchestrator_holds_no_sweep_code(self):
         """AS-2: nothing that changes an artefact lives inside the orchestrator."""
         for gone in ("_repo_root", "_untracked_root_files", "_sweep_agent_root_files"):
             assert not hasattr(po, gone), (
                 f"{gone} still lives in pipeline_orchestrator.py; the sweep "
-                "belongs to .github/scripts/sweep-repo-root.sh (AS-2)"
+                "belongs to scripts/sweep-repo-root.sh (AS-2)"
             )
 
     def test_the_lifecycle_env_carries_what_the_sweep_needs(self):
