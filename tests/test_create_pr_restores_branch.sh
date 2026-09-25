@@ -16,7 +16,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-CREATE_PR="${SCRIPT_DIR}/../.github/scripts/create-pr.sh"
+CREATE_PR="${SCRIPT_DIR}/../scripts/create-pr.sh"
 FAILURES=0
 
 fail() { echo "FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
