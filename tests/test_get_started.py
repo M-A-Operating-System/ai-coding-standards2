@@ -863,22 +863,22 @@ class TestRewritePaths:
         return get_started.SUBMODULE_NAME
 
     def test_rewrites_status_sh(self):
-        src = "bash .github/scripts/status.sh bootstrap-all"
+        src = "bash scripts/status.sh bootstrap-all"
         result = get_started.rewrite_paths(src)
-        assert f"{self._name()}/.github/scripts/status.sh" in result
-        assert "/.github/scripts/status.sh" not in result.replace(f"{self._name()}/", "")
+        assert f"{self._name()}/scripts/status.sh" in result
+        assert "/scripts/status.sh" not in result.replace(f"{self._name()}/", "")
 
     def test_no_double_prefix_status_sh(self):
-        already = f"bash {self._name()}/.github/scripts/status.sh arg"
+        already = f"bash {self._name()}/scripts/status.sh arg"
         assert get_started.rewrite_paths(already) == already
 
     def test_rewrites_migrate_labels_py(self):
-        src = "python .github/scripts/migrate_labels.py"
+        src = "python scripts/migrate_labels.py"
         result = get_started.rewrite_paths(src)
-        assert f"{self._name()}/.github/scripts/migrate_labels.py" in result
+        assert f"{self._name()}/scripts/migrate_labels.py" in result
 
     def test_no_double_prefix_migrate_labels_py(self):
-        already = f"python {self._name()}/.github/scripts/migrate_labels.py"
+        already = f"python {self._name()}/scripts/migrate_labels.py"
         assert get_started.rewrite_paths(already) == already
 
     def test_rewrites_claude_agents(self):
