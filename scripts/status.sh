@@ -6,10 +6,10 @@
 #
 # Source this file to use the functions, or call it directly:
 #
-#   source .github/scripts/status.sh
+#   source scripts/status.sh
 #   status_set_review prd-writer 42
 #
-#   bash .github/scripts/status.sh set-review prd-writer 42
+#   bash scripts/status.sh set-review prd-writer 42
 #
 # Requires: gh CLI authenticated, GITHUB_REPOSITORY set or --repo passed.
 #
