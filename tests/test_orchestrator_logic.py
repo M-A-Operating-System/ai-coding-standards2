@@ -3478,7 +3478,7 @@ class TestPostSteps:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            post_steps=["scripts/mark-pr-ready.sh"],
             review_gate=True,
         )
 
@@ -3657,8 +3657,8 @@ class TestPostSteps:
             human_gate_label=None,
             description="test",
             post_steps=[
-                ".github/scripts/mark-pr-ready.sh",
-                ".github/scripts/other-hook.sh",
+                "scripts/mark-pr-ready.sh",
+                "scripts/other-hook.sh",
             ],
         )
         gh = _make_gh_mock()
@@ -3722,8 +3722,8 @@ class TestPostSteps:
             human_gate_label=None,
             description="test",
             post_steps=[
-                ".github/scripts/mark-pr-ready.sh",
-                ".github/scripts/other-hook.sh",
+                "scripts/mark-pr-ready.sh",
+                "scripts/other-hook.sh",
             ],
         )
         gh = _make_gh_mock()
@@ -3821,7 +3821,7 @@ class TestPostSteps:
         assert "WORK_ITEM_KIND" not in env_passed
 
     def test_mark_pr_ready_script_exists(self):
-        """mark-pr-ready.sh must exist at .github/scripts/mark-pr-ready.sh with a shebang."""
+        """mark-pr-ready.sh must exist at scripts/mark-pr-ready.sh with a shebang."""
         import pipeline_orchestrator as orch
         script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "mark-pr-ready.sh"
         assert script_path.exists(), (
@@ -3855,7 +3855,7 @@ class TestPostStepFailureDecoupling:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            post_steps=["scripts/mark-pr-ready.sh"],
             review_gate=True,
         )
 
@@ -5464,7 +5464,7 @@ class TestApplyExhaustedPartialLabel:
 # ---------------------------------------------------------------------------
 
 class TestOrchestrationScriptResolution:
-    SCRIPT_REL = ".github/scripts/mark-pr-ready.sh"
+    SCRIPT_REL = "scripts/mark-pr-ready.sh"
 
     @pytest.fixture(autouse=True)
     def _isolate_cache(self):
@@ -5794,7 +5794,7 @@ class TestEnsureGhCli:
         mock_run.assert_called_once()
         args = mock_run.call_args.args[0]
         assert args[0] == "bash"
-        assert args[1].endswith(".github/scripts/ensure-gh-cli.sh")
+        assert args[1].endswith("scripts/ensure-gh-cli.sh")
 
     def test_success_logs_script_stdout_as_info(self, caplog):
         with patch("pipeline_orchestrator.subprocess.run") as mock_run:
@@ -5877,7 +5877,7 @@ class TestRecoverUnpushedCommits:
         mock_run.assert_called_once()
         args = mock_run.call_args.args[0]
         assert args[0] == "bash"
-        assert args[1].endswith(".github/scripts/recover-unpushed-commits.sh")
+        assert args[1].endswith("scripts/recover-unpushed-commits.sh")
         assert args[2] == "issue-42"
 
     def test_no_env_override_inherits_the_push_credential(self):
@@ -6340,7 +6340,7 @@ class TestEpicCompletionIsDeclared:
         assert self.step.flow_labels == ["epic"]
         assert self.step.trigger == {"children": "all_closed"}
         assert self.step.step_type == "script"
-        assert self.step.script_path == ".github/scripts/epic-closer.sh"
+        assert self.step.script_path == "scripts/epic-closer.sh"
 
     def test_eligible_once_every_child_is_closed(self):
         item = self._epic()
