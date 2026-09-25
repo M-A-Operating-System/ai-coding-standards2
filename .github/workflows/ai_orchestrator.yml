@@ -106,9 +106,9 @@ jobs:
         # submodule dir name on copy, so this stays correct if the consuming
         # repo checks the submodule out under a different name.
         run: |
-          bash .github/scripts/status.sh bootstrap-all pipeline/pipeline.json
-          bash .github/scripts/status.sh bootstrap-triggers
-          python .github/scripts/migrate_labels.py
+          bash scripts/status.sh bootstrap-all pipeline/pipeline.json
+          bash scripts/status.sh bootstrap-triggers
+          python scripts/migrate_labels.py
 
       - name: Stage and commit managed files
         run: |
