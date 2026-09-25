@@ -14,7 +14,7 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="${REPO_ROOT}/.github/scripts/rebaseline-branch.sh"
+SCRIPT="${REPO_ROOT}/scripts/rebaseline-branch.sh"
 
 g() { git -c user.email=t@t -c user.name=t -c push.negotiate=false "$@"; }
 
