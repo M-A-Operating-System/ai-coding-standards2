@@ -757,7 +757,7 @@ class TestEnsureMetricsBranch:
 
 class TestAppendMetricsRecord:
     """_append_metrics_record hands one finished record line to
-    .github/scripts/append-metrics-record.sh, which owns the git plumbing that
+    scripts/append-metrics-record.sh, which owns the git plumbing that
     puts it on the metrics branch (AS-2, issue #407).
 
     The orchestrator still decides WHAT the record says and what the commit is
@@ -811,7 +811,7 @@ class TestAppendMetricsRecord:
         assert len(calls) == 1
         cmd = calls[0][0]
         assert cmd[0] == "bash"
-        assert cmd[1].endswith("/.github/scripts/append-metrics-record.sh")
+        assert cmd[1].endswith("/scripts/append-metrics-record.sh")
 
     def test_record_is_written_as_one_compact_json_line(self):
         record = {"agent_id": "coder", "github_issue_number": 42}
