@@ -1,4 +1,4 @@
-"""Tests for .github/scripts/merge-pr.sh -- deterministic PR merge + branch delete.
+"""Tests for scripts/merge-pr.sh -- deterministic PR merge + branch delete.
 
 Uses a mock `gh` on PATH (like test_delete_branch.py) that dispatches on the
 subcommand and is parameterized per scenario via env vars.
