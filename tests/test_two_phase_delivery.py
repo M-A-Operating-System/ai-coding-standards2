@@ -67,7 +67,7 @@ class TestTwoPhaseChain:
             ("01_product_docs/merge-docs-pr", "merge-docs-pr.sh"),
         ):
             assert a[name].step_type == "script"
-            assert a[name].script_path == f".github/scripts/{script}"
+            assert a[name].script_path == f"scripts/{script}"
             assert (REPO_ROOT / a[name].script_path).is_file()
 
     def test_prd_docs_updater_gate_and_self_gates_unchanged(self):
