@@ -2,9 +2,9 @@
 
 Create the shared issue branch and open its draft PR, linked via `Closes #N`.
 This is a **deterministic script**, not an agent -- there is no LLM judgement
-in opening a branch and a PR. It runs `.github/scripts/new-branch-pr.sh`, which
+in opening a branch and a PR. It runs `scripts/new-branch-pr.sh`, which
 resolves the branch name from the flow's `naming` in `pipeline.json` and hands
-off to `.github/scripts/create-pr.sh` -- the same script the
+off to `scripts/create-pr.sh` -- the same script the
 `01_product_docs/create-pr` pipeline step runs, so an interactive run and a
 headless one produce the identical branch, PR, label and announcement.
 
@@ -22,8 +22,8 @@ with the repo and the issue number:
 
 ```bash
 REPO=$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
-SCRIPT=.github/scripts/new-branch-pr.sh
-[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/.github/scripts/new-branch-pr.sh
+SCRIPT=scripts/new-branch-pr.sh
+[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/scripts/new-branch-pr.sh
 REPO="$REPO" bash "$SCRIPT" $ARGUMENTS
 ```
 
