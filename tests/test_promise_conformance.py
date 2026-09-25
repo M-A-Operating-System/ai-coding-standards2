@@ -354,7 +354,7 @@ class TestAS1OneFileTellsYouWhatThePipelineDoes:
                         "agent": "00_ondemand/blocker",
                         "phase": "00_ondemand",
                         "type": "script",
-                        "script": ".github/scripts/blocker.sh",
+                        "script": "scripts/blocker.sh",
                         "trigger": {"label": "blocker:requested"},
                         "dependencies": [],
                         "human_gate_after": False,
@@ -460,7 +460,7 @@ class TestAS2TheOrchestratorOnlyCoordinates:
             "agent": f"{raw['flows'][flow_name]['steps'][0]['phase']}/a-brand-new-step",
             "phase": raw["flows"][flow_name]["steps"][0]["phase"],
             "type": "script",
-            "script": ".github/scripts/blocker.sh",
+            "script": "scripts/blocker.sh",
             "trigger": {"label": "brand-new:requested"},
             "dependencies": [],
             "human_gate_after": False,
@@ -532,16 +532,16 @@ class TestAS2TheOrchestratorOnlyCoordinates:
         name and run a script; it may not carry the work itself.
         """
         for script in (
-            ".github/scripts/sweep-repo-root.sh",
-            ".github/scripts/sweep-repo-root-snapshot.sh",
-            ".github/scripts/append-metrics-record.sh",
+            "scripts/sweep-repo-root.sh",
+            "scripts/sweep-repo-root-snapshot.sh",
+            "scripts/append-metrics-record.sh",
         ):
             assert (REPO_ROOT / script).is_file(), f"{script} is missing"
         # The sweep is declared in pipeline.json, not wired in code.
         lifecycle = _raw_pipeline()["defaults"]["agent_lifecycle"]
         declared = set(lifecycle.get("before", [])) | set(lifecycle.get("after", []))
-        assert ".github/scripts/sweep-repo-root-snapshot.sh" in declared
-        assert ".github/scripts/sweep-repo-root.sh" in declared
+        assert "scripts/sweep-repo-root-snapshot.sh" in declared
+        assert "scripts/sweep-repo-root.sh" in declared
 
 
 # ===========================================================================
