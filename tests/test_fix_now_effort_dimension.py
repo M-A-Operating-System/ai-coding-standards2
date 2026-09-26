@@ -32,5 +32,10 @@ def test_outcome_does_not_reintroduce_fix_now_defer_ok():
 
 def test_coder_uses_orchestrator_computed_blocking_field():
     text = CODER.read_text()
-    assert ".blocking == true" in text
-    assert "orchestrator" in text and "computed" in text
+    # PR #517 replaced the jq literal '.blocking == true' with prose:
+    # "use the orchestrator's computed `blocking` status". Updated to check
+    # for the prose form of the same constraint.
+    assert "blocking" in text and "orchestrator" in text and "computed" in text, (
+        "coder.md must direct the agent to use the orchestrator's computed "
+        "blocking status rather than recomputing it from severity/effort/etc."
+    )
