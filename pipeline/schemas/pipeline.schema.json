@@ -9,6 +9,28 @@
   "properties": {
     "$schema": { "type": "string" },
 
+    "entitlement_groups": {
+      "type": "object",
+      "description": "Named semantic entitlement groups declared once for reuse by steps. Groups organize command-pattern policy only; referencing a group does not change the underlying allow/deny enforcement model.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["purpose", "patterns"],
+        "additionalProperties": false,
+        "properties": {
+          "purpose": { "type": "string", "minLength": 1 },
+          "patterns": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+
     "defaults": {
       "type": "object",
       "description": "Pipeline-wide entitlement and lifecycle defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema. Step budgets are a separate, sibling concern -- see the top-level budgets key -- so a repository overriding one does not have to restate the other.",
@@ -328,16 +350,27 @@
 
         "deny_groups": {
           "type": "array",
-          "description": "Named groups of deny patterns with a stated purpose each, for a deniedTools list long enough that per-pattern rationale is worth grouping. Alternative to deniedTools, not a duplicate of it: a step declares one or the other. When present without a sibling deniedTools key, its patterns (flattened, group order preserved) become the step's effective deny list.",
+          "description": "Named deny groups for this step. Prefer string references to top-level entitlement_groups so semantic capabilities are declared once. Legacy inline {name, purpose, patterns} objects remain accepted for compatibility. When deniedTools is absent, referenced/inline groups are flattened in order into the step's effective deny list.",
           "items": {
-            "type": "object",
-            "required": ["name", "purpose", "patterns"],
-            "additionalProperties": false,
-            "properties": {
-              "name": { "type": "string" },
-              "purpose": { "type": "string" },
-              "patterns": { "type": "array", "items": { "type": "string" } }
-            }
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Name of a top-level entitlement_groups entry."
+              },
+              {
+                "type": "object",
+                "required": ["name", "purpose", "patterns"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "purpose": { "type": "string" },
+                  "patterns": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            ]
           }
         },
 

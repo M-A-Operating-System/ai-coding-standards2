@@ -5,6 +5,63 @@
     "max_wall_seconds": 1800,
     "max_launches_per_tick": 20
   },
+  "entitlement_groups": {
+    "local-git-history-control": {
+      "purpose": "The coder may create new commits but may not rewrite, discard, or delete existing local Git history or references.",
+      "patterns": [
+        "Bash(git reset --hard*)",
+        "Bash(git commit --amend*)",
+        "Bash(git commit * --amend*)",
+        "Bash(git branch -D *)",
+        "Bash(git branch --delete --force *)",
+        "Bash(git update-ref -d *)"
+      ]
+    },
+    "remote-git-control": {
+      "purpose": "The coder may not rewrite remote history, delete remote branches, or mirror repositories; the orchestrator owns remote publication.",
+      "patterns": [
+        "Bash(git push --force*)",
+        "Bash(git push * --force*)",
+        "Bash(git push --force-with-lease*)",
+        "Bash(git push * --force-with-lease*)",
+        "Bash(git push --delete*)",
+        "Bash(git push * --delete*)",
+        "Bash(git push --mirror*)",
+        "Bash(git push * --mirror*)"
+      ]
+    },
+    "git-configuration-control": {
+      "purpose": "The coder may not alter Git identity, remotes, hooks, signing, or other repository control-plane configuration.",
+      "patterns": ["Bash(git config *)"]
+    },
+    "repository-policy-enforcement": {
+      "purpose": "The coder may not bypass repository commit or push validation hooks.",
+      "patterns": [
+        "Bash(git commit --no-verify*)",
+        "Bash(git commit * --no-verify*)",
+        "Bash(git push --no-verify*)",
+        "Bash(git push * --no-verify*)"
+      ]
+    },
+    "environment-and-credential-access": {
+      "purpose": "The coder may not print the process environment, which can expose credentials or other secrets.",
+      "patterns": [
+        "Bash(env)",
+        "Bash(env *)",
+        "Bash(printenv)",
+        "Bash(printenv *)"
+      ]
+    },
+    "external-host-access": {
+      "purpose": "The coder may not open outbound shell or file-transfer sessions to external hosts.",
+      "patterns": [
+        "Bash(ssh *)",
+        "Bash(scp *)",
+        "Bash(sftp *)"
+      ]
+    }
+  },
+
   "defaults": {
     "extra_allowedTools": [
       "Write", "Edit",
@@ -192,74 +249,12 @@
           "session": { "scope": "per_issue" },
           "extra_allowedTools": ["Bash"],
           "deny_groups": [
-            {
-              "name": "Git history destruction",
-              "purpose": "Prevent the coder from discarding or rewriting recoverable work.",
-              "patterns": [
-                "Bash(git reset --hard*)",
-                "Bash(git commit --amend*)",
-                "Bash(git commit * --amend*)"
-              ]
-            },
-            {
-              "name": "Destructive or forced remote Git operations",
-              "purpose": "Prevent the coder from rewriting shared remote history or deleting remote branches. The orchestrator owns all pushes.",
-              "patterns": [
-                "Bash(git push --force*)",
-                "Bash(git push * --force*)",
-                "Bash(git push --force-with-lease*)",
-                "Bash(git push * --force-with-lease*)",
-                "Bash(git push --delete*)",
-                "Bash(git push * --delete*)",
-                "Bash(git push --mirror*)",
-                "Bash(git push * --mirror*)"
-              ]
-            },
-            {
-              "name": "Branch and reference destruction",
-              "purpose": "Prevent the coder from removing local branches or git refs that may be shared or tracked by the orchestrator.",
-              "patterns": [
-                "Bash(git branch -D *)",
-                "Bash(git branch --delete --force *)",
-                "Bash(git update-ref -d *)"
-              ]
-            },
-            {
-              "name": "Validation bypass",
-              "purpose": "Prevent the coder from skipping pre-commit or pre-push hooks that enforce repo policy.",
-              "patterns": [
-                "Bash(git commit --no-verify*)",
-                "Bash(git commit * --no-verify*)",
-                "Bash(git push --no-verify*)",
-                "Bash(git push * --no-verify*)"
-              ]
-            },
-            {
-              "name": "Git control-plane modification",
-              "purpose": "Prevent the coder from altering git configuration (identity, remotes, hooks, signing) that the orchestrator or operator owns.",
-              "patterns": [
-                "Bash(git config *)"
-              ]
-            },
-            {
-              "name": "Credential or environment disclosure",
-              "purpose": "Prevent the coder from printing the process environment, which may contain secrets or tokens.",
-              "patterns": [
-                "Bash(env)",
-                "Bash(env *)",
-                "Bash(printenv)",
-                "Bash(printenv *)"
-              ]
-            },
-            {
-              "name": "External shell access",
-              "purpose": "Prevent the coder from opening outbound shell sessions to remote hosts.",
-              "patterns": [
-                "Bash(ssh *)",
-                "Bash(scp *)",
-                "Bash(sftp *)"
-              ]
-            }
+            "local-git-history-control",
+            "remote-git-control",
+            "git-configuration-control",
+            "repository-policy-enforcement",
+            "environment-and-credential-access",
+            "external-host-access"
           ],
           "git_ops": { "commit_after": true, "commits_to": "code" },
           "exclude_classifications": ["spike"],
