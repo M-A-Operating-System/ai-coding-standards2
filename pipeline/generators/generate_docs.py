@@ -186,9 +186,25 @@ def render_steps(pipeline):
             "|---|---|---|---|",
         ]
         deny_group_steps = []
+        entitlement_groups = pipeline.get("entitlement_groups") or {}
+
+        def _resolved_deny_groups(step):
+            resolved = []
+            for group in step.get("deny_groups") or []:
+                if isinstance(group, str):
+                    definition = entitlement_groups.get(group) or {}
+                    resolved.append({
+                        "name": group,
+                        "purpose": definition.get("purpose", ""),
+                        "patterns": definition.get("patterns", []),
+                    })
+                else:
+                    resolved.append(group)
+            return resolved
+
         for step in flow_steps:
             extra = step.get("extra_allowedTools") or []
-            deny_groups = step.get("deny_groups") or []
+            deny_groups = _resolved_deny_groups(step)
             denied = step.get("deniedTools") or (
                 [p for group in deny_groups for p in group.get("patterns", [])]
             )
@@ -223,7 +239,7 @@ def render_steps(pipeline):
                 " deny list's known limitation.",
                 "",
             ]
-            for group in step.get("deny_groups", []):
+            for group in _resolved_deny_groups(step):
                 lines += [f"**{group['name']}** -- {group['purpose']}", ""]
                 for pat in group.get("patterns", []):
                     lines.append(f"- `{pat}`")
