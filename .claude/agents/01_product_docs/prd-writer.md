@@ -205,16 +205,19 @@ use them verbatim.
 ### Problem
 
 Bug/tech-debt/spike: 1–2 sentences naming the specific broken, missing, or
-unknown behaviour. Enhancement: one paragraph covering what
-hurts, who feels it, and how often. Never "users want better UX" —
-name the specific behaviour.
+unknown behaviour. Security: one paragraph naming the vulnerability, what
+it enables an attacker to do, and affected components. Enhancement: one
+paragraph covering what hurts, who feels it, and how often. Never "users
+want better UX" — name the specific behaviour.
 
 ### Goal
 
 Bug/tech-debt: one sentence naming the intended outcome the system
-achieves. Spike: one sentence naming the artefact the spike delivers.
-Enhancement: one paragraph naming the user-observable change. Phrase as
-what the user will experience, never the implementation.
+achieves. Security: one sentence naming the system passing the security
+test that identified the vulnerability. Spike: one sentence naming the
+artefact the spike delivers. Enhancement: one paragraph naming the
+user-observable change. Phrase as what the user will experience, never
+the implementation.
 
 ### User stories
 
