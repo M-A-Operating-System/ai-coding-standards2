@@ -4,15 +4,33 @@
   "title": "AI Agile Pipeline",
   "description": "The shape of a COMPLETE pipeline definition, as decided in docs/product/orchestrator/PRODUCT.md (issue #393) and made live by issue #406. Promoted verbatim from docs/product/orchestrator/schema/pipeline.schema.json (the design authority) with ONE deliberate addition: the step-level exclude_labels and exclude_classifications fields, which the target schema dropped in favour of positive-only selection. The target's trigger model has no negative primitive, and today's pipeline relies on those exclusions pervasively (build-phase steps skip epic/blocked items; code-producing steps skip spike-classified ones). Resolving that gap properly -- e.g. by splitting into type-scoped flows -- is larger than issue #406, so the two fields are carried over unchanged and documented as a known deviation. Required-ness (flows present and non-empty, budgets present and complete) describes any complete pipeline definition: the framework's shipped pipeline/pipeline.json, and equally a repository's own pipeline/pipeline.json where it has one. A repository's file is a complete replacement, not a fragment (PRODUCT.md, AS-1): the orchestrator uses it in full in place of the shipped file and validates it against this schema on its own, composing nothing.",
   "type": "object",
-  "required": [
-    "flows",
-    "budgets"
-  ],
+  "required": ["flows", "budgets"],
   "additionalProperties": false,
   "properties": {
-    "$schema": {
-      "type": "string"
+    "$schema": { "type": "string" },
+
+    "entitlement_groups": {
+      "type": "object",
+      "description": "Named semantic entitlement groups declared once for reuse by steps. Groups organize command-pattern policy only; referencing a group does not change the underlying allow/deny enforcement model.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["purpose", "patterns"],
+        "additionalProperties": false,
+        "properties": {
+          "purpose": { "type": "string", "minLength": 1 },
+          "patterns": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string" }
+          }
+        }
+      }
     },
+
     "defaults": {
       "type": "object",
       "description": "Pipeline-wide entitlement and lifecycle defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema. Step budgets are a separate, sibling concern -- see the top-level budgets key -- so a repository overriding one does not have to restate the other.",
@@ -21,16 +39,12 @@
         "extra_allowedTools": {
           "type": "array",
           "description": "Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- no other allow list contributes; deniedTools subtracts from this set (deny takes precedence over allow).",
-          "items": {
-            "type": "string"
-          }
+          "items": { "type": "string" }
         },
         "deniedTools": {
           "type": "array",
           "description": "Commands a step must not invoke, matched against the command string as written. Deny takes precedence over allow. Effective deny list = defaults.deniedTools + step.deniedTools, deduplicated, deterministic order. A step cannot remove or override a default deny rule. The deny list states intent and is not enforcement: it matches the command as written and does not inspect commands reached through an interpreter wrapper (e.g. bash -c '...').",
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "uniqueItems": true
         },
         "agent_lifecycle": {
@@ -41,29 +55,23 @@
             "before": {
               "type": "array",
               "description": "Run immediately before each invocation, including retries. Must be idempotent: a run killed mid-flight leaves state behind, and re-running setup is what clears it.",
-              "items": {
-                "type": "string"
-              }
+              "items": { "type": "string" }
             },
             "after": {
               "type": "array",
               "description": "Run once after the final retry, on every outcome.",
-              "items": {
-                "type": "string"
-              }
+              "items": { "type": "string" }
             }
           }
         }
       }
     },
+
     "budgets": {
       "type": "object",
       "description": "Consumption limits. Two shapes live here: a pipeline-wide cap with no step-level equivalent, and the default turn/wall-clock budget every step gets unless it declares its own -- the same two-level shape as extra_allowedTools (a global value declared once and visible, overridable per step where a step genuinely needs to differ), applied to budgets instead of entitlements. max_turns and max_wall_seconds are required so every step has an effective budget even when it declares none itself; a hidden constant asserted to fit every step alike is exactly what this replaces (AS-1).",
       "additionalProperties": false,
-      "required": [
-        "max_turns",
-        "max_wall_seconds"
-      ],
+      "required": ["max_turns", "max_wall_seconds"],
       "properties": {
         "max_turns": {
           "type": "integer",
@@ -82,56 +90,23 @@
         }
       }
     },
+
     "flows": {
       "type": "object",
       "description": "Every flow the pipeline runs, keyed by a stable flow name. Precedence is per file, not per flow (PRODUCT.md, AS-1): a repository's own pipeline/pipeline.json is a complete replacement for the shipped definition, validating against this identical schema, not a set of changes layered over it. There is no partial override and nothing to merge -- presence of the repository's file means it decides every flow, absence means the shipped default decides every flow. A repository that goes local stops tracking the shipped default entirely.",
       "minProperties": 1,
-      "additionalProperties": {
-        "$ref": "#/definitions/flow"
-      },
+      "additionalProperties": { "$ref": "#/definitions/flow" },
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$",
         "description": "The flow's stable name. Referenced by nothing outside this file -- it exists so a local override can name what it replaces."
       }
-    },
-    "entitlement_groups": {
-      "type": "object",
-      "description": "Named semantic entitlement groups declared once for reuse by steps. Groups organize command-pattern policy only; referencing a group does not change the underlying allow/deny enforcement model.",
-      "propertyNames": {
-        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
-      },
-      "additionalProperties": {
-        "type": "object",
-        "required": [
-          "purpose",
-          "patterns"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "purpose": {
-            "type": "string",
-            "minLength": 1
-          },
-          "patterns": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      }
     }
   },
+
   "definitions": {
     "flow": {
       "type": "object",
-      "required": [
-        "description",
-        "trigger",
-        "steps"
-      ],
+      "required": ["description", "trigger", "steps"],
       "additionalProperties": false,
       "properties": {
         "description": {
@@ -139,23 +114,19 @@
           "minLength": 1,
           "description": "What kind of work this is and why it is its own flow."
         },
+
         "trigger": {
           "type": "object",
           "description": "What makes a work item this flow's, or what makes the flow itself fire. Exactly one shape: item membership (kind, with optional classification and labels) for work that produces change or coordinates other work, or a schedule for work with no triggering item (PRODUCT.md, 'Three shapes a flow can take'). Selection is positive: a step or flow with no matching criterion is simply not entered -- there is no exclude_labels or exclude_classifications to forget.",
           "oneOf": [
             {
               "type": "object",
-              "required": [
-                "kind"
-              ],
+              "required": ["kind"],
               "additionalProperties": false,
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": [
-                    "issue",
-                    "pr"
-                  ],
+                  "enum": ["issue", "pr"],
                   "description": "Which GitHub object kind this flow processes."
                 },
                 "classification": {
@@ -164,13 +135,7 @@
                   "minItems": 1,
                   "items": {
                     "type": "string",
-                    "enum": [
-                      "security",
-                      "bug",
-                      "enhancement",
-                      "tech-debt",
-                      "spike"
-                    ]
+                    "enum": ["security", "bug", "enhancement", "tech-debt", "spike"]
                   },
                   "description": "Restrict this flow to work items carrying any one of these classification: labels (OR within the dimension -- a work item carries exactly one classification, never two, so this is 'any of', never 'all of'). Absent means every classification. See AS-1, 'Selection by classification'."
                 },
@@ -178,18 +143,14 @@
                   "type": "array",
                   "uniqueItems": true,
                   "minItems": 1,
-                  "items": {
-                    "type": "string"
-                  },
+                  "items": { "type": "string" },
                   "description": "Every label listed must be present for a work item to enter this flow -- an AND combination, general to any dimension (e.g. ['size: L'], or ['classification: enhancement', 'priority: high'] if a flow ever needed to key off more than classification and size). Combines with `classification` above, which is AND'd in as its own dimension when present. Absent means no additional label restriction. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority')."
                 }
               }
             },
             {
               "type": "object",
-              "required": [
-                "schedule"
-              ],
+              "required": ["schedule"],
               "additionalProperties": false,
               "properties": {
                 "schedule": {
@@ -200,13 +161,12 @@
             }
           ]
         },
+
         "naming": {
           "type": "object",
           "description": "What this flow's branches and pull requests are called. Declared here, never computed in orchestrator code (AS-1) -- which is what makes more than one branch or pull request per item expressible, for flows like two-phase design-to-build (lifecycle.md) that need it. Absent for a flow whose steps never commit.",
           "additionalProperties": false,
-          "required": [
-            "branch"
-          ],
+          "required": ["branch"],
           "properties": {
             "branch": {
               "type": "string",
@@ -222,10 +182,7 @@
               "description": "One entry per pull request this flow opens. A flow needing only its primary branch and one PR may omit this; a flow needing more (a design PR merged ahead of a code PR) declares each here.",
               "items": {
                 "type": "object",
-                "required": [
-                  "id",
-                  "branch"
-                ],
+                "required": ["id", "branch"],
                 "additionalProperties": false,
                 "properties": {
                   "id": {
@@ -246,16 +203,16 @@
             }
           }
         },
+
         "steps": {
           "type": "array",
           "minItems": 1,
           "description": "This flow's steps, in execution order.",
-          "items": {
-            "$ref": "#/definitions/step"
-          }
+          "items": { "$ref": "#/definitions/step" }
         }
       }
     },
+
     "step": {
       "type": "object",
       "required": [
@@ -276,16 +233,10 @@
         },
         "phase": {
           "type": "string",
-          "enum": [
-            "00_ondemand",
-            "01_product_docs",
-            "02_design",
-            "03_execute",
-            "04_evaluate",
-            "05_continuous"
-          ],
+          "enum": ["00_ondemand", "01_product_docs", "02_design", "03_execute", "04_evaluate", "05_continuous"],
           "description": "Must equal the agent field's phase prefix."
         },
+
         "trigger": {
           "type": "object",
           "description": "What makes this step eligible, within a flow its item has already entered. Sequencing (label) and, for a step in a coordinating or self-continuing flow, a condition about the item's own children (PRODUCT.md, 'Coordinating work needs a trigger that can look outward' and 'The same capability lets a step finish its own work in pieces').",
@@ -306,46 +257,36 @@
             },
             "children": {
               "type": "string",
-              "enum": [
-                "all_closed",
-                "any_open"
-              ],
+              "enum": ["all_closed", "any_open"],
               "description": "all_closed: eligible once every child of this item is closed (the epic wait). any_open: eligible while at least one child remains open (a step re-invoked once per remaining piece, e.g. coder). Both read the same underlying fact about the item's children; which direction a given step needs is the only difference."
             },
             "labels": {
               "type": "array",
               "uniqueItems": true,
               "minItems": 1,
-              "items": {
-                "type": "string"
-              },
+              "items": { "type": "string" },
               "description": "Additional labels that must all be present for this step to be eligible, beyond whatever fires it (label/event) and whatever its dependencies require -- an AND combination, general to any dimension. This is what lets steps inside one flow vary by a dimension like size without becoming a separate flow: architect declares labels: ['size: L'] so it is eligible only on a large item, even though large-decomposer, the combiner, and every M-only step share the same flow and the same sequencing. `priority:` labels are deliberately never used here -- priority orders pickup, never eligibility (lifecycle.md, 'Priority')."
             }
           }
         },
+
         "unit": {
           "type": "string",
-          "enum": [
-            "item",
-            "sub_item"
-          ],
+          "enum": ["item", "sub_item"],
           "default": "item",
           "description": "What one invocation of this step addresses. 'item' (default): the work item itself. 'sub_item': one of the item's open children -- the orchestrator selects one and tells the step which via SUB_ITEM_NUMBER. Pairs with trigger.children: any_open: the step stays eligible, one sub-issue per invocation, so a step that exhausts mid-item has already committed the pieces it finished (PRODUCT.md, 'The unit of work shrinks; the contract does not change')."
         },
+
         "dependencies": {
           "type": "array",
           "uniqueItems": true,
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "description": "Other steps in this flow that must be complete first."
         },
+
         "type": {
           "type": "string",
-          "enum": [
-            "agent",
-            "script"
-          ],
+          "enum": ["agent", "script"],
           "default": "agent",
           "description": "'agent' invokes the Claude CLI with this step's prompt. 'script' runs the file at 'script' directly. The step contract binds both; a script meets most of it by construction and must still return one outcome and report honestly when it did nothing (PRODUCT.md, 'The step contract')."
         },
@@ -357,12 +298,11 @@
           "type": "string",
           "description": "Which model this step runs on, chosen when the step was declared -- a step does not choose its own model, any more than it chooses its own permissions (AS-1). Agent-type steps only."
         },
+
         "expected_effect": {
           "type": "object",
           "description": "What this step is supposed to change, declared explicitly so the orchestrator can compare it against what actually changed (MI-6). A step declaring no commits that produces one disagrees with itself, and the disagreement is surfaced, not buried -- this is also how a read-only step's constraint (PRODUCT.md, 'What a scheduled step may do is declared') becomes checkable rather than a claim in a prompt.",
-          "required": [
-            "commits"
-          ],
+          "required": ["commits"],
           "additionalProperties": false,
           "properties": {
             "commits": {
@@ -376,6 +316,7 @@
             }
           }
         },
+
         "budgets": {
           "type": "object",
           "description": "Overrides the top-level budgets default for this step only, field by field: a step declaring only max_turns still inherits max_wall_seconds from the default, and vice versa. Absent entirely means this step uses the default for both. A step can be exhausted by either wall independently: few turns spent on one slow tool call, or many quick turns inside a short time (the design's 'two budgets' discussion) -- which is why an override can target one wall without touching the other.",
@@ -393,21 +334,20 @@
             }
           }
         },
+
         "extra_allowedTools": {
           "type": "array",
           "description": "Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged.",
-          "items": {
-            "type": "string"
-          }
+          "items": { "type": "string" }
         },
+
         "deniedTools": {
           "type": "array",
           "description": "Commands this step must not invoke, merged with defaults.deniedTools to form the effective deny list. Deny takes precedence over allow. A step cannot remove a default deny rule by omitting it here -- the effective list is always defaults.deniedTools + step.deniedTools. Same pattern syntax as extra_allowedTools. Omit in favour of deny_groups when the list is long enough that per-pattern rationale is worth grouping -- the two are alternatives, not additive: when deny_groups is present and this key is absent, the effective deny list is deny_groups' patterns flattened.",
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "uniqueItems": true
         },
+
         "deny_groups": {
           "type": "array",
           "description": "Named deny groups for this step. Prefer string references to top-level entitlement_groups so semantic capabilities are declared once. Legacy inline {name, purpose, patterns} objects remain accepted for compatibility. When deniedTools is absent, referenced/inline groups are flattened in order into the step's effective deny list.",
@@ -419,53 +359,37 @@
               },
               {
                 "type": "object",
-                "required": [
-                  "name",
-                  "purpose",
-                  "patterns"
-                ],
+                "required": ["name", "purpose", "patterns"],
                 "additionalProperties": false,
                 "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "purpose": {
-                    "type": "string"
-                  },
+                  "name": { "type": "string" },
+                  "purpose": { "type": "string" },
                   "patterns": {
                     "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
+                    "items": { "type": "string" }
                   }
                 }
               }
             ]
           }
         },
+
         "exclude_classifications": {
           "type": "array",
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "enum": [
-              "security",
-              "bug",
-              "enhancement",
-              "tech-debt",
-              "spike"
-            ]
+            "enum": ["security", "bug", "enhancement", "tech-debt", "spike"]
           },
           "description": "DELIBERATE DEVIATION from the target schema (issue #406, see this file's top-level description): never eligible when the work item's classification is one of these. Classification is read from a 'classification: {type}' label or a '[TYPE]' title prefix applied by issue-classifier. The target design replaces this with positive selection -- a flow scoped by trigger.classification -- which is a larger change than issue #406 carries; until then this field keeps today's spike exclusions expressible."
         },
         "exclude_labels": {
           "type": "array",
           "uniqueItems": true,
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "description": "DELIBERATE DEVIATION from the target schema (issue #406, see this file's top-level description): never eligible when the work item carries any of these labels. Used today to keep build-phase steps off 'epic' parents and 'blocked' items. The target design replaces this with positive selection; until then this field keeps today's exclusions expressible."
         },
+
         "allowed_labels": {
           "type": "object",
           "description": "Which labels this step may ask the orchestrator to add or remove, as part of its returned result (PRODUCT.md, 'What a step must return'). A step never writes to GitHub itself; it requests, and the orchestrator applies only what this declares, silently dropping the rest -- the same enforced-not-discouraged relationship extra_allowedTools has with commands. Absent means the step may request no label changes beyond its own lifecycle labels, which it never requests directly (those are computed from its outcome, not chosen). Patterns follow the same glob convention as extra_allowedTools (e.g. 'blockedby:*').",
@@ -473,27 +397,22 @@
           "properties": {
             "add": {
               "type": "array",
-              "items": {
-                "type": "string"
-              },
+              "items": { "type": "string" },
               "description": "Label patterns this step may request be added, to its own item or another named in the request."
             },
             "remove": {
               "type": "array",
-              "items": {
-                "type": "string"
-              },
+              "items": { "type": "string" },
               "description": "Label patterns this step may request be removed, to its own item or another named in the request."
             }
           }
         },
+
         "git_ops": {
           "type": "object",
           "description": "Declares that this step produces file output the orchestrator commits. Absent means it does not.",
           "additionalProperties": false,
-          "required": [
-            "commit_after"
-          ],
+          "required": ["commit_after"],
           "properties": {
             "commit_after": {
               "type": "boolean",
@@ -505,6 +424,7 @@
             }
           }
         },
+
         "human_gate_after": {
           "type": "boolean",
           "description": "Whether a named gate label is required before downstream steps see this one as satisfied."
@@ -530,10 +450,7 @@
           "type": "object",
           "description": "Automatic retry loop: when this step emits review, the orchestrator re-invokes a target step (up to max_cycles) before escalating to human sign-off.",
           "additionalProperties": false,
-          "required": [
-            "re_invoke",
-            "max_cycles"
-          ],
+          "required": ["re_invoke", "max_cycles"],
           "properties": {
             "re_invoke": {
               "type": "string",
@@ -547,9 +464,7 @@
             },
             "also_clear": {
               "type": "array",
-              "items": {
-                "type": "string"
-              },
+              "items": { "type": "string" },
               "uniqueItems": true,
               "description": "Other steps whose complete label is also cleared when the loop fires, so intermediate steps re-run."
             }
@@ -559,16 +474,11 @@
           "type": "object",
           "description": "Declares that this step's outcome is code-computed from structured findings, not trusted from the model's own outcome field (issue #512 Part 2, AS-1/AS-2: the orchestrator keys off this declared field, never the agent name). Requires result.review (validated against `schema`); the computed verdict overrides the model's own outcome, which is advisory only.",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "schema"
-          ],
+          "required": ["kind", "schema"],
           "properties": {
             "kind": {
               "type": "string",
-              "enum": [
-                "review_findings"
-              ],
+              "enum": ["review_findings"],
               "description": "review_findings: result.review.findings[] is run through review_outcome.derive_review_verdict."
             },
             "schema": {
@@ -581,6 +491,7 @@
             }
           }
         },
+
         "max_retries": {
           "type": "integer",
           "minimum": 0,
@@ -588,20 +499,16 @@
           "default": 0,
           "description": "How many times the orchestrator retries this step after failed before giving up. Never retries exhausted -- the same step against the same wall is deterministic, so a retry there is waste that costs a full budget to learn nothing."
         },
+
         "session": {
           "type": "object",
           "description": "Session management for an agent-type step.",
           "additionalProperties": false,
-          "required": [
-            "scope"
-          ],
+          "required": ["scope"],
           "properties": {
             "scope": {
               "type": "string",
-              "enum": [
-                "per_issue",
-                "global"
-              ],
+              "enum": ["per_issue", "global"],
               "description": "per_issue -- a distinct session for each work item; default ID ais-v1-{safe_agent}-issue-{number}. global -- one persistent session shared across every invocation of this agent; default ID ais-v1-{safe_agent}. Use global for agents that benefit from context accumulated across issues (e.g. a doc reviewer)."
             },
             "resume": {
@@ -615,13 +522,13 @@
             }
           }
         },
+
         "post_steps": {
           "type": "array",
-          "items": {
-            "type": "string"
-          },
+          "items": { "type": "string" },
           "description": "Ordered repo-relative script paths the orchestrator runs after this step's result is recorded. A non-zero exit transitions the step from complete to failed."
         },
+
         "description": {
           "type": "string",
           "minLength": 1,
@@ -630,35 +537,15 @@
       },
       "allOf": [
         {
-          "if": {
-            "properties": {
-              "human_gate_after": {
-                "const": true
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "human_gate_label"
-            ]
-          }
+          "if": { "properties": { "human_gate_after": { "const": true } } },
+          "then": { "required": ["human_gate_label"] }
         },
         {
           "if": {
-            "required": [
-              "type"
-            ],
-            "properties": {
-              "type": {
-                "const": "script"
-              }
-            }
+            "required": ["type"],
+            "properties": { "type": { "const": "script" } }
           },
-          "then": {
-            "required": [
-              "script"
-            ]
-          }
+          "then": { "required": ["script"] }
         }
       ]
     }
