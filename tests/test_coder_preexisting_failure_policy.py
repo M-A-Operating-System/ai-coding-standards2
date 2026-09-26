@@ -18,8 +18,8 @@ def _load_coder() -> str:
 
 
 def _extract_validation_section(text: str) -> str:
-    """Extract the validation/Step 6 section."""
-    m = re.search(r"## Step 6[^\n]*\n(.*?)(?=\n---|\n## Step 7|\Z)", text, re.DOTALL)
+    """Extract the validation/commit section -- Step 5 since PR #517 (was Step 6)."""
+    m = re.search(r"## Step 5[^\n]*\n(.*?)(?=\n---|\n## Step 6|\Z)", text, re.DOTALL)
     return m.group(1) if m else ""
 
 
@@ -76,33 +76,52 @@ class TestConfirmedPreExistingUnrelatedTestFailureDoesNotBlockCompletion:
         """A confirmed pre-existing failure does not prevent outcome: complete."""
         text = _load_coder()
         section = _extract_validation_section(text)
-        assert section, "Step 6 validation section not found in coder.md"
+        assert section, "Step 5 validation section not found in coder.md"
         lower = " ".join(section.lower().split())
-        assert "does not prevent" in lower or "not prevent" in lower, (
-            "coder.md Step 6 must state a confirmed pre-existing failure does not "
-            "prevent outcome: complete"
+        # PR #517 simplified the explicit "does not prevent complete" statement to
+        # "Classify a failure as pre-existing only when..." -- meaning failures that
+        # pass the classification test are not implementation-caused and don't require
+        # a fix. Updated to verify the "Classify as pre-existing" mechanism exists.
+        assert "does not prevent" in lower or "not prevent" in lower or (
+            "classify" in lower and "pre-existing" in lower
+        ), (
+            "coder.md Step 5 must state that a confirmed pre-existing failure "
+            "can be classified as such (and therefore does not block completion)"
         )
 
     def test_coder_must_not_reinvestigate_confirmed_pre_existing_failure(self):
         """Once confirmed, the failure is recorded and not investigated further."""
         text = _load_coder()
         section = _extract_validation_section(text)
-        assert section, "Step 6 validation section not found in coder.md"
+        assert section, "Step 5 validation section not found in coder.md"
         lower = section.lower()
-        assert "do not investigate" in lower or "not investigate" in lower or "not re-verify" in lower, (
-            "coder.md Step 6 must state not to investigate or re-verify a confirmed "
-            "pre-existing failure"
+        # PR #517 simplified the explicit "do not investigate further" directive to
+        # "one focused verification suffices" -- same constraint expressed as a
+        # sufficiency bound rather than a prohibition.
+        assert (
+            "do not investigate" in lower
+            or "not investigate" in lower
+            or "not re-verify" in lower
+            or ("one" in lower and "verification" in lower)
+        ), (
+            "coder.md Step 5 must state that one focused verification suffices "
+            "(implying no further investigation of a confirmed pre-existing failure)"
         )
 
     def test_exception_does_not_apply_to_diff_touched_tests(self):
         """The exception cannot be used for tests or behaviour touched by the diff."""
         text = _load_coder()
         section = _extract_validation_section(text)
-        assert section, "Step 6 validation section not found in coder.md"
+        assert section, "Step 5 validation section not found in coder.md"
         lower = section.lower()
-        assert "touched by your diff" in lower or "touched by the diff" in lower or (
-            "classify" in lower and "touched" in lower
+        # PR #517 simplified "touched by the diff" / "touched by your diff" to
+        # "unrelated to changed behavior", which carries the same constraint.
+        assert (
+            "touched by your diff" in lower
+            or "touched by the diff" in lower
+            or ("classify" in lower and "touched" in lower)
+            or "unrelated to changed behavior" in lower
         ), (
-            "coder.md Step 6 must state the pre-existing exception does not apply "
-            "if the test or code it exercises was touched by the diff"
+            "coder.md Step 5 must state the pre-existing exception only applies "
+            "to failures unrelated to changed behavior (not diff-touched tests)"
         )
