@@ -299,6 +299,39 @@ class TestStep6dCoverageSelfCheck:
             "unstated coverage gap remains"
         )
 
+    def test_self_check_runs_even_when_loop_already_stopped_at_maximum(self):
+        """Client-reported (issue #524): a security PRD hit the band maximum
+        (4 of 7 draft requirements) and signalled review with 3 genuinely
+        behavioural requirements uncovered -- the self-check must be stated
+        as mandatory and unconditional, not implicitly skippable once the
+        derivation loop above has already stopped."""
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        assert re.search(r"coverage\s+self-check\s+\(mandatory", step, re.IGNORECASE), (
+            "the coverage self-check must be marked mandatory"
+        )
+        assert re.search(r"even\s+when\s+the\s+derivation\s+loop.*?stopped\s+at\s+the\s+maximum", step, re.IGNORECASE | re.DOTALL), (
+            "the coverage self-check must explicitly state it runs even when "
+            "the derivation loop already stopped at the band maximum"
+        )
+
+    def test_rule_5_cross_references_self_check_as_overriding_its_stop(self):
+        """Issue #524: rule 5's 'stop at the maximum' must not read as final
+        at the point it is stated -- it must point forward to the coverage
+        self-check that can require deriving past it."""
+        text = _load_prd_writer_text()
+        step = _extract_step_6d(text)
+        assert step, "Step 6d section not found"
+        rule_5 = re.search(r"5\. Derive one scenario.*?(?=\n6\. )", step, re.DOTALL)
+        assert rule_5, "Step 6d's rule 5 not found"
+        assert "provisional" in rule_5.group(0), (
+            "rule 5 must state its stop is provisional"
+        )
+        assert re.search(r"coverage\s+self-check", rule_5.group(0)), (
+            "rule 5 must reference the coverage self-check that can override its stop"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Scenario: Non-behavioural requirements are not padded into scenarios

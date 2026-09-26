@@ -381,7 +381,10 @@ go directly to **Step 8**.
    **maximum** — the minimum only guarantees the low end for a thinly
    specified issue, it is never a stopping condition on its own. Stop early
    only when candidates are exhausted or the maximum is reached, whichever
-   comes first. Never invent scenarios beyond what the source material
+   comes first — but that stop is provisional, not final: the coverage
+   self-check below (run unconditionally, even when this loop stopped at the
+   maximum) can require deriving past it for a requirement it left
+   uncovered. Never invent scenarios beyond what the source material
    supports, and never split one behaviour into several scenarios to reach
    the maximum artificially (rule 2 still applies).
 6. If fewer scenarios can be derived than the **minimum** (e.g. a schema-only
@@ -420,14 +423,18 @@ from human-authored ones sharing the same section:
 The section label ("Derived by prd-writer") distinguishes machine-derived
 scenarios from human-authored content.
 
-**Coverage self-check (before Step 8):** Compare the requirement tags
-enumerated in step 1 above against the tags actually cited across *all*
-`#### Scenario:` blocks in the body — pre-existing and just-derived alike.
-A requirement enumerated but cited by no scenario is a gap. For each gap:
+**Coverage self-check (mandatory, before Step 8 — run unconditionally, even
+when the derivation loop above already stopped at the maximum):** List every
+requirement tag enumerated in step 1 above, and against each one, check
+explicitly whether it is actually cited across *all* `#### Scenario:` blocks
+in the body — pre-existing and just-derived alike. Do this tag by tag; do
+not conclude coverage is complete without having checked every tag
+individually. A requirement enumerated but cited by no scenario is a gap.
+For each gap:
 - If it is behavioural and a scenario can legitimately be derived for it
   (rules 2–4 above), derive it now, even if the maximum has already been
   reached — coverage of a real requirement takes priority over the band's
-  ceiling.
+  ceiling. This is the one case where rule 5's maximum does not hold.
 - If it genuinely cannot (non-behavioural, or already accounted for by rule
   6's under-minimum note), name the uncovered requirement(s) explicitly in
   the artefact comment posted at Step 8.
