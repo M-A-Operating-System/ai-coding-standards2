@@ -183,8 +183,8 @@ is what is required inside each section.
 
 | Classification | Problem | Goal | User stories | Gherkin scenarios | Out of scope | Success metrics |
 |---|---|---|---|---|---|---|
-| `security` | 1 paragraph: the vulnerability, what it enables an attacker to do, and affected components | One sentence: the fix and the regression test proving the hole is closed | 1--2 (the affected persona) | 2--4 (exploit path is closed + at least one regression scenario) | Include: related hardening out of scope | Include: the regression test passes in CI |
-| `bug` | 1–2 sentences naming the drift from target state | One sentence: the corrected behaviour | 0–1 (omit if the existing story already covers it) | 1–2 (the regression + one related path at most) | Omit unless reviewers might over-correct | Omit; the bug being fixed is the metric |
+| `security` | 1 paragraph: the vulnerability, what it enables an attacker to do, and affected components | One sentence: the secure behaviour the system exhibits once the vulnerability is closed | 1--2 (the affected persona) | 2--4 (the correct behaviour under the previously-exploitable condition, plus any related path) | Include: related hardening out of scope | Include: the regression test passes in CI |
+| `bug` | 1–2 sentences naming the drift from target state | One sentence: the corrected behaviour | 0–1 (omit if the existing story already covers it) | 1–2 (the correct behaviour under the previously-broken condition, plus one related path at most) | Omit unless reviewers might over-correct | Omit; the corrected behaviour demonstrated by the acceptance scenario is the metric |
 | `enhancement` | 1 paragraph | 1 paragraph | 1–5 | 2–7 | Include if scope ambiguity exists | Include if there is a measurable target |
 | `tech-debt` | 1–2 sentences naming the operational pain | One sentence: the post-change state | 0–1 | 1–3 | Omit unless scope creep is likely | Omit unless there is a measurable target (perf, cost) |
 | `spike` | 1–2 sentences naming the question and why now | One sentence: what artefact the spike delivers | 1 (the persona who consumes the findings) | 1–3 acceptance conditions on the **findings**, not on code | Often useful — list what is explicitly out of the spike's scope | Often omit — acceptance criteria already define "done" |
@@ -239,6 +239,15 @@ falsifiable by a tester or automated test. Stop at the smallest set
 that covers the happy path plus any edge cases the issue body
 explicitly raises — **do not add scenarios to reach a perceived
 minimum.** If two scenarios share the same Then-clause, keep one.
+
+State the outcome, not the change: if the system used to do X, a
+scenario's Then-clause states that it now does Y as a plain fact about
+the shipped system — never as confirmation that X was replaced,
+corrected, or fixed. "Then the bug no longer occurs" is a record of the
+change; "Then the request succeeds with a 200" is the outcome. This
+applies most to `bug` and `security` PRDs, where it is tempting to write
+the scenario as a regression check on the old defect rather than a
+statement of the correct behaviour.
 
 #### Scenario: {short imperative name}
 **Given** {precondition as fact about system state}
@@ -557,6 +566,9 @@ runtime values yourself:
   about user-observable behaviour, not database schemas.
 - Each Gherkin scenario must be falsifiable. "Given the system exists,
   When a user uses it, Then it works" is not Gherkin.
+- Success is the target capability's behaviour (Y), not confirmation that
+  prior behaviour (X) was changed. Never phrase a Then-clause as "the bug
+  is fixed" or "the change works" — state what the system now does.
 - Don't fabricate a module. If no clear bounded context emerges, omit
   the module segment.
 - When in doubt about size, decompose.
