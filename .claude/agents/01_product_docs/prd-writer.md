@@ -211,10 +211,10 @@ name the specific behaviour.
 
 ### Goal
 
-Bug/tech-debt/spike: one sentence naming the corrected behaviour or the
-artefact the spike delivers. Enhancement: one paragraph naming
-the user-observable change. Phrase as what the user will experience,
-never the implementation.
+Bug/tech-debt: one sentence naming the intended outcome the system
+achieves. Spike: one sentence naming the artefact the spike delivers.
+Enhancement: one paragraph naming the user-observable change. Phrase as
+what the user will experience, never the implementation.
 
 ### User stories
 
