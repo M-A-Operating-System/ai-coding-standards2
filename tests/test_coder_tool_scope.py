@@ -64,12 +64,15 @@ def _coder_step() -> dict:
 
 
 def _effective_denied(step: dict) -> list:
-    """A step's effective deny list: deniedTools when declared, else its
-    deny_groups' patterns flattened -- the two are alternatives, not
-    additive (mirrors pipeline_orchestrator._denied_tools_from_entry)."""
+    """Resolve the coder's deny groups exactly as the pipeline loader does."""
     if "deniedTools" in step:
         return step["deniedTools"]
-    return [p for group in step.get("deny_groups", []) for p in group.get("patterns", [])]
+    catalog = _pipeline().get("entitlement_groups", {})
+    denied = []
+    for group in step.get("deny_groups", []):
+        definition = catalog[group] if isinstance(group, str) else group
+        denied.extend(definition.get("patterns", []))
+    return denied
 
 
 def _tool_arg(pattern: str) -> str:
@@ -159,7 +162,7 @@ class TestDirectFormOfADeniedCommandIsBlocked:
         )
 
     def test_full_deny_list_declared(self):
-        """All seven deny groups' patterns must be in the effective deny list."""
+        """Every semantic deny group's patterns must remain in the effective deny list."""
         step = _coder_step()
         denied = _effective_denied(step)
         for pattern in _FULL_DENY_LIST:
@@ -270,16 +273,15 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
             "pipeline-steps.md must include the 'Deny rule groups' section"
         )
 
-    def test_deny_groups_section_names_all_seven_groups(self):
-        """All seven deny group names must appear in the generated docs."""
+    def test_deny_groups_section_names_all_semantic_groups(self):
+        """All six semantic capability group names must appear in the generated docs."""
         expected_group_names = [
-            "Git history destruction",
-            "Destructive or forced remote Git operations",
-            "Branch and reference destruction",
-            "Validation bypass",
-            "Git control-plane modification",
-            "Credential or environment disclosure",
-            "External shell access",
+            "local-git-history-control",
+            "remote-git-control",
+            "git-configuration-control",
+            "repository-policy-enforcement",
+            "environment-and-credential-access",
+            "external-host-access",
         ]
         text = STEPS_MD.read_text()
         for name in expected_group_names:
@@ -310,8 +312,19 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
 
 
 # ---------------------------------------------------------------------------
-# Schema: deny_groups is an accepted optional field
+# Schema: top-level entitlement_groups and deny_group references are accepted
 # ---------------------------------------------------------------------------
+
+
+def test_coder_references_top_level_semantic_entitlement_groups():
+    pipeline = _pipeline()
+    catalog = pipeline.get("entitlement_groups", {})
+    step = _coder_step()
+    refs = step.get("deny_groups", [])
+    assert refs
+    assert all(isinstance(ref, str) for ref in refs)
+    assert all(ref in catalog for ref in refs)
+
 
 def test_schema_accepts_deny_groups_on_coder_step():
     """The pipeline schema must accept deny_groups as a valid optional step field."""
