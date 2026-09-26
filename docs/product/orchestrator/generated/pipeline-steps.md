@@ -66,7 +66,7 @@ authoritative and these tables are a view of it.
 | `01_product_docs/prd-docs-updater` | `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)` | -- | `commit_after=true`, `commits_to="docs"` |
 | `01_product_docs/merge-docs-pr` | -- | -- | `commit_after=false`, `commits_to="docs"` |
 | `01_product_docs/create-pr` | -- | -- | `commit_after=false`, `commits_to="code"` |
-| `03_execute/coder` | `Bash` | `Bash(git reset --hard*)`, `Bash(git commit --amend*)`, `Bash(git commit * --amend*)`, `Bash(git push --force*)` _(+22 more)_ | `commit_after=true`, `commits_to="code"` |
+| `03_execute/coder` | `Bash` | `Bash(git reset --hard*)`, `Bash(git commit --amend*)`, `Bash(git commit * --amend*)`, `Bash(git branch -D *)` _(+22 more)_ | `commit_after=true`, `commits_to="code"` |
 | `03_execute/ci-gate` | -- | -- | -- |
 | `03_execute/merge-conflict` | `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh pr comment *)`, `Bash(gh run view *)`, `Bash(gh run list *)`, `Bash(git fetch *)` _(+8 more)_ | -- | -- |
 | `03_execute/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | -- | `commit_after=false` |
@@ -75,13 +75,16 @@ authoritative and these tables are a view of it.
 
 The groups below are this step's authoritative deny list, flattened at load time (no separate `deniedTools` declared). The matcher sees the command string as written; a command reached through an interpreter wrapper (e.g. `bash -c '...'`) is not matched and is documented as the deny list's known limitation.
 
-**Git history destruction** -- Prevent the coder from discarding or rewriting recoverable work.
+**local-git-history-control** -- The coder may create new commits but may not rewrite, discard, or delete existing local Git history or references.
 
 - `Bash(git reset --hard*)`
 - `Bash(git commit --amend*)`
 - `Bash(git commit * --amend*)`
+- `Bash(git branch -D *)`
+- `Bash(git branch --delete --force *)`
+- `Bash(git update-ref -d *)`
 
-**Destructive or forced remote Git operations** -- Prevent the coder from rewriting shared remote history or deleting remote branches. The orchestrator owns all pushes.
+**remote-git-control** -- The coder may not rewrite remote history, delete remote branches, or mirror repositories; the orchestrator owns remote publication.
 
 - `Bash(git push --force*)`
 - `Bash(git push * --force*)`
@@ -92,36 +95,29 @@ The groups below are this step's authoritative deny list, flattened at load time
 - `Bash(git push --mirror*)`
 - `Bash(git push * --mirror*)`
 
-**Branch and reference destruction** -- Prevent the coder from removing local branches or git refs that may be shared or tracked by the orchestrator.
+**git-configuration-control** -- The coder may not alter Git identity, remotes, hooks, signing, or other repository control-plane configuration.
 
-- `Bash(git branch -D *)`
-- `Bash(git branch --delete --force *)`
-- `Bash(git update-ref -d *)`
+- `Bash(git config *)`
 
-**Validation bypass** -- Prevent the coder from skipping pre-commit or pre-push hooks that enforce repo policy.
+**repository-policy-enforcement** -- The coder may not bypass repository commit or push validation hooks.
 
 - `Bash(git commit --no-verify*)`
 - `Bash(git commit * --no-verify*)`
 - `Bash(git push --no-verify*)`
 - `Bash(git push * --no-verify*)`
 
-**Git control-plane modification** -- Prevent the coder from altering git configuration (identity, remotes, hooks, signing) that the orchestrator or operator owns.
-
-- `Bash(git config *)`
-
-**Credential or environment disclosure** -- Prevent the coder from printing the process environment, which may contain secrets or tokens.
+**environment-and-credential-access** -- The coder may not print the process environment, which can expose credentials or other secrets.
 
 - `Bash(env)`
 - `Bash(env *)`
 - `Bash(printenv)`
 - `Bash(printenv *)`
 
-**External shell access** -- Prevent the coder from opening outbound shell sessions to remote hosts.
+**external-host-access** -- The coder may not open outbound shell or file-transfer sessions to external hosts.
 
 - `Bash(ssh *)`
 - `Bash(scp *)`
 - `Bash(sftp *)`
-
 
 ## Flow: `epic-completion`
 
