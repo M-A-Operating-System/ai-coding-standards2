@@ -183,8 +183,8 @@ is what is required inside each section.
 
 | Classification | Problem | Goal | User stories | Gherkin scenarios | Out of scope | Success metrics |
 |---|---|---|---|---|---|---|
-| `security` | 1 paragraph: the vulnerability, what it enables an attacker to do, and affected components | One sentence: the secure behaviour the system exhibits once the vulnerability is closed | 1--2 (the affected persona) | 2--4 (the correct behaviour under the previously-exploitable condition, plus any related path) | Include: related hardening out of scope | Include: the regression test passes in CI |
-| `bug` | 1–2 sentences naming the drift from target state | One sentence: the corrected behaviour | 0–1 (omit if the existing story already covers it) | 1–2 (the correct behaviour under the previously-broken condition, plus one related path at most) | Omit unless reviewers might over-correct | Omit; the corrected behaviour demonstrated by the acceptance scenario is the metric |
+| `security` | 1 paragraph: the vulnerability, what it enables an attacker to do, and affected components | One sentence: the system passing the security test that identified the vulnerability | 1--2 (the affected persona) | 2--4 (the system passing the security test that identified the vulnerability, plus any related exploitable path) | Include: related hardening out of scope | Include: the security test that identified the vulnerability passes in CI |
+| `bug` | 1–2 sentences naming the drift from target state | One sentence: the intended outcome the system achieves | 0–1 (omit if the existing story already covers it) | 1–2 (the system achieving its intended outcome under the previously-broken condition, plus one related path at most) | Omit unless reviewers might over-correct | Omit; the intended outcome demonstrated by the acceptance scenario is the metric |
 | `enhancement` | 1 paragraph | 1 paragraph | 1–5 | 2–7 | Include if scope ambiguity exists | Include if there is a measurable target |
 | `tech-debt` | 1–2 sentences naming the operational pain | One sentence: the post-change state | 0–1 | 1–3 | Omit unless scope creep is likely | Omit unless there is a measurable target (perf, cost) |
 | `spike` | 1–2 sentences naming the question and why now | One sentence: what artefact the spike delivers | 1 (the persona who consumes the findings) | 1–3 acceptance conditions on the **findings**, not on code | Often useful — list what is explicitly out of the spike's scope | Often omit — acceptance criteria already define "done" |
@@ -247,7 +247,15 @@ corrected, or fixed. "Then the bug no longer occurs" is a record of the
 change; "Then the request succeeds with a 200" is the outcome. This
 applies most to `bug` and `security` PRDs, where it is tempting to write
 the scenario as a regression check on the old defect rather than a
-statement of the correct behaviour.
+statement of the correct behaviour. Anchor Y concretely rather than
+describing it in the abstract:
+
+- **`bug`** — Y is the intended outcome the system was always supposed to
+  achieve. State that outcome directly, not "the bug is fixed."
+- **`security`** — Y is the system passing the specific security test,
+  scan finding, or pentest item that identified the vulnerability. Cite
+  it when the issue names one, rather than describing "secure behaviour"
+  in the abstract.
 
 #### Scenario: {short imperative name}
 **Given** {precondition as fact about system state}
