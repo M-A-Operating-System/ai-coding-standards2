@@ -32,9 +32,7 @@
     },
     "git-configuration-control": {
       "purpose": "The coder may not alter Git identity, remotes, hooks, signing, or other repository control-plane configuration.",
-      "patterns": [
-        "Bash(git config *)"
-      ]
+      "patterns": ["Bash(git config *)"]
     },
     "repository-policy-enforcement": {
       "purpose": "The coder may not bypass repository commit or push validation hooks.",
@@ -63,10 +61,10 @@
       ]
     }
   },
+
   "defaults": {
     "extra_allowedTools": [
-      "Write",
-      "Edit",
+      "Write", "Edit",
       "Bash(gh issue view *)",
       "Bash(gh issue comment *)",
       "Bash(gh issue edit *)",
@@ -104,7 +102,9 @@
       ]
     }
   },
+
   "flows": {
+
     "standard-delivery": {
       "description": "An issue taken from description to shipped code: classify, write the PRD, publish the approved design to main on its own design branch and PR, then build, gate on CI, resolve conflicts and review the code PR. Two-phase design->build (issue #247) is expressed here as two pull requests on one flow -- the design PR (issue-{N}-docs, non-closing) merged ahead of the code PR (issue-{N}, closing).",
       "trigger": {
@@ -127,6 +127,7 @@
         ]
       },
       "steps": [
+
         {
           "agent": "01_product_docs/issue-classifier",
           "phase": "01_product_docs",
@@ -136,23 +137,14 @@
           "human_gate_after": false,
           "dependencies": [],
           "max_retries": 2,
-          "session": {
-            "scope": "per_issue"
-          },
+          "session": { "scope": "per_issue" },
           "model": "claude-haiku-4-5-20251001",
-          "budgets": {
-            "max_turns": 8
-          },
-          "expected_effect": {
-            "commits": false
-          },
-          "allowed_labels": {
-            "add": [
-              "classification: *"
-            ]
-          },
+          "budgets": { "max_turns": 8 },
+          "expected_effect": { "commits": false },
+          "allowed_labels": { "add": ["classification: *"] },
           "description": "Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment."
         },
+
         {
           "agent": "01_product_docs/prd-writer",
           "phase": "01_product_docs",
@@ -161,26 +153,16 @@
           },
           "human_gate_after": true,
           "human_gate_label": "prd-writer:approved",
-          "dependencies": [
-            "01_product_docs/issue-classifier"
-          ],
+          "dependencies": ["01_product_docs/issue-classifier"],
           "max_retries": 2,
-          "session": {
-            "scope": "per_issue"
-          },
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
+          "session": { "scope": "per_issue" },
+          "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 45
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "budgets": { "max_turns": 45 },
+          "expected_effect": { "commits": false },
           "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked."
         },
+
         {
           "agent": "01_product_docs/create-docs-pr",
           "type": "script",
@@ -190,25 +172,14 @@
             "label": "prd-writer:complete"
           },
           "human_gate_after": false,
-          "dependencies": [
-            "01_product_docs/prd-writer"
-          ],
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
-          "git_ops": {
-            "commit_after": false,
-            "commits_to": "docs"
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "dependencies": ["01_product_docs/prd-writer"],
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
+          "git_ops": { "commit_after": false, "commits_to": "docs" },
+          "expected_effect": { "commits": false },
           "description": "Scripted step (two-phase design->build, issue #247): opens the DESIGN pull request on the issue-{N}-docs branch with a non-closing body. prd-docs-updater commits the docs/product/ and docs/features/ changes to this branch; merge-docs-pr merges it to main at the prd-docs-updater:approved gate, ahead of the build phase. Thin wrapper over create-pr.sh; the branch and the non-closing body both come from this flow's naming.pull_requests entry 'docs'. Idempotent. Skipped for spike/epic/blocked issues."
         },
+
         {
           "agent": "01_product_docs/prd-docs-updater",
           "phase": "01_product_docs",
@@ -218,38 +189,19 @@
           "human_gate_after": true,
           "human_gate_label": "prd-docs-updater:approved",
           "self_gates": true,
-          "dependencies": [
-            "01_product_docs/create-docs-pr"
-          ],
+          "dependencies": ["01_product_docs/create-docs-pr"],
           "max_retries": 2,
-          "session": {
-            "scope": "per_issue"
-          },
-          "extra_allowedTools": [
-            "Bash(git add *)",
-            "Bash(git commit *)",
-            "Bash(git status *)"
-          ],
-          "git_ops": {
-            "commit_after": true,
-            "commits_to": "docs"
-          },
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
+          "session": { "scope": "per_issue" },
+          "extra_allowedTools": ["Bash(git add *)", "Bash(git commit *)", "Bash(git status *)"],
+          "git_ops": { "commit_after": true, "commits_to": "docs" },
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 40
-          },
-          "expected_effect": {
-            "commits": true
-          },
+          "budgets": { "max_turns": 40 },
+          "expected_effect": { "commits": true },
           "description": "Runs after create-docs-pr opens the design PR. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool and commits them in its own worktree; the orchestrator then pushes the DESIGN branch (issue-{N}-docs, this flow's 'docs' pull request) so they land in the design PR. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight (mechanical docs/features/ copy only, or no changes needed); either way merge-docs-pr then publishes the design to main ahead of the build phase (two-phase design->build, issue #247). Skipped for spike issues. Skipped for epic/blocked issues."
         },
+
         {
           "agent": "01_product_docs/merge-docs-pr",
           "type": "script",
@@ -259,25 +211,14 @@
             "label": "prd-docs-updater:complete"
           },
           "human_gate_after": false,
-          "dependencies": [
-            "01_product_docs/prd-docs-updater"
-          ],
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
-          "git_ops": {
-            "commit_after": false,
-            "commits_to": "docs"
-          },
-          "expected_effect": {
-            "commits": true
-          },
+          "dependencies": ["01_product_docs/prd-docs-updater"],
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
+          "git_ops": { "commit_after": false, "commits_to": "docs" },
+          "expected_effect": { "commits": true },
           "description": "Scripted step (two-phase design->build, issue #247): merges the design PR (issue-{N}-docs) to main at the prd-docs-updater:approved gate, ahead of the build phase, so every subsequent (and parallel) build is cut from a main that already carries the latest approved design and design conflicts surface at this small docs merge. Idempotent -- if no open design PR exists it exits cleanly. Refuses to auto-merge a conflicting or protection-blocked PR (emits review for human resolution) rather than forcing it. Deterministic; does not invoke Claude CLI. Skipped for spike/epic/blocked issues."
         },
+
         {
           "agent": "01_product_docs/create-pr",
           "type": "script",
@@ -287,25 +228,14 @@
             "label": "merge-docs-pr:complete"
           },
           "human_gate_after": false,
-          "dependencies": [
-            "01_product_docs/merge-docs-pr"
-          ],
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
-          "git_ops": {
-            "commit_after": false,
-            "commits_to": "code"
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "dependencies": ["01_product_docs/merge-docs-pr"],
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
+          "git_ops": { "commit_after": false, "commits_to": "code" },
+          "expected_effect": { "commits": false },
           "description": "Scripted step: creates the CODE branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Runs after merge-docs-pr publishes the approved design to main (two-phase design->build, issue #247), so the code branch is cut from a main that already carries the latest design. Applies source-issue:{N} label via link-pr-to-issue.sh. Coder commits accumulate in this PR. Idempotent -- exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues (spikes produce no code to ship). Skipped for epic/blocked issues."
         },
+
         {
           "agent": "03_execute/coder",
           "phase": "03_execute",
@@ -314,16 +244,10 @@
           },
           "human_gate_after": false,
           "resolve_pr_number": true,
-          "dependencies": [
-            "01_product_docs/create-pr"
-          ],
+          "dependencies": ["01_product_docs/create-pr"],
           "max_retries": 1,
-          "session": {
-            "scope": "per_issue"
-          },
-          "extra_allowedTools": [
-            "Bash"
-          ],
+          "session": { "scope": "per_issue" },
+          "extra_allowedTools": ["Bash"],
           "deny_groups": [
             "local-git-history-control",
             "remote-git-control",
@@ -332,26 +256,15 @@
             "environment-and-credential-access",
             "external-host-access"
           ],
-          "git_ops": {
-            "commit_after": true,
-            "commits_to": "code"
-          },
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
+          "git_ops": { "commit_after": true, "commits_to": "code" },
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 60
-          },
-          "expected_effect": {
-            "commits": true
-          },
+          "budgets": { "max_turns": 60 },
+          "expected_effect": { "commits": true },
           "description": "Implements one GitHub issue in the consuming repository as a defensive programmer. Reads the approved scope and relevant project context, then modifies and tests that issue's code, committing it in its own worktree as it goes -- including incremental checkpoint commits during a long run so completed progress survives budget exhaustion, and a final commit before returning so the working tree is clean. The orchestrator then pushes what was committed and owns the PR lifecycle. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues -- spikes produce research findings, not code. Skipped for epic/blocked issues."
         },
+
         {
           "agent": "03_execute/ci-gate",
           "type": "script",
@@ -361,25 +274,15 @@
             "label": "coder:complete"
           },
           "human_gate_after": false,
-          "dependencies": [
-            "03_execute/coder"
-          ],
+          "dependencies": ["03_execute/coder"],
           "max_retries": 1,
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
-          "budgets": {
-            "max_wall_seconds": 900
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
+          "budgets": { "max_wall_seconds": 900 },
+          "expected_effect": { "commits": false },
           "description": "Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks pass (emits complete), any check fails (emits review -- the orchestrator re-invokes the coder up to 3 cycles), or the 14-minute timeout expires (emits blocked for human intervention). Posts a summary comment listing check outcomes before signalling status. Skipped for epic/blocked issues."
         },
+
         {
           "agent": "03_execute/merge-conflict",
           "phase": "03_execute",
@@ -390,14 +293,9 @@
           "human_gate_label": "merge-conflict:approved",
           "self_gates": true,
           "resolve_pr_number": true,
-          "dependencies": [
-            "03_execute/ci-gate"
-          ],
+          "dependencies": ["03_execute/ci-gate"],
           "max_retries": 1,
-          "session": {
-            "scope": "per_issue",
-            "resume": false
-          },
+          "session": { "scope": "per_issue", "resume": false },
           "extra_allowedTools": [
             "Bash(gh api *)",
             "Bash(gh pr checks *)",
@@ -414,22 +312,14 @@
             "Bash(git branch *)",
             "Bash(git config *)"
           ],
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
           "model": "claude-haiku-4-5-20251001",
-          "budgets": {
-            "max_turns": 60
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "budgets": { "max_turns": 60 },
+          "expected_effect": { "commits": false },
           "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied, so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review -- the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues."
         },
+
         {
           "agent": "03_execute/pr-reviewer",
           "phase": "03_execute",
@@ -438,14 +328,9 @@
           },
           "human_gate_after": false,
           "resolve_pr_number": true,
-          "dependencies": [
-            "03_execute/merge-conflict"
-          ],
+          "dependencies": ["03_execute/merge-conflict"],
           "max_retries": 1,
-          "session": {
-            "scope": "per_issue",
-            "resume": false
-          },
+          "session": { "scope": "per_issue", "resume": false },
           "extra_allowedTools": [
             "Bash(gh pr review *)",
             "Bash(gh pr ready *)",
@@ -453,35 +338,20 @@
             "Bash(gh pr checks *)",
             "Bash(gh run view *)"
           ],
-          "exclude_classifications": [
-            "spike"
-          ],
-          "exclude_labels": [
-            "epic",
-            "blocked"
-          ],
+          "exclude_classifications": ["spike"],
+          "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 80
-          },
-          "expected_effect": {
-            "commits": false,
-            "creates_issues": true
-          },
+          "budgets": { "max_turns": 80 },
+          "expected_effect": { "commits": false, "creates_issues": true },
           "review_loop": {
             "re_invoke": "03_execute/coder",
             "max_cycles": 3,
-            "also_clear": [
-              "03_execute/ci-gate",
-              "03_execute/merge-conflict"
-            ]
+            "also_clear": ["03_execute/ci-gate", "03_execute/merge-conflict"]
           },
           "git_ops": {
             "commit_after": false
           },
-          "post_steps": [
-            ".github/scripts/mark-pr-ready.sh"
-          ],
+          "post_steps": [".github/scripts/mark-pr-ready.sh"],
           "review_gate": true,
           "outcome_policy": {
             "kind": "review_findings",
@@ -490,15 +360,15 @@
           },
           "description": "Reviews the draft PR for this issue after CI passes. Looks up the open PR by branch issue-{N}, reads the diff and linked spec, then reports each finding as either a defect (correctness, spec, security, tests, standards, or cross-file consistency) or a genuinely optional improvement -- the orchestrator computes the verdict from those findings (outcome_policy: review_findings), never trusting the model's own outcome field. A defect blocks unless its severity is Low or Informational, its confidence is below 0.8 (non-Critical only), or it is covered by a verified ADR exception; a Critical defect always blocks regardless of confidence. An improvement never blocks -- its effort instead decides its disposition (issue #506): simple is eligible for an already-required coder pass, medium is flagged for a human decision, complex is deferred into a follow-up GitHub issue the orchestrator raises. Cannot APPROVE when any unresolved human REQUEST_CHANGES reviews exist on the PR -- this is a hard block regardless of automated findings. On APPROVE, the orchestrator compares the reviewed head_sha with the PR's live head (require_head_match, issue #512 Part 3); a mismatch withholds ready-marking and re-dispatches this step on the next tick rather than approving a commit that was never reviewed. On APPROVE with a matching head and no unresolved human reviews, the orchestrator marks the issue PR ready for human review. On REQUEST CHANGES the orchestrator automatically re-invokes the coder (clearing ci-gate:complete so CI re-runs, up to 3 cycles); only after 3 failed cycles is human sign-off required. Skipped for epic/blocked issues."
         }
+
       ]
     },
+
     "epic-completion": {
       "description": "Coordinating work: an epic is a parent whose children are the real work, and it has nothing to do while they run. Its one step becomes eligible only once every child issue (parent-issue:{N}) is closed -- trigger.children: all_closed, evaluated as ordinary step eligibility, with no epic-specific code in the orchestrator. The step never commits, so this flow declares no naming.",
       "trigger": {
         "kind": "issue",
-        "labels": [
-          "epic"
-        ]
+        "labels": ["epic"]
       },
       "steps": [
         {
@@ -511,16 +381,13 @@
           },
           "human_gate_after": false,
           "dependencies": [],
-          "budgets": {
-            "max_wall_seconds": 60
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "budgets": { "max_wall_seconds": 60 },
+          "expected_effect": { "commits": false },
           "description": "Closes a coordinating epic once every one of its children is closed: posts the epic-complete comment and closes the issue. Eligible only when trigger.children: all_closed holds -- the orchestrator counts the item's parent-issue:{N} children generically and hands this step AI_AGILE_CHILDREN_TOTAL / AI_AGILE_CHILDREN_OPEN. A flow that wants a review of the whole before the epic closes declares that step here ahead of this one, with no orchestrator change."
         }
       ]
     },
+
     "codebase-review": {
       "description": "On-demand three-persona codebase review, requested by a human applying a label to any issue. Produces findings as a new issue, never a commit, so this flow declares no naming.",
       "trigger": {
@@ -536,25 +403,19 @@
           "human_gate_after": false,
           "dependencies": [],
           "max_retries": 1,
-          "session": {
-            "scope": "global"
-          },
+          "session": { "scope": "global" },
           "extra_allowedTools": [
             "Bash(gh issue create *)",
             "Bash(git log *)"
           ],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 80
-          },
-          "expected_effect": {
-            "commits": false,
-            "creates_issues": true
-          },
+          "budgets": { "max_turns": 80 },
+          "expected_effect": { "commits": false, "creates_issues": true },
           "description": "Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear."
         }
       ]
     },
+
     "sizer": {
       "description": "On-demand sizing of an issue against a single development cycle, requested by a human applying a label. Decomposes a large issue into sub-issues and marks the parent epic; produces no commit, so this flow declares no naming.",
       "trigger": {
@@ -572,28 +433,19 @@
           "self_gates": true,
           "dependencies": [],
           "max_retries": 1,
-          "session": {
-            "scope": "per_issue"
-          },
+          "session": { "scope": "per_issue" },
           "extra_allowedTools": [
             "Bash(gh issue create *)",
             "Bash(gh api *)"
           ],
           "model": "claude-sonnet-4-6",
-          "expected_effect": {
-            "commits": false,
-            "creates_issues": true
-          },
-          "allowed_labels": {
-            "add": [
-              "epic",
-              "blocked"
-            ]
-          },
+          "expected_effect": { "commits": false, "creates_issues": true },
+          "allowed_labels": { "add": ["epic", "blocked"] },
           "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note and emit complete directly; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied. Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown at the sizer:review gate. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
         }
       ]
     },
+
     "new-agent": {
       "description": "On-demand scaffolding of a new pipeline agent from an issue description. The only on-demand flow whose step commits, so it is the only one that declares naming.",
       "trigger": {
@@ -612,29 +464,17 @@
           "human_gate_after": false,
           "dependencies": [],
           "max_retries": 1,
-          "session": {
-            "scope": "per_issue"
-          },
-          "git_ops": {
-            "commit_after": true
-          },
-          "extra_allowedTools": [
-            "Edit(.claude/agents/**)",
-            "Bash(git add *)",
-            "Bash(git commit *)",
-            "Bash(git status *)"
-          ],
+          "session": { "scope": "per_issue" },
+          "git_ops": { "commit_after": true },
+          "extra_allowedTools": ["Edit(.claude/agents/**)", "Bash(git add *)", "Bash(git commit *)", "Bash(git status *)"],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 20
-          },
-          "expected_effect": {
-            "commits": true
-          },
+          "budgets": { "max_turns": 20 },
+          "expected_effect": { "commits": true },
           "description": "On-demand agent that scaffolds a new pipeline agent from a GitHub issue description. Reads the issue to determine the agent's name, phase, trigger, and purpose, then creates the agent prompt file and registers it in pipeline.json. Triggered by applying the new-agent:requested label to an issue."
         }
       ]
     },
+
     "standards-migrator": {
       "description": "On-demand conversion of a consuming repo's existing knowledge files into machine-readable standards, requested by a human applying a label. Presents proposals for approval rather than committing, so this flow declares no naming.",
       "trigger": {
@@ -650,24 +490,19 @@
           "human_gate_after": false,
           "dependencies": [],
           "max_retries": 1,
-          "session": {
-            "scope": "per_issue"
-          },
+          "session": { "scope": "per_issue" },
           "extra_allowedTools": [
             "Bash(gh issue create *)",
             "Bash(python3 *)"
           ],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 200
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "budgets": { "max_turns": 200 },
+          "expected_effect": { "commits": false },
           "description": "Ad-hoc agent that scans the consuming repo for existing knowledge files and ground-truth artifacts, then converts the timeless rules they imply into machine-readable standards/*.json. Presents proposed standards for human approval before writing. Triggered by applying the standards-migrator:requested label to any issue."
         }
       ]
     },
+
     "branch-cleanup": {
       "description": "On-demand remote-branch hygiene sweep, requested by a human applying a label. Deletes branches only after a human approves the list; produces no commit, so this flow declares no naming.",
       "trigger": {
@@ -683,9 +518,7 @@
           "human_gate_after": false,
           "dependencies": [],
           "max_retries": 1,
-          "session": {
-            "scope": "global"
-          },
+          "session": { "scope": "global" },
           "extra_allowedTools": [
             "Bash(gh api *)",
             "Bash(gh pr list *)",
@@ -693,16 +526,13 @@
             "Bash(gh issue view *)"
           ],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 60
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "budgets": { "max_turns": 60 },
+          "expected_effect": { "commits": false },
           "description": "Ad-hoc sweep agent. Evaluates every remote branch, classifies each as a deletion candidate or one to keep, and posts the recommendation for human approval. On re-invocation after a human approves specific branches in a reply comment, deletes exactly those branches and posts a summary. Triggered by applying the branch-cleanup:requested label to any issue."
         }
       ]
     },
+
     "issue-cleanup": {
       "description": "On-demand backlog-hygiene sweep, requested by a human applying a label. Closes issues only after a human names them; produces no commit, so this flow declares no naming.",
       "trigger": {
@@ -718,9 +548,7 @@
           "human_gate_after": false,
           "dependencies": [],
           "max_retries": 1,
-          "session": {
-            "scope": "global"
-          },
+          "session": { "scope": "global" },
           "extra_allowedTools": [
             "Bash(gh api *)",
             "Bash(gh issue list *)",
@@ -730,16 +558,13 @@
             "Bash(gh pr list *)"
           ],
           "model": "claude-sonnet-4-6",
-          "budgets": {
-            "max_turns": 60
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "budgets": { "max_turns": 60 },
+          "expected_effect": { "commits": false },
           "description": "Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue."
         }
       ]
     },
+
     "blocker": {
       "description": "On-demand reciprocation of a blockedby:/blocks: pair, requested by a human applying a label. Writes labels only, so this flow declares no naming.",
       "trigger": {
@@ -757,15 +582,12 @@
           "human_gate_after": false,
           "dependencies": [],
           "max_retries": 1,
-          "budgets": {
-            "max_wall_seconds": 60
-          },
-          "expected_effect": {
-            "commits": false
-          },
+          "budgets": { "max_wall_seconds": 60 },
+          "expected_effect": { "commits": false },
           "description": "Reciprocates a blockedby:/blocks: pair. A human applies blockedby:{N} to this issue directly -- that alone already gates eligibility -- then requests this step to add the symmetric blocks:{this} label onto issue N. Emits blocked (not failed) when no blockedby: label is present to reciprocate, so a mistaken request is visible rather than silently swallowed. Triggered by applying the blocker:requested label to any issue."
         }
       ]
     }
+
   }
 }
