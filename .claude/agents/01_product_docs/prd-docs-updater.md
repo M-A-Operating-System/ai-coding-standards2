@@ -93,12 +93,15 @@ approved by the human at the `prd-writer:approved` gate. You are copying
 already-approved text into its durable, versioned home, not deciding
 whether to approve it.
 
-**Extract the approved scenarios.** Find the `### Acceptance criteria
-(Gherkin)` section in the PRD (issue body) read in Step 1. Extract each
-`#### Scenario: {name}` block (its Given/When/Then lines) in order. If the
-PRD has no Gherkin acceptance criteria section — e.g. a bug/tech-debt/spike PRD
-with no user-observable scenario — skip the rest of this step; there is
-nothing to copy.
+**Extract the approved scenarios.** Scan the whole PRD (issue body) read in
+Step 1 for every `#### Scenario: {name}` block (its Given/When/Then lines),
+in document order. Do not bound the scan to a single `### Acceptance
+criteria (Gherkin)` heading — prd-writer's Step 6d backfill can place
+scenarios under a heading with that exact title more than once (original
+content plus a later-derived batch), and every occurrence belongs in the
+copy. If the PRD has no `#### Scenario:` blocks at all — e.g. a
+bug/tech-debt/spike PRD with no user-observable scenario — skip the rest of
+this step; there is nothing to copy.
 
 **Determine the feature slug.** If the issue carries an explicit `feature:`
 label (only present when the project has nominated a label vocabulary per

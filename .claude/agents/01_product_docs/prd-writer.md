@@ -389,12 +389,25 @@ go directly to **Step 8**.
    append one note line:
    `<!-- backfill-note: N of MINIMUM scenarios derivable; remaining requirements are non-behavioural -->`
 
-**Append the new section** directly after the existing acceptance-criteria
-content (do not interleave with or renumber the original list):
+**Place the derived scenarios in one section, never a second heading with the
+same title.** If the body already contains a literal `### Acceptance
+criteria (Gherkin)` heading (from a prior prd-writer pass), append the
+derived scenarios inside that same section, after its last existing
+`#### Scenario:` block and before the next `##`/`###` heading — do not
+interleave with, renumber, or open a second `### Acceptance criteria
+(Gherkin)` heading. A duplicate heading would make the PRD's Gherkin
+coverage span two identically-titled sections, and prd-docs-updater's copy
+step reads the PRD as one such section per body.
+
+If the body has no `### Acceptance criteria (Gherkin)` heading yet (the
+stakeholder's existing criteria use a different heading or format), create
+the section fresh at the point in the body immediately following that
+existing acceptance-criteria content.
+
+Mark the derived scenarios with the label below so they stay distinguishable
+from human-authored ones sharing the same section:
 
 ```markdown
-### Acceptance criteria (Gherkin)
-
 *Derived by prd-writer from requirements above.*
 
 #### Scenario: {short imperative name}
