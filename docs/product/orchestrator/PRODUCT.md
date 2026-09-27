@@ -1618,7 +1618,8 @@ run. Each appended entry is one JSON object:
   "event": "agent.complete",
   "agent": "01_product_docs/prd-writer",
   "issue": 42,
-  "status": "complete"
+  "status": "complete",
+  "classification": "enhancement"
 }
 ```
 
@@ -1630,7 +1631,10 @@ Nullable alongside them: `detail`, `session_id`, `object`
 (who triggered the run — `{"kind": "orchestrator", "id":
 "github-actions", "human": null}` for unattended, `{"kind":
 "orchestrator", "id": <actor-id>, "human": true}` for human-initiated),
-and `duration_ms`.
+`duration_ms`, and `classification` (the work item's `classification:`
+label value at the time the step ran — one of `enhancement`, `bug`,
+`tech-debt`, `security`, or `spike`; `null` when the work item carries
+no `classification:` label).
 
 | Event | Emitted when |
 |---|---|
