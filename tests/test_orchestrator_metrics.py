@@ -44,6 +44,7 @@ from pipeline_orchestrator import (
     _post_cycle_metrics,
     _StreamAccumulator,
 )
+from pipeline_orchestrator import get_work_item_classification
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -399,6 +400,73 @@ class TestBuildAgentMetrics:
             _TS_START, _TS_END, _CYCLE_ID,
         )
         assert record["cycle_id"] == _CYCLE_ID
+
+
+# ---------------------------------------------------------------------------
+# TestClassificationField - issue #529: classification carried on every record
+# ---------------------------------------------------------------------------
+
+class TestClassificationField:
+    """Every metrics record carries the work item's classification, so a
+    performance report can compute an enhancement/bug/tech-debt/security mix
+    without a live GitHub API join at report time."""
+
+    def test_agent_metrics_reflects_classification_label(self):
+        work_item = _make_work_item()
+        work_item.labels = {"classification: enhancement"}
+        result = _make_full_result()
+        record = _build_agent_metrics(
+            _make_agent_def(), work_item, result, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] == "enhancement"
+
+    def test_agent_metrics_null_when_not_yet_classified(self):
+        work_item = _make_work_item()
+        work_item.labels = set()
+        result = _make_full_result()
+        record = _build_agent_metrics(
+            _make_agent_def(), work_item, result, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] is None
+
+    def test_agent_metrics_matches_get_work_item_classification(self):
+        """The record's field is exactly the shared helper's output, not a
+        re-implementation, so the two never drift apart."""
+        work_item = _make_work_item()
+        work_item.labels = {"classification: security", "priority: high"}
+        result = _make_full_result()
+        record = _build_agent_metrics(
+            _make_agent_def(), work_item, result, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] == get_work_item_classification(work_item)
+        assert record["classification"] == "security"
+
+    def test_scripted_metrics_reflects_classification_label(self):
+        work_item = _make_work_item(number=55)
+        work_item.labels = {"classification: tech-debt"}
+        record = _build_scripted_metrics(
+            _make_agent_def("01_product_docs/create-pr", step_type="script"),
+            work_item, False, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] == "tech-debt"
+
+    def test_scripted_metrics_null_when_not_yet_classified(self):
+        work_item = _make_work_item(number=55)
+        work_item.labels = set()
+        record = _build_scripted_metrics(
+            _make_agent_def("01_product_docs/create-pr", step_type="script"),
+            work_item, False, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] is None
+
+    def test_schema_documents_classification_property(self):
+        props = METRICS_SCHEMA.get("properties", {})
+        assert "classification" in props
+        field_type = props["classification"].get("type", [])
+        assert "null" in field_type
+        assert set(props["classification"]["enum"]) == {
+            "security", "bug", "enhancement", "tech-debt", "spike", None,
+        }
 
 
 # ---------------------------------------------------------------------------
