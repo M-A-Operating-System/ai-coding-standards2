@@ -1396,6 +1396,7 @@ METRICS_SCHEMA: dict = {
         "total_cost_usd": {"type": "number",  "minimum": 0},
         "retry_count":    {"type": "integer", "minimum": 0},
         "retry_errors":   {"type": "array",   "items": {"type": "string"}},
+        "classification": {"type": ["string", "null"]},
     },
 }
 
@@ -1513,6 +1514,7 @@ def _build_agent_metrics(
         "total_cost_usd": float(result_ev.get("total_cost_usd") or 0),
         "retry_count": result.retry_count,
         "retry_errors": list(result.retry_errors),
+        "classification": get_work_item_classification(work_item),
     }
 
     # Known canonical fields override any same-named extra fields.
@@ -1577,6 +1579,7 @@ def _build_scripted_metrics(
         "total_cost_usd": 0,
         "retry_count": 0,
         "retry_errors": [],
+        "classification": get_work_item_classification(work_item),
     }
 
 

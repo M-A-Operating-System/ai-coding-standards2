@@ -70,8 +70,8 @@ def _make_agent_def(name: str = "03_execute/coder", step_type: str = "agent") ->
     )
 
 
-def _make_work_item(number: int = 42, kind: str = "issue") -> WorkItem:
-    return WorkItem(number=number, kind=kind, title="Test item", labels=set(), url=f"https://example.com/{number}")
+def _make_work_item(number: int = 42, kind: str = "issue", labels: set = None) -> WorkItem:
+    return WorkItem(number=number, kind=kind, title="Test item", labels=labels or set(), url=f"https://example.com/{number}")
 
 
 def _make_full_result(
@@ -191,7 +191,7 @@ class TestBuildAgentMetrics:
         "is_error", "duration_ms", "duration_api_ms", "num_turns",
         "input_tokens", "output_tokens", "cache_creation_input_tokens",
         "cache_read_input_tokens", "web_search_requests", "service_tier",
-        "total_cost_usd", "retry_count", "retry_errors",
+        "total_cost_usd", "retry_count", "retry_errors", "classification",
     ]
 
     def _build(self, **kwargs):
@@ -483,7 +483,7 @@ class TestBuildScriptedMetrics:
         required = [
             "timestamp_start", "timestamp_end", "github_issue_number", "agent_id",
             "cycle_id", "duration_ms", "input_tokens", "output_tokens",
-            "retry_count", "retry_errors",
+            "retry_count", "retry_errors", "classification",
         ]
         for f in required:
             assert f in record, f"scripted record missing required field: {f}"
@@ -1086,3 +1086,69 @@ class TestCommentAndBranchRecordParity:
         assert len(branch_records) == 1
         # The branch record is the same dict passed in.
         assert branch_records[0] is record
+
+
+# ---------------------------------------------------------------------------
+# TestClassificationField — issue #529
+# ---------------------------------------------------------------------------
+
+class TestClassificationField:
+    """classification field is populated in every record (agent and scripted)."""
+
+    def test_agent_record_carries_classification_label(self):
+        """Scenario: Agent-type record carries the work item classification label."""
+        result = _make_full_result()
+        work_item = _make_work_item(labels={"classification: enhancement", "coder:wip"})
+        record = _build_agent_metrics(
+            _make_agent_def(), work_item, result, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] == "enhancement"
+
+    def test_scripted_record_carries_classification_field(self):
+        """Scenario: Scripted-type record carries the classification field for parity."""
+        work_item = _make_work_item(labels={"classification: bug"})
+        record = _build_scripted_metrics(
+            _make_agent_def("01_product_docs/create-pr", step_type="script"),
+            work_item, False, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] == "bug"
+
+    def test_classification_null_for_unclassified_work_item(self):
+        """Scenario: Classification field is null for an unclassified work item."""
+        work_item = _make_work_item(labels={"coder:wip"})
+        agent_record = _build_agent_metrics(
+            _make_agent_def(), work_item, _make_full_result(), _TS_START, _TS_END, _CYCLE_ID,
+        )
+        scripted_record = _build_scripted_metrics(
+            _make_agent_def("create-pr", step_type="script"),
+            work_item, False, _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert agent_record["classification"] is None
+        assert scripted_record["classification"] is None
+
+    def test_classification_reflects_post_label_application(self):
+        """Scenario: issue-classifier's own record reflects the classification it applied.
+
+        The orchestrator refreshes work_item.labels from GitHub after applying
+        label_requests and before building metrics (pipeline_orchestrator.py
+        lines 7683-7694), so a work item that gains 'classification: enhancement'
+        during its own step will have that label present when _build_*_metrics
+        is called. This test verifies that if the work item already carries the
+        freshly applied label, the record reflects it.
+        """
+        work_item = _make_work_item(labels={"classification: enhancement"})
+        record = _build_agent_metrics(
+            _make_agent_def("01_product_docs/issue-classifier"),
+            work_item, _make_full_result(), _TS_START, _TS_END, _CYCLE_ID,
+        )
+        assert record["classification"] == "enhancement"
+
+    def test_schema_includes_classification_property(self):
+        """METRICS_SCHEMA declares classification as nullable string."""
+        from pipeline_orchestrator import METRICS_SCHEMA
+        props = METRICS_SCHEMA.get("properties", {})
+        assert "classification" in props
+        field_type = props["classification"].get("type", [])
+        assert isinstance(field_type, list)
+        assert "string" in field_type
+        assert "null" in field_type
