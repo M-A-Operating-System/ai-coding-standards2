@@ -1366,6 +1366,7 @@ METRICS_SCHEMA: dict = {
         "timestamp_start", "timestamp_end", "github_issue_number",
         "agent_id", "cycle_id", "duration_ms",
         "input_tokens", "output_tokens", "retry_count", "retry_errors",
+        "classification",
     ],
     "additionalProperties": True,
     "properties": {
