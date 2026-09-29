@@ -64,15 +64,12 @@ def _coder_step() -> dict:
 
 
 def _effective_denied(step: dict) -> list:
-    """Resolve the coder's deny groups exactly as the pipeline loader does."""
+    """A step's effective deny list: deniedTools when declared, else its
+    deny_groups' patterns flattened -- the two are alternatives, not
+    additive (mirrors pipeline_orchestrator._denied_tools_from_entry)."""
     if "deniedTools" in step:
         return step["deniedTools"]
-    catalog = _pipeline().get("entitlement_groups", {})
-    denied = []
-    for group in step.get("deny_groups", []):
-        definition = catalog[group] if isinstance(group, str) else group
-        denied.extend(definition.get("patterns", []))
-    return denied
+    return [p for group in step.get("deny_groups", []) for p in group.get("patterns", [])]
 
 
 def _tool_arg(pattern: str) -> str:
@@ -312,19 +309,8 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
 
 
 # ---------------------------------------------------------------------------
-# Schema: top-level entitlement_groups and deny_group references are accepted
+# Schema: deny_groups is an accepted optional field
 # ---------------------------------------------------------------------------
-
-
-def test_coder_references_top_level_semantic_entitlement_groups():
-    pipeline = _pipeline()
-    catalog = pipeline.get("entitlement_groups", {})
-    step = _coder_step()
-    refs = step.get("deny_groups", [])
-    assert refs
-    assert all(isinstance(ref, str) for ref in refs)
-    assert all(ref in catalog for ref in refs)
-
 
 def test_schema_accepts_deny_groups_on_coder_step():
     """The pipeline schema must accept deny_groups as a valid optional step field."""
