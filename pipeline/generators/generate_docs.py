@@ -61,11 +61,19 @@ def _cell(value):
 
 def _resolve_groups(entitlement_groups, groups):
     """Resolve a list of allow_groups/deny_groups entries (catalog-name
-    strings or legacy inline objects) into {name, purpose, patterns} dicts."""
+    strings or legacy inline objects) into {name, purpose, patterns} dicts.
+
+    Mirrors pipeline_orchestrator._resolve_pattern_groups: an unknown catalog
+    name fails loudly here too, rather than silently rendering blank docs for
+    a pipeline.json mistake the orchestrator would otherwise catch at load
+    time (issue #523, "fail clearly").
+    """
     resolved = []
     for group in groups or []:
         if isinstance(group, str):
-            definition = entitlement_groups.get(group) or {}
+            if group not in entitlement_groups:
+                raise ValueError(f"unknown entitlement group {group!r}")
+            definition = entitlement_groups[group]
             resolved.append({
                 "name": group,
                 "purpose": definition.get("purpose", ""),

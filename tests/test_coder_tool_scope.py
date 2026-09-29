@@ -71,13 +71,11 @@ def _resolve_group(group: object, catalog: dict) -> dict:
 
 
 def _effective_denied(step: dict) -> list:
-    """A step's effective deny list: deniedTools when declared, else its
-    deny_groups' patterns flattened -- the two are alternatives, not
-    additive (mirrors pipeline_orchestrator._denied_tools_from_entry)."""
-    if "deniedTools" in step:
-        return step["deniedTools"]
+    """A step's effective deny list: deniedTools plus its deny_groups'
+    patterns flattened -- additive, not alternative (issue #523; mirrors
+    pipeline_orchestrator._denied_tools_from_entry)."""
     catalog = _pipeline().get("entitlement_groups", {})
-    return [
+    return list(step.get("deniedTools", [])) + [
         p
         for group in step.get("deny_groups", [])
         for p in _resolve_group(group, catalog).get("patterns", [])
