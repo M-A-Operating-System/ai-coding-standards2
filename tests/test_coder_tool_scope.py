@@ -63,13 +63,37 @@ def _coder_step() -> dict:
     raise AssertionError(f"{_CODER_AGENT} not found in pipeline.json")
 
 
+def _resolve_group(group: object, catalog: dict) -> dict:
+    """A deny_groups/allow_groups entry is either a catalog-name string or a
+    legacy inline {name, purpose, patterns} object; resolve to the latter
+    shape (mirrors pipeline_orchestrator._resolve_pattern_groups)."""
+    return catalog[group] | {"name": group} if isinstance(group, str) else group
+
+
 def _effective_denied(step: dict) -> list:
     """A step's effective deny list: deniedTools when declared, else its
     deny_groups' patterns flattened -- the two are alternatives, not
     additive (mirrors pipeline_orchestrator._denied_tools_from_entry)."""
     if "deniedTools" in step:
         return step["deniedTools"]
-    return [p for group in step.get("deny_groups", []) for p in group.get("patterns", [])]
+    catalog = _pipeline().get("entitlement_groups", {})
+    return [
+        p
+        for group in step.get("deny_groups", [])
+        for p in _resolve_group(group, catalog).get("patterns", [])
+    ]
+
+
+def _effective_allowed(step: dict) -> list:
+    """A step's effective allow list: its literal extra_allowedTools plus its
+    allow_groups' patterns flattened -- additive, not alternative (mirrors
+    pipeline_orchestrator._allowed_tools_from_entry)."""
+    catalog = _pipeline().get("entitlement_groups", {})
+    return list(step.get("extra_allowedTools", [])) + [
+        p
+        for group in step.get("allow_groups", [])
+        for p in _resolve_group(group, catalog).get("patterns", [])
+    ]
 
 
 def _tool_arg(pattern: str) -> str:
@@ -306,6 +330,54 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
                     f"{step['agent']} must not have bare 'Bash' in extra_allowedTools; "
                     "only the coder step uses this broad grant"
                 )
+
+
+# ---------------------------------------------------------------------------
+# entitlement_groups: a catalog shared between allow_groups and deny_groups
+# ---------------------------------------------------------------------------
+
+def test_coder_deny_groups_reference_top_level_entitlement_groups():
+    """The coder's deny_groups are catalog-name references, not inline objects."""
+    pipeline = _pipeline()
+    catalog = pipeline.get("entitlement_groups", {})
+    refs = _coder_step().get("deny_groups", [])
+    assert refs
+    assert all(isinstance(ref, str) for ref in refs)
+    assert all(ref in catalog for ref in refs)
+
+
+def test_merge_conflict_allow_groups_reuses_coders_deny_group():
+    """git-configuration-control is denied to the coder and allowed to
+    merge-conflict via the same catalog entry -- the reason the catalog
+    exists (one definition, referenced from both an allow and a deny list)."""
+    pipeline = _pipeline()
+    merge_conflict = next(
+        step
+        for flow in pipeline["flows"].values()
+        for step in flow.get("steps", [])
+        if step.get("agent") == "03_execute/merge-conflict"
+    )
+    assert "git-configuration-control" in merge_conflict.get("allow_groups", [])
+    assert "git-configuration-control" in _coder_step().get("deny_groups", [])
+
+    allowed = _effective_allowed(merge_conflict)
+    denied = _effective_denied(_coder_step())
+    assert "Bash(git config *)" in allowed
+    assert "Bash(git config *)" in denied
+
+
+def test_allow_groups_additive_to_extra_allowed_tools():
+    """allow_groups adds to extra_allowedTools; it does not replace it."""
+    pipeline = _pipeline()
+    merge_conflict = next(
+        step
+        for flow in pipeline["flows"].values()
+        for step in flow.get("steps", [])
+        if step.get("agent") == "03_execute/merge-conflict"
+    )
+    allowed = _effective_allowed(merge_conflict)
+    assert "Bash(git fetch *)" in allowed, "literal extra_allowedTools entries must survive"
+    assert "Bash(git config *)" in allowed, "allow_groups entries must be merged in"
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,28 @@
   "properties": {
     "$schema": { "type": "string" },
 
+    "entitlement_groups": {
+      "type": "object",
+      "description": "Named command-pattern groups declared once for reuse by steps' allow_groups and deny_groups alike. A group is a semantic capability (e.g. git-configuration-control), not an allow or deny decision -- the same group can be an allow reference for one step and a deny reference for another. Referencing a group changes nothing about the underlying allow/deny enforcement model.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["purpose", "patterns"],
+        "additionalProperties": false,
+        "properties": {
+          "purpose": { "type": "string", "minLength": 1 },
+          "patterns": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+
     "defaults": {
       "type": "object",
       "description": "Pipeline-wide entitlement and lifecycle defaults merged into every step. Unaffected by the flow work in PRODUCT.md; carried over from the current schema. Step budgets are a separate, sibling concern -- see the top-level budgets key -- so a repository overriding one does not have to restate the other.",
@@ -82,6 +104,26 @@
   },
 
   "definitions": {
+    "entitlementGroupEntry": {
+      "description": "One entry in a step's allow_groups or deny_groups: either the name of a top-level entitlement_groups catalog entry, or a legacy inline group object.",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Name of a top-level entitlement_groups entry."
+        },
+        {
+          "type": "object",
+          "required": ["name", "purpose", "patterns"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "purpose": { "type": "string" },
+            "patterns": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      ]
+    },
+
     "flow": {
       "type": "object",
       "required": ["description", "trigger", "steps"],
@@ -315,8 +357,14 @@
 
         "extra_allowedTools": {
           "type": "array",
-          "description": "Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged.",
+          "description": "Additional entitlements for this step beyond defaults.extra_allowedTools. Together these are this step's complete allowed-commands set; an action outside it is refused, not merely discouraged. Combined with allow_groups' resolved patterns, when present.",
           "items": { "type": "string" }
+        },
+
+        "allow_groups": {
+          "type": "array",
+          "description": "Named allow-pattern groups for this step, additive to extra_allowedTools (not an alternative to it, unlike deny_groups/deniedTools -- a step's allow-list is always the union of its literal extra_allowedTools and its resolved allow_groups). Prefer string references to top-level entitlement_groups so a capability shared with another step's deny_groups is declared once.",
+          "items": { "$ref": "#/definitions/entitlementGroupEntry" }
         },
 
         "deniedTools": {
@@ -328,17 +376,8 @@
 
         "deny_groups": {
           "type": "array",
-          "description": "Named groups of deny patterns with a stated purpose each, for a deniedTools list long enough that per-pattern rationale is worth grouping. Alternative to deniedTools, not a duplicate of it: a step declares one or the other. When present without a sibling deniedTools key, its patterns (flattened, group order preserved) become the step's effective deny list.",
-          "items": {
-            "type": "object",
-            "required": ["name", "purpose", "patterns"],
-            "additionalProperties": false,
-            "properties": {
-              "name": { "type": "string" },
-              "purpose": { "type": "string" },
-              "patterns": { "type": "array", "items": { "type": "string" } }
-            }
-          }
+          "description": "Named deny groups for this step. Prefer string references to top-level entitlement_groups so a capability shared with another step's allow_groups is declared once. Legacy inline {name, purpose, patterns} objects remain accepted for a one-off group with no other consumer. Alternative to deniedTools, not additive to it: when deniedTools is absent, deny_groups' resolved patterns (group order preserved) become the step's effective deny list.",
+          "items": { "$ref": "#/definitions/entitlementGroupEntry" }
         },
 
         "exclude_classifications": {

@@ -185,10 +185,30 @@ def render_steps(pipeline):
             "| Step | Additional entitlements | Declared prohibitions | Git operations |",
             "|---|---|---|---|",
         ]
+        entitlement_groups = pipeline.get("entitlement_groups") or {}
+
+        def _resolved_groups(step, field):
+            resolved = []
+            for group in step.get(field) or []:
+                if isinstance(group, str):
+                    definition = entitlement_groups.get(group) or {}
+                    resolved.append({
+                        "name": group,
+                        "purpose": definition.get("purpose", ""),
+                        "patterns": definition.get("patterns", []),
+                    })
+                else:
+                    resolved.append(group)
+            return resolved
+
         deny_group_steps = []
+        allow_group_steps = []
         for step in flow_steps:
-            extra = step.get("extra_allowedTools") or []
-            deny_groups = step.get("deny_groups") or []
+            allow_groups = _resolved_groups(step, "allow_groups")
+            extra = (step.get("extra_allowedTools") or []) + [
+                p for group in allow_groups for p in group.get("patterns", [])
+            ]
+            deny_groups = _resolved_groups(step, "deny_groups")
             denied = step.get("deniedTools") or (
                 [p for group in deny_groups for p in group.get("patterns", [])]
             )
@@ -201,6 +221,8 @@ def render_steps(pipeline):
             )
             if deny_groups:
                 deny_group_steps.append(step)
+            if allow_groups:
+                allow_group_steps.append(step)
 
         for step in deny_group_steps:
             if step.get("deniedTools"):
@@ -223,7 +245,23 @@ def render_steps(pipeline):
                 " deny list's known limitation.",
                 "",
             ]
-            for group in step.get("deny_groups", []):
+            for group in _resolved_groups(step, "deny_groups"):
+                lines += [f"**{group['name']}** -- {group['purpose']}", ""]
+                for pat in group.get("patterns", []):
+                    lines.append(f"- `{pat}`")
+                lines.append("")
+
+        for step in allow_group_steps:
+            lines += [
+                "",
+                f"### Allow rule groups: `{step['agent']}`",
+                "",
+                "The groups below are additive to this step's `extra_allowedTools` above"
+                " (not an alternative to it) -- the same named group can be an allow"
+                " reference here and a deny reference for another step.",
+                "",
+            ]
+            for group in _resolved_groups(step, "allow_groups"):
                 lines += [f"**{group['name']}** -- {group['purpose']}", ""]
                 for pat in group.get("patterns", []):
                     lines.append(f"- `{pat}`")

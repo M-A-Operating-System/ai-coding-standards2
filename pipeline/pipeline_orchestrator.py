@@ -399,18 +399,57 @@ class ComponentClaims:
 # Pipeline loader
 # ---------------------------------------------------------------------------
 
-def _denied_tools_from_entry(entry: dict) -> list[str]:
+def _resolve_pattern_groups(
+    groups: list, entitlement_groups: Optional[dict], field_name: str
+) -> list[str]:
+    """Flatten a list of group entries into command patterns.
+
+    Each entry is either a string naming a top-level `entitlement_groups`
+    catalog entry, or a legacy inline {name, purpose, patterns} object. Both
+    forms resolve to the same pattern list; this is shared by `deny_groups`
+    (deny side) and `allow_groups` (allow side) -- the catalog exists so the
+    same named capability (e.g. `git-configuration-control`) can be denied to
+    one agent and allowed to another without redeclaring its patterns twice.
+    """
+    catalog = entitlement_groups or {}
+    patterns: list[str] = []
+    for group in groups or []:
+        if isinstance(group, str):
+            definition = catalog.get(group)
+            if definition is None:
+                raise ValueError(f"unknown entitlement group {group!r}")
+            patterns.extend(_coerce_tools(definition.get("patterns")))
+        elif isinstance(group, dict):
+            patterns.extend(_coerce_tools(group.get("patterns")))
+        else:
+            raise TypeError(
+                f"{field_name} entries must be entitlement-group names or inline objects"
+            )
+    return patterns
+
+
+def _denied_tools_from_entry(
+    entry: dict, entitlement_groups: Optional[dict] = None
+) -> list[str]:
     """Resolve a step's deny-list patterns.
 
-    `deniedTools` is authoritative when present. A step that instead groups
-    its patterns under `deny_groups` (name/purpose per group, for readability
-    on a long list) gets its effective deny list flattened from there instead
-    -- one list of pattern strings per step, not two kept in sync by hand.
+    `deniedTools` remains authoritative when present. Otherwise `deny_groups`
+    (references into `entitlement_groups`, or legacy inline objects) flatten
+    into the effective deny list.
     """
     if "deniedTools" in entry:
         return _coerce_tools(entry.get("deniedTools"))
-    _groups = entry.get("deny_groups") or []
-    return [pattern for group in _groups for pattern in group.get("patterns", [])]
+    return _resolve_pattern_groups(entry.get("deny_groups"), entitlement_groups, "deny_groups")
+
+
+def _allowed_tools_from_entry(
+    entry: dict, entitlement_groups: Optional[dict] = None
+) -> list[str]:
+    """Resolve a step's extra_allowedTools, merging literal patterns with any
+    `allow_groups` references into the shared entitlement_groups catalog."""
+    return _coerce_tools(entry.get("extra_allowedTools")) + _resolve_pattern_groups(
+        entry.get("allow_groups"), entitlement_groups, "allow_groups"
+    )
 
 
 def _coerce_tools(val: object) -> list[str]:
@@ -521,6 +560,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
     the declaration rather than from anything hardcoded here.
     """
     agents: list[AgentDef] = []
+    entitlement_groups = raw.get("entitlement_groups") or {}
     for flow_name, flow in (raw["flows"] or {}).items():
         flow_trigger = flow.get("trigger") or {}
         flow_naming = dict(flow.get("naming") or {})
@@ -588,8 +628,8 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                     _budgets.get("max_wall_seconds") or SCRIPT_TIMEOUT_SECONDS
                 ),
                 self_gates=bool(entry.get("self_gates", False)),
-                extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
-                denied_tools=_denied_tools_from_entry(entry),
+                extra_allowedTools=_allowed_tools_from_entry(entry, entitlement_groups),
+                denied_tools=_denied_tools_from_entry(entry, entitlement_groups),
                 model=entry.get("model"),
                 max_turns=_budgets.get("max_turns"),
                 max_wall_seconds=_budgets.get("max_wall_seconds"),

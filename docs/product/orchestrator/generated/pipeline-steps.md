@@ -95,7 +95,7 @@ The groups below are this step's authoritative deny list, flattened at load time
 - `Bash(git push --mirror*)`
 - `Bash(git push * --mirror*)`
 
-**git-configuration-control** -- The coder may not alter Git identity, remotes, hooks, signing, or other repository control-plane configuration.
+**git-configuration-control** -- Git identity, remotes, hooks, signing, and other repository control-plane configuration. Denied to the coder (owned by the orchestrator/operator); allowed to merge-conflict, which legitimately reconfigures git during conflict resolution.
 
 - `Bash(git config *)`
 
@@ -118,6 +118,15 @@ The groups below are this step's authoritative deny list, flattened at load time
 - `Bash(ssh *)`
 - `Bash(scp *)`
 - `Bash(sftp *)`
+
+
+### Allow rule groups: `03_execute/merge-conflict`
+
+The groups below are additive to this step's `extra_allowedTools` above (not an alternative to it) -- the same named group can be an allow reference here and a deny reference for another step.
+
+**git-configuration-control** -- Git identity, remotes, hooks, signing, and other repository control-plane configuration. Denied to the coder (owned by the orchestrator/operator); allowed to merge-conflict, which legitimately reconfigures git during conflict resolution.
+
+- `Bash(git config *)`
 
 
 ## Flow: `epic-completion`
