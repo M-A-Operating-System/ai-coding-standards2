@@ -166,18 +166,30 @@ class TestAS1OneFileTellsYouWhatThePipelineDoes:
     def test_the_resolved_command_set_comes_from_pipeline_json_alone(self, loaded):
         """Every agent step's --allowedTools is exactly the file's grants.
 
-        `defaults.extra_allowedTools` plus the step's own
-        `extra_allowedTools`, plus its `allow_groups` resolved against the
-        file's own `entitlement_groups` catalog, deduped in that order --
-        nothing from the agent file's frontmatter, no constant in the
-        orchestrator. The catalog lookup is itself part of pipeline.json, so
-        resolving allow_groups here does not reintroduce a hidden source.
+        `defaults.extra_allowedTools` + `defaults.allow_groups` (resolved)
+        + the step's own `extra_allowedTools` + its `allow_groups` (resolved),
+        deduped in that order -- matching load_pipeline's actual resolution
+        (issue #523) -- nothing from the agent file's frontmatter, no
+        constant in the orchestrator. The catalog lookup is itself part of
+        pipeline.json, so resolving allow_groups here does not reintroduce a
+        hidden source.
         """
+        def _group_patterns(groups):
+            return [
+                pattern
+                for group in (groups or [])
+                for pattern in (
+                    entitlement_groups[group]["patterns"]
+                    if isinstance(group, str) else group.get("patterns", [])
+                )
+            ]
+
         agents, default_extra_tools = loaded
         raw_pipeline = _raw_pipeline()
         raw_steps = _raw_steps(raw_pipeline)
         raw_defaults = raw_pipeline["defaults"]["extra_allowedTools"]
         entitlement_groups = raw_pipeline.get("entitlement_groups") or {}
+        default_group_patterns = _group_patterns(raw_pipeline["defaults"].get("allow_groups"))
         item = _work_item()
         checked = 0
         for agent_def in agents:
@@ -189,18 +201,11 @@ class TestAS1OneFileTellsYouWhatThePipelineDoes:
                 default_extra_tools=default_extra_tools,
             )
             raw_step = raw_steps[agent_def.agent]
-            group_patterns = [
-                pattern
-                for group in raw_step.get("allow_groups", [])
-                for pattern in (
-                    entitlement_groups[group]["patterns"]
-                    if isinstance(group, str) else group.get("patterns", [])
-                )
-            ]
             expected = list(dict.fromkeys(
                 list(raw_defaults)
+                + default_group_patterns
                 + list(raw_step.get("extra_allowedTools", []))
-                + group_patterns
+                + _group_patterns(raw_step.get("allow_groups"))
             ))
             assert resolved.allowed_tools == expected, (
                 f"{agent_def.agent}'s resolved command set is not derivable from "
