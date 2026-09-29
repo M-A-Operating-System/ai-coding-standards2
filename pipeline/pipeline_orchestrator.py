@@ -425,7 +425,10 @@ def _resolve_pattern_groups(
             raise TypeError(
                 f"{field_name} entries must be entitlement-group names or inline objects"
             )
-    return patterns
+    # Deterministic, first-occurrence order; a duplicate pattern (whether
+    # repeated across groups or already in the literal list a caller merges
+    # this into) must not change effective behavior (issue #523).
+    return list(dict.fromkeys(patterns))
 
 
 def _denied_tools_from_entry(
@@ -433,13 +436,16 @@ def _denied_tools_from_entry(
 ) -> list[str]:
     """Resolve a step's deny-list patterns.
 
-    `deniedTools` remains authoritative when present. Otherwise `deny_groups`
-    (references into `entitlement_groups`, or legacy inline objects) flatten
-    into the effective deny list.
+    `deniedTools` and `deny_groups` (references into `entitlement_groups`, or
+    legacy inline objects) are additive, not alternatives (issue #523) --
+    symmetric with how `allow_groups` adds to `extra_allowedTools`. A step
+    that only ever declared one of the two sees no change: this is additive
+    only when both happen to be present, which no shipped step does today.
     """
-    if "deniedTools" in entry:
-        return _coerce_tools(entry.get("deniedTools"))
-    return _resolve_pattern_groups(entry.get("deny_groups"), entitlement_groups, "deny_groups")
+    patterns = _coerce_tools(entry.get("deniedTools")) + _resolve_pattern_groups(
+        entry.get("deny_groups"), entitlement_groups, "deny_groups"
+    )
+    return list(dict.fromkeys(patterns))
 
 
 def _allowed_tools_from_entry(
@@ -447,9 +453,10 @@ def _allowed_tools_from_entry(
 ) -> list[str]:
     """Resolve a step's extra_allowedTools, merging literal patterns with any
     `allow_groups` references into the shared entitlement_groups catalog."""
-    return _coerce_tools(entry.get("extra_allowedTools")) + _resolve_pattern_groups(
+    patterns = _coerce_tools(entry.get("extra_allowedTools")) + _resolve_pattern_groups(
         entry.get("allow_groups"), entitlement_groups, "allow_groups"
     )
+    return list(dict.fromkeys(patterns))
 
 
 def _coerce_tools(val: object) -> list[str]:
@@ -653,8 +660,10 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     decides everything. It is validated against the live schema on its own
     before use.
 
-    default_extra_tools comes from defaults.extra_allowedTools and is
-    prepended to every agent's own extra_allowedTools at invocation time.
+    default_extra_tools comes from defaults.extra_allowedTools plus
+    defaults.allow_groups resolved against entitlement_groups (issue #523),
+    and is prepended to every agent's own extra_allowedTools at invocation
+    time.
     """
     try:
         override_path = repo_pipeline_override_path(Path(path))
@@ -677,13 +686,22 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
 
         agents = _steps_from_flows(raw)
 
-        default_extra_tools: list[str] = _coerce_tools(
-            raw.get("defaults", {}).get("extra_allowedTools")
-        )
+        _entitlement_groups = raw.get("entitlement_groups") or {}
+        _defaults = raw.get("defaults", {})
 
-        _default_denied: list[str] = _coerce_tools(
-            raw.get("defaults", {}).get("deniedTools")
-        )
+        default_extra_tools: list[str] = list(dict.fromkeys(
+            _coerce_tools(_defaults.get("extra_allowedTools"))
+            + _resolve_pattern_groups(
+                _defaults.get("allow_groups"), _entitlement_groups, "defaults.allow_groups"
+            )
+        ))
+
+        _default_denied: list[str] = list(dict.fromkeys(
+            _coerce_tools(_defaults.get("deniedTools"))
+            + _resolve_pattern_groups(
+                _defaults.get("deny_groups"), _entitlement_groups, "defaults.deny_groups"
+            )
+        ))
         for _agent in agents:
             _agent.denied_tools = list(dict.fromkeys(
                 _default_denied + _agent.denied_tools

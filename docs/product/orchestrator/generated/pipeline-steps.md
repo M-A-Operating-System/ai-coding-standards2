@@ -99,7 +99,7 @@ The groups below are this step's authoritative deny list, flattened at load time
 
 - `Bash(git config *)`
 
-**repository-policy-enforcement** -- The coder may not bypass repository commit or push validation hooks.
+**validation-bypass-control** -- The coder may not bypass repository commit or push validation hooks.
 
 - `Bash(git commit --no-verify*)`
 - `Bash(git commit * --no-verify*)`

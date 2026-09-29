@@ -34,7 +34,7 @@
       "purpose": "Git identity, remotes, hooks, signing, and other repository control-plane configuration. Denied to the coder (owned by the orchestrator/operator); allowed to merge-conflict, which legitimately reconfigures git during conflict resolution.",
       "patterns": ["Bash(git config *)"]
     },
-    "repository-policy-enforcement": {
+    "validation-bypass-control": {
       "purpose": "The coder may not bypass repository commit or push validation hooks.",
       "patterns": [
         "Bash(git commit --no-verify*)",
@@ -251,7 +251,7 @@
             "local-git-history-control",
             "remote-git-control",
             "git-configuration-control",
-            "repository-policy-enforcement",
+            "validation-bypass-control",
             "environment-and-credential-access",
             "external-host-access"
           ],

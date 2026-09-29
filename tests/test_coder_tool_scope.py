@@ -300,7 +300,7 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
             "local-git-history-control",
             "remote-git-control",
             "git-configuration-control",
-            "repository-policy-enforcement",
+            "validation-bypass-control",
             "environment-and-credential-access",
             "external-host-access",
         ]

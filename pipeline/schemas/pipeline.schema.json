@@ -38,14 +38,24 @@
       "properties": {
         "extra_allowedTools": {
           "type": "array",
-          "description": "Tools granted to every step in every flow. A step's effective permission is exactly this plus its own extra_allowedTools (AS-1) -- no other allow list contributes; deniedTools subtracts from this set (deny takes precedence over allow).",
+          "description": "Tools granted to every step in every flow. A step's effective permission is this plus defaults.allow_groups (resolved), plus its own extra_allowedTools and allow_groups (AS-1) -- no other allow list contributes; deniedTools subtracts from this set (deny takes precedence over allow).",
           "items": { "type": "string" }
+        },
+        "allow_groups": {
+          "type": "array",
+          "description": "Named allow-pattern groups granted to every step (issue #523), resolved against the top-level entitlement_groups catalog and merged ahead of each step's own extra_allowedTools/allow_groups: effective allow = defaults.extra_allowedTools + expand(defaults.allow_groups) + step.extra_allowedTools + expand(step.allow_groups), deduplicated in that order.",
+          "items": { "$ref": "#/definitions/entitlementGroupEntry" }
         },
         "deniedTools": {
           "type": "array",
-          "description": "Commands a step must not invoke, matched against the command string as written. Deny takes precedence over allow. Effective deny list = defaults.deniedTools + step.deniedTools, deduplicated, deterministic order. A step cannot remove or override a default deny rule. The deny list states intent and is not enforcement: it matches the command as written and does not inspect commands reached through an interpreter wrapper (e.g. bash -c '...').",
+          "description": "Commands a step must not invoke, matched against the command string as written. Deny takes precedence over allow. Effective deny list = defaults.deniedTools + expand(defaults.deny_groups) + step.deniedTools + expand(step.deny_groups), deduplicated, deterministic order. A step cannot remove or override a default deny rule. The deny list states intent and is not enforcement: it matches the command as written and does not inspect commands reached through an interpreter wrapper (e.g. bash -c '...').",
           "items": { "type": "string" },
           "uniqueItems": true
+        },
+        "deny_groups": {
+          "type": "array",
+          "description": "Named deny-pattern groups applied to every step (issue #523), resolved against the top-level entitlement_groups catalog and merged into the effective deny list alongside defaults.deniedTools -- see deniedTools' description for the full resolution order.",
+          "items": { "$ref": "#/definitions/entitlementGroupEntry" }
         },
         "agent_lifecycle": {
           "type": "object",
@@ -363,20 +373,20 @@
 
         "allow_groups": {
           "type": "array",
-          "description": "Named allow-pattern groups for this step, additive to extra_allowedTools (not an alternative to it, unlike deny_groups/deniedTools -- a step's allow-list is always the union of its literal extra_allowedTools and its resolved allow_groups). Prefer string references to top-level entitlement_groups so a capability shared with another step's deny_groups is declared once.",
+          "description": "Named allow-pattern groups for this step, additive to extra_allowedTools -- a step's allow-list is always the union of its literal extra_allowedTools and its resolved allow_groups. Prefer string references to top-level entitlement_groups so a capability shared with another step's deny_groups is declared once.",
           "items": { "$ref": "#/definitions/entitlementGroupEntry" }
         },
 
         "deniedTools": {
           "type": "array",
-          "description": "Commands this step must not invoke, merged with defaults.deniedTools to form the effective deny list. Deny takes precedence over allow. A step cannot remove a default deny rule by omitting it here -- the effective list is always defaults.deniedTools + step.deniedTools. Same pattern syntax as extra_allowedTools. Omit in favour of deny_groups when the list is long enough that per-pattern rationale is worth grouping -- the two are alternatives, not additive: when deny_groups is present and this key is absent, the effective deny list is deny_groups' patterns flattened.",
+          "description": "Commands this step must not invoke. Additive with deny_groups (issue #523), symmetric with how allow_groups adds to extra_allowedTools: effective deny = defaults.deniedTools + expand(defaults.deny_groups) + step.deniedTools + expand(step.deny_groups), deduplicated, deterministic order. Deny takes precedence over allow. A step cannot remove a default deny rule by omitting it here. Same pattern syntax as extra_allowedTools.",
           "items": { "type": "string" },
           "uniqueItems": true
         },
 
         "deny_groups": {
           "type": "array",
-          "description": "Named deny groups for this step. Prefer string references to top-level entitlement_groups so a capability shared with another step's allow_groups is declared once. Legacy inline {name, purpose, patterns} objects remain accepted for a one-off group with no other consumer. Alternative to deniedTools, not additive to it: when deniedTools is absent, deny_groups' resolved patterns (group order preserved) become the step's effective deny list.",
+          "description": "Named deny groups for this step, additive to deniedTools (issue #523) -- a step's effective deny list is always the union of its literal deniedTools and its resolved deny_groups. Prefer string references to top-level entitlement_groups so a capability shared with another step's allow_groups is declared once. Legacy inline {name, purpose, patterns} objects remain accepted for a one-off group with no other consumer.",
           "items": { "$ref": "#/definitions/entitlementGroupEntry" }
         },
 
