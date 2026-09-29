@@ -59,6 +59,21 @@
         "Bash(scp *)",
         "Bash(sftp *)"
       ]
+    },
+    "issue-pr-rest-access": {
+      "purpose": "Direct GitHub REST API access to the repo's issues and pull requests, for operations gh's built-in issue/PR subcommands don't cover (label mutations, custom fields, etc). Granted to every step.",
+      "patterns": [
+        "Bash(gh api repos/*/issues/*)",
+        "Bash(gh api repos/*/pulls/*)",
+        "Bash(gh api repos/*/issues*)",
+        "Bash(gh api repos/*/pulls*)",
+        "Bash(gh api \"repos/*/issues/*)",
+        "Bash(gh api \"repos/*/pulls/*)",
+        "Bash(gh api \"repos/*/issues*)",
+        "Bash(gh api \"repos/*/pulls*)",
+        "Bash(gh api --method * repos/*/issues*)",
+        "Bash(gh api --method * \"repos/*/issues*)"
+      ]
     }
   },
   "defaults": {
@@ -72,16 +87,6 @@
       "Bash(gh pr comment *)",
       "Bash(gh pr list *)",
       "Bash(gh pr diff *)",
-      "Bash(gh api repos/*/issues/*)",
-      "Bash(gh api repos/*/pulls/*)",
-      "Bash(gh api repos/*/issues*)",
-      "Bash(gh api repos/*/pulls*)",
-      "Bash(gh api \"repos/*/issues/*)",
-      "Bash(gh api \"repos/*/pulls/*)",
-      "Bash(gh api \"repos/*/issues*)",
-      "Bash(gh api \"repos/*/pulls*)",
-      "Bash(gh api --method * repos/*/issues*)",
-      "Bash(gh api --method * \"repos/*/issues*)",
       "Bash(cat *)",
       "Bash(grep *)",
       "Bash(find *)",
@@ -90,6 +95,7 @@
       "Glob",
       "Grep"
     ],
+    "allow_groups": ["issue-pr-rest-access"],
     "agent_lifecycle": {
       "before": [
         ".github/scripts/scratch-setup.sh",

@@ -294,7 +294,8 @@ The groups below are additive to this step's `extra_allowedTools` above (not an 
 Under AS-1 the tables above must be complete: an entitlement that does
 not appear there or here is not granted.
 
-**Granted to every step:** `Write`, `Edit`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue edit *)`, `Bash(gh issue list *)`, `Bash(gh pr view *)`, `Bash(gh pr comment *)`, `Bash(gh pr list *)`, `Bash(gh pr diff *)`, `Bash(gh api repos/*/issues/*)`, `Bash(gh api repos/*/pulls/*)`, `Bash(gh api repos/*/issues*)`, `Bash(gh api repos/*/pulls*)`, `Bash(gh api "repos/*/issues/*)`, `Bash(gh api "repos/*/pulls/*)`, `Bash(gh api "repos/*/issues*)`, `Bash(gh api "repos/*/pulls*)`, `Bash(gh api --method * repos/*/issues*)`, `Bash(gh api --method * "repos/*/issues*)`, `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`, `Bash(cd *)`, `Read`, `Glob`, `Grep`
+**Granted to every step:** `Write`, `Edit`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue edit *)`, `Bash(gh issue list *)`, `Bash(gh pr view *)`, `Bash(gh pr comment *)`, `Bash(gh pr list *)`, `Bash(gh pr diff *)`, `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`, `Bash(cd *)`, `Read`, `Glob`, `Grep`, `Bash(gh api repos/*/issues/*)`, `Bash(gh api repos/*/pulls/*)`, `Bash(gh api repos/*/issues*)`, `Bash(gh api repos/*/pulls*)`, `Bash(gh api "repos/*/issues/*)`, `Bash(gh api "repos/*/pulls/*)`, `Bash(gh api "repos/*/issues*)`, `Bash(gh api "repos/*/pulls*)`, `Bash(gh api --method * repos/*/issues*)`, `Bash(gh api --method * "repos/*/issues*)`
+**Allow groups granted to every step:** `issue-pr-rest-access` (patterns resolved into the line above)
 
 Declared prohibitions state what a step must not do. They are matched
 against the command string as written; a command reached through an
