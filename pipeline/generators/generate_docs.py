@@ -204,6 +204,7 @@ def render_steps(pipeline):
             "| Step | Additional entitlements | Declared prohibitions | Git operations |",
             "|---|---|---|---|",
         ]
+
         def _resolved_groups(step, field):
             return _resolve_groups(entitlement_groups, step.get(field))
 
