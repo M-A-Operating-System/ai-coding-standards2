@@ -425,6 +425,19 @@ def test_unknown_group_reference_fails_clearly():
         po._allowed_tools_from_entry({"allow_groups": ["does-not-exist"]}, _CATALOG)
 
 
+def test_inline_group_missing_patterns_key_fails_clearly():
+    """A legacy inline group object with no 'patterns' key (a likely typo,
+    e.g. singular 'pattern') must fail loudly rather than silently
+    contributing zero patterns to the effective deny/allow list -- the
+    shipped pipeline.json is never schema-validated at load time, so this
+    is the only guard against that specific typo going unnoticed."""
+    malformed = {"name": "g", "purpose": "p"}
+    with pytest.raises(ValueError, match="missing 'patterns'"):
+        po._denied_tools_from_entry({"deny_groups": [malformed]})
+    with pytest.raises(ValueError, match="missing 'patterns'"):
+        po._allowed_tools_from_entry({"allow_groups": [malformed]})
+
+
 def test_duplicate_group_and_pattern_resolution_preserves_first_seen_order():
     """Repeated groups/patterns collapse to one occurrence at their first
     position -- deterministic, and a duplicate must not change behavior."""

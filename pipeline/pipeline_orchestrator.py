@@ -71,6 +71,13 @@ from todos_patch import (
     apply_todos_patch as _apply_todos_patch,
 )
 
+# entitlement_groups catalog resolution (issue #523) lives in
+# entitlement_groups.py -- pure data transform, no orchestrator or GitHub
+# coupling, shared with generate_docs.py so the two can never silently
+# disagree on what a group reference means (same reasoning as todos_patch.py
+# above).
+from entitlement_groups import resolve_pattern_groups as _resolve_pattern_groups
+
 # The review-verdict computation itself lives in review_outcome.py (issue
 # #512 Part 2, STD-ARCH-035) -- pure functions, no GitHub or orchestrator
 # coupling. Imported under their original names so every call site and test
@@ -398,38 +405,6 @@ class ComponentClaims:
 # ---------------------------------------------------------------------------
 # Pipeline loader
 # ---------------------------------------------------------------------------
-
-def _resolve_pattern_groups(
-    groups: list, entitlement_groups: Optional[dict], field_name: str
-) -> list[str]:
-    """Flatten a list of group entries into command patterns.
-
-    Each entry is either a string naming a top-level `entitlement_groups`
-    catalog entry, or a legacy inline {name, purpose, patterns} object. Both
-    forms resolve to the same pattern list; this is shared by `deny_groups`
-    (deny side) and `allow_groups` (allow side) -- the catalog exists so the
-    same named capability (e.g. `git-configuration-control`) can be denied to
-    one agent and allowed to another without redeclaring its patterns twice.
-    """
-    catalog = entitlement_groups or {}
-    patterns: list[str] = []
-    for group in groups or []:
-        if isinstance(group, str):
-            definition = catalog.get(group)
-            if definition is None:
-                raise ValueError(f"unknown entitlement group {group!r}")
-            patterns.extend(_coerce_tools(definition.get("patterns")))
-        elif isinstance(group, dict):
-            patterns.extend(_coerce_tools(group.get("patterns")))
-        else:
-            raise TypeError(
-                f"{field_name} entries must be entitlement-group names or inline objects"
-            )
-    # Deterministic, first-occurrence order; a duplicate pattern (whether
-    # repeated across groups or already in the literal list a caller merges
-    # this into) must not change effective behavior (issue #523).
-    return list(dict.fromkeys(patterns))
-
 
 def _denied_tools_from_entry(
     entry: dict, entitlement_groups: Optional[dict] = None

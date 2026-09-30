@@ -8,11 +8,14 @@ Gherkin scenarios traced (docs/features/simplify-coder-tool-scope-using-broad-ba
 """
 import fnmatch
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(REPO_ROOT / "pipeline"))
+from entitlement_groups import resolve_group as _resolve_group_entry
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
 SCHEMA_PATH = REPO_ROOT / "pipeline" / "schemas" / "pipeline.schema.json"
 STEPS_MD = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "pipeline-steps.md"
@@ -66,8 +69,9 @@ def _coder_step() -> dict:
 def _resolve_group(group: object, catalog: dict) -> dict:
     """A deny_groups/allow_groups entry is either a catalog-name string or a
     legacy inline {name, purpose, patterns} object; resolve to the latter
-    shape (mirrors pipeline_orchestrator._resolve_pattern_groups)."""
-    return catalog[group] | {"name": group} if isinstance(group, str) else group
+    shape via the entitlement_groups module shared with the orchestrator's
+    own resolver."""
+    return _resolve_group_entry(group, catalog)
 
 
 def _effective_denied(step: dict) -> list:
