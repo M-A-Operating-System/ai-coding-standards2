@@ -67,3 +67,21 @@
 **Given** a step completes and its result file is present in the scratch directory
 **When** the orchestrator processes the step's result
 **Then** logic with no orchestrator-internal coupling and a safe degrade path -- the `gh` CLI bootstrap (`ensure-gh-cli.sh`), unpushed-commit recovery (`recover-unpushed-commits.sh`), and todos-block patching (`pipeline/todos_patch.py`) -- runs as a standalone script or module (issue #495), while the git push and worktree teardown that make a step's commit durable (`_push_step_branch`, `_create_run_worktree`, `_remove_run_worktree`) and the metrics/announcement builders that share orchestrator-internal types stay inline in `pipeline_orchestrator.py` as a cited STD-ARCH-035 exception (`adrs/adrs.json` ADR-002) -- routing a load-bearing push through the same script-resolution fallback used for best-effort operations would reintroduce issue #196's regression class (see `test_pushing_a_step_s_commits_needs_no_script_on_the_branch`)
+
+## Scenario: Orchestrator-owned scripts do not appear under .github/scripts
+
+**Given** the script reorganization has been applied to the repository
+**When** a developer lists all files under `.github/scripts/`
+**Then** no pipeline-runtime-owned scripts are present there (worktree lifecycle, status operations, recovery, scratch, and branch/PR operations all reside only under `scripts/`)
+
+## Scenario: Script resolution works when installed as a submodule
+
+**Given** this repository is installed as a git submodule inside a consuming project
+**When** the pipeline orchestrator starts and resolves a runtime script path
+**Then** the resolved path points into the ai-coding-standards2 submodule's `scripts/` directory, not the consuming project's `.github/scripts/`
+
+## Scenario: Conformance test rejects a new orchestrator script placed under .github/scripts
+
+**Given** the ownership conformance tests have been added to the test suite
+**When** a new pipeline-runtime script is placed under `.github/scripts/` rather than `scripts/`
+**Then** the conformance test suite fails with a path-ownership violation message
