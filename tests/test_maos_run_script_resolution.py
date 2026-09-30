@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 MAOS_RUN = REPO_ROOT / ".claude" / "commands" / "maos-run.md"
-DRIVE_ITEM = REPO_ROOT / ".github" / "scripts" / "drive-item.sh"
+DRIVE_ITEM = REPO_ROOT / "scripts" / "drive-item.sh"
 
 STANDALONE_SCRIPT = "pipeline/pipeline_orchestrator.py"
 SUBMODULE_SCRIPT = "ai-coding-standards2/pipeline/pipeline_orchestrator.py"

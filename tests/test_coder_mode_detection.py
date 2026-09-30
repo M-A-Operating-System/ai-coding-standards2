@@ -64,10 +64,12 @@ class TestGenuineFirstDispatchRunsModeA:
     def test_step0_reads_invocation_mode_env_var(self):
         """Step 0 reads AI_AGILE_INVOCATION_MODE instead of inspecting labels."""
         text = _load_coder()
+        assert "AI_AGILE_INVOCATION_MODE" in text, (
+            "coder.md must document AI_AGILE_INVOCATION_MODE as the mode-selection mechanism"
+        )
         step = _extract_step0(text)
-        assert "AI_AGILE_INVOCATION_MODE" in step, (
-            "coder.md Step 0 must read AI_AGILE_INVOCATION_MODE "
-            "to determine its invocation mode"
+        assert "initial" in step and "review" in step, (
+            "coder.md Step 0 must map 'initial' and 'review' to their respective modes"
         )
 
     def test_step0_does_not_inspect_review_cycle_label(self):

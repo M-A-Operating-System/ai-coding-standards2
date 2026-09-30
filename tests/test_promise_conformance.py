@@ -1517,7 +1517,7 @@ class TestMI8AnyDifferenceIsWrittenDown:
     def test_no_pipeline_script_branches_on_the_mode(self):
         """The scripts half of the paragraph, at its coarsest: none does."""
         offenders = []
-        for path in sorted((REPO_ROOT / ".github" / "scripts").glob("*.sh")):
+        for path in sorted((REPO_ROOT / "scripts").glob("*.sh")):
             text = path.read_text()
             for token in ("AI_AGILE_EXECUTION_MODE", "--headless", "INTERACTIVE"):
                 if re.search(rf'^\s*(if|elif|case).*{re.escape(token)}', text, re.M):

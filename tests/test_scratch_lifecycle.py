@@ -197,7 +197,7 @@ class TestAgentsMdScratchConvention:
 # STD-ARCH-035: the lifecycle is implemented in scripts, not in the orchestrator
 # ---------------------------------------------------------------------------
 
-SCRIPTS = Path(__file__).parent.parent / ".github" / "scripts"
+SCRIPTS = Path(__file__).parent.parent / "scripts"
 
 
 def _run_script(name, scratch, cwd=None):
@@ -658,7 +658,7 @@ class TestScratchLifecycleIsSelfHealing:
         src = (Path(__file__).parent.parent / "pipeline"
                / "pipeline_orchestrator.py").read_text()
         assert "_clear_scratch_on_signal" not in src
-        setup = (Path(__file__).parent.parent / ".github" / "scripts"
+        setup = (Path(__file__).parent.parent / "scripts"
                  / "scratch-setup.sh").read_text()
         rm_at = setup.index("rm -rf")
         mkdir_at = setup.index("mkdir -p")
@@ -820,7 +820,7 @@ class TestShippedFilesAreAscii:
 
     @pytest.mark.parametrize("name", ["scratch-setup.sh", "scratch-teardown.sh"])
     def test_scratch_scripts_are_ascii(self, name):
-        path = self.REPO_ROOT / ".github" / "scripts" / name
+        path = self.REPO_ROOT / "scripts" / name
         assert self._offenders(path) == [], f"{name} contains non-ASCII"
 
 

@@ -27,7 +27,7 @@ from pipeline_orchestrator import (
 
 REPO_ROOT = Path(__file__).parent.parent
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
-SCRIPTS = REPO_ROOT / ".github" / "scripts"
+SCRIPTS = REPO_ROOT / "scripts"
 DELETE_BRANCH_SCRIPT = SCRIPTS / "delete-branch.sh"
 MERGE_DOCS_PR_SCRIPT = SCRIPTS / "merge-docs-pr.sh"
 

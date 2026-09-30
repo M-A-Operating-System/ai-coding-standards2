@@ -259,7 +259,7 @@ class TestOneIdentityBehindEverySystemWrite:
 
     def test_the_identity_is_resolved_in_one_place(self):
         from pathlib import Path as _P
-        scripts = _P(__file__).parent.parent / ".github" / "scripts"
+        scripts = _P(__file__).parent.parent / "scripts"
         helper = scripts / "lib" / "github-identity.sh"
         assert helper.is_file(), "the shared identity resolver must exist"
 
@@ -279,7 +279,7 @@ class TestOneIdentityBehindEverySystemWrite:
     def test_no_script_picks_its_own_identity(self):
         """A script expanding AI_AGILE_BOT_TOKEN is deciding for itself."""
         from pathlib import Path as _P
-        scripts = _P(__file__).parent.parent / ".github" / "scripts"
+        scripts = _P(__file__).parent.parent / "scripts"
         for script in sorted(scripts.glob("*.sh")):
             assert "${AI_AGILE_BOT_TOKEN" not in script.read_text(), (
                 f"{script.name} reads AI_AGILE_BOT_TOKEN directly; the identity "

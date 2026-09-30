@@ -33,8 +33,8 @@ sys.path.insert(0, str(REPO_ROOT / "pipeline"))
 
 import pipeline_orchestrator as po  # noqa: E402
 
-SNAPSHOT_SCRIPT = REPO_ROOT / ".github" / "scripts" / "sweep-repo-root-snapshot.sh"
-SWEEP_SCRIPT = REPO_ROOT / ".github" / "scripts" / "sweep-repo-root.sh"
+SNAPSHOT_SCRIPT = REPO_ROOT / "scripts" / "sweep-repo-root-snapshot.sh"
+SWEEP_SCRIPT = REPO_ROOT / "scripts" / "sweep-repo-root.sh"
 
 
 @pytest.fixture

@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
-SCRIPT = REPO_ROOT / ".github" / "scripts" / "append-metrics-record.sh"
+SCRIPT = REPO_ROOT / "scripts" / "append-metrics-record.sh"
 
 BRANCH = "ai-agile/metrics"
 RECORDS = "records.jsonl"

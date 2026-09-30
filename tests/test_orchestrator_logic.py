@@ -3823,7 +3823,7 @@ class TestPostSteps:
     def test_mark_pr_ready_script_exists(self):
         """mark-pr-ready.sh must exist at scripts/mark-pr-ready.sh with a shebang."""
         import pipeline_orchestrator as orch
-        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "mark-pr-ready.sh"
+        script_path = orch.SUBMODULE_ROOT / "scripts" / "mark-pr-ready.sh"
         assert script_path.exists(), (
             f"mark-pr-ready.sh must exist at {script_path}"
         )
@@ -3909,7 +3909,7 @@ class TestPostStepFailureDecoupling:
         Then it detects the PR is already ready and exits 0
         """
         import pipeline_orchestrator as orch
-        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "mark-pr-ready.sh"
+        script_path = orch.SUBMODULE_ROOT / "scripts" / "mark-pr-ready.sh"
         content = script_path.read_text()
         assert 'draft' in content, "Script must check the 'draft' field of the PR"
         assert 'exit 0' in content, "Script must exit 0 when the PR is already ready"
@@ -6386,7 +6386,7 @@ class TestEpicCompletionIsDeclared:
 
     def test_closer_script_posts_the_completion_comment_and_closes(self, tmp_path):
         """The declared step reproduces exactly what the sweep used to do."""
-        script = Path(__file__).parent.parent / ".github" / "scripts" / "epic-closer.sh"
+        script = Path(__file__).parent.parent / "scripts" / "epic-closer.sh"
         calls = tmp_path / "calls.log"
         fake_bin = tmp_path / "bin"
         fake_bin.mkdir()
@@ -6417,7 +6417,7 @@ class TestEpicCompletionIsDeclared:
         assert "state_reason=completed" in logged
 
     def test_closer_script_refuses_while_a_child_is_open(self, tmp_path):
-        script = Path(__file__).parent.parent / ".github" / "scripts" / "epic-closer.sh"
+        script = Path(__file__).parent.parent / "scripts" / "epic-closer.sh"
         fake_bin = tmp_path / "bin"
         fake_bin.mkdir()
         (fake_bin / "gh").write_text("#!/usr/bin/env bash\nexit 0\n")

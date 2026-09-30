@@ -25,7 +25,7 @@ SCRIPT_REL="scripts/new-branch-pr.sh"
 # adapter, and a stub create-pr.sh that only records the env it was handed.
 setup() {
   WORK_DIR="$(mktemp -d)"
-  mkdir -p "${WORK_DIR}/.github/scripts" "${WORK_DIR}/pipeline"
+  mkdir -p "${WORK_DIR}/scripts" "${WORK_DIR}/pipeline"
   cp "${REPO_ROOT}/${SCRIPT_REL}" "${WORK_DIR}/scripts/"
   cp "${REPO_ROOT}/pipeline/pipeline_orchestrator.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/todos_patch.py" "${WORK_DIR}/pipeline/"

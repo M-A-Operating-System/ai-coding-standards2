@@ -16,7 +16,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 RELEASE_YML = REPO_ROOT / ".github" / "release.yml"
-LINK_SCRIPT = REPO_ROOT / ".github" / "scripts" / "link-pr-to-issue.sh"
+LINK_SCRIPT = REPO_ROOT / "scripts" / "link-pr-to-issue.sh"
 
 CLASSIFICATION_LABELS = {
     "classification: enhancement",

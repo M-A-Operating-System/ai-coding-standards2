@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
-MERGE_PR = REPO_ROOT / ".github" / "scripts" / "merge-pr.sh"
+MERGE_PR = REPO_ROOT / "scripts" / "merge-pr.sh"
 
 # A mock `gh` that branches on the new REST `gh api` invocations:
 #   api repos/O/R/pulls?head=...&state=open  -> prints $ISSUE_PR (the resolved

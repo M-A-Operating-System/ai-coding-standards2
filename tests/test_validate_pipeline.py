@@ -133,7 +133,7 @@ class TestNamedScriptsExist:
         assert len(errors) == 1 and "agent_lifecycle.before" in errors[0]
 
     def test_a_script_that_is_there_clears_it(self, tmp_path):
-        script = tmp_path / ".github" / "scripts" / "here.sh"
+        script = tmp_path / "scripts" / "here.sh"
         script.parent.mkdir(parents=True)
         script.write_text("#!/usr/bin/env bash\n")
         assert validate_named_scripts_exist(

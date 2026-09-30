@@ -26,7 +26,7 @@ from pipeline_orchestrator import (
 )
 
 REPO_ROOT = Path(__file__).parent.parent
-DELETE_BRANCH_SCRIPT = REPO_ROOT / ".github" / "scripts" / "delete-branch.sh"
+DELETE_BRANCH_SCRIPT = REPO_ROOT / "scripts" / "delete-branch.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ class TestCallDeleteBranch:
 
     def test_invokes_script_with_correct_env(self, tmp_path):
         """_call_delete_branch calls delete-branch.sh with REPO and BRANCH in env."""
-        fake_script = tmp_path / ".github" / "scripts" / "delete-branch.sh"
+        fake_script = tmp_path / "scripts" / "delete-branch.sh"
         fake_script.parent.mkdir(parents=True)
         fake_script.write_text("#!/usr/bin/env bash\nexit 0\n")
 
@@ -173,7 +173,7 @@ class TestCallDeleteBranch:
 
     def test_does_not_raise_on_timeout(self, tmp_path):
         """_call_delete_branch swallows TimeoutExpired and does not propagate it."""
-        fake_script = tmp_path / ".github" / "scripts" / "delete-branch.sh"
+        fake_script = tmp_path / "scripts" / "delete-branch.sh"
         fake_script.parent.mkdir(parents=True)
         fake_script.write_text("#!/usr/bin/env bash\nexit 0\n")
 
@@ -186,7 +186,7 @@ class TestCallDeleteBranch:
 
     def test_does_not_raise_on_oserror(self, tmp_path):
         """_call_delete_branch swallows OSError (e.g. bash not in PATH)."""
-        fake_script = tmp_path / ".github" / "scripts" / "delete-branch.sh"
+        fake_script = tmp_path / "scripts" / "delete-branch.sh"
         fake_script.parent.mkdir(parents=True)
         fake_script.write_text("#!/usr/bin/env bash\nexit 0\n")
 
