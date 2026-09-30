@@ -71,6 +71,13 @@ from todos_patch import (
     apply_todos_patch as _apply_todos_patch,
 )
 
+# entitlement_groups catalog resolution (issue #523) lives in
+# entitlement_groups.py -- pure data transform, no orchestrator or GitHub
+# coupling, shared with generate_docs.py so the two can never silently
+# disagree on what a group reference means (same reasoning as todos_patch.py
+# above).
+from entitlement_groups import resolve_pattern_groups as _resolve_pattern_groups
+
 # The review-verdict computation itself lives in review_outcome.py (issue
 # #512 Part 2, STD-ARCH-035) -- pure functions, no GitHub or orchestrator
 # coupling. Imported under their original names so every call site and test
@@ -399,18 +406,32 @@ class ComponentClaims:
 # Pipeline loader
 # ---------------------------------------------------------------------------
 
-def _denied_tools_from_entry(entry: dict) -> list[str]:
+def _denied_tools_from_entry(
+    entry: dict, entitlement_groups: Optional[dict] = None
+) -> list[str]:
     """Resolve a step's deny-list patterns.
 
-    `deniedTools` is authoritative when present. A step that instead groups
-    its patterns under `deny_groups` (name/purpose per group, for readability
-    on a long list) gets its effective deny list flattened from there instead
-    -- one list of pattern strings per step, not two kept in sync by hand.
+    `deniedTools` and `deny_groups` (references into `entitlement_groups`, or
+    legacy inline objects) are additive, not alternatives (issue #523) --
+    symmetric with how `allow_groups` adds to `extra_allowedTools`. A step
+    that only ever declared one of the two sees no change: this is additive
+    only when both happen to be present, which no shipped step does today.
     """
-    if "deniedTools" in entry:
-        return _coerce_tools(entry.get("deniedTools"))
-    _groups = entry.get("deny_groups") or []
-    return [pattern for group in _groups for pattern in group.get("patterns", [])]
+    patterns = _coerce_tools(entry.get("deniedTools")) + _resolve_pattern_groups(
+        entry.get("deny_groups"), entitlement_groups, "deny_groups"
+    )
+    return list(dict.fromkeys(patterns))
+
+
+def _allowed_tools_from_entry(
+    entry: dict, entitlement_groups: Optional[dict] = None
+) -> list[str]:
+    """Resolve a step's extra_allowedTools, merging literal patterns with any
+    `allow_groups` references into the shared entitlement_groups catalog."""
+    patterns = _coerce_tools(entry.get("extra_allowedTools")) + _resolve_pattern_groups(
+        entry.get("allow_groups"), entitlement_groups, "allow_groups"
+    )
+    return list(dict.fromkeys(patterns))
 
 
 def _coerce_tools(val: object) -> list[str]:
@@ -521,6 +542,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
     the declaration rather than from anything hardcoded here.
     """
     agents: list[AgentDef] = []
+    entitlement_groups = raw.get("entitlement_groups") or {}
     for flow_name, flow in (raw["flows"] or {}).items():
         flow_trigger = flow.get("trigger") or {}
         flow_naming = dict(flow.get("naming") or {})
@@ -588,8 +610,8 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                     _budgets.get("max_wall_seconds") or SCRIPT_TIMEOUT_SECONDS
                 ),
                 self_gates=bool(entry.get("self_gates", False)),
-                extra_allowedTools=_coerce_tools(entry.get("extra_allowedTools")),
-                denied_tools=_denied_tools_from_entry(entry),
+                extra_allowedTools=_allowed_tools_from_entry(entry, entitlement_groups),
+                denied_tools=_denied_tools_from_entry(entry, entitlement_groups),
                 model=entry.get("model"),
                 max_turns=_budgets.get("max_turns"),
                 max_wall_seconds=_budgets.get("max_wall_seconds"),
@@ -613,8 +635,10 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
     decides everything. It is validated against the live schema on its own
     before use.
 
-    default_extra_tools comes from defaults.extra_allowedTools and is
-    prepended to every agent's own extra_allowedTools at invocation time.
+    default_extra_tools comes from defaults.extra_allowedTools plus
+    defaults.allow_groups resolved against entitlement_groups (issue #523),
+    and is prepended to every agent's own extra_allowedTools at invocation
+    time.
     """
     try:
         override_path = repo_pipeline_override_path(Path(path))
@@ -637,13 +661,22 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
 
         agents = _steps_from_flows(raw)
 
-        default_extra_tools: list[str] = _coerce_tools(
-            raw.get("defaults", {}).get("extra_allowedTools")
-        )
+        _entitlement_groups = raw.get("entitlement_groups") or {}
+        _defaults = raw.get("defaults", {})
 
-        _default_denied: list[str] = _coerce_tools(
-            raw.get("defaults", {}).get("deniedTools")
-        )
+        default_extra_tools: list[str] = list(dict.fromkeys(
+            _coerce_tools(_defaults.get("extra_allowedTools"))
+            + _resolve_pattern_groups(
+                _defaults.get("allow_groups"), _entitlement_groups, "defaults.allow_groups"
+            )
+        ))
+
+        _default_denied: list[str] = list(dict.fromkeys(
+            _coerce_tools(_defaults.get("deniedTools"))
+            + _resolve_pattern_groups(
+                _defaults.get("deny_groups"), _entitlement_groups, "defaults.deny_groups"
+            )
+        ))
         for _agent in agents:
             _agent.denied_tools = list(dict.fromkeys(
                 _default_denied + _agent.denied_tools

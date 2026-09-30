@@ -24,9 +24,13 @@ Gherkin scenarios traced:
   - coder_md_mode_b_reads_feedback_before_any_other_action
 """
 import re
+import sys
 from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "pipeline"))
+from entitlement_groups import resolve_pattern_groups as _resolve_pattern_groups
 
 REPO_ROOT = Path(__file__).parent.parent
 CODER_MD = REPO_ROOT / ".claude" / "agents" / "03_execute" / "coder.md"
@@ -240,9 +244,11 @@ class TestCoderBroadBashGrantDesign:
         must be present, whether declared directly in deniedTools or
         flattened from deny_groups."""
         step = _coder_step()
-        denied = step.get("deniedTools") or [
-            p for group in step.get("deny_groups", []) for p in group.get("patterns", [])
-        ]
+        pipeline = json.loads(PIPELINE_JSON.read_text())
+        entitlement_groups = pipeline.get("entitlement_groups") or {}
+        denied = step.get("deniedTools") or _resolve_pattern_groups(
+            step.get("deny_groups"), entitlement_groups, "deny_groups"
+        )
         required_denials = [
             "Bash(git reset --hard*)",
             "Bash(git commit --amend*)",

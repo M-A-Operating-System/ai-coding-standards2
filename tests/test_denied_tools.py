@@ -210,10 +210,24 @@ def test_default_and_step_deny_lists_are_merged_without_duplication():
 
 
 def _load_from_raw(raw):
-    """Call the internal pipeline loader directly on a dict, bypassing file I/O."""
+    """Call the internal pipeline loader directly on a dict, bypassing file I/O.
+
+    Mirrors load_pipeline's defaults-merge exactly (issue #523): both allow
+    and deny sides resolve defaults.allow_groups/deny_groups against the
+    top-level entitlement_groups catalog before merging with the step's own
+    (already-resolved) lists.
+    """
     agents = po._steps_from_flows(raw)
-    default_extra_tools = po._coerce_tools(raw.get("defaults", {}).get("extra_allowedTools"))
-    _default_denied = po._coerce_tools(raw.get("defaults", {}).get("deniedTools"))
+    entitlement_groups = raw.get("entitlement_groups") or {}
+    defaults = raw.get("defaults", {})
+    default_extra_tools = list(dict.fromkeys(
+        po._coerce_tools(defaults.get("extra_allowedTools"))
+        + po._resolve_pattern_groups(defaults.get("allow_groups"), entitlement_groups, "defaults.allow_groups")
+    ))
+    _default_denied = list(dict.fromkeys(
+        po._coerce_tools(defaults.get("deniedTools"))
+        + po._resolve_pattern_groups(defaults.get("deny_groups"), entitlement_groups, "defaults.deny_groups")
+    ))
     for _agent in agents:
         _agent.denied_tools = list(dict.fromkeys(_default_denied + _agent.denied_tools))
     return agents, default_extra_tools
@@ -288,15 +302,13 @@ def test_deduplication_when_step_repeats_a_default_rule():
 
 
 # ---------------------------------------------------------------------------
-# _denied_tools_from_entry: deniedTools is authoritative over deny_groups
+# _denied_tools_from_entry: deniedTools and deny_groups are additive (#523)
 # ---------------------------------------------------------------------------
 
-def test_denied_tools_from_entry_prefers_declared_denied_tools_over_deny_groups():
-    """When a step entry declares both deniedTools and deny_groups, deniedTools wins.
-
-    _denied_tools_from_entry must not flatten deny_groups when deniedTools is
-    present -- deny_groups is only a fallback for steps that source their
-    effective deny list from grouped patterns instead of a flat declaration.
+def test_denied_tools_from_entry_merges_declared_denied_tools_with_deny_groups():
+    """When a step entry declares both deniedTools and deny_groups, both
+    contribute to the effective deny list (issue #523) -- symmetric with how
+    allow_groups adds to extra_allowedTools, not an alternative to deniedTools.
     """
     entry = {
         "deniedTools": ["Bash(git push --force*)"],
@@ -304,7 +316,9 @@ def test_denied_tools_from_entry_prefers_declared_denied_tools_over_deny_groups(
             {"name": "g", "purpose": "p", "patterns": ["Bash(git reset --hard*)"]}
         ],
     }
-    assert po._denied_tools_from_entry(entry) == ["Bash(git push --force*)"]
+    assert po._denied_tools_from_entry(entry) == [
+        "Bash(git push --force*)", "Bash(git reset --hard*)",
+    ]
 
 
 def test_denied_tools_from_entry_flattens_deny_groups_when_no_denied_tools():
@@ -316,6 +330,173 @@ def test_denied_tools_from_entry_flattens_deny_groups_when_no_denied_tools():
         ],
     }
     assert po._denied_tools_from_entry(entry) == ["Bash(a*)", "Bash(b*)", "Bash(c*)"]
+
+
+# ---------------------------------------------------------------------------
+# Issue #523: reusable entitlement groups usable from either allow or deny,
+# at defaults level and step level, additive and deterministic.
+# ---------------------------------------------------------------------------
+
+_CATALOG = {
+    "example-group": {
+        "purpose": "Example reusable capability.",
+        "patterns": ["Bash(example *)"],
+    },
+    "other-group": {
+        "purpose": "Another reusable capability.",
+        "patterns": ["Bash(other *)"],
+    },
+}
+
+
+def _raw_with_defaults(**defaults_overrides):
+    raw = {
+        "budgets": {"max_turns": 10, "max_wall_seconds": 60},
+        "entitlement_groups": _CATALOG,
+        "defaults": {"extra_allowedTools": [], **defaults_overrides},
+        "flows": {
+            "test-flow": {
+                "description": "d",
+                "trigger": {"kind": "issue"},
+                "steps": [
+                    {
+                        "agent": "03_execute/coder",
+                        "phase": "03_execute",
+                        "trigger": {"label": "create-pr:complete"},
+                        "dependencies": [],
+                        "human_gate_after": False,
+                        "description": "d",
+                        "expected_effect": {"commits": True},
+                    }
+                ],
+            }
+        },
+    }
+    return raw
+
+
+def test_defaults_level_allow_group_grants_every_step():
+    """defaults.allow_groups resolves through entitlement_groups and is
+    granted to every step, same as defaults.extra_allowedTools."""
+    raw = _raw_with_defaults(allow_groups=["example-group"])
+    agents, default_extra_tools = _load_from_raw(raw)
+    assert "Bash(example *)" in default_extra_tools
+
+
+def test_defaults_level_deny_group_denies_every_step():
+    """defaults.deny_groups resolves through entitlement_groups and is
+    denied to every step, same as defaults.deniedTools."""
+    raw = _raw_with_defaults(deny_groups=["example-group"])
+    agents, _ = _load_from_raw(raw)
+    coder = next(a for a in agents if a.agent == "03_execute/coder")
+    assert "Bash(example *)" in coder.denied_tools
+
+
+def test_direct_and_grouped_allow_compose():
+    """A step's literal extra_allowedTools and its allow_groups both
+    contribute to the effective allow list."""
+    entry = {
+        "extra_allowedTools": ["Bash(direct *)"],
+        "allow_groups": ["example-group"],
+    }
+    assert po._allowed_tools_from_entry(entry, _CATALOG) == [
+        "Bash(direct *)", "Bash(example *)",
+    ]
+
+
+def test_direct_and_grouped_deny_compose():
+    """A step's literal deniedTools and its deny_groups both contribute to
+    the effective deny list (issue #523: additive, not alternative)."""
+    entry = {
+        "deniedTools": ["Bash(direct *)"],
+        "deny_groups": ["example-group"],
+    }
+    assert po._denied_tools_from_entry(entry, _CATALOG) == [
+        "Bash(direct *)", "Bash(example *)",
+    ]
+
+
+def test_unknown_group_reference_fails_clearly():
+    """A deny_groups/allow_groups reference naming an undeclared catalog
+    entry must fail loudly at load time, not silently resolve to nothing."""
+    with pytest.raises(ValueError, match="unknown entitlement group"):
+        po._denied_tools_from_entry({"deny_groups": ["does-not-exist"]}, _CATALOG)
+    with pytest.raises(ValueError, match="unknown entitlement group"):
+        po._allowed_tools_from_entry({"allow_groups": ["does-not-exist"]}, _CATALOG)
+
+
+def test_inline_group_missing_patterns_key_fails_clearly():
+    """A legacy inline group object with no 'patterns' key (a likely typo,
+    e.g. singular 'pattern') must fail loudly rather than silently
+    contributing zero patterns to the effective deny/allow list -- the
+    shipped pipeline.json is never schema-validated at load time, so this
+    is the only guard against that specific typo going unnoticed."""
+    malformed = {"name": "g", "purpose": "p"}
+    with pytest.raises(ValueError, match="missing 'patterns'"):
+        po._denied_tools_from_entry({"deny_groups": [malformed]})
+    with pytest.raises(ValueError, match="missing 'patterns'"):
+        po._allowed_tools_from_entry({"allow_groups": [malformed]})
+
+
+def test_duplicate_group_and_pattern_resolution_preserves_first_seen_order():
+    """Repeated groups/patterns collapse to one occurrence at their first
+    position -- deterministic, and a duplicate must not change behavior."""
+    entry = {
+        "extra_allowedTools": ["Bash(example *)"],
+        "allow_groups": ["example-group", "other-group", "example-group"],
+    }
+    assert po._allowed_tools_from_entry(entry, _CATALOG) == [
+        "Bash(example *)", "Bash(other *)",
+    ]
+
+
+def test_deny_precedence_when_command_reachable_from_both_allow_and_deny():
+    """The same underlying command allowed via one group and denied via
+    another: deny still wins, since deny is passed separately and the CLI
+    matcher applies deny precedence over allow regardless of list overlap."""
+    entry_allow = {"allow_groups": ["example-group"]}
+    entry_deny = {"deny_groups": ["example-group"]}
+    allowed = po._allowed_tools_from_entry(entry_allow, _CATALOG)
+    denied = po._denied_tools_from_entry(entry_deny, _CATALOG)
+    assert "Bash(example *)" in allowed
+    assert "Bash(example *)" in denied
+    agent_def = _make_agent_def(
+        extra_allowedTools=allowed,
+        denied_tools=denied,
+    )
+    resolved = _resolve(agent_def)
+    assert resolved is not None
+    assert "Bash(example *)" in resolved.allowed_tools
+    assert "Bash(example *)" in resolved.denied_tools, (
+        "deny must be passed through even when the same pattern is also allowed "
+        "-- the CLI's own matcher applies deny precedence, not the orchestrator"
+    )
+
+
+def test_generated_docs_show_defaults_level_group_references():
+    """Generated docs must expose defaults-level allow_groups/deny_groups,
+    not just defaults.extra_allowedTools/deniedTools."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "generate_docs", REPO_ROOT / "pipeline" / "generators" / "generate_docs.py"
+    )
+    generate_docs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generate_docs)
+
+    pipeline = {
+        "entitlement_groups": _CATALOG,
+        "defaults": {
+            "extra_allowedTools": [],
+            "allow_groups": ["example-group"],
+            "deny_groups": ["other-group"],
+        },
+        "flows": {},
+    }
+    text = generate_docs.render_steps(pipeline)
+    assert "example-group" in text
+    assert "Bash(example *)" in text
+    assert "other-group" in text
+    assert "Bash(other *)" in text
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +645,26 @@ def test_schema_accepts_denied_tools_in_defaults():
     assert not errors, f"schema rejected valid defaults.deniedTools: {errors}"
 
 
+def test_schema_accepts_allow_groups_in_defaults():
+    """Issue #523: defaults.allow_groups accepts a catalog-name string."""
+    raw = _minimal_pipeline(allow_groups=["example-group"])
+    raw["entitlement_groups"] = {
+        "example-group": {"purpose": "p", "patterns": ["Bash(example *)"]}
+    }
+    errors = _validate_against_schema(raw)
+    assert not errors, f"schema rejected valid defaults.allow_groups: {errors}"
+
+
+def test_schema_accepts_deny_groups_in_defaults():
+    """Issue #523: defaults.deny_groups accepts a catalog-name string."""
+    raw = _minimal_pipeline(deny_groups=["example-group"])
+    raw["entitlement_groups"] = {
+        "example-group": {"purpose": "p", "patterns": ["Bash(example *)"]}
+    }
+    errors = _validate_against_schema(raw)
+    assert not errors, f"schema rejected valid defaults.deny_groups: {errors}"
+
+
 def test_schema_accepts_denied_tools_in_step():
     raw = _minimal_pipeline()
     raw["flows"]["test-flow"]["steps"][0]["deniedTools"] = ["Bash(git reset --hard*)"]
@@ -574,8 +775,10 @@ def test_generate_docs_check_passes():
 # deniedTools-absent case; this covers the deniedTools-present branch)
 # ---------------------------------------------------------------------------
 
-def test_render_steps_banner_is_explanatory_when_denied_tools_declared():
-    """A step with both deniedTools and deny_groups gets the 'explanatory only' banner."""
+def test_render_steps_banner_is_additive_when_denied_tools_declared():
+    """A step with both deniedTools and deny_groups gets the 'additive' banner
+    (issue #523) -- both are authoritative and merged, not deny_groups being
+    explanatory-only in deniedTools' shadow."""
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "generate_docs", REPO_ROOT / "pipeline" / "generators" / "generate_docs.py"
@@ -592,7 +795,7 @@ def test_render_steps_banner_is_explanatory_when_denied_tools_declared():
                         "agent": "03_execute/coder",
                         "deniedTools": ["Bash(git push --force*)"],
                         "deny_groups": [
-                            {"name": "g", "purpose": "p", "patterns": ["Bash(git push --force*)"]}
+                            {"name": "g", "purpose": "p", "patterns": ["Bash(git reset --hard*)"]}
                         ],
                     }
                 ],
@@ -600,7 +803,10 @@ def test_render_steps_banner_is_explanatory_when_denied_tools_declared():
         }
     }
     text = generate_docs.render_steps(pipeline)
-    assert "explanatory only" in text, (
+    assert "additive" in text, (
         "when a step declares deniedTools directly, its deny_groups banner "
-        "must say the groups are explanatory only and deniedTools is authoritative"
+        "must say the groups are additive and both are authoritative"
     )
+    # And the "Declared prohibitions" column must show both, not just deniedTools.
+    assert "Bash(git push --force*)" in text
+    assert "Bash(git reset --hard*)" in text
