@@ -66,7 +66,7 @@ authoritative and these tables are a view of it.
 | `01_product_docs/prd-docs-updater` | `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)` | -- | `commit_after=true`, `commits_to="docs"` |
 | `01_product_docs/merge-docs-pr` | -- | -- | `commit_after=false`, `commits_to="docs"` |
 | `01_product_docs/create-pr` | -- | -- | `commit_after=false`, `commits_to="code"` |
-| `03_execute/coder` | `Bash` | `Bash(git reset --hard*)`, `Bash(git commit --amend*)`, `Bash(git commit * --amend*)`, `Bash(git branch -D *)` _(+22 more)_ | `commit_after=true`, `commits_to="code"` |
+| `03_execute/coder` | `Bash` | `local-git-history-control`, `remote-git-control`, `git-configuration-control`, `validation-bypass-control` _(+2 more)_ | `commit_after=true`, `commits_to="code"` |
 | `03_execute/ci-gate` | -- | -- | -- |
 | `03_execute/merge-conflict` | `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh pr comment *)`, `Bash(gh run view *)`, `Bash(gh run list *)`, `Bash(git fetch *)` _(+8 more)_ | -- | -- |
 | `03_execute/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | -- | `commit_after=false` |
@@ -294,9 +294,23 @@ The groups below are additive to this step's `extra_allowedTools` above (not an 
 Under AS-1 the tables above must be complete: an entitlement that does
 not appear there or here is not granted.
 
-**Granted to every step:** `Write`, `Edit`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue edit *)`, `Bash(gh issue list *)`, `Bash(gh pr view *)`, `Bash(gh pr comment *)`, `Bash(gh pr list *)`, `Bash(gh pr diff *)`, `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`, `Bash(cd *)`, `Read`, `Glob`, `Grep`, `Bash(gh api repos/*/issues/*)`, `Bash(gh api repos/*/pulls/*)`, `Bash(gh api repos/*/issues*)`, `Bash(gh api repos/*/pulls*)`, `Bash(gh api "repos/*/issues/*)`, `Bash(gh api "repos/*/pulls/*)`, `Bash(gh api "repos/*/issues*)`, `Bash(gh api "repos/*/pulls*)`, `Bash(gh api --method * repos/*/issues*)`, `Bash(gh api --method * "repos/*/issues*)`
-**Allow groups granted to every step:** `issue-pr-rest-access` (patterns resolved into the line above)
+**Granted to every step:** `Write`, `Edit`, `Bash(gh issue view *)`, `Bash(gh issue comment *)`, `Bash(gh issue edit *)`, `Bash(gh issue list *)`, `Bash(gh pr view *)`, `Bash(gh pr comment *)`, `Bash(gh pr list *)`, `Bash(gh pr diff *)`, `Bash(cat *)`, `Bash(grep *)`, `Bash(find *)`, `Bash(cd *)`, `Read`, `Glob`, `Grep`, `issue-pr-rest-access`
 
 Declared prohibitions state what a step must not do. They are matched
 against the command string as written; a command reached through an
 interpreter wrapper (e.g. `bash -c '...'`) is not matched.
+
+### Default allow rule groups
+
+**issue-pr-rest-access** -- Direct GitHub REST API access to the repo's issues and pull requests, for operations gh's built-in issue/PR subcommands don't cover (label mutations, custom fields, etc). Granted to every step.
+
+- `Bash(gh api repos/*/issues/*)`
+- `Bash(gh api repos/*/pulls/*)`
+- `Bash(gh api repos/*/issues*)`
+- `Bash(gh api repos/*/pulls*)`
+- `Bash(gh api "repos/*/issues/*)`
+- `Bash(gh api "repos/*/pulls/*)`
+- `Bash(gh api "repos/*/issues*)`
+- `Bash(gh api "repos/*/pulls*)`
+- `Bash(gh api --method * repos/*/issues*)`
+- `Bash(gh api --method * "repos/*/issues*)`

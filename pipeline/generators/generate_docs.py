@@ -211,14 +211,15 @@ def render_steps(pipeline):
         allow_group_steps = []
         for step in flow_steps:
             allow_groups = _resolved_groups(step, "allow_groups")
+            # A referenced group is shown by name, not expanded to its
+            # patterns here -- the "Allow/Deny rule groups" sections below
+            # are where a group's patterns are spelled out.
             extra = list(dict.fromkeys(
-                (step.get("extra_allowedTools") or [])
-                + [p for group in allow_groups for p in group.get("patterns", [])]
+                (step.get("extra_allowedTools") or []) + [g["name"] for g in allow_groups]
             ))
             deny_groups = _resolved_groups(step, "deny_groups")
             denied = list(dict.fromkeys(
-                (step.get("deniedTools") or [])
-                + [p for group in deny_groups for p in group.get("patterns", [])]
+                (step.get("deniedTools") or []) + [g["name"] for g in deny_groups]
             ))
             shown_extra = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
             shown_denied = _cell(denied[:4]) + (f" _(+{len(denied) - 4} more)_" if len(denied) > 4 else "")
@@ -282,39 +283,48 @@ def render_steps(pipeline):
         "not appear there or here is not granted.",
         "",
     ]
+    # Referenced groups are shown by name here too, matching the per-step
+    # table above -- see the "Allow/Deny rule groups" sections for a named
+    # group's actual patterns.
     _default_allow_groups = _resolve_groups(
         entitlement_groups, pipeline.get("defaults", {}).get("allow_groups")
     )
     defaults = list(dict.fromkeys(
         (pipeline.get("defaults", {}).get("extra_allowedTools", []))
-        + [p for group in _default_allow_groups for p in group.get("patterns", [])]
+        + [g["name"] for g in _default_allow_groups]
     ))
     lines += [f"**Granted to every step:** {_cell(defaults)}"]
-    if _default_allow_groups:
-        lines += [
-            f"**Allow groups granted to every step:** "
-            f"{_cell([g['name'] for g in _default_allow_groups])} (patterns resolved into the line above)"
-        ]
     _default_deny_groups = _resolve_groups(
         entitlement_groups, pipeline.get("defaults", {}).get("deny_groups")
     )
     default_denied = list(dict.fromkeys(
         (pipeline.get("defaults", {}).get("deniedTools", []))
-        + [p for group in _default_deny_groups for p in group.get("patterns", [])]
+        + [g["name"] for g in _default_deny_groups]
     ))
     if default_denied:
         lines += [f"**Declared prohibition for every step:** {_cell(default_denied)}"]
-    if _default_deny_groups:
-        lines += [
-            f"**Deny groups declared for every step:** "
-            f"{_cell([g['name'] for g in _default_deny_groups])} (patterns resolved into the line above)"
-        ]
     lines += [
         "",
         "Declared prohibitions state what a step must not do. They are matched",
         "against the command string as written; a command reached through an",
         "interpreter wrapper (e.g. `bash -c '...'`) is not matched.",
     ]
+
+    if _default_allow_groups:
+        lines += ["", "### Default allow rule groups", ""]
+        for group in _default_allow_groups:
+            lines += [f"**{group['name']}** -- {group['purpose']}", ""]
+            for pat in group.get("patterns", []):
+                lines.append(f"- `{pat}`")
+            lines.append("")
+
+    if _default_deny_groups:
+        lines += ["", "### Default deny rule groups", ""]
+        for group in _default_deny_groups:
+            lines += [f"**{group['name']}** -- {group['purpose']}", ""]
+            for pat in group.get("patterns", []):
+                lines.append(f"- `{pat}`")
+            lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
 
