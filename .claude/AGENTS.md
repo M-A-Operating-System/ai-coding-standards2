@@ -120,8 +120,8 @@ fits -- there is no third option:
   `Write` reaches every agent through `defaults.extra_allowedTools` in
   `pipeline.json`, not through each agent's own `tools:` frontmatter.
 - **`cat > "${AI_AGILE_SCRATCH:-/tmp}/name.md" <<EOF`** when the body must interpolate
-  shell variables you hold at runtime (`$SESSION_ID`, `$VERDICT`). Quote the
-  delimiter (`<<'EOF'`) to suppress expansion. Start the command with `cat` --
+  shell variables you hold at runtime (`$SESSION_ID`, `$VERDICT`). Leave the
+  delimiter unquoted (`<<EOF`) to allow expansion. Start the command with `cat` --
   a leading variable assignment matches no allowlist pattern and is denied.
 
 Two forms you will see in older prompts. Neither works; do not copy them:
