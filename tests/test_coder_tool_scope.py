@@ -297,14 +297,11 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
         )
 
     def test_deny_groups_section_names_all_semantic_groups(self):
-        """All six semantic capability group names must appear in the generated docs."""
+        """The reduced high-risk deny taxonomy must appear in generated docs."""
         expected_group_names = [
-            "local-git-history-control",
-            "remote-git-control",
-            "git-configuration-control",
-            "validation-bypass-control",
-            "environment-and-credential-access",
-            "external-host-access",
+            "destructive-git-operations",
+            "repository-safety-bypass",
+            "sensitive-host-access",
         ]
         text = STEPS_MD.read_text()
         for name in expected_group_names:
@@ -335,7 +332,7 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
 
 
 # ---------------------------------------------------------------------------
-# entitlement_groups: a catalog shared between allow_groups and deny_groups
+# entitlement_groups: shipped policy uses semantic groups for prohibitions
 # ---------------------------------------------------------------------------
 
 def test_coder_deny_groups_reference_top_level_entitlement_groups():
@@ -348,10 +345,22 @@ def test_coder_deny_groups_reference_top_level_entitlement_groups():
     assert all(ref in catalog for ref in refs)
 
 
-def test_merge_conflict_allow_groups_reuses_coders_deny_group():
-    """git-configuration-control is denied to the coder and allowed to
-    merge-conflict via the same catalog entry -- the reason the catalog
-    exists (one definition, referenced from both an allow and a deny list)."""
+def test_shipped_pipeline_uses_entitlement_groups_only_for_denies():
+    """Keep the shipped policy simple: semantic groups describe high-risk
+    operations we block; ordinary required capabilities remain direct grants."""
+    pipeline = _pipeline()
+    assert not pipeline.get("defaults", {}).get("allow_groups")
+    for flow in pipeline["flows"].values():
+        for step in flow.get("steps", []):
+            assert not step.get("allow_groups"), (
+                f"{step['agent']} should use direct extra_allowedTools for normal "
+                "capabilities; reserve semantic groups for deny policy"
+            )
+
+
+def test_merge_conflict_git_config_access_is_direct_and_coder_still_denies_it():
+    """merge-conflict still needs git config, but that positive capability is
+    explicit on the step while the coder blocks it through the risk group."""
     pipeline = _pipeline()
     merge_conflict = next(
         step
@@ -359,27 +368,19 @@ def test_merge_conflict_allow_groups_reuses_coders_deny_group():
         for step in flow.get("steps", [])
         if step.get("agent") == "03_execute/merge-conflict"
     )
-    assert "git-configuration-control" in merge_conflict.get("allow_groups", [])
-    assert "git-configuration-control" in _coder_step().get("deny_groups", [])
-
-    allowed = _effective_allowed(merge_conflict)
-    denied = _effective_denied(_coder_step())
-    assert "Bash(git config *)" in allowed
-    assert "Bash(git config *)" in denied
+    assert "Bash(git config *)" in merge_conflict.get("extra_allowedTools", [])
+    assert "Bash(git config *)" in _effective_allowed(merge_conflict)
+    assert "Bash(git config *)" in _effective_denied(_coder_step())
 
 
-def test_allow_groups_additive_to_extra_allowed_tools():
-    """allow_groups adds to extra_allowedTools; it does not replace it."""
-    pipeline = _pipeline()
-    merge_conflict = next(
-        step
-        for flow in pipeline["flows"].values()
-        for step in flow.get("steps", [])
-        if step.get("agent") == "03_execute/merge-conflict"
-    )
-    allowed = _effective_allowed(merge_conflict)
-    assert "Bash(git fetch *)" in allowed, "literal extra_allowedTools entries must survive"
-    assert "Bash(git config *)" in allowed, "allow_groups entries must be merged in"
+def test_coder_deny_taxonomy_is_small_and_risk_focused():
+    """A few broad risk categories are easier to audit than many capability
+    groups while preserving the same concrete denied command set."""
+    assert _coder_step().get("deny_groups") == [
+        "destructive-git-operations",
+        "repository-safety-bypass",
+        "sensitive-host-access",
+    ]
 
 
 # ---------------------------------------------------------------------------
