@@ -1,7 +1,7 @@
 name: Tests
 # The trigger must cover everything the jobs below check, or a gate that reads
 # as complete silently is not. `ruff check .` lints every Python file and the
-# shell-test step exercises .github/scripts, so **/*.py and **/*.sh are listed
+# shell-test step exercises scripts/, so **/*.py and **/*.sh are listed
 # rather than the handful of paths that happened to matter when this workflow
 # was written. Naming files individually left get_started.py, pipeline/validate.py,
 # scripts/generate_slash_commands.py and scripts/migrate_labels.py

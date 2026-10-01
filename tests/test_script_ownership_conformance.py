@@ -18,21 +18,23 @@ ORCHESTRATOR_PY = REPO_ROOT / "pipeline" / "pipeline_orchestrator.py"
 GITHUB_SCRIPTS_DIR = REPO_ROOT / ".github" / "scripts"
 
 
-def _iter_script_path_values(node):
-    """Yield every string value of a "script" key or "post_steps" entry anywhere in a parsed pipeline.json tree."""
+def _iter_strings(node):
+    """Yield every string value anywhere in a parsed pipeline.json tree.
+
+    Deliberately not scoped to "script"/"post_steps" keys -- a script path
+    also appears as a bare string in defaults.agent_lifecycle.before/after,
+    and no other string in pipeline.json legitimately starts with
+    ".github/scripts/", so walking every string cannot introduce a false
+    positive while catching every current and future placement.
+    """
     if isinstance(node, dict):
-        for key, value in node.items():
-            if key == "script" and isinstance(value, str):
-                yield value
-            elif key == "post_steps" and isinstance(value, list):
-                for entry in value:
-                    if isinstance(entry, str):
-                        yield entry
-            else:
-                yield from _iter_script_path_values(value)
+        for value in node.values():
+            yield from _iter_strings(value)
     elif isinstance(node, list):
         for item in node:
-            yield from _iter_script_path_values(item)
+            yield from _iter_strings(item)
+    elif isinstance(node, str):
+        yield node
 
 
 class TestScriptOwnershipConformance:
@@ -41,13 +43,13 @@ class TestScriptOwnershipConformance:
     def test_pipeline_json_script_references_stay_out_of_github_scripts(self):
         pipeline = json.loads(PIPELINE_JSON.read_text())
         offenders = sorted({
-            path for path in _iter_script_path_values(pipeline)
+            path for path in _iter_strings(pipeline)
             if path.startswith(".github/scripts/")
         })
         assert not offenders, (
             f"pipeline.json references {offenders} under .github/scripts/ -- "
-            "scripts the pipeline invokes as steps or post_steps belong in "
-            "scripts/ (issue #519)"
+            "scripts the pipeline invokes (steps, post_steps, or "
+            "agent_lifecycle before/after) belong in scripts/ (issue #519)"
         )
 
     def test_orchestrator_source_has_no_github_scripts_path(self):
