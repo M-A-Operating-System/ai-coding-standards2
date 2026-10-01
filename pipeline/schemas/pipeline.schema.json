@@ -11,7 +11,7 @@
 
     "entitlement_groups": {
       "type": "object",
-      "description": "Named command-pattern groups declared once for reuse by steps' allow_groups and deny_groups alike. A group is a semantic capability (e.g. git-configuration-control), not an allow or deny decision -- the same group can be an allow reference for one step and a deny reference for another. Referencing a group changes nothing about the underlying allow/deny enforcement model.",
+      "description": "Named command-pattern groups declared once for reuse by steps' allow_groups and deny_groups alike. A group is a semantic capability (e.g. repository-safety-bypass), not an allow or deny decision -- the same group can be an allow reference for one step and a deny reference for another. Referencing a group changes nothing about the underlying allow/deny enforcement model.",
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
       },

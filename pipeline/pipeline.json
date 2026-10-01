@@ -6,20 +6,15 @@
     "max_launches_per_tick": 20
   },
   "entitlement_groups": {
-    "local-git-history-control": {
-      "purpose": "The coder may create new commits but may not rewrite, discard, or delete existing local Git history or references.",
+    "destructive-git-operations": {
+      "purpose": "Destructive Git operations that rewrite or discard local or remote history, delete references, or mirror repository state.",
       "patterns": [
         "Bash(git reset --hard*)",
         "Bash(git commit --amend*)",
         "Bash(git commit * --amend*)",
         "Bash(git branch -D *)",
         "Bash(git branch --delete --force *)",
-        "Bash(git update-ref -d *)"
-      ]
-    },
-    "remote-git-control": {
-      "purpose": "The coder may not rewrite remote history, delete remote branches, or mirror repositories; the orchestrator owns remote publication.",
-      "patterns": [
+        "Bash(git update-ref -d *)",
         "Bash(git push --force*)",
         "Bash(git push * --force*)",
         "Bash(git push --force-with-lease*)",
@@ -30,49 +25,26 @@
         "Bash(git push * --mirror*)"
       ]
     },
-    "git-configuration-control": {
-      "purpose": "Git identity, remotes, hooks, signing, and other repository control-plane configuration. Denied to the coder (owned by the orchestrator/operator); allowed to merge-conflict, which legitimately reconfigures git during conflict resolution.",
-      "patterns": ["Bash(git config *)"]
-    },
-    "validation-bypass-control": {
-      "purpose": "The coder may not bypass repository commit or push validation hooks.",
+    "repository-safety-bypass": {
+      "purpose": "Repository control-plane changes or validation bypasses that can redirect Git behavior or skip commit and push safeguards.",
       "patterns": [
+        "Bash(git config *)",
         "Bash(git commit --no-verify*)",
         "Bash(git commit * --no-verify*)",
         "Bash(git push --no-verify*)",
         "Bash(git push * --no-verify*)"
       ]
     },
-    "environment-and-credential-access": {
-      "purpose": "The coder may not print the process environment, which can expose credentials or other secrets.",
+    "sensitive-host-access": {
+      "purpose": "Host-level access paths that can expose environment credentials or move data through direct external shell and file-transfer sessions.",
       "patterns": [
         "Bash(env)",
         "Bash(env *)",
         "Bash(printenv)",
-        "Bash(printenv *)"
-      ]
-    },
-    "external-host-access": {
-      "purpose": "The coder may not open outbound shell or file-transfer sessions to external hosts.",
-      "patterns": [
+        "Bash(printenv *)",
         "Bash(ssh *)",
         "Bash(scp *)",
         "Bash(sftp *)"
-      ]
-    },
-    "issue-pr-rest-access": {
-      "purpose": "Direct GitHub REST API access to the repo's issues and pull requests, for operations gh's built-in issue/PR subcommands don't cover (label mutations, custom fields, etc). Granted to every step.",
-      "patterns": [
-        "Bash(gh api repos/*/issues/*)",
-        "Bash(gh api repos/*/pulls/*)",
-        "Bash(gh api repos/*/issues*)",
-        "Bash(gh api repos/*/pulls*)",
-        "Bash(gh api \"repos/*/issues/*)",
-        "Bash(gh api \"repos/*/pulls/*)",
-        "Bash(gh api \"repos/*/issues*)",
-        "Bash(gh api \"repos/*/pulls*)",
-        "Bash(gh api --method * repos/*/issues*)",
-        "Bash(gh api --method * \"repos/*/issues*)"
       ]
     }
   },
@@ -93,9 +65,18 @@
       "Bash(cd *)",
       "Read",
       "Glob",
-      "Grep"
+      "Grep",
+      "Bash(gh api repos/*/issues/*)",
+      "Bash(gh api repos/*/pulls/*)",
+      "Bash(gh api repos/*/issues*)",
+      "Bash(gh api repos/*/pulls*)",
+      "Bash(gh api \"repos/*/issues/*)",
+      "Bash(gh api \"repos/*/pulls/*)",
+      "Bash(gh api \"repos/*/issues*)",
+      "Bash(gh api \"repos/*/pulls*)",
+      "Bash(gh api --method * repos/*/issues*)",
+      "Bash(gh api --method * \"repos/*/issues*)"
     ],
-    "allow_groups": ["issue-pr-rest-access"],
     "agent_lifecycle": {
       "before": [
         "scripts/scratch-setup.sh",
@@ -254,12 +235,9 @@
           "session": { "scope": "per_issue" },
           "extra_allowedTools": ["Bash"],
           "deny_groups": [
-            "local-git-history-control",
-            "remote-git-control",
-            "git-configuration-control",
-            "validation-bypass-control",
-            "environment-and-credential-access",
-            "external-host-access"
+            "destructive-git-operations",
+            "repository-safety-bypass",
+            "sensitive-host-access"
           ],
           "git_ops": { "commit_after": true, "commits_to": "code" },
           "exclude_classifications": ["spike"],
@@ -318,9 +296,9 @@
             "Bash(git push *)",
             "Bash(git log *)",
             "Bash(git diff *)",
-            "Bash(git branch *)"
+            "Bash(git branch *)",
+            "Bash(git config *)"
           ],
-          "allow_groups": ["git-configuration-control"],
           "exclude_classifications": ["spike"],
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-haiku-4-5-20251001",
