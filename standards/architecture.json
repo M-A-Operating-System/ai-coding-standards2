@@ -542,6 +542,27 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-ARCH-036",
+      "title": "Destructive or state-changing infrastructure jobs support a dry-run mode",
+      "description": "Any script, job, or workflow that can create, modify, or destroy infrastructure, stored data, or a running service -- a deploy, a migration, a bulk data operation, a resource-deletion sweep -- accepts a dry-run mode, designed in from the start rather than added after an incident. Dry-run performs every read and computation the real run would, but skips every write, apply, or delete call, and reports exactly what would change.",
+      "rationale": "A destructive job's blast radius is only visible once it runs. A dry-run mode that reports the same plan the real run would produce, without applying it, is the only reliable way to verify intent before a change becomes irreversible; \"test it in staging first\" is not a substitute, since staging drifts from production and does not cover every environment the job can target.",
+      "acceptance_criteria": [
+        "Every new script, job, or workflow in the diff that can create, modify, or delete infrastructure, stored data, or a running service exposes an explicit dry-run mode (a flag, input, or equivalent) that performs the real run's reads and computations but skips every write/apply/delete call.",
+        "The dry-run mode's output names exactly what would change -- which resources, records, or rows -- not merely that changes exist.",
+        "A destructive job shipped with no dry-run mode carries a stated, ADR-recorded justification for why one is not possible."
+      ],
+      "anti_patterns": [
+        "A deploy or migration script that only supports running for real, with 'test it in staging first' as the sole safety net.",
+        "A --dry-run flag that exists but silently performs a subset of the real writes anyway.",
+        "A bulk-delete, cleanup, or reclamation job added with no way to preview what it would remove before it removes it."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }

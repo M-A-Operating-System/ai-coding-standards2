@@ -40,9 +40,12 @@ _LIFECYCLE_SOLID: dict[str, list[tuple[str, str]]] = {
 
 # Extra dashed back-edges not covered by the JSON `review_loop` field.
 # Each entry: agent_path → [(edge_label, target_agent_path, max_cycles|None)]
-_LIFECYCLE_LOOPS: dict[str, list[tuple[str, str, int | None]]] = {
-    "03_execute/ci-gate": [("fail", "03_execute/coder", 3)],
-}
+# ci-gate's back-edge to coder used to live here as a hand-curated stand-in
+# (issue #490): ci-gate had no review_loop field yet, but its step
+# description already claimed the auto-retry behavior. Now that ci-gate
+# declares a real review_loop, the edge renders from that field like every
+# other step's, so no hand-curated entry is needed here.
+_LIFECYCLE_LOOPS: dict[str, list[tuple[str, str, int | None]]] = {}
 
 _TERMINAL_LABELS: dict[str, str] = {
     "terminal:rejected": "rejected",
@@ -146,7 +149,7 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
             else:
                 lines.append(f"    {_node_id(dep)} --> {aid}")
 
-    # Review loop: dashed feedback arrows (REQUEST_CHANGES → re-invoke target)
+    # Review loop: dashed feedback arrows (:review outcome -> re-invoke target)
     for entry in entries:
         review_loop = entry.get("review_loop")
         if not review_loop:
@@ -157,7 +160,7 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
             source_id = _node_id(entry["agent"])
             target_id = _node_id(re_invoke)
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
+            lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
 
     return "\n".join(lines) + "\n"
 
@@ -246,7 +249,7 @@ def build_lifecycle_chart(all_entries: list[dict]) -> str:
             source_id = _node_id(entry["agent"])
             target_id = _node_id(re_invoke)
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
+            lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
 
     # Dashed back-edges from hand-curated loop outcomes
     for agent_path, loops in _LIFECYCLE_LOOPS.items():
@@ -385,7 +388,7 @@ def build_complete_chart(all_entries: list[dict]) -> str:
             source_id = _node_id(entry["agent"])
             target_id = _node_id(re_invoke)
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
+            lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
 
     # Dashed back-edges from hand-curated loop outcomes
     for agent_path, loops in _LIFECYCLE_LOOPS.items():
