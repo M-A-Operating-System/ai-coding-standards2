@@ -59,6 +59,13 @@
       "Bash(gh pr comment *)",
       "Bash(gh pr list *)",
       "Bash(gh pr diff *)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(cd *)",
+      "Read",
+      "Glob",
+      "Grep",
       "Bash(gh api repos/*/issues/*)",
       "Bash(gh api repos/*/pulls/*)",
       "Bash(gh api repos/*/issues*)",
@@ -68,14 +75,7 @@
       "Bash(gh api \"repos/*/issues*)",
       "Bash(gh api \"repos/*/pulls*)",
       "Bash(gh api --method * repos/*/issues*)",
-      "Bash(gh api --method * \"repos/*/issues*)",
-      "Bash(cat *)",
-      "Bash(grep *)",
-      "Bash(find *)",
-      "Bash(cd *)",
-      "Read",
-      "Glob",
-      "Grep"
+      "Bash(gh api --method * \"repos/*/issues*)"
     ],
     "agent_lifecycle": {
       "before": [
