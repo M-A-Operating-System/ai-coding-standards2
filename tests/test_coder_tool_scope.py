@@ -8,11 +8,14 @@ Gherkin scenarios traced (docs/features/simplify-coder-tool-scope-using-broad-ba
 """
 import fnmatch
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(REPO_ROOT / "pipeline"))
+from entitlement_groups import resolve_group as _resolve_group_entry
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
 SCHEMA_PATH = REPO_ROOT / "pipeline" / "schemas" / "pipeline.schema.json"
 STEPS_MD = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "pipeline-steps.md"
@@ -63,13 +66,36 @@ def _coder_step() -> dict:
     raise AssertionError(f"{_CODER_AGENT} not found in pipeline.json")
 
 
+def _resolve_group(group: object, catalog: dict) -> dict:
+    """A deny_groups/allow_groups entry is either a catalog-name string or a
+    legacy inline {name, purpose, patterns} object; resolve to the latter
+    shape via the entitlement_groups module shared with the orchestrator's
+    own resolver."""
+    return _resolve_group_entry(group, catalog)
+
+
 def _effective_denied(step: dict) -> list:
-    """A step's effective deny list: deniedTools when declared, else its
-    deny_groups' patterns flattened -- the two are alternatives, not
-    additive (mirrors pipeline_orchestrator._denied_tools_from_entry)."""
-    if "deniedTools" in step:
-        return step["deniedTools"]
-    return [p for group in step.get("deny_groups", []) for p in group.get("patterns", [])]
+    """A step's effective deny list: deniedTools plus its deny_groups'
+    patterns flattened -- additive, not alternative (issue #523; mirrors
+    pipeline_orchestrator._denied_tools_from_entry)."""
+    catalog = _pipeline().get("entitlement_groups", {})
+    return list(step.get("deniedTools", [])) + [
+        p
+        for group in step.get("deny_groups", [])
+        for p in _resolve_group(group, catalog).get("patterns", [])
+    ]
+
+
+def _effective_allowed(step: dict) -> list:
+    """A step's effective allow list: its literal extra_allowedTools plus its
+    allow_groups' patterns flattened -- additive, not alternative (mirrors
+    pipeline_orchestrator._allowed_tools_from_entry)."""
+    catalog = _pipeline().get("entitlement_groups", {})
+    return list(step.get("extra_allowedTools", [])) + [
+        p
+        for group in step.get("allow_groups", [])
+        for p in _resolve_group(group, catalog).get("patterns", [])
+    ]
 
 
 def _tool_arg(pattern: str) -> str:
@@ -159,7 +185,7 @@ class TestDirectFormOfADeniedCommandIsBlocked:
         )
 
     def test_full_deny_list_declared(self):
-        """All seven deny groups' patterns must be in the effective deny list."""
+        """Every semantic deny group's patterns must remain in the effective deny list."""
         step = _coder_step()
         denied = _effective_denied(step)
         for pattern in _FULL_DENY_LIST:
@@ -270,16 +296,15 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
             "pipeline-steps.md must include the 'Deny rule groups' section"
         )
 
-    def test_deny_groups_section_names_all_seven_groups(self):
-        """All seven deny group names must appear in the generated docs."""
+    def test_deny_groups_section_names_all_semantic_groups(self):
+        """All six semantic capability group names must appear in the generated docs."""
         expected_group_names = [
-            "Git history destruction",
-            "Destructive or forced remote Git operations",
-            "Branch and reference destruction",
-            "Validation bypass",
-            "Git control-plane modification",
-            "Credential or environment disclosure",
-            "External shell access",
+            "local-git-history-control",
+            "remote-git-control",
+            "git-configuration-control",
+            "validation-bypass-control",
+            "environment-and-credential-access",
+            "external-host-access",
         ]
         text = STEPS_MD.read_text()
         for name in expected_group_names:
@@ -307,6 +332,54 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
                     f"{step['agent']} must not have bare 'Bash' in extra_allowedTools; "
                     "only the coder step uses this broad grant"
                 )
+
+
+# ---------------------------------------------------------------------------
+# entitlement_groups: a catalog shared between allow_groups and deny_groups
+# ---------------------------------------------------------------------------
+
+def test_coder_deny_groups_reference_top_level_entitlement_groups():
+    """The coder's deny_groups are catalog-name references, not inline objects."""
+    pipeline = _pipeline()
+    catalog = pipeline.get("entitlement_groups", {})
+    refs = _coder_step().get("deny_groups", [])
+    assert refs
+    assert all(isinstance(ref, str) for ref in refs)
+    assert all(ref in catalog for ref in refs)
+
+
+def test_merge_conflict_allow_groups_reuses_coders_deny_group():
+    """git-configuration-control is denied to the coder and allowed to
+    merge-conflict via the same catalog entry -- the reason the catalog
+    exists (one definition, referenced from both an allow and a deny list)."""
+    pipeline = _pipeline()
+    merge_conflict = next(
+        step
+        for flow in pipeline["flows"].values()
+        for step in flow.get("steps", [])
+        if step.get("agent") == "03_execute/merge-conflict"
+    )
+    assert "git-configuration-control" in merge_conflict.get("allow_groups", [])
+    assert "git-configuration-control" in _coder_step().get("deny_groups", [])
+
+    allowed = _effective_allowed(merge_conflict)
+    denied = _effective_denied(_coder_step())
+    assert "Bash(git config *)" in allowed
+    assert "Bash(git config *)" in denied
+
+
+def test_allow_groups_additive_to_extra_allowed_tools():
+    """allow_groups adds to extra_allowedTools; it does not replace it."""
+    pipeline = _pipeline()
+    merge_conflict = next(
+        step
+        for flow in pipeline["flows"].values()
+        for step in flow.get("steps", [])
+        if step.get("agent") == "03_execute/merge-conflict"
+    )
+    allowed = _effective_allowed(merge_conflict)
+    assert "Bash(git fetch *)" in allowed, "literal extra_allowedTools entries must survive"
+    assert "Bash(git config *)" in allowed, "allow_groups entries must be merged in"
 
 
 # ---------------------------------------------------------------------------

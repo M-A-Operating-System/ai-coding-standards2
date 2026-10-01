@@ -27,9 +27,18 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
+PIPELINE_DIR = REPO_ROOT / "pipeline"
+PIPELINE_JSON = PIPELINE_DIR / "pipeline.json"
 STATUSES_JSON = REPO_ROOT / "pipeline" / "statuses.json"
 OUT_DIR = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated"
+
+# entitlement_groups catalog resolution (issue #523) is shared with
+# pipeline_orchestrator.py's loader via entitlement_groups.py, so the two
+# can never silently disagree on what an allow_groups/deny_groups entry
+# means (same "no orchestrator coupling" reasoning as todos_patch.py).
+sys.path.insert(0, str(PIPELINE_DIR))
+from entitlement_groups import resolve_group as _resolve_group_entry
+from entitlement_groups import resolve_pattern_groups as _resolve_pattern_groups
 
 BANNER = (
     "<!-- GENERATED FILE -- DO NOT EDIT.\n"
@@ -57,6 +66,15 @@ def _cell(value):
             return "--"
         return ", ".join(f"`{k}={json.dumps(v)}`" for k, v in value.items())
     return f"`{value}`"
+
+
+def _resolve_groups(entitlement_groups, groups):
+    """Resolve a list of allow_groups/deny_groups entries into
+    {name, purpose, patterns} dicts, via the entitlement_groups module
+    shared with pipeline_orchestrator.py's loader -- an unknown catalog name
+    fails loudly here too, the same as it does at orchestrator load time
+    (issue #523, "fail clearly"), since both go through the same resolver."""
+    return [_resolve_group_entry(group, entitlement_groups) for group in (groups or [])]
 
 
 def _trigger(step):
@@ -137,6 +155,7 @@ def render_agents(pipeline):
 
 
 def render_steps(pipeline):
+    entitlement_groups = pipeline.get("entitlement_groups") or {}
     lines = [BANNER.format(source="pipeline/pipeline.json"), "# Pipeline Steps", ""]
     lines += [
         "What runs, what starts it, what must finish first, and where a human",
@@ -185,13 +204,24 @@ def render_steps(pipeline):
             "| Step | Additional entitlements | Declared prohibitions | Git operations |",
             "|---|---|---|---|",
         ]
+
+        def _resolved_groups(step, field):
+            return _resolve_groups(entitlement_groups, step.get(field))
+
         deny_group_steps = []
+        allow_group_steps = []
         for step in flow_steps:
-            extra = step.get("extra_allowedTools") or []
-            deny_groups = step.get("deny_groups") or []
-            denied = step.get("deniedTools") or (
-                [p for group in deny_groups for p in group.get("patterns", [])]
-            )
+            allow_groups = _resolved_groups(step, "allow_groups")
+            # A referenced group is shown by name, not expanded to its
+            # patterns here -- the "Allow/Deny rule groups" sections below
+            # are where a group's patterns are spelled out.
+            extra = list(dict.fromkeys(
+                (step.get("extra_allowedTools") or []) + [g["name"] for g in allow_groups]
+            ))
+            deny_groups = _resolved_groups(step, "deny_groups")
+            denied = list(dict.fromkeys(
+                (step.get("deniedTools") or []) + [g["name"] for g in deny_groups]
+            ))
             shown_extra = _cell(extra[:6]) + (f" _(+{len(extra) - 6} more)_" if len(extra) > 6 else "")
             shown_denied = _cell(denied[:4]) + (f" _(+{len(denied) - 4} more)_" if len(denied) > 4 else "")
             lines.append(
@@ -200,13 +230,16 @@ def render_steps(pipeline):
                 f"| {_cell(step.get('git_ops'))} |"
             )
             if deny_groups:
-                deny_group_steps.append(step)
+                deny_group_steps.append((step, deny_groups))
+            if allow_groups:
+                allow_group_steps.append((step, allow_groups))
 
-        for step in deny_group_steps:
+        for step, deny_groups in deny_group_steps:
             if step.get("deniedTools"):
                 authority_note = (
-                    "The groups below are explanatory only. The authoritative enforcement is"
-                    " the flat `deniedTools` list above."
+                    "The groups below are additive to this step's flat `deniedTools` list"
+                    " above (issue #523) -- both are authoritative and merged into the"
+                    " effective deny list."
                 )
             else:
                 authority_note = (
@@ -223,7 +256,23 @@ def render_steps(pipeline):
                 " deny list's known limitation.",
                 "",
             ]
-            for group in step.get("deny_groups", []):
+            for group in deny_groups:
+                lines += [f"**{group['name']}** -- {group['purpose']}", ""]
+                for pat in group.get("patterns", []):
+                    lines.append(f"- `{pat}`")
+                lines.append("")
+
+        for step, allow_groups in allow_group_steps:
+            lines += [
+                "",
+                f"### Allow rule groups: `{step['agent']}`",
+                "",
+                "The groups below are additive to this step's `extra_allowedTools` above"
+                " (not an alternative to it) -- the same named group can be an allow"
+                " reference here and a deny reference for another step.",
+                "",
+            ]
+            for group in allow_groups:
                 lines += [f"**{group['name']}** -- {group['purpose']}", ""]
                 for pat in group.get("patterns", []):
                     lines.append(f"- `{pat}`")
@@ -235,9 +284,24 @@ def render_steps(pipeline):
         "not appear there or here is not granted.",
         "",
     ]
-    defaults = pipeline.get("defaults", {}).get("extra_allowedTools", [])
+    # Referenced groups are shown by name here too, matching the per-step
+    # table above -- see the "Allow/Deny rule groups" sections for a named
+    # group's actual patterns.
+    _default_allow_groups = _resolve_groups(
+        entitlement_groups, pipeline.get("defaults", {}).get("allow_groups")
+    )
+    defaults = list(dict.fromkeys(
+        (pipeline.get("defaults", {}).get("extra_allowedTools", []))
+        + [g["name"] for g in _default_allow_groups]
+    ))
     lines += [f"**Granted to every step:** {_cell(defaults)}"]
-    default_denied = pipeline.get("defaults", {}).get("deniedTools", [])
+    _default_deny_groups = _resolve_groups(
+        entitlement_groups, pipeline.get("defaults", {}).get("deny_groups")
+    )
+    default_denied = list(dict.fromkeys(
+        (pipeline.get("defaults", {}).get("deniedTools", []))
+        + [g["name"] for g in _default_deny_groups]
+    ))
     if default_denied:
         lines += [f"**Declared prohibition for every step:** {_cell(default_denied)}"]
     lines += [
@@ -246,6 +310,22 @@ def render_steps(pipeline):
         "against the command string as written; a command reached through an",
         "interpreter wrapper (e.g. `bash -c '...'`) is not matched.",
     ]
+
+    if _default_allow_groups:
+        lines += ["", "### Default allow rule groups", ""]
+        for group in _default_allow_groups:
+            lines += [f"**{group['name']}** -- {group['purpose']}", ""]
+            for pat in group.get("patterns", []):
+                lines.append(f"- `{pat}`")
+            lines.append("")
+
+    if _default_deny_groups:
+        lines += ["", "### Default deny rule groups", ""]
+        for group in _default_deny_groups:
+            lines += [f"**{group['name']}** -- {group['purpose']}", ""]
+            for pat in group.get("patterns", []):
+                lines.append(f"- `{pat}`")
+            lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
 

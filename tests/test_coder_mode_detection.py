@@ -64,6 +64,9 @@ class TestGenuineFirstDispatchRunsModeA:
     def test_step0_reads_invocation_mode_env_var(self):
         """Step 0 reads AI_AGILE_INVOCATION_MODE instead of inspecting labels."""
         text = _load_coder()
+        # PR #517 simplified Step 0 to a brief dispatch table; AI_AGILE_INVOCATION_MODE
+        # is defined in the Execution context section, which Step 0 references
+        # implicitly by mapping its values (initial/review) to modes.
         assert "AI_AGILE_INVOCATION_MODE" in text, (
             "coder.md must document AI_AGILE_INVOCATION_MODE as the mode-selection mechanism"
         )

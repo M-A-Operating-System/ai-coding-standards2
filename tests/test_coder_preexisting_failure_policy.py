@@ -45,10 +45,10 @@ class TestConfirmedPreExistingUnrelatedTestFailureDoesNotBlockCompletion:
         """The exception only applies to failures unrelated to the diff."""
         text = _load_coder()
         section = _extract_validation_section(text)
-        assert section, "Step 5 validation section not found in coder.md"
+        assert section, "Step 6 validation section not found in coder.md"
         lower = section.lower()
         assert "diff" in lower or "changed" in lower, (
-            "coder.md Step 5 must state that the pre-existing exception only applies "
+            "coder.md Step 6 must state that the pre-existing exception only applies "
             "to failures unrelated to the coder's diff"
         )
 
@@ -56,20 +56,20 @@ class TestConfirmedPreExistingUnrelatedTestFailureDoesNotBlockCompletion:
         """A pre-existing failure requires baseline verification -- not just a claim."""
         text = _load_coder()
         section = _extract_validation_section(text)
-        assert section, "Step 5 validation section not found in coder.md"
+        assert section, "Step 6 validation section not found in coder.md"
         lower = section.lower()
         assert "baseline" in lower or "pre-change" in lower or "before" in lower, (
-            "coder.md Step 5 must require verifying the failure against the pre-change state"
+            "coder.md Step 6 must require verifying the failure against the pre-change state"
         )
 
     def test_one_targeted_verification_suffices(self):
         """One baseline verification is enough -- no requirement for exhaustive checking."""
         text = _load_coder()
         section = _extract_validation_section(text)
-        assert section, "Step 5 validation section not found in coder.md"
+        assert section, "Step 6 validation section not found in coder.md"
         lower = section.lower()
         assert "one" in lower or "single" in lower or "suffic" in lower, (
-            "coder.md Step 5 must state that one targeted baseline verification suffices"
+            "coder.md Step 6 must state that one targeted baseline verification suffices"
         )
 
     def test_pre_existing_failure_does_not_prevent_complete(self):
@@ -78,6 +78,10 @@ class TestConfirmedPreExistingUnrelatedTestFailureDoesNotBlockCompletion:
         section = _extract_validation_section(text)
         assert section, "Step 5 validation section not found in coder.md"
         lower = " ".join(section.lower().split())
+        # PR #517 simplified the explicit "does not prevent complete" statement to
+        # "Classify a failure as pre-existing only when..." -- meaning failures that
+        # pass the classification test are not implementation-caused and don't require
+        # a fix. Updated to verify the "Classify as pre-existing" mechanism exists.
         assert "does not prevent" in lower or "not prevent" in lower or (
             "classify" in lower and "pre-existing" in lower
         ), (
@@ -91,6 +95,9 @@ class TestConfirmedPreExistingUnrelatedTestFailureDoesNotBlockCompletion:
         section = _extract_validation_section(text)
         assert section, "Step 5 validation section not found in coder.md"
         lower = section.lower()
+        # PR #517 simplified the explicit "do not investigate further" directive to
+        # "one focused verification suffices" -- same constraint expressed as a
+        # sufficiency bound rather than a prohibition.
         assert (
             "do not investigate" in lower
             or "not investigate" in lower
@@ -107,6 +114,8 @@ class TestConfirmedPreExistingUnrelatedTestFailureDoesNotBlockCompletion:
         section = _extract_validation_section(text)
         assert section, "Step 5 validation section not found in coder.md"
         lower = section.lower()
+        # PR #517 simplified "touched by the diff" / "touched by your diff" to
+        # "unrelated to changed behavior", which carries the same constraint.
         assert (
             "touched by your diff" in lower
             or "touched by the diff" in lower

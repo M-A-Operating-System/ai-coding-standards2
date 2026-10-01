@@ -30,6 +30,7 @@ setup() {
   cp "${REPO_ROOT}/pipeline/pipeline_orchestrator.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/todos_patch.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/review_outcome.py" "${WORK_DIR}/pipeline/"
+  cp "${REPO_ROOT}/pipeline/entitlement_groups.py" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/pipeline.json" "${WORK_DIR}/pipeline/"
   cp "${REPO_ROOT}/pipeline/statuses.json" "${WORK_DIR}/pipeline/"
   cp -r "${REPO_ROOT}/pipeline/schemas" "${WORK_DIR}/pipeline/" 2>/dev/null || true
