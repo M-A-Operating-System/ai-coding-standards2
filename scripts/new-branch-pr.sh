@@ -30,7 +30,7 @@ ISSUE_NUMBER="${1:?usage: new-branch-pr.sh <issue-number>}"
 
 STEP="${AI_AGILE_STEP:-01_product_docs/create-pr}"
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-ROOT=$(cd -- "${HERE}/../.." && pwd)
+ROOT=$(cd -- "${HERE}/.." && pwd)
 
 if [[ ! "${ISSUE_NUMBER}" =~ ^[0-9]+$ ]]; then
     echo "ERROR: issue number is not an integer: ${ISSUE_NUMBER}" >&2

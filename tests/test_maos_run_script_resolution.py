@@ -7,7 +7,7 @@ Traces to docs/features/pipeline.md:
 
 Issue #407 made `/maos-run` a thin wrapper (AS-3): the drive loop -- and with
 it the orchestrator path resolution these scenarios are about -- moved into
-`.github/scripts/drive-item.sh`. The same three scenarios are asserted here
+`scripts/drive-item.sh`. The same three scenarios are asserted here
 against the script that now owns the resolution, plus the command file that
 now has to locate the script.
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 MAOS_RUN = REPO_ROOT / ".claude" / "commands" / "maos-run.md"
-DRIVE_ITEM = REPO_ROOT / ".github" / "scripts" / "drive-item.sh"
+DRIVE_ITEM = REPO_ROOT / "scripts" / "drive-item.sh"
 
 STANDALONE_SCRIPT = "pipeline/pipeline_orchestrator.py"
 SUBMODULE_SCRIPT = "ai-coding-standards2/pipeline/pipeline_orchestrator.py"
@@ -47,8 +47,8 @@ class TestMaosRunWorksWhenAiCodingStandards2IsCheckedOutAsANestedSubmodule:
 
     def test_the_command_finds_the_drive_script_in_either_layout(self):
         content = _command()
-        assert ".github/scripts/drive-item.sh" in content
-        assert "ai-coding-standards2/.github/scripts/drive-item.sh" in content
+        assert "scripts/drive-item.sh" in content
+        assert "ai-coding-standards2/scripts/drive-item.sh" in content
 
 
 class TestMaosRunContinuesToWorkInAiCodingStandards2sOwnRepo:

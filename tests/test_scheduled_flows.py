@@ -286,7 +286,7 @@ def _scheduled_step(flow="learn-loop", cron="0 3 * * *", **overrides):
         human_gate_label=None,
         description="a scheduled sweep",
         step_type="script",
-        script_path=".github/scripts/learn-loop.sh",
+        script_path="scripts/learn-loop.sh",
         flow=flow,
         flow_schedule=cron,
         expected_effect={"commits": False, "creates_issues": True},

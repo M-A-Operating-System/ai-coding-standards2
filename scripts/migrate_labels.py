@@ -7,7 +7,7 @@ the short {agent}:{status} format across both the repo label registry and
 every open issue and PR.
 
 Run by the Onboard job's label-bootstrap step, or manually:
-    python .github/scripts/migrate_labels.py
+    python scripts/migrate_labels.py
 """
 
 import json

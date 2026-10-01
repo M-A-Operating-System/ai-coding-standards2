@@ -1,4 +1,4 @@
-"""Tests for .github/scripts/append-metrics-record.sh (issue #407).
+"""Tests for scripts/append-metrics-record.sh (issue #407).
 
 The git plumbing that puts a record on the `ai-agile/metrics` branch used to be
 inline Python in `pipeline_orchestrator.py` (`_append_metrics_record`). AS-2
@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
-SCRIPT = REPO_ROOT / ".github" / "scripts" / "append-metrics-record.sh"
+SCRIPT = REPO_ROOT / "scripts" / "append-metrics-record.sh"
 
 BRANCH = "ai-agile/metrics"
 RECORDS = "records.jsonl"

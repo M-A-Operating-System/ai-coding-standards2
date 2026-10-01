@@ -15,8 +15,8 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).parent.parent
-FRESHNESS = REPO_ROOT / ".github" / "scripts" / "check-branch-freshness.sh"
-CREATE_PR = REPO_ROOT / ".github" / "scripts" / "create-pr.sh"
+FRESHNESS = REPO_ROOT / "scripts" / "check-branch-freshness.sh"
+CREATE_PR = REPO_ROOT / "scripts" / "create-pr.sh"
 ORCH_YML = REPO_ROOT / ".github" / "workflows" / "ai_orchestrator.yml"
 
 

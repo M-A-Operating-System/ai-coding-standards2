@@ -38,12 +38,6 @@ _LIFECYCLE_SOLID: dict[str, list[tuple[str, str]]] = {
     "00_ondemand/codebase-reviewer":    [("complete",    "terminal:cr-done")],
 }
 
-# Extra dashed back-edges not covered by the JSON `review_loop` field.
-# Each entry: agent_path → [(edge_label, target_agent_path, max_cycles|None)]
-_LIFECYCLE_LOOPS: dict[str, list[tuple[str, str, int | None]]] = {
-    "03_execute/ci-gate": [("fail", "03_execute/coder", 3)],
-}
-
 _TERMINAL_LABELS: dict[str, str] = {
     "terminal:rejected": "rejected",
     "terminal:blocked":  "blocked — human",
@@ -146,7 +140,7 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
             else:
                 lines.append(f"    {_node_id(dep)} --> {aid}")
 
-    # Review loop: dashed feedback arrows (REQUEST_CHANGES → re-invoke target)
+    # Review loop: dashed feedback arrows (:review outcome -> re-invoke target)
     for entry in entries:
         review_loop = entry.get("review_loop")
         if not review_loop:
@@ -157,7 +151,7 @@ def build_chart(phase: str, all_entries: list[dict]) -> str:
             source_id = _node_id(entry["agent"])
             target_id = _node_id(re_invoke)
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
+            lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
 
     return "\n".join(lines) + "\n"
 
@@ -246,19 +240,7 @@ def build_lifecycle_chart(all_entries: list[dict]) -> str:
             source_id = _node_id(entry["agent"])
             target_id = _node_id(re_invoke)
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
-
-    # Dashed back-edges from hand-curated loop outcomes
-    for agent_path, loops in _LIFECYCLE_LOOPS.items():
-        if agent_path not in entry_map:
-            continue
-        src_id = _node_id(agent_path)
-        for edge_label, target_agent, max_cycles in loops:
-            if target_agent not in entry_map:
-                continue
-            tgt_id = _node_id(target_agent)
-            cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {src_id} -. {edge_label}{cycle_text} .-> {tgt_id}")
+            lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
 
     # Labeled solid edges to terminal nodes
     for agent_path, outcomes in _LIFECYCLE_SOLID.items():
@@ -385,19 +367,7 @@ def build_complete_chart(all_entries: list[dict]) -> str:
             source_id = _node_id(entry["agent"])
             target_id = _node_id(re_invoke)
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {source_id} -. REQUEST_CHANGES{cycle_text} .-> {target_id}")
-
-    # Dashed back-edges from hand-curated loop outcomes
-    for agent_path, loops in _LIFECYCLE_LOOPS.items():
-        if agent_path not in entry_map:
-            continue
-        src_id = _node_id(agent_path)
-        for edge_label, target_agent, max_cycles in loops:
-            if target_agent not in entry_map:
-                continue
-            tgt_id = _node_id(target_agent)
-            cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {src_id} -. {edge_label}{cycle_text} .-> {tgt_id}")
+            lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
 
     # Labeled solid edges to terminal nodes
     for agent_path, outcomes in _LIFECYCLE_SOLID.items():

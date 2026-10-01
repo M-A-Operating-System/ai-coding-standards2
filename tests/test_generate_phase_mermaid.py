@@ -297,7 +297,7 @@ def test_build_chart_review_loop_dashed_edge():
 
 def test_build_chart_review_loop_max_cycles_label():
     chart = build_chart("ph_c", _LOOP_ENTRIES)
-    assert "REQUEST_CHANGES ≤3" in chart
+    assert "review ≤3" in chart
 
 
 def test_build_chart_no_review_loop_no_dashed_edge():
@@ -561,13 +561,6 @@ def test_lifecycle_review_loop_dashed_edge():
 def test_lifecycle_review_loop_cycle_count_in_label():
     chart = build_lifecycle_chart(_LC_ENTRIES)
     assert "≤2" in chart
-
-
-def test_lifecycle_hand_curated_loop_absent_when_agent_missing():
-    # _LIFECYCLE_LOOPS refers to 03_execute/ci-gate — not in _LC_ENTRIES
-    chart = build_lifecycle_chart(_LC_ENTRIES)
-    # No spurious edges from the hand-curated map should appear.
-    assert "ci_gate" not in chart
 
 
 def test_lifecycle_hand_curated_terminal_absent_when_agent_missing():

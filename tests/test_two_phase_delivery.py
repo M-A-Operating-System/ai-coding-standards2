@@ -27,7 +27,7 @@ from pipeline_orchestrator import (
 
 REPO_ROOT = Path(__file__).parent.parent
 PIPELINE_JSON = REPO_ROOT / "pipeline" / "pipeline.json"
-SCRIPTS = REPO_ROOT / ".github" / "scripts"
+SCRIPTS = REPO_ROOT / "scripts"
 DELETE_BRANCH_SCRIPT = SCRIPTS / "delete-branch.sh"
 MERGE_DOCS_PR_SCRIPT = SCRIPTS / "merge-docs-pr.sh"
 
@@ -67,7 +67,7 @@ class TestTwoPhaseChain:
             ("01_product_docs/merge-docs-pr", "merge-docs-pr.sh"),
         ):
             assert a[name].step_type == "script"
-            assert a[name].script_path == f".github/scripts/{script}"
+            assert a[name].script_path == f"scripts/{script}"
             assert (REPO_ROOT / a[name].script_path).is_file()
 
     def test_prd_docs_updater_gate_and_self_gates_unchanged(self):

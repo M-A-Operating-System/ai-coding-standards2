@@ -2773,6 +2773,150 @@ class TestDispatchReviewCycleCounter:
 
 
 # ---------------------------------------------------------------------------
+# Issue #490: ci-gate gets a review_loop, sharing pr-reviewer's counter
+# ---------------------------------------------------------------------------
+
+class TestCiGateReviewLoop:
+    """ci-gate's review_loop uses the exact same generic mechanism pr-reviewer
+    uses -- no ci-gate-specific code exists or is needed. These tests confirm
+    that by driving _handle_review_loop with ci-gate as the emitting step, and
+    confirm the shipped pipeline.json actually wires it up."""
+
+    def test_shipped_pipeline_json_sets_review_loop_on_ci_gate(self):
+        """pipeline.json's real ci-gate entry has review_loop -- the auto-loop
+        design (issue #490) is actually wired up, not just documented."""
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        agents, _ = load_pipeline(pipeline_path)
+        agent = pipeline_by_name(agents)["03_execute/ci-gate"]
+        assert agent.review_loop is not None
+        assert agent.review_loop["re_invoke"] == "03_execute/coder"
+        assert agent.review_loop["max_cycles"] == 3
+
+    def _ci_gate_def(self, max_cycles: int = 3) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/ci-gate",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="ci-gate",
+            review_loop={"re_invoke": "03_execute/coder", "max_cycles": max_cycles},
+        )
+
+    def _coder_def(self) -> AgentDef:
+        return AgentDef(
+            agent="03_execute/coder",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="coder",
+        )
+
+    def test_ci_gate_review_loop_clears_review_and_coder_complete(self):
+        """_handle_review_loop works identically for ci-gate as it does for
+        pr-reviewer -- confirms the mechanism is step-agnostic, per design."""
+        ci_gate = self._ci_gate_def()
+        coder = self._coder_def()
+        wi = WorkItem(
+            number=42, kind="issue", title="Test issue", labels=set(),
+            url="https://github.com/test/repo/issues/42",
+        )
+        gh = MagicMock()
+        pipeline_map = {coder.agent: coder}
+        labels = {ci_gate.review_label, coder.complete_label}
+
+        result = _handle_review_loop(gh, ci_gate, wi, labels, pipeline_map)
+
+        gh.remove_label.assert_any_call(wi.number, ci_gate.review_label)
+        assert ci_gate.review_label not in result
+        gh.remove_label.assert_any_call(wi.number, coder.complete_label)
+        assert coder.complete_label not in result
+
+    def test_ci_gate_review_loop_escalates_at_max_cycles(self):
+        """ci-gate's own loop escalates to human at max_cycles, same as pr-reviewer's."""
+        ci_gate = self._ci_gate_def(max_cycles=2)
+        coder = self._coder_def()
+        wi = WorkItem(
+            number=42, kind="issue", title="Test issue", labels=set(),
+            url="https://github.com/test/repo/issues/42",
+        )
+        gh = MagicMock()
+        pipeline_map = {coder.agent: coder}
+        labels = {ci_gate.review_label, coder.complete_label, "review-cycle:2"}
+
+        result = _handle_review_loop(gh, ci_gate, wi, labels, pipeline_map)
+
+        assert ci_gate.review_label in result
+        gh.post_comment.assert_called_once()
+
+    @patch("pipeline_orchestrator.invoke_agent")
+    def test_counter_is_shared_across_ci_gate_and_pr_reviewer(self, mock_invoke):
+        """The review-cycle:N counter continues across triggers from different
+        review_loop-configured steps -- ci-gate and pr-reviewer draw from one
+        shared, per-PR budget, per docs/product/orchestrator/11-orchestrator.md
+        ('What a cycle counts').
+
+        Simulates: ci-gate's loop already re-invoked coder once (review-cycle:1
+        present). pr-reviewer's loop now also re-invokes coder. The counter must
+        advance to review-cycle:2, not reset to review-cycle:1, proving the two
+        steps are not tracking independent budgets.
+        """
+        mock_invoke.return_value = AgentRunResult(
+            success=True, captured_tail="AI_AGILE_STATUS: complete"
+        )
+        coder = self._coder_def()
+        coder.trigger = {"label": "prd-docs-updater:approved"}
+        reviewer = AgentDef(
+            agent="03_execute/pr-reviewer",
+            phase="03_execute",
+            objects=["issue"],
+            trigger={"label": "merge-conflict:complete"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="reviewer",
+            review_loop={"re_invoke": "03_execute/coder", "max_cycles": 3},
+        )
+        pipeline_map = {coder.agent: coder, reviewer.agent: reviewer}
+        gh = _make_gh_mock()
+        # review-cycle:1 already present, as if ci-gate's loop set it on a prior tick
+        wi = _make_work_item_with_labels(
+            42, {"prd-docs-updater:approved", "review-cycle:1"}
+        )
+
+        process_work_item(wi, [coder], pipeline_map, gh, dry_run=False, repo="test/repo")
+
+        applied = [c.args[1] for c in gh.add_label.call_args_list]
+        removed = [c.args[1] for c in gh.remove_label.call_args_list]
+        assert "review-cycle:2" in applied, (
+            f"Counter must advance past ci-gate's earlier cycle, not reset. Applied: {applied}"
+        )
+        assert "review-cycle:1" in removed
+
+    def test_ci_gate_failure_leaves_downstream_steps_ineligible(self):
+        """Structural proof against double-dispatch: merge-conflict and
+        pr-reviewer both require ci-gate:complete (per pipeline.json), which
+        ci-gate never reaches while it is on :review. So on any tick where
+        ci-gate's own review_loop is the one firing, pr-reviewer's review_loop
+        cannot also fire for the same work item -- the dependency chain, not
+        new code, is what prevents a double re-invoke of coder.
+        """
+        pipeline_path = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+        agents, _ = load_pipeline(pipeline_path)
+        by_name = pipeline_by_name(agents)
+        merge_conflict = by_name["03_execute/merge-conflict"]
+        pr_reviewer = by_name["03_execute/pr-reviewer"]
+        assert merge_conflict.trigger.get("label") == "ci-gate:complete"
+        assert "03_execute/ci-gate" in merge_conflict.dependencies
+        assert "03_execute/merge-conflict" in pr_reviewer.dependencies
+
+
+# ---------------------------------------------------------------------------
 # QA-001: TestAuditEventEmission
 # ---------------------------------------------------------------------------
 
@@ -3478,7 +3622,7 @@ class TestPostSteps:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            post_steps=["scripts/mark-pr-ready.sh"],
             review_gate=True,
         )
 
@@ -3657,8 +3801,8 @@ class TestPostSteps:
             human_gate_label=None,
             description="test",
             post_steps=[
-                ".github/scripts/mark-pr-ready.sh",
-                ".github/scripts/other-hook.sh",
+                "scripts/mark-pr-ready.sh",
+                "scripts/other-hook.sh",
             ],
         )
         gh = _make_gh_mock()
@@ -3722,8 +3866,8 @@ class TestPostSteps:
             human_gate_label=None,
             description="test",
             post_steps=[
-                ".github/scripts/mark-pr-ready.sh",
-                ".github/scripts/other-hook.sh",
+                "scripts/mark-pr-ready.sh",
+                "scripts/other-hook.sh",
             ],
         )
         gh = _make_gh_mock()
@@ -3821,9 +3965,9 @@ class TestPostSteps:
         assert "WORK_ITEM_KIND" not in env_passed
 
     def test_mark_pr_ready_script_exists(self):
-        """mark-pr-ready.sh must exist at .github/scripts/mark-pr-ready.sh with a shebang."""
+        """mark-pr-ready.sh must exist at scripts/mark-pr-ready.sh with a shebang."""
         import pipeline_orchestrator as orch
-        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "mark-pr-ready.sh"
+        script_path = orch.SUBMODULE_ROOT / "scripts" / "mark-pr-ready.sh"
         assert script_path.exists(), (
             f"mark-pr-ready.sh must exist at {script_path}"
         )
@@ -3855,7 +3999,7 @@ class TestPostStepFailureDecoupling:
             human_gate_after=False,
             human_gate_label=None,
             description="test",
-            post_steps=[".github/scripts/mark-pr-ready.sh"],
+            post_steps=["scripts/mark-pr-ready.sh"],
             review_gate=True,
         )
 
@@ -3909,7 +4053,7 @@ class TestPostStepFailureDecoupling:
         Then it detects the PR is already ready and exits 0
         """
         import pipeline_orchestrator as orch
-        script_path = orch.SUBMODULE_ROOT / ".github" / "scripts" / "mark-pr-ready.sh"
+        script_path = orch.SUBMODULE_ROOT / "scripts" / "mark-pr-ready.sh"
         content = script_path.read_text()
         assert 'draft' in content, "Script must check the 'draft' field of the PR"
         assert 'exit 0' in content, "Script must exit 0 when the PR is already ready"
@@ -5464,7 +5608,7 @@ class TestApplyExhaustedPartialLabel:
 # ---------------------------------------------------------------------------
 
 class TestOrchestrationScriptResolution:
-    SCRIPT_REL = ".github/scripts/mark-pr-ready.sh"
+    SCRIPT_REL = "scripts/mark-pr-ready.sh"
 
     @pytest.fixture(autouse=True)
     def _isolate_cache(self):
@@ -5794,7 +5938,7 @@ class TestEnsureGhCli:
         mock_run.assert_called_once()
         args = mock_run.call_args.args[0]
         assert args[0] == "bash"
-        assert args[1].endswith(".github/scripts/ensure-gh-cli.sh")
+        assert args[1].endswith("scripts/ensure-gh-cli.sh")
 
     def test_success_logs_script_stdout_as_info(self, caplog):
         with patch("pipeline_orchestrator.subprocess.run") as mock_run:
@@ -5877,7 +6021,7 @@ class TestRecoverUnpushedCommits:
         mock_run.assert_called_once()
         args = mock_run.call_args.args[0]
         assert args[0] == "bash"
-        assert args[1].endswith(".github/scripts/recover-unpushed-commits.sh")
+        assert args[1].endswith("scripts/recover-unpushed-commits.sh")
         assert args[2] == "issue-42"
 
     def test_no_env_override_inherits_the_push_credential(self):
@@ -6340,7 +6484,7 @@ class TestEpicCompletionIsDeclared:
         assert self.step.flow_labels == ["epic"]
         assert self.step.trigger == {"children": "all_closed"}
         assert self.step.step_type == "script"
-        assert self.step.script_path == ".github/scripts/epic-closer.sh"
+        assert self.step.script_path == "scripts/epic-closer.sh"
 
     def test_eligible_once_every_child_is_closed(self):
         item = self._epic()
@@ -6386,7 +6530,7 @@ class TestEpicCompletionIsDeclared:
 
     def test_closer_script_posts_the_completion_comment_and_closes(self, tmp_path):
         """The declared step reproduces exactly what the sweep used to do."""
-        script = Path(__file__).parent.parent / ".github" / "scripts" / "epic-closer.sh"
+        script = Path(__file__).parent.parent / "scripts" / "epic-closer.sh"
         calls = tmp_path / "calls.log"
         fake_bin = tmp_path / "bin"
         fake_bin.mkdir()
@@ -6417,7 +6561,7 @@ class TestEpicCompletionIsDeclared:
         assert "state_reason=completed" in logged
 
     def test_closer_script_refuses_while_a_child_is_open(self, tmp_path):
-        script = Path(__file__).parent.parent / ".github" / "scripts" / "epic-closer.sh"
+        script = Path(__file__).parent.parent / "scripts" / "epic-closer.sh"
         fake_bin = tmp_path / "bin"
         fake_bin.mkdir()
         (fake_bin / "gh").write_text("#!/usr/bin/env bash\nexit 0\n")

@@ -5,7 +5,7 @@
 # it via apt if missing. Runs once at orchestrator startup (issue #495 --
 # STD-ARCH-035: this was inline in pipeline_orchestrator.py's _ensure_gh_cli).
 #
-# Script-type pipeline steps (.github/scripts/*.sh) shell out to `gh api`
+# Script-type pipeline steps (scripts/*.sh) shell out to `gh api`
 # REST calls, not gh's GraphQL-backed subcommands (some of which 403 in
 # restricted sessions -- see #276/#284), so this only needs the binary plus
 # GITHUB_TOKEN/GH_TOKEN in the environment. Verification below uses

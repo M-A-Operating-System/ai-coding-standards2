@@ -18,7 +18,7 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CI_GATE_SCRIPT="${REPO_ROOT}/.github/scripts/ci-gate.sh"
+CI_GATE_SCRIPT="${REPO_ROOT}/scripts/ci-gate.sh"
 
 # ---------------------------------------------------------------------------
 # Test 1: the exact defect pattern (${!array[*]:-<none>}) must not appear in

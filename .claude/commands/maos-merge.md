@@ -2,7 +2,7 @@
 
 Merge a pull request and delete its branch. This is a **deterministic script**,
 not an agent -- there is no LLM judgement in the merge decision. It runs
-`.github/scripts/merge-pr.sh`, which finds the right PR, verifies it is open and
+`scripts/merge-pr.sh`, which finds the right PR, verifies it is open and
 not conflicting, merges it, and deletes the head branch.
 
 ## Input
@@ -20,8 +20,8 @@ the repo and the argument(s):
 
 ```bash
 REPO=$(git remote get-url origin | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
-SCRIPT=.github/scripts/merge-pr.sh
-[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/.github/scripts/merge-pr.sh
+SCRIPT=scripts/merge-pr.sh
+[ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/scripts/merge-pr.sh
 REPO="$REPO" bash "$SCRIPT" $ARGUMENTS
 ```
 

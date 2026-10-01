@@ -223,7 +223,7 @@ class TestTheAgentPathIsUntouched:
 # rule inverted: every script step is handed the same credential and resolves
 # it in one place. The narrowing that survives is which VARIABLES a script gets
 # at all, and what each script is written to do. The tradeoff is stated in
-# .github/scripts/lib/github-identity.sh.
+# scripts/lib/github-identity.sh.
 # ---------------------------------------------------------------------------
 
 class TestOneIdentityBehindEverySystemWrite:
@@ -235,7 +235,7 @@ class TestOneIdentityBehindEverySystemWrite:
             "create-pr.sh", "create-docs-pr.sh", "merge-docs-pr.sh",
             "ci-gate.sh", "some-future-step.sh",
         ):
-            got = type(self)._resolve(f".github/scripts/{script}")
+            got = type(self)._resolve(f"scripts/{script}")
             assert "AI_AGILE_BOT_TOKEN" in got, (
                 f"{script} talks to GitHub as the system and must carry the "
                 "system's own identity (MI-7)"
@@ -247,19 +247,19 @@ class TestOneIdentityBehindEverySystemWrite:
 
     def test_the_list_does_not_vary_by_script(self):
         """A per-script identity is exactly what MI-7 rules out."""
-        base = set(type(self)._resolve(".github/scripts/ci-gate.sh"))
-        assert base == set(type(self)._resolve(".github/scripts/create-pr.sh"))
+        base = set(type(self)._resolve("scripts/ci-gate.sh"))
+        assert base == set(type(self)._resolve("scripts/create-pr.sh"))
         assert base == set(_SCRIPT_AGENT_ENV_VARS)
 
     def test_the_fallback_keeps_a_repo_without_a_pat_working(self):
         """AI_AGILE_BOT_TOKEN is granted, never required: a repository that
         configures none falls back to exactly the token it used before."""
-        got = set(type(self)._resolve(".github/scripts/create-pr.sh"))
+        got = set(type(self)._resolve("scripts/create-pr.sh"))
         assert {"GH_TOKEN", "GITHUB_TOKEN"} <= got
 
     def test_the_identity_is_resolved_in_one_place(self):
         from pathlib import Path as _P
-        scripts = _P(__file__).parent.parent / ".github" / "scripts"
+        scripts = _P(__file__).parent.parent / "scripts"
         helper = scripts / "lib" / "github-identity.sh"
         assert helper.is_file(), "the shared identity resolver must exist"
 
@@ -279,7 +279,7 @@ class TestOneIdentityBehindEverySystemWrite:
     def test_no_script_picks_its_own_identity(self):
         """A script expanding AI_AGILE_BOT_TOKEN is deciding for itself."""
         from pathlib import Path as _P
-        scripts = _P(__file__).parent.parent / ".github" / "scripts"
+        scripts = _P(__file__).parent.parent / "scripts"
         for script in sorted(scripts.glob("*.sh")):
             assert "${AI_AGILE_BOT_TOKEN" not in script.read_text(), (
                 f"{script.name} reads AI_AGILE_BOT_TOKEN directly; the identity "

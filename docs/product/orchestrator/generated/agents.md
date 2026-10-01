@@ -33,7 +33,7 @@ Drafts a Product Requirements Document for an appropriately-sized issue. Rewrite
 
 - **Kind:** script
 - **Phase:** `01_product_docs`
-- **Script:** `.github/scripts/create-docs-pr.sh`
+- **Script:** `scripts/create-docs-pr.sh`
 
 Scripted step (two-phase design->build, issue #247): opens the DESIGN pull request on the issue-{N}-docs branch with a non-closing body. prd-docs-updater commits the docs/product/ and docs/features/ changes to this branch; merge-docs-pr merges it to main at the prd-docs-updater:approved gate, ahead of the build phase. Thin wrapper over create-pr.sh; the branch and the non-closing body both come from this flow's naming.pull_requests entry 'docs'. Idempotent. Skipped for spike/epic/blocked issues.
 
@@ -48,7 +48,7 @@ Runs after create-docs-pr opens the design PR. Copies the approved PRD's Gherkin
 
 - **Kind:** script
 - **Phase:** `01_product_docs`
-- **Script:** `.github/scripts/merge-docs-pr.sh`
+- **Script:** `scripts/merge-docs-pr.sh`
 
 Scripted step (two-phase design->build, issue #247): merges the design PR (issue-{N}-docs) to main at the prd-docs-updater:approved gate, ahead of the build phase, so every subsequent (and parallel) build is cut from a main that already carries the latest approved design and design conflicts surface at this small docs merge. Idempotent -- if no open design PR exists it exits cleanly. Refuses to auto-merge a conflicting or protection-blocked PR (emits review for human resolution) rather than forcing it. Deterministic; does not invoke Claude CLI. Skipped for spike/epic/blocked issues.
 
@@ -56,7 +56,7 @@ Scripted step (two-phase design->build, issue #247): merges the design PR (issue
 
 - **Kind:** script
 - **Phase:** `01_product_docs`
-- **Script:** `.github/scripts/create-pr.sh`
+- **Script:** `scripts/create-pr.sh`
 
 Scripted step: creates the CODE branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Runs after merge-docs-pr publishes the approved design to main (two-phase design->build, issue #247), so the code branch is cut from a main that already carries the latest design. Applies source-issue:{N} label via link-pr-to-issue.sh. Coder commits accumulate in this PR. Idempotent -- exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues (spikes produce no code to ship). Skipped for epic/blocked issues.
 
@@ -71,7 +71,7 @@ Implements one GitHub issue in the consuming repository as a defensive programme
 
 - **Kind:** script
 - **Phase:** `03_execute`
-- **Script:** `.github/scripts/ci-gate.sh`
+- **Script:** `scripts/ci-gate.sh`
 
 Scripted CI gate: polls the GitHub check-runs for the issue PR until all checks pass (emits complete), any check fails (emits review -- the orchestrator re-invokes the coder up to 3 cycles), or the 14-minute timeout expires (emits blocked for human intervention). Posts a summary comment listing check outcomes before signalling status. Skipped for epic/blocked issues.
 
@@ -100,7 +100,7 @@ Coordinating work: an epic is a parent whose children are the real work, and it 
 
 - **Kind:** script
 - **Phase:** `04_evaluate`
-- **Script:** `.github/scripts/epic-closer.sh`
+- **Script:** `scripts/epic-closer.sh`
 
 Closes a coordinating epic once every one of its children is closed: posts the epic-complete comment and closes the issue. Eligible only when trigger.children: all_closed holds -- the orchestrator counts the item's parent-issue:{N} children generically and hands this step AI_AGILE_CHILDREN_TOTAL / AI_AGILE_CHILDREN_OPEN. A flow that wants a review of the whole before the epic closes declares that step here ahead of this one, with no orchestrator change.
 
@@ -199,6 +199,6 @@ On-demand reciprocation of a blockedby:/blocks: pair, requested by a human apply
 
 - **Kind:** script
 - **Phase:** `00_ondemand`
-- **Script:** `.github/scripts/blocker.sh`
+- **Script:** `scripts/blocker.sh`
 
 Reciprocates a blockedby:/blocks: pair. A human applies blockedby:{N} to this issue directly -- that alone already gates eligibility -- then requests this step to add the symmetric blocks:{this} label onto issue N. Emits blocked (not failed) when no blockedby: label is present to reciprocate, so a mistaken request is visible rather than silently swallowed. Triggered by applying the blocker:requested label to any issue.

@@ -510,7 +510,7 @@
 
 **Given** an agent-type step whose defaults declare `agent_lifecycle.before` and `agent_lifecycle.after`
 **When** the step is invoked
-**Then** the baseline of untracked repo-root files is recorded by `.github/scripts/sweep-repo-root-snapshot.sh` and the files the step added are removed by `.github/scripts/sweep-repo-root.sh`
+**Then** the baseline of untracked repo-root files is recorded by `scripts/sweep-repo-root-snapshot.sh` and the files the step added are removed by `scripts/sweep-repo-root.sh`
 **And** `pipeline_orchestrator.py` holds no sweep code of its own -- adding, removing or changing the sweep is a change to a script and to `pipeline.json`, never to the orchestrator
 
 ## Scenario: A retried step is still swept against the baseline from before its first attempt
@@ -535,7 +535,7 @@
 
 **Given** a completed step whose metrics record is ready
 **When** the orchestrator records it
-**Then** it writes the finished record line and hands it to `.github/scripts/append-metrics-record.sh`, which fetches the `ai-agile/metrics` branch, builds the commit with git plumbing and pushes it
+**Then** it writes the finished record line and hands it to `scripts/append-metrics-record.sh`, which fetches the `ai-agile/metrics` branch, builds the commit with git plumbing and pushes it
 **And** deciding what the record says stays with the orchestrator, which knows the step, the outcome and the timing
 
 ## Scenario: A concurrent writer loses the race rather than the record
@@ -587,13 +587,13 @@
 
 **Given** the four commands that are not generated from `pipeline.json` -- `maos-merge`, `maos-new-branch-pr`, `maos-rebaseline`, `maos-run`
 **When** each command file is read
-**Then** it names one script under `.github/scripts/` and passes its arguments through
+**Then** it names one script under `scripts/` and passes its arguments through
 **And** it contains no numbered procedure, no shell conditional beyond locating that script in the two supported checkout layouts, and no loop
 
 ## Scenario: The `/maos-run` drive loop is a script, and stops where a person is needed
 
 **Given** an issue being driven interactively
-**When** `.github/scripts/drive-item.sh` runs
+**When** `scripts/drive-item.sh` runs
 **Then** it invokes an orchestrator tick, re-reads the labels, and ticks again while a tick keeps changing them
 **And** it stops with a distinct exit code as soon as a step lands on `:review`, `:blocked` or `:failed`, naming what halted and what clears it
 **And** it stops when a tick advances nothing, and when a bounded tick budget is exhausted
@@ -607,14 +607,14 @@
 ## Scenario: An interactive branch-and-PR run produces what the pipeline step produces
 
 **Given** `/maos-new-branch-pr` is run for an issue
-**When** `.github/scripts/new-branch-pr.sh` resolves the branch from the flow's `naming` in `pipeline.json`
+**When** `scripts/new-branch-pr.sh` resolves the branch from the flow's `naming` in `pipeline.json`
 **Then** it hands off to `create-pr.sh` -- the same script `01_product_docs/create-pr` runs -- so the branch, PR title, `source-issue` label and announcement are identical to a headless run
 **And** no branch-naming or title-truncation rule is restated in the command file
 
 ## Scenario: A rebaseline refuses to run over uncommitted work
 
 **Given** a checkout with staged, unstaged or untracked changes
-**When** `.github/scripts/rebaseline-branch.sh` runs
+**When** `scripts/rebaseline-branch.sh` runs
 **Then** it lists what is dirty and stops, leaving every one of those changes on disk
 **And** it never runs `git clean` -- the dirty-tree check is the safety net, and deleting files would be a second one that contradicts it
 
@@ -628,7 +628,7 @@
 
 **Given** a repository that configures `AI_AGILE_BOT_TOKEN`
 **When** any orchestrator-invoked script talks to GitHub -- opening a PR, merging one, marking one ready, applying a label, deleting a branch, pushing a commit, appending to the metrics ledger
-**Then** it authenticates as that one dedicated identity, resolved in `.github/scripts/lib/github-identity.sh` and nowhere else
+**Then** it authenticates as that one dedicated identity, resolved in `scripts/lib/github-identity.sh` and nowhere else
 **And** no script chooses its own credential, so the same logical actor never appears on an issue as two different identities
 
 ## Scenario: A repository without a dedicated identity keeps working

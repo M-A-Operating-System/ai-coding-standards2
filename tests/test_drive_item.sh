@@ -15,7 +15,7 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DRIVE_SCRIPT="${REPO_ROOT}/.github/scripts/drive-item.sh"
+DRIVE_SCRIPT="${REPO_ROOT}/scripts/drive-item.sh"
 
 TEST_REPO="owner/repo"
 ISSUE_NUM=407
