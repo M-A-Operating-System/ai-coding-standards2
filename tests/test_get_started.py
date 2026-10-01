@@ -872,6 +872,13 @@ class TestRewritePaths:
         already = f"bash {self._name()}/scripts/status.sh arg"
         assert get_started.rewrite_paths(already) == already
 
+    def test_no_mid_substring_rewrite_status_sh(self):
+        # "scripts/status.sh" appears as a mid-string suffix of an unrelated
+        # directory name here -- it must not be treated as a bare path
+        # component and rewritten (issue #519 RV-002).
+        src = "bash old_scripts/status.sh arg"
+        assert get_started.rewrite_paths(src) == src
+
     def test_rewrites_migrate_labels_py(self):
         src = "python scripts/migrate_labels.py"
         result = get_started.rewrite_paths(src)
@@ -880,6 +887,10 @@ class TestRewritePaths:
     def test_no_double_prefix_migrate_labels_py(self):
         already = f"python {self._name()}/scripts/migrate_labels.py"
         assert get_started.rewrite_paths(already) == already
+
+    def test_no_mid_substring_rewrite_migrate_labels_py(self):
+        src = "python old_scripts/migrate_labels.py"
+        assert get_started.rewrite_paths(src) == src
 
     def test_rewrites_claude_agents(self):
         src = "cat .claude/agents/01_product_docs/issue-classifier.md"

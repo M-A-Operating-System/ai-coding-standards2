@@ -563,13 +563,6 @@ def test_lifecycle_review_loop_cycle_count_in_label():
     assert "≤2" in chart
 
 
-def test_lifecycle_hand_curated_loop_absent_when_agent_missing():
-    # _LIFECYCLE_LOOPS refers to 03_execute/ci-gate — not in _LC_ENTRIES
-    chart = build_lifecycle_chart(_LC_ENTRIES)
-    # No spurious edges from the hand-curated map should appear.
-    assert "ci_gate" not in chart
-
-
 def test_lifecycle_hand_curated_terminal_absent_when_agent_missing():
     chart = build_lifecycle_chart(_LC_ENTRIES)
     # Terminals require their source agent to be present.

@@ -38,15 +38,6 @@ _LIFECYCLE_SOLID: dict[str, list[tuple[str, str]]] = {
     "00_ondemand/codebase-reviewer":    [("complete",    "terminal:cr-done")],
 }
 
-# Extra dashed back-edges not covered by the JSON `review_loop` field.
-# Each entry: agent_path → [(edge_label, target_agent_path, max_cycles|None)]
-# ci-gate's back-edge to coder used to live here as a hand-curated stand-in
-# (issue #490): ci-gate had no review_loop field yet, but its step
-# description already claimed the auto-retry behavior. Now that ci-gate
-# declares a real review_loop, the edge renders from that field like every
-# other step's, so no hand-curated entry is needed here.
-_LIFECYCLE_LOOPS: dict[str, list[tuple[str, str, int | None]]] = {}
-
 _TERMINAL_LABELS: dict[str, str] = {
     "terminal:rejected": "rejected",
     "terminal:blocked":  "blocked — human",
@@ -251,18 +242,6 @@ def build_lifecycle_chart(all_entries: list[dict]) -> str:
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
             lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
 
-    # Dashed back-edges from hand-curated loop outcomes
-    for agent_path, loops in _LIFECYCLE_LOOPS.items():
-        if agent_path not in entry_map:
-            continue
-        src_id = _node_id(agent_path)
-        for edge_label, target_agent, max_cycles in loops:
-            if target_agent not in entry_map:
-                continue
-            tgt_id = _node_id(target_agent)
-            cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {src_id} -. {edge_label}{cycle_text} .-> {tgt_id}")
-
     # Labeled solid edges to terminal nodes
     for agent_path, outcomes in _LIFECYCLE_SOLID.items():
         if agent_path not in entry_map:
@@ -389,18 +368,6 @@ def build_complete_chart(all_entries: list[dict]) -> str:
             target_id = _node_id(re_invoke)
             cycle_text = f" ≤{max_cycles}" if max_cycles else ""
             lines.append(f"    {source_id} -. review{cycle_text} .-> {target_id}")
-
-    # Dashed back-edges from hand-curated loop outcomes
-    for agent_path, loops in _LIFECYCLE_LOOPS.items():
-        if agent_path not in entry_map:
-            continue
-        src_id = _node_id(agent_path)
-        for edge_label, target_agent, max_cycles in loops:
-            if target_agent not in entry_map:
-                continue
-            tgt_id = _node_id(target_agent)
-            cycle_text = f" ≤{max_cycles}" if max_cycles else ""
-            lines.append(f"    {src_id} -. {edge_label}{cycle_text} .-> {tgt_id}")
 
     # Labeled solid edges to terminal nodes
     for agent_path, outcomes in _LIFECYCLE_SOLID.items():
