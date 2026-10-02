@@ -16,16 +16,39 @@ Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 **System context.** This is a CI/CD pipeline orchestrator running in GitHub
 Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope.
 
-**If a command is denied or a required check fails.** If the tool-permission
-system refuses to run a command, do not retry the identical denied form and
-do not proceed as if the check had succeeded. Retry at most once, and only
-with a directly permitted equivalent shape (e.g. a combined/piped invocation
-split into its separate allowed commands). If evidence still cannot be
-gathered after that retry — a denied command, a `git`/`gh` failure that is
-not one of the specific documented fallbacks below — stop and write
+**Avoid denied command shapes in the first place.** A leading variable
+assignment in front of a command substitution -- `VAR=$(gh api ...)` or
+`VAR=$(git ...)` -- does not reliably match this agent's command allowlist,
+because the line's first token is the assignment, not `gh`/`git`. Every
+command below instead runs as its own line with the permitted command
+leading, redirects its output to a file, and loads that file into a shell
+variable with `read` (also not an assignment-first line) -- never
+reconstruct this back into a `VAR=$(...)` one-liner.
+
+**If a command is denied or a required check fails anyway.** If the
+tool-permission system still refuses to run a command, do not retry the
+identical denied form and do not proceed as if the check had succeeded.
+Retry at most once, and only with a directly permitted equivalent shape. If
+evidence still cannot be gathered after that retry, stop and write
 `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"` and the concrete
 command and reason in `summary`, rather than guessing or reporting a result
-that was never actually determined.
+that was never actually determined. Exception: Step 1's own
+mergeable-state-unknown-after-retry fallback (below) is a deliberate,
+already-reasoned degraded-mode advance -- GitHub's own asynchronous
+computation genuinely has no answer yet, which is not a denied command or a
+failure to work around -- so it is not a case this rule overrides.
+
+**Steps 2 and 3 run as one Bash invocation each, start to cleanup.** Both
+steps mutate the shared checkout (a scratch branch, a rebase or merge in
+progress) and rely on their own `trap ... EXIT` to undo that no matter where
+the block stops. A trap only protects commands run in the *same* shell
+process: splitting either block across more than one Bash tool call would
+leave a later call's mutations unprotected by the earlier call's trap. If an
+individual command inside one of these blocks is denied, do not split the
+rest into a separate invocation to work around it -- within that same
+invocation, manually run the equivalent of the trap's own cleanup (abort
+any in-progress rebase/merge, check out `$_ORIG_REF`, delete the scratch
+branch) before the block ends, then write `outcome: "blocked"`.
 
 ---
 
@@ -74,7 +97,8 @@ Use the GitHub API `.mergeable_state` field — it is authoritative and requires
 no local git operations:
 
 ```bash
-MERGEABLE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state')
+gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state' >/tmp/_mc_mergeable
+read -r MERGEABLE </tmp/_mc_mergeable
 ```
 
 `mergeable_state` will be `dirty` (has conflicts), `unknown` (not yet computed),
@@ -85,7 +109,8 @@ seconds:
 ```bash
 if [[ "$MERGEABLE" == "unknown" ]]; then
   sleep 15
-  MERGEABLE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state')
+  gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state' >/tmp/_mc_mergeable
+  read -r MERGEABLE </tmp/_mc_mergeable
 fi
 ```
 
@@ -126,8 +151,10 @@ rebase resolves them automatically with no human input required.
 ```bash
 # Resolve the PR's base and head branches before using them -- they drive every
 # git command in this step. (Step 3 re-resolves them for the manual path.)
-BASE_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')
-HEAD_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
+gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref' >/tmp/_mc_base_branch
+gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref' >/tmp/_mc_head_branch
+read -r BASE_BRANCH </tmp/_mc_base_branch
+read -r HEAD_BRANCH </tmp/_mc_head_branch
 
 git config user.email "github-actions[bot]@users.noreply.github.com"
 git config user.name "github-actions[bot]"
@@ -137,7 +164,8 @@ git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
 # failing command anywhere after this line -- not just the two explicit
 # fall-through paths -- still restores the original branch and removes the
 # scratch branch instead of leaving it behind for the next invocation.
-_ORIG_REF=$(git rev-parse --abbrev-ref HEAD)
+git rev-parse --abbrev-ref HEAD >/tmp/_mc_orig_ref
+read -r _ORIG_REF </tmp/_mc_orig_ref
 trap 'git rebase --abort 2>/dev/null || true; git checkout "$_ORIG_REF" 2>/dev/null || true; git branch -D _rebase_attempt 2>/dev/null || true' EXIT
 
 git checkout -B _rebase_attempt "origin/${HEAD_BRANCH}"
@@ -177,8 +205,10 @@ merge result with conflict markers — it cannot be used to identify conflicts.
 Instead, simulate the merge locally:
 
 ```bash
-BASE_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')
-HEAD_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
+gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref' >/tmp/_mc_base_branch
+gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref' >/tmp/_mc_head_branch
+read -r BASE_BRANCH </tmp/_mc_base_branch
+read -r HEAD_BRANCH </tmp/_mc_head_branch
 
 # Fetch both sides
 git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
@@ -186,7 +216,8 @@ git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
 # Registered before the checkout below mutates anything, so a denied or
 # failing command anywhere after this line still restores the original
 # branch and removes the scratch branch instead of leaving it behind.
-_ORIG_REF=$(git rev-parse --abbrev-ref HEAD)
+git rev-parse --abbrev-ref HEAD >/tmp/_mc_orig_ref
+read -r _ORIG_REF </tmp/_mc_orig_ref
 trap 'git merge --abort 2>/dev/null || true; git checkout "$_ORIG_REF" 2>/dev/null || true; git branch -D _conflict_assess 2>/dev/null || true' EXIT
 
 # -B (not -b): force-create/reset in case a prior interrupted run left this
@@ -196,15 +227,17 @@ git checkout -B _conflict_assess "origin/${HEAD_BRANCH}"
 git merge --no-commit "origin/${BASE_BRANCH}" 2>&1 || true
 
 # List conflicted files
-CONFLICTED_FILES=$(git diff --name-only --diff-filter=U)
+git diff --name-only --diff-filter=U >/tmp/_mc_conflicted_files
 echo "Conflicted files:"
-echo "$CONFLICTED_FILES"
+cat /tmp/_mc_conflicted_files
 
-# For each conflicted file, show the full conflict diff
-for f in $CONFLICTED_FILES; do
+# For each conflicted file, show the full conflict diff. Iterates the file
+# directly (not a $CONFLICTED_FILES variable) -- the same leading-assignment
+# avoidance as everywhere else in this step.
+while IFS= read -r f; do
   echo "=== $f ==="
   git diff HEAD -- "$f"
-done
+done </tmp/_mc_conflicted_files
 # Clean up runs via the trap above on exit.
 ```
 
@@ -263,7 +296,7 @@ token before writing:
 ```json
 {
   "outcome": "review",
-  "summary": "Found merge conflicts on PR #${PR_NUMBER}; posted a prioritised resolution plan.",
+  "summary": "Found merge conflicts on PR #${PR_NUMBER}; wrote a prioritised resolution plan in output for the orchestrator to post.",
   "message": "Merge conflicts found — review the resolution plan and apply merge-conflict:approved to proceed.",
   "output": "## Merge Conflict Assessment\n\n**PR:** #PR_NUMBER_PLACEHOLDER | **Issue:** #ISSUE_NUMBER_PLACEHOLDER\n\nThe PR branch has merge conflicts that must be resolved before this PR can be merged. The table below summarises each conflict; the detailed sections below explain the recommended resolution approach.\n\n### Conflict Summary\n\n| Priority | File | Conflict scope | Recommended resolution |\n|----------|------|----------------|------------------------|\n| ... | ... | ... | ... |\n\n### Detailed Recommendations\n\n#### `path/to/file.py`\n\n**Priority:** High\n\n**Ours (PR branch):** `[description of what the PR changed]`\n\n**Theirs (base branch):** `[description of what the base changed]`\n\n**Recommended resolution:** `[Accept Ours / Accept Theirs / Manual merge]`\n\n**Rationale:** `[why this resolution is correct]`\n\n**Suggested merged form** (if Manual merge):\n```python\n# paste the correctly merged hunk here\n```\n\n---\n\n**To proceed:**\n1. Review each recommendation above.\n2. If the resolution plan is acceptable, apply `merge-conflict:approved` to issue #ISSUE_NUMBER_PLACEHOLDER. The orchestrator will re-invoke the coding agent to apply the resolutions automatically.\n3. If a recommendation is wrong, add a comment explaining the correction before approving."
 }
