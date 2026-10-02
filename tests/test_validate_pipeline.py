@@ -195,3 +195,12 @@ class TestNoSelfGrantedGateOrLifecycleLabel:
             _step(), tmp_path / "nope.json",
         )
         assert len(errors) == 1 and "could not read statuses" in errors[0]
+
+
+def test_shipped_standard_delivery_targets_main_for_release():
+    """The released pipeline must branch and open delivery PRs against main,
+    never the retired beta integration branch."""
+    pipeline = json.loads(PIPELINE_PATH.read_text())
+    standard = pipeline["flows"]["standard-delivery"]
+    assert standard["naming"]["base"] == "main"
+    assert "feature/393-orchestrator-target-design" not in PIPELINE_PATH.read_text()

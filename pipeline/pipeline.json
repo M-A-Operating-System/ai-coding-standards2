@@ -98,7 +98,7 @@
       },
       "naming": {
         "branch": "issue-{number}",
-        "base": "feature/393-orchestrator-target-design",
+        "base": "main",
         "pull_requests": [
           {
             "id": "docs",
