@@ -22,6 +22,15 @@ Required behavior, and how each is now met:
 - clean up temporary branches/worktrees created during investigation — Steps 2 and 3's cleanup is now an `EXIT` trap registered before either scratch branch (`_rebase_attempt`, `_conflict_assess`) is created, so a denied or failing command anywhere in the block still restores the original branch and removes the scratch branch; Step 3's checkout also switched `-b` to `-B` so a branch stranded by an earlier interrupted run can no longer make the checkout fail silently and merge onto the wrong branch.
 - cover the denied-command/failure path with an eval or deterministic test — the orchestrator-level fix is covered by new deterministic tests in `tests/test_step_result.py` (`TestPostArtefactIfPresent`, `TestReviewOutcomeNeedsItsPostedArtefact`); the agent-prompt-level denied-command/blocked guidance is instructional text, not independently testable the same way.
 
+**Second pass, after PR review of the first implementation:**
+
+- `_post_artefact_if_present` returned `True` (vacuously) when a step produced no `output` at all, so a `review` outcome with no `body_write` *and* no `output` still passed through with nothing posted and no failure -- the same integrity gap #539 was fixing, just without a thrown exception. Replaced the override's condition with `_review_outcome_lacks_durable_artefact(step_result, posted_ok)`, which requires an actual durable record -- `body_write`, or `output` that was both present and successfully posted -- not merely that a posting attempt (if any) didn't raise. Covered by `TestReviewOutcomeLacksDurableArtefact`, including the exact missing-output case.
+- That stricter check can now also fire for a `commit_after` step that completed real file edits and returned `review` with nothing else to show -- the `commit_after` push gate (issue #429) was keyed on `final_status`, so it would have silently discarded those commits instead of just failing the gate. Fixed by keying that one check on the step's own declared outcome (`step_result.outcome`) instead of the overridden `final_status`: the push still happens (real work is still real work), the step still fails loud (no blind approval).
+- `merge-conflict.md` still instructed the exact leading-variable-assignment shapes (`VAR=$(gh api ...)`, `VAR=$(git ...)`) that issue #539 itself records as denied in real runs, relying on the generic recovery instruction to paper over it rather than making the happy path directly executable. Every such assignment in the prompt now runs the command on its own line with output redirected to a file, then loads it with `read -r VAR <file` -- never an assignment-first line.
+- Step 1's unknown-after-retry fallback (returns `complete` and advances) contradicted the new general "return blocked when evidence can't be gathered" rule. Resolved by making the exception explicit in the prompt: GitHub's own async computation having no answer yet is not a denied command or a recoverable failure, so it isn't a case the general rule overrides.
+- Step 5's result summary said the agent "posted" the resolution plan, even though the entire point of this fix is that the agent never owns that post. Reworded to say it wrote the plan in `output` for the orchestrator to post.
+- The `EXIT` trap cleanup in Steps 2 and 3 only protects commands run in the same shell process; the prompt's own "retry with split commands" guidance could have led the agent to split a block's commands across multiple Bash invocations, stranding the trap's cleanup. Added an explicit instruction: each of these two steps' blocks runs as one Bash invocation from fetch to cleanup, and if an individual command inside one must be retried, the retry stays in the same invocation, or the agent manually performs the trap's cleanup before writing `blocked`.
+
 ### 2. Finish the executable-contract sweep — #518
 
 `pipeline.json` should remain the authoritative executable lifecycle contract.
@@ -44,7 +53,9 @@ A release/main validation path should regenerate or run every supported `--check
 
 This closes the gap between "generated files are currently correct" and "generated files cannot silently become stale."
 
-Added a `generated-artifacts-freshness` job to `validate-pipeline.yml`, running on every PR and every push to main: `generate_docs.py --check`, `generate_phase_mermaid.py --check`, and `generate_schema_reference.py --check`; `generate_slash_commands.py` has no `--check` mode, so it runs in write mode followed by `git diff --check` (conflict markers/whitespace) and `git diff --exit-code` (anything differs). Verified clean against current `main` before landing.
+Added a `generated-artifacts-freshness` job: `generate_docs.py --check`, `generate_phase_mermaid.py --check`, and `generate_schema_reference.py --check`; `generate_slash_commands.py` has no `--check` mode, so it runs in write mode followed by `git diff --check` (conflict markers/whitespace) and `git diff --exit-code` (anything differs). Verified clean against current `main` before landing.
+
+**Second pass, after PR review of the first implementation:** that job was first added inside `validate-pipeline.yml`, which still carries a `pull_request.paths` filter -- so on a PR, the whole workflow (this job included) was skipped unless the diff touched one of `validate.py`'s own narrow paths, exactly the gap finding 4 below is about. Moved to its own workflow, `generated-artifacts-freshness.yml`, with no `paths:` filter on either its `pull_request` or `push: branches: [main]` trigger, so it runs unconditionally on every PR as well as every push to main.
 
 ### 4. Keep full-suite validation independent of path filters — fixed on this PR
 
@@ -60,7 +71,11 @@ For baseline/release validation, run the complete suite unconditionally:
 
 Path filters are an optimization for normal PRs, not sufficient evidence for a new baseline.
 
-`test.yml` and `validate-pipeline.yml`'s `push: branches: [main]` triggers no longer carry a `paths:` filter — a push to main now always runs pytest (including the existing real-directory taxonomy/standards integration tests), the shell tests, lint, pipeline/schema validation, and the new generated-artifact freshness checks above, regardless of which files changed. PR triggers keep their path filters as a fast-feedback optimization, per the principle stated above.
+`test.yml` and `validate-pipeline.yml`'s `push: branches: [main]` triggers no longer carry a `paths:` filter — a push to main now always runs pytest (including the existing real-directory taxonomy/standards integration tests), the shell tests, lint, and pipeline/schema validation, regardless of which files changed. `generated-artifacts-freshness.yml` (finding 3, second pass) has no `paths:` filter on either trigger at all. PR triggers on `test.yml`/`validate-pipeline.yml` keep their path filters as a fast-feedback optimization, per the principle stated above.
+
+### 5. Stale feature-branch references left by the promotion — fixed on this PR
+
+Flagged during PR review of the first implementation: `docs/product/orchestrator/PRODUCT.md` still described the target design as tracked against the (now-merged) `feature/393-orchestrator-target-design` integration branch, and `docs/features/orchestrator.md`'s PR-auto-targeting Gherkin scenario used that same branch name as its literal example `naming.base` value. `main` is now the authoritative implementation (#541), so PRODUCT.md's reference was simply stale; the Gherkin example was changed to a generic illustrative branch name so a historical integration branch isn't baked into the product contract's acceptance criteria.
 
 ## Backlog reconciliation
 
