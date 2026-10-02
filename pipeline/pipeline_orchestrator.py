@@ -3287,23 +3287,46 @@ def _create_requested_issue(
 
 def _post_artefact_if_present(
     gh: "GitHubClient", agent_def: "AgentDef", work_item: "WorkItem", step_result: Optional[StepResult],
-) -> None:
+) -> bool:
     """Post the step's output as a structured artefact comment, if it produced one.
 
     The step never posts its own comments (P-10/P-14, PRODUCT.md "What a
     step must never do"); this is the orchestrator doing that on its behalf,
     the same way it already owns the opening/closing announcements.
+
+    Returns False only when posting was attempted and failed -- True both
+    when it succeeded and when there was nothing to post (no step_result,
+    no output). A step whose outcome is `review` with no other durable
+    record (no body_write) depends entirely on this comment existing for a
+    human to act on; its caller checks this return value and fails the step
+    rather than gate on content nobody can see (issue #539). A step that
+    already completed its real work (`complete`) is unaffected -- losing an
+    FYI comment doesn't erase that work, so this still swallows the failure
+    for every other case, same as before.
     """
     if not step_result or not step_result.output:
-        return
+        return True
     body = f"<!-- ai-agile/artefact/v1 by {agent_def.agent} -->\n\n{step_result.output}"
     try:
         gh.post_comment(work_item.number, body)
+        return True
     except Exception as exc:
         log.warning(
             "  could not post artefact comment for %s on #%d: %s",
             agent_def.agent, work_item.number, exc,
         )
+        return False
+
+
+def _review_outcome_needs_its_posted_artefact(step_result: Optional[StepResult]) -> bool:
+    """True when a `review` outcome has no durable record besides the
+    artefact comment -- no body_write -- so a human asked to act on it has
+    nothing to see if that comment never posted (issue #539)."""
+    return (
+        step_result is not None
+        and step_result.outcome == STATUS_REVIEW
+        and not step_result.body_write
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -6271,7 +6294,14 @@ def _run_agent(
         # never reached for it), so its own diagnostic output is posted here
         # same as any other step's, or a legitimate block would go unreported.
         if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
-            _post_artefact_if_present(gh, agent_def, work_item, step_result)
+            _posted = _post_artefact_if_present(gh, agent_def, work_item, step_result)
+            if not _posted and _review_outcome_needs_its_posted_artefact(step_result):
+                sentinel_status = STATUS_FAILED
+                sentinel_message = (
+                    f"{agent_def.agent} reported outcome 'review' but its artefact "
+                    f"comment -- the only record of what it found -- could not be "
+                    f"posted; a human gate cannot approve content nobody can see"
+                )
     else:
         result, step_result, exhausted, _attempt = _invoke_with_retries(
             agent_def, work_item, dry_run, repo, gh,
@@ -6281,7 +6311,14 @@ def _run_agent(
         if step_result is not None:
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
         if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
-            _post_artefact_if_present(gh, agent_def, work_item, step_result)
+            _posted = _post_artefact_if_present(gh, agent_def, work_item, step_result)
+            if not _posted and _review_outcome_needs_its_posted_artefact(step_result):
+                sentinel_status = STATUS_FAILED
+                sentinel_message = (
+                    f"{agent_def.agent} reported outcome 'review' but its artefact "
+                    f"comment -- the only record of what it found -- could not be "
+                    f"posted; a human gate cannot approve content nobody can see"
+                )
 
     # Run the declared "after" scripts once all retries are done, whatever the
     # outcome. load_pipeline leaves these empty for script steps, which are
