@@ -8,17 +8,19 @@ This is not a request to clear the historical backlog. The focus is narrower: co
 
 ## Priority findings
 
-### 1. Make merge-conflict reporting fail loud — #539
+### 1. Make merge-conflict reporting fail loud — #539 — fixed on this PR
 
 The confirmed defect is not primarily conflict detection. It is false reporting of side effects: the agent has claimed that a GitHub review/assessment was posted when no post occurred.
 
-Required behavior:
+Root cause, found during the fix: the agent itself never claims the post succeeded — it only ever writes `result.json` (P-10/P-14, PRODUCT.md "What a step must never do"). The false claim was coming from the **orchestrator**: `_post_artefact_if_present` posts the artefact comment on the step's behalf, and silently swallowed any `post_comment` exception with a `log.warning`, letting the step's `review` outcome (and the resulting human gate) proceed regardless of whether the comment ever posted.
 
-- never claim a GitHub write succeeded unless the write call returned success;
-- when required evidence cannot be gathered, return `blocked` with the concrete reason;
-- retry denied shell forms only with directly permitted command shapes;
-- clean up temporary branches/worktrees created during investigation;
-- cover the denied-command/failure path with an eval or deterministic test.
+Required behavior, and how each is now met:
+
+- never claim a GitHub write succeeded unless the write call returned success — `_post_artefact_if_present` now returns `False` on a failed post; `_run_agent` overrides `sentinel_status` to `failed` when that happens for a `review` outcome with no other durable record (`body_write`), so the step itself fails loud instead of gating on content nobody can see. Scoped narrowly to that case so a `complete` step's best-effort FYI comment, and a `review` step that also wrote a body (e.g. prd-writer), keep the existing swallow-and-continue behavior (`tests/test_step_result.py::test_swallows_post_comment_exception`).
+- when required evidence cannot be gathered, return `blocked` with the concrete reason — added to `merge-conflict.md` directly: a denied command or an unrecoverable `git`/`gh` failure now writes `outcome: "blocked"` with the concrete command and reason, rather than guessing.
+- retry denied shell forms only with directly permitted command shapes — same addition: at most one retry, only with a directly permitted equivalent shape, never the identical denied form.
+- clean up temporary branches/worktrees created during investigation — Steps 2 and 3's cleanup is now an `EXIT` trap registered before either scratch branch (`_rebase_attempt`, `_conflict_assess`) is created, so a denied or failing command anywhere in the block still restores the original branch and removes the scratch branch; Step 3's checkout also switched `-b` to `-B` so a branch stranded by an earlier interrupted run can no longer make the checkout fail silently and merge onto the wrong branch.
+- cover the denied-command/failure path with an eval or deterministic test — the orchestrator-level fix is covered by new deterministic tests in `tests/test_step_result.py` (`TestPostArtefactIfPresent`, `TestReviewOutcomeNeedsItsPostedArtefact`); the agent-prompt-level denied-command/blocked guidance is instructional text, not independently testable the same way.
 
 ### 2. Finish the executable-contract sweep — #518
 
@@ -34,15 +36,17 @@ After the changes already landed, perform a final sweep for lifecycle behavior e
 
 Executable transitions, retry limits, gates and terminal outcomes should be structurally declared. Renderers and documentation may present the contract but should not invent behavior.
 
-### 3. Enforce generated-artifact freshness — #465
+### 3. Enforce generated-artifact freshness — #465 — fixed on this PR
 
 Generated pipeline documentation should be a CI invariant.
 
 A release/main validation path should regenerate or run every supported `--check` mode and fail when committed generated artifacts differ from the authoritative source.
 
-This closes the gap between “generated files are currently correct” and “generated files cannot silently become stale.”
+This closes the gap between "generated files are currently correct" and "generated files cannot silently become stale."
 
-### 4. Keep full-suite validation independent of path filters
+Added a `generated-artifacts-freshness` job to `validate-pipeline.yml`, running on every PR and every push to main: `generate_docs.py --check`, `generate_phase_mermaid.py --check`, and `generate_schema_reference.py --check`; `generate_slash_commands.py` has no `--check` mode, so it runs in write mode followed by `git diff --check` (conflict markers/whitespace) and `git diff --exit-code` (anything differs). Verified clean against current `main` before landing.
+
+### 4. Keep full-suite validation independent of path filters — fixed on this PR
 
 #526's underlying test failures are fixed (verified: all 4 affected files pass, 0 failures), but the gap that let them go undetected is not: `test.yml`'s trigger paths (`**/*.py`, `**/*.sh`, `tests/**`, `ruff.toml`) still exclude a `.claude/agents/*.md`-only change, so the same class of drift could recur silently.
 
@@ -55,6 +59,8 @@ For baseline/release validation, run the complete suite unconditionally:
 - `git diff --check`.
 
 Path filters are an optimization for normal PRs, not sufficient evidence for a new baseline.
+
+`test.yml` and `validate-pipeline.yml`'s `push: branches: [main]` triggers no longer carry a `paths:` filter — a push to main now always runs pytest (including the existing real-directory taxonomy/standards integration tests), the shell tests, lint, pipeline/schema validation, and the new generated-artifact freshness checks above, regardless of which files changed. PR triggers keep their path filters as a fast-feedback optimization, per the principle stated above.
 
 ## Backlog reconciliation
 
@@ -79,6 +85,12 @@ Each candidate was verified directly against current `main` (code/tests, not iss
 - #518 — too broad/qualitative (a repo-wide sweep for lifecycle behavior encoded outside `pipeline.json`) to verify as done/not-done in one pass; left open pending a dedicated audit.
 
 The objective is not backlog reduction for its own sake. It is to prevent historical reports from obscuring the actual risk profile of the released architecture — which cuts both ways: #460 is real and should not be lost among items that already shipped.
+
+**Scoping decision for this PR's direct fixes:** #539, #465, and finding 4 (above) were fixed directly on this branch — each was a concrete, boundable defect with a clear acceptance criterion. #460, #478, and #518 were deliberately left for a separate pass instead of an ad hoc fix here:
+
+- #460's own issue body defers the gate-consumption/subject-recording redesign to "the PRD" — a substantial architecture change, not a direct-fix task.
+- #478's own issue body says it is "not prescriptive -- prd-writer/design should evaluate," for the same reason.
+- #518 is a repo-wide qualitative sweep (see finding 2) that needs its own dedicated audit, not a one-pass fix bundled into hardening cleanup.
 
 ## Operational verification
 
