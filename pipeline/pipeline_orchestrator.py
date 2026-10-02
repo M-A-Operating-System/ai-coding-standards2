@@ -3329,6 +3329,26 @@ def _review_outcome_needs_its_posted_artefact(step_result: Optional[StepResult])
     )
 
 
+def _review_outcome_lacks_durable_artefact(
+    step_result: Optional[StepResult], posted_ok: bool,
+) -> bool:
+    """True when a `review` outcome with no body_write ends this run with
+    nothing a human can actually act on.
+
+    `_post_artefact_if_present` returns True both when posting succeeded and
+    when there was nothing to post (step_result.output empty) -- a correct
+    contract for its other callers, but on its own insufficient here: a
+    `review` outcome with no body_write AND no output is just as stranded a
+    human gate as one whose post_comment call raised (issue #539 PR review).
+    Requires an actual durable artefact -- body_write, or output that was
+    both present and successfully posted -- not merely that posting (if
+    attempted at all) didn't raise.
+    """
+    if not _review_outcome_needs_its_posted_artefact(step_result):
+        return False
+    return not (posted_ok and bool(step_result.output))
+
+
 # ---------------------------------------------------------------------------
 # Body writes (issue #401) — a step never writes an issue/PR body itself
 # (PRODUCT.md, "What a step must return" / "What a step must never do");
@@ -6295,12 +6315,15 @@ def _run_agent(
         # same as any other step's, or a legitimate block would go unreported.
         if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
             _posted = _post_artefact_if_present(gh, agent_def, work_item, step_result)
-            if not _posted and _review_outcome_needs_its_posted_artefact(step_result):
+            if _review_outcome_lacks_durable_artefact(step_result, _posted):
                 sentinel_status = STATUS_FAILED
                 sentinel_message = (
-                    f"{agent_def.agent} reported outcome 'review' but its artefact "
-                    f"comment -- the only record of what it found -- could not be "
-                    f"posted; a human gate cannot approve content nobody can see"
+                    f"{agent_def.agent} reported outcome 'review' but left no durable "
+                    f"record of what it found -- "
+                    + ("its artefact comment could not be posted"
+                       if step_result and step_result.output
+                       else "it wrote no output and no body_write")
+                    + "; a human gate cannot approve content nobody can see"
                 )
     else:
         result, step_result, exhausted, _attempt = _invoke_with_retries(
@@ -6312,12 +6335,15 @@ def _run_agent(
             sentinel_status, sentinel_message = step_result.outcome, step_result.message
         if not agent_def.outcome_policy or sentinel_status == STATUS_BLOCKED:
             _posted = _post_artefact_if_present(gh, agent_def, work_item, step_result)
-            if not _posted and _review_outcome_needs_its_posted_artefact(step_result):
+            if _review_outcome_lacks_durable_artefact(step_result, _posted):
                 sentinel_status = STATUS_FAILED
                 sentinel_message = (
-                    f"{agent_def.agent} reported outcome 'review' but its artefact "
-                    f"comment -- the only record of what it found -- could not be "
-                    f"posted; a human gate cannot approve content nobody can see"
+                    f"{agent_def.agent} reported outcome 'review' but left no durable "
+                    f"record of what it found -- "
+                    + ("its artefact comment could not be posted"
+                       if step_result and step_result.output
+                       else "it wrote no output and no body_write")
+                    + "; a human gate cannot approve content nobody can see"
                 )
 
     # Run the declared "after" scripts once all retries are done, whatever the
@@ -7672,12 +7698,17 @@ def _apply_result(
     # for issue work items.
     # Also pushes on STATUS_REVIEW (issue #429): a step can legitimately
     # return "review" with real file edits worth keeping (e.g.
-    # prd-docs-updater's docs/product/ path) -- final_status here is always
-    # the agent's own declared outcome, never the pr-reviewer human-review
-    # override (that runs later, below, and only applies to review_loop
-    # steps, none of which set commit_after).
+    # prd-docs-updater's docs/product/ path) -- checked against the agent's
+    # own declared outcome (step_result.outcome), not final_status: the
+    # latter can since be overridden to STATUS_FAILED when a `review` step
+    # left no durable artefact (issue #539), and that override must not
+    # silently discard commits the step already made. The pr-reviewer
+    # human-review override runs later, below, and only applies to
+    # review_loop steps, none of which set commit_after, so it never reaches
+    # here either way.
+    _declared_outcome = step_result.outcome if step_result is not None else final_status
     _pushed: dict = {}
-    if final_status in (STATUS_COMPLETE, STATUS_REVIEW) and agent_def.commit_after and work_item.kind == "issue":
+    if _declared_outcome in (STATUS_COMPLETE, STATUS_REVIEW) and agent_def.commit_after and work_item.kind == "issue":
         _commit_fail_reason = _push_step_branch(
             agent_def, work_item, cwd=pre_agent_worktree or None, pushed=_pushed,
         )
