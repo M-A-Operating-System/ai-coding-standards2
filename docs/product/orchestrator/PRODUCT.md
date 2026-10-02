@@ -2,12 +2,10 @@
 
 The single description of what the orchestrator is and what it promises.
 
-This document states the target design as fact. Closing the gap to the
-current implementation is tracked as a sequenced build plan on
-[issue #393](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/393),
-against the
-[`feature/393-orchestrator-target-design`](https://github.com/M-A-Operating-System/ai-coding-standards2/tree/feature/393-orchestrator-target-design)
-integration branch.
+This document states the target design as fact. The build plan tracked on
+[issue #393](https://github.com/M-A-Operating-System/ai-coding-standards2/issues/393)
+promoted this architecture to `main` in #541 -- `main` is now the
+authoritative implementation of the design below.
 
 ---
 

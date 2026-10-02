@@ -21,6 +21,8 @@ from pipeline_orchestrator import (
     _filter_allowed_label_requests,
     _apply_label_requests,
     _post_artefact_if_present,
+    _review_outcome_needs_its_posted_artefact,
+    _review_outcome_lacks_durable_artefact,
     _build_closing_announcement,
     _invoke_with_retries,
     STATUS_COMPLETE, STATUS_REVIEW, STATUS_BLOCKED,
@@ -415,6 +417,89 @@ class TestPostArtefactIfPresent:
         step_result = StepResult(outcome="complete", summary="ok", output="content")
         # Must not raise.
         _post_artefact_if_present(gh, agent_def, work_item, step_result)
+
+    def test_returns_false_when_post_comment_fails(self):
+        agent_def = _make_agent_def()
+        work_item = _make_work_item(5)
+        gh = MagicMock()
+        gh.post_comment.side_effect = RuntimeError("boom")
+        step_result = StepResult(outcome="complete", summary="ok", output="content")
+        assert _post_artefact_if_present(gh, agent_def, work_item, step_result) is False
+
+    def test_returns_true_when_post_comment_succeeds(self):
+        agent_def = _make_agent_def()
+        work_item = _make_work_item(5)
+        gh = MagicMock()
+        step_result = StepResult(outcome="complete", summary="ok", output="content")
+        assert _post_artefact_if_present(gh, agent_def, work_item, step_result) is True
+
+    def test_returns_true_when_nothing_to_post(self):
+        agent_def = _make_agent_def()
+        work_item = _make_work_item(5)
+        gh = MagicMock()
+        assert _post_artefact_if_present(gh, agent_def, work_item, None) is True
+
+
+# ---------------------------------------------------------------------------
+# TestReviewOutcomeNeedsItsPostedArtefact (issue #539)
+# ---------------------------------------------------------------------------
+
+class TestReviewOutcomeNeedsItsPostedArtefact:
+    def test_true_for_review_outcome_with_no_body_write(self):
+        step_result = StepResult(outcome=STATUS_REVIEW, summary="found conflicts", output="plan")
+        assert _review_outcome_needs_its_posted_artefact(step_result) is True
+
+    def test_false_for_review_outcome_with_body_write(self):
+        step_result = StepResult(
+            outcome=STATUS_REVIEW, summary="drafted PRD", output="plan",
+            body_write={"target": "issue", "mode": "replace", "body": "..."},
+        )
+        assert _review_outcome_needs_its_posted_artefact(step_result) is False
+
+    def test_false_for_complete_outcome(self):
+        step_result = StepResult(outcome=STATUS_COMPLETE, summary="done", output="fyi")
+        assert _review_outcome_needs_its_posted_artefact(step_result) is False
+
+    def test_false_when_step_result_none(self):
+        assert _review_outcome_needs_its_posted_artefact(None) is False
+
+
+# ---------------------------------------------------------------------------
+# TestReviewOutcomeLacksDurableArtefact (issue #539 PR review -- the
+# missing-output fail-open case: _post_artefact_if_present returns True
+# vacuously when there is nothing to post, which on its own is not enough
+# to prove a `review` outcome left a human anything to act on)
+# ---------------------------------------------------------------------------
+
+class TestReviewOutcomeLacksDurableArtefact:
+    def test_true_when_review_has_no_body_write_and_no_output(self):
+        # The exact fail-open gap: nothing to post (_post_artefact_if_present
+        # would return True), but there is also no body_write -- no durable
+        # record exists for the human gate at all.
+        step_result = StepResult(outcome=STATUS_REVIEW, summary="found nothing to report")
+        assert _review_outcome_lacks_durable_artefact(step_result, posted_ok=True) is True
+
+    def test_true_when_post_failed_despite_output(self):
+        step_result = StepResult(outcome=STATUS_REVIEW, summary="found conflicts", output="plan")
+        assert _review_outcome_lacks_durable_artefact(step_result, posted_ok=False) is True
+
+    def test_false_when_output_posted_successfully(self):
+        step_result = StepResult(outcome=STATUS_REVIEW, summary="found conflicts", output="plan")
+        assert _review_outcome_lacks_durable_artefact(step_result, posted_ok=True) is False
+
+    def test_false_when_body_write_present_even_with_no_output(self):
+        step_result = StepResult(
+            outcome=STATUS_REVIEW, summary="drafted PRD",
+            body_write={"target": "issue", "mode": "replace", "body": "..."},
+        )
+        assert _review_outcome_lacks_durable_artefact(step_result, posted_ok=True) is False
+
+    def test_false_for_complete_outcome_with_no_output(self):
+        step_result = StepResult(outcome=STATUS_COMPLETE, summary="done")
+        assert _review_outcome_lacks_durable_artefact(step_result, posted_ok=True) is False
+
+    def test_false_when_step_result_none(self):
+        assert _review_outcome_lacks_durable_artefact(None, posted_ok=True) is False
 
 
 # ---------------------------------------------------------------------------

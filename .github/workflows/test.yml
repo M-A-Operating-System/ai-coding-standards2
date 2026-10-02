@@ -7,14 +7,15 @@ name: Tests
 # scripts/generate_slash_commands.py and scripts/migrate_labels.py
 # untriggered -- including get_started.py, whose own tests live in tests/ and so
 # never ran on a change to it.
+#
+# push to main has no paths filter at all (issue #539 hardening review,
+# finding 4): a path list is an optimization for PR feedback, not sufficient
+# evidence that a release baseline is safe to skip testing -- a prompt-only
+# change under .claude/agents/ matched no pattern above and so a regression
+# like #526's went undetected on main until it was caught by hand.
 on:
   push:
     branches: [main]
-    paths:
-      - '**/*.py'
-      - '**/*.sh'
-      - 'tests/**'
-      - 'ruff.toml'
   pull_request:
     paths:
       - '**/*.py'

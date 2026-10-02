@@ -8,11 +8,10 @@ on:
       - 'pipeline/validate.py'
       - '.github/workflows/validate-pipeline.yml'
   push:
+    # No paths filter: a push to main is a release baseline, not a normal PR,
+    # and a path filter is an optimization for the latter, not sufficient
+    # evidence for the former.
     branches: [main]
-    paths:
-      - 'pipeline/pipeline.json'
-      - 'pipeline/schemas/pipeline.schema.json'
-      - 'pipeline/validate.py'
 
 permissions:
   contents: read
