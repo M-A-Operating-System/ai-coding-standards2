@@ -669,6 +669,6 @@
 
 ## Scenario: pipeline auto-targets the configured base branch when creating a PR
 
-**Given** a flow in pipeline.json declares naming.base as "feature/393-orchestrator-target-design"
+**Given** a flow in pipeline.json declares naming.base as "integration/2026-q4"
 **When** create-pr.sh runs for a new pull request in that flow
-**Then** the pull request is opened targeting "feature/393-orchestrator-target-design" without a hand-configured override
+**Then** the pull request is opened targeting "integration/2026-q4" without a hand-configured override
