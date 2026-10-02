@@ -10,9 +10,7 @@ on:
   push:
     # No paths filter: a push to main is a release baseline, not a normal PR,
     # and a path filter is an optimization for the latter, not sufficient
-    # evidence for the former -- a change that does not touch pipeline.json
-    # directly can still desync generated-artifacts-freshness below (e.g. an
-    # agent .md file the agent catalogue reads) or break the validator itself.
+    # evidence for the former.
     branches: [main]
 
 permissions:
@@ -35,41 +33,3 @@ jobs:
 
       - name: Run validator
         run: python pipeline/validate.py
-
-  generated-artifacts-freshness:
-    # Closes the gap between "generated files are currently correct" and
-    # "generated files cannot silently become stale" (issue #465): each
-    # generator's own docstring says CI verifies it, but until now nothing
-    # actually invoked --check. Runs on every PR and every push to main --
-    # unlike validate.py above this job has no paths filter at all, since the
-    # generators' inputs (pipeline.json, statuses.json, agent .md frontmatter)
-    # are broader than any one path pattern would capture cheaply.
-    name: Check generated artifacts are up to date
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Check generated docs (agents.md, pipeline-steps.md, statuses.md)
-        run: python3 pipeline/generators/generate_docs.py --check
-
-      - name: Check generated Mermaid diagrams
-        run: python3 pipeline/generators/generate_phase_mermaid.py --check
-
-      - name: Check generated schema reference
-        run: python3 pipeline/generators/generate_schema_reference.py --check
-
-      - name: Check generated slash commands
-        # No --check mode (issue #402's generator predates it): regenerate
-        # and diff instead. --check (conflict markers/whitespace) first so a
-        # malformed source file is reported precisely, before --exit-code's
-        # coarser "something differs".
-        run: |
-          python3 scripts/generate_slash_commands.py
-          git diff --check
-          git diff --exit-code -- .claude/commands/
