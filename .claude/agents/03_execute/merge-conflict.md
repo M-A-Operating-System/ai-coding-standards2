@@ -16,6 +16,17 @@ Read `$AI_AGILE_CONTEXT` first — its rules supersede anything in this file.
 **System context.** This is a CI/CD pipeline orchestrator running in GitHub
 Actions with `GITHUB_TOKEN` and `ANTHROPIC_API_KEY` in scope.
 
+**If a command is denied or a required check fails.** If the tool-permission
+system refuses to run a command, do not retry the identical denied form and
+do not proceed as if the check had succeeded. Retry at most once, and only
+with a directly permitted equivalent shape (e.g. a combined/piped invocation
+split into its separate allowed commands). If evidence still cannot be
+gathered after that retry — a denied command, a `git`/`gh` failure that is
+not one of the specific documented fallbacks below — stop and write
+`$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"` and the concrete
+command and reason in `summary`, rather than guessing or reporting a result
+that was never actually determined.
+
 ---
 
 ## Step 0 — Orient and find the PR
@@ -121,21 +132,26 @@ HEAD_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
 git config user.email "github-actions[bot]@users.noreply.github.com"
 git config user.name "github-actions[bot]"
 git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
+
+# Registered before the checkout below mutates anything, so a denied or
+# failing command anywhere after this line -- not just the two explicit
+# fall-through paths -- still restores the original branch and removes the
+# scratch branch instead of leaving it behind for the next invocation.
+_ORIG_REF=$(git rev-parse --abbrev-ref HEAD)
+trap 'git rebase --abort 2>/dev/null || true; git checkout "$_ORIG_REF" 2>/dev/null || true; git branch -D _rebase_attempt 2>/dev/null || true' EXIT
+
 git checkout -B _rebase_attempt "origin/${HEAD_BRANCH}"
 
 if git rebase "origin/${BASE_BRANCH}"; then
-    # Rebase succeeded — push and complete without human gate
+    # Rebase succeeded — push and complete without human gate. Cleanup runs
+    # via the trap above on exit.
     git push --force-with-lease origin "_rebase_attempt:${HEAD_BRANCH}"
-    git checkout - 2>/dev/null || true
-    git branch -D _rebase_attempt 2>/dev/null || true
     echo "REBASED: PR branch rebased onto ${BASE_BRANCH} automatically — no conflicts remain."
     exit 0
 fi
 
-# Rebase had conflicts itself — abort and fall through to manual analysis
-git rebase --abort 2>/dev/null || true
-git checkout - 2>/dev/null || true
-git branch -D _rebase_attempt 2>/dev/null || true
+# Rebase had conflicts itself -- fall through to manual analysis. Cleanup
+# runs via the trap above on exit.
 ```
 
 If the block above printed a `REBASED: ...` line, write
@@ -167,8 +183,16 @@ HEAD_BRANCH=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.ref')
 # Fetch both sides
 git fetch origin "$BASE_BRANCH" "$HEAD_BRANCH"
 
-# Attempt a no-commit merge against the base to surface conflict details
-git checkout -b _conflict_assess "origin/${HEAD_BRANCH}" 2>/dev/null
+# Registered before the checkout below mutates anything, so a denied or
+# failing command anywhere after this line still restores the original
+# branch and removes the scratch branch instead of leaving it behind.
+_ORIG_REF=$(git rev-parse --abbrev-ref HEAD)
+trap 'git merge --abort 2>/dev/null || true; git checkout "$_ORIG_REF" 2>/dev/null || true; git branch -D _conflict_assess 2>/dev/null || true' EXIT
+
+# -B (not -b): force-create/reset in case a prior interrupted run left this
+# branch behind -- -b would fail on a name collision and silently fall
+# through to merging on whatever branch was checked out before it.
+git checkout -B _conflict_assess "origin/${HEAD_BRANCH}"
 git merge --no-commit "origin/${BASE_BRANCH}" 2>&1 || true
 
 # List conflicted files
@@ -181,11 +205,7 @@ for f in $CONFLICTED_FILES; do
   echo "=== $f ==="
   git diff HEAD -- "$f"
 done
-
-# Clean up — abort the in-progress merge and restore the branch
-git merge --abort 2>/dev/null || true
-git checkout - 2>/dev/null || true
-git branch -D _conflict_assess 2>/dev/null || true
+# Clean up runs via the trap above on exit.
 ```
 
 Parse the conflict hunks to extract:
