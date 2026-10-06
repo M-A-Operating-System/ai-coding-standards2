@@ -37,6 +37,9 @@ flowchart TD
         n_00_ondemand__blocker("blocker")
         gate__n_00_ondemand__sizer{"sizer:review"}
     end
+    subgraph 05_continuous["05 Continuous"]
+        n_05_continuous__metrics_aggregation("metrics-aggregation")
+    end
     term_blocked(["blocked — human"]):::term
     term_cr_done(["review issue created"]):::term
     term_epic(["epic — sub-issues"]):::term

@@ -202,3 +202,18 @@ On-demand reciprocation of a blockedby:/blocks: pair, requested by a human apply
 - **Script:** `scripts/blocker.sh`
 
 Reciprocates a blockedby:/blocks: pair. A human applies blockedby:{N} to this issue directly -- that alone already gates eligibility -- then requests this step to add the symmetric blocks:{this} label onto issue N. Emits blocked (not failed) when no blockedby: label is present to reciprocate, so a mistaken request is visible rather than silently swallowed. Triggered by applying the blocker:requested label to any issue.
+
+## Flow: `metrics-aggregation`
+
+- **Applies to:** schedule `0 0 * * 1`
+- **Naming:** --
+
+Weekly aggregation of pipeline metrics (issue #533). Reads records.jsonl from the ai-agile/metrics branch, computes per-agent and blended weekly aggregate records for the previous Mon-Sun week, and appends them back into the same file. Produces no issue branch or PR; all writes go to the metrics branch via append-metrics-record.sh.
+
+### `05_continuous/metrics-aggregation`
+
+- **Kind:** script
+- **Phase:** `05_continuous`
+- **Script:** `scripts/aggregate-metrics.sh`
+
+Computes per-agent and blended weekly aggregate records for the previous Mon-Sun week and appends them to records.jsonl on the ai-agile/metrics branch. Aggregate rows carry agent_id=metrics-aggregator (blended) or the real agent name (per-agent breakdown), period=week, and metric fields named {aggregation_fn}_{base_metric}[-{dimension}]. Idempotent: skips the append when the bucket is already aggregated.

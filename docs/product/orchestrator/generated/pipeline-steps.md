@@ -23,6 +23,7 @@ authoritative and these tables are a view of it.
 | `branch-cleanup` | kind `issue` | -- |
 | `issue-cleanup` | kind `issue` | -- |
 | `blocker` | kind `issue` | -- |
+| `metrics-aggregation` | schedule `0 0 * * 1` | -- |
 
 ## Flow: `standard-delivery`
 
@@ -270,6 +271,26 @@ The groups below are this step's authoritative deny list, flattened at load time
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
 | `00_ondemand/blocker` | -- | -- | -- |
+
+## Flow: `metrics-aggregation`
+
+### Sequence and gates
+
+| Step | Kind | Unit | Trigger | Depends on | Human gate |
+|---|---|---|---|---|---|
+| `05_continuous/metrics-aggregation` | script | `item` | event `schedule` | -- | -- |
+
+### Exclusions and retries
+
+| Step | Excluded classifications | Excluded labels | Max retries |
+|---|---|---|---|
+| `05_continuous/metrics-aggregation` | -- | -- | `1` |
+
+### Entitled activities
+
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `05_continuous/metrics-aggregation` | -- | -- | -- |
 
 ## Entitlements granted to every step
 
