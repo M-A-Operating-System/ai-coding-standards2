@@ -253,13 +253,15 @@ class TestAS1OneFileTellsYouWhatThePipelineDoes:
             step, _work_item(labels=set()), set(), pipeline_map, None,
         ) is False, f"{step.agent} ran on an item carrying none of flow {step.flow!r}'s labels"
 
-        # The `kind` dimension. Every shipped flow triggers on kind: issue, so
-        # a pull request matches none of them and reaches no step.
+        # The `kind` dimension. Every item-triggered flow triggers on kind: issue;
+        # scheduled flows have no kind (trigger.schedule instead). Neither enters
+        # on a pull request, so a PR work item reaches no step.
         raw_kinds = {
             flow["trigger"].get("kind") for flow in _raw_pipeline()["flows"].values()
         }
-        assert raw_kinds == {"issue"}, (
-            f"the shipped flows now trigger on {raw_kinds}; this check assumed issues only"
+        assert raw_kinds <= {"issue", None}, (
+            f"the shipped flows now trigger on {raw_kinds - {None, 'issue'}}; "
+            "only issue-kind and scheduled (no kind) flows are expected"
         )
         pr = _work_item(kind="pr")
         for agent_def in agents:
