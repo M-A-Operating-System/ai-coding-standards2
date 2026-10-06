@@ -152,10 +152,18 @@ def week_bucket(now: datetime):
 
 
 def _parse_ts(value: object) -> Optional[datetime]:
+    """Parse an ISO-8601 UTC timestamp, with or without a trailing "Z".
+
+    A value already carrying an explicit offset (e.g. "+00:00") must not
+    have another one appended (issue #533 PR review, RV-002) -- only a bare
+    "Z" suffix is rewritten to "+00:00"; every other case is parsed as-is.
+    """
     if not isinstance(value, str) or not value:
         return None
     try:
-        return datetime.fromisoformat(value.rstrip("Z") + "+00:00")
+        if value.endswith("Z"):
+            return datetime.fromisoformat(value[:-1] + "+00:00")
+        return datetime.fromisoformat(value)
     except ValueError:
         return None
 

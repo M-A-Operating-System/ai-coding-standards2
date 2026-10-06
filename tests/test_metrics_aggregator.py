@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 from metrics_aggregator import (
     METRICS_AGGREGATOR_ID,
     _BUCKET_FUNCS,
+    _parse_ts,
     already_aggregated,
     compute_blended_record,
     compute_classification_mix,
@@ -223,7 +224,7 @@ class TestValueAddRatio:
 
     def test_regular_issue(self):
         # issue-classifier=1, prd-writer=1, prd-docs-updater=1, coder=2 => value_add=5
-        # total = 6 (extra overhead=1)
+        # total = 9 (first coder=2, second coder=3 excluded from value_add, pr-reviewer=1)
         records = [
             _raw_record("issue-classifier",  _IN_BUCKET_TS, total_cost_usd=1.0),
             _raw_record("prd-writer",         _IN_BUCKET_TS, total_cost_usd=1.0),
@@ -640,3 +641,26 @@ class TestReadRecordsFailsClosed:
         )
         with patch("metrics_aggregator.subprocess.run", side_effect=[fetch_result, show_result]):
             assert read_records() == []
+
+
+class TestParseTs:
+    """issue #533 PR review, RV-002: a timestamp already carrying an
+    explicit offset must not have another one appended."""
+
+    def test_z_suffix(self):
+        assert _parse_ts("2026-10-01T10:00:00Z") == _utc("2026-10-01T10:00:00Z")
+
+    def test_explicit_utc_offset(self):
+        assert _parse_ts("2026-10-01T10:00:00+00:00") == _utc("2026-10-01T10:00:00Z")
+
+    def test_non_utc_offset(self):
+        parsed = _parse_ts("2026-10-01T10:00:00+05:00")
+        assert parsed is not None
+        assert parsed.utcoffset().total_seconds() == 5 * 3600
+
+    def test_invalid_string_returns_none(self):
+        assert _parse_ts("not-a-timestamp") is None
+
+    def test_non_string_returns_none(self):
+        assert _parse_ts(None) is None
+        assert _parse_ts(12345) is None
