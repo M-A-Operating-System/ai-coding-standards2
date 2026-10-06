@@ -22,9 +22,11 @@ Traceability to feature scenarios (docs/features/weekly-aggregation-...md):
 """
 
 import json
+import subprocess
 import sys
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -40,6 +42,7 @@ from metrics_aggregator import (
     compute_period_aggregates,
     compute_value_add_ratio,
     compute_weekly_aggregates,
+    read_records,
     week_bucket,
 )
 
@@ -92,13 +95,22 @@ class TestWeekBucket:
     def test_previous_monday_to_sunday(self):
         start, end = week_bucket(_NOW)
         assert start == _utc("2026-09-28T00:00:00Z")
-        assert end   == _utc("2026-10-04T23:59:59Z")
+        # Microsecond-precise upper bound (issue #533 PR review, RV-002):
+        # one microsecond before next Monday, not one second.
+        assert end == _utc("2026-09-28T00:00:00Z") + timedelta(weeks=1, microseconds=-1)
 
     def test_mid_week_run_same_result(self):
         # Running on Wednesday still targets the previous full week.
         start, end = week_bucket(_utc("2026-10-07T14:30:00Z"))
         assert start == _utc("2026-09-28T00:00:00Z")
-        assert end   == _utc("2026-10-04T23:59:59Z")
+        assert end == _utc("2026-09-28T00:00:00Z") + timedelta(weeks=1, microseconds=-1)
+
+    def test_sunday_end_is_microsecond_precise_not_second_precise(self):
+        # A record timestamped in the last second of Sunday must still fall
+        # inside the bucket (the exact defect RV-002 fixed).
+        start, end = week_bucket(_NOW)
+        ts = _utc(_BUCKET_END) + timedelta(microseconds=500000)
+        assert start <= ts <= end
 
     def test_first_record_of_week_included(self):
         start, end = week_bucket(_NOW)
@@ -604,3 +616,27 @@ class TestComputePeriodAggregates:
         assert self._without_cycle_id(
             compute_period_aggregates(records, _NOW, period="week")
         ) == self._without_cycle_id(compute_weekly_aggregates(records, _NOW))
+
+
+class TestReadRecordsFailsClosed:
+    """A git fetch failure must propagate, not be read as "no records"
+    (issue #533 PR review, RV-001; STD-ARCH-014 fail closed). Swallowing it
+    made aggregate-metrics.sh report `complete` on a network/auth failure --
+    indistinguishable from a legitimately quiet week."""
+
+    def test_fetch_failure_raises_rather_than_returning_empty(self):
+        with patch("metrics_aggregator.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(1, ["git", "fetch"])
+            with pytest.raises(subprocess.CalledProcessError):
+                read_records()
+
+    def test_missing_file_on_an_existing_branch_returns_empty(self):
+        # git fetch succeeds; git show fails only because records.jsonl does
+        # not exist yet on the branch -- a legitimately empty ledger, not a
+        # failure.
+        fetch_result = subprocess.CompletedProcess(args=["git", "fetch"], returncode=0)
+        show_result = subprocess.CompletedProcess(
+            args=["git", "show"], returncode=128, stdout="", stderr="fatal: path not in tree"
+        )
+        with patch("metrics_aggregator.subprocess.run", side_effect=[fetch_result, show_result]):
+            assert read_records() == []

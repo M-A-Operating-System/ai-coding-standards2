@@ -82,7 +82,15 @@ _CORRECTIVE_CLASSIFICATIONS = frozenset({"bug", "tech-debt", "security"})
 def read_records() -> list:
     """Read every record from records.jsonl on the metrics branch, oldest first.
 
-    Returns [] when the branch or file does not exist.
+    Returns [] only when the branch exists but the file does not (a
+    legitimately empty ledger -- e.g. before the first record was ever
+    appended). A `git fetch` failure (network, auth, the branch missing
+    entirely) is NOT swallowed here (issue #533 PR review, RV-001): it
+    propagates as an uncaught CalledProcessError, which main() lets reach
+    a nonzero exit so aggregate-metrics.sh reports `blocked`, not
+    `complete` -- STD-ARCH-014 fail closed. Silently returning [] on a
+    fetch failure would have been indistinguishable from "nothing to
+    aggregate this week" and skipped the bucket without anyone knowing.
 
     Deliberately duplicates (does not import) read_metrics_records() in
     pipeline_orchestrator.py (issue #533 PR review, RV-002): this module runs
@@ -95,17 +103,14 @@ def read_records() -> list:
     couple a scheduled script's behavior to an 8000+ line module it has no
     other reason to depend on.
     """
-    try:
-        subprocess.run(
-            ["git", "fetch", "origin", METRICS_BRANCH],
-            check=True, capture_output=True,
-        )
-        show = subprocess.run(
-            ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
-            capture_output=True, text=True,
-        )
-    except Exception:
-        return []
+    subprocess.run(
+        ["git", "fetch", "origin", METRICS_BRANCH],
+        check=True, capture_output=True,
+    )
+    show = subprocess.run(
+        ["git", "show", f"origin/{METRICS_BRANCH}:{METRICS_RECORDS_FILE}"],
+        capture_output=True, text=True,
+    )
     if show.returncode != 0:
         return []
     records = []
@@ -129,15 +134,20 @@ def read_records() -> list:
 def week_bucket(now: datetime):
     """Return (start, end) of the previous Mon-Sun week relative to now.
 
-    start is Monday 00:00:00 UTC; end is the following Sunday 23:59:59 UTC.
-    Both are timezone-aware (UTC).
+    start is Monday 00:00:00.000000 UTC; end is the following Sunday
+    23:59:59.999999 UTC -- microseconds, not seconds, below the next Monday
+    (issue #533 PR review, RV-002): a record's timestamp_end comes from
+    datetime.now(timezone.utc) in production and routinely carries
+    microseconds, so a seconds-granularity upper bound silently excluded any
+    record timestamped in the last second of Sunday. Both are timezone-aware
+    (UTC).
     """
     days_since_monday = now.weekday()  # Monday=0
     this_monday = now.replace(
         hour=0, minute=0, second=0, microsecond=0
     ) - timedelta(days=days_since_monday)
     last_monday = this_monday - timedelta(weeks=1)
-    last_sunday = this_monday - timedelta(seconds=1)
+    last_sunday = this_monday - timedelta(microseconds=1)
     return last_monday, last_sunday
 
 
