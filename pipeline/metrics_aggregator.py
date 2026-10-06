@@ -76,13 +76,24 @@ _CORRECTIVE_CLASSIFICATIONS = frozenset({"bug", "tech-debt", "security"})
 
 
 # ---------------------------------------------------------------------------
-# Record reading (mirrors read_metrics_records in pipeline_orchestrator.py)
+# Record reading
 # ---------------------------------------------------------------------------
 
 def read_records() -> list:
     """Read every record from records.jsonl on the metrics branch, oldest first.
 
     Returns [] when the branch or file does not exist.
+
+    Deliberately duplicates (does not import) read_metrics_records() in
+    pipeline_orchestrator.py (issue #533 PR review, RV-002): this module runs
+    standalone, invoked as `python3 -I metrics_aggregator.py` from
+    aggregate-metrics.sh with no orchestrator process on the call stack, the
+    same "no orchestrator-internal coupling" boundary ADR-002 and
+    todos_patch.py already draw for an extracted script/module. Importing
+    pipeline_orchestrator.py here would pull in its whole dependency surface
+    (GitHubClient, AgentDef, etc.) for a four-line git-plumbing read, and
+    couple a scheduled script's behavior to an 8000+ line module it has no
+    other reason to depend on.
     """
     try:
         subprocess.run(

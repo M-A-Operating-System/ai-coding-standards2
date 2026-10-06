@@ -12,10 +12,20 @@
 # Emits AI_AGILE_STATUS: complete | blocked as the last stdout line.
 # All diagnostic output goes to stderr.
 #
+# --dry-run (STD-ARCH-036): performs the same read and computation as a real
+# run, but skips the append-metrics-record.sh call -- the only step that
+# writes to the ledger. Reports exactly which rows (agent_id, period, bucket
+# boundaries) would be appended, not merely that rows exist.
+#
 # Required env (injected by the orchestrator):
 #   AI_AGILE_ROOT  -- repo root, used to locate metrics_aggregator.py
 
 set -euo pipefail
+
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=1
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -63,6 +73,22 @@ if [[ ! -s "$records_file" ]]; then
 fi
 
 record_count=$(grep -c . -- "$records_file")
+
+if (( DRY_RUN )); then
+    echo "aggregate-metrics: DRY RUN -- would append ${record_count} record(s) to ai-agile/metrics:records.jsonl:" >&2
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        python3 -I -c '
+import json, sys
+rec = json.loads(sys.argv[1])
+fields = ["agent_id", "period", "timestamp_start", "timestamp_end"]
+summary = " ".join(f"{k}={rec.get(k)!r}" for k in fields)
+print(f"  {summary}", file=sys.stderr)
+' "$line"
+    done < "$records_file"
+    echo "AI_AGILE_STATUS: complete"
+    exit 0
+fi
 
 # Every record for this bucket (each per-agent breakdown row and the blended
 # total row) is appended in ONE commit via a single append-metrics-record.sh
