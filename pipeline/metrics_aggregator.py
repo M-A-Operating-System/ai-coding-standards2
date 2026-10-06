@@ -441,20 +441,29 @@ def compute_blended_record(
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def compute_weekly_aggregates(records: list, now: datetime) -> list:
-    """Compute weekly aggregate records for the previous full Mon-Sun week.
+# Bucket-boundary function for each supported period. Adding a later
+# "month" period (PRD acceptance criterion AC-7, and the PRD's own
+# `period: "month"` note) is adding a `month_bucket()` function and one
+# entry here -- compute_period_aggregates, compute_per_agent_records, and
+# compute_blended_record already take `period` as a plain parameter and
+# need no change (issue #533 PR review, RV-003).
+_BUCKET_FUNCS = {"week": week_bucket}
+
+
+def compute_period_aggregates(records: list, now: datetime, period: str = "week") -> list:
+    """Compute aggregate records for the most recent complete bucket of `period`.
 
     Returns [] when:
       - the bucket is already aggregated (idempotent re-run);
       - no raw records fall within the bucket (nothing to aggregate).
 
-    Aggregate rows produced (all period=="week"):
+    Aggregate rows produced (all sharing the given period):
       1. One per distinct real agent_id in the bucket (per-agent breakdown).
       2. One blended total row (agent_id=="metrics-aggregator").
     """
-    bucket_start, bucket_end = week_bucket(now)
+    bucket_start, bucket_end = _BUCKET_FUNCS[period](now)
 
-    if already_aggregated(records, bucket_start, "week"):
+    if already_aggregated(records, bucket_start, period):
         return []
 
     bucket_records = [
@@ -468,9 +477,14 @@ def compute_weekly_aggregates(records: list, now: datetime) -> list:
         return []
 
     result = []
-    result.extend(compute_per_agent_records(bucket_records, bucket_start, bucket_end, "week"))
-    result.append(compute_blended_record(bucket_records, bucket_start, bucket_end, "week"))
+    result.extend(compute_per_agent_records(bucket_records, bucket_start, bucket_end, period))
+    result.append(compute_blended_record(bucket_records, bucket_start, bucket_end, period))
     return result
+
+
+def compute_weekly_aggregates(records: list, now: datetime) -> list:
+    """Back-compat name for compute_period_aggregates(records, now, "week")."""
+    return compute_period_aggregates(records, now, period="week")
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +496,7 @@ def main() -> None:
         description="Compute weekly aggregate records and write them to stdout as JSONL."
     )
     parser.add_argument(
-        "--period", default="week", choices=["week"],
+        "--period", default="week", choices=sorted(_BUCKET_FUNCS),
         help="Aggregation period (default: week)",
     )
     parser.add_argument(
@@ -497,7 +511,7 @@ def main() -> None:
         now = datetime.now(timezone.utc)
 
     records = read_records()
-    aggregates = compute_weekly_aggregates(records, now)
+    aggregates = compute_period_aggregates(records, now, period=args.period)
 
     for rec in aggregates:
         print(json.dumps(rec, separators=(",", ":")))

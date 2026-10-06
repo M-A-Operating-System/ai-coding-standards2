@@ -32,10 +32,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 from metrics_aggregator import (
     METRICS_AGGREGATOR_ID,
+    _BUCKET_FUNCS,
     already_aggregated,
     compute_blended_record,
     compute_classification_mix,
     compute_per_agent_records,
+    compute_period_aggregates,
     compute_value_add_ratio,
     compute_weekly_aggregates,
     week_bucket,
@@ -568,3 +570,37 @@ class TestBucketGenericPeriod:
         start, end = week_bucket(_NOW)
         blended = compute_blended_record(records, start, end, "week")
         assert blended["period"] == "week"
+
+
+class TestComputePeriodAggregates:
+    """compute_period_aggregates dispatches the bucket function by period
+    (issue #533 PR review, RV-003) -- adding a later "month" period is adding
+    a bucket function and one _BUCKET_FUNCS entry, not restructuring this."""
+
+    def test_week_is_the_only_registered_period_today(self):
+        assert set(_BUCKET_FUNCS) == {"week"}
+
+    def test_week_bucket_is_the_registered_function(self):
+        assert _BUCKET_FUNCS["week"] is week_bucket
+
+    def test_unknown_period_raises_rather_than_silently_resolving(self):
+        with pytest.raises(KeyError):
+            compute_period_aggregates([], _NOW, period="month")
+
+    @staticmethod
+    def _without_cycle_id(rows):
+        # cycle_id is a fresh uuid4 per call (see _base_record) -- excluded
+        # so two independent computations can be compared structurally.
+        return [{k: v for k, v in row.items() if k != "cycle_id"} for row in rows]
+
+    def test_default_period_matches_compute_weekly_aggregates(self):
+        records = [_raw_record("issue-classifier", _IN_BUCKET_TS)]
+        assert self._without_cycle_id(
+            compute_period_aggregates(records, _NOW)
+        ) == self._without_cycle_id(compute_weekly_aggregates(records, _NOW))
+
+    def test_explicit_week_period_matches_compute_weekly_aggregates(self):
+        records = [_raw_record("issue-classifier", _IN_BUCKET_TS)]
+        assert self._without_cycle_id(
+            compute_period_aggregates(records, _NOW, period="week")
+        ) == self._without_cycle_id(compute_weekly_aggregates(records, _NOW))

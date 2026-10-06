@@ -35,42 +35,55 @@ if [[ ! -f "$APPEND_SCRIPT" ]]; then
     exit 0
 fi
 
-# Compute aggregate records.  python3 -I (isolated mode) prevents the data
-# directory from being treated as a module root.
-output=$(python3 -I "$AGGREGATOR" 2>&1)
-exit_code=$?
+tmpdir=$(mktemp -d)
+trap 'rm -rf -- "$tmpdir"' EXIT
+stderr_file="${tmpdir}/stderr"
+records_file="${tmpdir}/records.jsonl"
 
-if (( exit_code != 0 )); then
-    echo "aggregate-metrics: ERROR: metrics_aggregator.py exited ${exit_code}:" >&2
-    echo "$output" >&2
+# Compute aggregate records.  python3 -I (isolated mode) prevents the data
+# directory from being treated as a module root.  stdout (the computed
+# records) and stderr (diagnostics) go to separate files -- merging them
+# (issue #533 PR review, RV-004) would append any unexpected warning line
+# to the ledger as a garbage JSONL record.
+if ! python3 -I "$AGGREGATOR" >"$records_file" 2>"$stderr_file"; then
+    echo "aggregate-metrics: ERROR: metrics_aggregator.py failed:" >&2
+    cat -- "$stderr_file" >&2
     echo "AI_AGILE_STATUS: blocked"
     exit 0
 fi
+if [[ -s "$stderr_file" ]]; then
+    echo "aggregate-metrics: metrics_aggregator.py stderr (non-fatal):" >&2
+    cat -- "$stderr_file" >&2
+fi
 
-if [[ -z "$output" ]]; then
+if [[ ! -s "$records_file" ]]; then
     echo "aggregate-metrics: no records to append (already aggregated or no data for the period)" >&2
     echo "AI_AGILE_STATUS: complete"
     exit 0
 fi
 
-# Append each record line.
-tmpdir=$(mktemp -d)
-trap 'rm -rf -- "$tmpdir"' EXIT
+record_count=$(grep -c . -- "$records_file")
 
-appended=0
-while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    tmpfile="${tmpdir}/record_${appended}.jsonl"
-    printf '%s\n' "$line" > "$tmpfile"
+# Every record for this bucket (each per-agent breakdown row and the blended
+# total row) is appended in ONE commit via a single append-metrics-record.sh
+# call on the whole file -- never one commit per row. That makes the write
+# atomic: either every row for this bucket lands, or (append-metrics-record.sh
+# fails closed, STD-ARCH-014) none do. A mid-write crash can therefore never
+# leave the blended row -- already_aggregated()'s idempotency key -- without
+# its per-agent siblings, or vice versa (issue #533 PR review, RV-002).
+#
+# set -e is deliberately not relied on here (RV-001): a bare command failure
+# under set -e exits with no AI_AGILE_STATUS sentinel, which the orchestrator
+# would otherwise have to treat as a crash rather than a reported `blocked`.
+if ! AI_AGILE_METRICS_BRANCH="ai-agile/metrics" \
+     AI_AGILE_METRICS_FILE="records.jsonl" \
+     AI_AGILE_METRICS_COMMIT_MESSAGE="metrics: weekly aggregate (${record_count} record(s))" \
+     AI_AGILE_METRICS_RETRIES="3" \
+     bash "$APPEND_SCRIPT" "$records_file"; then
+    echo "aggregate-metrics: ERROR: append-metrics-record.sh failed -- no records were appended this run" >&2
+    echo "AI_AGILE_STATUS: blocked"
+    exit 0
+fi
 
-    AI_AGILE_METRICS_BRANCH="ai-agile/metrics" \
-    AI_AGILE_METRICS_FILE="records.jsonl" \
-    AI_AGILE_METRICS_COMMIT_MESSAGE="metrics: weekly aggregate" \
-    AI_AGILE_METRICS_RETRIES="3" \
-    bash "$APPEND_SCRIPT" "$tmpfile"
-
-    appended=$(( appended + 1 ))
-done <<< "$output"
-
-echo "aggregate-metrics: appended ${appended} record(s)" >&2
+echo "aggregate-metrics: appended ${record_count} record(s)" >&2
 echo "AI_AGILE_STATUS: complete"
