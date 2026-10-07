@@ -24,6 +24,7 @@ authoritative and these tables are a view of it.
 | `issue-cleanup` | kind `issue` | -- |
 | `blocker` | kind `issue` | -- |
 | `metrics-aggregation` | schedule `0 0 * * 1` | -- |
+| `metrics-report` | schedule `0 2 * * 1` | -- |
 
 ## Flow: `standard-delivery`
 
@@ -291,6 +292,26 @@ The groups below are this step's authoritative deny list, flattened at load time
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
 | `05_continuous/metrics-aggregation` | -- | -- | -- |
+
+## Flow: `metrics-report`
+
+### Sequence and gates
+
+| Step | Kind | Unit | Trigger | Depends on | Human gate |
+|---|---|---|---|---|---|
+| `05_continuous/metrics-report` | script | `item` | event `schedule` | -- | -- |
+
+### Exclusions and retries
+
+| Step | Excluded classifications | Excluded labels | Max retries |
+|---|---|---|---|
+| `05_continuous/metrics-report` | -- | -- | `1` |
+
+### Entitled activities
+
+| Step | Additional entitlements | Declared prohibitions | Git operations |
+|---|---|---|---|
+| `05_continuous/metrics-report` | -- | -- | -- |
 
 ## Entitlements granted to every step
 
