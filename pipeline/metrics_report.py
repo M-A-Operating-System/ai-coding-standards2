@@ -158,14 +158,25 @@ def read_aggregate_records() -> list:
 # ---------------------------------------------------------------------------
 
 def _parse_ts(value: object) -> Optional[datetime]:
+    """Parse an ISO-8601 timestamp, with or without a trailing "Z".
+
+    A result with no timezone (no "Z", no explicit offset) is assumed UTC --
+    the only format metrics_aggregator.py writes -- so it can still be
+    compared against the UTC-aware 12mo/2mo cutoffs below without raising
+    TypeError on a naive/aware comparison.
+    """
     if not isinstance(value, str) or not value:
         return None
     try:
         if value.endswith("Z"):
-            return datetime.fromisoformat(value[:-1] + "+00:00")
-        return datetime.fromisoformat(value)
+            parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+        else:
+            parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _cutoff(now: datetime, weeks: int) -> datetime:
