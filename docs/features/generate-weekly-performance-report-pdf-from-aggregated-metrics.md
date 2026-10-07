@@ -11,9 +11,9 @@
 **Then** the document is portrait-oriented and each page contains four chart rows rendered via WeasyPrint
 
 ## Scenario: Time-series metrics use dual time-window layout and by-agent metrics use grouped bar
-**Given** `records.jsonl` contains weekly-aggregate rows for both time-series metrics (e.g. cost per completed issue, throughput) and by-agent breakdown metrics (cost and duration by `agent_id`)
+**Given** `records.jsonl` contains weekly-aggregate rows and daily-aggregate rows for both time-series metrics (e.g. cost per completed issue, throughput) and by-agent breakdown metrics (cost and duration by `agent_id`)
 **When** the report is generated
-**Then** each time-series metric row contains a 12-month chart on the left and a 2-month chart on the right, and by-agent breakdown rows use a grouped bar chart shape instead of a line pair
+**Then** each time-series metric row contains a 12-month chart (sourced from weekly-aggregate rows) on the left and a 4-week chart (sourced from daily-aggregate rows) on the right, and by-agent breakdown rows use a grouped bar chart shape instead of a line pair
 
 ## Scenario: Cost and efficiency charts carry explicit unit labels
 **Given** `records.jsonl` contains weekly-aggregate rows for both cost (USD) and token count metrics
@@ -31,7 +31,7 @@
 **Then** the report includes at least one chart that displays cost, duration, or token usage broken down by `agent_id`
 
 ## Scenario: Short data range renders without failing
-**Given** `records.jsonl` contains weekly-aggregate rows spanning fewer than 12 months for one metric and fewer than 2 months for another
+**Given** `records.jsonl` contains weekly-aggregate rows spanning fewer than 12 months for one metric and daily-aggregate rows spanning fewer than 4 weeks for another
 **When** the report is generated
 **Then** both affected charts render using the available data range and the report is produced without error
 

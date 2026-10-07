@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# aggregate-metrics.sh -- weekly metrics aggregation scheduled pipeline step.
+# aggregate-metrics.sh -- metrics aggregation scheduled pipeline step.
 #
 # Reads records.jsonl from the ai-agile/metrics branch, computes per-agent and
-# blended weekly aggregate records for the previous Mon-Sun week, and appends
-# each record back into the same file using append-metrics-record.sh.
+# blended aggregate records for the previous complete bucket of --period (the
+# previous Mon-Sun week by default, or the previous complete calendar day with
+# --period day), and appends each record back into the same file using
+# append-metrics-record.sh.
 #
 # Aggregate rows are identifiable by:
-#   agent_id == "metrics-aggregator"  (blended total row)
-#   period   == "week"                (both per-agent and blended rows)
+#   agent_id == "metrics-aggregator"        (blended total row)
+#   period   == "week" or "day"             (both per-agent and blended rows)
 #
 # Emits AI_AGILE_STATUS: complete | blocked as the last stdout line.
 # All diagnostic output goes to stderr.
@@ -23,9 +25,28 @@
 set -euo pipefail
 
 DRY_RUN=0
-if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN=1
-fi
+PERIOD="week"
+while [[ $# -gt 0 ]]; do
+    case "${1}" in
+        --dry-run) DRY_RUN=1 ;;
+        --period)
+            if [[ -z "${2:-}" ]]; then
+                echo "aggregate-metrics: ERROR: --period requires an argument" >&2
+                echo "AI_AGILE_STATUS: blocked"
+                exit 0
+            fi
+            PERIOD="${2}"
+            shift
+            ;;
+        --period=*) PERIOD="${1#--period=}" ;;
+        *)
+            echo "aggregate-metrics: ERROR: unknown argument: ${1}" >&2
+            echo "AI_AGILE_STATUS: blocked"
+            exit 0
+            ;;
+    esac
+    shift
+done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -55,7 +76,7 @@ records_file="${tmpdir}/records.jsonl"
 # records) and stderr (diagnostics) go to separate files -- merging them
 # (issue #533 PR review, RV-004) would append any unexpected warning line
 # to the ledger as a garbage JSONL record.
-if ! python3 -I "$AGGREGATOR" >"$records_file" 2>"$stderr_file"; then
+if ! python3 -I "$AGGREGATOR" --period "$PERIOD" >"$records_file" 2>"$stderr_file"; then
     echo "aggregate-metrics: ERROR: metrics_aggregator.py failed:" >&2
     cat -- "$stderr_file" >&2
     echo "AI_AGILE_STATUS: blocked"
@@ -103,7 +124,7 @@ fi
 # would otherwise have to treat as a crash rather than a reported `blocked`.
 if ! AI_AGILE_METRICS_BRANCH="ai-agile/metrics" \
      AI_AGILE_METRICS_FILE="records.jsonl" \
-     AI_AGILE_METRICS_COMMIT_MESSAGE="metrics: weekly aggregate (${record_count} record(s))" \
+     AI_AGILE_METRICS_COMMIT_MESSAGE="metrics: ${PERIOD} aggregate (${record_count} record(s))" \
      AI_AGILE_METRICS_RETRIES="3" \
      bash "$APPEND_SCRIPT" "$records_file"; then
     echo "aggregate-metrics: ERROR: append-metrics-record.sh failed -- no records were appended this run" >&2

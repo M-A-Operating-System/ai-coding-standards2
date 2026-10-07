@@ -598,8 +598,30 @@
       ]
     },
 
+    "metrics-aggregation-daily": {
+      "description": "Daily aggregation of pipeline metrics (issue #547). Reads records.jsonl from the ai-agile/metrics branch, computes per-agent and blended daily aggregate records for the previous complete calendar day (UTC), and appends them back into the same file. Runs at 01:00 UTC daily to allow the previous day's data to settle. Produces no issue branch or PR; all writes go to the metrics branch via append-metrics-record.sh.",
+      "trigger": {
+        "schedule": "0 1 * * *"
+      },
+      "steps": [
+        {
+          "agent": "05_continuous/metrics-aggregation-daily",
+          "type": "script",
+          "script": "scripts/aggregate-metrics-daily.sh",
+          "phase": "05_continuous",
+          "trigger": {"event": "schedule"},
+          "human_gate_after": false,
+          "dependencies": [],
+          "max_retries": 1,
+          "budgets": { "max_wall_seconds": 300 },
+          "expected_effect": { "commits": false },
+          "description": "Computes per-agent and blended daily aggregate records for the previous complete calendar day and appends them to records.jsonl on the ai-agile/metrics branch. Aggregate rows carry agent_id=metrics-aggregator (blended) or the real agent name (per-agent breakdown), period=day, and metric fields named {aggregation_fn}_{base_metric}[-{dimension}]. Idempotent: skips the append when the bucket is already aggregated."
+        }
+      ]
+    },
+
     "metrics-report": {
-      "description": "Weekly performance report (issue #534). Reads weekly-aggregate rows from the ai-agile/metrics branch (written by the metrics-aggregation flow), generates per-metric charts via matplotlib, assembles them into print-styled HTML, and renders a PDF via WeasyPrint. Runs 2 hours after metrics-aggregation on Mondays to allow the aggregation step to complete first.",
+      "description": "Weekly performance report (issue #534). Reads weekly-aggregate rows (period=week) and daily-aggregate rows (period=day) from the ai-agile/metrics branch, generates per-metric charts via matplotlib, assembles them into print-styled HTML, and renders a PDF via WeasyPrint. Left charts show 12 months of weekly data; right charts show 4 weeks of daily data. Runs 2 hours after metrics-aggregation on Mondays to allow the weekly aggregation step to complete first.",
       "trigger": {
         "schedule": "0 2 * * 1"
       },
@@ -615,7 +637,7 @@
           "max_retries": 1,
           "budgets": { "max_wall_seconds": 600 },
           "expected_effect": { "commits": false },
-          "description": "Reads weekly-aggregate rows (agent_id=metrics-aggregator, period=week) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month and 2-month charts for each metric via matplotlib (static PNG images). Assembles charts into portrait-A4 print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. The rendered PDF is written to AI_AGILE_SCRATCH, then committed to the ai-agile/reports branch so it persists after the run's scratch directory is removed."
+          "description": "Reads period=week rows (last 12 months) and period=day rows (last 4 weeks) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month (weekly) and 4-week (daily) charts for each metric via matplotlib (static PNG images). Assembles charts into portrait-A4 print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. The rendered PDF is written to AI_AGILE_SCRATCH, then committed to the ai-agile/reports branch so it persists after the run's scratch directory is removed."
         }
       ]
     }
