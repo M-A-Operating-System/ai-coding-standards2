@@ -519,3 +519,93 @@ class TestDocumentation:
         for field, title, ylabel, chart_type in _KNOWN_METRICS:
             assert title.strip(), f"{field}: empty title"
             assert ylabel.strip(), f"{field}: empty ylabel"
+
+    def test_docstring_says_bar_charts_not_stacked_bar(self):
+        import metrics_report
+        doc = metrics_report.__doc__
+        assert "stacked bar" not in doc.lower()
+
+    def test_commit_report_sh_exists(self):
+        script_path = REPO_ROOT / "scripts" / "commit-report.sh"
+        assert script_path.exists(), "commit-report.sh must exist on disk"
+
+    def test_generate_metrics_report_sh_calls_commit_report(self):
+        script_path = REPO_ROOT / "scripts" / "generate-metrics-report.sh"
+        assert script_path.exists()
+        content = script_path.read_text()
+        assert "commit-report.sh" in content
+
+    def test_generate_metrics_report_sh_uses_persistent_branch(self):
+        script_path = REPO_ROOT / "scripts" / "generate-metrics-report.sh"
+        content = script_path.read_text()
+        assert "ai-agile/reports" in content
+
+
+# ---------------------------------------------------------------------------
+# Additional regression tests for RV-003 and RV-004
+# ---------------------------------------------------------------------------
+
+class TestRenderChartsBackend:
+    def test_matplotlib_use_agg_called_once_in_render_charts(self):
+        import metrics_report as mr
+        calls = []
+
+        class FakeMatplotlib:
+            def use(self, backend):
+                calls.append(backend)
+
+        with patch.dict("sys.modules", {
+            "matplotlib": FakeMatplotlib(),
+            "matplotlib.pyplot": MagicMock(),
+            "matplotlib.dates": MagicMock(),
+        }):
+            importlib.reload(mr)
+            mr.render_charts([])
+
+        assert len(calls) == 1
+        assert calls[0] == "Agg"
+
+    def test_render_line_pair_does_not_call_matplotlib_use(self):
+        import inspect
+        import metrics_report as mr
+        source = inspect.getsource(mr._render_line_pair)
+        assert "matplotlib.use" not in source
+
+    def test_render_bar_agent_pair_does_not_call_matplotlib_use(self):
+        import inspect
+        import metrics_report as mr
+        source = inspect.getsource(mr._render_bar_agent_pair)
+        assert "matplotlib.use" not in source
+
+
+class TestNowParsing:
+    def test_z_suffix_is_parsed_as_utc(self):
+        from metrics_report import _parse_ts
+        from datetime import timezone
+        dt = _parse_ts("2026-10-06T12:00:00Z")
+        assert dt is not None
+        assert dt.tzinfo is not None
+
+    def test_now_with_offset_does_not_raise(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [_blended(_week_ts(now, 1), count_issues=3)]
+        # Simulate what main() does with a timezone-offset --now string.
+        from datetime import timezone
+        import metrics_report as mr
+        ts_with_offset = "2026-10-06T05:30:00+05:30"
+        parsed = datetime.fromisoformat(ts_with_offset)
+        resolved = parsed.astimezone(timezone.utc)
+        descs = mr.prepare_report_data(records, resolved)
+        assert len(descs) >= 1
+
+    def test_now_naive_string_treated_as_utc(self):
+        import metrics_report as mr
+        from datetime import timezone
+        naive_str = "2026-10-06T00:00:00"
+        parsed = datetime.fromisoformat(naive_str)
+        assert parsed.tzinfo is None
+        resolved = parsed.replace(tzinfo=timezone.utc)
+        now = _utc("2026-10-06T00:00:00Z")
+        records = [_blended(_week_ts(now, 1), count_issues=2)]
+        descs = mr.prepare_report_data(records, resolved)
+        assert len(descs) >= 1

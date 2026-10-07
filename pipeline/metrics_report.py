@@ -12,15 +12,15 @@ appears as one row containing two charts side by side:
   Left:  last 12 months of data.
   Right: last 2 months of data.
 
-By-agent breakdown metrics (cost, duration by agent_id) use stacked bar
-charts per window instead of line charts, showing where spending goes and
+By-agent breakdown metrics (cost, duration by agent_id) use bar charts
+per window instead of line charts, showing where spending goes and
 making agent-mix shifts visible.
 
 METRIC PRIORITY ORDER (v1)
 --------------------------
-1. Cost by agent_id (stacked bar) -- where spending goes; decouples
+1. Cost by agent_id (bar chart) -- where spending goes; decouples
    agent-mix shifts from performance trends in all other charts.
-2. Duration by agent_id (stacked bar).
+2. Duration by agent_id (bar chart).
 3. Throughput: issues per week (count_issues from blended rows).
 4. Cost per completed issue (ave_cost_usd-issue).
 5. Value-add ratio (ratio_value_add-issue) -- spike carve-out applied by
@@ -328,8 +328,6 @@ def _figure_to_b64(fig) -> str:
 
 def _render_line_pair(desc: dict) -> tuple:
     """Return (img_12mo_b64, img_2mo_b64) PNG base64 strings for a line chart row."""
-    import matplotlib
-    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
 
@@ -351,8 +349,6 @@ def _render_line_pair(desc: dict) -> tuple:
 
 def _render_bar_agent_pair(desc: dict) -> tuple:
     """Return (img_12mo_b64, img_2mo_b64) PNG base64 strings for a by-agent bar row."""
-    import matplotlib
-    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     imgs = []
@@ -380,6 +376,8 @@ def _render_bar_agent_pair(desc: dict) -> tuple:
 
 def render_charts(chart_descriptors: list) -> list:
     """Render each descriptor to a (img_12mo_b64, img_2mo_b64) pair of PNG base64 strings."""
+    import matplotlib
+    matplotlib.use("Agg")
     pairs = []
     for desc in chart_descriptors:
         if desc["chart_type"] == _BAR_AGENT:
@@ -466,7 +464,11 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.now:
-        now = datetime.fromisoformat(args.now.rstrip("Z") + "+00:00")
+        _parsed = datetime.fromisoformat(args.now.rstrip("Z") + "+00:00" if args.now.endswith("Z") else args.now)
+        if _parsed.tzinfo is None:
+            now = _parsed.replace(tzinfo=timezone.utc)
+        else:
+            now = _parsed.astimezone(timezone.utc)
     else:
         now = datetime.now(timezone.utc)
 
