@@ -43,6 +43,7 @@ from metrics_aggregator import (
     compute_period_aggregates,
     compute_value_add_ratio,
     compute_weekly_aggregates,
+    day_bucket,
     read_records,
     week_bucket,
 )
@@ -590,11 +591,15 @@ class TestComputePeriodAggregates:
     (issue #533 PR review, RV-003) -- adding a later "month" period is adding
     a bucket function and one _BUCKET_FUNCS entry, not restructuring this."""
 
-    def test_week_is_the_only_registered_period_today(self):
-        assert set(_BUCKET_FUNCS) == {"week"}
+    def test_week_and_day_are_registered_periods(self):
+        assert "week" in _BUCKET_FUNCS
+        assert "day" in _BUCKET_FUNCS
 
     def test_week_bucket_is_the_registered_function(self):
         assert _BUCKET_FUNCS["week"] is week_bucket
+
+    def test_day_bucket_is_the_registered_function(self):
+        assert _BUCKET_FUNCS["day"] is day_bucket
 
     def test_unknown_period_raises_rather_than_silently_resolving(self):
         with pytest.raises(KeyError):
@@ -664,3 +669,69 @@ class TestParseTs:
     def test_non_string_returns_none(self):
         assert _parse_ts(None) is None
         assert _parse_ts(12345) is None
+
+
+# Scenario 1 (feature docs: daily aggregation covers previous complete calendar day)
+class TestDayBucket:
+    """day_bucket() returns the previous complete calendar day (UTC) with
+    microsecond-precision upper bound, matching the same care as week_bucket()
+    (issue #547)."""
+
+    # Aggregator runs 2026-10-07 01:00 UTC; previous day was 2026-10-06.
+    _NOW_DAY = _utc("2026-10-07T01:00:00Z")
+    _DAY_START = "2026-10-06T00:00:00Z"
+    _DAY_END_S  = "2026-10-06T23:59:59Z"
+
+    def test_previous_calendar_day_start_and_end(self):
+        start, end = day_bucket(self._NOW_DAY)
+        assert start == _utc(self._DAY_START)
+        # Microsecond-precise upper bound: one microsecond before today midnight.
+        assert end == _utc("2026-10-07T00:00:00Z") - timedelta(microseconds=1)
+
+    def test_microsecond_upper_bound_not_second(self):
+        # A record timestamped in the last second of yesterday must fall inside the bucket.
+        start, end = day_bucket(self._NOW_DAY)
+        ts_last_second = _utc("2026-10-06T23:59:59Z") + timedelta(microseconds=500000)
+        assert start <= ts_last_second <= end
+
+    def test_first_record_of_day_included(self):
+        start, end = day_bucket(self._NOW_DAY)
+        assert start <= _utc(self._DAY_START) <= end
+
+    def test_last_record_of_day_included_at_second_boundary(self):
+        start, end = day_bucket(self._NOW_DAY)
+        assert start <= _utc(self._DAY_END_S) <= end
+
+    def test_record_at_today_midnight_excluded(self):
+        start, end = day_bucket(self._NOW_DAY)
+        today_midnight = _utc("2026-10-07T00:00:00Z")
+        assert not (start <= today_midnight <= end)
+
+    def test_record_two_days_ago_excluded(self):
+        start, end = day_bucket(self._NOW_DAY)
+        two_days_ago = _utc("2026-10-05T12:00:00Z")
+        assert not (start <= two_days_ago <= end)
+
+    def test_day_period_aggregates_with_day_bucket(self):
+        # Records timestamped during yesterday are bucketed as period=day.
+        yesterday_ts = "2026-10-06T15:00:00Z"
+        records = [_raw_record("issue-classifier", yesterday_ts)]
+        result = compute_period_aggregates(records, self._NOW_DAY, period="day")
+        assert result
+        blended = next(r for r in result if r["agent_id"] == METRICS_AGGREGATOR_ID)
+        assert blended["period"] == "day"
+        assert blended["timestamp_start"] == self._DAY_START
+
+    def test_idempotency_for_day_period(self):
+        yesterday_ts = "2026-10-06T15:00:00Z"
+        records = [_raw_record("issue-classifier", yesterday_ts)]
+        first = compute_period_aggregates(records, self._NOW_DAY, period="day")
+        assert first
+        second = compute_period_aggregates(records + first, self._NOW_DAY, period="day")
+        assert second == []
+
+    def test_day_bucket_run_at_midnight_targets_the_previous_day(self):
+        # Running exactly at midnight should still target yesterday, not today.
+        at_midnight = _utc("2026-10-07T00:00:00Z")
+        start, end = day_bucket(at_midnight)
+        assert start == _utc("2026-10-06T00:00:00Z")

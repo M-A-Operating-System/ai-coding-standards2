@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Weekly performance report generator for ai-agile/metrics (issue #534).
 
-Reads weekly-aggregate rows from records.jsonl on the ai-agile/metrics branch,
-generates per-metric charts with matplotlib, assembles them into a
-print-styled HTML document, and renders to PDF via WeasyPrint.
+Reads weekly-aggregate (period=week) and daily-aggregate (period=day) rows
+from records.jsonl on the ai-agile/metrics branch, generates per-metric
+charts with matplotlib, assembles them into a print-styled HTML document,
+and renders to PDF via WeasyPrint.
 
 REPORT LAYOUT
 -------------
 Portrait A4, four chart rows per page (CSS break-after: page). Each metric
 appears as one row containing two charts side by side:
-  Left:  last 12 months of data.
-  Right: last 2 months of data.
+  Left:  last 12 months of data, sourced from period=week aggregate rows.
+  Right: last 4 weeks of data, sourced from period=day aggregate rows.
 
 By-agent breakdown metrics (cost, duration by agent_id) use bar charts
 per window instead of line charts, showing where spending goes and
@@ -46,7 +47,7 @@ Usage:
   python3 -I metrics_report.py [--output path/to/report.pdf] [--now ISO-8601]
 
 --now overrides the current UTC time (for testing and manual backfills;
-  determines the 12-month and 2-month lookback cutoffs).
+  determines the 12-month and 4-week lookback cutoffs).
 
 Runtime requirements (not in requirements.txt -- install separately):
   matplotlib >= 3.7
@@ -69,7 +70,7 @@ METRICS_AGGREGATOR_ID = "metrics-aggregator"
 
 ROWS_PER_PAGE = 4
 WINDOW_12MO_WEEKS = 52
-WINDOW_2MO_WEEKS = 8
+WINDOW_4WK_DAYS = 28
 
 _LINE = "line"
 _BAR_AGENT = "bar_agent"
@@ -122,12 +123,12 @@ def _infer_ylabel(field_name: str) -> str:
 # ---------------------------------------------------------------------------
 
 def read_aggregate_records() -> list:
-    """Return weekly-aggregate rows from records.jsonl on the metrics branch.
+    """Return aggregate rows (period=week and period=day) from records.jsonl.
 
-    Fetches the branch, reads all lines, and filters for rows with
-    period == "week".  Returns [] when the branch exists but the file does
-    not, or when no aggregate rows are present.  A git fetch failure
-    propagates as CalledProcessError (fail-closed, STD-ARCH-014).
+    Fetches the branch, reads all lines, and filters for rows with a known
+    period value ("week" or "day").  Returns [] when the branch exists but
+    the file does not, or when no aggregate rows are present.  A git fetch
+    failure propagates as CalledProcessError (fail-closed, STD-ARCH-014).
     """
     subprocess.run(
         ["git", "fetch", "origin", METRICS_BRANCH],
@@ -148,7 +149,7 @@ def read_aggregate_records() -> list:
             entry = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(entry, dict) and entry.get("period") == "week":
+        if isinstance(entry, dict) and entry.get("period") in ("week", "day"):
             records.append(entry)
     return records
 
@@ -179,8 +180,12 @@ def _parse_ts(value: object) -> Optional[datetime]:
     return parsed
 
 
-def _cutoff(now: datetime, weeks: int) -> datetime:
+def _cutoff_weeks(now: datetime, weeks: int) -> datetime:
     return now - timedelta(weeks=weeks)
+
+
+def _cutoff_days(now: datetime, days: int) -> datetime:
+    return now - timedelta(days=days)
 
 
 def prepare_report_data(records: list, now: datetime) -> list:
@@ -191,35 +196,47 @@ def prepare_report_data(records: list, now: datetime) -> list:
       title      -- display title for the chart row
       ylabel     -- y-axis label (encodes the unit)
       chart_type -- _LINE or _BAR_AGENT
-      data_12mo  -- (line only) list of (week_dt, float) pairs
-      data_2mo   -- (line only) list of (week_dt, float) pairs
+      data_12mo  -- (line only) list of (dt, float) pairs; period=week rows, last 12 months
+      data_4wk   -- (line only) list of (dt, float) pairs; period=day rows, last 4 weeks
       agents     -- (bar_agent only) sorted list of agent_id strings
-      series     -- (bar_agent only) {agent_id: [(week_dt, float), ...]}
+      series_week-- (bar_agent only) {agent_id: [(dt, float), ...]} from period=week rows
+      series_day -- (bar_agent only) {agent_id: [(dt, float), ...]} from period=day rows
       cutoff_12mo-- (bar_agent only) 12-month window cutoff datetime
-      cutoff_2mo -- (bar_agent only) 2-month window cutoff datetime
+      cutoff_4wk -- (bar_agent only) 4-week window cutoff datetime
 
     Returns descriptors in the priority order defined by _KNOWN_METRICS,
     followed by any additional fields discovered from the records.
     When a field has no data at all it is omitted from the result.
-    When data spans fewer weeks than a window, the available range is used.
+    When data spans fewer periods than a window, the available range is used.
     """
-    blended = [r for r in records if r.get("agent_id") == METRICS_AGGREGATOR_ID]
-    per_agent = [
-        r for r in records
+    week_records = [r for r in records if r.get("period") == "week"]
+    day_records = [r for r in records if r.get("period") == "day"]
+
+    blended_week = [r for r in week_records if r.get("agent_id") == METRICS_AGGREGATOR_ID]
+    blended_day = [r for r in day_records if r.get("agent_id") == METRICS_AGGREGATOR_ID]
+    per_agent_week = [
+        r for r in week_records
+        if r.get("agent_id") and r.get("agent_id") != METRICS_AGGREGATOR_ID
+        and not r.get("event")
+    ]
+    per_agent_day = [
+        r for r in day_records
         if r.get("agent_id") and r.get("agent_id") != METRICS_AGGREGATOR_ID
         and not r.get("event")
     ]
 
-    blended_sorted = sorted(blended, key=lambda r: r.get("timestamp_start") or "")
-    per_agent_sorted = sorted(per_agent, key=lambda r: r.get("timestamp_start") or "")
+    blended_week_sorted = sorted(blended_week, key=lambda r: r.get("timestamp_start") or "")
+    blended_day_sorted = sorted(blended_day, key=lambda r: r.get("timestamp_start") or "")
+    per_agent_week_sorted = sorted(per_agent_week, key=lambda r: r.get("timestamp_start") or "")
+    per_agent_day_sorted = sorted(per_agent_day, key=lambda r: r.get("timestamp_start") or "")
 
-    cutoff_12mo = _cutoff(now, WINDOW_12MO_WEEKS)
-    cutoff_2mo = _cutoff(now, WINDOW_2MO_WEEKS)
+    cutoff_12mo = _cutoff_weeks(now, WINDOW_12MO_WEEKS)
+    cutoff_4wk = _cutoff_days(now, WINDOW_4WK_DAYS)
 
     # Discover scalar fields in blended records not in _KNOWN_METRICS.
     extra_fields = []
     seen_fields = set(_KNOWN_FIELD_NAMES) | _NON_METRIC_FIELDS
-    for rec in blended_sorted:
+    for rec in blended_week_sorted + blended_day_sorted:
         for key, val in rec.items():
             if key in seen_fields:
                 continue
@@ -231,11 +248,15 @@ def prepare_report_data(records: list, now: datetime) -> list:
     for field, title, ylabel, chart_type in list(_KNOWN_METRICS) + extra_fields:
         if chart_type == _BAR_AGENT:
             desc = _build_bar_agent(
-                field, title, ylabel, per_agent_sorted, cutoff_12mo, cutoff_2mo,
+                field, title, ylabel,
+                per_agent_week_sorted, per_agent_day_sorted,
+                cutoff_12mo, cutoff_4wk,
             )
         else:
             desc = _build_line(
-                field, title, ylabel, blended_sorted, cutoff_12mo, cutoff_2mo,
+                field, title, ylabel,
+                blended_week_sorted, blended_day_sorted,
+                cutoff_12mo, cutoff_4wk,
             )
         if desc is not None:
             result.append(desc)
@@ -247,32 +268,46 @@ def _build_line(
     field: str,
     title: str,
     ylabel: str,
-    blended_sorted: list,
+    blended_week: list,
+    blended_day: list,
     cutoff_12mo: datetime,
-    cutoff_2mo: datetime,
+    cutoff_4wk: datetime,
 ) -> Optional[dict]:
-    all_points = []
-    for rec in blended_sorted:
+    week_points = []
+    for rec in blended_week:
         val = rec.get(field)
         if val is None:
             continue
-        week_dt = _parse_ts(rec.get("timestamp_start"))
-        if week_dt is None:
+        dt = _parse_ts(rec.get("timestamp_start"))
+        if dt is None:
             continue
         try:
-            all_points.append((week_dt, float(val)))
+            week_points.append((dt, float(val)))
         except (TypeError, ValueError):
             continue
 
-    if not all_points:
+    day_points = []
+    for rec in blended_day:
+        val = rec.get(field)
+        if val is None:
+            continue
+        dt = _parse_ts(rec.get("timestamp_start"))
+        if dt is None:
+            continue
+        try:
+            day_points.append((dt, float(val)))
+        except (TypeError, ValueError):
+            continue
+
+    if not week_points and not day_points:
         return None
 
-    data_12mo = [(dt, v) for dt, v in all_points if dt >= cutoff_12mo]
-    data_2mo = [(dt, v) for dt, v in all_points if dt >= cutoff_2mo]
+    data_12mo = [(dt, v) for dt, v in week_points if dt >= cutoff_12mo]
+    data_4wk = [(dt, v) for dt, v in day_points if dt >= cutoff_4wk]
     if not data_12mo:
-        data_12mo = all_points
-    if not data_2mo:
-        data_2mo = all_points
+        data_12mo = week_points
+    if not data_4wk:
+        data_4wk = day_points
 
     return {
         "field": field,
@@ -280,7 +315,7 @@ def _build_line(
         "ylabel": ylabel,
         "chart_type": _LINE,
         "data_12mo": data_12mo,
-        "data_2mo": data_2mo,
+        "data_4wk": data_4wk,
     }
 
 
@@ -288,17 +323,18 @@ def _build_bar_agent(
     field: str,
     title: str,
     ylabel: str,
-    per_agent_sorted: list,
+    per_agent_week: list,
+    per_agent_day: list,
     cutoff_12mo: datetime,
-    cutoff_2mo: datetime,
+    cutoff_4wk: datetime,
 ) -> Optional[dict]:
-    series: dict = {}
-    for rec in per_agent_sorted:
+    series_week: dict = {}
+    for rec in per_agent_week:
         val = rec.get(field)
         if val is None:
             continue
-        week_dt = _parse_ts(rec.get("timestamp_start"))
-        if week_dt is None:
+        dt = _parse_ts(rec.get("timestamp_start"))
+        if dt is None:
             continue
         agent = rec.get("agent_id", "")
         if not agent:
@@ -307,20 +343,39 @@ def _build_bar_agent(
             fval = float(val)
         except (TypeError, ValueError):
             continue
-        series.setdefault(agent, []).append((week_dt, fval))
+        series_week.setdefault(agent, []).append((dt, fval))
 
-    if not series:
+    series_day: dict = {}
+    for rec in per_agent_day:
+        val = rec.get(field)
+        if val is None:
+            continue
+        dt = _parse_ts(rec.get("timestamp_start"))
+        if dt is None:
+            continue
+        agent = rec.get("agent_id", "")
+        if not agent:
+            continue
+        try:
+            fval = float(val)
+        except (TypeError, ValueError):
+            continue
+        series_day.setdefault(agent, []).append((dt, fval))
+
+    if not series_week and not series_day:
         return None
 
+    agents = sorted(set(series_week) | set(series_day))
     return {
         "field": field,
         "title": title,
         "ylabel": ylabel,
         "chart_type": _BAR_AGENT,
-        "agents": sorted(series),
-        "series": series,
+        "agents": agents,
+        "series_week": series_week,
+        "series_day": series_day,
         "cutoff_12mo": cutoff_12mo,
-        "cutoff_2mo": cutoff_2mo,
+        "cutoff_4wk": cutoff_4wk,
     }
 
 
@@ -339,12 +394,12 @@ def _figure_to_b64(fig) -> str:
 
 
 def _render_line_pair(desc: dict) -> tuple:
-    """Return (img_12mo_b64, img_2mo_b64) PNG base64 strings for a line chart row."""
+    """Return (img_12mo_b64, img_4wk_b64) PNG base64 strings for a line chart row."""
     import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
 
     imgs = []
-    for window_label, data in [("12 months", desc["data_12mo"]), ("2 months", desc["data_2mo"])]:
+    for window_label, data in [("12 months", desc["data_12mo"]), ("4 weeks", desc["data_4wk"])]:
         fig, ax = plt.subplots(figsize=(5.5, 3))
         if data:
             xs = [dt for dt, _ in data]
@@ -360,17 +415,18 @@ def _render_line_pair(desc: dict) -> tuple:
 
 
 def _render_bar_agent_pair(desc: dict) -> tuple:
-    """Return (img_12mo_b64, img_2mo_b64) PNG base64 strings for a by-agent bar row."""
+    """Return (img_12mo_b64, img_4wk_b64) PNG base64 strings for a by-agent bar row."""
     import matplotlib.pyplot as plt
 
     imgs = []
-    for window_label, cutoff in [
-        ("12 months", desc["cutoff_12mo"]),
-        ("2 months", desc["cutoff_2mo"]),
+    for window_label, series_key, cutoff in [
+        ("12 months", "series_week", desc["cutoff_12mo"]),
+        ("4 weeks",   "series_day",  desc["cutoff_4wk"]),
     ]:
         fig, ax = plt.subplots(figsize=(5.5, 3))
+        series = desc[series_key]
         totals = {
-            agent: sum(v for dt, v in desc["series"].get(agent, []) if dt >= cutoff)
+            agent: sum(v for dt, v in series.get(agent, []) if dt >= cutoff)
             for agent in desc["agents"]
         }
         active = [(a, totals[a]) for a in desc["agents"] if totals[a] > 0]
@@ -429,12 +485,12 @@ def build_html(chart_descriptors: list, chart_pairs: list) -> str:
     Groups chart rows into pages of ROWS_PER_PAGE using CSS break-after: page.
     """
     rows_html = []
-    for desc, (img_12mo, img_2mo) in zip(chart_descriptors, chart_pairs):
+    for desc, (img_12mo, img_4wk) in zip(chart_descriptors, chart_pairs):
         title = html.escape(desc["title"])
         row = (
             '<div class="row">'
             f'<img src="data:image/png;base64,{img_12mo}" alt="{title} 12mo">'
-            f'<img src="data:image/png;base64,{img_2mo}" alt="{title} 2mo">'
+            f'<img src="data:image/png;base64,{img_4wk}" alt="{title} 4wk">'
             "</div>"
         )
         rows_html.append(row)

@@ -30,7 +30,7 @@ from metrics_report import (
     METRICS_AGGREGATOR_ID,
     ROWS_PER_PAGE,
     WINDOW_12MO_WEEKS,
-    WINDOW_2MO_WEEKS,
+    WINDOW_4WK_DAYS,
     _BAR_AGENT,
     _LINE,
     _infer_ylabel,
@@ -53,7 +53,7 @@ def _utc(text: str) -> datetime:
 
 
 def _blended(ts: str, **fields) -> dict:
-    """Minimal blended aggregate record."""
+    """Minimal blended aggregate record with period=week."""
     base = {
         "timestamp_start": ts,
         "timestamp_end": ts,
@@ -72,14 +72,54 @@ def _blended(ts: str, **fields) -> dict:
     return base
 
 
+def _blended_day(ts: str, **fields) -> dict:
+    """Minimal blended aggregate record with period=day."""
+    base = {
+        "timestamp_start": ts,
+        "timestamp_end": ts,
+        "github_issue_number": None,
+        "agent_id": METRICS_AGGREGATOR_ID,
+        "period": "day",
+        "cycle_id": "c",
+        "duration_ms": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "retry_count": 0,
+        "retry_errors": [],
+        "classification": None,
+    }
+    base.update(fields)
+    return base
+
+
 def _agent_rec(agent_id: str, ts: str, **fields) -> dict:
-    """Minimal per-agent breakdown record."""
+    """Minimal per-agent breakdown record with period=week."""
     base = {
         "timestamp_start": ts,
         "timestamp_end": ts,
         "github_issue_number": None,
         "agent_id": agent_id,
         "period": "week",
+        "cycle_id": "c",
+        "duration_ms": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "retry_count": 0,
+        "retry_errors": [],
+        "classification": None,
+    }
+    base.update(fields)
+    return base
+
+
+def _agent_rec_day(agent_id: str, ts: str, **fields) -> dict:
+    """Minimal per-agent breakdown record with period=day."""
+    base = {
+        "timestamp_start": ts,
+        "timestamp_end": ts,
+        "github_issue_number": None,
+        "agent_id": agent_id,
+        "period": "day",
         "cycle_id": "c",
         "duration_ms": 0,
         "input_tokens": 0,
@@ -102,19 +142,21 @@ def _week_ts(now: datetime, weeks_ago: int) -> str:
 # ---------------------------------------------------------------------------
 
 class TestReadAndProduce:
-    def test_read_aggregate_records_returns_only_week_rows(self, monkeypatch):
+    def test_read_aggregate_records_returns_week_and_day_rows(self, monkeypatch):
         week_rec = _blended("2026-09-01T00:00:00Z", count_issues=3)
-        non_week_rec = {**week_rec, "period": "month"}
+        day_rec = _blended_day("2026-09-30T00:00:00Z", count_issues=1)
+        month_rec = {**week_rec, "period": "month"}
         raw_rec = {**week_rec}
         del raw_rec["period"]
-        lines = "\n".join(json.dumps(r) for r in [week_rec, non_week_rec, raw_rec])
+        lines = "\n".join(json.dumps(r) for r in [week_rec, day_rec, month_rec, raw_rec])
         monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[
             MagicMock(returncode=0),
             MagicMock(returncode=0, stdout=lines),
         ]))
         result = read_aggregate_records()
-        assert len(result) == 1
-        assert result[0]["agent_id"] == METRICS_AGGREGATOR_ID
+        periods = {r["period"] for r in result}
+        assert periods == {"week", "day"}
+        assert len(result) == 2
 
     def test_read_aggregate_records_returns_empty_when_file_missing(self, monkeypatch):
         monkeypatch.setattr("subprocess.run", MagicMock(side_effect=[
@@ -248,13 +290,13 @@ class TestChartTypes:
         assert cost_agent is not None
         assert cost_agent["chart_type"] == _BAR_AGENT
 
-    def test_line_descriptor_has_12mo_and_2mo_data(self):
+    def test_line_descriptor_has_12mo_and_4wk_data(self):
         now = _utc("2026-10-06T00:00:00Z")
         records = [_blended(_week_ts(now, 2), count_issues=5)]
         descs = prepare_report_data(records, now)
         throughput = next(d for d in descs if d["field"] == "count_issues")
         assert "data_12mo" in throughput
-        assert "data_2mo" in throughput
+        assert "data_4wk" in throughput
 
     def test_bar_agent_descriptor_has_series_and_agents(self):
         now = _utc("2026-10-06T00:00:00Z")
@@ -262,21 +304,55 @@ class TestChartTypes:
         descs = prepare_report_data(records, now)
         cost_agent = next(d for d in descs if d["field"] == "sum_cost_usd")
         assert "agents" in cost_agent
-        assert "series" in cost_agent
+        assert "series_week" in cost_agent
+        assert "series_day" in cost_agent
         assert "coder" in cost_agent["agents"]
 
-    def test_line_12mo_window_is_left_and_2mo_is_right(self):
+    def test_left_chart_sources_week_rows_for_12mo(self):
         now = _utc("2026-10-06T00:00:00Z")
-        old_ts = _week_ts(now, 20)
-        recent_ts = _week_ts(now, 2)
+        week_ts_old = _week_ts(now, 20)
+        week_ts_recent = _week_ts(now, 2)
         records = [
-            _blended(old_ts, count_issues=10),
-            _blended(recent_ts, count_issues=5),
+            _blended(week_ts_old, count_issues=10),
+            _blended(week_ts_recent, count_issues=5),
         ]
         descs = prepare_report_data(records, now)
         throughput = next(d for d in descs if d["field"] == "count_issues")
+        # Both week records fall within 12-month window -- both appear on the left.
         assert len(throughput["data_12mo"]) == 2
-        assert len(throughput["data_2mo"]) == 1
+
+    def test_right_chart_sources_day_rows_for_4wk(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        day_ts_recent = (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        day_ts_old = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        records = [
+            _blended_day(day_ts_recent, count_issues=3),
+            _blended_day(day_ts_old, count_issues=1),
+        ]
+        descs = prepare_report_data(records, now)
+        throughput = next((d for d in descs if d["field"] == "count_issues"), None)
+        assert throughput is not None
+        # Only the 3-days-ago record falls within the 4-week window.
+        assert len(throughput["data_4wk"]) == 1
+
+    def test_week_rows_do_not_appear_in_right_chart(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        week_ts = _week_ts(now, 1)
+        records = [_blended(week_ts, count_issues=5)]
+        descs = prepare_report_data(records, now)
+        throughput = next(d for d in descs if d["field"] == "count_issues")
+        # Week rows feed only the left chart; right chart (data_4wk) uses day rows.
+        assert throughput["data_4wk"] == []
+
+    def test_day_rows_do_not_appear_in_left_chart(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        day_ts = (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        records = [_blended_day(day_ts, count_issues=2)]
+        descs = prepare_report_data(records, now)
+        throughput = next((d for d in descs if d["field"] == "count_issues"), None)
+        assert throughput is not None
+        # Day rows feed only the right chart; left chart (data_12mo) uses week rows.
+        assert throughput["data_12mo"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -401,15 +477,24 @@ class TestShortRange:
         assert len(throughput["data_12mo"]) == 3
         assert len(throughput["data_12mo"]) > 0
 
-    def test_fewer_than_2mo_weeks_renders_available_range(self):
+    def test_fewer_than_4wk_day_rows_renders_available_range(self):
         now = _utc("2026-10-06T00:00:00Z")
-        # Only one record, 10 months ago -- inside 12mo window but outside 2mo.
-        records = [_blended(_week_ts(now, 40), count_issues=7)]
+        # Only one day record, 10 days ago -- outside the 4-week window still falls back.
+        day_ts = (now - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        records = [_blended_day(day_ts, count_issues=7)]
         descs = prepare_report_data(records, now)
         throughput = next((d for d in descs if d["field"] == "count_issues"), None)
         assert throughput is not None
-        # When no data falls in 2mo window, fallback to full available range.
-        assert len(throughput["data_2mo"]) >= 1
+        # When no data falls in 4wk window, fallback to full available day range.
+        assert len(throughput["data_4wk"]) >= 1
+
+    def test_no_day_rows_right_chart_empty_without_error(self):
+        now = _utc("2026-10-06T00:00:00Z")
+        # Only week records -- right chart has no day data but should not error.
+        records = [_blended(_week_ts(now, 1), count_issues=5)]
+        descs = prepare_report_data(records, now)
+        throughput = next(d for d in descs if d["field"] == "count_issues")
+        assert throughput["data_4wk"] == []
 
     def test_single_record_does_not_raise(self):
         now = _utc("2026-10-06T00:00:00Z")
@@ -429,15 +514,15 @@ class TestShortRange:
     def test_build_line_with_no_data_returns_none(self):
         now = _utc("2026-10-06T00:00:00Z")
         cutoff_12mo = now - timedelta(weeks=WINDOW_12MO_WEEKS)
-        cutoff_2mo = now - timedelta(weeks=WINDOW_2MO_WEEKS)
-        result = _build_line("count_issues", "T", "count", [], cutoff_12mo, cutoff_2mo)
+        cutoff_4wk = now - timedelta(days=WINDOW_4WK_DAYS)
+        result = _build_line("count_issues", "T", "count", [], [], cutoff_12mo, cutoff_4wk)
         assert result is None
 
     def test_build_bar_agent_with_no_data_returns_none(self):
         now = _utc("2026-10-06T00:00:00Z")
         cutoff_12mo = now - timedelta(weeks=WINDOW_12MO_WEEKS)
-        cutoff_2mo = now - timedelta(weeks=WINDOW_2MO_WEEKS)
-        result = _build_bar_agent("sum_cost_usd", "T", "USD", [], cutoff_12mo, cutoff_2mo)
+        cutoff_4wk = now - timedelta(days=WINDOW_4WK_DAYS)
+        result = _build_bar_agent("sum_cost_usd", "T", "USD", [], [], cutoff_12mo, cutoff_4wk)
         assert result is None
 
 
@@ -481,6 +566,28 @@ class TestScheduledFlow:
         script_path = REPO_ROOT / "scripts" / "generate-metrics-report.sh"
         assert script_path.exists(), "generate-metrics-report.sh must exist on disk"
 
+    def test_daily_aggregation_flow_exists_in_pipeline(self):
+        pipeline = self._pipeline()
+        assert "metrics-aggregation-daily" in pipeline["flows"]
+
+    def test_daily_aggregation_flow_has_daily_schedule(self):
+        pipeline = self._pipeline()
+        flow = pipeline["flows"]["metrics-aggregation-daily"]
+        cron = flow["trigger"]["schedule"]
+        # Runs every day (last field is * not a specific day-of-week).
+        parts = cron.split()
+        assert parts[4] == "*", "daily schedule must run every day-of-week"
+
+    def test_daily_aggregation_flow_uses_daily_script(self):
+        pipeline = self._pipeline()
+        steps = pipeline["flows"]["metrics-aggregation-daily"]["steps"]
+        assert len(steps) == 1
+        assert steps[0]["script"] == "scripts/aggregate-metrics-daily.sh"
+
+    def test_aggregate_metrics_daily_sh_exists(self):
+        script_path = REPO_ROOT / "scripts" / "aggregate-metrics-daily.sh"
+        assert script_path.exists(), "aggregate-metrics-daily.sh must exist on disk"
+
 
 # ---------------------------------------------------------------------------
 # R9: Report generator documents metric selection, units, and layout
@@ -506,7 +613,7 @@ class TestDocumentation:
         doc_lower = doc.lower()
         assert "portrait" in doc_lower or "layout" in doc_lower
         assert "12" in doc
-        assert "2" in doc
+        assert "4" in doc
 
     def test_known_metrics_list_is_documented_in_module(self):
         import metrics_report

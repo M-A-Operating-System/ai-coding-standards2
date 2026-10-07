@@ -151,6 +151,20 @@ def week_bucket(now: datetime):
     return last_monday, last_sunday
 
 
+def day_bucket(now: datetime):
+    """Return (start, end) of the previous complete calendar day relative to now.
+
+    start is yesterday 00:00:00.000000 UTC; end is yesterday 23:59:59.999999 UTC
+    -- microseconds, not seconds, below today midnight, matching the same
+    microsecond-precision upper-bound care as week_bucket() (issue #547).
+    Both are timezone-aware (UTC).
+    """
+    today_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_midnight = today_midnight - timedelta(days=1)
+    yesterday_end = today_midnight - timedelta(microseconds=1)
+    return yesterday_midnight, yesterday_end
+
+
 def _parse_ts(value: object) -> Optional[datetime]:
     """Parse an ISO-8601 UTC timestamp, with or without a trailing "Z".
 
@@ -471,12 +485,11 @@ def compute_blended_record(
 # ---------------------------------------------------------------------------
 
 # Bucket-boundary function for each supported period. Adding a later
-# "month" period (PRD acceptance criterion AC-7, and the PRD's own
-# `period: "month"` note) is adding a `month_bucket()` function and one
-# entry here -- compute_period_aggregates, compute_per_agent_records, and
+# "month" period is adding a `month_bucket()` function and one entry here --
+# compute_period_aggregates, compute_per_agent_records, and
 # compute_blended_record already take `period` as a plain parameter and
-# need no change (issue #533 PR review, RV-003).
-_BUCKET_FUNCS = {"week": week_bucket}
+# need no change (issue #533 PR review, RV-003). "day" was added by issue #547.
+_BUCKET_FUNCS = {"week": week_bucket, "day": day_bucket}
 
 
 def compute_period_aggregates(records: list, now: datetime, period: str = "week") -> list:
