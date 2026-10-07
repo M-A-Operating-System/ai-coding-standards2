@@ -79,7 +79,7 @@ _BAR_AGENT = "bar_agent"
 # listed here are appended after in discovery order, so a new field added by
 # a future metrics-aggregator update is rendered automatically.
 _KNOWN_METRICS = [
-    # By-agent stacked bar charts (sourced from per-agent breakdown rows).
+    # By-agent bar charts (sourced from per-agent breakdown rows).
     ("sum_cost_usd",    "Cost by agent",     "cost (USD)",    _BAR_AGENT),
     ("sum_duration_ms", "Duration by agent", "duration (ms)", _BAR_AGENT),
     # Blended time-series line charts (sourced from blended weekly-aggregate rows).
