@@ -217,3 +217,18 @@ Weekly aggregation of pipeline metrics (issue #533). Reads records.jsonl from th
 - **Script:** `scripts/aggregate-metrics.sh`
 
 Computes per-agent and blended weekly aggregate records for the previous Mon-Sun week and appends them to records.jsonl on the ai-agile/metrics branch. Aggregate rows carry agent_id=metrics-aggregator (blended) or the real agent name (per-agent breakdown), period=week, and metric fields named {aggregation_fn}_{base_metric}[-{dimension}]. Idempotent: skips the append when the bucket is already aggregated.
+
+## Flow: `metrics-report`
+
+- **Applies to:** schedule `0 2 * * 1`
+- **Naming:** --
+
+Weekly performance report (issue #534). Reads weekly-aggregate rows from the ai-agile/metrics branch (written by the metrics-aggregation flow), generates per-metric charts via matplotlib, assembles them into print-styled HTML, and renders a PDF via WeasyPrint. Runs 2 hours after metrics-aggregation on Mondays to allow the aggregation step to complete first.
+
+### `05_continuous/metrics-report`
+
+- **Kind:** script
+- **Phase:** `05_continuous`
+- **Script:** `scripts/generate-metrics-report.sh`
+
+Reads weekly-aggregate rows (agent_id=metrics-aggregator, period=week) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month and 2-month charts for each metric via matplotlib (static PNG images). Assembles charts into portrait-A4 print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. The rendered PDF is written to AI_AGILE_SCRATCH, then committed to the ai-agile/reports branch so it persists after the run's scratch directory is removed.
