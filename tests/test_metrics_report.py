@@ -210,7 +210,7 @@ class TestReadAndProduce:
 
 
 # ---------------------------------------------------------------------------
-# R2: Portrait A4, four chart rows per page
+# R2: Portrait US Letter, four chart rows per page
 # ---------------------------------------------------------------------------
 
 class TestHtmlLayout:
@@ -251,7 +251,8 @@ class TestHtmlLayout:
     def test_html_declares_portrait_page_size(self):
         html = build_html([], [])
         assert "portrait" in html
-        assert "A4" in html
+        assert "letter" in html
+        assert "A4" not in html
 
     def test_last_page_has_break_after_auto(self):
         html = build_html([], [])
