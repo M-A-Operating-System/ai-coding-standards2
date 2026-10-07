@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# aggregate-metrics.sh -- weekly metrics aggregation scheduled pipeline step.
+# aggregate-metrics.sh -- metrics aggregation scheduled pipeline step.
 #
 # Reads records.jsonl from the ai-agile/metrics branch, computes per-agent and
-# blended weekly aggregate records for the previous Mon-Sun week, and appends
-# each record back into the same file using append-metrics-record.sh.
+# blended aggregate records for the previous complete bucket of --period (the
+# previous Mon-Sun week by default, or the previous complete calendar day with
+# --period day), and appends each record back into the same file using
+# append-metrics-record.sh.
 #
 # Aggregate rows are identifiable by:
-#   agent_id == "metrics-aggregator"  (blended total row)
-#   period   == "week"                (both per-agent and blended rows)
+#   agent_id == "metrics-aggregator"        (blended total row)
+#   period   == "week" or "day"             (both per-agent and blended rows)
 #
 # Emits AI_AGILE_STATUS: complete | blocked as the last stdout line.
 # All diagnostic output goes to stderr.

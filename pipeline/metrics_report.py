@@ -163,7 +163,7 @@ def _parse_ts(value: object) -> Optional[datetime]:
 
     A result with no timezone (no "Z", no explicit offset) is assumed UTC --
     the only format metrics_aggregator.py writes -- so it can still be
-    compared against the UTC-aware 12mo/2mo cutoffs below without raising
+    compared against the UTC-aware 12mo/4wk cutoffs below without raising
     TypeError on a naive/aware comparison.
     """
     if not isinstance(value, str) or not value:
@@ -443,7 +443,7 @@ def _render_bar_agent_pair(desc: dict) -> tuple:
 
 
 def render_charts(chart_descriptors: list) -> list:
-    """Render each descriptor to a (img_12mo_b64, img_2mo_b64) pair of PNG base64 strings."""
+    """Render each descriptor to a (img_12mo_b64, img_4wk_b64) pair of PNG base64 strings."""
     import matplotlib
     matplotlib.use("Agg")
     pairs = []

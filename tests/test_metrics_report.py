@@ -221,7 +221,7 @@ class TestHtmlLayout:
         now = _utc("2026-10-06T00:00:00Z")
         descs = [
             {"field": f"f{i}", "title": f"T{i}", "ylabel": "count",
-             "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
+             "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
             for i in range(4)
         ]
         pairs = [self._fake_pair() for _ in descs]
@@ -231,7 +231,7 @@ class TestHtmlLayout:
     def test_five_rows_spill_onto_second_page(self):
         descs = [
             {"field": f"f{i}", "title": f"T{i}", "ylabel": "count",
-             "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
+             "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
             for i in range(5)
         ]
         pairs = [self._fake_pair() for _ in descs]
@@ -241,7 +241,7 @@ class TestHtmlLayout:
     def test_eight_rows_fill_exactly_two_pages(self):
         descs = [
             {"field": f"f{i}", "title": f"T{i}", "ylabel": "count",
-             "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
+             "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
             for i in range(ROWS_PER_PAGE * 2)
         ]
         pairs = [self._fake_pair() for _ in descs]
@@ -259,7 +259,7 @@ class TestHtmlLayout:
 
     def test_each_row_has_two_images(self):
         desc = {"field": "f", "title": "T", "ylabel": "count",
-                "chart_type": _LINE, "data_12mo": [], "data_2mo": []}
+                "chart_type": _LINE, "data_12mo": [], "data_4wk": []}
         html = build_html([desc], [self._fake_pair()])
         assert html.count("<img ") == 2
 
@@ -479,8 +479,9 @@ class TestShortRange:
 
     def test_fewer_than_4wk_day_rows_renders_available_range(self):
         now = _utc("2026-10-06T00:00:00Z")
-        # Only one day record, 10 days ago -- outside the 4-week window still falls back.
-        day_ts = (now - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Only one day record, 35 days ago -- outside the 4-week (28-day) window,
+        # so the fallback-to-available-range path is actually exercised.
+        day_ts = (now - timedelta(days=35)).strftime("%Y-%m-%dT%H:%M:%SZ")
         records = [_blended_day(day_ts, count_issues=7)]
         descs = prepare_report_data(records, now)
         throughput = next((d for d in descs if d["field"] == "count_issues"), None)

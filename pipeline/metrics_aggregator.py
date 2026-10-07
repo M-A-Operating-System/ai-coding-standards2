@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-"""Weekly aggregator for ai-agile/metrics records.jsonl (issue #533).
+"""Aggregator for ai-agile/metrics records.jsonl (issue #533; day period issue #547).
 
 Reads raw per-invocation records from the ai-agile/metrics branch, computes
-weekly aggregate records for the previous full Mon-Sun week, and writes them
-to stdout as JSONL (one compact JSON object per line, no output when nothing
-has changed).
+aggregate records for the previous complete bucket of a given period (the
+previous full Mon-Sun week, or the previous complete calendar day), and
+writes them to stdout as JSONL (one compact JSON object per line, no output
+when nothing has changed).
 
 RECORD FORMAT
 -------------
 Aggregate rows share the same JSONL format as raw per-invocation rows.  Two
 fields distinguish them from raw rows:
 
-  period    "week" (or "month" for a future monthly aggregate -- same shape,
-            same file, just a different period value)
-  agent_id  "metrics-aggregator" for the blended weekly total row, or the
-            real agent name (e.g. "03_execute/coder") for a per-agent
-            breakdown row.
+  period    "week" or "day" (same shape, same file, just a different period
+            value -- a future period is a new bucket function plus one
+            _BUCKET_FUNCS entry, not a schema change)
+  agent_id  "metrics-aggregator" for the blended total row, or the real agent
+            name (e.g. "03_execute/coder") for a per-agent breakdown row.
 
 A reader filters aggregate rows with:
-  agent_id == "metrics-aggregator" AND period == "week"
+  agent_id == "metrics-aggregator" AND period == "week" (or "day")
   -- or --
-  period == "week"  (to include per-agent breakdown rows)
+  period == "week" (or "day")  (to include per-agent breakdown rows)
 
 FIELD-NAMING CONVENTION
 -----------------------
@@ -43,7 +44,7 @@ UNIT DISCIPLINE
                    cost even when model costs differ per token type.
 
 Usage:
-  python3 -I metrics_aggregator.py [--period week] [--now ISO-8601]
+  python3 -I metrics_aggregator.py [--period week|day] [--now ISO-8601]
 
 --now overrides the current UTC time (for testing and manual backfills).
 """
@@ -535,7 +536,7 @@ def compute_weekly_aggregates(records: list, now: datetime) -> list:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Compute weekly aggregate records and write them to stdout as JSONL."
+        description="Compute aggregate records for the given --period and write them to stdout as JSONL."
     )
     parser.add_argument(
         "--period", default="week", choices=sorted(_BUCKET_FUNCS),
