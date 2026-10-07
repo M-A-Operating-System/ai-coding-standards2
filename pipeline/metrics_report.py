@@ -430,6 +430,16 @@ def _render_bar_agent_pair(desc: dict) -> tuple:
             for agent in desc["agents"]
         }
         active = [(a, totals[a]) for a in desc["agents"] if totals[a] > 0]
+        if not active:
+            # No data falls within the cutoff window -- fall back to the full
+            # available range (same short-range behavior as _build_line's
+            # line charts; issue #547 PR review RV-001) rather than silently
+            # rendering an empty bar chart.
+            fallback_totals = {
+                agent: sum(v for _, v in series.get(agent, []))
+                for agent in desc["agents"]
+            }
+            active = [(a, fallback_totals[a]) for a in desc["agents"] if fallback_totals[a] > 0]
         if active:
             labels, values = zip(*active)
             ax.bar(range(len(labels)), values)

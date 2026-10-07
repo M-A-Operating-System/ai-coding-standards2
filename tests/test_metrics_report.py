@@ -497,6 +497,43 @@ class TestShortRange:
         throughput = next(d for d in descs if d["field"] == "count_issues")
         assert throughput["data_4wk"] == []
 
+    def test_bar_agent_falls_back_to_available_range_when_all_day_data_outside_window(self):
+        """issue #547 PR review RV-001: _render_bar_agent_pair must fall back
+        to the full available range when every series_day point pre-dates
+        cutoff_4wk, the same short-range behavior _build_line already applies
+        to the line-chart rows -- not silently render an empty bar chart."""
+        import metrics_report as mr
+
+        now = _utc("2026-10-06T00:00:00Z")
+        old_dt = now - timedelta(days=35)  # outside the 4-week (28-day) window
+        desc = {
+            "field": "sum_cost_usd",
+            "title": "Cost by agent",
+            "ylabel": "cost (USD)",
+            "chart_type": mr._BAR_AGENT,
+            "agents": ["03_execute/coder"],
+            "series_week": {"03_execute/coder": [(now, 5.0)]},
+            "series_day": {"03_execute/coder": [(old_dt, 3.0)]},
+            "cutoff_12mo": now - timedelta(weeks=52),
+            "cutoff_4wk": now - timedelta(days=28),
+        }
+
+        bar_calls = []
+        mock_ax = MagicMock()
+        mock_ax.bar.side_effect = lambda *a, **k: bar_calls.append((a, k))
+        mock_fig = MagicMock()
+
+        with patch("matplotlib.pyplot.subplots", return_value=(mock_fig, mock_ax)), \
+             patch.object(mr, "_figure_to_b64", return_value="x"):
+            mr._render_bar_agent_pair(desc)
+
+        # Both the 12mo window (real data) and the 4wk window (fallback since
+        # the only day point is outside cutoff_4wk) must have drawn bars.
+        assert len(bar_calls) == 2
+        # The 4wk window's bar call used the fallback total (3.0), not an
+        # empty bars call.
+        assert mock_ax.bar.call_args_list[1].args[1] == (3.0,)
+
     def test_single_record_does_not_raise(self):
         now = _utc("2026-10-06T00:00:00Z")
         records = [_blended(_week_ts(now, 1), count_issues=1)]
