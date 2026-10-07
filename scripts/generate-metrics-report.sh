@@ -9,6 +9,12 @@
 # Emits AI_AGILE_STATUS: complete | blocked as the last stdout line.
 # All diagnostic output goes to stderr.
 #
+# --dry-run (STD-ARCH-036): renders the PDF to the scratch directory exactly
+# as a real run does -- that part is already local and non-destructive -- but
+# skips the commit-report.sh call, the only step that writes to the
+# ai-agile/reports branch. Reports the destination branch/path and the
+# rendered PDF's size instead of committing it.
+#
 # Required env (injected by the orchestrator):
 #   AI_AGILE_ROOT   -- repo root, used to locate metrics_report.py
 #   AI_AGILE_SCRATCH -- per-run scratch directory for the working PDF
@@ -18,6 +24,11 @@
 #   weasyprint >= 61
 
 set -euo pipefail
+
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=1
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${AI_AGILE_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"
@@ -64,6 +75,13 @@ fi
 # directory being removed at the end of the run.
 report_date=$(date -u +"%Y-%m-%d")
 dest_path="metrics-report-${report_date}.pdf"
+
+if (( DRY_RUN )); then
+    pdf_size=$(wc -c < "$OUTPUT")
+    echo "generate-metrics-report: DRY RUN -- would commit ${pdf_size} byte(s) to ${REPORTS_BRANCH}:${dest_path}" >&2
+    echo "AI_AGILE_STATUS: complete"
+    exit 0
+fi
 
 if ! AI_AGILE_REPORT_BRANCH="$REPORTS_BRANCH" \
      AI_AGILE_REPORT_COMMIT_MESSAGE="metrics-report: weekly PDF report (${report_date})" \

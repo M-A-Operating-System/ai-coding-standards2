@@ -55,6 +55,7 @@ Runtime requirements (not in requirements.txt -- install separately):
 
 import argparse
 import base64
+import html
 import io
 import json
 import subprocess
@@ -418,10 +419,11 @@ def build_html(chart_descriptors: list, chart_pairs: list) -> str:
     """
     rows_html = []
     for desc, (img_12mo, img_2mo) in zip(chart_descriptors, chart_pairs):
+        title = html.escape(desc["title"])
         row = (
             '<div class="row">'
-            f'<img src="data:image/png;base64,{img_12mo}" alt="{desc["title"]} 12mo">'
-            f'<img src="data:image/png;base64,{img_2mo}" alt="{desc["title"]} 2mo">'
+            f'<img src="data:image/png;base64,{img_12mo}" alt="{title} 12mo">'
+            f'<img src="data:image/png;base64,{img_2mo}" alt="{title} 2mo">'
             "</div>"
         )
         rows_html.append(row)
@@ -439,10 +441,10 @@ def build_html(chart_descriptors: list, chart_pairs: list) -> str:
 # PDF rendering
 # ---------------------------------------------------------------------------
 
-def render_pdf(html: str, output_path: str) -> None:
+def render_pdf(html_doc: str, output_path: str) -> None:
     """Render the HTML string to a PDF file at output_path via WeasyPrint."""
     import weasyprint
-    weasyprint.HTML(string=html).write_pdf(output_path)
+    weasyprint.HTML(string=html_doc).write_pdf(output_path)
 
 
 # ---------------------------------------------------------------------------
@@ -483,8 +485,8 @@ def main() -> None:
         return
 
     chart_pairs = render_charts(chart_descriptors)
-    html = build_html(chart_descriptors, chart_pairs)
-    render_pdf(html, args.output)
+    html_doc = build_html(chart_descriptors, chart_pairs)
+    render_pdf(html_doc, args.output)
     print(f"metrics_report: PDF written to {args.output}", file=sys.stderr)
 
 

@@ -231,4 +231,4 @@ Weekly performance report (issue #534). Reads weekly-aggregate rows from the ai-
 - **Phase:** `05_continuous`
 - **Script:** `scripts/generate-metrics-report.sh`
 
-Reads weekly-aggregate rows (agent_id=metrics-aggregator, period=week) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month and 2-month charts for each metric via matplotlib (static PNG images). Assembles charts into portrait-A4 print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use grouped bar charts; all other metrics use dual line charts. Output PDF is written to AI_AGILE_SCRATCH.
+Reads weekly-aggregate rows (agent_id=metrics-aggregator, period=week) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month and 2-month charts for each metric via matplotlib (static PNG images). Assembles charts into portrait-A4 print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. Output PDF is written to AI_AGILE_SCRATCH.
