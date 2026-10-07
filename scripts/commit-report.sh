@@ -26,8 +26,14 @@
 
 set -euo pipefail
 
-SOURCE_FILE="${1:?usage: commit-report.sh <source-file> <dest-path>}"
-DEST_PATH="${2:?usage: commit-report.sh <source-file> <dest-path>}"
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=1
+    shift
+fi
+
+SOURCE_FILE="${1:?usage: commit-report.sh [--dry-run] <source-file> <dest-path>}"
+DEST_PATH="${2:?usage: commit-report.sh [--dry-run] <source-file> <dest-path>}"
 BRANCH="${AI_AGILE_REPORT_BRANCH:?AI_AGILE_REPORT_BRANCH is required}"
 COMMIT_MESSAGE="${AI_AGILE_REPORT_COMMIT_MESSAGE:?AI_AGILE_REPORT_COMMIT_MESSAGE is required}"
 RETRIES="${AI_AGILE_REPORT_RETRIES:-2}"
@@ -78,6 +84,11 @@ while :; do
 
     # shellcheck disable=SC2086
     commit_sha=$(git commit-tree "$tree_sha" $parent_arg -m "$COMMIT_MESSAGE")
+
+    if (( DRY_RUN )); then
+        echo "commit-report: DRY RUN -- would push ${commit_sha} to refs/heads/${BRANCH} (file: ${DEST_PATH}, blob: ${blob_sha})" >&2
+        exit 0
+    fi
 
     if push_err=$(git push origin "${commit_sha}:refs/heads/${BRANCH}" 2>&1); then
         echo "commit-report: committed ${DEST_PATH} to ${BRANCH}"

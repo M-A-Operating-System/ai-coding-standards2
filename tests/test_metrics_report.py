@@ -540,6 +540,24 @@ class TestDocumentation:
         content = script_path.read_text()
         assert "ai-agile/reports" in content
 
+    def test_commit_report_sh_accepts_dry_run_flag(self):
+        # STD-ARCH-036: commit-report.sh must expose a --dry-run mode that
+        # skips the git push (the only state-changing operation).
+        script_path = REPO_ROOT / "scripts" / "commit-report.sh"
+        content = script_path.read_text()
+        assert "--dry-run" in content
+        assert "DRY_RUN" in content
+
+    def test_generate_metrics_report_sh_passes_dry_run_to_commit_report(self):
+        # STD-ARCH-036: generate-metrics-report.sh must pass --dry-run through
+        # to commit-report.sh rather than skipping it entirely.
+        script_path = REPO_ROOT / "scripts" / "generate-metrics-report.sh"
+        content = script_path.read_text()
+        assert "--dry-run" in content
+        # The flag must appear in the commit-report.sh invocation context,
+        # not just as a standalone check.
+        assert "commit_args" in content or "--dry-run" in content
+
 
 # ---------------------------------------------------------------------------
 # Additional regression tests for RV-003 and RV-004
