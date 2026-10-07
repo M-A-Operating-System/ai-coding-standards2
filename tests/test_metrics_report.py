@@ -522,9 +522,21 @@ class TestShortRange:
         mock_ax = MagicMock()
         mock_ax.bar.side_effect = lambda *a, **k: bar_calls.append((a, k))
         mock_fig = MagicMock()
+        fake_matplotlib = MagicMock()
+        fake_plt = MagicMock()
+        fake_matplotlib.pyplot = fake_plt  # "import matplotlib.pyplot as plt"
+        # resolves via attribute access on the parent module object, not a
+        # direct sys.modules["matplotlib.pyplot"] lookup -- both must agree.
+        fake_plt.subplots.return_value = (mock_fig, mock_ax)
 
-        with patch("matplotlib.pyplot.subplots", return_value=(mock_fig, mock_ax)), \
-             patch.object(mr, "_figure_to_b64", return_value="x"):
+        # Fake out matplotlib in sys.modules (same pattern as
+        # TestRenderChartsBackend below) rather than patching the real
+        # package by import-path string -- matplotlib is an optional runtime
+        # dependency (see module docstring), not installed in CI.
+        with patch.dict("sys.modules", {
+            "matplotlib": fake_matplotlib,
+            "matplotlib.pyplot": fake_plt,
+        }), patch.object(mr, "_figure_to_b64", return_value="x"):
             mr._render_bar_agent_pair(desc)
 
         # Both the 12mo window (real data) and the 4wk window (fallback since
