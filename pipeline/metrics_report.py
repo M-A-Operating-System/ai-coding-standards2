@@ -8,8 +8,9 @@ and renders to PDF via WeasyPrint.
 
 REPORT LAYOUT
 -------------
-Portrait A4, four chart rows per page (CSS break-after: page). Each metric
-appears as one row containing two charts side by side:
+Portrait US Letter (8.5in x 11in), four chart rows per page (CSS
+break-after: page). Each metric appears as one row containing two charts
+side by side:
   Left:  last 12 months of data, sourced from period=week aggregate rows.
   Right: last 4 weeks of data, sourced from period=day aggregate rows.
 
@@ -400,7 +401,7 @@ def _render_line_pair(desc: dict) -> tuple:
 
     imgs = []
     for window_label, data in [("12 months", desc["data_12mo"]), ("4 weeks", desc["data_4wk"])]:
-        fig, ax = plt.subplots(figsize=(5.5, 3))
+        fig, ax = plt.subplots(figsize=(5.5, 3.4))
         if data:
             xs = [dt for dt, _ in data]
             ys = [v for _, v in data]
@@ -423,7 +424,7 @@ def _render_bar_agent_pair(desc: dict) -> tuple:
         ("12 months", "series_week", desc["cutoff_12mo"]),
         ("4 weeks",   "series_day",  desc["cutoff_4wk"]),
     ]:
-        fig, ax = plt.subplots(figsize=(5.5, 3))
+        fig, ax = plt.subplots(figsize=(5.5, 3.4))
         series = desc[series_key]
         totals = {
             agent: sum(v for dt, v in series.get(agent, []) if dt >= cutoff)
@@ -475,7 +476,7 @@ _HTML_HEADER = (
     "<head>\n"
     "<meta charset=\"UTF-8\">\n"
     "<style>\n"
-    "  @page { size: A4 portrait; margin: 10mm; }\n"
+    "  @page { size: letter portrait; margin: 10mm; }\n"
     "  body { font-family: sans-serif; font-size: 10pt; }\n"
     "  .page { break-after: page; }\n"
     "  .page:last-child { break-after: auto; }\n"
