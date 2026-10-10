@@ -126,19 +126,59 @@ The same logical agent definition must be usable in interactive Claude Code and 
 
 The existing entitlement model remains canonical.
 
-Runtime adapters translate the canonical entitlement set into the enforcement mechanism supported by the selected runtime.
+V3 must preserve the current group-based entitlement structure in `pipeline.json`. Entitlement groups remain an internal policy abstraction used to organize allowed and denied commands. OpenCode does not need to understand those group names.
+
+For each resolved pipeline step, the orchestrator must:
+
+1. resolve defaults and step-specific entitlements;
+2. expand referenced allow and deny groups;
+3. flatten them into one effective rule list;
+4. preserve the allow/deny effect for each rule;
+5. pass that resolved list to the selected runtime adapter.
 
 Conceptually:
 
 ```text
-canonical entitlement policy
+pipeline.json
+  |- default entitlements
+  |- step entitlements
+  |- allow groups
+  `- deny groups
+          |
+          v
+existing entitlement resolver
+          |
+          v
+effective per-step rule list
+[
+  { action, pattern, effect },
+  ...
+]
           |
      +----+----+
      |         |
      v         v
 Claude Code  OpenCode
-adapter      adapter
+renderer     renderer
 ```
+
+The runtime contract is therefore based on the resolved effective rules, not entitlement group names.
+
+Illustrative resolved policy:
+
+```json
+{
+  "rules": [
+    { "action": "shell", "pattern": "*", "effect": "allow" },
+    { "action": "shell", "pattern": "git reset --hard*", "effect": "deny" },
+    { "action": "shell", "pattern": "git push --force*", "effect": "deny" },
+    { "action": "shell", "pattern": "git config *", "effect": "deny" },
+    { "action": "shell", "pattern": "ssh *", "effect": "deny" }
+  ]
+}
+```
+
+OpenCode-specific permission syntax is generated from this flattened list at runtime. The adapter may transform command wrappers or wildcard syntax where OpenCode requires a different representation, but it must not change the policy outcome.
 
 The objective is policy equivalence, not identical runtime syntax.
 
@@ -179,7 +219,7 @@ In headless mode, OpenCode is expected to provide the agent-side execution capab
 | Launch supporting agents | OpenCode subagent capabilities where entitled |
 | GitHub CLI / API calls | `gh` through OpenCode shell execution or an approved MCP/tool integration |
 
-The canonical policy remains in the repository. OpenCode-specific permission syntax is an adapter concern and must not become a second entitlement source of truth.
+The canonical policy remains in the repository. Entitlement groups are resolved and flattened before OpenCode is invoked. OpenCode receives only the effective per-step allow/deny rule list. OpenCode-specific permission syntax is an adapter concern and must not become a second entitlement source of truth.
 
 ### Build and execution host boundary
 
