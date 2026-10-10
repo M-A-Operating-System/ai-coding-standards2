@@ -146,7 +146,59 @@ It owns:
 
 OpenCode does not own pipeline sequencing or GitHub lifecycle state.
 
-### Azure
+#
+## Claude Code to OpenCode capability equivalence
+
+In headless mode, OpenCode is expected to provide the agent-side execution capabilities currently supplied by Claude Code. GitHub remains the repository service, and the GitHub Actions runner or other execution host remains responsible for the operating system, checked-out working tree, language runtimes, compilers, test frameworks, and build infrastructure.
+
+| Current Claude Code capability | V3 headless equivalent |
+|---|---|
+| Read repository | OpenCode read / glob / grep capabilities |
+| Modify source | OpenCode edit / write capabilities |
+| `git status`, `git diff`, `git log` | OpenCode shell execution |
+| Commit changes | OpenCode shell execution constrained by the canonical entitlement model |
+| Run tests | OpenCode shell execution on the runner/host |
+| Compile / build | OpenCode shell execution on the runner/host |
+| Linters / formatters | OpenCode shell execution and formatter integrations |
+| LSP / code navigation | OpenCode LSP capabilities |
+| Web research | OpenCode web search / web fetch capabilities where entitled |
+| Agent-specific allowed / denied tools | OpenCode runtime permissions derived from the canonical entitlement model |
+| Launch supporting agents | OpenCode subagent capabilities where entitled |
+| GitHub CLI / API calls | `gh` through OpenCode shell execution or an approved MCP/tool integration |
+
+The canonical policy remains in the repository. OpenCode-specific permission syntax is an adapter concern and must not become a second entitlement source of truth.
+
+### Build and execution host boundary
+
+OpenCode does not itself provide the underlying build machine. It executes inside the environment supplied to it.
+
+```text
+GitHub repository
+      |
+      v
+GitHub Actions runner / execution host
+  |- checked-out repository
+  |- operating system
+  |- Python / Node / Java / other runtimes
+  |- compilers and build tools
+  |- test frameworks
+  `- local dependencies
+      |
+      v
+OpenCode
+  |- reads and edits files
+  |- runs git commands
+  |- executes builds and tests
+  |- invokes tools subject to entitlements
+  `- manages the headless agent loop
+      |
+      v
+Claude or Azure foundation model
+```
+
+For V3, "OpenCode runtime" therefore means the headless **agent execution runtime**, not the underlying compute or build sandbox.
+
+## Azure
 
 Azure is a model source, not the agent runtime.
 
