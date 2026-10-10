@@ -59,10 +59,18 @@ This preserves the current conversational workflow, including "next agent step" 
 
 ### Headless mode
 
-Headless execution uses OpenCode as the agent runtime abstraction.
+Headless execution uses OpenCode as the agent runtime abstraction. Long-running coding jobs execute on an Azure-hosted build/agent machine rather than consuming GitHub-hosted Actions minutes for the full duration of the job.
+
+GitHub remains the trigger and workflow control plane. When headless work is required, the Azure execution host is started automatically, accepts the job through the GitHub runner/control path, executes the pipeline step, and is stopped again when the workload is complete or the host becomes idle.
 
 ```text
-GitHub Actions / unattended invocation
+GitHub event / workflow control
+              |
+              v
+      start Azure execution host
+              |
+              v
+Azure VM / self-hosted GitHub runner
               |
               v
       Pipeline orchestrator
@@ -75,9 +83,15 @@ GitHub Actions / unattended invocation
           /        \
          v          v
    Claude source   Azure source
+              |
+              v
+      job completes / idle
+              |
+              v
+       stop Azure host
 ```
 
-OpenCode owns the model-facing agent loop in headless mode. The pipeline remains unaware of the implementation details of the selected provider beyond the runtime/model policy required for the step.
+OpenCode owns the model-facing agent loop in headless mode. The Azure host owns the long-running compute and build environment. The pipeline remains unaware of the implementation details of the selected provider beyond the runtime/model policy required for the step.
 
 ## Responsibility boundaries
 
@@ -146,10 +160,9 @@ It owns:
 
 OpenCode does not own pipeline sequencing or GitHub lifecycle state.
 
-#
 ## Claude Code to OpenCode capability equivalence
 
-In headless mode, OpenCode is expected to provide the agent-side execution capabilities currently supplied by Claude Code. GitHub remains the repository service, and the GitHub Actions runner or other execution host remains responsible for the operating system, checked-out working tree, language runtimes, compilers, test frameworks, and build infrastructure.
+In headless mode, OpenCode is expected to provide the agent-side execution capabilities currently supplied by Claude Code. GitHub remains the repository and workflow-control service. For long-running coding jobs, the execution host is an Azure VM running the GitHub self-hosted runner (or equivalent runner integration), rather than a GitHub-hosted runner consuming Actions minutes for the duration of the job. The Azure host supplies the operating system, checked-out working tree, language runtimes, compilers, test frameworks, and build infrastructure.
 
 | Current Claude Code capability | V3 headless equivalent |
 |---|---|
@@ -170,13 +183,16 @@ The canonical policy remains in the repository. OpenCode-specific permission syn
 
 ### Build and execution host boundary
 
-OpenCode does not itself provide the underlying build machine. It executes inside the environment supplied to it.
+OpenCode does not itself provide the underlying build machine. For long-running headless coding work, it executes on an Azure host that is started and stopped automatically around the workload.
 
 ```text
-GitHub repository
+GitHub repository + workflow control
       |
       v
-GitHub Actions runner / execution host
+start / assign job
+      |
+      v
+Azure VM / self-hosted GitHub runner
   |- checked-out repository
   |- operating system
   |- Python / Node / Java / other runtimes
@@ -194,9 +210,19 @@ OpenCode
       |
       v
 Claude or Azure foundation model
+      |
+      v
+job completes / runner becomes idle
+      |
+      v
+stop Azure VM
 ```
 
-For V3, "OpenCode runtime" therefore means the headless **agent execution runtime**, not the underlying compute or build sandbox.
+GitHub Actions may still provide lightweight orchestration and triggering, but the target design does not use GitHub-hosted runner minutes as the primary compute for long-running coding agents.
+
+The Azure host lifecycle must be automated so that compute is available when a headless job needs it and does not remain running unnecessarily after work completes.
+
+For V3, "OpenCode runtime" therefore means the headless **agent execution runtime**, while the Azure VM is the underlying compute/build host.
 
 ## Azure
 
