@@ -6,13 +6,19 @@ Draft target-state design for V3. This document defines the runtime boundary and
 
 ## Core design invariants
 
-V3 preserves the existing AI Agile product model:
+These invariants are mandatory for V3. An implementation that violates any of them is not V3-compatible.
 
-- The existing pipeline process definitions remain authoritative for tasks, dependencies, sequencing, gates, retries, review loops, and terminal states.
-- The existing agent definitions remain authoritative for agent purpose and behavioral instructions.
-- The existing entitlement model remains authoritative for tool and action constraints.
-- Standards, ADR selection, taxonomy, deterministic helpers, metrics, and repository state continue to operate independently of the selected runtime.
-- V3 changes the execution wrapper around the foundation model; it does not redesign the agile process around a particular model provider.
+1. **Reuse the existing agent definitions.** V3 must execute the same agent definitions already held in the repository. Runtime-specific wrappers may adapt invocation mechanics, but they must not create a second behavioral source of truth or fork agent instructions by runtime.
+
+2. **Reuse the existing pipeline process definitions.** V3 must use the same pipeline task definitions, dependencies, ordering, sequencing, gates, retries, review loops, and terminal-state semantics already defined in the repository. Interactive and headless modes must resolve the same next eligible step from the same process definition.
+
+3. **Reuse the existing entitlement model.** V3 must preserve the current canonical entitlement model for tool and action constraints. Runtime adapters may translate those entitlements into Claude Code or OpenCode enforcement mechanisms, but the policy itself must not be redefined independently by either runtime.
+
+4. **Only the model-execution wrapper changes.** V3 is not a redesign of the AI Agile process. The change is limited to the coding/agent wrapper that executes an already-resolved agent against a foundation LLM. Pipeline state, agent behavior, lifecycle rules, standards and ADR selection, deterministic helpers, and repository conventions remain common.
+
+5. **Metrics logging and analysis must continue seamlessly.** Existing metrics collection, logging, aggregation, reporting, and analysis capabilities must continue across interactive Claude Code and headless OpenCode execution. A runtime change must not break historical continuity, remove existing measures, or require a separate metrics system. Runtime and model-source dimensions may be added, but existing metrics semantics must remain comparable across V2 and V3.
+
+These invariants take precedence over runtime-specific convenience. OpenCode, Claude Code, Azure model mappings, and any future provider integration must conform to them rather than force changes to the existing product model.
 
 ## Problem statement
 
