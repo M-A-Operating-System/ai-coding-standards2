@@ -112,10 +112,12 @@ resolved pipeline step
         |
         `--> script step
                 |
-                `--> assigned execution environment --> deterministic script
+                +--> interactive --> existing deterministic execution path
+                |
+                `--> headless ----> isolated sandbox --> deterministic script
 ```
 
-Agent steps invoke a model runtime. Script steps retain their deterministic behavior and do not become OpenCode agents.
+Agent steps invoke a model runtime. Script steps retain their deterministic behavior and do not become OpenCode agents. Every headless pipeline step, whether model-driven or deterministic, executes inside an isolated ephemeral sandbox.
 
 ## Interactive execution
 
@@ -210,7 +212,7 @@ It:
 - prevents new placement on hosts that are draining or shutting down;
 - deallocates hosts when there are no active executions, no queued executable work, and the configured idle threshold has been reached.
 
-The placement layer does not determine whether pipeline work may run concurrently.
+The placement layer does not determine whether pipeline work may run concurrently and does not inspect pipeline dependencies, labels, workflow state, management-task rules, or human gates. It receives only execution requests that the orchestrator has already declared eligible.
 
 ## Azure IaaS execution infrastructure
 
@@ -227,9 +229,11 @@ An execution host supplies:
 - test frameworks;
 - linters and formatters;
 - Git tooling;
-- GitHub runner/control integration;
+- one host-level GitHub runner/control process;
 - OpenCode runtime image or installation;
 - host monitoring and lifecycle control.
+
+Individual sandboxes are execution units, not independent GitHub self-hosted runners. The host-level runner/control process receives work and the orchestrator/placement layer launches isolated sandboxes beneath it.
 
 The Azure IaaS VM is a capacity and placement boundary, not the isolation boundary between agent executions.
 
@@ -251,7 +255,9 @@ Each sandbox has its own:
 - OpenCode process;
 - CPU and memory limits.
 
-A sandbox cannot inspect or modify another sandbox's files, processes, environment, credentials, repository, or runtime state. Agent sandboxes are unprivileged and do not receive access to the host container-runtime control socket or other privileged host interfaces.
+A sandbox cannot inspect or modify another sandbox's files, processes, environment, credentials, repository, or runtime state. Sandboxes are unprivileged and do not receive access to the host container-runtime control socket or other privileged host interfaces.
+
+Sandbox networking is also isolated. A sandbox cannot directly address sibling sandboxes or privileged host-management endpoints. Outbound network access is controlled by the execution environment and limited to the services required by the step's entitlements and runtime configuration.
 
 The sandbox is destroyed after execution completes or fails.
 
@@ -281,6 +287,8 @@ Where resume is enabled, the runtime adapter makes the prior logical session con
 Session state remains non-authoritative. Every invocation re-derives its current situation from durable artifacts.
 
 Persisted session material is scoped to the logical session and exposed only to the sandbox executing that session.
+
+Conversational session state is runtime-specific and optional. A Claude Code conversational session is not translated into an OpenCode session, and an OpenCode session is not translated into Claude Code. When execution changes runtime, the next invocation reconstructs its context from durable repository and pipeline state plus the resolved execution inputs. This preserves pipeline/session semantics without making runtime-specific conversation formats part of the product contract.
 
 ## Responsibility boundaries
 
@@ -407,7 +415,7 @@ Each model-driven pipeline step references a provider-neutral logical model name
 }
 ```
 
-A separate model registry owns the mapping from that alias to the concrete runtime, provider, and model/deployment used in each execution mode.
+A separate model registry owns the mapping from that logical name to the concrete provider/gateway and model/deployment used in each execution mode. Runtime selection is not duplicated in the registry: interactive execution uses Claude Code and headless execution uses OpenCode.
 
 The canonical registry is held outside `pipeline.json`, for example:
 
@@ -471,9 +479,11 @@ Example:
 }
 ```
 
-The logical model name is the pipeline contract. Provider names, concrete model identifiers, deployment names, API endpoints, and provider-specific credentials are resolved outside the pipeline definition.
+The logical model name is the pipeline contract. Provider names, concrete model identifiers, and deployment names belong to the model registry. API endpoints, tenant/resource identifiers, authentication mechanisms, secrets, and provider-specific credentials belong to provider/runtime configuration and are not stored in the model registry.
 
-This abstraction allows the same pipeline step to move between Claude Code, Anthropic direct, Azure AI Foundry, Trustbolt, or another supported foundation-model provider or gateway without changing the pipeline workflow or agent definition.
+Each logical model name also represents a functional capability contract for the pipeline role it serves, such as required tool use, structured-output support, or minimum context capability. A provider mapping must satisfy that contract.
+
+Model resolution returns one configured target. Provider or model failure is returned to the orchestrator as an execution failure; V3 does not silently substitute another provider or model.
 
 ## Model inference
 
@@ -569,8 +579,10 @@ V3 adds attribution dimensions:
 execution_mode     = interactive | headless
 execution_runtime  = claude-code | opencode
 execution_host     = interactive | azure-iaas
+logical_model      = provider-neutral pipeline model name
 model_provider     = claude-code | anthropic | azure-ai-foundry | trustbolt
-model              = concrete model/deployment identifier
+model              = concrete model identifier
+model_deployment   = concrete deployment identifier where applicable
 ```
 
 Existing metrics retain their definitions and historical comparability.
@@ -581,21 +593,24 @@ V3 is complete when:
 
 - existing pipeline definitions execute without interactive/headless forks;
 - existing agent definitions execute unchanged through Claude Code interactively and OpenCode headlessly;
-- deterministic script steps retain their existing semantics;
+- deterministic script steps retain their existing semantics and run inside isolated sandboxes when headless;
 - the orchestrator retains all existing dependency and concurrency controls;
 - multiple eligible headless executions may run concurrently;
 - each concurrent headless execution runs in an isolated ephemeral sandbox;
 - one sandbox cannot affect another sandbox;
-- execution placement can use multiple sandboxes per Azure IaaS VM and multiple Azure IaaS VMs;
+- execution placement can use multiple sandboxes per Azure IaaS VM and multiple Azure IaaS VMs without inspecting pipeline semantics;
 - Azure IaaS capacity management does not change pipeline semantics;
-- session scope and resume semantics remain compatible with the existing pipeline;
+- session scope and resume semantics remain compatible with the existing pipeline, while conversational state remains runtime-specific and non-authoritative;
 - canonical entitlements are resolved once and rendered into the selected runtime;
 - Azure IaaS is used only for execution infrastructure;
-- pipeline model references are provider-neutral logical model names introduced specifically to abstract foundation-model providers and gateways;
+- pipeline model references are provider-neutral logical model names introduced specifically to abstract foundation-model providers and gateways and to define the capability contract required by each model role;
 - the model registry resolves each alias to the concrete runtime/provider/model mapping;
 - Azure AI Foundry is used only as a model inference provider;
 - Trustbolt is a parallel headless model-access provider;
-- headless OpenCode can use Anthropic direct, Azure AI Foundry, or Trustbolt according to the model registry;
+- headless OpenCode can use Anthropic direct, Azure AI Foundry, or Trustbolt according to the model registry, with no silent provider/model fallback;
 - human approval gates remain unchanged;
 - retries run in clean sandboxes and recover from durable state;
+- sandbox network access prevents direct sibling or privileged host-management access;
+- the Azure IaaS host uses a host-level runner/control process rather than one GitHub runner per sandbox;
+- metrics capture logical model name, provider, concrete model, and deployment where applicable;
 - existing metrics logging, aggregation, reporting, and analysis continue without interruption.
