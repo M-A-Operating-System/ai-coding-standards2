@@ -502,6 +502,32 @@
         "coder",
         "pr-reviewer"
       ]
+    },
+    {
+      "id": "STD-PROC-033",
+      "related": [
+        "STD-PROC-028",
+        "STD-PROC-029"
+      ],
+      "title": "Release versioning: MAJOR is manual, MINOR bumps weekly, PATCH bumps per merged PR",
+      "description": "Semantic version tags (vMAJOR.MINOR.PATCH) follow a three-tier cadence: MAJOR is bumped only by a deliberate manual tag push, never by automation; MINOR is bumped on a fixed weekly schedule, which is also the only point at which a public GitHub Release with generated, label-grouped notes is published; PATCH is bumped automatically on every individual merged PR to main as a tag only, with no corresponding public GitHub Release entry.",
+      "rationale": "A formal, human-visible release only at a predictable weekly cadence avoids Release-page noise and notification fatigue, while per-PR PATCH tags still give every merge a precise, addressable version for traceability and rollback. Reserving MAJOR bumps for deliberate human action keeps breaking-change signaling intentional rather than automatic.",
+      "acceptance_criteria": [
+        "A scheduled/weekly release workflow bumps MINOR (resets PATCH to 0) and publishes a GitHub Release with generated notes.",
+        "A workflow triggered by each merged PR to main bumps PATCH only and pushes a tag, without publishing a GitHub Release.",
+        "No automation bumps MAJOR; a MAJOR version change is only ever an explicit, manually pushed vX.0.0 tag.",
+        "The weekly release computation does not skip just because a same-day PR already tagged the same commit; it compares against the latest MINOR-boundary tag, not the absolute latest tag."
+      ],
+      "anti_patterns": [
+        "A per-PR automation that also calls `gh release create`, producing dozens of public Release entries per week.",
+        "A weekly job that bumps PATCH instead of MINOR.",
+        "Any workflow that computes and pushes a new MAJOR tag automatically."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
     }
   ]
 }
