@@ -1,0 +1,75 @@
+# RELEASE - per-PR PATCH tag (GitHub issue #556).
+#
+# What it does: on every push to main (i.e. every merged PR), bumps PATCH and
+# pushes a vX.Y.Z tag for traceability. Does NOT publish a GitHub Release.
+#
+# Versioning (STD-PROC-033):
+#   This workflow owns PATCH only. MINOR is bumped weekly by release.yml.
+#   MAJOR is cut deliberately by a human pushing an explicit vX.0.0 tag.
+#
+# The tag pushed here uses the default GITHUB_TOKEN. GitHub Actions does not
+# re-trigger other workflows' push:tags: events for tags pushed that way, so
+# this will not cause release.yml's off-cycle push:tags path to fire.
+
+name: RELEASE - per-PR PATCH tag
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+# Serialize runs so two rapid merges do not race on the same LATEST tag and
+# one ends up untagged. cancel-in-progress: false is required -- cancelling
+# the second run would leave that commit without a PATCH tag.
+concurrency:
+  group: release-patch-tag
+  cancel-in-progress: false
+
+jobs:
+  patch-tag:
+    name: Push PATCH tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute and push PATCH tag
+        run: |
+          set -euo pipefail
+
+          # Skip if HEAD already has a tag (idempotency guard against reruns).
+          EXISTING="$(git tag --points-at HEAD)"
+          if [ -n "$EXISTING" ]; then
+            echo "HEAD already tagged ($EXISTING) -- skipping."
+            exit 0
+          fi
+
+          # Latest existing vX.Y.Z tag; default v2.0.0 if none.
+          LATEST="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n 1)"
+          if [ -z "$LATEST" ]; then
+            LATEST="v2.0.0"
+          fi
+          echo "Latest release tag: $LATEST"
+
+          # Bump PATCH only.
+          VERSION="${LATEST#v}"
+          MAJOR="${VERSION%%.*}"
+          REST="${VERSION#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST#*.}"
+          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "Next PATCH tag: $NEXT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "refs/tags/$NEXT"
+          echo "Pushed $NEXT"

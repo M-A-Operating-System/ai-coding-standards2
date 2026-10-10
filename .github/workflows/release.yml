@@ -1,15 +1,15 @@
-# RELEASE - publish (GitHub issue #270).
+# RELEASE - publish (GitHub issue #270, #556).
 #
 # What it does: on a weekly Wednesday cadence (and on manual dispatch) it cuts
-# the next PATCH release from the default branch and publishes a GitHub Release
+# the next MINOR release from the default branch and publishes a GitHub Release
 # with auto-generated, label-grouped notes (grouping is configured in
 # .github/release.yml). Pushing an explicit `v*` tag publishes that tag as an
 # off-cycle release instead.
 #
-# Versioning: the scheduled/manual path only ever bumps PATCH (v0.1.0 ->
-# v0.1.1). MAJOR and MINOR releases are cut deliberately by a human pushing an
-# explicit tag, e.g. `git tag v0.2.0 && git push origin v0.2.0` for a MINOR or
-# `git tag v1.0.0 && git push origin v1.0.0` for a MAJOR.
+# Versioning (STD-PROC-033):
+#   MINOR is bumped here on the weekly schedule (vX.Y.0 -> vX.(Y+1).0).
+#   PATCH is bumped per merged PR by release-patch-tag.yml (tag-only, no Release).
+#   MAJOR is cut deliberately by a human pushing an explicit vX.0.0 tag.
 
 name: RELEASE - publish
 
@@ -31,6 +31,12 @@ on:
 
 permissions:
   contents: write
+
+# Serialize scheduled and manual dispatch runs to prevent a rare double-tag
+# if cron and workflow_dispatch fire at the same moment.
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -65,39 +71,47 @@ jobs:
             exit 0
           fi
 
-          # Scheduled or manual path: compute the next PATCH version.
-          # Latest existing vX.Y.Z tag by version order; default v0.0.0 if none.
+          # Scheduled or manual path: compute the next MINOR version.
+          # Latest existing vX.Y.Z tag by version order; default v2.0.0 if none.
           LATEST="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n 1)"
           if [ -z "$LATEST" ]; then
-            LATEST="v0.0.0"
+            LATEST="v2.0.0"
           fi
           echo "Latest release tag: $LATEST"
 
-          # Count commits on the default branch since that tag. If the tag does
-          # not exist yet (first release), count all commits on HEAD.
-          if git rev-parse -q --verify "refs/tags/$LATEST" >/dev/null 2>&1; then
-            COUNT="$(git rev-list "$LATEST"..HEAD --count)"
+          # Compare against the latest MINOR-boundary tag (vX.Y.0) to decide
+          # whether to skip. Per-PR PATCH tags land on the same commit as their
+          # merge, so comparing against the absolute latest tag would see 0
+          # commits and skip even when PRs merged during the week.
+          LATEST_MINOR="$(git tag --list 'v[0-9]*.[0-9]*.0' --sort=-version:refname | head -n 1)"
+          if [ -z "$LATEST_MINOR" ]; then
+            LATEST_MINOR="v2.0.0"
+          fi
+          echo "Latest MINOR-boundary tag: $LATEST_MINOR"
+
+          if git rev-parse -q --verify "refs/tags/$LATEST_MINOR" >/dev/null 2>&1; then
+            COUNT="$(git rev-list "$LATEST_MINOR"..HEAD --count)"
           else
             COUNT="$(git rev-list HEAD --count)"
           fi
-          echo "Commits since $LATEST: $COUNT"
+          echo "Commits since $LATEST_MINOR: $COUNT"
 
-          # No new commits: skip cleanly. No empty tag, no empty release, no
-          # notification.
+          # No new commits since the last weekly release: skip cleanly.
           if [ "$COUNT" -eq 0 ]; then
-            echo "No new commits since $LATEST -- skipping release."
+            echo "No new commits since $LATEST_MINOR -- skipping release."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Bump PATCH only. MAJOR/MINOR bumps are cut by pushing an explicit
-          # vX.Y.0 / vX.0.0 tag (see the header comment).
+          # Bump MINOR, reset PATCH to 0. PATCH is bumped per-PR by
+          # release-patch-tag.yml. MAJOR is cut by pushing an explicit vX.0.0 tag.
+          # Compute NEXT from the overall latest tag so MAJOR/MINOR carry forward
+          # correctly even when PATCH is nonzero on LATEST.
           VERSION="${LATEST#v}"
           MAJOR="${VERSION%%.*}"
           REST="${VERSION#*.}"
           MINOR="${REST%%.*}"
-          PATCH="${REST#*.}"
-          NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          NEXT="v${MAJOR}.$((MINOR + 1)).0"
           echo "Next release tag: $NEXT"
 
           echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
