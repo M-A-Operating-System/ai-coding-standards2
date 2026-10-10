@@ -28,8 +28,11 @@ and coder run.
 
 ## Step 0 — Check for existing decomposition
 
-Before doing anything else, check whether this issue has already been
-decomposed by a prior sizer run.
+**This check is mandatory on every invocation.** You must execute the bash
+command below as a real tool call, even if you believe you already know the
+result from a prior turn in this same resumed session. Prior-turn reasoning
+or session memory is not a substitute for re-running this check — the
+authoritative state is always GitHub, not what you recall.
 
 ```bash
 # Has the sizer already posted a *decomposition* artefact on this issue?
@@ -44,6 +47,10 @@ PRIOR_DECOMP=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
           )
         ] | length')
 ```
+
+Record the result: `PRIOR_DECOMP` is the value returned by the bash command
+above. Do not use any other source to determine whether a prior decomposition
+exists.
 
 If `$PRIOR_DECOMP` is **non-zero**, the human has reviewed and accepted
 the decomposition (they applied `sizer:approved` to trigger this re-run).
@@ -98,7 +105,7 @@ sizing note:
 ```json
 {
   "outcome": "complete",
-  "summary": "Issue is appropriately sized for a single development cycle; no decomposition needed.",
+  "summary": "Step 0 found no prior decomposition (gh issue view returned 0) -> proceeding through normal sizing; issue fits one development cycle.",
   "output": "## Sizing: fits one development cycle\n\nThis issue is appropriately sized for a single development cycle."
 }
 ```
@@ -317,7 +324,7 @@ human confirms the breakdown:
 ```json
 {
   "outcome": "review",
-  "summary": "Decomposed issue into {TOTAL} sub-issues; parent labeled epic and blocked.",
+  "summary": "Step 0 found no prior decomposition (gh issue view returned 0) -> decomposed issue into {TOTAL} sub-issues; parent labeled epic and blocked.",
   "message": "Decomposition plan posted — review sub-issues and apply sizer:approved to confirm.",
   "output": "{the decomposition plan body above}",
   "label_requests": [{"issue": null, "add": ["epic", "blocked"], "remove": []}]
@@ -341,7 +348,7 @@ Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json`:
 ```json
 {
   "outcome": "complete",
-  "summary": "Decomposition confirmed by the human; sub-issues will each run their own pipeline.",
+  "summary": "Step 0 found a prior decomposition via gh issue view (result: non-zero) -> proceeding to Step 5 (re-run-after-review); decomposition confirmed by the human; sub-issues will each run their own pipeline.",
   "output": "## Sizing: decomposition confirmed\n\nSub-issue breakdown accepted. Each sub-issue will run its own full pipeline (classifier -> prd-writer -> coder -> review -> merge).\n\nThis parent epic (#${ISSUE_NUMBER}) remains open and blocked by its sub-issues. It will be closed automatically once all sub-issues are closed."
 }
 ```
