@@ -93,6 +93,8 @@ Azure VM / self-hosted GitHub runner
 
 OpenCode owns the model-facing agent loop in headless mode. The Azure host owns the long-running compute and build environment. The pipeline remains unaware of the implementation details of the selected provider beyond the runtime/model policy required for the step.
 
+For the initial V3 implementation, each resolved pipeline agent step launches as a **fresh OpenCode execution**. OpenCode session state is not a source of pipeline truth and is not reused across pipeline steps.
+
 ## Responsibility boundaries
 
 ### Pipeline orchestrator
@@ -164,6 +166,17 @@ renderer     renderer
 
 The runtime contract is therefore based on the resolved effective rules, not entitlement group names.
 
+The resolved entitlement handoff should use one normalized internal representation shared by all runtime adapters:
+
+```text
+[
+  { action, pattern, effect },
+  ...
+]
+```
+
+Rule ordering must be deterministic. Broad allows should be resolved before more specific denies so that the effective policy remains equivalent to the current pipeline semantics when rendered into OpenCode's ordered permission model.
+
 Illustrative resolved policy:
 
 ```json
@@ -181,6 +194,8 @@ Illustrative resolved policy:
 OpenCode-specific permission syntax is generated from this flattened list at runtime. The adapter may transform command wrappers or wildcard syntax where OpenCode requires a different representation, but it must not change the policy outcome.
 
 The objective is policy equivalence, not identical runtime syntax.
+
+For V3 MVP, the security goal is **equivalent enforcement to the current Claude Code implementation**, not a redesign of the entitlement/security model. Defense in depth comes from the Azure VM boundary, scoped GitHub credentials, filesystem/OS permissions, and the existing repository controls in addition to runtime command permissions.
 
 ### OpenCode
 
@@ -260,7 +275,9 @@ stop Azure VM
 
 GitHub Actions may still provide lightweight orchestration and triggering, but the target design does not use GitHub-hosted runner minutes as the primary compute for long-running coding agents.
 
-The Azure host lifecycle must be automated so that compute is available when a headless job needs it and does not remain running unnecessarily after work completes.
+For the V3 MVP, a **short GitHub-hosted bootstrap job** starts the Azure VM before the long-running job is assigned. The Azure VM runs a self-hosted GitHub runner and accepts the actual coding workload once available. When the workload completes or the host reaches its configured idle threshold, the VM is stopped/deallocated automatically.
+
+The initial design uses **one named reusable Azure VM that is normally deallocated**, rather than provisioning a disposable VM for every pipeline step. Disposable/ephemeral hosts may be introduced later without changing the OpenCode adapter contract.
 
 For V3, "OpenCode runtime" therefore means the headless **agent execution runtime**, while the Azure VM is the underlying compute/build host.
 
@@ -291,32 +308,23 @@ model_source = claude | azure
 
 This separation prevents provider choice from becoming embedded in the pipeline definition.
 
-## Model policy
+## Model selection
 
-Pipeline and agent definitions should refer to logical model classes rather than provider deployment identifiers where practical.
+V3 does not introduce a new logical model-class abstraction as part of the initial implementation.
 
-Examples:
+Existing pipeline model-selection semantics remain authoritative. The OpenCode adapter and provider configuration are responsible for translating the configured model/provider choice into the concrete Anthropic or Azure endpoint required at runtime.
 
-```text
-frontier-coding
-fast-review
-research
-writing
-reasoning
-economy
-```
-
-A runtime/provider configuration resolves those logical classes to a concrete model source and deployment.
-
-For example:
+In headless mode:
 
 ```text
-frontier-coding -> Azure deployment A
-research        -> Azure deployment B
-fast-review     -> Claude model C
+OpenCode
+  |- Anthropic API -> Claude model
+  `- Azure API     -> Azure-hosted model
 ```
 
-The mapping may evolve without changing the logical agent or process definition.
+Claude Code is **not** nested underneath OpenCode. Claude Code remains the interactive runtime only; when a headless OpenCode step uses Claude, it reaches Claude through the Anthropic API/provider path.
+
+This keeps model-provider selection behind the runtime boundary and avoids changing pipeline definitions solely for V3.
 
 ## Research and content agents
 
@@ -412,6 +420,8 @@ OpenCode
 
 The outcome must be written back through the same repository-state and pipeline-state mechanisms used today.
 
+When headless execution reaches an existing human approval gate, it must **stop normally and persist state**. It must never synthesize, infer, or bypass the approval. The Azure host may then shut down. Once the human approval is recorded, a subsequent invocation resumes from the durable pipeline state and launches the next eligible step.
+
 ## Runtime adapter contract
 
 V3 should introduce a narrow runtime abstraction rather than embedding OpenCode logic directly throughout the orchestrator.
@@ -450,6 +460,18 @@ Each runtime adapter should return a normalized result containing, at minimum:
 
 Provider-specific fields may be retained as optional diagnostic metadata but must not become process-state dependencies.
 
+## Remaining open questions
+
+The following items remain intentionally unresolved and should be answered during the next design/implementation pass:
+
+1. **Concurrency and work isolation.** If multiple issues are eligible simultaneously, determine whether a single Azure host may run multiple agent jobs concurrently, whether separate worktrees are sufficient, or whether V3 initially serializes work per host.
+
+2. **Execution-context assembly.** Define the exact authoritative payload passed to the runtime adapter from the existing orchestrator: agent definition, resolved prompt/context, standards/ADRs, issue/PR context, and other deterministic inputs. OpenCode must not independently rediscover or reconstruct pipeline context.
+
+3. **Metrics attribution dimensions.** Preserve the existing metrics pipeline while deciding which additional runtime dimensions are required, such as execution runtime, execution host, model provider, and concrete model.
+
+4. **Runtime failure and recovery.** Define the normalized handling for OpenCode failure, VM loss, API timeout, runner disconnect, and budget exhaustion, while keeping process-level retry policy in the existing orchestrator.
+
 ## Out of scope for this design
 
 The following are deliberately out of scope for the initial V3 target state:
@@ -470,12 +492,12 @@ The minimum V3 implementation should prove runtime portability with the smallest
 
 1. Introduce the runtime adapter boundary.
 2. Preserve the current interactive Claude Code path behind the Claude adapter.
-3. Add a headless OpenCode adapter.
-4. Map the existing entitlement model into OpenCode permissions.
-5. Support at least one Azure-hosted model through OpenCode.
-6. Run an existing pipeline agent unchanged through both execution modes.
-7. Verify equivalent pipeline-state transitions and repository effects.
-8. Add runtime/model telemetry without changing existing process semantics.
+3. Add a headless OpenCode adapter that launches a fresh OpenCode execution per resolved pipeline step.
+4. Resolve and flatten the existing entitlement groups into the normalized per-step rule list and render it into OpenCode permissions.
+5. Add the short GitHub-hosted bootstrap that starts the reusable Azure self-hosted runner VM and stops/deallocates it after completion or idle.
+6. Support the existing configured model selection through either the Anthropic API or an Azure-hosted model via OpenCode.
+7. Run an existing pipeline agent unchanged through both execution modes.
+8. Verify equivalent pipeline-state transitions, human gates, repository effects, and metrics continuity.
 
 ## Acceptance criteria for the V3 foundation
 
