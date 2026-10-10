@@ -2156,7 +2156,7 @@ class TestSelfGates:
         agent = pipeline_by_name(agents)["00_ondemand/sizer"]
         assert agent.self_gates is True
         assert agent.human_gate_after is True
-        assert agent.human_gate_label == "sizer:review"
+        assert agent.human_gate_label == "sizer:approved"
 
     def _downstream_agent(self) -> AgentDef:
         """A single-dependency downstream agent, matching coder's real

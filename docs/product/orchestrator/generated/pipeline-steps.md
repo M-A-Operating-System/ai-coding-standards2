@@ -160,7 +160,7 @@ The groups below are this step's authoritative deny list, flattened at load time
 
 | Step | Kind | Unit | Trigger | Depends on | Human gate |
 |---|---|---|---|---|---|
-| `00_ondemand/sizer` | agent | `item` | `sizer:requested` | -- | `sizer:review` |
+| `00_ondemand/sizer` | agent | `item` | `sizer:requested` | -- | `sizer:approved` |
 
 ### Exclusions and retries
 
