@@ -214,6 +214,17 @@ It:
 
 The placement layer does not determine whether pipeline work may run concurrently and does not inspect pipeline dependencies, labels, workflow state, management-task rules, or human gates. It receives only execution requests that the orchestrator has already declared eligible.
 
+For the first V3 iteration, placement policy is deliberately simple:
+
+```text
+if an existing Azure IaaS host has configured capacity:
+    place the sandbox there
+else:
+    start or allocate another configured host
+```
+
+V3 does not require Kubernetes, predictive autoscaling, dynamic VM sizing, workload affinity, or priority scheduling.
+
 ## Azure IaaS execution infrastructure
 
 Azure IaaS provides the headless execution infrastructure.
@@ -365,6 +376,12 @@ V3 preserves the existing ownership of execution-context resolution.
 
 Whatever the current pipeline resolves before invoking Claude Code remains resolved before invoking either runtime. The interactive and headless runtimes receive semantically equivalent resolved inputs, even where runtime-specific packaging differs.
 
+The execution contract is independently versioned so runtime adapters can evolve without changing pipeline semantics.
+
+```text
+execution_contract_version = 1
+```
+
 The normalized execution input contains, at minimum:
 
 - pipeline execution ID;
@@ -385,8 +402,14 @@ OpenCode does not independently infer pipeline state, choose alternate standards
 Every execution returns a normalized machine-readable result containing, at minimum:
 
 ```text
+execution_contract_version
 status
+pipeline_run_id
 execution_id
+sandbox_id
+host_id
+attempt
+logical_session_id
 step
 execution_mode
 execution_runtime
@@ -402,6 +425,12 @@ usage
 commits
 artifacts
 repository_effects
+repository_sha
+agent_definition_sha
+pipeline_config_sha
+model_registry_sha
+sandbox_image
+sandbox_image_version
 failure_class
 retryable
 diagnostics
@@ -460,13 +489,13 @@ Azure IaaS host controls
 repository protections
 ```
 
-Credentials are injected per sandbox and scoped to the execution. Sandboxes do not inherit broad shared host credentials or another execution's credentials.
+Credentials are injected when the sandbox starts, scoped to the execution, and destroyed with the sandbox. They are not persisted into the repository, shared host state, session artifacts, metrics, or logs. Sandboxes do not inherit broad shared host credentials or another execution's credentials.
 
 ## Provider-neutral model selection
 
 Pipeline definitions must not contain provider-specific model or deployment names.
 
-V3 deliberately introduces **logical model names** to abstract pipeline behavior from concrete foundation-model providers and model gateways. A logical model name represents the role or capability expected by the pipeline, while the model registry resolves that logical name to the concrete provider, model, and deployment used in a given execution mode.
+V3 deliberately introduces **logical model names** to abstract pipeline behavior from concrete foundation-model providers and model gateways. A logical model name is a stable, explicitly configured pipeline identifier; it does not perform capability-based model selection, scoring, recommendation, routing, or substitution. The model registry maps that logical name to the concrete provider, model, and deployment used in each execution mode.
 
 Each model-driven pipeline step references a provider-neutral logical model name:
 
@@ -484,6 +513,16 @@ The canonical registry is held outside `pipeline.json`, for example:
 ```text
 config/model-providers.json
 ```
+
+The model registry is independently schema-versioned:
+
+```json
+{
+  "schema_version": 1
+}
+```
+
+Registry schema evolution must not require changes to pipeline workflow semantics.
 
 Conceptually:
 
@@ -541,9 +580,7 @@ Example:
 
 The logical model name is the pipeline contract. Provider names, concrete model identifiers, and deployment names belong to the model registry. API endpoints, tenant/resource identifiers, authentication mechanisms, secrets, and provider-specific credentials belong to provider/runtime configuration and are not stored in the model registry.
 
-Each logical model name also represents a functional capability contract for the pipeline role it serves, such as required tool use, structured-output support, or minimum context capability. A provider mapping must satisfy that contract.
-
-Model resolution returns one configured target. Provider or model failure is returned to the orchestrator as an execution failure; V3 does not silently substitute another provider or model.
+Model resolution is explicit configuration, not automated model selection. Each logical model name resolves to one configured target for the selected execution mode. Provider or model failure is returned to the orchestrator as an execution failure; V3 does not silently substitute another provider or model.
 
 ## Model inference
 
@@ -621,9 +658,21 @@ When headless execution reaches a human approval gate, pipeline state is persist
 
 ## Failure and recovery
 
-Runtime and infrastructure failures are returned to the orchestrator as normalized execution results.
+Runtime and infrastructure failures are returned to the orchestrator as normalized execution results using a controlled failure taxonomy:
 
-This includes OpenCode process failure, model-provider errors, Azure IaaS host loss, sandbox failure, runner disconnect, tool permission failure, budget exhaustion, build failure, and test failure.
+```text
+runtime_failure
+provider_failure
+entitlement_denied
+sandbox_failure
+infrastructure_failure
+budget_exhausted
+build_failure
+test_failure
+invalid_configuration
+```
+
+Provider-specific or runtime-specific error details are retained in diagnostics but do not replace the normalized failure class.
 
 The existing orchestrator owns retry, re-entry, terminal-state handling, and escalation.
 
@@ -644,7 +693,8 @@ execution_host          = interactive | azure-iaas
 
 logical_model           = provider-neutral pipeline model name
 
-configured_provider     = claude-code | anthropic | azure-ai-foundry | trustbolt
+configured_gateway      = direct | trustbolt | other configured gateway
+configured_provider     = claude-code | anthropic | azure-ai-foundry | other configured provider
 configured_model        = configured provider model or router target
 configured_deployment   = configured deployment identifier where applicable
 
@@ -666,6 +716,7 @@ configured_provider
 configured_model
 configured_deployment
 
+actual_gateway
 actual_provider
 actual_model
 actual_deployment
@@ -683,6 +734,65 @@ If the provider does not expose the concrete model actually used, the actual-mod
 
 Existing metrics retain their definitions and historical comparability. These additional fields extend attribution without creating a separate telemetry path.
 
+## Runtime conformance and compatibility
+
+V3 validates runtime portability through shared conformance tests rather than requiring identical model prose or reasoning.
+
+Claude Code and OpenCode adapters must be tested against the same contract for:
+
+- entitlement-policy outcomes;
+- execution input handling;
+- execution-result schema;
+- normalized failure classification;
+- session-policy handling;
+- commit and artifact reporting;
+- durable state transitions.
+
+Entitlement translation must include parity fixtures proving that the same resolved canonical rule set produces equivalent allow/deny outcomes in Claude Code and OpenCode.
+
+Behavioral equivalence means:
+
+- the same pipeline step is eligible;
+- the same actions are permitted or denied;
+- the same human gates remain authoritative;
+- the same classes of durable artifacts are produced;
+- the same repository and pipeline state transitions occur;
+- the same retry and review-loop semantics apply.
+
+V3 does not require different foundation models to produce identical text, identical reasoning paths, or identical implementation details.
+
+## V3 end-to-end proof path
+
+The first V3 implementation must prove one existing model-driven pipeline step end to end through both execution modes. The coder step is the reference proof path.
+
+The proof uses:
+
+- the same pipeline step definition;
+- the same agent definition;
+- the same resolved entitlement policy;
+- the same logical model name;
+- the same durable repository/pipeline state mechanisms;
+- Claude Code for interactive execution;
+- OpenCode for headless execution;
+- the same normalized execution-result and metrics contracts.
+
+Success is measured by equivalent product behavior and durable effects, not identical model output.
+
+## V3 execution non-goals
+
+The first V3 iteration deliberately does not introduce:
+
+- autonomous modification or reinterpretation of pipeline sequence by OpenCode or any model;
+- automated model selection, scoring, recommendation, or substitution;
+- silent provider/model failover;
+- sophisticated cluster scheduling or Kubernetes;
+- predictive autoscaling or dynamic VM sizing;
+- cross-runtime translation of conversational sessions;
+- a new PM user interface;
+- a separate telemetry system.
+
+The declarative pipeline remains authoritative.
+
 ## Target-state acceptance criteria
 
 V3 is complete when:
@@ -690,7 +800,7 @@ V3 is complete when:
 - existing pipeline definitions execute without interactive/headless forks;
 - existing agent definitions execute unchanged through Claude Code interactively and OpenCode headlessly;
 - all pipeline execution crosses the execution-adapter boundary rather than calling runtime/provider/infrastructure implementations directly;
-- agent and script executions both return the normalized execution-result contract;
+- agent and script executions both return the versioned normalized execution-result contract;
 - deterministic script steps retain their existing semantics and run inside isolated sandboxes when headless;
 - the orchestrator retains all existing dependency and concurrency controls;
 - multiple eligible headless executions may run concurrently;
@@ -699,9 +809,9 @@ V3 is complete when:
 - execution placement can use multiple sandboxes per Azure IaaS VM and multiple Azure IaaS VMs without inspecting pipeline semantics;
 - Azure IaaS capacity management does not change pipeline semantics;
 - session scope and resume semantics remain compatible with the existing pipeline, while conversational state remains runtime-specific and non-authoritative;
-- canonical entitlements are resolved once and rendered into the selected runtime;
+- canonical entitlements are resolved once and rendered into the selected runtime, with parity tests proving equivalent allow/deny outcomes;
 - Azure IaaS is used only for execution infrastructure;
-- pipeline model references are provider-neutral logical model names introduced specifically to abstract foundation-model providers and gateways and to define the capability contract required by each model role;
+- pipeline model references are provider-neutral logical model names introduced specifically to abstract foundation-model providers and gateways without introducing automated model selection;
 - the model registry resolves each logical model name to provider/model/deployment mappings without duplicating runtime selection;
 - Azure AI Foundry is used only as a model inference provider;
 - Trustbolt is a parallel headless model-access provider;
@@ -710,6 +820,9 @@ V3 is complete when:
 - retries run in clean sandboxes and recover only from durable state and explicitly persisted session artifacts;
 - sandbox network access prevents direct sibling or privileged host-management access;
 - the Azure IaaS host uses a host-level runner/control process rather than one GitHub runner per sandbox;
-- metrics capture the logical model name, configured provider/model/deployment, and the actual provider/model/deployment reported for each inference request;
+- metrics capture execution identity and reproducibility metadata including pipeline run, execution, sandbox, host, attempt, repository SHA, agent definition SHA, pipeline configuration SHA, model registry SHA, and sandbox image/version;
+- metrics capture logical model name, configured gateway/provider/model/deployment, and actual gateway/provider/model/deployment reported for each inference request;
 - execution-level metrics aggregate the distinct actual models used and model switches for routed executions;
+- the coder reference path demonstrates equivalent interactive and headless product behavior through the same pipeline/agent definitions;
+- runtime adapters pass shared conformance tests;
 - existing metrics logging, aggregation, reporting, and analysis continue without interruption.
