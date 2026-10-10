@@ -612,7 +612,7 @@ Conceptually:
 
 The token-type keys shown above are illustrative. Each configured model records only the token classes that are billable or reported for that provider/model. Pricing values are explicitly maintained configuration and are never inferred by the runtime.
 
-Model resolution is explicit configuration, not automated model selection. Each logical model name resolves to one configured target for the selected execution mode. Provider or model failure is returned to the orchestrator as an execution failure; V3 does not silently substitute another provider or model.
+Model resolution is explicit configuration, not automated model selection. Each logical model name resolves to one configured target for the selected execution mode. V3 may collect comparative performance and cost metrics across different configured models so operators can optimize those mappings over time, but the runtime does not score, recommend, or switch models autonomously. Provider or model failure is returned to the orchestrator as an execution failure; V3 does not silently substitute another provider or model.
 
 ## Model inference
 
@@ -766,99 +766,110 @@ provider_request_id
 
 For direct, non-routed model calls, configured and actual model attribution will normally be identical. For provider-side routing, the configured model may be a router or gateway target while `actual_model` records the concrete underlying model reported for that request.
 
-Cost attribution uses the pricing configuration for the concrete model actually used when that model is known. Token usage is retained by provider/model token class rather than collapsed prematurely into a single total. Where the provider supplies an authoritative request cost, that value is retained separately from locally calculated cost.
+Cost attribution uses the pricing configuration for the concrete model actually used when that model is known. Token usage is retained by provider/model token class rather than collapsed prematurely into a single total. Where the runtime supplies an estimated cost, that value is retained as `runtime_estimated_cost_usd`. Where the provider supplies a request-level cost, that value is retained as `provider_reported_cost_usd`. Locally calculated cost is retained separately as `calculated_cost_usd`. If billing-system reconciliation is later available, the reconciled charge is stored separately as `actual_billed_cost_usd`. These values are never conflated.
 
 ### Cost metric compatibility
 
 The current V2 metrics pipeline records `total_cost_usd` directly from the Claude Code result event. The orchestrator does not currently calculate that value from token counts, and the weekly metrics aggregator sums the reported `total_cost_usd` values.
 
-V3 preserves `total_cost_usd` as the canonical aggregate cost field for historical compatibility. Its source is determined explicitly:
+In V3, cost provenance is explicit:
 
 ```text
-if provider_reported_cost_usd is available:
+runtime_estimated_cost_usd = estimate emitted by the execution runtime, if any
+provider_reported_cost_usd = cost emitted by the model provider/gateway, if any
+calculated_cost_usd        = token usage by type × versioned configured pricing
+actual_billed_cost_usd     = reconciled billing-system charge, if available
+```
+
+Claude Code's existing `total_cost_usd` is treated as `runtime_estimated_cost_usd`; it is not assumed to be an authoritative provider invoice.
+
+V3 preserves `total_cost_usd` as the canonical aggregate cost field for historical compatibility. Its source is selected explicitly:
+
+```text
+if actual_billed_cost_usd is available:
+    total_cost_usd = actual_billed_cost_usd
+    cost_source = actual_billed
+else if provider_reported_cost_usd is available:
     total_cost_usd = provider_reported_cost_usd
+    cost_source = provider_reported
 else if calculated_cost_usd is available:
     total_cost_usd = calculated_cost_usd
+    cost_source = calculated
+else if runtime_estimated_cost_usd is available:
+    total_cost_usd = runtime_estimated_cost_usd
+    cost_source = runtime_estimated
 else:
     total_cost_usd = unavailable
+    cost_source = unavailable
 ```
 
-The source used for the canonical value is recorded as:
+Existing aggregations continue to consume `total_cost_usd`, preserving historical definitions while exposing provenance for every value.
+
+For routed models, cost is attributed using the actual model used where that model and its pricing are known. If the provider does not disclose the actual routed model, V3 does not fabricate model-specific calculated cost.
+
+### Multi-model optimization metrics
+
+V3 supports deliberate comparison of explicitly configured model mappings. This is an analysis capability, not an automated model-selection capability.
+
+For every agent execution, the metrics pipeline retains enough information to compare model economics and delivery effectiveness across runs:
 
 ```text
-cost_source = provider_reported | calculated | unavailable
+logical_model
+configured_gateway
+configured_provider
+configured_model
+configured_deployment
+
+actual_gateway
+actual_provider
+actual_model
+actual_deployment
+
+pipeline_step
+classification
+execution_mode
+execution_runtime
+
+success
+failure_class
+retry_count
+num_turns
+wall_time
+duration_api_ms
+
+token_usage_by_type
+runtime_estimated_cost_usd
+calculated_cost_usd
+provider_reported_cost_usd
+actual_billed_cost_usd
+total_cost_usd
+cost_source
+
+commits
+artifacts
+build_result
+test_result
+review_result
 ```
 
-V3 therefore does not silently redefine existing cost-based metrics such as weekly cost totals or value-add ratios. Existing aggregations continue to consume `total_cost_usd`, while the new detailed fields retain the provenance required to compare provider-reported cost with locally calculated cost.
+Where existing pipeline data permits it, aggregate analysis can derive measures such as:
 
-For Claude Code interactive execution, the current runtime-reported `total_cost_usd` is mapped to `provider_reported_cost_usd` and remains the canonical `total_cost_usd`.
+```text
+cost_per_successful_execution
+cost_per_completed_work_item
+first_pass_success_rate
+first_pass_ci_rate
+review_rework_rate
+retry_rate
+mean_turns_per_success
+mean_wall_time_per_success
+mean_tokens_per_success
+```
 
-For headless execution, providers or gateways may report cost directly, may report only token usage, or may expose different token classes. When no authoritative cost is reported, V3 calculates cost from the actual model's configured pricing and the request's token usage by type.
+These measures are used to inform human/configuration decisions about which concrete model should back a logical model name. They do not cause the orchestrator or runtime to alter model mappings automatically.
 
-If provider-side routing is used and the actual model is not disclosed, V3 must not fabricate model-specific calculated cost. In that case, provider-reported cost may still be used when available; otherwise cost remains unavailable.
+Comparisons must retain the work classification, pipeline step, execution mode, and model/provider dimensions so materially different workloads are not blended into misleading averages.
 
-If the provider does not expose the concrete model actually used, the actual-model fields remain unavailable rather than being inferred.
-
-Existing metrics retain their definitions and historical comparability. These additional fields extend attribution without creating a separate telemetry path.
-
-## Runtime conformance and compatibility
-
-V3 validates runtime portability through shared conformance tests rather than requiring identical model prose or reasoning.
-
-Claude Code and OpenCode adapters must be tested against the same contract for:
-
-- entitlement-policy outcomes;
-- execution input handling;
-- execution-result schema;
-- normalized failure classification;
-- session-policy handling;
-- commit and artifact reporting;
-- durable state transitions.
-
-Entitlement translation must include parity fixtures proving that the same resolved canonical rule set produces equivalent allow/deny outcomes in Claude Code and OpenCode.
-
-Behavioral equivalence means:
-
-- the same pipeline step is eligible;
-- the same actions are permitted or denied;
-- the same human gates remain authoritative;
-- the same classes of durable artifacts are produced;
-- the same repository and pipeline state transitions occur;
-- the same retry and review-loop semantics apply.
-
-V3 does not require different foundation models to produce identical text, identical reasoning paths, or identical implementation details.
-
-## V3 end-to-end proof path
-
-The first V3 implementation must prove one existing model-driven pipeline step end to end through both execution modes. The coder step is the reference proof path.
-
-The proof uses:
-
-- the same pipeline step definition;
-- the same agent definition;
-- the same resolved entitlement policy;
-- the same logical model name;
-- the same durable repository/pipeline state mechanisms;
-- Claude Code for interactive execution;
-- OpenCode for headless execution;
-- the same normalized execution-result and metrics contracts.
-
-Success is measured by equivalent product behavior and durable effects, not identical model output.
-
-## V3 execution non-goals
-
-The first V3 iteration deliberately does not introduce:
-
-- autonomous modification or reinterpretation of pipeline sequence by OpenCode or any model;
-- automated model selection, scoring, recommendation, or substitution;
-- silent provider/model failover;
-- sophisticated cluster scheduling or Kubernetes;
-- predictive autoscaling or dynamic VM sizing;
-- cross-runtime translation of conversational sessions;
-- a new PM user interface;
-- a separate telemetry system.
-
-The declarative pipeline remains authoritative.
 
 ## Target-state acceptance criteria
 
@@ -890,9 +901,11 @@ V3 is complete when:
 - metrics capture execution identity and reproducibility metadata including pipeline run, execution, sandbox, host, attempt, repository SHA, agent definition SHA, pipeline configuration SHA, model registry SHA, and sandbox image/version;
 - metrics capture logical model name, configured gateway/provider/model/deployment, and actual gateway/provider/model/deployment reported for each inference request;
 - the model registry records model-specific token pricing by token class, currency, unit, and effective version/date;
-- request metrics retain token usage by type and distinguish calculated cost from provider-reported cost;
-- `total_cost_usd` remains the canonical aggregate cost field for historical compatibility and records whether its source was provider-reported or locally calculated;
+- request metrics retain token usage by type and distinguish runtime-estimated, calculated, provider-reported, and actual billed cost;
+- `total_cost_usd` remains the canonical aggregate cost field for historical compatibility and records its cost provenance;
 - existing cost-based aggregates retain their current definitions rather than silently changing semantics;
+- model-performance metrics support comparison of explicitly configured models by pipeline step, workload classification, success, retries, CI/review outcomes, latency, token usage, and cost;
+- comparative model metrics inform configuration decisions only and never trigger autonomous model selection or substitution;
 - execution-level metrics aggregate the distinct actual models used and model switches for routed executions;
 - the coder reference path demonstrates equivalent interactive and headless product behavior through the same pipeline/agent definitions;
 - runtime adapters pass shared conformance tests;
