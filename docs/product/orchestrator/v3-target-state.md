@@ -52,7 +52,7 @@ The defining V3 principle is that **process semantics remain common while execut
 
 ## Target architecture
 
-V3 separates four concerns:
+V3 separates five concerns:
 
 - **process control** — the pipeline orchestrator determines what work is eligible and whether work may run concurrently;
 - **execution placement** — the headless execution layer determines where each eligible execution runs based on available Azure IaaS capacity;
@@ -184,7 +184,7 @@ Azure VM hosts are reusable IaaS capacity and are normally deallocated when no e
 
 ## Concurrency
 
-The existing orchestrator remains the sole authority for whether work is safe to execute concurrently.
+The existing orchestrator remains the sole authority for whether work is safe to execute concurrently. Neither OpenCode, the sandbox runtime, GitHub Actions, the placement layer, nor Azure IaaS may introduce an independent process-level concurrency policy.
 
 It continues to enforce:
 
@@ -274,7 +274,7 @@ design artifacts -> repository commits or existing artifact mechanisms
 metrics          -> existing metrics log and analysis path
 ```
 
-Retries and re-entry start in a clean sandbox and reconstruct work from durable repository and pipeline state.
+Sandbox-local state is never authoritative and is never reused as the basis for retry or continuation. Retries and re-entry start in a clean sandbox and reconstruct work from durable repository and pipeline state plus explicitly persisted session artifacts where permitted by the session policy.
 
 ## Session semantics
 
@@ -319,35 +319,97 @@ The placement layer owns infrastructure placement and capacity only.
 
 It does not own pipeline dependencies, work-conflict rules, human gates, retry policy, agent behavior, or entitlements.
 
-### Runtime adapters
+### Execution adapters
 
-Runtime adapters execute already-resolved model-driven agent steps.
+All pipeline execution crosses one explicit execution boundary. The orchestrator does not invoke Claude Code, OpenCode, provider APIs, containers, or host-specific commands directly.
+
+For model-driven agent steps:
 
 ```text
 execute_agent(
     agent_definition,
     resolved_execution_input,
     resolved_entitlements,
-    session,
-    model_selection,
-    execution_mode
+    session_policy,
+    logical_model,
+    execution_mode,
+    execution_metadata
 ) -> execution_result
 ```
 
+For deterministic script steps:
+
+```text
+execute_script(
+    script_definition,
+    resolved_execution_input,
+    resolved_entitlements,
+    execution_mode,
+    execution_metadata
+) -> execution_result
+```
+
+The adapter layer is the only component permitted to translate pipeline execution into runtime-specific invocation.
+
 V3 provides:
 
-- Claude Code interactive execution;
-- OpenCode headless execution.
+- Claude Code interactive agent execution;
+- OpenCode headless agent execution;
+- deterministic script execution in the assigned interactive or headless environment.
 
-## Execution input
+The orchestrator depends only on these contracts and never on Claude Code CLI syntax, OpenCode CLI syntax, provider APIs, container commands, or Azure IaaS implementation details.
+
+## Execution contract
 
 V3 preserves the existing ownership of execution-context resolution.
 
-Whatever the current pipeline resolves before invoking Claude Code remains resolved before invoking either runtime.
+Whatever the current pipeline resolves before invoking Claude Code remains resolved before invoking either runtime. The interactive and headless runtimes receive semantically equivalent resolved inputs, even where runtime-specific packaging differs.
 
-The interactive and headless runtimes receive semantically equivalent resolved inputs, even where runtime-specific packaging differs.
+The normalized execution input contains, at minimum:
+
+- pipeline execution ID;
+- flow and step identity;
+- issue/PR/work-item identity;
+- agent or script definition;
+- resolved prompt/context;
+- selected standards and ADRs;
+- deterministic helper outputs;
+- resolved entitlements;
+- logical model name for model-driven steps;
+- session policy and logical session identity where applicable;
+- repository/branch context;
+- execution mode.
 
 OpenCode does not independently infer pipeline state, choose alternate standards, reconstruct issue intent, or create a second process model.
+
+Every execution returns a normalized machine-readable result containing, at minimum:
+
+```text
+status
+execution_id
+step
+execution_mode
+execution_runtime
+execution_host
+logical_model
+model_provider
+model
+model_deployment
+started_at
+completed_at
+elapsed_time
+usage
+commits
+artifacts
+repository_effects
+failure_class
+retryable
+diagnostics
+```
+
+Fields that do not apply to a deterministic script step are null/omitted according to the execution-result schema.
+
+This normalized result is the only runtime-facing outcome consumed by the orchestrator. Runtime/provider-specific metadata may be retained as diagnostics but cannot become a pipeline-state dependency.
 
 ## Entitlements
 
@@ -415,7 +477,7 @@ Each model-driven pipeline step references a provider-neutral logical model name
 }
 ```
 
-A separate model registry owns the mapping from that logical name to the concrete provider/gateway and model/deployment used in each execution mode. Runtime selection is not duplicated in the registry: interactive execution uses Claude Code and headless execution uses OpenCode.
+A separate model registry owns the mapping from that logical name to the concrete provider/gateway and model/deployment used in each execution mode. Runtime selection is fixed elsewhere by execution mode: interactive execution uses Claude Code and headless execution uses OpenCode. The registry does not select or configure runtimes.
 
 The canonical registry is held outside `pipeline.json`, for example:
 
@@ -454,11 +516,10 @@ Example:
   "models": {
     "coding-primary": {
       "interactive": {
-        "runtime": "claude-code",
+        "provider": "claude-code",
         "model": "claude-sonnet-4-6"
       },
       "headless": {
-        "runtime": "opencode",
         "provider": "azure-ai-foundry",
         "model": "kimi-k2",
         "deployment": "kimi-k2-prod"
@@ -466,11 +527,10 @@ Example:
     },
     "review-fast": {
       "interactive": {
-        "runtime": "claude-code",
+        "provider": "claude-code",
         "model": "claude-haiku-4-5"
       },
       "headless": {
-        "runtime": "opencode",
         "provider": "anthropic",
         "model": "claude-haiku-4-5"
       }
@@ -593,6 +653,8 @@ V3 is complete when:
 
 - existing pipeline definitions execute without interactive/headless forks;
 - existing agent definitions execute unchanged through Claude Code interactively and OpenCode headlessly;
+- all pipeline execution crosses the execution-adapter boundary rather than calling runtime/provider/infrastructure implementations directly;
+- agent and script executions both return the normalized execution-result contract;
 - deterministic script steps retain their existing semantics and run inside isolated sandboxes when headless;
 - the orchestrator retains all existing dependency and concurrency controls;
 - multiple eligible headless executions may run concurrently;
@@ -604,12 +666,12 @@ V3 is complete when:
 - canonical entitlements are resolved once and rendered into the selected runtime;
 - Azure IaaS is used only for execution infrastructure;
 - pipeline model references are provider-neutral logical model names introduced specifically to abstract foundation-model providers and gateways and to define the capability contract required by each model role;
-- the model registry resolves each alias to the concrete runtime/provider/model mapping;
+- the model registry resolves each logical model name to provider/model/deployment mappings without duplicating runtime selection;
 - Azure AI Foundry is used only as a model inference provider;
 - Trustbolt is a parallel headless model-access provider;
 - headless OpenCode can use Anthropic direct, Azure AI Foundry, or Trustbolt according to the model registry, with no silent provider/model fallback;
 - human approval gates remain unchanged;
-- retries run in clean sandboxes and recover from durable state;
+- retries run in clean sandboxes and recover only from durable state and explicitly persisted session artifacts;
 - sandbox network access prevents direct sibling or privileged host-management access;
 - the Azure IaaS host uses a host-level runner/control process rather than one GitHub runner per sandbox;
 - metrics capture logical model name, provider, concrete model, and deployment where applicable;
