@@ -46,7 +46,7 @@ PRIOR_DECOMP=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json comments \
 ```
 
 If `$PRIOR_DECOMP` is **non-zero**, the human has reviewed and accepted
-the decomposition (they removed `sizer:review` to trigger this re-run).
+the decomposition (they applied `sizer:approved` to trigger this re-run).
 Go directly to **Step 5 — Re-run after review**.
 
 If `$PRIOR_DECOMP` is **zero**, this is a first run. Continue to Step 1.
@@ -301,8 +301,8 @@ merged to the base branch.
    issue body). Edit titles, scope, or acceptance criteria if the
    split is wrong.
 2. Delete any sub-issue you want to merge back into another.
-3. When the breakdown looks right, remove the `sizer:review` label
-   from this issue (#${ISSUE_NUMBER}) to confirm.
+3. When the breakdown looks right, apply the `sizer:approved` label
+   to this issue (#${ISSUE_NUMBER}) to confirm.
 
 This parent issue is now blocked by its sub-issues. It will close
 automatically when all sub-issues are closed. Each sub-issue runs its
@@ -318,7 +318,7 @@ human confirms the breakdown:
 {
   "outcome": "review",
   "summary": "Decomposed issue into {TOTAL} sub-issues; parent labeled epic and blocked.",
-  "message": "Decomposition plan posted — review sub-issues and remove sizer:review to confirm.",
+  "message": "Decomposition plan posted — review sub-issues and apply sizer:approved to confirm.",
   "output": "{the decomposition plan body above}",
   "label_requests": [{"issue": null, "add": ["epic", "blocked"], "remove": []}]
 }
@@ -328,7 +328,7 @@ human confirms the breakdown:
 
 ## Step 5 — Re-run after review (decomposition confirmed)
 
-The human removed `sizer:review`, confirming the breakdown is
+The human applied `sizer:approved`, confirming the breakdown is
 acceptable. The sub-issues are now live and will each start their own
 pipeline when `issue-classifier` picks them up.
 

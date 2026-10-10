@@ -130,7 +130,7 @@ On-demand sizing of an issue against a single development cycle, requested by a 
 - **Kind:** agent
 - **Phase:** `00_ondemand`
 
-Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note and emit complete directly; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied. Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown at the sizer:review gate. On re-invocation after the human removes sizer:review, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue.
+Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note and emit complete directly; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied. Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown at the sizer:approved gate. On re-invocation after the human applies sizer:approved, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue.
 
 ## Flow: `new-agent`
 
