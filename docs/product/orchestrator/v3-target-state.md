@@ -768,6 +768,35 @@ For direct, non-routed model calls, configured and actual model attribution will
 
 Cost attribution uses the pricing configuration for the concrete model actually used when that model is known. Token usage is retained by provider/model token class rather than collapsed prematurely into a single total. Where the provider supplies an authoritative request cost, that value is retained separately from locally calculated cost.
 
+### Cost metric compatibility
+
+The current V2 metrics pipeline records `total_cost_usd` directly from the Claude Code result event. The orchestrator does not currently calculate that value from token counts, and the weekly metrics aggregator sums the reported `total_cost_usd` values.
+
+V3 preserves `total_cost_usd` as the canonical aggregate cost field for historical compatibility. Its source is determined explicitly:
+
+```text
+if provider_reported_cost_usd is available:
+    total_cost_usd = provider_reported_cost_usd
+else if calculated_cost_usd is available:
+    total_cost_usd = calculated_cost_usd
+else:
+    total_cost_usd = unavailable
+```
+
+The source used for the canonical value is recorded as:
+
+```text
+cost_source = provider_reported | calculated | unavailable
+```
+
+V3 therefore does not silently redefine existing cost-based metrics such as weekly cost totals or value-add ratios. Existing aggregations continue to consume `total_cost_usd`, while the new detailed fields retain the provenance required to compare provider-reported cost with locally calculated cost.
+
+For Claude Code interactive execution, the current runtime-reported `total_cost_usd` is mapped to `provider_reported_cost_usd` and remains the canonical `total_cost_usd`.
+
+For headless execution, providers or gateways may report cost directly, may report only token usage, or may expose different token classes. When no authoritative cost is reported, V3 calculates cost from the actual model's configured pricing and the request's token usage by type.
+
+If provider-side routing is used and the actual model is not disclosed, V3 must not fabricate model-specific calculated cost. In that case, provider-reported cost may still be used when available; otherwise cost remains unavailable.
+
 If the provider does not expose the concrete model actually used, the actual-model fields remain unavailable rather than being inferred.
 
 Existing metrics retain their definitions and historical comparability. These additional fields extend attribution without creating a separate telemetry path.
@@ -862,6 +891,8 @@ V3 is complete when:
 - metrics capture logical model name, configured gateway/provider/model/deployment, and actual gateway/provider/model/deployment reported for each inference request;
 - the model registry records model-specific token pricing by token class, currency, unit, and effective version/date;
 - request metrics retain token usage by type and distinguish calculated cost from provider-reported cost;
+- `total_cost_usd` remains the canonical aggregate cost field for historical compatibility and records whether its source was provider-reported or locally calculated;
+- existing cost-based aggregates retain their current definitions rather than silently changing semantics;
 - execution-level metrics aggregate the distinct actual models used and model switches for routed executions;
 - the coder reference path demonstrates equivalent interactive and headless product behavior through the same pipeline/agent definitions;
 - runtime adapters pass shared conformance tests;
