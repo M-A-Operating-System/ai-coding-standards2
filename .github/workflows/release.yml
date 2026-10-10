@@ -32,6 +32,12 @@ on:
 permissions:
   contents: write
 
+# Serialize scheduled and manual dispatch runs to prevent a rare double-tag
+# if cron and workflow_dispatch fire at the same moment.
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Publish release

@@ -21,6 +21,13 @@ on:
 permissions:
   contents: write
 
+# Serialize runs so two rapid merges do not race on the same LATEST tag and
+# one ends up untagged. cancel-in-progress: false is required -- cancelling
+# the second run would leave that commit without a PATCH tag.
+concurrency:
+  group: release-patch-tag
+  cancel-in-progress: false
+
 jobs:
   patch-tag:
     name: Push PATCH tag
