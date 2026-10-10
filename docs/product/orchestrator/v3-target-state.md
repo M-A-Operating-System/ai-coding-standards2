@@ -578,7 +578,39 @@ Example:
 }
 ```
 
-The logical model name is the pipeline contract. Provider names, concrete model identifiers, and deployment names belong to the model registry. API endpoints, tenant/resource identifiers, authentication mechanisms, secrets, and provider-specific credentials belong to provider/runtime configuration and are not stored in the model registry.
+The logical model name is the pipeline contract. Provider names, concrete model identifiers, deployment names, and model-specific token pricing belong to the model registry. API endpoints, tenant/resource identifiers, authentication mechanisms, secrets, and provider-specific credentials belong to provider/runtime configuration and are not stored in the model registry.
+
+Each concrete model mapping may define its pricing schedule using the token classes exposed by that model/provider. Pricing is configuration data, not pipeline logic. Different models may expose different chargeable token types, so the registry does not assume a universal input/output-only pricing structure.
+
+Conceptually:
+
+```json
+{
+  "schema_version": 1,
+  "models": {
+    "coding-primary": {
+      "headless": {
+        "provider": "azure-ai-foundry",
+        "model": "kimi-k2",
+        "deployment": "kimi-k2-prod",
+        "pricing": {
+          "currency": "USD",
+          "unit": "per_1m_tokens",
+          "effective_from": "2026-10-01",
+          "token_types": {
+            "input": 0.00,
+            "output": 0.00,
+            "cached_input": 0.00,
+            "reasoning": 0.00
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+The token-type keys shown above are illustrative. Each configured model records only the token classes that are billable or reported for that provider/model. Pricing values are explicitly maintained configuration and are never inferred by the runtime.
 
 Model resolution is explicit configuration, not automated model selection. Each logical model name resolves to one configured target for the selected execution mode. Provider or model failure is returned to the orchestrator as an execution failure; V3 does not silently substitute another provider or model.
 
@@ -721,14 +753,20 @@ actual_provider
 actual_model
 actual_deployment
 
+token_usage_by_type
 input_tokens
 output_tokens
 latency
-cost
+calculated_cost
+provider_reported_cost
+pricing_currency
+pricing_version
 provider_request_id
 ```
 
 For direct, non-routed model calls, configured and actual model attribution will normally be identical. For provider-side routing, the configured model may be a router or gateway target while `actual_model` records the concrete underlying model reported for that request.
+
+Cost attribution uses the pricing configuration for the concrete model actually used when that model is known. Token usage is retained by provider/model token class rather than collapsed prematurely into a single total. Where the provider supplies an authoritative request cost, that value is retained separately from locally calculated cost.
 
 If the provider does not expose the concrete model actually used, the actual-model fields remain unavailable rather than being inferred.
 
@@ -822,6 +860,8 @@ V3 is complete when:
 - the Azure IaaS host uses a host-level runner/control process rather than one GitHub runner per sandbox;
 - metrics capture execution identity and reproducibility metadata including pipeline run, execution, sandbox, host, attempt, repository SHA, agent definition SHA, pipeline configuration SHA, model registry SHA, and sandbox image/version;
 - metrics capture logical model name, configured gateway/provider/model/deployment, and actual gateway/provider/model/deployment reported for each inference request;
+- the model registry records model-specific token pricing by token class, currency, unit, and effective version/date;
+- request metrics retain token usage by type and distinguish calculated cost from provider-reported cost;
 - execution-level metrics aggregate the distinct actual models used and model switches for routed executions;
 - the coder reference path demonstrates equivalent interactive and headless product behavior through the same pipeline/agent definitions;
 - runtime adapters pass shared conformance tests;
