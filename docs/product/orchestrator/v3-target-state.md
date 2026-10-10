@@ -29,8 +29,9 @@ These invariants take precedence over runtime-specific convenience.
 | Agent definitions | Existing repository agent files | Same agent files | Same agent files |
 | Deterministic script steps | Existing script execution path | Same script behavior | Same script behavior in the assigned execution environment |
 | Agent runtime | Claude Code | Claude Code | OpenCode |
-| Model invocation | Claude Code -> Claude | Claude Code -> Claude | OpenCode -> Anthropic API or Azure AI Foundry |
-| Model-selection semantics | Existing pipeline configuration | Same configuration | Same configuration |
+| Model invocation | Claude Code -> Claude | Claude Code -> Claude | OpenCode -> Anthropic API, Azure AI Foundry, or Trustbolt |
+| Model selection | Provider-specific model name in current pipeline configuration | Provider-neutral model alias resolved to Claude Code model | Same provider-neutral alias resolved to OpenCode provider/model mapping |
+| Model mapping | Not separate | Model registry maps alias to Claude Code model | Model registry maps alias to Anthropic, Azure AI Foundry, or Trustbolt model/deployment |
 | Entitlement source | Existing groups and step configuration in `pipeline.json` | Same source | Same source |
 | Entitlement enforcement | Claude Code tool permissions | Claude Code tool permissions | Resolved rules rendered into OpenCode permissions |
 | Session semantics | Existing `per_issue`, `global`, and resume behavior | Same semantics | Same logical semantics mapped into fresh OpenCode processes |
@@ -54,7 +55,8 @@ V3 separates four concerns:
 - **process control** — the pipeline orchestrator determines what work is eligible and whether work may run concurrently;
 - **execution placement** — the headless execution layer determines where each eligible execution runs based on available Azure IaaS capacity;
 - **execution isolation** — each headless execution runs inside its own ephemeral sandbox;
-- **model inference** — OpenCode reaches either Anthropic or Azure AI Foundry according to the existing model selection.
+- **model selection** — `pipeline.json` references a provider-neutral logical model alias, resolved through a separate model registry;
+- **model inference** — OpenCode invokes the provider/model resolved by that registry through Anthropic direct, Azure AI Foundry, or Trustbolt.
 
 ```text
                          GitHub repository
@@ -84,10 +86,11 @@ V3 separates four concerns:
                  |             |          |          |
                  v             +----------+----------+
            Claude model                   |
-                                  +--------+--------+
-                                  |                 |
-                                  v                 v
-                            Anthropic API   Azure AI Foundry
+                                  +-----------+-----------+
+                                  |           |           |
+                                  v           v           v
+                            Anthropic API  Azure AI    Trustbolt
+                                           Foundry
 ```
 
 The orchestrator remains authoritative for process semantics. The placement layer determines execution location only. The sandbox provides isolation. OpenCode provides the headless agent loop. Model providers provide inference only.
@@ -387,6 +390,85 @@ repository protections
 
 Credentials are injected per sandbox and scoped to the execution. Sandboxes do not inherit broad shared host credentials or another execution's credentials.
 
+## Provider-neutral model selection
+
+Pipeline definitions must not contain provider-specific model or deployment names.
+
+Each model-driven pipeline step references a provider-neutral logical model alias:
+
+```json
+{
+  "agent": "03_execute/coder",
+  "model": "coding-primary"
+}
+```
+
+A separate model registry owns the mapping from that alias to the concrete runtime, provider, and model/deployment used in each execution mode.
+
+The canonical registry is held outside `pipeline.json`, for example:
+
+```text
+config/model-providers.json
+```
+
+Conceptually:
+
+```text
+pipeline.json
+  model = coding-primary
+          |
+          v
+model-providers.json
+          |
+     +----+------------------+
+     |                       |
+     v                       v
+interactive               headless
+     |                       |
+     v                       v
+Claude Code               OpenCode
+     |                 /       |        \
+     v                v        v         v
+Claude model      Anthropic   Azure     Trustbolt
+                    direct    AI Foundry
+```
+
+The registry allows provider/model assignments to change without changing pipeline process definitions or agent definitions.
+
+Example:
+
+```json
+{
+  "models": {
+    "coding-primary": {
+      "interactive": {
+        "runtime": "claude-code",
+        "model": "claude-sonnet-4-6"
+      },
+      "headless": {
+        "runtime": "opencode",
+        "provider": "azure-ai-foundry",
+        "model": "kimi-k2",
+        "deployment": "kimi-k2-prod"
+      }
+    },
+    "review-fast": {
+      "interactive": {
+        "runtime": "claude-code",
+        "model": "claude-haiku-4-5"
+      },
+      "headless": {
+        "runtime": "opencode",
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5"
+      }
+    }
+  }
+}
+```
+
+The logical alias is the pipeline contract. Provider names, API endpoints, deployment names, and provider-specific credentials remain runtime configuration.
+
 ## Model inference
 
 Model inference is separate from Azure IaaS.
@@ -394,35 +476,66 @@ Model inference is separate from Azure IaaS.
 ### Interactive
 
 ```text
+provider-neutral model alias
+          |
+          v
+model registry
+          |
+          v
 Claude Code
-    |
-    v
+          |
+          v
 Claude model through the interactive Claude Code account
 ```
 
 ### Headless
 
 ```text
+provider-neutral model alias
+          |
+          v
+model registry
+          |
+          v
 OpenCode
-   |
-   +--> Anthropic API
-   |       `--> Claude model
-   |
-   `--> Azure AI Foundry
-           `--> configured model deployment
+   /          |          \
+  v           v           v
+Anthropic   Azure AI    Trustbolt
+ direct     Foundry
+  |           |           |
+  v           v           v
+Claude      Kimi /      routed
+models      other       models
+            models
 ```
 
 Claude Code is not nested beneath OpenCode.
 
-Existing pipeline model-selection semantics remain authoritative.
+OpenCode is the headless model-access abstraction. It invokes the provider/model resolved by the registry.
 
-## Azure AI Foundry
+## Model provider responsibilities
+
+### Anthropic direct
+
+Anthropic direct is a headless model-provider path used by OpenCode with provider credentials such as an Anthropic API key.
+
+It provides direct access to configured Claude models.
+
+### Azure AI Foundry
 
 Azure AI Foundry is a model inference provider, not the execution host.
 
-It provides model deployments, inference endpoints, model credentials, and provider/model usage telemetry.
+It provides model deployments, inference endpoints, model credentials, and provider/model usage telemetry. Its deployed model portfolio may include Kimi and other supported model families.
 
-It does not own pipeline sequencing, OpenCode execution, repository state, sandbox lifecycle, Azure VM placement, GitHub workflow state, or entitlement policy.
+It does not own pipeline sequencing, OpenCode execution, repository state, sandbox lifecycle, Azure IaaS placement, GitHub workflow state, or entitlement policy.
+
+### Trustbolt
+
+Trustbolt is a parallel model-access provider behind OpenCode.
+
+The same provider-neutral logical model aliases may be mapped to Trustbolt rather than Azure AI Foundry or Anthropic direct without changing `pipeline.json` or agent definitions.
+
+Trustbolt may route to underlying model providers while preserving the same OpenCode-facing provider boundary.
 
 ## Human approval gates
 
@@ -450,7 +563,7 @@ V3 adds attribution dimensions:
 execution_mode     = interactive | headless
 execution_runtime  = claude-code | opencode
 execution_host     = interactive | azure-iaas
-model_provider     = claude-code | anthropic | azure-ai-foundry
+model_provider     = claude-code | anthropic | azure-ai-foundry | trustbolt
 model              = concrete model/deployment identifier
 ```
 
@@ -472,8 +585,11 @@ V3 is complete when:
 - session scope and resume semantics remain compatible with the existing pipeline;
 - canonical entitlements are resolved once and rendered into the selected runtime;
 - Azure IaaS is used only for execution infrastructure;
+- pipeline model references are provider-neutral logical aliases;
+- the model registry resolves each alias to the concrete runtime/provider/model mapping;
 - Azure AI Foundry is used only as a model inference provider;
-- headless OpenCode can use Anthropic or Azure AI Foundry according to existing model selection;
+- Trustbolt is a parallel headless model-access provider;
+- headless OpenCode can use Anthropic direct, Azure AI Foundry, or Trustbolt according to the model registry;
 - human approval gates remain unchanged;
 - retries run in clean sandboxes and recover from durable state;
 - existing metrics logging, aggregation, reporting, and analysis continue without interruption.
