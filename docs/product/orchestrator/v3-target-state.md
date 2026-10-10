@@ -6,13 +6,15 @@ These invariants are mandatory for V3.
 
 1. **Reuse the existing agent definitions.** V3 executes the same agent definitions already held in the repository. Runtime adapters change invocation mechanics only; they do not create a second behavioral source of truth or fork agent instructions by runtime.
 
-2. **Reuse the existing pipeline process definitions.** V3 uses the same pipeline task definitions, dependencies, ordering, sequencing, gates, retries, review loops, terminal-state semantics, session semantics, and scripted steps already defined in the repository. Interactive and headless modes resolve the same next eligible step from the same process definition.
+2. **Preserve existing pipeline workflow semantics.** V3 retains the existing pipeline tasks, dependencies, ordering, sequencing, gates, retries, review loops, terminal-state semantics, session semantics, and scripted-step behavior. Interactive and headless modes resolve the same next eligible step from the same process definition. The deliberate pipeline configuration change in V3 is replacement of provider-specific model identifiers with provider-neutral logical model names.
 
-3. **Reuse the existing entitlement model.** V3 preserves the current canonical entitlement model for tool and action constraints. Runtime adapters translate resolved entitlements into Claude Code or OpenCode enforcement mechanisms without redefining policy.
+3. **Introduce provider-neutral logical model names.** V3 replaces provider-specific model identifiers in `pipeline.json` with logical model names such as `coding-primary` or `review-fast`. These logical names define the model role required by the pipeline and are resolved through a separate model registry to a concrete model exposed through Claude Code, Anthropic, Azure AI Foundry, Trustbolt, or another supported foundation-model provider or gateway. This allows model providers and gateways to change without altering pipeline workflow semantics or agent definitions.
 
-4. **Only the execution wrapper changes.** V3 does not redesign the AI Agile process. Pipeline state, agent behavior, lifecycle rules, standards and ADR selection, deterministic helpers, repository conventions, session behavior, scripted steps, and workflow semantics remain common. V3 introduces execution adapters, isolated headless sandboxes, and execution placement without changing product behavior.
+4. **Reuse the existing entitlement model.** V3 preserves the current canonical entitlement model for tool and action constraints. Runtime adapters translate resolved entitlements into Claude Code or OpenCode enforcement mechanisms without redefining policy.
 
-5. **Metrics logging and analysis continue seamlessly.** Existing metrics collection, logging, aggregation, reporting, and analysis continue across interactive Claude Code and headless OpenCode execution. Historical continuity is preserved and existing measures remain comparable across V2 and V3.
+5. **Only the execution wrapper and model-resolution abstraction change.** V3 does not redesign the AI Agile process. Pipeline state, agent behavior, lifecycle rules, standards and ADR selection, deterministic helpers, repository conventions, session behavior, scripted steps, and workflow semantics remain common. V3 introduces execution adapters, isolated headless sandboxes, and execution placement without changing product behavior.
+
+6. **Metrics logging and analysis continue seamlessly.** Existing metrics collection, logging, aggregation, reporting, and analysis continue across interactive Claude Code and headless OpenCode execution. Historical continuity is preserved and existing measures remain comparable across V2 and V3.
 
 These invariants take precedence over runtime-specific convenience.
 
@@ -394,7 +396,9 @@ Credentials are injected per sandbox and scoped to the execution. Sandboxes do n
 
 Pipeline definitions must not contain provider-specific model or deployment names.
 
-Each model-driven pipeline step references a provider-neutral logical model alias:
+V3 deliberately introduces **logical model names** to abstract pipeline behavior from concrete foundation-model providers and model gateways. A logical model name represents the role or capability expected by the pipeline, while the model registry resolves that logical name to the concrete provider, model, and deployment used in a given execution mode.
+
+Each model-driven pipeline step references a provider-neutral logical model name:
 
 ```json
 {
@@ -467,7 +471,9 @@ Example:
 }
 ```
 
-The logical alias is the pipeline contract. Provider names, API endpoints, deployment names, and provider-specific credentials remain runtime configuration.
+The logical model name is the pipeline contract. Provider names, concrete model identifiers, deployment names, API endpoints, and provider-specific credentials are resolved outside the pipeline definition.
+
+This abstraction allows the same pipeline step to move between Claude Code, Anthropic direct, Azure AI Foundry, Trustbolt, or another supported foundation-model provider or gateway without changing the pipeline workflow or agent definition.
 
 ## Model inference
 
@@ -585,7 +591,7 @@ V3 is complete when:
 - session scope and resume semantics remain compatible with the existing pipeline;
 - canonical entitlements are resolved once and rendered into the selected runtime;
 - Azure IaaS is used only for execution infrastructure;
-- pipeline model references are provider-neutral logical aliases;
+- pipeline model references are provider-neutral logical model names introduced specifically to abstract foundation-model providers and gateways;
 - the model registry resolves each alias to the concrete runtime/provider/model mapping;
 - Azure AI Foundry is used only as a model inference provider;
 - Trustbolt is a parallel headless model-access provider;
