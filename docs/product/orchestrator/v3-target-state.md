@@ -633,19 +633,55 @@ A failed sandbox is discarded. Retries start in a clean sandbox and reconstruct 
 
 The existing metrics pipeline remains canonical.
 
-V3 adds attribution dimensions:
+V3 must distinguish the model target selected by pipeline/runtime configuration from the concrete model actually used by the provider for each inference request. This distinction is required for routed providers and gateways such as Azure AI Foundry Model Router and Trustbolt, where the configured target may select a different underlying model at request time.
+
+Execution-level attribution includes:
 
 ```text
-execution_mode     = interactive | headless
-execution_runtime  = claude-code | opencode
-execution_host     = interactive | azure-iaas
-logical_model      = provider-neutral pipeline model name
-model_provider     = claude-code | anthropic | azure-ai-foundry | trustbolt
-model              = concrete model identifier
-model_deployment   = concrete deployment identifier where applicable
+execution_mode          = interactive | headless
+execution_runtime       = claude-code | opencode
+execution_host          = interactive | azure-iaas
+
+logical_model           = provider-neutral pipeline model name
+
+configured_provider     = claude-code | anthropic | azure-ai-foundry | trustbolt
+configured_model        = configured provider model or router target
+configured_deployment   = configured deployment identifier where applicable
+
+actual_providers_used   = distinct providers reported across inference requests
+actual_models_used      = distinct concrete models reported across inference requests
+primary_actual_model    = dominant/primary concrete model where meaningful
+model_switch_count      = number of actual-model changes during the execution
 ```
 
-Existing metrics retain their definitions and historical comparability.
+Each individual model inference request is also recorded with request-level attribution:
+
+```text
+execution_id
+request_id
+sequence
+logical_model
+
+configured_provider
+configured_model
+configured_deployment
+
+actual_provider
+actual_model
+actual_deployment
+
+input_tokens
+output_tokens
+latency
+cost
+provider_request_id
+```
+
+For direct, non-routed model calls, configured and actual model attribution will normally be identical. For provider-side routing, the configured model may be a router or gateway target while `actual_model` records the concrete underlying model reported for that request.
+
+If the provider does not expose the concrete model actually used, the actual-model fields remain unavailable rather than being inferred.
+
+Existing metrics retain their definitions and historical comparability. These additional fields extend attribution without creating a separate telemetry path.
 
 ## Target-state acceptance criteria
 
@@ -674,5 +710,6 @@ V3 is complete when:
 - retries run in clean sandboxes and recover only from durable state and explicitly persisted session artifacts;
 - sandbox network access prevents direct sibling or privileged host-management access;
 - the Azure IaaS host uses a host-level runner/control process rather than one GitHub runner per sandbox;
-- metrics capture logical model name, provider, concrete model, and deployment where applicable;
+- metrics capture the logical model name, configured provider/model/deployment, and the actual provider/model/deployment reported for each inference request;
+- execution-level metrics aggregate the distinct actual models used and model switches for routed executions;
 - existing metrics logging, aggregation, reporting, and analysis continue without interruption.
