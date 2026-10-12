@@ -12,6 +12,9 @@ changelog:
       - dependencies
       - ignore-for-release
   categories:
+    - title: Security
+      labels:
+        - "classification: security"
     - title: Features
       labels:
         - "classification: enhancement"
