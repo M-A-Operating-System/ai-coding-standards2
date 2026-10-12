@@ -22,12 +22,20 @@ An issue taken from description to shipped code: classify, write the PRD, publis
 
 Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment.
 
+### `01_product_docs/request-sizing`
+
+- **Kind:** script
+- **Phase:** `01_product_docs`
+- **Script:** `scripts/request-sizing.sh`
+
+Scripted step (issue #565): applies sizer:requested to the issue so the standalone 00_ondemand/sizer flow runs automatically before prd-writer, instead of leaving sizing to a human applying the label by hand. A lifecycle status label like sizer:requested is only the orchestrator's to write (pipeline/validate.py's lifecycle-label check forbids any agent's own allowed_labels from covering one), so this is a scripted step rather than something an agent requests directly. Idempotent.
+
 ### `01_product_docs/prd-writer`
 
 - **Kind:** agent
 - **Phase:** `01_product_docs`
 
-Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked.
+Drafts a Product Requirements Document for an appropriately-sized issue. Triggers on sizer:complete (issue #565) rather than issue-classifier:complete directly, so build never starts while sizing is pending or in progress -- request-sizing applies sizer:requested automatically, and the standalone 00_ondemand/sizer flow must reach a terminal outcome before this step becomes eligible. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked.
 
 ### `01_product_docs/create-docs-pr`
 
@@ -123,7 +131,7 @@ Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Qu
 - **Applies to:** kind `issue`
 - **Naming:** --
 
-On-demand sizing of an issue against a single development cycle, requested by a human applying a label. Decomposes a large issue into sub-issues and marks the parent epic; produces no commit, so this flow declares no naming.
+Sizing of an issue against a single development cycle, triggered by the sizer:requested label -- applied automatically by the standard-delivery flow's request-sizing step right after classification (issue #565), or manually by a human re-requesting sizing on an already-classified issue. Decomposes a large issue into sub-issues and marks the parent epic; produces no commit, so this flow declares no naming.
 
 ### `00_ondemand/sizer`
 

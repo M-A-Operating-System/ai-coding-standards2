@@ -34,7 +34,8 @@ authoritative and these tables are a view of it.
 | Step | Kind | Unit | Trigger | Depends on | Human gate |
 |---|---|---|---|---|---|
 | `01_product_docs/issue-classifier` | agent | `item` | event `issue.opened` | -- | -- |
-| `01_product_docs/prd-writer` | agent | `item` | `issue-classifier:complete` | `01_product_docs/issue-classifier` | `prd-writer:approved` |
+| `01_product_docs/request-sizing` | script | `item` | `issue-classifier:complete` | `01_product_docs/issue-classifier` | -- |
+| `01_product_docs/prd-writer` | agent | `item` | `sizer:complete` | `01_product_docs/request-sizing` | `prd-writer:approved` |
 | `01_product_docs/create-docs-pr` | script | `item` | `prd-writer:complete` | `01_product_docs/prd-writer` | -- |
 | `01_product_docs/prd-docs-updater` | agent | `item` | `create-docs-pr:complete` | `01_product_docs/create-docs-pr` | `prd-docs-updater:approved` |
 | `01_product_docs/merge-docs-pr` | script | `item` | `prd-docs-updater:complete` | `01_product_docs/prd-docs-updater` | -- |
@@ -49,6 +50,7 @@ authoritative and these tables are a view of it.
 | Step | Excluded classifications | Excluded labels | Max retries |
 |---|---|---|---|
 | `01_product_docs/issue-classifier` | -- | -- | `2` |
+| `01_product_docs/request-sizing` | -- | `blocked` | `1` |
 | `01_product_docs/prd-writer` | -- | `epic`, `blocked` | `2` |
 | `01_product_docs/create-docs-pr` | `spike` | `epic`, `blocked` | -- |
 | `01_product_docs/prd-docs-updater` | `spike` | `epic`, `blocked` | `2` |
@@ -64,6 +66,7 @@ authoritative and these tables are a view of it.
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
 | `01_product_docs/issue-classifier` | -- | -- | -- |
+| `01_product_docs/request-sizing` | -- | -- | -- |
 | `01_product_docs/prd-writer` | -- | -- | -- |
 | `01_product_docs/create-docs-pr` | -- | -- | `commit_after=false`, `commits_to="docs"` |
 | `01_product_docs/prd-docs-updater` | `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)` | -- | `commit_after=true`, `commits_to="docs"` |

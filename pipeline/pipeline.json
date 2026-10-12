@@ -132,21 +132,37 @@
         },
 
         {
-          "agent": "01_product_docs/prd-writer",
+          "agent": "01_product_docs/request-sizing",
+          "type": "script",
+          "script": "scripts/request-sizing.sh",
           "phase": "01_product_docs",
           "trigger": {
             "label": "issue-classifier:complete"
           },
+          "human_gate_after": false,
+          "dependencies": ["01_product_docs/issue-classifier"],
+          "max_retries": 1,
+          "exclude_labels": ["blocked"],
+          "expected_effect": { "commits": false },
+          "description": "Scripted step (issue #565): applies sizer:requested to the issue so the standalone 00_ondemand/sizer flow runs automatically before prd-writer, instead of leaving sizing to a human applying the label by hand. A lifecycle status label like sizer:requested is only the orchestrator's to write (pipeline/validate.py's lifecycle-label check forbids any agent's own allowed_labels from covering one), so this is a scripted step rather than something an agent requests directly. Idempotent."
+        },
+
+        {
+          "agent": "01_product_docs/prd-writer",
+          "phase": "01_product_docs",
+          "trigger": {
+            "label": "sizer:complete"
+          },
           "human_gate_after": true,
           "human_gate_label": "prd-writer:approved",
-          "dependencies": ["01_product_docs/issue-classifier"],
+          "dependencies": ["01_product_docs/request-sizing"],
           "max_retries": 2,
           "session": { "scope": "per_issue" },
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 45 },
           "expected_effect": { "commits": false },
-          "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked."
+          "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Triggers on sizer:complete (issue #565) rather than issue-classifier:complete directly, so build never starts while sizing is pending or in progress -- request-sizing applies sizer:requested automatically, and the standalone 00_ondemand/sizer flow must reach a terminal outcome before this step becomes eligible. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked."
         },
 
         {
@@ -404,7 +420,7 @@
     },
 
     "sizer": {
-      "description": "On-demand sizing of an issue against a single development cycle, requested by a human applying a label. Decomposes a large issue into sub-issues and marks the parent epic; produces no commit, so this flow declares no naming.",
+      "description": "Sizing of an issue against a single development cycle, triggered by the sizer:requested label -- applied automatically by the standard-delivery flow's request-sizing step right after classification (issue #565), or manually by a human re-requesting sizing on an already-classified issue. Decomposes a large issue into sub-issues and marks the parent epic; produces no commit, so this flow declares no naming.",
       "trigger": {
         "kind": "issue"
       },
