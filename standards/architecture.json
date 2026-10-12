@@ -392,19 +392,20 @@
     },
     {
       "id": "STD-ARCH-029",
-      "title": "Deployment environments use the fixed names PROD, BETA, TEST, DEV, TEMP",
-      "description": "Every deployment environment is named from a single fixed vocabulary of five upper-case tiers: PROD (production -- the live, user-facing environment; the only tier that serves real users and holds real production data), BETA (pre-production/staging -- a production-like environment for release-candidate validation and acceptance before promotion to PROD), TEST (integration and QA -- where automated and manual test suites run against integrated services), DEV (development -- the shared, expected-unstable environment for in-progress work), and TEMP (ephemeral -- short-lived throwaway environments such as per-branch previews or experiments, provisioned on demand and torn down automatically). Environment identifiers in configuration, infrastructure code, hostnames, variable names, and secret scopes use one of these five names. Ad-hoc synonyms (staging, uat, qa, preprod, prod2, sandbox, local) are not introduced, and a tier beyond the five requires a deliberate decision recorded in an ADR.",
-      "rationale": "A single fixed environment vocabulary makes every deploy target, config key, hostname, and secret scope unambiguous across services and tooling; ad-hoc synonyms (staging vs uat vs preprod) fragment configuration and cause the wrong environment to be targeted.",
+      "title": "Deployment environments use the fixed names LIVE, BETA, TEST, DEV, EPH",
+      "description": "Every deployment environment is named from a single fixed vocabulary of five upper-case tiers: LIVE (live code and data -- the production, user-facing environment; subject to PII and compliance controls), BETA (early-access capability -- live data and real users, subject to the same PII and compliance controls as LIVE, used for controlled early release ahead of general availability), TEST (test code and test data -- deployed and running, where automated and manual test suites run against integrated services), DEV (the constantly-iterating development environment -- shared and expected-unstable, for in-progress work), and EPH (ephemeral -- temporary test environments built on demand, such as per-branch previews or experiments, torn down automatically). Environment identifiers in configuration, infrastructure code, hostnames, variable names, and secret scopes use one of these five names. Ad-hoc synonyms (staging, uat, qa, preprod, prod, temp, prod2, sandbox, local) are not introduced, and a tier beyond the five requires a deliberate decision recorded in an ADR.",
+      "rationale": "A single fixed environment vocabulary makes every deploy target, config key, hostname, and secret scope unambiguous across services and tooling; ad-hoc synonyms (staging vs uat vs preprod) fragment configuration and cause the wrong environment to be targeted. Naming BETA and LIVE as the two tiers subject to PII and compliance controls keeps data-protection obligations attached to the environment name itself, not left to tribal knowledge.",
       "acceptance_criteria": [
-        "New or renamed deployment environments in the diff use exactly one of PROD, BETA, TEST, DEV, TEMP (upper-case).",
-        "Environment identifiers in configuration, infrastructure code, hostnames, and secret scopes in the diff draw from the same five-name vocabulary, not ad-hoc synonyms (staging, uat, qa, prod2, sandbox).",
-        "Only PROD serves real users and holds real production data; lower tiers do not point at production resources.",
+        "New or renamed deployment environments in the diff use exactly one of LIVE, BETA, TEST, DEV, EPH (upper-case).",
+        "Environment identifiers in configuration, infrastructure code, hostnames, and secret scopes in the diff draw from the same five-name vocabulary, not ad-hoc synonyms (staging, uat, qa, prod, temp, prod2, sandbox).",
+        "LIVE and BETA are the two tiers that hold real user data and are subject to PII and compliance controls; TEST, DEV, and EPH do not hold real user or production data.",
         "A tier outside the five, or a synonym for an existing tier, is introduced only under a referenced ADR."
       ],
       "anti_patterns": [
-        "Naming an environment `staging` or `uat` instead of `BETA`.",
-        "Introducing `prod2`, `qa1`, or `sandbox` as a parallel environment name.",
-        "Using lower-case or mixed-case environment names (`Prod`, `dev-env`) inconsistently across services."
+        "Naming an environment `staging`, `uat`, or `prod` instead of `BETA` or `LIVE`.",
+        "Introducing `prod2`, `qa1`, `sandbox`, or `temp` as a parallel environment name.",
+        "Using lower-case or mixed-case environment names (`Live`, `dev-env`) inconsistently across services.",
+        "Treating BETA as safe for synthetic-only data now that it holds real users and PII."
       ],
       "adr_overridable": true,
       "applies_to": [
@@ -415,12 +416,12 @@
     {
       "id": "STD-ARCH-030",
       "title": "Cloud resources follow a consistent, type-encoded naming convention",
-      "description": "Every cloud resource is named `{app}-{sub-app}-{code}[-{env}][-{region}][-{instance}]`, where `{sub-app}`, `{env}`, `{region}`, and `{instance}` are optional and `{code}` is the resource type's official provider abbreviation, upper-cased (Azure: the Cloud Adoption Framework resource abbreviations; AWS and Google Cloud: their equivalent resource-type conventions). `{env}` is the STD-ARCH-029 environment identifier and its ABSENCE means production (PROD); `{region}` is an approved region code (STD-ARCH-032), omitted for global or single-region resources; `{instance}` is a zero-padded number (e.g. 001) for scaled-out or duplicate resources. On Azure the resource group (the grouping construct) is named `{app}-RG[-{region}][-{env}]`. Segments are hyphen-delimited and a given resource type always uses the same `{code}`. Where a provider's rules for a resource type forbid hyphens or upper-case or cap length (e.g. Azure storage accounts, AWS S3 / Google Cloud Storage buckets: lower-case, no hyphens, globally unique, length-limited), the name uses that type's valid compacted/lower-cased form of the same components. Reference the provider's official abbreviation list rather than reproducing it.",
+      "description": "Every cloud resource is named `{app}-{sub-app}-{code}[-{env}][-{region}][-{instance}]`, where `{sub-app}`, `{env}`, `{region}`, and `{instance}` are optional and `{code}` is the resource type's official provider abbreviation, upper-cased (Azure: the Cloud Adoption Framework resource abbreviations; AWS and Google Cloud: their equivalent resource-type conventions). `{env}` is the STD-ARCH-029 environment identifier and its ABSENCE means production (LIVE); `{region}` is an approved region code (STD-ARCH-032), omitted for global or single-region resources; `{instance}` is a zero-padded number (e.g. 001) for scaled-out or duplicate resources. On Azure the resource group (the grouping construct) is named `{app}-RG[-{region}][-{env}]`. Segments are hyphen-delimited and a given resource type always uses the same `{code}`. Where a provider's rules for a resource type forbid hyphens or upper-case or cap length (e.g. Azure storage accounts, AWS S3 / Google Cloud Storage buckets: lower-case, no hyphens, globally unique, length-limited), the name uses that type's valid compacted/lower-cased form of the same components. Reference the provider's official abbreviation list rather than reproducing it.",
       "rationale": "A predictable, type-encoded naming scheme makes ownership, environment, region, and resource type readable at a glance across every provider's console, infrastructure-as-code, cost reports, and alerts, and lets automation target resources by pattern.",
       "acceptance_criteria": [
         "Any cloud resource defined or renamed in the diff is named `{app}-{sub-app}-{code}[-{env}][-{region}][-{instance}]` (e.g. `payments-web-KV`, `payments-ACS-DEV`, `payments-web-VM-DEV-EUS2-001`); an Azure resource group is `{app}-RG[-{region}][-{env}]` (e.g. `payments-RG`, `payments-RG-DEV`).",
         "The `{code}` segment is the resource type's official provider abbreviation, upper-cased -- for Azure take it from the CAF resource-abbreviations reference (https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-abbreviations); do not invent ad-hoc codes -- and a resource of a given type always uses the same `{code}`.",
-        "`{env}` uses the STD-ARCH-029 vocabulary and its absence means PROD; `{region}` uses STD-ARCH-032; `{instance}` is a zero-padded number. Omitted optional segments stay unambiguous (env vocabulary, region codes, and numeric instance do not overlap).",
+        "`{env}` uses the STD-ARCH-029 vocabulary and its absence means LIVE; `{region}` uses STD-ARCH-032; `{instance}` is a zero-padded number. Omitted optional segments stay unambiguous (env vocabulary, region codes, and numeric instance do not overlap).",
         "Where the provider forbids hyphens or upper-case or caps length for a resource type (Azure storage account, S3 / Cloud Storage bucket, Key Vault, etc.), the name is a valid compacted form of the same components, not an invalid one."
       ],
       "anti_patterns": [
@@ -438,13 +439,13 @@
     {
       "id": "STD-ARCH-031",
       "title": "Cloud resources carry a mandatory core tag or label set",
-      "description": "Every cloud resource carries a core set of governance metadata -- tags on Azure and AWS, labels on Google Cloud: `Environment` (the STD-ARCH-029 identifier, or PROD when the name has no environment segment), `ApplicationName` (the owning application or service), `Owner` (accountable team or email), `CostCenter` (chargeback code), `Criticality` (business criticality), and `DataClassification` (e.g. Public/Internal/Confidential/Restricted). Keys and values are spelled and cased consistently per the provider's rules (note Google Cloud labels require lower-case keys and values and a restricted character set). Tags and labels never contain secrets, credentials, or personal data, since they surface in reports and logs. Follow each provider's tagging or labelling guidance (Azure CAF tagging, AWS tagging best practices, Google Cloud labels) rather than reproducing it here.",
+      "description": "Every cloud resource carries a core set of governance metadata -- tags on Azure and AWS, labels on Google Cloud: `Environment` (the STD-ARCH-029 identifier, or LIVE when the name has no environment segment), `ApplicationName` (the owning application or service), `Owner` (accountable team or email), `CostCenter` (chargeback code), `Criticality` (business criticality), and `DataClassification` (e.g. Public/Internal/Confidential/Restricted). Keys and values are spelled and cased consistently per the provider's rules (note Google Cloud labels require lower-case keys and values and a restricted character set). Tags and labels never contain secrets, credentials, or personal data, since they surface in reports and logs. Follow each provider's tagging or labelling guidance (Azure CAF tagging, AWS tagging best practices, Google Cloud labels) rather than reproducing it here.",
       "rationale": "Consistent metadata makes cost allocation, ownership, incident routing, compliance, and lifecycle automation possible across every provider and subscription; a mandatory core set prevents untagged, unattributable resources.",
       "acceptance_criteria": [
         "Any cloud resource defined in the diff sets at least the core metadata -- Environment, ApplicationName, Owner, CostCenter, Criticality, DataClassification -- as tags on Azure/AWS or labels on Google Cloud.",
         "Keys and values are consistent and conform to the provider's rules (e.g. Google Cloud labels are lower-case); DataClassification is one of the documented values (Public/Internal/Confidential/Restricted).",
         "No tag or label key or value contains a secret, credential, password, or personal data.",
-        "The Environment metadata is consistent with the name: a resource with no naming `{env}` segment is tagged/labelled Environment=PROD."
+        "The Environment metadata is consistent with the name: a resource with no naming `{env}` segment is tagged/labelled Environment=LIVE."
       ],
       "anti_patterns": [
         "A resource created with no tags/labels, or missing one of the core keys.",
@@ -557,6 +558,31 @@
         "A deploy or migration script that only supports running for real, with 'test it in staging first' as the sole safety net.",
         "A --dry-run flag that exists but silently performs a subset of the real writes anyway.",
         "A bulk-delete, cleanup, or reclamation job added with no way to preview what it would remove before it removes it."
+      ],
+      "adr_overridable": true,
+      "applies_to": [
+        "coder",
+        "pr-reviewer"
+      ]
+    },
+    {
+      "id": "STD-ARCH-037",
+      "related": ["STD-ARCH-029", "STD-SEC-013"],
+      "title": "Repo environment/secret names follow STD-ARCH-029; secrets match their own tier",
+      "description": "Every CI/CD-platform environment construct used in a repository (e.g. GitHub Environments, GitLab environments, Azure DevOps environments) is named using the STD-ARCH-029 vocabulary (LIVE, BETA, TEST, DEV, EPH), not an ad-hoc name. Secrets and variables are scoped to the specific environment they belong to using the platform's native per-environment scoping, rather than defined once at the repository level and reused unconditionally across every job regardless of target tier. A secret or variable with the same logical name (e.g. DATABASE_URL, API_KEY) holds a different, tier-appropriate value in each environment it is defined for: the LIVE environment's value points at LIVE's own backing resources, and BETA/TEST/DEV/EPH each point at their own tier's resources -- never at another tier's. No secret value is shared verbatim across two different-tier environments unless an ADR records a deliberate, reviewed exception.",
+      "rationale": "Ad-hoc or inconsistent environment/secret naming hides which tier a given secret feeds, and reusing one secret value across tiers (or copying a LIVE credential into a lower tier for convenience) silently grants a lower-trust environment access to production data and PII-bearing systems -- defeating STD-ARCH-029's point of keeping LIVE and BETA separately controlled from TEST, DEV, and EPH. Centralizing naming on one vocabulary and scoping secrets per environment makes misconfiguration visible at review time instead of discovered via a leak.",
+      "acceptance_criteria": [
+        "Any CI/CD platform environment defined or referenced in the diff is named using the STD-ARCH-029 vocabulary (LIVE, BETA, TEST, DEV, EPH), not an ad-hoc name (staging, production, prod, temp, etc.).",
+        "A secret or variable needed by more than one tier is defined once per environment via the platform's native per-environment scoping, not once at the repository/organization level and reused unconditionally across every job regardless of target tier.",
+        "Where the diff adds or changes a secret/variable for a given environment, its value is sourced from that environment's own backing resource, not copied from another tier's value.",
+        "No secret value is shared verbatim across two different-tier environments in the diff, unless an ADR records the exception.",
+        "Workflow/pipeline files referencing an environment by name use the exact STD-ARCH-029 vocabulary, so the mapping from CI environment to deployment tier is unambiguous."
+      ],
+      "anti_patterns": [
+        "Defining a single repo-level secret (e.g. DATABASE_URL) with no per-environment scoping, then branching workflow logic on which literal value to use for each tier.",
+        "Copying a LIVE credential into a BETA, TEST, DEV, or EPH environment 'temporarily' to unblock testing.",
+        "Naming a CI/CD environment `staging`, `production`, `prod`, or `temp` instead of the STD-ARCH-029 names.",
+        "Two environments (e.g. BETA and LIVE) resolving to the same backing database, API key, or other credential."
       ],
       "adr_overridable": true,
       "applies_to": [
