@@ -63,15 +63,10 @@ def _raw_pipeline() -> dict:
 
 
 def _raw_steps(raw: dict) -> dict:
-    """{(flow_name, agent_name): raw step entry}, across every flow.
-
-    Keyed by (flow, agent) to handle the same agent appearing in multiple
-    flows (e.g. 00_ondemand/sizer is a step in both standard-delivery and its
-    own standalone sizer flow, with different triggers for each role).
-    """
+    """{step name: its raw pipeline.json entry}, across every flow."""
     return {
-        (flow_name, step["agent"]): step
-        for flow_name, flow in raw["flows"].items()
+        step["agent"]: step
+        for flow in raw["flows"].values()
         for step in flow["steps"]
     }
 
@@ -205,7 +200,7 @@ class TestAS1OneFileTellsYouWhatThePipelineDoes:
                 agent_text_override="# stand-in agent body",
                 default_extra_tools=default_extra_tools,
             )
-            raw_step = raw_steps[(agent_def.flow, agent_def.agent)]
+            raw_step = raw_steps[agent_def.agent]
             expected = list(dict.fromkeys(
                 list(raw_defaults)
                 + default_group_patterns
@@ -223,7 +218,7 @@ class TestAS1OneFileTellsYouWhatThePipelineDoes:
         agents, _ = loaded
         raw_steps = _raw_steps(_raw_pipeline())
         for agent_def in agents:
-            raw = raw_steps[(agent_def.flow, agent_def.agent)]
+            raw = raw_steps[agent_def.agent]
             assert agent_def.trigger == raw["trigger"]
             assert agent_def.dependencies == raw.get("dependencies", [])
             assert agent_def.expected_effect == dict(raw.get("expected_effect") or {})
@@ -541,7 +536,7 @@ class TestAS2TheOrchestratorOnlyCoordinates:
 
     def test_the_orchestrator_names_no_step_of_its_own(self):
         """A step the orchestrator's code names is a step it is coupled to."""
-        names = {agent for (_flow, agent) in _raw_steps(_raw_pipeline())}
+        names = set(_raw_steps(_raw_pipeline()))
         shorts = {n.split("/")[-1] for n in names}
         offenders = []
         for value in _behavioural_string_constants(ORCHESTRATOR_TREE):
@@ -1171,7 +1166,7 @@ class TestMI5TheResultDoesNotDependOnWhoWasWatching:
         lifecycle = raw["defaults"]["agent_lifecycle"]
         raw_steps = _raw_steps(raw)
         for agent_def in agents:
-            assert agent_def.post_steps == list(raw_steps[(agent_def.flow, agent_def.agent)].get("post_steps", []))
+            assert agent_def.post_steps == list(raw_steps[agent_def.agent].get("post_steps", []))
             if agent_def.step_type == "agent":
                 assert agent_def.lifecycle_before == list(lifecycle.get("before", []))
                 assert agent_def.lifecycle_after == list(lifecycle.get("after", []))
