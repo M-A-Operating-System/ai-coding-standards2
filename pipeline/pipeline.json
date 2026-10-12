@@ -132,14 +132,37 @@
         },
 
         {
-          "agent": "01_product_docs/prd-writer",
-          "phase": "01_product_docs",
+          "agent": "00_ondemand/sizer",
+          "phase": "00_ondemand",
           "trigger": {
             "label": "issue-classifier:complete"
           },
           "human_gate_after": true,
-          "human_gate_label": "prd-writer:approved",
+          "human_gate_label": "sizer:approved",
+          "self_gates": true,
           "dependencies": ["01_product_docs/issue-classifier"],
+          "max_retries": 1,
+          "session": { "scope": "per_issue" },
+          "extra_allowedTools": [
+            "Bash(gh issue create *)",
+            "Bash(gh api *)"
+          ],
+          "model": "claude-sonnet-4-6",
+          "expected_effect": { "commits": false, "creates_issues": true },
+          "allowed_labels": { "add": ["epic", "blocked"] },
+          "exclude_labels": ["blocked"],
+          "description": "Sizing gate in standard-delivery (issue #565): evaluates whether the issue fits a single development cycle before any build-affecting step runs. Small issues get a sizing note and emit sizer:complete directly (self_gates: true), letting prd-writer advance without a gate label. Large issues are decomposed into ordered sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown at the sizer:approved gate. Once the human approves, emits sizer:complete -- prd-writer's exclude_labels then blocks it on epic issues so standard-delivery stops there for decomposed parents."
+        },
+
+        {
+          "agent": "01_product_docs/prd-writer",
+          "phase": "01_product_docs",
+          "trigger": {
+            "label": "sizer:complete"
+          },
+          "human_gate_after": true,
+          "human_gate_label": "prd-writer:approved",
+          "dependencies": ["00_ondemand/sizer"],
           "max_retries": 2,
           "session": { "scope": "per_issue" },
           "exclude_labels": ["epic", "blocked"],

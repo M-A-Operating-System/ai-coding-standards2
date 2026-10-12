@@ -22,6 +22,13 @@ An issue taken from description to shipped code: classify, write the PRD, publis
 
 Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment.
 
+### `00_ondemand/sizer`
+
+- **Kind:** agent
+- **Phase:** `00_ondemand`
+
+Sizing gate in standard-delivery (issue #565): evaluates whether the issue fits a single development cycle before any build-affecting step runs. Small issues get a sizing note and emit sizer:complete directly (self_gates: true), letting prd-writer advance without a gate label. Large issues are decomposed into ordered sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown at the sizer:approved gate. Once the human approves, emits sizer:complete -- prd-writer's exclude_labels then blocks it on epic issues so standard-delivery stops there for decomposed parents.
+
 ### `01_product_docs/prd-writer`
 
 - **Kind:** agent
