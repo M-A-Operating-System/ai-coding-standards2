@@ -85,3 +85,15 @@
 **Given** the ownership conformance tests have been added to the test suite
 **When** a new pipeline-runtime script is placed under `.github/scripts/` rather than `scripts/`
 **Then** the conformance test suite fails with a path-ownership violation message
+
+## Scenario: build-affecting steps blocked while sizer is pending or in progress
+
+**Given** an issue has been classified (a `classification: *` label is present) and sizer has not yet reached a terminal outcome
+**When** the pipeline orchestrator evaluates which standard-delivery steps are eligible to run
+**Then** all build-affecting standard-delivery steps from prd-writer onward are ineligible to run
+
+## Scenario: issue flows through standard-delivery after sizer pass-through
+
+**Given** an issue has been classified and sizer has determined it fits one development cycle (sizer reached a terminal outcome without applying the `epic` label)
+**When** the pipeline orchestrator evaluates which standard-delivery steps are eligible next
+**Then** prd-writer becomes eligible and the issue proceeds through standard-delivery without added waiting
