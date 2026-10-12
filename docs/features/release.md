@@ -46,3 +46,15 @@
 **Given** a maintainer manually pushes a v(X+1).0.0 annotated tag to the repository
 **When** the release workflow's push-tags trigger fires
 **Then** a GitHub Release is published for that tag and no workflow has automatically computed or pushed a new MAJOR version tag
+
+## Scenario: Security-classified PR appears under Security heading
+
+**Given** `.github/release.yml` includes a `Security` category matching the label `classification: security`
+**When** a PR carrying `classification: security` is included in a release
+**Then** the PR appears under the `Security` heading in the generated release notes
+
+## Scenario: Existing category mappings are unchanged
+
+**Given** `.github/release.yml` has been updated to add the `Security` category
+**When** PRs carrying `classification: enhancement`, `classification: bug`, or `classification: tech-debt` are included in a release
+**Then** each PR appears under its existing category heading (`Features`, `Fixes`, `Maintenance` respectively), unchanged
