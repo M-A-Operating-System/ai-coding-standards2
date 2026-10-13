@@ -33,10 +33,8 @@ The repository remains the authority for agent definitions, task dependencies, s
 
 For the detailed product contract, see the [orchestrator product](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/PRODUCT.md) and [V3 runtime target state](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/v3-target-state.md) proposal.
 
-## Context for this positioning
+## Why this repository takes this approach
 
-Lougarou's September 15, 2026 article, "A better way to manage your engineering team (AI SDLC)," argues for observing agent work, verifying output and measuring process changes. Its author discloses working on Capacitor at Kurrent. It is an industry perspective, not independent validation of AI Agile.
-
-AI Agile is one approach to those management needs through a governed delivery workflow. This page describes its own product mechanisms; it does not claim feature parity with Capacitor, integration with that product or endorsement by the article's author.
+Observing agent work, verifying its output and measuring process changes are goals of this repository, not an add-on. AI Agile is one approach to those management needs through a governed delivery workflow, and this page describes its own product mechanisms.
 
 Continue with [AI Agile's objectives](objectives.md) and the [product overview](index.md).

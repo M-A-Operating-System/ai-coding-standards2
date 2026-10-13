@@ -22,12 +22,12 @@ MkDocs generates static, anonymously accessible HTML with descriptive page title
 
 Google's guidance says its AI search experiences build on ordinary search eligibility and useful, reliable content. No special AI schema or llms.txt file guarantees inclusion. This proposal deliberately uses normal HTML and a sitemap rather than presenting a crawler hint as a ranking mechanism. Other AI services apply their own retrieval/indexing policies; public access does not guarantee their inclusion.
 
-Keep implemented capabilities and target designs distinct. Public pages link to current product/implementation sources and label V3 as proposed. Do not publish unsupported speed/cost improvements, adoption statistics, customer endorsements or feature comparisons. External articles are context, not product validation.
+Keep implemented capabilities and target designs distinct. Public pages link to current product/implementation sources and label V3 as proposed. Do not publish unsupported speed/cost improvements, adoption statistics, customer endorsements or feature comparisons. Do not attribute the repository's own goals or positioning to third-party articles or authors.
 
 ## Evidence and maintenance
 
 Track whether key pages are indexed, relevant search queries/impressions/clicks where accessible, referring links and inaccuracies in AI-generated descriptions. Record observations with dates and actual URLs. Do not report ranking, traffic or AI citation improvements without measurements.
 
-The engineering-management page references Lougarou's AI SDLC article as industry context and discloses the author's product affiliation. Its framing does not make AI Agile an implementation of Capacitor or assert feature parity.
+The engineering-management page states observing agent work, verifying output and measuring process changes as this repository's own goals, without attributing them to any third-party source.
 
 Primary guidance: [Google Search Essentials](https://developers.google.com/search/docs/essentials), [Google AI optimization](https://developers.google.com/search/docs/fundamentals/ai-optimization-guide), [sitemaps](https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap), [GitHub Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages) and [MkDocs configuration](https://www.mkdocs.org/user-guide/configuration/).
