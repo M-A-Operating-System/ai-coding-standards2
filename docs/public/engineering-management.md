@@ -35,7 +35,7 @@ For the detailed product contract, see the [orchestrator product](https://github
 
 ## Context for this positioning
 
-Lougarou's September 15, 2026 article, [A better way to manage your engineering team (AI SDLC)](https://medium.com/@yogisawesome/a-better-way-to-manage-your-engineering-team-ai-sdlc-988f9c5468c1), argues for observing agent work, verifying output and measuring process changes. Its author discloses working on Capacitor at Kurrent. It is an industry perspective, not independent validation of AI Agile.
+Lougarou's September 15, 2026 article, "A better way to manage your engineering team (AI SDLC)," argues for observing agent work, verifying output and measuring process changes. Its author discloses working on Capacitor at Kurrent. It is an industry perspective, not independent validation of AI Agile.
 
 AI Agile is one approach to those management needs through a governed delivery workflow. This page describes its own product mechanisms; it does not claim feature parity with Capacitor, integration with that product or endorsement by the article's author.
 
