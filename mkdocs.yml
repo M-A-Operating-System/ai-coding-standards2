@@ -4,7 +4,7 @@ site_author: "M&A Operating System"
 site_url: "https://m-a-operating-system.github.io/ai-coding-standards2/"
 repo_url: "https://github.com/M-A-Operating-System/ai-coding-standards2"
 repo_name: "ai-coding-standards2"
-edit_uri: "blob/main/docs/public/"
+edit_uri: "edit/main/docs/public/"
 docs_dir: "docs/public"
 site_dir: "site"
 theme:

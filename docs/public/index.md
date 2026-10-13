@@ -27,7 +27,7 @@ AI Agile is a workflow and standards framework. It does not claim to record ever
 
 The current framework's authoritative behavior is documented in the [orchestrator product](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/PRODUCT.md), [lifecycle](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/lifecycle.md) and [pipeline configuration](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/pipeline/pipeline.json).
 
-V3 is a proposed runtime extension in [PR 553](https://github.com/M-A-Operating-System/ai-coding-standards2/pull/553). It preserves agent definitions, pipeline tasks/dependencies/sequence and canonical entitlements while changing the execution wrapper and model-resolution boundary. Interactive Claude Code and headless OpenCode are intended to share the same process. Provider/model attribution and model-specific cost comparisons described for V3 are target capabilities until implemented and released.
+V3 is a proposed runtime extension described in the [V3 runtime target state](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/v3-target-state.md) design. It preserves agent definitions, pipeline tasks/dependencies/sequence and canonical entitlements while changing the execution wrapper and model-resolution boundary. Interactive Claude Code and headless OpenCode are intended to share the same process. Provider/model attribution and model-specific cost comparisons described for V3 are target capabilities until implemented and released.
 
 ## Get started
 
