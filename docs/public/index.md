@@ -25,10 +25,12 @@ AI Agile is a workflow and standards framework. It does not claim to record ever
 
 ## Current framework and V3 target
 
-The current framework's authoritative behavior is documented in the repository's own product and pipeline definitions.
+The current framework's authoritative behavior is documented in the [orchestrator product](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/PRODUCT.md), [lifecycle](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/lifecycle.md) and [pipeline configuration](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/pipeline/pipeline.json).
 
-V3 is a proposed runtime extension. It preserves agent definitions, pipeline tasks/dependencies/sequence and canonical entitlements while changing the execution wrapper and model-resolution boundary. Interactive Claude Code and headless OpenCode are intended to share the same process. Provider/model attribution and model-specific cost comparisons described for V3 are target capabilities until implemented and released.
+V3 is a proposed runtime extension described in the [V3 runtime target state](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/v3-target-state.md) design. It preserves agent definitions, pipeline tasks/dependencies/sequence and canonical entitlements while changing the execution wrapper and model-resolution boundary. Interactive Claude Code and headless OpenCode are intended to share the same process. Provider/model attribution and model-specific cost comparisons described for V3 are target capabilities until implemented and released.
 
 ## Get started
 
-Review the repository's quick start, onboarding guide and installation instructions before adopting the framework. The current installation restrictions apply; public documentation does not mean the execution pipeline is suitable for untrusted public issue submissions.
+Read the [quick start](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/quick-start.md), [onboarding guide](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/16-onboarding.md) and [repository installation instructions](https://github.com/M-A-Operating-System/ai-coding-standards2#using-this-repo). The current installation restrictions apply; public documentation does not mean the execution pipeline is suitable for untrusted public issue submissions.
+
+Source and implementation: [M-A-Operating-System/ai-coding-standards2](https://github.com/M-A-Operating-System/ai-coding-standards2).
