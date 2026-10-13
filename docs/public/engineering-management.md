@@ -31,7 +31,7 @@ Changes to agent prompts, standards, model mappings and process definitions shou
 
 The repository remains the authority for agent definitions, task dependencies, sequencing and entitlements. Runtime adapters implement that contract; they do not redefine it. This lets a team evaluate an execution engine or model without also changing the workflow and invalidating the comparison.
 
-For the detailed product contract, see the [orchestrator product](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/PRODUCT.md) and [V3 runtime target state](https://github.com/M-A-Operating-System/ai-coding-standards2/blob/main/docs/product/orchestrator/v3-target-state.md) proposal.
+The detailed product contract and the V3 proposal are maintained in the repository's own product documentation.
 
 ## Context for this positioning
 
