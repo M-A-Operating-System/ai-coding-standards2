@@ -31,3 +31,6 @@ aicodingstandardsandprocess.zip
 
 # one-off agent cleanup scripts (not source, never committed)
 cleanup_temp_files.py
+
+# Generated public documentation (MkDocs)
+/site/

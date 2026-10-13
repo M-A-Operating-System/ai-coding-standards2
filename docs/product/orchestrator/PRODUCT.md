@@ -27,6 +27,23 @@ engineering judgement, only the repetitive work around it.
 
 ---
 
+## Engineering-management objectives
+
+AI-assisted delivery needs a shared record of intended outcomes, agent work, verification and decisions. AI Agile's objective is to let engineering teams manage that work through one governed lifecycle, even when coding runtimes and foundation models change.
+
+| Management need | AI Agile response | Evidence available to the team |
+| --- | --- | --- |
+| Understand what agents are doing | Shared GitHub work items and deterministic routing through declared dependencies | Stage state, linked artifacts, blocking reasons and audit events |
+| Check that the result meets intent | Product-led requirements, CI/test evidence and standards-based review | Acceptance criteria, code changes, review findings and verification outcomes |
+| Keep responsibility clear | Canonical entitlements and the existing human approval gates | Allowed activities and attributable approval records |
+| Improve the delivery process | Execution metrics and reviewed tuning of prompts, standards and workflow | Comparable duration, outcomes, rework and reported cost where captured |
+
+Managers should be able to inspect progress and decisions without relying on a private agent conversation. That is different from claiming complete session capture: the framework does not promise every local transcript or a separate session analytics dashboard. Tests and reviews supply evidence rather than a guarantee that all defects are detected. Cost and token measures inform process improvement; they are not individual productivity rankings.
+
+The [public product overview](../../public/index.md), [engineering-management explanation](../../public/engineering-management.md) and [product objectives](../../public/objectives.md) explain this positioning. Exact behavior remains authoritative here, in pipeline configuration, agent definitions and the implementation. V3 model/runtime comparison capabilities remain target-state proposals until released.
+
+---
+
 ## Personas
 
 Six people, and one automated role, use AI Agile, each at a different

@@ -1,0 +1,59 @@
+name: Public product documentation
+
+on:
+  pull_request:
+    paths: ['docs/public/**', 'docs/theme/**', 'mkdocs.yml', 'requirements-docs.txt', '.github/workflows/public-docs.yml']
+  push:
+    branches: [main]
+    paths: ['docs/public/**', 'docs/theme/**', 'mkdocs.yml', 'requirements-docs.txt', '.github/workflows/public-docs.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-docs.txt
+      - run: mkdocs build --strict
+      - name: Check public HTML and sitemap
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          import re
+          for name in ('index.html', 'engineering-management/index.html', 'objectives/index.html'):
+              text = (Path('site') / name).read_text()
+              assert '<h1' in text and 'rel="canonical"' in text, name
+              assert re.search(r'<meta name="description" content="[^"]+', text), name
+              assert 'noindex' not in text, name
+          root = ElementTree.parse('site/sitemap.xml').getroot()
+          assert len(root.findall('{*}url')) == 3
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-docs-preview
+          path: site
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        with:
+          path: site
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy approved public documentation
+        id: deployment
+        uses: actions/deploy-pages@v4
