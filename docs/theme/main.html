@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block site_meta %}
+{{ super() }}
+{% if page and not page.is_homepage %}
+<meta name="description" content="{{ page.meta.description | default(config.site_description, true) | e }}">
+{% endif %}
+{% endblock %}
