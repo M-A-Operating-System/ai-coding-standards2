@@ -18,6 +18,12 @@ These invariants are mandatory for V3.
 
 These invariants take precedence over runtime-specific convenience.
 
+## Engineering-management outcome
+
+V3 extends the same governed AI SDLC to another coding runtime without losing the team's shared view of work, verification, approval or cost. The invariants above allow runtime/model experiments while preserving agent behavior, task dependencies/sequence and canonical entitlements. That keeps process differences from being mistaken for model improvements.
+
+The target metrics support deliberate comparisons of explicitly configured engines/models against completion, CI/review outcomes, rework, latency and cost provenance. They do not introduce automatic model selection or replace human gates. The [public product objectives](../../public/objectives.md) explain the intended management outcomes; the detailed metrics and acceptance criteria below remain the V3 specification, not a claim that the extension has shipped.
+
 ## V2 and V3 responsibility model
 
 | Responsibility | V2 | V3 Interactive | V3 Headless |
