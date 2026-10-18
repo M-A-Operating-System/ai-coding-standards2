@@ -4,7 +4,7 @@ Work through the `00_ondemand/codebase-reviewer` pipeline step's own instruction
 the chat-AI, in this session. This is not an agent invocation (MI-3,
 "Headless and interactive") — no subprocess is spawned, and no tool-access
 enforcement is attempted; this session's own normal permissions apply
-throughout. Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality A….
+throughout. Weekly three-persona codebase review (Defensive Programmer, Security Analyst, Quality A….
 
 The orchestrator still performs every label transition, artefact comment,
 body write, and commit — never this command by hand (same core rule as
