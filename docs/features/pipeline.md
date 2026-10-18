@@ -97,3 +97,21 @@
 **Given** an issue has been classified and sizer has determined it fits one development cycle (sizer reached a terminal outcome without applying the `epic` label)
 **When** the pipeline orchestrator evaluates which standard-delivery steps are eligible next
 **Then** prd-writer becomes eligible and the issue proceeds through standard-delivery without added waiting
+
+## Scenario: Manual result apply succeeds with the override flag
+
+**Given** a staged `result.json` for `00_ondemand/codebase-reviewer` associated with a valid issue number, and no override flag was previously used for this invocation
+**When** the orchestrator is invoked with `--agent 00_ondemand/codebase-reviewer --issue N --interactive-result` and the manual-override flag
+**Then** at least one agent is reported as triggered and the result is applied to the issue
+
+## Scenario: Invocation without the override flag does not apply the result
+
+**Given** the same staged `result.json` and issue number as above
+**When** the orchestrator is invoked with `--agent 00_ondemand/codebase-reviewer --issue N --interactive-result` and no override flag
+**Then** zero agents are reported as triggered and no result is applied
+
+## Scenario: Slash command generator emits the override flag for schedule-triggered steps
+
+**Given** the updated `scripts/generate_slash_commands.py` and the `00_ondemand/codebase-reviewer` step definition in `pipeline.json`
+**When** the generator runs and regenerates `.claude/commands/maos-codebase-reviewer.md` and `.claude/commands/maos-codebase-reviewer-i.md`
+**Then** neither generated command file references `codebase-reviewer:requested`, and both include the manual-override flag in their invocation instructions
