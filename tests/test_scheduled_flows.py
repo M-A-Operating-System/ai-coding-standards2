@@ -12,6 +12,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -473,8 +474,62 @@ class TestCodebaseReviewScheduledFlow:
 
     def test_codebase_review_schedule_does_not_collide_with_metrics_crons(self):
         step = self._load_codebase_review_step()
-        # Existing metrics crons: 0 0 * * 1, 0 1 * * *, 0 2 * * 1
-        colliding_crons = {"0 0 * * 1", "0 1 * * *", "0 2 * * 1"}
-        assert step.flow_schedule not in colliding_crons, (
-            f"codebase-review schedule {step.flow_schedule!r} collides with an existing metrics cron"
+        # Existing metrics crons are read from every other scheduled flow in
+        # pipeline.json, so a newly added metrics flow is caught here too
+        # rather than only against a hardcoded snapshot of today's crons.
+        agents, _ = orch.load_pipeline(_PIPELINE_PATH)
+        other_crons = {
+            a.flow_schedule for a in agents
+            if a.flow_schedule and a.flow != "codebase-review"
+        }
+        assert step.flow_schedule not in other_crons, (
+            f"codebase-review schedule {step.flow_schedule!r} collides with "
+            f"another scheduled flow's cron"
         )
+
+    @staticmethod
+    def _schema_field_sets(markdown_path: Path) -> dict:
+        """The field names of the defect/improvement example JSON blocks in
+        a review-agent's own prompt file, keyed by category.
+
+        Both pr-reviewer and codebase-reviewer document their finding shape
+        as a fenced ```json block containing a literal `"category": "defect"`
+        or `"category": "improvement"`. Comparing the two agents' field sets
+        directly against the markdown they actually ship (rather than
+        against a hand-copied expectation in this test) is what catches a
+        future edit to one file's schema that isn't mirrored in the other.
+        """
+        text = markdown_path.read_text()
+        fields_by_category: dict = {}
+        for block in re.findall(r"```json\n(.*?)\n```", text, re.DOTALL):
+            try:
+                data = json.loads(block)
+            except json.JSONDecodeError:
+                continue
+            category = data.get("category")
+            if category in ("defect", "improvement"):
+                fields_by_category[category] = set(data.keys())
+        return fields_by_category
+
+    def test_codebase_review_schema_matches_pr_reviewer_schema(self):
+        """Scenario R2 (issue #574): codebase-reviewer's documented finding
+        shape matches pr-reviewer's, field-for-field, for both categories."""
+        repo_root = Path(__file__).parent.parent
+        codebase_reviewer_fields = self._schema_field_sets(
+            repo_root / ".claude" / "agents" / "00_ondemand" / "codebase-reviewer.md"
+        )
+        pr_reviewer_fields = self._schema_field_sets(
+            repo_root / ".claude" / "agents" / "03_execute" / "pr-reviewer.md"
+        )
+        for category in ("defect", "improvement"):
+            assert category in codebase_reviewer_fields, (
+                f"codebase-reviewer.md has no example {category} JSON block"
+            )
+            assert category in pr_reviewer_fields, (
+                f"pr-reviewer.md has no example {category} JSON block"
+            )
+            assert codebase_reviewer_fields[category] == pr_reviewer_fields[category], (
+                f"codebase-reviewer's {category} fields "
+                f"{codebase_reviewer_fields[category]} do not match "
+                f"pr-reviewer's {pr_reviewer_fields[category]}"
+            )
