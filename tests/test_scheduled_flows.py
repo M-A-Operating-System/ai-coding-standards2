@@ -433,7 +433,8 @@ _PIPELINE_PATH = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
 
 class TestCodebaseReviewScheduledFlow:
     """Confirm the shipped codebase-review flow is a scheduled, agent-type
-    step with no work-item dependency (Scenario R1 / R8 from issue #574)."""
+    step with no work-item dependency, and that its documented finding
+    schema matches pr-reviewer's (Scenario R1 / R2 / R8 from issue #574)."""
 
     def _load_codebase_review_step(self):
         agents, _ = orch.load_pipeline(_PIPELINE_PATH)

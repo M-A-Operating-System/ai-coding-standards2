@@ -27,13 +27,17 @@ are deduplicated before finalizing.
 
 The coverage tracker is a perpetually-open GitHub issue titled
 **"Codebase Review Coverage"**. It records every top-level component and its
-last-reviewed date. Read it:
+last-reviewed date. Find it by title, not by label: `codebase-reviewer:tracker`
+is a bespoke label with no bootstrap step of its own (unlike the lifecycle
+labels `status.sh bootstrap-all` creates), so a repo where it was never
+manually created would otherwise mean the tracker is created once with a
+label GitHub silently drops, then this search finds nothing on every
+subsequent run and re-creates it forever, losing all rotation state:
 
 ```bash
 gh api "repos/$REPO/issues" \
   --method GET \
   -f state=open \
-  -f labels="codebase-reviewer:tracker" \
   --paginate \
   --jq '.[] | select(.title == "Codebase Review Coverage") | {number: .number, body: .body}'
 ```
@@ -314,13 +318,17 @@ If `TRACKER_NUMBER=new`, create the tracker first. `gh issue create` is not
 in this step's tool allowlist (it was intentionally removed so this agent
 cannot create findings issues directly -- see Step 9), so bootstrap the
 tracker via the REST API instead, which the existing default
-`Bash(gh api --method * repos/*/issues*)` already covers:
+`Bash(gh api --method * repos/*/issues*)` already covers. Do not attach a
+label on creation: `codebase-reviewer:tracker` has no bootstrap step of its
+own, and GitHub silently drops an unknown label rather than erroring, which
+would make the tracker exist with no label while looking like it worked --
+Step 1 finds this issue by title alone precisely so a missing label can
+never cause it to go undiscovered:
 
 ```bash
 gh api --method POST "repos/${REPO}/issues" \
   -f title="Codebase Review Coverage" \
-  -f body=@"${AI_AGILE_SCRATCH}/tracker_body.md" \
-  -f "labels[]=codebase-reviewer:tracker"
+  -f body=@"${AI_AGILE_SCRATCH}/tracker_body.md"
 ```
 
 ---
