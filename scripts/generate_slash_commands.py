@@ -77,6 +77,47 @@ auto-detects a PR number too, when one is given instead.
 {marker}
 """
 
+SUBPROCESS_SCHEDULE_TEMPLATE = """\
+# {title}
+
+Run the `{agent}` pipeline agent as a real subprocess, spawned by the
+orchestrator exactly as the headless (GitHub Actions) path does -- native
+`--allowedTools` enforcement, nothing emulated (MI-3). {description}.
+
+This step is schedule-triggered and has no issue-based eligibility path.
+Use this command to run it against a specific issue with the manual-override
+flag. The step's own schedule cadence is not affected.
+
+This command never applies labels, posts artefacts, or performs the step's
+own work -- the orchestrator does that, in `pipeline_orchestrator.py`, the
+same as it does headless (see `/maos-run`'s core rule).
+
+## Input
+
+`$ARGUMENTS` — an issue number (required; the step has no natural issue
+eligibility, so the number must be explicit).
+
+## Instructions
+
+1. Detect the repo and the orchestrator script path:
+   ```bash
+   REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+   SCRIPT=pipeline/pipeline_orchestrator.py
+   [ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/pipeline/pipeline_orchestrator.py
+   ```
+2. Run one orchestrator tick scoped to this issue with the manual-override
+   flag — this spawns `{agent}` as a real subprocess with native
+   `--allowedTools`, identical to the headless path, and performs every label
+   transition, artefact comment, and commit itself:
+   ```bash
+   python3 "$SCRIPT" --repo "$REPO" --agent {agent} --issue $ARGUMENTS --manual-override
+   ```
+3. Report what happened from the resulting labels — advanced, reached a
+   human gate, or halted.
+
+{marker}
+"""
+
 INTERACTIVE_TEMPLATE = """\
 # {title}
 
@@ -150,6 +191,79 @@ auto-detects a PR number too, when one is given instead.
 {marker}
 """
 
+INTERACTIVE_SCHEDULE_TEMPLATE = """\
+# {title}
+
+Work through the `{agent}` pipeline step's own instructions directly, with
+the chat-AI, in this session. This is not an agent invocation (MI-3,
+"Headless and interactive") — no subprocess is spawned, and no tool-access
+enforcement is attempted; this session's own normal permissions apply
+throughout. {description}.
+
+This step is schedule-triggered and has no issue-based eligibility path.
+Pass `--manual-override` when applying the result so the orchestrator
+accepts it for a specific issue. The step's own schedule cadence is not
+affected.
+
+The orchestrator still performs every label transition, artefact comment,
+body write, and commit — never this command by hand (same core rule as
+`/maos-run` and `/maos-{short}`). Two phases, run in order, in one sitting.
+
+## Input
+
+`$ARGUMENTS` — an issue number (required; the step has no natural issue
+eligibility, so the number must be explicit).
+
+## Phase 1 — resolve the step's instructions
+
+1. Detect the repo and the orchestrator script path:
+   ```bash
+   REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+   SCRIPT=pipeline/pipeline_orchestrator.py
+   [ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/pipeline/pipeline_orchestrator.py
+   ```
+2. Resolve the step's prompt, tool context, and scratch directory —
+   resolve-only mode; mutates no GitHub state:
+   ```bash
+   RESOLVED=$(python3 "$SCRIPT" --repo "$REPO" --agent {agent} --issue $ARGUMENTS --print-prompt)
+   AI_AGILE_SCRATCH=$(echo "$RESOLVED" | jq -r '.env.AI_AGILE_SCRATCH')
+   AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash scripts/scratch-setup.sh
+   ```
+   Export `AI_AGILE_SCRATCH` for the rest of this session so the step's own
+   snippets resolve it rather than falling back to a shared `/tmp`.
+3. Follow the printed prompt's instructions **directly, as this session** —
+   not by spawning a subagent. This session's own permissions and
+   confirmations apply throughout; nothing scopes or restricts tool access
+   on its behalf.
+4. When you reach the step's terminal instruction, write
+   `$AI_AGILE_SCRATCH/result.json` yourself, exactly per the prompt's own
+   "write your result" instructions — `outcome`, `summary`, `output`,
+   `label_requests`, `body_write`, etc., precisely as a spawned agent would.
+
+## Phase 2 — apply the result
+
+5. Hand the written result to the orchestrator to apply with the
+   manual-override flag. This runs the same eligibility check (with the
+   schedule guard bypassed) and the same :wip/announcement/artefact/label/
+   body-write/post_steps handling a real run would, so GitHub state and the
+   audit trail cannot drift between the two paths (MI-3) — the only
+   difference recorded is attribution: a person performed this activity, not
+   a spawned agent.
+   ```bash
+   python3 "$SCRIPT" --repo "$REPO" --agent {agent} --issue $ARGUMENTS --interactive-result --manual-override
+   ```
+6. Report what happened from the resulting labels. If nothing was applied,
+   the orchestrator's own output names why (an invalid/missing
+   `result.json`, or an eligibility check that no longer passes); fix that
+   and re-run step 5 rather than redoing Phase 1.
+7. Remove the scratch directory, even if an earlier step halted:
+   ```bash
+   [ -n "${{AI_AGILE_SCRATCH:-}}" ] && AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash scripts/scratch-teardown.sh
+   ```
+
+{marker}
+"""
+
 
 def _short_name(agent_path: str) -> str:
     """'03_execute/pr-reviewer' → 'pr-reviewer'"""
@@ -165,11 +279,17 @@ def _first_sentence(text: str) -> str:
     return sentence
 
 
+def _is_schedule_triggered(entry: dict) -> bool:
+    """True when the entry carries a flow_schedule (schedule-triggered flow)."""
+    return bool(entry.get("flow_schedule"))
+
+
 def _render_subprocess(entry: dict) -> str:
     agent = entry["agent"]
     short = _short_name(agent)
     description = _first_sentence(entry.get("description", ""))
-    return SUBPROCESS_TEMPLATE.format(
+    template = SUBPROCESS_SCHEDULE_TEMPLATE if _is_schedule_triggered(entry) else SUBPROCESS_TEMPLATE
+    return template.format(
         marker=GENERATED_MARKER,
         title=f"maos-{short}",
         description=description,
@@ -182,7 +302,8 @@ def _render_interactive(entry: dict) -> str:
     agent = entry["agent"]
     short = _short_name(agent)
     description = _first_sentence(entry.get("description", ""))
-    return INTERACTIVE_TEMPLATE.format(
+    template = INTERACTIVE_SCHEDULE_TEMPLATE if _is_schedule_triggered(entry) else INTERACTIVE_TEMPLATE
+    return template.format(
         marker=GENERATED_MARKER,
         title=f"maos-{short}-i",
         description=description,
@@ -196,8 +317,10 @@ def main() -> int:
 
     # Agent-type entries only — script-type steps (create-pr, ci-gate) are
     # not interactively invokable and get no slash command.
+    # Annotate each step with its flow's schedule (if any) so renderers can
+    # detect schedule-triggered steps without re-reading the pipeline.
     agents = [
-        step
+        {**step, "flow_schedule": flow.get("trigger", {}).get("schedule")}
         for flow in (pipeline.get("flows") or {}).values()
         for step in (flow.get("steps") or [])
         if step.get("type", "agent") == "agent"

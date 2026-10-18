@@ -6,14 +6,19 @@ the chat-AI, in this session. This is not an agent invocation (MI-3,
 enforcement is attempted; this session's own normal permissions apply
 throughout. Weekly three-persona codebase review (Defensive Programmer, Security Analyst, Quality A….
 
+This step is schedule-triggered and has no issue-based eligibility path.
+Pass `--manual-override` when applying the result so the orchestrator
+accepts it for a specific issue. The step's own schedule cadence is not
+affected.
+
 The orchestrator still performs every label transition, artefact comment,
 body write, and commit — never this command by hand (same core rule as
 `/maos-run` and `/maos-codebase-reviewer`). Two phases, run in order, in one sitting.
 
 ## Input
 
-`$ARGUMENTS` — an issue number by default (e.g. `42`); the orchestrator
-auto-detects a PR number too, when one is given instead.
+`$ARGUMENTS` — an issue number (required; the step has no natural issue
+eligibility, so the number must be explicit).
 
 ## Phase 1 — resolve the step's instructions
 
@@ -23,12 +28,7 @@ auto-detects a PR number too, when one is given instead.
    SCRIPT=pipeline/pipeline_orchestrator.py
    [ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/pipeline/pipeline_orchestrator.py
    ```
-2. Make `00_ondemand/codebase-reviewer` eligible even if it is not the pipeline's natural next step
-   (stays in place until Phase 2 consumes it):
-   ```bash
-   gh issue edit $ARGUMENTS --repo "$REPO" --add-label "codebase-reviewer:requested"
-   ```
-3. Resolve the step's prompt, tool context, and scratch directory —
+2. Resolve the step's prompt, tool context, and scratch directory —
    resolve-only mode; mutates no GitHub state:
    ```bash
    RESOLVED=$(python3 "$SCRIPT" --repo "$REPO" --agent 00_ondemand/codebase-reviewer --issue $ARGUMENTS --print-prompt)
@@ -37,32 +37,32 @@ auto-detects a PR number too, when one is given instead.
    ```
    Export `AI_AGILE_SCRATCH` for the rest of this session so the step's own
    snippets resolve it rather than falling back to a shared `/tmp`.
-4. Follow the printed prompt's instructions **directly, as this session** —
+3. Follow the printed prompt's instructions **directly, as this session** —
    not by spawning a subagent. This session's own permissions and
    confirmations apply throughout; nothing scopes or restricts tool access
    on its behalf.
-5. When you reach the step's terminal instruction, write
+4. When you reach the step's terminal instruction, write
    `$AI_AGILE_SCRATCH/result.json` yourself, exactly per the prompt's own
    "write your result" instructions — `outcome`, `summary`, `output`,
    `label_requests`, `body_write`, etc., precisely as a spawned agent would.
 
 ## Phase 2 — apply the result
 
-6. Hand the written result to the orchestrator to apply. This runs the same
-   eligibility check and the same :wip/announcement/artefact/label/
+5. Hand the written result to the orchestrator to apply with the
+   manual-override flag. This runs the same eligibility check (with the
+   schedule guard bypassed) and the same :wip/announcement/artefact/label/
    body-write/post_steps handling a real run would, so GitHub state and the
    audit trail cannot drift between the two paths (MI-3) — the only
    difference recorded is attribution: a person performed this activity, not
    a spawned agent.
    ```bash
-   python3 "$SCRIPT" --repo "$REPO" --agent 00_ondemand/codebase-reviewer --issue $ARGUMENTS --interactive-result
+   python3 "$SCRIPT" --repo "$REPO" --agent 00_ondemand/codebase-reviewer --issue $ARGUMENTS --interactive-result --manual-override
    ```
-7. Report what happened from the resulting labels. If `codebase-reviewer:requested` is
-   still present afterward, nothing was applied — the orchestrator's own
-   output names why (an invalid/missing `result.json`, or an eligibility
-   check that no longer passes); fix that and re-run step 6 rather than
-   redoing Phase 1.
-8. Remove the scratch directory, even if an earlier step halted:
+6. Report what happened from the resulting labels. If nothing was applied,
+   the orchestrator's own output names why (an invalid/missing
+   `result.json`, or an eligibility check that no longer passes); fix that
+   and re-run step 5 rather than redoing Phase 1.
+7. Remove the scratch directory, even if an earlier step halted:
    ```bash
    [ -n "${AI_AGILE_SCRATCH:-}" ] && AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash scripts/scratch-teardown.sh
    ```

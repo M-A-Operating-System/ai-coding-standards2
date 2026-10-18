@@ -5398,6 +5398,7 @@ def _should_run(
     concurrency: Optional[ComponentClaims],
     gh=None,
     repo: str = "",
+    manual_override: bool = False,
 ) -> Optional[bool]:
     """Evaluate whether an agent should be dispatched for a work item.
 
@@ -5410,7 +5411,13 @@ def _should_run(
 
     # A scheduled flow has no work item to be eligible against; its steps are
     # dispatched by cadence (see _run_scheduled_flows), never by this loop.
-    if agent_def.flow_schedule:
+    # manual_override bypasses this guard so --interactive-result can apply a
+    # person-produced result for a schedule-triggered step to a specific issue.
+    if agent_def.flow_schedule and not manual_override:
+        log.info(
+            "  skip %-40s  [schedule-triggered; pass --manual-override to apply interactively]",
+            agent_def.agent,
+        )
         return False
 
     # Flow membership (issue #406): the flow says what makes an item its own.
@@ -7954,6 +7961,7 @@ def process_work_item(
     default_extra_tools: Optional[list[str]] = None,
     concurrency: Optional[ComponentClaims] = None,
     interactive_result: bool = False,
+    manual_override: bool = False,
 ) -> int:
     """Evaluate all agents against a single issue or PR.
 
@@ -8026,7 +8034,7 @@ def process_work_item(
     for agent_def in agents:
         should_run = _should_run(
             agent_def, work_item, labels, pipeline_map, concurrency,
-            gh=gh, repo=repo,
+            gh=gh, repo=repo, manual_override=manual_override,
         )
         if should_run is None:
             break
@@ -8327,6 +8335,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--manual-override",
+        action="store_true",
+        help=(
+            "Allow --interactive-result to apply a result for a "
+            "schedule-triggered step to a specific issue. Without this flag, "
+            "schedule-triggered steps are unconditionally skipped by the "
+            "eligibility loop (they are dispatched by cadence, not by issue). "
+            "Does not affect the step's own schedule cadence."
+        ),
+    )
+    p.add_argument(
         "--confirm-gate",
         action="store_true",
         help=(
@@ -8361,6 +8380,7 @@ class RunContext:
     dry_run: bool
     default_extra_tools: Optional[list]
     interactive_result: bool = False
+    manual_override: bool = False
     # True when this tick was scoped to one work item (--issue). A scheduled
     # flow is about the repository, not that item, so a scoped tick leaves the
     # cadences to the unscoped ticks that own them.
@@ -8975,6 +8995,7 @@ def _wake(args) -> "Optional[RunContext]":
         concurrency=conc, repo=args.repo, session_id=session_id,
         dry_run=args.dry_run, default_extra_tools=default_extra_tools,
         interactive_result=args.interactive_result,
+        manual_override=args.manual_override,
         scoped_to_item=args.issue is not None,
     )
 
@@ -9120,6 +9141,7 @@ def _do_work(ctx: "RunContext") -> int:
             default_extra_tools=ctx.default_extra_tools,
             concurrency=ctx.concurrency,
             interactive_result=ctx.interactive_result,
+            manual_override=ctx.manual_override,
         )
         total_triggered += n
         if n > 0:

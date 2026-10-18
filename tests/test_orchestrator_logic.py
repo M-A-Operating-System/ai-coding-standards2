@@ -2406,7 +2406,8 @@ class TestPhasesFilter:
             verbose=False, clear_pause=False, clear_stop=False, repo="test/repo",
             pipeline="pipeline.json", phases="01_product_docs",
             issue=None, kind=None, dry_run=True,
-            headless=False, print_prompt=False, interactive_result=False, confirm_gate=False,
+            headless=False, print_prompt=False, interactive_result=False,
+            manual_override=False, confirm_gate=False,
         )
 
         wi = _make_work_item_with_labels(1, set())
@@ -5006,6 +5007,58 @@ class TestProcessWorkItemDecomposition:
         assert result is False, (
             f"_should_run must not dispatch a second run while :wip is set, "
             f"even with :requested present; got {result!r}"
+        )
+
+    def test_should_run_returns_false_for_schedule_triggered_without_override(self):
+        """Scenario: Invocation without the override flag does not apply the result.
+
+        A schedule-triggered step must be skipped by the eligibility loop when
+        manual_override is False, regardless of issue labels.
+        """
+        agent_def = AgentDef(
+            agent="00_ondemand/codebase-reviewer",
+            phase="00_ondemand",
+            objects=["issue"],
+            trigger={"event": "schedule"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            flow_schedule="0 3 * * 1",
+        )
+        wi = _make_work_item_with_labels(1, set())
+        result = _should_run(agent_def, wi, wi.labels, {agent_def.agent: agent_def}, None)
+        assert result is False, (
+            f"_should_run must return False for a schedule-triggered step "
+            f"when manual_override is not set; got {result!r}"
+        )
+
+    def test_should_run_returns_true_for_schedule_triggered_with_override(self):
+        """Scenario: Manual result apply succeeds with the override flag.
+
+        A schedule-triggered step must be eligible when manual_override=True,
+        allowing --interactive-result to apply a person-produced result to a
+        specific issue without affecting the step's cadence.
+        """
+        agent_def = AgentDef(
+            agent="00_ondemand/codebase-reviewer",
+            phase="00_ondemand",
+            objects=["issue"],
+            trigger={"event": "schedule"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            flow_schedule="0 3 * * 1",
+        )
+        wi = _make_work_item_with_labels(1, set())
+        result = _should_run(
+            agent_def, wi, wi.labels, {agent_def.agent: agent_def}, None,
+            manual_override=True,
+        )
+        assert result is True, (
+            f"_should_run must return True for a schedule-triggered step "
+            f"when manual_override=True; got {result!r}"
         )
 
 
