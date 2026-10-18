@@ -2,7 +2,7 @@
 
 Run the `00_ondemand/codebase-reviewer` pipeline agent as a real subprocess, spawned by the
 orchestrator exactly as the headless (GitHub Actions) path does -- native
-`--allowedTools` enforcement, nothing emulated (MI-3). Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality A….
+`--allowedTools` enforcement, nothing emulated (MI-3). Weekly three-persona codebase review (Defensive Programmer, Security Analyst, Quality A….
 
 This command never applies labels, posts artefacts, or performs the step's
 own work -- the orchestrator does that, in `pipeline_orchestrator.py`, the

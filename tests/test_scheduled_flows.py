@@ -7,14 +7,14 @@ the record rather than from a label or a table of its own:
     branch, with a flow that has never run reading as overdue;
   - its mutex: a claim appended to that same append-only log, where losing the
     push race IS the mutex failure, and a stranded claim expires on age.
-
-No shipped flow declares a schedule yet -- these prove the mechanism.
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -422,3 +422,115 @@ class TestScheduledDispatch:
         assert orch._run_scheduled_flows(ctx) == 0
         read.assert_not_called()
         run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Shipped pipeline: codebase-review flow (issue #574)
+# ---------------------------------------------------------------------------
+
+_PIPELINE_PATH = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+
+
+class TestCodebaseReviewScheduledFlow:
+    """Confirm the shipped codebase-review flow is a scheduled, agent-type
+    step with no work-item dependency, and that its documented finding
+    schema matches pr-reviewer's (Scenario R1 / R2 / R8 from issue #574)."""
+
+    def _load_codebase_review_step(self):
+        agents, _ = orch.load_pipeline(_PIPELINE_PATH)
+        matches = [a for a in agents if a.flow == "codebase-review"]
+        assert matches, "codebase-review flow not found in pipeline.json"
+        assert len(matches) == 1, "expected exactly one step in codebase-review flow"
+        return matches[0]
+
+    def test_codebase_review_has_schedule_trigger(self):
+        step = self._load_codebase_review_step()
+        assert step.flow_schedule is not None, (
+            "codebase-review flow must declare a schedule trigger"
+        )
+
+    def test_codebase_review_is_agent_type(self):
+        step = self._load_codebase_review_step()
+        assert step.step_type == "agent", (
+            "codebase-review step must be type 'agent', not 'script'"
+        )
+
+    def test_codebase_review_has_no_label_trigger(self):
+        step = self._load_codebase_review_step()
+        assert step.trigger.get("label") is None, (
+            "codebase-review step must not have a label trigger"
+        )
+        assert step.trigger.get("event") == "schedule", (
+            "codebase-review step trigger must be {event: schedule}"
+        )
+
+    def test_codebase_review_is_not_reachable_by_work_item_loop(self):
+        step = self._load_codebase_review_step()
+        item = orch.WorkItem(
+            number=1, kind="issue", title="t", labels=set(), url="u"
+        )
+        assert orch._should_run(
+            step, item, item.labels, {}, None, gh=MagicMock(), repo="org/repo"
+        ) is False, "scheduled step must never be triggered by a work item"
+
+    def test_codebase_review_schedule_does_not_collide_with_metrics_crons(self):
+        step = self._load_codebase_review_step()
+        # Existing metrics crons are read from every other scheduled flow in
+        # pipeline.json, so a newly added metrics flow is caught here too
+        # rather than only against a hardcoded snapshot of today's crons.
+        agents, _ = orch.load_pipeline(_PIPELINE_PATH)
+        other_crons = {
+            a.flow_schedule for a in agents
+            if a.flow_schedule and a.flow != "codebase-review"
+        }
+        assert step.flow_schedule not in other_crons, (
+            f"codebase-review schedule {step.flow_schedule!r} collides with "
+            f"another scheduled flow's cron"
+        )
+
+    @staticmethod
+    def _schema_field_sets(markdown_path: Path) -> dict:
+        """The field names of the defect/improvement example JSON blocks in
+        a review-agent's own prompt file, keyed by category.
+
+        Both pr-reviewer and codebase-reviewer document their finding shape
+        as a fenced ```json block containing a literal `"category": "defect"`
+        or `"category": "improvement"`. Comparing the two agents' field sets
+        directly against the markdown they actually ship (rather than
+        against a hand-copied expectation in this test) is what catches a
+        future edit to one file's schema that isn't mirrored in the other.
+        """
+        text = markdown_path.read_text()
+        fields_by_category: dict = {}
+        for block in re.findall(r"```json\n(.*?)\n```", text, re.DOTALL):
+            try:
+                data = json.loads(block)
+            except json.JSONDecodeError:
+                continue
+            category = data.get("category")
+            if category in ("defect", "improvement"):
+                fields_by_category[category] = set(data.keys())
+        return fields_by_category
+
+    def test_codebase_review_schema_matches_pr_reviewer_schema(self):
+        """Scenario R2 (issue #574): codebase-reviewer's documented finding
+        shape matches pr-reviewer's, field-for-field, for both categories."""
+        repo_root = Path(__file__).parent.parent
+        codebase_reviewer_fields = self._schema_field_sets(
+            repo_root / ".claude" / "agents" / "00_ondemand" / "codebase-reviewer.md"
+        )
+        pr_reviewer_fields = self._schema_field_sets(
+            repo_root / ".claude" / "agents" / "03_execute" / "pr-reviewer.md"
+        )
+        for category in ("defect", "improvement"):
+            assert category in codebase_reviewer_fields, (
+                f"codebase-reviewer.md has no example {category} JSON block"
+            )
+            assert category in pr_reviewer_fields, (
+                f"pr-reviewer.md has no example {category} JSON block"
+            )
+            assert codebase_reviewer_fields[category] == pr_reviewer_fields[category], (
+                f"codebase-reviewer's {category} fields "
+                f"{codebase_reviewer_fields[category]} do not match "
+                f"pr-reviewer's {pr_reviewer_fields[category]}"
+            )

@@ -16,7 +16,7 @@ authoritative and these tables are a view of it.
 |---|---|---|
 | `standard-delivery` | kind `issue` | branch `issue-{number}`; base `main`; PR `docs` on `issue-{number}-docs` (does not close the issue); PR `code` on `issue-{number}` (closes the issue) |
 | `epic-completion` | kind `issue`; labels `epic` | -- |
-| `codebase-review` | kind `issue` | -- |
+| `codebase-review` | schedule `0 3 * * 1` | -- |
 | `sizer` | kind `issue` | -- |
 | `new-agent` | kind `issue` | branch `issue-{number}` |
 | `standards-migrator` | kind `issue` | -- |
@@ -143,7 +143,7 @@ The groups below are this step's authoritative deny list, flattened at load time
 
 | Step | Kind | Unit | Trigger | Depends on | Human gate |
 |---|---|---|---|---|---|
-| `00_ondemand/codebase-reviewer` | agent | `item` | `codebase-reviewer:requested` | -- | -- |
+| `00_ondemand/codebase-reviewer` | agent | `item` | event `schedule` | -- | -- |
 
 ### Exclusions and retries
 
@@ -155,7 +155,7 @@ The groups below are this step's authoritative deny list, flattened at load time
 
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
-| `00_ondemand/codebase-reviewer` | `Bash(gh issue create *)`, `Bash(git log *)` | -- | -- |
+| `00_ondemand/codebase-reviewer` | `Bash(git log *)` | -- | -- |
 
 ## Flow: `sizer`
 

@@ -1,6 +1,5 @@
 flowchart TD
     entry_n_01_product_docs__issue_classifier(["issue.opened"])
-    entry_n_00_ondemand__codebase_reviewer(["codebase-reviewer:requested"])
     entry_n_00_ondemand__sizer(["sizer:requested"])
     entry_n_00_ondemand__new_agent(["new-agent:requested"])
     entry_n_00_ondemand__standards_migrator(["standards-migrator:requested"])
@@ -40,7 +39,6 @@ flowchart TD
     term_rejected(["rejected"]):::term
     term_sized(["sized"]):::term
     entry_n_01_product_docs__issue_classifier --> n_01_product_docs__issue_classifier
-    entry_n_00_ondemand__codebase_reviewer --> n_00_ondemand__codebase_reviewer
     entry_n_00_ondemand__sizer --> n_00_ondemand__sizer
     entry_n_00_ondemand__new_agent --> n_00_ondemand__new_agent
     entry_n_00_ondemand__standards_migrator --> n_00_ondemand__standards_migrator
