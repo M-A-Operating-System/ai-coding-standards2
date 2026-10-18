@@ -35,7 +35,7 @@ satisfied. Phase 5 does not block any per-ticket flow.
 
 | Agent | Phase | Kind | Purpose |
 |---|---|---|---|
-| `00_ondemand/codebase-reviewer` | 0 | agent | Three-persona codebase review; files a Technical Review issue |
+| `00_ondemand/codebase-reviewer` | 0 | agent | Weekly-scheduled three-persona codebase review with rotating component coverage; findings use pr-reviewer's RV-NNN schema; files a Technical Review issue each cycle via `creates_issue` |
 | `00_ondemand/new-agent` | 0 | agent | Scaffolds a new pipeline agent from an issue description |
 | `00_ondemand/standards-migrator` | 0 | agent | Converts a consuming repo's existing knowledge files into `standards/*.json` |
 | `00_ondemand/branch-cleanup` | 0 | agent | Recommends, then (on approval) deletes, stale remote branches |
