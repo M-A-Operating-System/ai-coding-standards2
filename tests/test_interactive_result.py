@@ -73,6 +73,7 @@ def _make_wake_args(**overrides):
     args.agent = "03_execute/coder"
     args.interactive_result = True
     args.phases = None
+    args.manual_override = False
     for k, v in overrides.items():
         setattr(args, k, v)
     return args

@@ -28,7 +28,16 @@ def _fake_pipeline(tmp_path):
                     {"agent": "01_product_docs/create-pr", "type": "script",
                      "script": "x.sh", "description": "Scripted step."},
                 ],
-            }
+            },
+            "codebase-review": {
+                "description": "test schedule-triggered flow",
+                "trigger": {"schedule": "0 3 * * 1"},
+                "steps": [
+                    {"agent": "00_ondemand/codebase-reviewer", "type": "agent",
+                     "trigger": {"event": "schedule"},
+                     "description": "Reviews the codebase. Second sentence."},
+                ],
+            },
         }
     }))
     return p
@@ -71,6 +80,36 @@ class TestGeneratePreservesHandAuthored:
         stale.write_text(f"# maos-old-agent\n\nold\n\n{gen.GENERATED_MARKER}\n")
         gen.main()
         assert not stale.exists(), "a marked, agentless generated file must be removed"
+
+
+class TestScheduleTriggeredCommands:
+    """A schedule-triggered agent step (issue #574's codebase-reviewer) has no
+    issue-based eligibility, so its generated commands must skip the
+    `:requested` label-add step entirely and pass --manual-override instead
+    (issue #577 acceptance criterion AC3)."""
+
+    _setup = TestGeneratePreservesHandAuthored._setup
+
+    def test_schedule_triggered_subprocess_command_has_no_label_step(self, tmp_path, monkeypatch):
+        gen, commands = self._setup(tmp_path, monkeypatch)
+        gen.main()
+        text = (commands / "maos-codebase-reviewer.md").read_text()
+        assert "codebase-reviewer:requested" not in text
+        assert "--manual-override" in text
+
+    def test_schedule_triggered_interactive_command_has_no_label_step(self, tmp_path, monkeypatch):
+        gen, commands = self._setup(tmp_path, monkeypatch)
+        gen.main()
+        text = (commands / "maos-codebase-reviewer-i.md").read_text()
+        assert "codebase-reviewer:requested" not in text
+        assert "--manual-override" in text
+
+    def test_non_schedule_triggered_command_is_unaffected(self, tmp_path, monkeypatch):
+        """The ordinary (non-scheduled) template is untouched by the new branch."""
+        gen, commands = self._setup(tmp_path, monkeypatch)
+        gen.main()
+        text = (commands / "maos-prd-writer.md").read_text()
+        assert "--manual-override" not in text
 
 
 class TestTheRequestedLabelMatchesWhatTheOrchestratorReads:

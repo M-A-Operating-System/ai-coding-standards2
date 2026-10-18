@@ -5018,7 +5018,12 @@ class TestProcessWorkItemDecomposition:
         agent_def = AgentDef(
             agent="00_ondemand/codebase-reviewer",
             phase="00_ondemand",
-            objects=["issue"],
+            # Real pipeline.json shape: a schedule-triggered flow's trigger
+            # has no "kind", so load_pipeline leaves objects empty -- not a
+            # hardcoded ["issue"], which would mask the bug where the
+            # objects check (checked before manual_override) always refused
+            # every work_item.kind against an empty objects list.
+            objects=[],
             trigger={"event": "schedule"},
             dependencies=[],
             human_gate_after=False,
@@ -5043,7 +5048,8 @@ class TestProcessWorkItemDecomposition:
         agent_def = AgentDef(
             agent="00_ondemand/codebase-reviewer",
             phase="00_ondemand",
-            objects=["issue"],
+            # Real pipeline.json shape -- see the sibling test above.
+            objects=[],
             trigger={"event": "schedule"},
             dependencies=[],
             human_gate_after=False,

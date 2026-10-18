@@ -5406,7 +5406,15 @@ def _should_run(
     or None to stop processing agents for this work item (per-tick launch
     budget hit).
     """
-    if work_item.kind not in agent_def.objects:
+    # A schedule-triggered step declares no "kind" in its trigger, so
+    # agent_def.objects is empty -- `work_item.kind not in []` is always
+    # True, which would refuse every work_item.kind unconditionally and
+    # make manual_override below unreachable. Guard the same way the
+    # --print-prompt resolve path already does (see the agent_def.objects
+    # check a few hundred lines down in the CLI's prompt-resolution branch):
+    # an empty objects list means "no kind restriction", not "no kind
+    # matches".
+    if agent_def.objects and work_item.kind not in agent_def.objects:
         return False
 
     # A scheduled flow has no work item to be eligible against; its steps are
