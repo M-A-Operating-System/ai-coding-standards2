@@ -7,14 +7,13 @@ the record rather than from a label or a table of its own:
     branch, with a flow that has never run reading as overdue;
   - its mutex: a claim appended to that same append-only log, where losing the
     push race IS the mutex failure, and a stranded claim expires on age.
-
-No shipped flow declares a schedule yet -- these prove the mechanism.
 """
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -422,3 +421,60 @@ class TestScheduledDispatch:
         assert orch._run_scheduled_flows(ctx) == 0
         read.assert_not_called()
         run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Shipped pipeline: codebase-review flow (issue #574)
+# ---------------------------------------------------------------------------
+
+_PIPELINE_PATH = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
+
+
+class TestCodebaseReviewScheduledFlow:
+    """Confirm the shipped codebase-review flow is a scheduled, agent-type
+    step with no work-item dependency (Scenario R1 / R8 from issue #574)."""
+
+    def _load_codebase_review_step(self):
+        agents, _ = orch.load_pipeline(_PIPELINE_PATH)
+        matches = [a for a in agents if a.flow == "codebase-review"]
+        assert matches, "codebase-review flow not found in pipeline.json"
+        assert len(matches) == 1, "expected exactly one step in codebase-review flow"
+        return matches[0]
+
+    def test_codebase_review_has_schedule_trigger(self):
+        step = self._load_codebase_review_step()
+        assert step.flow_schedule is not None, (
+            "codebase-review flow must declare a schedule trigger"
+        )
+
+    def test_codebase_review_is_agent_type(self):
+        step = self._load_codebase_review_step()
+        assert step.step_type == "agent", (
+            "codebase-review step must be type 'agent', not 'script'"
+        )
+
+    def test_codebase_review_has_no_label_trigger(self):
+        step = self._load_codebase_review_step()
+        assert step.trigger.get("label") is None, (
+            "codebase-review step must not have a label trigger"
+        )
+        assert step.trigger.get("event") == "schedule", (
+            "codebase-review step trigger must be {event: schedule}"
+        )
+
+    def test_codebase_review_is_not_reachable_by_work_item_loop(self):
+        step = self._load_codebase_review_step()
+        item = orch.WorkItem(
+            number=1, kind="issue", title="t", labels=set(), url="u"
+        )
+        assert orch._should_run(
+            step, item, item.labels, {}, None, gh=MagicMock(), repo="org/repo"
+        ) is False, "scheduled step must never be triggered by a work item"
+
+    def test_codebase_review_schedule_does_not_collide_with_metrics_crons(self):
+        step = self._load_codebase_review_step()
+        # Existing metrics crons: 0 0 * * 1, 0 1 * * *, 0 2 * * 1
+        colliding_crons = {"0 0 * * 1", "0 1 * * *", "0 2 * * 1"}
+        assert step.flow_schedule not in colliding_crons, (
+            f"codebase-review schedule {step.flow_schedule!r} collides with an existing metrics cron"
+        )

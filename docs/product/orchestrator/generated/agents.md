@@ -114,17 +114,17 @@ Closes a coordinating epic once every one of its children is closed: posts the e
 
 ## Flow: `codebase-review`
 
-- **Applies to:** kind `issue`
+- **Applies to:** schedule `0 3 * * 1`
 - **Naming:** --
 
-On-demand three-persona codebase review, requested by a human applying a label to any issue. Produces findings as a new issue, never a commit, so this flow declares no naming.
+Weekly scheduled three-persona codebase review. Rotates through codebase components across cycles, produces findings matching pr-reviewer's schema, and raises a 'Technical Review - {date}' issue via result.json. Produces no commit, so this flow declares no naming.
 
 ### `00_ondemand/codebase-reviewer`
 
 - **Kind:** agent
 - **Phase:** `00_ondemand`
 
-Ad-hoc three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads the full codebase and creates a 'Technical Review - {date}' GitHub issue containing all findings with severity ratings and AI-actionable remediation instructions. Triggered by applying the codebase-reviewer:requested label to any issue. Cross-references docs/product/ only when code intent is unclear.
+Weekly three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads a durable coverage tracker, selects the next due codebase components, reviews them using pr-reviewer's finding schema (RV-NNN), checks for duplicate findings in still-open prior review issues, and requests a 'Technical Review - {date}' issue via result.json's creates_issue field. Cross-references docs/product/ only when code intent is unclear.
 
 ## Flow: `sizer`
 
