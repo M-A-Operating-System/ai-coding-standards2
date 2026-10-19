@@ -115,3 +115,27 @@
 **Given** the updated `scripts/generate_slash_commands.py` and the `00_ondemand/codebase-reviewer` step definition in `pipeline.json`
 **When** the generator runs and regenerates `.claude/commands/maos-codebase-reviewer.md` and `.claude/commands/maos-codebase-reviewer-i.md`
 **Then** neither generated command file references `codebase-reviewer:requested`, and both include the manual-override flag in their invocation instructions
+
+## Scenario: Schedule fires at correct Eastern wall-clock time during winter (EST)
+
+**Given** `pipeline.json` has `defaults.schedule_timezone` set to `"America/New_York"` and a flow declares `trigger.cron` of `"0 2 * * 1"` with no per-flow timezone override
+**When** the orchestrator evaluates whether the schedule is due at 07:00 UTC on a Monday in January (EST, UTC-5)
+**Then** the schedule is evaluated as due
+
+## Scenario: Schedule fires at correct Eastern wall-clock time during summer (EDT)
+
+**Given** `pipeline.json` has `defaults.schedule_timezone` set to `"America/New_York"` and a flow declares `trigger.cron` of `"0 2 * * 1"` with no per-flow timezone override
+**When** the orchestrator evaluates whether the schedule is due at 06:00 UTC on a Monday in July (EDT, UTC-4)
+**Then** the schedule is evaluated as due
+
+## Scenario: Pipeline without defaults.schedule_timezone falls back to UTC
+
+**Given** a `pipeline.json` with no `defaults.schedule_timezone` key
+**When** the orchestrator evaluates `trigger.cron` of `"0 2 * * 1"` at Monday 02:00 UTC
+**Then** the schedule is evaluated as due
+
+## Scenario: Per-flow timezone override takes precedence over pipeline default
+
+**Given** `pipeline.json` has `defaults.schedule_timezone` set to `"America/New_York"` and a flow declares `trigger.timezone` of `"UTC"` with `trigger.cron` of `"0 2 * * *"`
+**When** the orchestrator evaluates the schedule at 02:00 UTC on any day
+**Then** the schedule is evaluated as due
