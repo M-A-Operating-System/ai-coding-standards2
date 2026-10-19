@@ -9134,7 +9134,7 @@ def _run_scheduled_flows(ctx: "RunContext") -> int:
     for flow, (cron, tz, steps) in flows.items():
         try:
             due = schedule_is_due(cron, flow_last_run(records, flow), now, tz=tz)
-        except ValueError as exc:
+        except (ValueError, KeyError) as exc:
             log.error("schedule %s: %s -- skipping", flow, exc)
             continue
         if not due:

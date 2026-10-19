@@ -707,3 +707,135 @@ class TestTimezoneOverridePerFlow:
         monkeypatch.setattr(orch, "_now_utc", lambda: _t("2026-07-06T02:00:00"))
         assert orch._run_scheduled_flows(ctx) == 1
         assert ran == ["05_continuous/learn-loop"]
+
+
+# ---------------------------------------------------------------------------
+# load_pipeline integration: timezone resolution through the full loading path
+# (RV-001 / RV-002 from review cycle 2)
+# ---------------------------------------------------------------------------
+
+_MINIMAL_STEP = {
+    "agent": "test/agent",
+    "phase": "test",
+    "trigger": {"event": "schedule"},
+    "description": "a test step",
+}
+
+
+class TestLoadPipelineTimezoneResolution:
+    """RV-001 / RV-002: load_pipeline must resolve flow_schedule_timezone through
+    _defaults.get('schedule_timezone', 'UTC') and flow_trigger.get('timezone').
+    Tests that exercise the function-signature default of cron_matches are not
+    sufficient -- these exercise the load_pipeline code paths directly."""
+
+    def test_no_schedule_timezone_in_defaults_falls_back_to_utc(self, tmp_path):
+        """RV-001: pipeline.json with no defaults.schedule_timezone key yields UTC on all
+        scheduled agents, testing _defaults.get('schedule_timezone', 'UTC') at load time."""
+        pipeline_data = {
+            "budgets": {"max_turns": 10, "max_wall_seconds": 3600},
+            "flows": {
+                "scheduled-flow": {
+                    "trigger": {"schedule": "0 2 * * 1"},
+                    "steps": [dict(_MINIMAL_STEP)],
+                }
+            },
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        agents, _ = orch.load_pipeline(path)
+        scheduled = [a for a in agents if a.flow_schedule is not None]
+        assert len(scheduled) == 1
+        assert scheduled[0].flow_schedule_timezone == "UTC", (
+            "absent defaults.schedule_timezone must produce 'UTC', "
+            "not 'America/New_York' or empty string"
+        )
+
+    def test_per_flow_trigger_timezone_overrides_pipeline_default(self, tmp_path):
+        """RV-002: a flow's trigger.timezone overrides defaults.schedule_timezone,
+        testing flow_trigger.get('timezone', '') at load time via load_pipeline."""
+        pipeline_data = {
+            "budgets": {"max_turns": 10, "max_wall_seconds": 3600},
+            "defaults": {"schedule_timezone": "America/New_York"},
+            "flows": {
+                "default-tz-flow": {
+                    "trigger": {"schedule": "0 1 * * *"},
+                    "steps": [dict(_MINIMAL_STEP, agent="test/agent1")],
+                },
+                "utc-override-flow": {
+                    "trigger": {"schedule": "0 2 * * 1", "timezone": "UTC"},
+                    "steps": [dict(_MINIMAL_STEP, agent="test/agent2")],
+                },
+            },
+        }
+        path = tmp_path / "pipeline.json"
+        path.write_text(json.dumps(pipeline_data))
+        agents, _ = orch.load_pipeline(path)
+        by_flow = {a.flow: a for a in agents if a.flow_schedule is not None}
+        assert by_flow["default-tz-flow"].flow_schedule_timezone == "America/New_York", (
+            "flow without trigger.timezone must inherit defaults.schedule_timezone"
+        )
+        assert by_flow["utc-override-flow"].flow_schedule_timezone == "UTC", (
+            "flow with trigger.timezone='UTC' must override defaults.schedule_timezone"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Invalid timezone handling in _run_scheduled_flows (RV-003)
+# ---------------------------------------------------------------------------
+
+class TestInvalidTimezoneHandling:
+    """RV-003: an invalid timezone name in flow_schedule_timezone raises
+    ZoneInfoNotFoundError (a KeyError subclass), which must be caught and
+    logged like a malformed cron expression -- not allowed to crash the whole
+    _run_scheduled_flows loop.
+
+    ZoneInfoNotFoundError is only raised when cron_matches is actually called,
+    which happens only when last_run is not None (so schedule_is_due calls
+    previous_fire_time rather than returning True immediately for a never-run
+    flow).  Tests below provide a past last_run via records to trigger this path.
+    """
+
+    def test_invalid_timezone_is_logged_and_skipped_not_crashed(self, monkeypatch):
+        """ZoneInfoNotFoundError (KeyError subclass) from cron_matches must be caught."""
+        step = _scheduled_step(
+            flow="bad-tz-flow", cron="0 2 * * 1", flow_schedule_timezone="Invalid/Zone",
+        )
+        ctx = _ctx([step])
+        # Provide a past last_run so schedule_is_due calls previous_fire_time -> cron_matches.
+        # With last_run=None, schedule_is_due short-circuits to True before calling ZoneInfo.
+        monkeypatch.setattr(orch, "read_metrics_records", lambda repo: [
+            _record("bad-tz-flow", "2026-07-05T02:00:00Z"),
+        ])
+        monkeypatch.setattr(orch, "claim_schedule", MagicMock(return_value=True))
+        run = MagicMock()
+        monkeypatch.setattr(orch, "_run_scheduled_step", run)
+        monkeypatch.setattr(orch, "_now_utc", lambda: _t("2026-07-06T10:00:00"))
+        # Must not raise -- the invalid timezone is caught and the flow is skipped
+        result = orch._run_scheduled_flows(ctx)
+        assert result == 0
+        run.assert_not_called()
+
+    def test_invalid_timezone_does_not_skip_other_flows(self, monkeypatch):
+        """A bad timezone on one flow must not prevent other flows from running."""
+        bad_step = _scheduled_step(
+            flow="bad-tz-flow", cron="0 2 * * 1", flow_schedule_timezone="Invalid/Zone",
+            agent="test/bad-step",
+        )
+        good_step = _scheduled_step(
+            flow="good-flow", cron="0 3 * * 1", flow_schedule_timezone="UTC",
+            agent="test/good-step",
+        )
+        ctx = _ctx([bad_step, good_step])
+        # Give bad-tz-flow a past last_run so cron_matches is reached for it.
+        # good-flow has no records so last_run=None -> always due, no ZoneInfo call needed.
+        monkeypatch.setattr(orch, "read_metrics_records", lambda repo: [
+            _record("bad-tz-flow", "2026-07-05T02:00:00Z"),
+        ])
+        monkeypatch.setattr(orch, "claim_schedule", MagicMock(return_value=True))
+        monkeypatch.setattr(orch, "release_schedule", MagicMock())
+        ran = []
+        monkeypatch.setattr(orch, "_run_scheduled_step", lambda c, a, w: ran.append(a.agent))
+        monkeypatch.setattr(orch, "_now_utc", lambda: _t("2026-07-06T03:00:00"))
+        result = orch._run_scheduled_flows(ctx)
+        assert result == 1
+        assert ran == ["test/good-step"]
