@@ -231,7 +231,7 @@ Computes per-agent and blended weekly aggregate records for the previous Mon-Sun
 - **Applies to:** schedule `0 1 * * *`
 - **Naming:** --
 
-Daily aggregation of pipeline metrics (issue #547). Reads records.jsonl from the ai-agile/metrics branch, computes per-agent and blended daily aggregate records for the previous complete calendar day (UTC), and appends them back into the same file. Runs at 01:00 UTC daily to allow the previous day's data to settle. Produces no issue branch or PR; all writes go to the metrics branch via append-metrics-record.sh.
+Daily aggregation of pipeline metrics (issue #547). Reads records.jsonl from the ai-agile/metrics branch, computes per-agent and blended daily aggregate records for the previous complete calendar day (UTC), and appends them back into the same file. Runs at 01:00 Eastern Time (America/New_York) daily to allow the previous day's data to settle. Produces no issue branch or PR; all writes go to the metrics branch via append-metrics-record.sh.
 
 ### `05_continuous/metrics-aggregation-daily`
 

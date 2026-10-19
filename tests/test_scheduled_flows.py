@@ -1,4 +1,4 @@
-"""Tests for issue #406's scheduled flows.
+"""Tests for issue #406's scheduled flows, and issue #580's timezone-aware cron matching.
 
 A scheduled flow has no work item, so the two things it needs are read from
 the record rather than from a label or a table of its own:
@@ -534,3 +534,176 @@ class TestCodebaseReviewScheduledFlow:
                 f"{codebase_reviewer_fields[category]} do not match "
                 f"pr-reviewer's {pr_reviewer_fields[category]}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Timezone-aware cron matching (issue #580)
+# ---------------------------------------------------------------------------
+
+class TestTimezoneAwareCronMatching:
+    """Scenarios from docs/features/pipeline.md (issue #580)."""
+
+    def test_schedule_fires_at_correct_eastern_time_during_winter_est(self):
+        """Scenario: Schedule fires at correct Eastern wall-clock time during winter (EST).
+
+        0 2 * * 1 (2am Monday Eastern) should be due at 07:00 UTC on a Monday in January
+        because EST is UTC-5.  2026-01-05 is a Monday.
+        """
+        when = _t("2026-01-05T07:00:00")  # 02:00 EST
+        assert cron_matches("0 2 * * 1", when, tz="America/New_York") is True
+
+    def test_schedule_not_due_one_hour_early_in_winter(self):
+        """Same expression must NOT fire at 06:00 UTC in January (that would be 01:00 EST)."""
+        when = _t("2026-01-05T06:00:00")  # 01:00 EST
+        assert cron_matches("0 2 * * 1", when, tz="America/New_York") is False
+
+    def test_schedule_fires_at_correct_eastern_time_during_summer_edt(self):
+        """Scenario: Schedule fires at correct Eastern wall-clock time during summer (EDT).
+
+        0 2 * * 1 (2am Monday Eastern) should be due at 06:00 UTC on a Monday in July
+        because EDT is UTC-4.  2026-07-06 is a Monday.
+        """
+        when = _t("2026-07-06T06:00:00")  # 02:00 EDT
+        assert cron_matches("0 2 * * 1", when, tz="America/New_York") is True
+
+    def test_schedule_not_due_one_hour_late_in_summer(self):
+        """Same expression must NOT fire at 07:00 UTC in July (that would be 03:00 EDT)."""
+        when = _t("2026-07-06T07:00:00")  # 03:00 EDT
+        assert cron_matches("0 2 * * 1", when, tz="America/New_York") is False
+
+    def test_utc_fallback_without_defaults_schedule_timezone(self):
+        """Scenario: Pipeline without defaults.schedule_timezone falls back to UTC.
+
+        With no timezone, 0 2 * * 1 matches at 02:00 UTC on a Monday.
+        """
+        when = _t("2026-07-06T02:00:00")  # 02:00 UTC
+        assert cron_matches("0 2 * * 1", when) is True
+
+    def test_utc_fallback_does_not_match_at_eastern_offset(self):
+        """UTC fallback: 06:00 UTC (02:00 EDT) must NOT match without tz."""
+        when = _t("2026-07-06T06:00:00")  # 06:00 UTC
+        assert cron_matches("0 2 * * 1", when) is False
+
+    def test_per_flow_timezone_override_takes_precedence(self):
+        """Scenario: Per-flow timezone override takes precedence over pipeline default.
+
+        A step with flow_schedule_timezone='UTC' should match at 02:00 UTC even when
+        the pipeline default is America/New_York.  schedule_is_due threads tz through
+        previous_fire_time -> cron_matches, so we test via schedule_is_due with tz='UTC'.
+        """
+        when = _t("2026-07-06T02:00:00")  # 02:00 UTC
+        assert schedule_is_due("0 2 * * *", None, when, tz="UTC") is True
+        # And it should NOT be due at 06:00 UTC with tz='UTC' (that's not 02:xx UTC)
+        when_later = _t("2026-07-06T06:00:00")
+        last = _t("2026-07-06T02:05:00")
+        assert schedule_is_due("0 2 * * *", last, when_later, tz="UTC") is False
+
+    def test_schedule_is_due_threads_timezone_through(self):
+        """schedule_is_due with tz='America/New_York' is due at 07:00 UTC in January."""
+        when = _t("2026-01-05T07:00:00")  # 02:00 EST
+        assert schedule_is_due("0 2 * * 1", None, when, tz="America/New_York") is True
+
+    def test_previous_fire_time_respects_timezone(self):
+        """previous_fire_time with tz finds the last wall-clock firing in that zone."""
+        now = _t("2026-01-05T09:00:00")  # 04:00 EST, after the 02:00 EST firing
+        fired = previous_fire_time("0 2 * * 1", now, tz="America/New_York")
+        assert fired == _t("2026-01-05T07:00:00")  # 02:00 EST = 07:00 UTC
+
+
+class TestTimezoneLoadedFromPipeline:
+    """The four real scheduled flows fire at documented Eastern wall-clock times."""
+
+    def _load_scheduled_steps(self):
+        agents, _ = orch.load_pipeline(_PIPELINE_PATH)
+        return {a.flow: a for a in agents if a.flow_schedule}
+
+    def test_defaults_schedule_timezone_applied_to_all_scheduled_flows(self):
+        steps = self._load_scheduled_steps()
+        assert steps, "pipeline.json must have at least one scheduled flow"
+        for flow_name, step in steps.items():
+            assert step.flow_schedule_timezone == "America/New_York", (
+                f"flow {flow_name!r} should inherit defaults.schedule_timezone"
+            )
+
+    def test_metrics_aggregation_fires_at_midnight_eastern_monday_est(self):
+        """0 0 * * 1 (midnight Monday Eastern) is due at 05:00 UTC in January."""
+        steps = self._load_scheduled_steps()
+        step = steps["metrics-aggregation"]
+        when = _t("2026-01-05T05:00:00")  # 00:00 EST
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+    def test_metrics_aggregation_fires_at_midnight_eastern_monday_edt(self):
+        """0 0 * * 1 (midnight Monday Eastern) is due at 04:00 UTC in July."""
+        steps = self._load_scheduled_steps()
+        step = steps["metrics-aggregation"]
+        when = _t("2026-07-06T04:00:00")  # 00:00 EDT
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+    def test_metrics_aggregation_daily_fires_at_01_eastern_est(self):
+        """0 1 * * * (01:00 Eastern daily) is due at 06:00 UTC in January."""
+        steps = self._load_scheduled_steps()
+        step = steps["metrics-aggregation-daily"]
+        when = _t("2026-01-06T06:00:00")  # 01:00 EST
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+    def test_metrics_aggregation_daily_fires_at_01_eastern_edt(self):
+        """0 1 * * * (01:00 Eastern daily) is due at 05:00 UTC in July."""
+        steps = self._load_scheduled_steps()
+        step = steps["metrics-aggregation-daily"]
+        when = _t("2026-07-07T05:00:00")  # 01:00 EDT
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+    def test_metrics_report_fires_at_02_eastern_monday_est(self):
+        """0 2 * * 1 (02:00 Monday Eastern) is due at 07:00 UTC in January."""
+        steps = self._load_scheduled_steps()
+        step = steps["metrics-report"]
+        when = _t("2026-01-05T07:00:00")  # 02:00 EST
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+    def test_metrics_report_fires_at_02_eastern_monday_edt(self):
+        """0 2 * * 1 (02:00 Monday Eastern) is due at 06:00 UTC in July."""
+        steps = self._load_scheduled_steps()
+        step = steps["metrics-report"]
+        when = _t("2026-07-06T06:00:00")  # 02:00 EDT
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+    def test_codebase_review_fires_at_03_eastern_monday_est(self):
+        """0 3 * * 1 (03:00 Monday Eastern) is due at 08:00 UTC in January."""
+        steps = self._load_scheduled_steps()
+        step = steps["codebase-review"]
+        when = _t("2026-01-05T08:00:00")  # 03:00 EST
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+    def test_codebase_review_fires_at_03_eastern_monday_edt(self):
+        """0 3 * * 1 (03:00 Monday Eastern) is due at 07:00 UTC in July."""
+        steps = self._load_scheduled_steps()
+        step = steps["codebase-review"]
+        when = _t("2026-07-06T07:00:00")  # 03:00 EDT
+        assert cron_matches(step.flow_schedule, when, tz=step.flow_schedule_timezone) is True
+
+
+class TestTimezoneOverridePerFlow:
+    """A flow with trigger.timezone overrides the pipeline default."""
+
+    def test_per_flow_utc_override_matches_at_utc_time(self):
+        """A step with flow_schedule_timezone='UTC' matches at 02:00 UTC,
+        not at 06:00/07:00 UTC as America/New_York would require."""
+        step = _scheduled_step(cron="0 2 * * 1", flow_schedule_timezone="UTC")
+        when_utc = _t("2026-07-06T02:00:00")  # 02:00 UTC, not 02:00 EDT
+        assert cron_matches(step.flow_schedule, when_utc, tz=step.flow_schedule_timezone) is True
+        when_eastern = _t("2026-07-06T06:00:00")  # 02:00 EDT (what NY default would need)
+        assert cron_matches(step.flow_schedule, when_eastern, tz=step.flow_schedule_timezone) is False
+
+    def test_per_flow_utc_override_dispatched_with_utc_in_run(self, monkeypatch):
+        """_run_scheduled_flows uses the resolved tz from the step, not a hardcoded value."""
+        step = _scheduled_step(cron="0 2 * * 1", flow_schedule_timezone="UTC")
+        ctx = _ctx([step])
+        monkeypatch.setattr(orch, "read_metrics_records", lambda repo: [])
+        monkeypatch.setattr(orch, "claim_schedule", MagicMock(return_value=True))
+        monkeypatch.setattr(orch, "release_schedule", MagicMock())
+        ran = []
+        monkeypatch.setattr(orch, "_run_scheduled_step", lambda c, a, w: ran.append(a.agent))
+        # Provide a Monday 02:00 UTC time -- should match with tz=UTC
+        monkeypatch.setattr(orch, "_now_utc", lambda: _t("2026-07-06T02:00:00"))
+        assert orch._run_scheduled_flows(ctx) == 1
+        assert ran == ["05_continuous/learn-loop"]

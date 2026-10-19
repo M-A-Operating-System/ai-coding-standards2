@@ -7,7 +7,7 @@ description: >
   Analyst, Quality Assurance), deduplicates findings against still-open prior
   review issues, and requests a "Technical Review - {date}" GitHub issue via
   result.json's creates_issue field. Findings use pr-reviewer's structured
-  schema (RV-NNN). Runs every Monday at 03:00 UTC; no label trigger.
+  schema (RV-NNN). Runs every Monday at 03:00 Eastern Time (America/New_York); no label trigger.
 ---
 
 # 00_ondemand/codebase-reviewer

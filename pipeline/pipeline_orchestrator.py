@@ -55,6 +55,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Mapping, Optional
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -248,6 +249,7 @@ class AgentDef:
     flow_labels: list = field(default_factory=list)   # flow trigger.labels -- every one must be present for an item to enter this flow
     flow_classifications: list = field(default_factory=list)  # flow trigger.classification -- item must carry one of these classification: labels; [] means every classification
     flow_schedule: Optional[str] = None   # flow trigger.schedule (cron) -- this flow has no work item; it fires on cadence
+    flow_schedule_timezone: str = ""      # resolved timezone for schedule matching (empty until load_pipeline resolves it)
     commits_to: Optional[str] = None      # git_ops.commits_to -- which of the flow's naming.pull_requests entries this step commits to
     unit: str = "item"                    # "item" | "sub_item" -- what one invocation of this step addresses
     exclude_classifications: list = field(default_factory=list)  # skip if issue classification matches
@@ -596,6 +598,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 flow_labels=list(flow_trigger.get("labels") or []),
                 flow_classifications=list(flow_trigger.get("classification") or []),
                 flow_schedule=flow_trigger.get("schedule"),
+                flow_schedule_timezone=flow_trigger.get("timezone", ""),
                 commits_to=_commits_to,
                 unit=entry.get("unit", "item"),
                 exclude_classifications=list(entry.get("exclude_classifications", [])),
@@ -697,6 +700,11 @@ def load_pipeline(path: Path) -> tuple[list[AgentDef], list[str]]:
             if _agent.step_type == "agent":
                 _agent.lifecycle_before = list(_before)
                 _agent.lifecycle_after = list(_after)
+
+        _default_schedule_tz = _defaults.get("schedule_timezone", "UTC")
+        for _agent in agents:
+            if _agent.flow_schedule is not None and not _agent.flow_schedule_timezone:
+                _agent.flow_schedule_timezone = _default_schedule_tz
 
         # AS-1: pipeline.json's budgets is the sole source for these three
         # values -- they used to be hardcoded module constants. Mutating the
@@ -1929,13 +1937,19 @@ def _cron_field_matches(field: str, value: int, *, low: int, high: int) -> bool:
     return False
 
 
-def cron_matches(expression: str, when: datetime) -> bool:
-    """Whether a 5-field cron expression fires at this minute (UTC).
+def cron_matches(expression: str, when: datetime, tz: str = "UTC") -> bool:
+    """Whether a 5-field cron expression fires at this minute in the given timezone.
 
     Fields: minute hour day-of-month month day-of-week (0 or 7 = Sunday).
     Day-of-month and day-of-week are OR'd when both are restricted, matching
     cron's own long-standing behaviour.
+
+    *when* is expected to be UTC (or timezone-aware). When *tz* differs from
+    UTC, *when* is converted to that zone before extracting hour/minute/weekday,
+    so the expression is evaluated against wall-clock time in the target zone.
     """
+    if tz and tz != "UTC":
+        when = when.astimezone(ZoneInfo(tz))
     fields = expression.split()
     if len(fields) != 5:
         raise ValueError(f"cron expression must have 5 fields, got {expression!r}")
@@ -1969,17 +1983,19 @@ def cron_matches(expression: str, when: datetime) -> bool:
 _CRON_LOOKBACK_MINUTES = 366 * 24 * 60
 
 
-def previous_fire_time(expression: str, now: datetime) -> Optional[datetime]:
+def previous_fire_time(expression: str, now: datetime, tz: str = "UTC") -> Optional[datetime]:
     """The most recent minute at or before *now* that this cadence fires."""
     candidate = now.replace(second=0, microsecond=0)
     for _ in range(_CRON_LOOKBACK_MINUTES):
-        if cron_matches(expression, candidate):
+        if cron_matches(expression, candidate, tz=tz):
             return candidate
         candidate -= timedelta(minutes=1)
     return None
 
 
-def schedule_is_due(expression: str, last_run: Optional[datetime], now: datetime) -> bool:
+def schedule_is_due(
+    expression: str, last_run: Optional[datetime], now: datetime, tz: str = "UTC",
+) -> bool:
     """Whether a scheduled flow is due, given when it last ran.
 
     A flow that has never run has no entry in the record, which is the same
@@ -1987,12 +2003,16 @@ def schedule_is_due(expression: str, last_run: Optional[datetime], now: datetime
     again since that entry. A cadence that cannot be parsed raises here rather
     than being read as "always due" -- a broken declaration must not silently
     run a sweep every tick (STD-ARCH-014).
+
+    *tz* is a timezone name understood by zoneinfo (e.g. "America/New_York").
+    The cron expression's hour/minute/weekday fields are evaluated in that zone.
+    Defaults to "UTC" for backward compatibility.
     """
     if len(expression.split()) != 5:
         raise ValueError(f"cron expression must have 5 fields, got {expression!r}")
     if last_run is None:
         return True
-    fired = previous_fire_time(expression, now)
+    fired = previous_fire_time(expression, now, tz=tz)
     if fired is None:
         return True
     return last_run < fired
@@ -9012,7 +9032,7 @@ SCHEDULE_WORK_ITEM_KIND = "schedule"
 
 
 def _scheduled_flows(agents: list) -> dict:
-    """The scheduled flows in the pipeline, as {flow name: (cron, [steps])}.
+    """The scheduled flows in the pipeline, as {flow name: (cron, tz, [steps])}.
 
     A scheduled flow is a flow like any other; the only difference is that its
     trigger is a cadence rather than an item, so its steps are never reached by
@@ -9022,7 +9042,10 @@ def _scheduled_flows(agents: list) -> dict:
     for agent_def in agents:
         if not agent_def.flow_schedule:
             continue
-        cron, steps = flows.setdefault(agent_def.flow, (agent_def.flow_schedule, []))
+        cron, tz, steps = flows.setdefault(
+            agent_def.flow,
+            (agent_def.flow_schedule, agent_def.flow_schedule_timezone or "UTC", []),
+        )
         steps.append(agent_def)
     return flows
 
@@ -9108,9 +9131,9 @@ def _run_scheduled_flows(ctx: "RunContext") -> int:
     now = _now_utc()
     records = read_metrics_records(ctx.repo)
     ran = 0
-    for flow, (cron, steps) in flows.items():
+    for flow, (cron, tz, steps) in flows.items():
         try:
-            due = schedule_is_due(cron, flow_last_run(records, flow), now)
+            due = schedule_is_due(cron, flow_last_run(records, flow), now, tz=tz)
         except ValueError as exc:
             log.error("schedule %s: %s -- skipping", flow, exc)
             continue
