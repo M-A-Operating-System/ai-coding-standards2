@@ -327,10 +327,9 @@ BODY_EOF
 # NEW_BODY="${NEW_BODY}\n\n**Standards check:** STD-SEC-001 ..."
 ```
 
-### 6c — Compute the new title (prefix only)
+### 6c — Compute a descriptive release-note-ready title
 
-Apply the title prefix from the 7a table. Do **not** rephrase the
-existing title text — only prepend the `[CATEGORY]` prefix if absent.
+Apply the title guidance in Step 7a. Rewrite vague or implementation-only titles into concise, fully descriptive statements of the issue's purpose and expected delivered outcome. The issue title is reused in published release notes, so it must make sense independently of the issue body. Do not introduce outcomes or scope not supported by the issue.
 Hold the result in `$NEW_TITLE` — you write neither title nor body here;
 Step 8 returns both together.
 
@@ -456,7 +455,7 @@ the first time it applies a body replace for this agent on this issue
 
 ### 7a — Build the new title
 
-Preserve the original title's meaning and scope. Prefer the original wording with a classification prefix. Rephrase only if demonstrably misleading or ambiguous; never imply additional scope. Disclose substantive title changes in review output.
+The issue title is copied into published release notes. Rewrite it when needed to clearly state the purpose of the issue and the expected shipped outcome, in language understandable without the issue body. Prefer a specific outcome-oriented description over generic activity labels such as 'refactor', 'fix issue', or 'update agent'. Preserve the approved scope and do not invent benefits or implementation results. Retain the classification prefix required below, and include the optional module only when supported by the source. Keep the title concise but informative. The existing title is input, not immutable wording. Sizer-created sub-issue canonical titles remain exempt under Step 2.
 
 Map classification to prefix:
 
