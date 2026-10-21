@@ -564,14 +564,17 @@ class TestInteractiveSessionIngressAuthVars:
             "ANTHROPIC_API_KEY": "sk-should-not-be-needed",
             **self._INGRESS_ENV,
         }
-        with patch.object(pipeline_orchestrator.subprocess, "run", side_effect=fake_run):
-            env = _build_agent_env(
-                source_env, "test/repo", _make_work_item(), "sid", "per_issue"
+        try:
+            with patch.object(pipeline_orchestrator.subprocess, "run", side_effect=fake_run):
+                env = _build_agent_env(
+                    source_env, "test/repo", _make_work_item(), "sid", "per_issue"
+                )
+            assert envs, "the probe must have run"
+            probed = envs[0]
+            for name, value in self._INGRESS_ENV.items():
+                assert probed.get(name) == value, f"probe env is missing {name}"
+            assert "ANTHROPIC_API_KEY" not in env, (
+                "session auth (via the ingress vars) worked, so the key must be dropped"
             )
-        assert envs, "the probe must have run"
-        probed = envs[0]
-        for name, value in self._INGRESS_ENV.items():
-            assert probed.get(name) == value, f"probe env is missing {name}"
-        assert "ANTHROPIC_API_KEY" not in env, (
-            "session auth (via the ingress vars) worked, so the key must be dropped"
-        )
+        finally:
+            pipeline_orchestrator._CLAUDE_CLI_PROBE.clear()
