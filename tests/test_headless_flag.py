@@ -18,6 +18,8 @@ from pipeline_orchestrator import (
     _resolve_agent_invocation,
     WorkItem,
     AgentDef,
+    AGENT_ENV_PASSTHROUGH,
+    INTERACTIVE_SESSION_AUTH_VARS,
 )
 
 
@@ -488,4 +490,88 @@ class TestInteractiveSessionAuth:
         assert probed.get("REPO") == "test/repo", "probe env must be the agent's env"
         assert "ANTHROPIC_API_KEY" not in probed, (
             "the probe must test whether session auth works WITHOUT the key"
+        )
+
+
+class TestInteractiveSessionIngressAuthVars:
+    """On some interactive containers the Claude CLI authenticates via
+    session-ingress tokens rather than a credentials file under HOME or
+    ANTHROPIC_API_KEY -- neither of which AGENT_ENV_PASSTHROUGH's other
+    entries cover. INTERACTIVE_SESSION_AUTH_VARS closes that gap for the
+    interactive path only (issue #584)."""
+
+    _INGRESS_ENV = {
+        "CLAUDE_CODE_REMOTE": "1",
+        "CLAUDE_CODE_REMOTE_SDK_URL": "https://example.invalid/sdk",
+        "SESSION_INGRESS_URL": "https://example.invalid/ingress",
+        "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/tmp/token-file",
+        "CLAUDE_CODE_SESSION_ID": "sess-abc",
+        "CLAUDE_CODE_REMOTE_SESSION_ID": "remote-sess-abc",
+    }
+
+    def test_vars_are_not_in_the_headless_capable_passthrough(self):
+        # These vars must stay out of AGENT_ENV_PASSTHROUGH itself: that list
+        # is also used verbatim by headless/CI runs, which have no session to
+        # inherit and must not pick these up incidentally.
+        for name in INTERACTIVE_SESSION_AUTH_VARS:
+            assert name not in AGENT_ENV_PASSTHROUGH
+
+    def test_messaging_vars_are_excluded(self):
+        # Confirmed unnecessary for CLI auth, and they look like they grant
+        # control over the session itself -- never hand that to an agent.
+        assert "CLAUDE_CODE_MESSAGING_SOCKET" not in INTERACTIVE_SESSION_AUTH_VARS
+        assert "CLAUDE_CODE_MESSAGING_TOKEN" not in INTERACTIVE_SESSION_AUTH_VARS
+
+    def test_interactive_run_passes_ingress_vars_through(self):
+        pipeline_orchestrator._HEADLESS = False
+        source_env = {"PATH": "/usr/bin", **self._INGRESS_ENV}
+        env = _build_agent_env(
+            source_env, "test/repo", _make_work_item(), "sid", "per_issue"
+        )
+        for name, value in self._INGRESS_ENV.items():
+            assert env.get(name) == value, f"{name} must reach an interactive agent"
+
+    def test_headless_run_never_gets_ingress_vars(self):
+        # Headless/CI authenticates with ANTHROPIC_API_KEY via a secret and
+        # has no session to inherit; these vars have no business there.
+        pipeline_orchestrator._HEADLESS = True
+        try:
+            source_env = {"PATH": "/usr/bin", **self._INGRESS_ENV}
+            env = _build_agent_env(
+                source_env, "test/repo", _make_work_item(), "sid", "per_issue"
+            )
+        finally:
+            pipeline_orchestrator._HEADLESS = False
+        for name in self._INGRESS_ENV:
+            assert name not in env, f"{name} must not reach a headless agent"
+
+    def test_ingress_vars_reach_the_cli_auth_probe(self):
+        # The ANTHROPIC_API_KEY-drop probe (issue #346) must see these vars
+        # too, since it probes the exact env the agent subprocess receives --
+        # otherwise a container that needs them to authenticate would probe
+        # as unusable and keep ANTHROPIC_API_KEY even when session auth (via
+        # these vars) would have worked.
+        pipeline_orchestrator._CLAUDE_CLI_PROBE.clear()
+        envs = []
+
+        def fake_run(cmd, **kw):
+            envs.append(kw.get("env") or {})
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        pipeline_orchestrator._HEADLESS = False
+        source_env = {
+            "PATH": "/usr/bin",
+            "ANTHROPIC_API_KEY": "sk-should-not-be-needed",
+            **self._INGRESS_ENV,
+        }
+        with patch.object(pipeline_orchestrator.subprocess, "run", side_effect=fake_run):
+            env = _build_agent_env(
+                source_env, "test/repo", _make_work_item(), "sid", "per_issue"
+            )
+        assert envs, "the probe must have run"
+        probed = envs[0]
+        for name, value in self._INGRESS_ENV.items():
+            assert probed.get(name) == value, f"probe env is missing {name}"
+        assert "ANTHROPIC_API_KEY" not in env, (
+            "session auth (via the ingress vars) worked, so the key must be dropped"
         )

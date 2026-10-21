@@ -4111,7 +4111,9 @@ def _compute_agent_session_id(agent_def: AgentDef, work_item: WorkItem, repo: st
 # the agent's own API key, and a gh token for the agent's read/comment calls
 # are passed through here. ANTHROPIC_API_KEY is then dropped again for
 # interactive runs, which inherit the session's own auth instead (issue #346);
-# see _build_agent_env. Work-item context vars (AI_AGILE_ROOT, REPO,
+# see _build_agent_env. INTERACTIVE_SESSION_AUTH_VARS below covers the same
+# interactive-auth intent for containers where that inheritance needs explicit
+# vars (issue #584). Work-item context vars (AI_AGILE_ROOT, REPO,
 # ISSUE_NUMBER, etc.) are set explicitly in _build_agent_env, not passed through.
 AGENT_ENV_PASSTHROUGH = (
     "PATH",
@@ -4129,6 +4131,27 @@ AGENT_ENV_PASSTHROUGH = (
     "http_proxy", "https_proxy", "no_proxy",
     "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
     "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+)
+
+# Session-ingress auth vars (issue #584), passed through on the interactive
+# path only -- never headless/CI, which authenticates with ANTHROPIC_API_KEY
+# via a secret and has no session to inherit. On some interactive containers
+# the Claude CLI authenticates via session-ingress tokens rather than via a
+# credentials file under HOME or ANTHROPIC_API_KEY, neither of which
+# AGENT_ENV_PASSTHROUGH's other entries cover; without these, "interactive
+# runs inherit the session's own auth" (issue #346) silently stops being true
+# on such a container and every agent subprocess gets "Not logged in".
+# Deliberately excludes CLAUDE_CODE_MESSAGING_SOCKET/CLAUDE_CODE_MESSAGING_TOKEN:
+# confirmed unnecessary for CLI auth, and they look like they grant control
+# over the session itself -- not something a pipeline agent (running
+# LLM-driven tool calls against untrusted issue/PR content) should receive.
+INTERACTIVE_SESSION_AUTH_VARS = (
+    "CLAUDE_CODE_REMOTE",
+    "CLAUDE_CODE_REMOTE_SDK_URL",
+    "SESSION_INGRESS_URL",
+    "CLAUDE_SESSION_INGRESS_TOKEN_FILE",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_REMOTE_SESSION_ID",
 )
 
 # The env keys resolve-only mode (--print-prompt) may print. That output goes to
@@ -4371,6 +4394,14 @@ def _build_agent_env(
     every other step (falls back to base_env's AI_AGILE_ROOT / SUBMODULE_ROOT).
     """
     agent_env = {k: base_env[k] for k in AGENT_ENV_PASSTHROUGH if k in base_env}
+    # Issue #584: an interactive run's session-ingress auth vars, when the
+    # container needs them to authenticate the agent's Claude CLI (see
+    # INTERACTIVE_SESSION_AUTH_VARS). Added before the ANTHROPIC_API_KEY probe
+    # below so that probe sees the same env the agent subprocess will.
+    if not _HEADLESS:
+        agent_env.update(
+            {k: base_env[k] for k in INTERACTIVE_SESSION_AUTH_VARS if k in base_env}
+        )
     # Export resolved paths so the agent prompt's bash snippets work regardless
     # of CWD or where this repo is mounted in the consuming repo. ISSUE_NUMBER
     # and PR_NUMBER are each set independently when the orchestrator can
