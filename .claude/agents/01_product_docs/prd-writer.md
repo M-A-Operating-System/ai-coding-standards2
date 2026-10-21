@@ -6,9 +6,7 @@ description: >
   complete specification (Gherkin, acceptance criteria, user stories, problem
   statement) -- if so, preserves it and appends missing governance elements
   (header comment, title prefix, standards check) plus any missing Gherkin
-  coverage (Step 6d: derives scenarios from existing requirements toward the
-  classification band's maximum, self-checking that every requirement is
-  cited, never inventing new requirements). If no
+  coverage (Step 6d: derives only supported scenarios for uncovered behavioral requirements, while preserving technical contracts). If no
   pre-existing spec is found, rewrites the issue body with a full PRD in
   user-story and Gherkin format. Waits for the prd-writer:approved gate.
 ---
@@ -329,7 +327,7 @@ BODY_EOF
 
 ### 6c — Compute a descriptive release-note-ready title
 
-Apply the title guidance in Step 7a. Rewrite vague or implementation-only titles into concise, fully descriptive statements of the issue's purpose and expected delivered outcome. The issue title is reused in published release notes, so it must make sense independently of the issue body. Do not introduce outcomes or scope not supported by the issue.
+Apply the single title-writing rule in Step 7a.
 Hold the result in `$NEW_TITLE` — you write neither title nor body here;
 Step 8 returns both together.
 
@@ -358,18 +356,7 @@ If `$ALREADY_APPROVED` is non-zero, skip to **Step 8** immediately.
 
 **Check for existing Gherkin coverage:**
 
-Count existing scenarios and assess coverage of distinct behavioral requirements. Classification ranges are advisory, not generation targets:
-
-| Classification | Minimum scenarios | Maximum scenarios |
-|---|---|---|
-| `security` | 2 | 4 |
-| `bug` | 1 | 2 |
-| `enhancement` | 2 | 7 |
-| `tech-debt` | 1 | 3 |
-| `spike` | 1 | 3 |
-
-If the existing count meets or exceeds the maximum, Step 6d is a no-op —
-go directly to **Step 8**.
+Assess existing scenarios against every distinct behavioral requirement. Generate additional scenarios only for uncovered requirements; classification ranges are not stopping conditions or generation targets.
 
 **Derivation algorithm (runs only where supported behavioral requirements lack test coverage):**
 
@@ -387,10 +374,7 @@ go directly to **Step 8**.
    Given from surrounding context using the same technique Step 5 uses when
    drafting from a looser problem statement.
 5. Derive only the smallest set of scenarios that covers supported behavioral requirements. Do not target a minimum or maximum count; never invent requirements to fill a quota.
-6. If fewer scenarios can be derived than the **minimum** (e.g. a schema-only
-   or infrastructure-only sub-issue), derive however many are legitimate and
-   append one note line:
-   `<!-- backfill-note: N of MINIMUM scenarios derivable; remaining requirements are non-behavioural -->`
+6. Record any requirements that require structural or contract checks rather than Gherkin; do not fabricate behavioral scenarios.
 
 **Place the derived scenarios in one section, never a second heading with the
 same title.** If the body already contains a literal `### Acceptance
@@ -423,8 +407,7 @@ from human-authored ones sharing the same section:
 The section label ("Derived by prd-writer") distinguishes machine-derived
 scenarios from human-authored content.
 
-**Coverage self-check (mandatory, before Step 8 — run unconditionally, even
-when the derivation loop above already stopped at the maximum):** List every
+**Coverage self-check (mandatory, before Step 8 — run unconditionally, regardless of the existing scenario count):** List every
 requirement tag enumerated in step 1 above, and against each one, check
 explicitly whether it is actually cited across *all* `#### Scenario:` blocks
 in the body — pre-existing and just-derived alike. Do this tag by tag; do
@@ -432,11 +415,8 @@ not conclude coverage is complete without having checked every tag
 individually. A behavioral requirement enumerated but cited by no scenario is a gap. Technical or structural requirements may instead be covered by explicit contract/structural checks and must remain in the issue.
 For each gap:
 - If it is behavioural and a scenario can legitimately be derived for it
-  (rules 2–4 above), derive it now, even if the maximum has already been
-  reached — coverage of a real requirement takes priority over the band's
-  ceiling. This is the one case where rule 5's maximum does not hold.
-- If it genuinely cannot (non-behavioural, or already accounted for by rule
-  6's under-minimum note), name the uncovered requirement(s) explicitly in
+  (rules 2–4 above), derive it now; requirement coverage governs.
+- If it genuinely cannot (non-behavioural, or covered by a structural or contract check), name the uncovered requirement(s) explicitly in
   the artefact comment posted at Step 8.
 
 Do not signal `outcome: "review"` with a known, unstated coverage gap —
@@ -455,7 +435,7 @@ the first time it applies a body replace for this agent on this issue
 
 ### 7a — Build the new title
 
-The issue title is copied into published release notes. Rewrite it when needed to clearly state the purpose of the issue and the expected shipped outcome, in language understandable without the issue body. Prefer a specific outcome-oriented description over generic activity labels such as 'refactor', 'fix issue', or 'update agent'. Preserve the approved scope and do not invent benefits or implementation results. Retain the classification prefix required below, and include the optional module only when supported by the source. Keep the title concise but informative. The existing title is input, not immutable wording. Sizer-created sub-issue canonical titles remain exempt under Step 2.
+Rewrite the issue title as a single, concise, outcome-oriented sentence that independently communicates the issue's purpose and expected delivered result for publication in release notes. Retain the classification prefix, preserve the intended scope, and do not invent requirements or benefits. Sizer-created canonical sub-issue titles remain exempt under Step 2.
 
 Map classification to prefix:
 
@@ -554,9 +534,7 @@ runtime values yourself:
 - **PRD lives in the issue body, not a comment.** Re-runs overwrite
   the body with the revised PRD via `body_write` (Step 8) — never a
   direct API call. GitHub keeps the full edit history.
-- Do not invent acceptance criteria the stakeholder didn't imply. If
-  their problem statement is too vague for Gherkin, post a Question
-  Card rather than guessing.
+- Do not invent acceptance criteria. Return material unanswered questions using Step 3b's blocked result; the orchestrator handles stakeholder communication.
 - Do not invent technical design. Preserve stakeholder-specified architectural constraints, execution ordering, schemas, file paths, interfaces, algorithms, dependencies, metrics contracts, and exclusions as binding requirements even when not user-observable.
 - Before submission, verify every substantive source requirement remains represented; block on material unresolved questions under Step 3b and disclose nonblocking questions in review.
 - Each Gherkin scenario must be falsifiable. "Given the system exists,
@@ -566,7 +544,7 @@ runtime values yourself:
   is fixed" or "the change works" — state what the system now does.
 - Don't fabricate a module. If no clear bounded context emerges, omit
   the module segment.
-- When in doubt about size, decompose.
+- Decompose only for independently deliverable outcomes; block on material uncertainty rather than guessing.
 - Do not call `status.sh` or post comments yourself — the orchestrator
   handles all label transitions and posts your `output` as the artefact
   comment. `result.json` must be written before you exit.
