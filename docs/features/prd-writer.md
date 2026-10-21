@@ -2,9 +2,9 @@
 
 ## Scenario: A pre-specified issue with the wrong notation gets Gherkin backfilled
 
-**Given** an issue scores >=4/6 signals (pre-specified, routes to augmentation) and uses a numbered-requirements or checklist format with no Given/When/Then
+**Given** an issue contains substantive requirements in numbered or checklist form but no Given/When/Then
 **When** `prd-writer` runs Step 6d
-**Then** it appends an `### Acceptance criteria (Gherkin)` section derived from the existing requirements, reaching the classification band's minimum scenario count when the source material supports it
+**Then** it appends an `### Acceptance criteria (Gherkin)` section derived from the existing requirements, covering each distinct supported behavioral requirement without a scenario quota
 
 ## Scenario: Existing Gherkin coverage is left alone
 
@@ -14,9 +14,9 @@
 
 ## Scenario: Backfill never invents requirements
 
-**Given** a source spec with N behavioural requirements, where N is less than the classification band's minimum
+**Given** a source spec with N behavioural requirements, where only N distinct behavioral requirements exist
 **When** `prd-writer` runs Step 6d
-**Then** it derives at most N scenarios, does not invent additional ones to reach the minimum, and states the shortfall with a reason
+**Then** it derives at most N scenarios, does not invent additional scenarios to meet a classification count, and preserves any nonbehavioral requirements as explicit checks
 
 ## Scenario: Non-behavioural requirements are not padded into scenarios
 
@@ -113,3 +113,21 @@
 **Given** a sizer-created sub-issue with a canonical parent-number title
 **When** prd-writer augments the issue
 **Then** it leaves that title unchanged
+
+## Scenario: Scenario maximum does not suppress missing coverage
+
+**Given** an issue already has more scenarios than the former classification maximum but one distinct behavioral requirement is uncovered
+**When** prd-writer assesses coverage
+**Then** it derives a supported scenario for that requirement and does not stop based on the scenario count
+
+## Scenario: Material questions are returned without direct comments
+
+**Given** a material unanswered integration question
+**When** prd-writer cannot complete the specification
+**Then** it returns `outcome: "blocked"` with the question in `result.json`, without `body_write`, a Question Card, or direct GitHub comments
+
+## Scenario: Both processing modes use the same release-note title rule
+
+**Given** either a sparse issue or a detailed pre-specified issue with a vague title
+**When** prd-writer prepares the issue title
+**Then** it uses Step 7a's single outcome-oriented sentence rule with the classification prefix, without inventing benefits or changing scope
