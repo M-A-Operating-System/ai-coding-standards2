@@ -139,3 +139,15 @@
 **Given** `pipeline.json` has `defaults.schedule_timezone` set to `"America/New_York"` and a flow declares `trigger.timezone` of `"UTC"` with `trigger.cron` of `"0 2 * * *"`
 **When** the orchestrator evaluates the schedule at 02:00 UTC on any day
 **Then** the schedule is evaluated as due
+
+## Scenario: Interactive run agent subprocess starts on a session-ingress-token container
+
+**Given** the orchestrator is running interactively (`_HEADLESS = False`) on a container where the `claude` CLI requires session-ingress-token env vars to authenticate
+**When** the orchestrator builds the agent subprocess environment and probes it via `_claude_cli_usable()`
+**Then** `_claude_cli_usable()` returns `True`, the session-ingress vars are present in the environment, and `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` are absent from the environment
+
+## Scenario: Headless run agent environment does not receive session-ingress vars
+
+**Given** the orchestrator is running headlessly (`_HEADLESS = True`)
+**When** the orchestrator builds the agent subprocess environment
+**Then** `CLAUDE_CODE_REMOTE`, `CLAUDE_CODE_REMOTE_SDK_URL`, `SESSION_INGRESS_URL`, `CLAUDE_SESSION_INGRESS_TOKEN_FILE`, `CLAUDE_CODE_SESSION_ID`, and `CLAUDE_CODE_REMOTE_SESSION_ID` are all absent from the built environment
