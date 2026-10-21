@@ -96,8 +96,20 @@
 **When** prd-writer exits
 **Then** it uses the existing blocked outcome and does not post comments or change labels directly
 
-## Scenario: Issue title preserves scope
+## Scenario: Issue title communicates the shipped outcome in release notes
 
-**Given** an existing descriptive issue title
-**When** prd-writer computes a title
-**Then** it retains the meaning and scope, preferring a classification prefix over substantive rephrasing
+**Given** an issue with a vague or implementation-only title and an explicit expected outcome in its body
+**When** prd-writer computes the title
+**Then** it produces a concise, independently understandable title describing the purpose and expected outcome without inventing scope, while retaining the classification prefix
+
+## Scenario: Existing detailed title may be improved without losing meaning
+
+**Given** a pre-specified issue with a technically accurate but unclear title
+**When** prd-writer augments the issue
+**Then** it may rewrite the title for release-note clarity while preserving all stakeholder-defined scope and constraints
+
+## Scenario: Sizer-generated sub-issue titles remain canonical
+
+**Given** a sizer-created sub-issue with a canonical parent-number title
+**When** prd-writer augments the issue
+**Then** it leaves that title unchanged
