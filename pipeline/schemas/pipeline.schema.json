@@ -73,6 +73,10 @@
               "items": { "type": "string" }
             }
           }
+        },
+        "schedule_timezone": {
+          "type": "string",
+          "description": "Default timezone for evaluating scheduled-flow cron expressions (e.g. 'America/New_York'). The cron expression's hour/minute/weekday fields are matched against wall-clock time in this zone rather than UTC. Individual flows may override this with trigger.timezone. Absent means UTC, for backward compatibility with pipeline.json files that predate this field."
         }
       }
     },
@@ -186,6 +190,10 @@
                 "schedule": {
                   "type": "string",
                   "description": "Cron expression. This flow has no triggering work item; it fires on cadence and, if it concludes something is needed, raises one (PRODUCT.md, 'Scheduled work'). Due-ness is derived from the record (when this flow's steps last appended an entry), never stored separately."
+                },
+                "timezone": {
+                  "type": "string",
+                  "description": "Per-flow timezone override for cron matching (e.g. 'UTC', 'America/Los_Angeles'). When present, takes precedence over defaults.schedule_timezone. Absent means use the pipeline default."
                 }
               }
             }
