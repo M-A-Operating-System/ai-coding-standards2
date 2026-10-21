@@ -131,3 +131,21 @@
 **Given** either a sparse issue or a detailed pre-specified issue with a vague title
 **When** prd-writer prepares the issue title
 **Then** it uses Step 7a's single outcome-oriented sentence rule with the classification prefix, without inventing benefits or changing scope
+
+## Scenario: New PRD begins with release-note summary
+
+**Given** a sparse issue with a supported purpose and expected outcome
+**When** prd-writer drafts its PRD
+**Then** it places `### Release Notes` immediately after the PRD heading, with a concise 2–4 sentence summary before `### Problem`, retaining all existing downstream section headings
+
+## Scenario: Existing specification gains release notes without losing requirements
+
+**Given** a detailed pre-specified issue without a release-note introduction
+**When** prd-writer augments it
+**Then** it inserts `### Release Notes` above the preserved specification, describing only supported purpose and outcome without changing requirements
+
+## Scenario: Existing release notes are not duplicated
+
+**Given** a pre-specified issue already containing `### Release Notes`
+**When** prd-writer augments it
+**Then** the output contains exactly one `### Release Notes` section and preserves its supported content
