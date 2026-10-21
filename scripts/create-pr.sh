@@ -129,15 +129,16 @@ if [[ "${PR_CLOSES_ISSUE}" == "false" ]]; then
   PR_BODY="Design documentation for issue #${ISSUE_NUMBER} (branch ${BRANCH}). Merges to main at the prd-docs-updater:approved gate, ahead of the build phase; does not close the issue -- the code PR does."
 else
   PR_BODY="Closes #${ISSUE_NUMBER}"
-  # Carry only the business-facing Release Notes section into the draft PR.
+  # Copy only the issue's Release Notes section into the draft PR.
   ISSUE_BODY=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq '.body // ""')
-  RELEASE_NOTES=$(printf '%s\\n' "${ISSUE_BODY}" | awk '
+  RELEASE_NOTES=$(printf '%s\n' "${ISSUE_BODY}" | awk '
     /^#+[[:space:]]+Release Notes[[:space:]]*$/ { copying=1 }
     copying && /^#+[[:space:]]+/ && !/^#+[[:space:]]+Release Notes[[:space:]]*$/ { exit }
     copying { print }
   ')
   if [[ -n "${RELEASE_NOTES}" ]]; then
-    PR_BODY="${RELEASE_NOTES}"
+    PR_BODY="${RELEASE_NOTES}"$'\n\n'"${PR_BODY}"
+  fi
 fi
 
 # Idempotency: check for an existing open PR on this branch.
