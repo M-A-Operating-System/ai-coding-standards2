@@ -137,8 +137,7 @@ else
     copying { print }
   ')
   if [[ -n "${RELEASE_NOTES}" ]]; then
-    PR_BODY="${RELEASE_NOTES}"$'\n\n'"${PR_BODY}"
-  fi
+    PR_BODY="${RELEASE_NOTES}"
 fi
 
 # Idempotency: check for an existing open PR on this branch.
@@ -310,7 +309,7 @@ else
 fi
 
 echo "AI_AGILE_STATUS: complete"
-\\n\\n'"${PR_BODY}"
+\n\n'"${PR_BODY}"
   fi
 fi
 
