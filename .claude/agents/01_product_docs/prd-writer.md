@@ -52,7 +52,7 @@ Record that output as `HUMAN_FEEDBACK`.
 
 If `$HUMAN_FEEDBACK` is non-empty, incorporate the feedback when
 rewriting the PRD in Step 7. Address every point the reviewer raised.
-If feedback materially affects scope, requirements, or architecture and is ambiguous, surface the ambiguity for stakeholder resolution rather than guessing. Apply unambiguous feedback directly.
+If feedback materially affects scope, requirements, or architecture and is ambiguous, return the Step 3b blocked result rather than guessing. Apply unambiguous feedback directly.
 
 If `$PREV_ARTEFACT_TIME` is **empty**, this is a first run — proceed
 normally from Step 1.
@@ -132,6 +132,17 @@ complete technical specification that should be preserved.
 Assess the issue's substantive requirements, not its document formatting. Existing explicit requirements, constraints, exclusions, dependencies, paths, schemas, and acceptance conditions are authoritative regardless of whether user stories or Gherkin are present.
 
 **Decision:** If the issue contains substantive requirements, use Step 6 (augmentation mode), preserving the body verbatim and adding only supported governance and acceptance material. Use Step 4 and Step 5 only for genuinely sparse issue descriptions. Never select destructive full rewriting because a formatting signal is absent. Identify contradictions or missing decisions for stakeholder review rather than silently resolving them.
+
+---
+
+## Step 3b — Outstanding requirements questions
+
+Before drafting or submitting, classify unresolved questions and contradictions:
+
+- **Blocking:** An answer could materially change scope, acceptance criteria, architecture, or an integration contract. Do not guess. Write `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"`, `summary`, `message`, and `output` listing each specific question, its source, and the decision required. Do not include `body_write`, request approval, or advance to sizing.
+- **Nonblocking:** The issue remains implementable and testable. Preserve the question in the proposed issue body, list it in the review artefact `output`, and return `outcome: "review"` through Step 8.
+
+Use only existing outcomes. The orchestrator owns labels and comments. Do not directly post Question Cards or modify the issue.
 
 ---
 
@@ -445,6 +456,8 @@ the first time it applies a body replace for this agent on this issue
 
 ### 7a — Build the new title
 
+Preserve the original title's meaning and scope. Prefer the original wording with a classification prefix. Rephrase only if demonstrably misleading or ambiguous; never imply additional scope. Disclose substantive title changes in review output.
+
 Map classification to prefix:
 
 | Classification | Prefix |
@@ -507,6 +520,8 @@ Omit `title` from `body_write` entirely (not just empty) when this is a
 sub-issue whose title must not change (Step 2), or when Step 6d's
 already-approved guard skipped straight here with no title recomputed.
 
+For nonblocking questions, include them in both the issue body and review `output`.
+
 The orchestrator applies `:review`, posts the closing announcement, and
 prompts the stakeholder to apply `prd-writer:approved`.
 
@@ -544,7 +559,7 @@ runtime values yourself:
   their problem statement is too vague for Gherkin, post a Question
   Card rather than guessing.
 - Do not invent technical design. Preserve stakeholder-specified architectural constraints, execution ordering, schemas, file paths, interfaces, algorithms, dependencies, metrics contracts, and exclusions as binding requirements even when not user-observable.
-- Before submission, verify every substantive source requirement remains represented; report unresolved contradictions and material ambiguities.
+- Before submission, verify every substantive source requirement remains represented; block on material unresolved questions under Step 3b and disclose nonblocking questions in review.
 - Each Gherkin scenario must be falsifiable. "Given the system exists,
   When a user uses it, Then it works" is not Gherkin.
 - Success is the target capability's behaviour (Y), not confirmation that
