@@ -16,7 +16,6 @@
 # branch. Reports the destination branch/path, blob SHA, and PDF size.
 #
 # Required env (injected by the orchestrator):
-#   AI_AGILE_ROOT   -- repo root, used to locate metrics_report.py
 #   AI_AGILE_SCRATCH -- per-run scratch directory for the working PDF
 #
 # Runtime Python requirements (not in requirements.txt -- install separately):
@@ -31,8 +30,8 @@ if [[ "${1:-}" == "--dry-run" ]]; then
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="${AI_AGILE_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"
-REPORTER="${ROOT}/pipeline/metrics_report.py"
+SUBMODULE_ROOT="$(dirname -- "$SCRIPT_DIR")"
+REPORTER="${SUBMODULE_ROOT}/pipeline/metrics_report.py"
 COMMIT_SCRIPT="${SCRIPT_DIR}/commit-report.sh"
 SCRATCH="${AI_AGILE_SCRATCH:-/tmp}"
 OUTPUT="${SCRATCH}/metrics-report.pdf"

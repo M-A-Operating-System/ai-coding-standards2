@@ -20,7 +20,7 @@
 # boundaries) would be appended, not merely that rows exist.
 #
 # Required env (injected by the orchestrator):
-#   AI_AGILE_ROOT  -- repo root, used to locate metrics_aggregator.py
+#   (none for path resolution -- metrics_aggregator.py is located via SUBMODULE_ROOT)
 
 set -euo pipefail
 
@@ -49,9 +49,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-
-ROOT="${AI_AGILE_ROOT:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"
-AGGREGATOR="${ROOT}/pipeline/metrics_aggregator.py"
+SUBMODULE_ROOT="$(dirname -- "$SCRIPT_DIR")"
+AGGREGATOR="${SUBMODULE_ROOT}/pipeline/metrics_aggregator.py"
 APPEND_SCRIPT="${SCRIPT_DIR}/append-metrics-record.sh"
 
 if [[ ! -f "$AGGREGATOR" ]]; then

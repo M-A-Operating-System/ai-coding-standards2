@@ -25,12 +25,22 @@
 
 set -euo pipefail
 
+# SUBMODULE_ROOT: the directory containing both scripts/ and pipeline/ --
+# the same concept pipeline_orchestrator.py's own SUBMODULE_ROOT constant
+# names (Path(__file__).resolve().parent.parent), computed independently
+# here since this script can run with no orchestrator process alive to
+# inherit it from (e.g. the Onboard job's raw `bash scripts/status.sh ...`).
+# ${BASH_SOURCE[0]:-$0} so the documented `source scripts/status.sh` usage
+# still resolves correctly.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SUBMODULE_ROOT="$(dirname -- "$SCRIPT_DIR")"
+
 # ---------------------------------------------------------------------------
 # Config — override via environment or arguments
 # ---------------------------------------------------------------------------
 
 REPO="${GITHUB_REPOSITORY:-}"
-STATUSES_JSON="${STATUSES_JSON:-$(dirname "$0")/../../pipeline/statuses.json}"
+STATUSES_JSON="${STATUSES_JSON:-${SUBMODULE_ROOT}/pipeline/statuses.json}"
 
 # Colour codes — loaded from statuses.json at runtime.
 # Hardcoded values serve as a fallback when the JSON file is absent.
@@ -271,7 +281,7 @@ status_bootstrap_agent() {
 # Bootstrap: create all status label variants for every agent in pipeline.json
 status_bootstrap_all() {
   # Usage: status_bootstrap_all [pipeline.json path] [repo]
-  local pipeline="${1:-$(dirname "$0")/../../pipeline/pipeline.json}"
+  local pipeline="${1:-${SUBMODULE_ROOT}/pipeline/pipeline.json}"
   local repo="${2:-$(_repo)}"
 
   if ! command -v python3 &>/dev/null; then
@@ -306,8 +316,8 @@ PYEOF
 # Only creates labels not already covered by bootstrap-all.
 status_bootstrap_trigger_labels() {
   local repo="${1:-$(_repo)}"
-  local pipeline="${2:-$(dirname "$0")/../../pipeline/pipeline.json}"
-  local statuses="${3:-$(dirname "$0")/../../pipeline/statuses.json}"
+  local pipeline="${2:-${SUBMODULE_ROOT}/pipeline/pipeline.json}"
+  local statuses="${3:-${SUBMODULE_ROOT}/pipeline/statuses.json}"
 
   if ! command -v python3 &>/dev/null; then
     echo "ERROR: python3 required for status_bootstrap_trigger_labels" >&2
@@ -376,7 +386,7 @@ status_prune() {
     esac
   done
 
-  pipeline="${positional[0]:-$(dirname "$0")/../../pipeline/pipeline.json}"
+  pipeline="${positional[0]:-${SUBMODULE_ROOT}/pipeline/pipeline.json}"
   local repo="${positional[1]:-$(_repo)}"
 
   if ! command -v python3 &>/dev/null; then
