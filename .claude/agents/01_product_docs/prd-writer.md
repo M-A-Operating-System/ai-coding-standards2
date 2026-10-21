@@ -187,11 +187,14 @@ reach a quota.**
 
 ### 5b — Write the sections
 
-Six sections, in this order. Downstream agents parse these headers —
-use them verbatim.
+Start with `### Release Notes`, followed by the six existing sections in their original order. Downstream agents parse the existing headers — preserve them verbatim.
 
 ```markdown
 ## PRD — {issue title, copied verbatim}
+
+### Release Notes
+
+One concise paragraph (2–4 sentences) explaining the issue's purpose, the problem or opportunity, and the expected delivered outcome. Write for readers of published release notes. Include only supported scope and benefits; do not invent requirements or repeat the detailed acceptance criteria. This is the release-note summary, distinct from Step 8's orchestration `summary`.
 
 ### Problem
 
@@ -306,8 +309,9 @@ Check the body for:
 Construct the new body by:
 
 1. Adding the governance header comment as the very first line.
-2. Keeping the entire existing body content verbatim beneath it.
-3. Appending a **Standards check** block at the end **only if** there are
+2. Adding a `### Release Notes` section immediately after the header comment and before the existing body, with a concise 2–4 sentence paragraph describing the supported purpose, problem, and expected delivered outcome. If the existing body already has a substantive `### Release Notes` section, preserve it rather than duplicating it; revise only if necessary to reflect supported scope.
+3. Keeping the entire existing body content verbatim beneath it, except for relocating an existing Release Notes section to the top without changing its wording.
+4. Appending a **Standards check** block at the end **only if** there are
    product-layer standards files AND the existing body contains violations
    (list them by STD ID). If there are no violations, omit it entirely.
 
@@ -315,7 +319,11 @@ Construct the new body by:
 NEW_BODY=$(cat <<'BODY_EOF'
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
 
-{EXISTING_BODY_VERBATIM}
+### Release Notes
+
+{SUPPORTED_TWO_TO_FOUR_SENTENCE_SUMMARY}
+
+{EXISTING_BODY_VERBATIM_WITHOUT_DUPLICATE_RELEASE_NOTES_SECTION}
 
 ---
 *Pre-existing specification preserved. Governance elements added by prd-writer.*
