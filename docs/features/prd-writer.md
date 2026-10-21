@@ -77,3 +77,27 @@
 **Given** issues #586 and #587 containing post-merge sequencing, file paths, issue dependency, metric ledger requirements and exclusions
 **When** prd-writer processes them
 **Then** every explicit requirement remains represented and verifiable
+
+## Scenario: Material unanswered questions block the PRD
+
+**Given** an unresolved question materially affecting scope, architecture, or acceptance criteria
+**When** prd-writer assesses the issue
+**Then** it returns blocked with specific questions and no body_write, without requesting approval or advancing to sizing
+
+## Scenario: Nonblocking questions remain visible
+
+**Given** a clarification that does not affect implementation or acceptance
+**When** prd-writer submits a PRD
+**Then** it returns review and includes the question in the issue body and artefact output
+
+## Scenario: Question handling uses existing orchestration
+
+**Given** an unresolved material question
+**When** prd-writer exits
+**Then** it uses the existing blocked outcome and does not post comments or change labels directly
+
+## Scenario: Issue title preserves scope
+
+**Given** an existing descriptive issue title
+**When** prd-writer computes a title
+**Then** it retains the meaning and scope, preferring a classification prefix over substantive rephrasing
