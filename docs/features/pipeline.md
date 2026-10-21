@@ -151,3 +151,39 @@
 **Given** the orchestrator is running headlessly (`_HEADLESS = True`)
 **When** the orchestrator builds the agent subprocess environment
 **Then** `CLAUDE_CODE_REMOTE`, `CLAUDE_CODE_REMOTE_SDK_URL`, `SESSION_INGRESS_URL`, `CLAUDE_SESSION_INGRESS_TOKEN_FILE`, `CLAUDE_CODE_SESSION_ID`, and `CLAUDE_CODE_REMOTE_SESSION_ID` are all absent from the built environment
+
+## Scenario: bootstrap-triggers exits 0 in a submodule layout with no pipeline-path argument
+
+**Given** `scripts/status.sh` is invoked as `ai-coding-standards2/scripts/status.sh` (a submodule-style path) and `ai-coding-standards2/pipeline/pipeline.json` exists while `pipeline/pipeline.json` at the consuming repo root does not
+**When** `bash scripts/status.sh bootstrap-triggers` is called without a pipeline-path argument
+**Then** the command exits 0
+
+## Scenario: bootstrap-triggers exits 0 in a standalone layout with no pipeline-path argument
+
+**Given** `scripts/status.sh` is invoked as `scripts/status.sh` (a standalone path) and `pipeline/pipeline.json` exists relative to the repo root
+**When** `bash scripts/status.sh bootstrap-triggers` is called without a pipeline-path argument
+**Then** the command exits 0
+
+## Scenario: no .. path-segment token anywhere in the fixed scripts
+
+**Given** the fixed `scripts/status.sh`, `scripts/aggregate-metrics.sh`, and `scripts/generate-metrics-report.sh`
+**When** their `SUBMODULE_ROOT` computations and every default-path-resolution line are inspected
+**Then** none of them contain a literal `..` path-segment token
+
+## Scenario: AI_AGILE_ROOT is not read when locating framework files in any of the three scripts
+
+**Given** the fixed scripts
+**When** `AI_AGILE_ROOT` is set to an unrelated directory in the environment
+**Then** `status.sh`'s `pipeline.json`/`statuses.json` paths, `aggregate-metrics.sh`'s `metrics_aggregator.py` path, and `generate-metrics-report.sh`'s `metrics_report.py` path all still resolve relative to each script's own `SUBMODULE_ROOT`, not to `AI_AGILE_ROOT`
+
+## Scenario: aggregate-metrics.sh finds metrics_aggregator.py in a submodule layout
+
+**Given** `scripts/aggregate-metrics.sh` is invoked as `ai-coding-standards2/scripts/aggregate-metrics.sh` and `ai-coding-standards2/pipeline/metrics_aggregator.py` exists while `pipeline/metrics_aggregator.py` at the consuming repo root does not, and `AI_AGILE_ROOT` is set to the consuming repo root
+**When** the script runs
+**Then** it does not emit `AI_AGILE_STATUS: blocked` for a missing `metrics_aggregator.py`
+
+## Scenario: generate-metrics-report.sh finds metrics_report.py in a submodule layout
+
+**Given** `scripts/generate-metrics-report.sh` is invoked as `ai-coding-standards2/scripts/generate-metrics-report.sh` and `ai-coding-standards2/pipeline/metrics_report.py` exists while `pipeline/metrics_report.py` at the consuming repo root does not, and `AI_AGILE_ROOT` is set to the consuming repo root
+**When** the script runs
+**Then** it does not emit `AI_AGILE_STATUS: blocked` for a missing `metrics_report.py`
