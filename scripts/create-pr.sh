@@ -132,8 +132,8 @@ else
   # Carry only the business-facing Release Notes section into the draft PR.
   ISSUE_BODY=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq '.body // ""')
   RELEASE_NOTES=$(printf '%s\\n' "${ISSUE_BODY}" | awk '
-    /^#{1,6}[[:space:]]+Release Notes[[:space:]]*$/ { copying=1 }
-    copying && /^#{1,6}[[:space:]]+/ && !/^#{1,6}[[:space:]]+Release Notes[[:space:]]*$/ { exit }
+    /^#+[[:space:]]+Release Notes[[:space:]]*$/ { copying=1 }
+    copying && /^#+[[:space:]]+/ && !/^#+[[:space:]]+Release Notes[[:space:]]*$/ { exit }
     copying { print }
   ')
   if [[ -n "${RELEASE_NOTES}" ]]; then
