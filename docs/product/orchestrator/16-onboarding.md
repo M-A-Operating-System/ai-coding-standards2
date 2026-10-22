@@ -76,6 +76,7 @@ a Linux runner (as `--full --force`), and what you would run locally with
 | Link CLAUDE.md | Links the root-level `CLAUDE.md` to `.claude/CLAUDE.md` (a byte-copy on Windows). Also runs during `--seed`, so this step is a no-op here for a repo onboarded that way; it exists here too for a developer who runs `--full` directly. Never overwrites a project's own pre-existing `CLAUDE.md` without `--force` |
 | Add .gitignore entries | Gitignores the whole-folder symlinks (`.claude`, `standards`, `CLAUDE.md`) so they are not committed as normal files; the setup job force-commits the symlink blobs. The `adrs/` folder is NOT gitignored — it stays committed |
 | Untrack managed paths | Removes previously-tracked managed paths from the git index (`git rm --cached`) — migration from old installs |
+| Create perpetual branches | Creates `ai-agile/metrics` and `ai-agile/reports` as orphan branches in the consuming repo if they do not already exist, so the first scheduled metrics flow succeeds without requiring any prior issue/PR activity |
 | Lock .claude read-only | On Linux/macOS: removes write permission from the submodule's `.claude/` directory and each file under it (directory: `0o555`; files: `0o444`), so any write attempt against the real target fails with a permission error rather than silently succeeding. On Windows: sets the read-only file attribute on each file under the `.claude/` copy. **Skipped when `get_started.py` detects it is running inside `ai-coding-standards2` itself** — the framework source repo, where `.claude/` is a real version-controlled directory that agents must be able to edit. |
 | Print follow-up | Prints the checklist of manual steps needed to complete setup |
 
@@ -155,8 +156,9 @@ Go to: **Actions → AI - Orchestrator → Run workflow → tick Onboard → Run
 
 The job checks out the repo with its submodule on a Linux runner, runs
 `get_started.py --full --force`, creates the whole-folder `.claude` and `standards`
-symlinks, seeds the local `adrs/` folder, bootstraps the pipeline labels, and
-commits the **non-workflow** files directly to the default branch (or to an
+symlinks, seeds the local `adrs/` folder, bootstraps the pipeline labels, creates
+the `ai-agile/metrics` and `ai-agile/reports` orphan branches, and commits the
+**non-workflow** files directly to the default branch (or to an
 `ai-standards-setup` branch if branch protection rules block a direct push — in
 that case, open a PR from that branch). It never pushes a `.github/workflows/*`
 file — the two pipeline workflows were committed in the seed step — so the

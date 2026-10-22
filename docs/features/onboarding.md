@@ -41,3 +41,15 @@
 **Given** the `ai_orchestrator.yml` file has been modified to add the `bump` input and `Bump` job
 **When** the full `pytest` suite and `python3 pipeline/validate.py` are executed against the repository
 **Then** all tests pass and no validation errors are reported
+
+## Scenario: Onboarding creates both perpetual branches in a fresh repo
+
+**Given** a client repository with no prior `ai-agile/metrics` or `ai-agile/reports` branches
+**When** the onboarding process completes
+**Then** both `ai-agile/metrics` and `ai-agile/reports` exist as branches in the repository
+
+## Scenario: append-metrics-record.sh self-heals a missing target branch
+
+**Given** `ai-agile/metrics` does not exist in the target repository
+**When** `scripts/append-metrics-record.sh` runs
+**Then** the script creates `ai-agile/metrics` as an orphan first commit and writes the metrics record without error
