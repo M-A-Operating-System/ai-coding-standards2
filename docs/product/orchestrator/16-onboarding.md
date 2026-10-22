@@ -178,14 +178,29 @@ acceptance criteria to confirm the pipeline is live.
 
 ---
 
-## Keeping in sync — no sync workflow
+## Keeping in sync
 
 There is no daily sync workflow. On a Linux runner `.claude` and `standards` are
 whole-folder symlinks into the submodule, so they always resolve to the
 submodule's current content — there is no drift between a committed copy and the
 submodule to reconcile.
 
-To take a new framework version, **bump the submodule pointer** (a normal commit
+### Recommended: one-click Bump job
+
+The recommended path is to trigger the built-in **Bump** job:
+
+Go to: **Actions → AI - Orchestrator → Run workflow → tick Bump → Run**.
+
+The Bump job runs on a Linux runner and:
+
+1. Updates the `ai-coding-standards2` submodule pointer to the latest commit on its default branch and commits the change. If the pointer has not moved, the job exits cleanly with no commit.
+2. Re-runs `get_started.py --full --force` to refresh symlinks (and re-copy the `.claude/` tree on Windows).
+3. Re-runs the pipeline-label bootstrap so labels for any newly-added agents are created.
+4. Stages and commits the resulting managed-file changes.
+
+### Manual procedure (still valid)
+
+To take a new framework version manually, **bump the submodule pointer** (a normal commit
 in the consuming repo); the symlinks reflect the new content automatically. If a
 consuming repo ever needs its symlinks re-laid or new-agent labels created after
 such a bump, re-run the Onboard job (`get_started.py --full --force` + label
