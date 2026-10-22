@@ -652,6 +652,39 @@ def install_orchestrator_workflows(
     return written
 
 
+def install_orchestrator_actions(
+    consuming_root: Path,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    """Copy composite actions from the submodule into the consuming repo.
+
+    Each subdirectory of .github/actions/ in the submodule that contains an
+    action.yml is copied verbatim (with path rewrites applied) into the
+    consuming repo's .github/actions/. These actions are referenced by the
+    orchestrator workflow and must be present for jobs like onboard and bump
+    to run.
+
+    Returns the number of files written.
+    """
+    actions_src = SUBMODULE_ROOT / ".github" / "actions"
+    if not actions_src.exists():
+        return 0
+    written = 0
+    for action_dir in sorted(actions_src.iterdir()):
+        if not action_dir.is_dir():
+            continue
+        action_yml = action_dir / "action.yml"
+        if not action_yml.exists():
+            continue
+        dst = consuming_root / ".github" / "actions" / action_dir.name / "action.yml"
+        print(f"  Composite action ({action_dir.name}): -> {dst}")
+        content = rewrite_paths(action_yml.read_text(encoding="utf-8"))
+        if write_file(dst, content, force, dry_run):
+            written += 1
+    return written
+
+
 def _install_workflow(
     name: str,
     consuming_root: Path,
@@ -940,6 +973,7 @@ def print_followup_seed() -> None:
     print(f"             {SUBMODULE_NAME} \\")
     print(f"             .github/workflows/ai_orchestrator.yml \\")
     print(f"             .github/workflows/ai_emergency_stop.yml \\")
+    print(f"             .github/actions/ \\")
     print(f"             CLAUDE.local.md \\")
     print(f"             .gitignore")
     print(f"     git add -f CLAUDE.md   # gitignored like .claude/ -- force-add it")
@@ -1061,6 +1095,7 @@ def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_claude() which only ever runs on a Linux runner during --full.
     """
     install_orchestrator_workflows(consuming_root, force, dry_run)
+    install_orchestrator_actions(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
     install_claude_local_md(consuming_root, dry_run)
     install_claude_md(consuming_root, force, dry_run)
@@ -1139,6 +1174,7 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
         _unlock_claude_tree(_resolve_claude_lock_target(consuming_root))
 
     install_orchestrator_workflows(consuming_root, force, dry_run)
+    install_orchestrator_actions(consuming_root, force, dry_run)
     install_emergency_stop_workflow(consuming_root, force, dry_run)
     install_standards(consuming_root, force, dry_run)
     install_adrs(consuming_root, dry_run)
