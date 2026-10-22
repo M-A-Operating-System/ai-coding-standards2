@@ -188,6 +188,55 @@ class TestAConcurrentWriter:
         assert _ledger(remote) is None
 
 
+@pytest.fixture
+def remote_and_clone_no_metrics(tmp_path):
+    """A bare remote with NO metrics branch, and a clone of it."""
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", "-q", "-b", "main", str(remote)], check=True,
+    )
+
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    _git("init", "-q", "-b", "main", cwd=seed)
+    (seed / "README.md").write_text("seed\n")
+    _git("add", "README.md", cwd=seed)
+    _git("commit", "-qm", "seed", cwd=seed)
+    _git("push", "-q", str(remote), "main:refs/heads/main", cwd=seed)
+    # Deliberately no push to refs/heads/{BRANCH} -- simulates a fresh repo.
+
+    clone = tmp_path / "clone"
+    subprocess.run(
+        ["git", "clone", "-q", str(remote), str(clone)], check=True,
+    )
+    _git("config", "user.email", "t@t", cwd=clone)
+    _git("config", "user.name", "t", cwd=clone)
+    return remote, clone
+
+
+class TestSelfHealMissingBranch:
+    def test_creates_branch_and_appends_when_missing(self, remote_and_clone_no_metrics):
+        remote, clone = remote_and_clone_no_metrics
+        record = {"agent_id": "coder", "github_issue_number": 42}
+
+        res = _run(clone, json.dumps(record, separators=(",", ":")) + "\n")
+
+        assert res.returncode == 0, res.stderr
+        assert _ledger(remote) is not None
+        assert [json.loads(line) for line in _ledger(remote).splitlines()] == [record]
+
+    def test_subsequent_append_works_after_self_heal(self, remote_and_clone_no_metrics):
+        remote, clone = remote_and_clone_no_metrics
+        first = {"agent_id": "coder", "github_issue_number": 42}
+        second = {"agent_id": "prd-writer", "github_issue_number": 43}
+
+        _run(clone, json.dumps(first, separators=(",", ":")) + "\n")
+        res = _run(clone, json.dumps(second, separators=(",", ":")) + "\n")
+
+        assert res.returncode == 0, res.stderr
+        assert [json.loads(line) for line in _ledger(remote).splitlines()] == [first, second]
+
+
 class TestItsInputContract:
     def test_refuses_a_missing_record_file(self, remote_and_clone):
         _remote, clone = remote_and_clone

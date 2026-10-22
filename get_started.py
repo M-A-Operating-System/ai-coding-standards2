@@ -1104,6 +1104,93 @@ def run_seed(consuming_root: Path, force: bool, dry_run: bool) -> None:
     print_followup_seed()
 
 
+def create_perpetual_branches(consuming_root: Path, dry_run: bool) -> int:
+    """Create ai-agile/metrics and ai-agile/reports as orphan branches if absent.
+
+    Both branches are perpetual ledgers used by the scheduled metrics flow.
+    Creating them during onboarding means the first flow run never hits a
+    missing-branch error. Returns the number of branches created (or that
+    would be created in dry-run mode).
+    """
+    branches = ["ai-agile/metrics", "ai-agile/reports"]
+    created = 0
+
+    for branch in branches:
+        try:
+            ls = subprocess.run(
+                ["git", "ls-remote", "--exit-code", "--heads", "origin", branch],
+                cwd=str(consuming_root),
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            print(f"  SKIP   {branch}  (git binary not found)")
+            break
+
+        if ls.returncode == 0:
+            print(f"  SKIP   {branch}  (branch already exists)")
+            continue
+
+        if ls.returncode != 2:
+            print(f"  WARN   {branch}  (ls-remote failed: {ls.stderr.strip()})")
+            continue
+
+        if dry_run:
+            print(f"  WOULD  create orphan branch {branch}")
+            created += 1
+            continue
+
+        try:
+            _ident = dict(os.environ)
+            for _k, _v in [
+                ("GIT_AUTHOR_NAME", "github-actions[bot]"),
+                ("GIT_AUTHOR_EMAIL", "github-actions[bot]@users.noreply.github.com"),
+                ("GIT_COMMITTER_NAME", "github-actions[bot]"),
+                ("GIT_COMMITTER_EMAIL", "github-actions[bot]@users.noreply.github.com"),
+            ]:
+                _ident.setdefault(_k, _v)
+
+            empty_tree = subprocess.run(
+                ["git", "hash-object", "-w", "-t", "tree", "--stdin"],
+                cwd=str(consuming_root),
+                input="",
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+
+            orphan_sha = subprocess.run(
+                ["git", "commit-tree", empty_tree,
+                 "-m", f"Initialize {branch} branch"],
+                cwd=str(consuming_root),
+                input="",
+                capture_output=True,
+                text=True,
+                check=True,
+                env=_ident,
+            ).stdout.strip()
+
+            push_result = subprocess.run(
+                ["git", "push", "origin", f"{orphan_sha}:refs/heads/{branch}"],
+                cwd=str(consuming_root),
+                capture_output=True,
+                text=True,
+            )
+
+            if push_result.returncode == 0:
+                print(f"  CREATED {branch}  (orphan branch)")
+                created += 1
+            else:
+                print(
+                    f"  WARN   {branch}  (push failed -- create it manually: "
+                    f"{push_result.stderr.strip()})"
+                )
+        except subprocess.CalledProcessError as exc:
+            print(f"  WARN   {branch}  (git plumbing failed: {exc})")
+
+    return created
+
+
 def _guard_existing_claude(consuming_root: Path) -> None:
     """Refuse to clobber a consuming repo's own `.claude` directory.
 
@@ -1184,6 +1271,7 @@ def run_full(consuming_root: Path, force: bool, dry_run: bool) -> None:
     install_requirements(consuming_root, dry_run)
     add_gitignore_entries(consuming_root, dry_run)
     untrack_managed_paths(consuming_root, dry_run)
+    create_perpetual_branches(consuming_root, dry_run)
 
     # Re-apply the read-only lock after all writes complete.
     _lock_claude_tree(_resolve_claude_lock_target(consuming_root), dry_run)
