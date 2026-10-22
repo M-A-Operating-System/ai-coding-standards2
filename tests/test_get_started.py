@@ -1,4 +1,5 @@
 """Tests for get_started install helpers and _add_submodules_to_checkout."""
+import subprocess
 import sys
 import os
 
@@ -2151,3 +2152,101 @@ class TestLockUnlockClaudeTree:
         result = get_started._resolve_claude_lock_target(consuming)
 
         assert result == consuming / ".claude"
+
+
+# ---------------------------------------------------------------------------
+# TestCreatePerpetualBranches
+# ---------------------------------------------------------------------------
+
+def _git_cp(*args, cwd):
+    return subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", *args],
+        cwd=str(cwd), capture_output=True, text=True, check=True,
+    )
+
+
+@pytest.fixture
+def fresh_repo_without_branches(tmp_path):
+    """Bare remote and clone with no ai-agile/* branches."""
+    remote = tmp_path / "remote.git"
+    subprocess.run(
+        ["git", "init", "--bare", "-q", "-b", "main", str(remote)], check=True,
+    )
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    _git_cp("init", "-q", "-b", "main", cwd=seed)
+    (seed / "README.md").write_text("seed\n")
+    _git_cp("add", "README.md", cwd=seed)
+    _git_cp("commit", "-qm", "seed", cwd=seed)
+    _git_cp("push", "-q", str(remote), "main:refs/heads/main", cwd=seed)
+
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+    _git_cp("config", "user.email", "t@t", cwd=clone)
+    _git_cp("config", "user.name", "t", cwd=clone)
+    return remote, clone
+
+
+class TestCreatePerpetualBranches:
+    def test_creates_both_branches_when_absent(self, fresh_repo_without_branches):
+        remote, clone = fresh_repo_without_branches
+
+        count = get_started.create_perpetual_branches(clone, dry_run=False)
+
+        assert count == 2
+        for branch in ["ai-agile/metrics", "ai-agile/reports"]:
+            ls = subprocess.run(
+                ["git", "ls-remote", "--exit-code", "--heads", str(remote), branch],
+                capture_output=True, text=True,
+            )
+            assert ls.returncode == 0, f"{branch} not found on remote"
+
+    def test_skips_branches_that_already_exist(self, fresh_repo_without_branches):
+        remote, clone = fresh_repo_without_branches
+        get_started.create_perpetual_branches(clone, dry_run=False)
+
+        count = get_started.create_perpetual_branches(clone, dry_run=False)
+
+        assert count == 0
+
+    def test_dry_run_does_not_push(self, fresh_repo_without_branches):
+        remote, clone = fresh_repo_without_branches
+
+        count = get_started.create_perpetual_branches(clone, dry_run=True)
+
+        assert count == 2
+        for branch in ["ai-agile/metrics", "ai-agile/reports"]:
+            ls = subprocess.run(
+                ["git", "ls-remote", "--exit-code", "--heads", str(remote), branch],
+                capture_output=True, text=True,
+            )
+            assert ls.returncode != 0, f"{branch} should not exist after dry-run"
+
+    def test_returns_zero_when_git_unavailable(self, tmp_path, monkeypatch):
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        def _raise(*args, **kwargs):
+            raise FileNotFoundError("git not found")
+
+        monkeypatch.setattr(subprocess, "run", _raise)
+
+        result = get_started.create_perpetual_branches(consuming, dry_run=False)
+
+        assert result == 0
+
+    def test_warns_and_continues_on_ls_remote_error(self, tmp_path, monkeypatch):
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+        import types
+
+        def _mock_run(args, **kwargs):
+            if "ls-remote" in args:
+                return types.SimpleNamespace(returncode=128, stdout="", stderr="fatal: not a git repo")
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        result = get_started.create_perpetual_branches(consuming, dry_run=False)
+
+        assert result == 0

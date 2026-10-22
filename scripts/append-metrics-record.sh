@@ -75,12 +75,19 @@ trap 'rm -f -- "$CONTENT" "$INDEX"' EXIT
 
 attempt=0
 while :; do
-    git fetch origin "$BRANCH" >/dev/null
-    parent_sha=$(git rev-parse "origin/${BRANCH}")
+    parent_sha=""
+    parent_arg=""
+    if git fetch origin "$BRANCH" >/dev/null 2>&1; then
+        parent_sha=$(git rev-parse "origin/${BRANCH}")
+        parent_arg="-p ${parent_sha}"
+    fi
 
     # The whole ledger, plus this record. A missing file on the branch is an
-    # empty ledger, not an error: the first append creates it.
-    if ! git show "${parent_sha}:${RECORDS_FILE}" > "$CONTENT" 2>/dev/null; then
+    # empty ledger, not an error: the first append creates it. A missing branch
+    # is also treated as an empty ledger -- this run creates the orphan commit.
+    if [[ -n "${parent_sha}" ]] && git show "${parent_sha}:${RECORDS_FILE}" > "$CONTENT" 2>/dev/null; then
+        :
+    else
         : > "$CONTENT"
     fi
     cat -- "$RECORD_FILE" >> "$CONTENT"
@@ -90,13 +97,18 @@ while :; do
     # A scratch index, so nothing here can disturb the checkout this tick is
     # running in.
     export GIT_INDEX_FILE="$INDEX"
-    git read-tree "$parent_sha"
+    if [[ -n "${parent_sha}" ]]; then
+        git read-tree "$parent_sha"
+    else
+        git read-tree --empty
+    fi
     git update-index --add --cacheinfo "100644,${blob_sha},${RECORDS_FILE}"
     tree_sha=$(git write-tree)
     unset GIT_INDEX_FILE
     : > "$INDEX"
 
-    commit_sha=$(git commit-tree "$tree_sha" -p "$parent_sha" -m "$COMMIT_MESSAGE")
+    # shellcheck disable=SC2086
+    commit_sha=$(git commit-tree "$tree_sha" $parent_arg -m "$COMMIT_MESSAGE")
 
     if push_err=$(git push origin "${commit_sha}:refs/heads/${BRANCH}" 2>&1); then
         echo "append-metrics-record: appended to ${BRANCH}:${RECORDS_FILE}"
