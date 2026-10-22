@@ -87,6 +87,21 @@ class TestGetPriorRelease:
         result = get_prior_release(client, 'owner/repo', '2026-10-15T10:00:00Z')
         assert result is None
 
+    def test_returns_max_published_at_not_first_in_api_order(self):
+        # API returns by created_at desc; a draft published retroactively may appear
+        # later in the list than its published_at implies. The function must return
+        # the release with the largest published_at that is still before the cutoff.
+        releases = [
+            self._make_release('v2.5.0', '2026-10-15T10:00:00Z'),
+            # v2.3.0 was created first but published later than v2.4.0
+            self._make_release('v2.3.0', '2026-10-09T12:00:00Z'),
+            self._make_release('v2.4.0', '2026-10-08T10:00:00Z'),
+        ]
+        client = MagicMock()
+        client.get.return_value = releases
+        result = get_prior_release(client, 'owner/repo', '2026-10-15T10:00:00Z')
+        assert result['tag_name'] == 'v2.3.0'
+
 
 # ---------------------------------------------------------------------------
 # compare

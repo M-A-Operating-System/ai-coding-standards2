@@ -61,8 +61,15 @@ def get_release_by_tag(client, repo, tag):
 
 
 def get_prior_release(client, repo, before_published_at):
-    """Return the most recently published release with published_at < before_published_at."""
+    """Return the most recently published release with published_at < before_published_at.
+
+    The GitHub API sorts releases by created_at descending, not published_at, so a
+    draft published retroactively can appear later in the list than its published_at
+    implies. All pages are scanned and the candidate with the maximum published_at
+    that still falls before the cutoff is returned.
+    """
     cutoff = _parse_dt(before_published_at)
+    best = None
     page = 1
     while True:
         releases = client.get(
@@ -73,11 +80,12 @@ def get_prior_release(client, repo, before_published_at):
         for r in releases:
             pub = r.get('published_at')
             if pub and _parse_dt(pub) < cutoff:
-                return r
+                if best is None or _parse_dt(pub) > _parse_dt(best['published_at']):
+                    best = r
         if len(releases) < 100:
             break
         page += 1
-    return None
+    return best
 
 
 # ---------------------------------------------------------------------------

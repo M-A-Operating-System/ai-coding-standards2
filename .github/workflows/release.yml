@@ -169,23 +169,40 @@ jobs:
           echo "Window end:   $WINDOW_END"
           echo "window_start=$WINDOW_START" >> "$GITHUB_OUTPUT"
           echo "window_end=$WINDOW_END" >> "$GITHUB_OUTPUT"
+          echo "prior_release_tag=$PRIOR_RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         if: steps.tag.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           WINDOW_START: ${{ steps.window.outputs.window_start }}
           WINDOW_END: ${{ steps.window.outputs.window_end }}
         run: |
           set -euo pipefail
           python3 scripts/release_note_generator.py \
-            --repo "${{ github.repository }}" \
+            --repo "$REPO" \
             --start "$WINDOW_START" \
             --end   "$WINDOW_END" \
             --output release-notes.md \
             --diagnostics diagnostics.json
           echo "=== Release notes coverage diagnostics ==="
           cat diagnostics.json
+
+      - name: Shadow-run comparison
+        if: steps.tag.outputs.skip != 'true' && steps.window.outputs.prior_release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PRIOR_TAG: ${{ steps.window.outputs.prior_release_tag }}
+        run: |
+          set -euo pipefail
+          python3 scripts/shadow_compare.py \
+            --repo "$REPO" \
+            --release-tag "$PRIOR_TAG" \
+            --output shadow-comparison.json
+          echo "=== Shadow-run comparison ==="
+          cat shadow-comparison.json
 
       - name: Publish GitHub Release
         if: steps.tag.outputs.skip != 'true'
