@@ -581,5 +581,6 @@ def test_module_importable():
 
 import json as _json
 
+
 def json_parse(s):
     return _json.loads(s)
