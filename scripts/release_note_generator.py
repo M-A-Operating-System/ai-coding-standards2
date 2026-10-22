@@ -133,12 +133,16 @@ def _parse_dt(ts):
 
 
 def collect_merged_prs(client, repo, start, end):
-    """Return all PRs merged in [start, end) from repo, with full pagination.
+    """Return (in_window, outside_window) for merged PRs encountered during traversal.
+
+    in_window       -- PRs merged in [start, end), as full PR dicts
+    outside_window  -- PR numbers of merged PRs encountered but outside [start, end)
 
     Sorted by updated descending; stops early once the page's earliest
     updated_at is before start (merging a PR always updates updated_at).
     """
     results = []
+    outside = []
     page = 1
     while True:
         prs = client.get(
@@ -160,12 +164,14 @@ def collect_merged_prs(client, repo, start, end):
             merged_dt = _parse_dt(merged_at)
             if start <= merged_dt < end:
                 results.append(pr)
+            else:
+                outside.append(pr['number'])
         if earliest_updated and earliest_updated < start:
             break
         if len(prs) < 100:
             break
         page += 1
-    return results
+    return results, outside
 
 
 def collate(client, repo, start, end):
@@ -173,10 +179,11 @@ def collate(client, repo, start, end):
 
     Returns (entries, diagnostics, prs_count) where:
       entries     - list of dicts for render_markdown
-      diagnostics - dict with cross_repo_refs, excluded, reopened, missing_release_notes
+      diagnostics - dict with cross_repo_refs, excluded, reopened,
+                    missing_release_notes, prs_outside_window, prs_covered
       prs_count   - total merged PRs found in the window
     """
-    prs = collect_merged_prs(client, repo, start, end)
+    prs, prs_outside_window = collect_merged_prs(client, repo, start, end)
 
     # Map issue_number -> list of PR dicts (same-repo only, deduplicated)
     issue_to_prs = {}
@@ -202,6 +209,8 @@ def collate(client, repo, start, end):
         'excluded': [],
         'reopened': [],
         'missing_release_notes': [],
+        'prs_outside_window': sorted(set(prs_outside_window)),
+        'prs_covered': [],
     }
     entries = []
 
@@ -260,6 +269,9 @@ def collate(client, repo, start, end):
             'reopened': reopened,
         })
 
+    diagnostics['prs_covered'] = sorted(
+        {pr for entry in entries for pr in entry['pr_numbers']}
+    )
     return entries, diagnostics, len(prs)
 
 

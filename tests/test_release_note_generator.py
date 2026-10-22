@@ -205,9 +205,9 @@ class TestCollectMergedPrs:
     def test_returns_prs_merged_in_window(self):
         pr = _make_pr(1, merged_at='2026-10-04T10:00:00Z')
         client = self._make_client([[pr]])
-        result = collect_merged_prs(client, 'owner/repo', _START, _END)
-        assert len(result) == 1
-        assert result[0]['number'] == 1
+        in_window, outside = collect_merged_prs(client, 'owner/repo', _START, _END)
+        assert len(in_window) == 1
+        assert in_window[0]['number'] == 1
 
     def test_excludes_prs_outside_window(self):
         pr_before = _make_pr(1, merged_at='2026-09-30T23:59:59Z',
@@ -217,15 +217,17 @@ class TestCollectMergedPrs:
         pr_in = _make_pr(3, merged_at='2026-10-04T12:00:00Z',
                           updated_at='2026-10-04T12:00:00Z')
         client = self._make_client([[pr_after, pr_in, pr_before]])
-        result = collect_merged_prs(client, 'owner/repo', _START, _END)
-        assert [r['number'] for r in result] == [3]
+        in_window, outside = collect_merged_prs(client, 'owner/repo', _START, _END)
+        assert [r['number'] for r in in_window] == [3]
+        assert set(outside) == {1, 2}
 
     def test_excludes_unmerged_prs(self):
         pr_open = _make_pr(1, merged_at=None, updated_at='2026-10-05T00:00:00Z')
         pr_closed = _make_pr(2, merged_at=None, updated_at='2026-10-05T00:00:00Z')
         client = self._make_client([[pr_open, pr_closed]])
-        result = collect_merged_prs(client, 'owner/repo', _START, _END)
-        assert result == []
+        in_window, outside = collect_merged_prs(client, 'owner/repo', _START, _END)
+        assert in_window == []
+        assert outside == []
 
     def test_pagination_collects_all_pages(self):
         page1 = [_make_pr(i, merged_at='2026-10-04T10:00:00Z',
@@ -234,8 +236,8 @@ class TestCollectMergedPrs:
         page2 = [_make_pr(101, merged_at='2026-10-03T10:00:00Z',
                            updated_at='2026-10-03T10:00:00Z')]
         client = self._make_client([page1, page2])
-        result = collect_merged_prs(client, 'owner/repo', _START, _END)
-        assert len(result) == 101
+        in_window, outside = collect_merged_prs(client, 'owner/repo', _START, _END)
+        assert len(in_window) == 101
 
     def test_stops_when_earliest_updated_before_start(self):
         pr_in = _make_pr(1, merged_at='2026-10-04T10:00:00Z',
@@ -243,10 +245,11 @@ class TestCollectMergedPrs:
         pr_before = _make_pr(2, merged_at='2026-09-15T10:00:00Z',
                               updated_at='2026-09-15T10:00:00Z')
         client = self._make_client([[pr_in, pr_before]])
-        result = collect_merged_prs(client, 'owner/repo', _START, _END)
+        in_window, outside = collect_merged_prs(client, 'owner/repo', _START, _END)
         # Should stop after page 1 (earliest updated before start)
         assert client.get.call_count == 1
-        assert len(result) == 1
+        assert len(in_window) == 1
+        assert 2 in outside
 
     def test_window_boundary_start_inclusive_end_exclusive(self):
         pr_at_start = _make_pr(1, merged_at='2026-10-01T00:00:00Z',
@@ -254,8 +257,19 @@ class TestCollectMergedPrs:
         pr_at_end = _make_pr(2, merged_at='2026-10-08T00:00:00Z',
                               updated_at='2026-10-08T00:00:00Z')
         client = self._make_client([[pr_at_start, pr_at_end]])
-        result = collect_merged_prs(client, 'owner/repo', _START, _END)
-        assert [r['number'] for r in result] == [1]
+        in_window, outside = collect_merged_prs(client, 'owner/repo', _START, _END)
+        assert [r['number'] for r in in_window] == [1]
+        assert 2 in outside
+
+    def test_outside_window_prs_tracked(self):
+        pr_before = _make_pr(5, merged_at='2026-09-25T10:00:00Z',
+                              updated_at='2026-10-02T10:00:00Z')
+        pr_in = _make_pr(6, merged_at='2026-10-04T10:00:00Z',
+                          updated_at='2026-10-04T10:00:00Z')
+        client = self._make_client([[pr_before, pr_in]])
+        in_window, outside = collect_merged_prs(client, 'owner/repo', _START, _END)
+        assert [r['number'] for r in in_window] == [6]
+        assert 5 in outside
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +393,29 @@ class TestCollate:
         client = self._make_client([pr1, pr2], {5: issue5, 6: issue6})
         _, _, prs_count = collate(client, 'owner/repo', _START, _END)
         assert prs_count == 2
+
+    def test_prs_covered_in_diagnostics(self):
+        pr1 = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #5')
+        pr2 = _make_pr(11, merged_at='2026-10-03T10:00:00Z', body='Closes #6')
+        issue5 = _make_issue(5, labels=['classification: bug'],
+                              body='### Release Notes\n\nFix 1.')
+        issue6 = _make_issue(6, labels=['classification: bug'],
+                              body='### Release Notes\n\nFix 2.')
+        client = self._make_client([pr1, pr2], {5: issue5, 6: issue6})
+        _, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert sorted(diag['prs_covered']) == [10, 11]
+
+    def test_prs_outside_window_in_diagnostics(self):
+        pr_in = _make_pr(10, merged_at='2026-10-02T10:00:00Z',
+                          updated_at='2026-10-02T10:00:00Z', body='Closes #5')
+        pr_before = _make_pr(9, merged_at='2026-09-20T10:00:00Z',
+                               updated_at='2026-10-02T09:00:00Z', body='')
+        issue5 = _make_issue(5, labels=['classification: bug'],
+                              body='### Release Notes\n\nFix.')
+        client = self._make_client([pr_in, pr_before], {5: issue5})
+        _, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert 9 in diag['prs_outside_window']
+        assert 10 not in diag['prs_outside_window']
 
 
 # ---------------------------------------------------------------------------
@@ -543,8 +580,8 @@ class TestTimezone:
                       updated_at='2026-10-01T00:00:00Z')
         client = MagicMock()
         client.get.side_effect = [[pr], []]
-        result = collect_merged_prs(client, 'owner/repo', start, end)
-        assert any(r['number'] == 1 for r in result)
+        in_window, _ = collect_merged_prs(client, 'owner/repo', start, end)
+        assert any(r['number'] == 1 for r in in_window)
 
     def test_utc_boundary_end_exclusive(self):
         start = datetime.datetime(2026, 10, 1, 0, 0, 0, tzinfo=UTC)
@@ -553,8 +590,9 @@ class TestTimezone:
                       updated_at='2026-10-08T00:00:00Z')
         client = MagicMock()
         client.get.side_effect = [[pr], []]
-        result = collect_merged_prs(client, 'owner/repo', start, end)
-        assert result == []
+        in_window, outside = collect_merged_prs(client, 'owner/repo', start, end)
+        assert in_window == []
+        assert 1 in outside
 
     def test_timezone_aware_comparison(self):
         start = datetime.datetime(2026, 10, 1, 0, 0, 0, tzinfo=UTC)
@@ -563,8 +601,8 @@ class TestTimezone:
                       updated_at='2026-10-04T23:00:00+00:00')
         client = MagicMock()
         client.get.side_effect = [[pr], []]
-        result = collect_merged_prs(client, 'owner/repo', start, end)
-        assert any(r['number'] == 1 for r in result)
+        in_window, _ = collect_merged_prs(client, 'owner/repo', start, end)
+        assert any(r['number'] == 1 for r in in_window)
 
 
 # ---------------------------------------------------------------------------
