@@ -993,6 +993,137 @@ class TestInstallOrchestratorWorkflows:
         assert existing.read_text() == "original content"
 
 
+# ---------------------------------------------------------------------------
+# TestInstallOrchestratorActions
+# ---------------------------------------------------------------------------
+
+
+class TestInstallOrchestratorActions:
+    def _make_src(self, tmp_path, action_name="ai-onboard-refresh"):
+        fake_src = tmp_path / "submodule"
+        action_dir = fake_src / ".github" / "actions" / action_name
+        action_dir.mkdir(parents=True)
+        (action_dir / "action.yml").write_text(
+            "name: Test Action\nruns:\n  using: composite\n  steps: []\n"
+        )
+        return fake_src
+
+    def test_copies_action_file(self, tmp_path, monkeypatch):
+        fake_src = self._make_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_actions(consuming, force=True, dry_run=False)
+
+        assert count == 1
+        dst = consuming / ".github" / "actions" / "ai-onboard-refresh" / "action.yml"
+        assert dst.exists()
+
+    def test_rewrites_paths_in_action(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        action_dir = fake_src / ".github" / "actions" / "ai-onboard-refresh"
+        action_dir.mkdir(parents=True)
+        (action_dir / "action.yml").write_text(
+            "run: bash scripts/status.sh bootstrap-all pipeline/pipeline.json\n"
+        )
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.install_orchestrator_actions(consuming, force=True, dry_run=False)
+
+        name = get_started.SUBMODULE_NAME
+        content = (
+            consuming / ".github" / "actions" / "ai-onboard-refresh" / "action.yml"
+        ).read_text()
+        assert f"{name}/scripts/status.sh" in content
+        assert f"{name}/pipeline/pipeline.json" in content
+
+    def test_returns_zero_when_src_missing(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "empty"
+        fake_src.mkdir()
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_actions(consuming, force=True, dry_run=False)
+
+        assert count == 0
+
+    def test_returns_zero_when_actions_dir_empty(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        (fake_src / ".github" / "actions").mkdir(parents=True)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_actions(consuming, force=True, dry_run=False)
+
+        assert count == 0
+
+    def test_dry_run_does_not_write(self, tmp_path, monkeypatch):
+        fake_src = self._make_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_actions(consuming, force=True, dry_run=True)
+
+        assert count == 1
+        assert not (
+            consuming / ".github" / "actions" / "ai-onboard-refresh" / "action.yml"
+        ).exists()
+
+    def test_skip_when_force_false_and_file_exists(self, tmp_path, monkeypatch):
+        fake_src = self._make_src(tmp_path)
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        action_dst = consuming / ".github" / "actions" / "ai-onboard-refresh"
+        action_dst.mkdir(parents=True)
+        existing = action_dst / "action.yml"
+        existing.write_text("original content")
+
+        get_started.install_orchestrator_actions(consuming, force=False, dry_run=False)
+
+        assert existing.read_text() == "original content"
+
+    def test_skips_dirs_without_action_yml(self, tmp_path, monkeypatch):
+        fake_src = tmp_path / "submodule"
+        action_dir = fake_src / ".github" / "actions" / "no-action-file"
+        action_dir.mkdir(parents=True)
+        (action_dir / "README.md").write_text("no action here")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        count = get_started.install_orchestrator_actions(consuming, force=True, dry_run=False)
+
+        assert count == 0
+
+    def test_seed_installs_actions(self, tmp_path, monkeypatch):
+        """run_seed() must install the composite action so the Onboard job
+        (which references it via uses: ./.github/actions/...) can run on
+        the first workflow trigger after seed commit."""
+        fake_src = tmp_path / "submodule"
+        wf = fake_src / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        for name in ("ai_orchestrator.yml", "ai_emergency_stop.yml"):
+            (wf / name).write_text("steps:\n  - uses: actions/checkout@v4\n")
+        action_dir = fake_src / ".github" / "actions" / "ai-onboard-refresh"
+        action_dir.mkdir(parents=True)
+        (action_dir / "action.yml").write_text("name: Refresh\nruns:\n  using: composite\n  steps: []\n")
+        monkeypatch.setattr(get_started, "SUBMODULE_ROOT", fake_src)
+        consuming = tmp_path / "consuming"
+        consuming.mkdir()
+
+        get_started.run_seed(consuming, force=True, dry_run=False)
+
+        assert (
+            consuming / ".github" / "actions" / "ai-onboard-refresh" / "action.yml"
+        ).exists()
+
+
 # TestInstallSlashCommands / TestInstallLocalSettings retired: slash commands and
 # settings now arrive via the whole-.claude symlink, and there is no generated
 # local config file (the consuming repo owns only its adrs/ folder).
