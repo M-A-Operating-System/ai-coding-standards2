@@ -15,6 +15,7 @@ import datetime
 import re
 import sys
 import os
+import urllib.error
 from unittest.mock import MagicMock
 
 import pytest
@@ -253,3 +254,23 @@ class TestCompare:
         result = compare(client, 'owner/repo', 'v1.0.0')
         assert result['window_start'].startswith('1970')
         assert result['coverage_ok'] is True
+
+    def test_http_error_during_prior_release_surfaces_as_error_dict(self):
+        target = {
+            'tag_name': 'v2.5.0',
+            'published_at': '2026-10-15T10:00:00Z',
+            'body': '',
+        }
+
+        def get_side_effect(path):
+            if '/releases/tags/' in path:
+                return target
+            # Raise HTTPError on the releases list call (used by get_prior_release)
+            if '/releases?' in path:
+                raise urllib.error.HTTPError(path, 503, 'Service Unavailable', {}, None)
+            raise ValueError(f'Unexpected path: {path}')
+
+        client = MagicMock()
+        client.get.side_effect = get_side_effect
+        result = compare(client, 'owner/repo', 'v2.5.0')
+        assert 'error' in result

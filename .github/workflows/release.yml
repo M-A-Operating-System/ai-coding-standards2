@@ -191,6 +191,7 @@ jobs:
 
       - name: Shadow-run comparison
         if: steps.tag.outputs.skip != 'true' && steps.window.outputs.prior_release_tag != ''
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

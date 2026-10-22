@@ -104,6 +104,8 @@ def compare(client, repo, release_tag):
       missing_from_generator -- PRs in GitHub notes not covered by generator
       extra_in_generator   -- PRs in generator not referenced in GitHub notes
       coverage_ok          -- True when missing_from_generator is empty
+
+    Returns {'error': ...} on API or network failure rather than raising.
     """
     release = get_release_by_tag(client, repo, release_tag)
     if release is None:
@@ -113,13 +115,20 @@ def compare(client, repo, release_tag):
     gh_prs = extract_pr_numbers(gh_notes_body)
 
     window_end = _parse_dt(release['published_at'])
-    prior = get_prior_release(client, repo, release['published_at'])
+    try:
+        prior = get_prior_release(client, repo, release['published_at'])
+    except urllib.error.HTTPError as exc:
+        return {'error': f'HTTP {exc.code} fetching releases: {exc.reason}'}
+
     if prior:
         window_start = _parse_dt(prior['published_at'])
     else:
         window_start = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
-    entries, diagnostics, _ = collate(client, repo, window_start, window_end)
+    try:
+        entries, diagnostics, _ = collate(client, repo, window_start, window_end)
+    except urllib.error.HTTPError as exc:
+        return {'error': f'HTTP {exc.code} fetching PR/issue data: {exc.reason}'}
     gen_prs = set(diagnostics.get('prs_covered', []))
 
     missing = sorted(gh_prs - gen_prs)
