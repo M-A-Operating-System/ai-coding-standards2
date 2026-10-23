@@ -658,6 +658,28 @@
           "description": "Reads period=week rows (last 12 months) and period=day rows (last 4 weeks) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month (weekly) and 4-week (daily) charts for each metric via matplotlib (static PNG images). Assembles charts into portrait US Letter print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. The rendered PDF is written to AI_AGILE_SCRATCH, then committed to the ai-agile/reports branch so it persists after the run's scratch directory is removed."
         }
       ]
+    },
+
+    "weekly-release": {
+      "description": "Weekly release flow stub (issue #604 sub-issue 1/3). Fires on the weekly Wednesday cadence and supports manual dispatch. Checks for merged PRs or closed issues since the last GitHub Release; exits with a structured no-change outcome when none exist. This stub establishes the scheduling and dispatch infrastructure; no GitHub Release is created until sub-issue 2/3 merges.",
+      "trigger": {
+        "schedule": "0 9 * * 3"
+      },
+      "steps": [
+        {
+          "agent": "05_continuous/weekly-release",
+          "type": "script",
+          "script": "scripts/run-release-flow.sh",
+          "phase": "05_continuous",
+          "trigger": {"event": "schedule"},
+          "human_gate_after": false,
+          "dependencies": [],
+          "max_retries": 1,
+          "budgets": { "max_wall_seconds": 300 },
+          "expected_effect": { "commits": false },
+          "description": "Checks for merged PRs and closed issues since the last GitHub Release. Exits without publishing when none exist (no-change run), recording a structured JSON outcome to stderr. When changes exist, records a structured stub outcome to stderr and exits without creating a GitHub Release (stub behavior until sub-issue 2/3 merges). Idempotent: makes no writes; safe to re-trigger after a prior failed run."
+        }
+      ]
     }
 
   }
