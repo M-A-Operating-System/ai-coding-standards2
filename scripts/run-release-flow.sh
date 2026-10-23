@@ -1,33 +1,37 @@
 #!/usr/bin/env bash
-# run-release-flow.sh -- weekly release flow stub (issue #604 sub-issue 1/3).
+# run-release-flow.sh -- weekly release flow (issue #604).
 #
-# Fires on the weekly Wednesday cadence and supports manual dispatch. Checks
-# for merged PRs or closed issues since the last GitHub Release and exits with
-# a structured no-change outcome when none exist. This stub establishes the
-# scheduling and dispatch infrastructure; no GitHub Release is created until
-# sub-issue 2/3 merges.
+# Fires on the weekly Wednesday cadence and supports manual dispatch.
+# Determines the previous published release boundary, discovers merged PRs and
+# closed issues since that boundary, applies publication gates, generates
+# deterministic release-notes Markdown, and publishes a GitHub Release.
 #
-# Outcomes:
-#   no-change:  no merged PRs or closed issues since the last release --
-#               emits a structured JSON record to stderr, AI_AGILE_STATUS: complete
-#   stub:       changes exist but this is the sub-issue 1/3 stub --
-#               emits a structured JSON record to stderr, AI_AGILE_STATUS: complete
-#               (no GitHub Release is created)
+# Outcomes (emitted as structured JSON to stderr + AI_AGILE_STATUS to stdout):
+#   no-change:   no merged PRs or closed issues since the last release
+#   skipped:     a release for the computed tag already exists (idempotent rerun)
+#   gate-failed: coverage threshold not met
+#   published:   GitHub Release created successfully
+#   error:       notes generation or gh release create failed (blocked)
 #
-# Idempotent: makes no writes to any branch or release; safe to re-trigger
-# after a prior failed run without leaving residual state.
+# Idempotent: a rerun with an existing release tag exits with "skipped" and
+# leaves the existing release untouched.
 #
 # Required env (injected by the orchestrator):
-#   REPO              -- owner/name of the repository
+#   REPO                      -- owner/name of the repository
 #   GH_TOKEN or GITHUB_TOKEN
+#
+# Optional env:
+#   RELEASE_COVERAGE_THRESHOLD  -- minimum merged PRs required (default: 1)
+#   RELEASE_NOTES_FILE_OVERRIDE -- pre-generated notes file path (test hook)
 
 set -euo pipefail
 
 # The identity every headless system action on GitHub uses (MI-7): the
 # dedicated bot when the repository configures one, otherwise exactly the token
 # this script used before. Resolved in one place, never here.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/github-identity.sh
-. "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/github-identity.sh"
+. "$SCRIPT_DIR/lib/github-identity.sh"
 
 REPO="${REPO:?run-release-flow.sh requires REPO}"
 
@@ -122,20 +126,137 @@ print(json.dumps({
 fi
 
 # ---------------------------------------------------------------------------
-# Stub path: changes exist but this is sub-issue 1/3 -- no release created.
+# Full release path: changes exist -- compute tag, apply gates, and publish.
 # ---------------------------------------------------------------------------
 
-python3 -I -c "
+# Compute the next MINOR release tag from all existing vX.Y.Z tags.
+NEXT_TAG=""
+if TAGS_JSON="$(gh api --paginate --slurp "repos/$REPO/git/refs/tags" 2>/dev/null)"; then
+    NEXT_TAG="$(printf '%s' "$TAGS_JSON" | python3 -I -c "
+import json, sys, re
+pages = json.load(sys.stdin)
+refs = [r for page in pages for r in page]
+tags = []
+for ref in refs:
+    name = ref['ref'].replace('refs/tags/', '')
+    m = re.match(r'^v(\d+)\.(\d+)\.(\d+)$', name)
+    if m:
+        tags.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+if not tags:
+    print('v2.1.0')
+    sys.exit(0)
+tags.sort(reverse=True)
+major, minor, _ = tags[0]
+print('v{}.{}.0'.format(major, minor + 1))
+" 2>/dev/null || true)"
+fi
+if [[ -z "$NEXT_TAG" ]]; then
+    NEXT_TAG="v2.1.0"
+fi
+
+echo "run-release-flow: next release tag: $NEXT_TAG" >&2
+
+# Duplicate-release prevention gate: if a release for this tag already exists,
+# exit cleanly without creating a duplicate.
+if gh api "repos/$REPO/releases/tags/$NEXT_TAG" 2>/dev/null; then
+    python3 -I -c "
 import json, sys
 print(json.dumps({
-    'outcome': 'stub',
-    'reason': 'release flow stub -- no GitHub Release created (sub-issue 2/3 not yet merged)',
-    'merged_prs': int(sys.argv[1]),
-    'closed_issues': int(sys.argv[2]),
+    'outcome': 'skipped',
+    'reason': 'release already exists for this tag',
+    'tag': sys.argv[1],
+    'last_release_date': sys.argv[2],
+    'timestamp': sys.argv[3],
+}), file=sys.stderr)
+" "$NEXT_TAG" "$LAST_RELEASE_DATE" "$NOW"
+    echo "AI_AGILE_STATUS: complete"
+    exit 0
+fi
+
+# Coverage threshold gate: at least RELEASE_COVERAGE_THRESHOLD merged PRs required.
+COVERAGE_THRESHOLD="${RELEASE_COVERAGE_THRESHOLD:-1}"
+if [[ "$MERGED_PRS" -lt "$COVERAGE_THRESHOLD" ]]; then
+    python3 -I -c "
+import json, sys
+print(json.dumps({
+    'outcome': 'gate-failed',
+    'reason': 'coverage threshold not met',
+    'coverage_threshold': int(sys.argv[1]),
+    'merged_prs': int(sys.argv[2]),
     'last_release_date': sys.argv[3],
     'timestamp': sys.argv[4],
 }), file=sys.stderr)
-" "$MERGED_PRS" "$CLOSED_ISSUES" "$LAST_RELEASE_DATE" "$NOW"
+" "$COVERAGE_THRESHOLD" "$MERGED_PRS" "$LAST_RELEASE_DATE" "$NOW"
+    echo "AI_AGILE_STATUS: complete"
+    exit 0
+fi
 
-echo "AI_AGILE_STATUS: complete"
-exit 0
+# Generate release notes.
+# RELEASE_NOTES_FILE_OVERRIDE may be set in tests to skip the HTTP-backed generator.
+TMPDIR_NOTES="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_NOTES"' EXIT
+NOTES_FILE="$TMPDIR_NOTES/release-notes.md"
+DIAG_FILE="$TMPDIR_NOTES/diagnostics.json"
+
+if [[ -n "${RELEASE_NOTES_FILE_OVERRIDE:-}" ]]; then
+    cp "$RELEASE_NOTES_FILE_OVERRIDE" "$NOTES_FILE"
+    printf '{"prs_in_window":%s,"issues_included":0,"cross_repo_refs":[],"excluded":[],"reopened":[],"missing_release_notes":[],"prs_outside_window":[],"prs_covered":[]}' \
+        "$MERGED_PRS" > "$DIAG_FILE"
+else
+    python3 -I "$SCRIPT_DIR/release_note_generator.py" \
+        --repo "$REPO" \
+        --start "$LAST_RELEASE_DATE" \
+        --end   "$NOW" \
+        --output   "$NOTES_FILE" \
+        --diagnostics "$DIAG_FILE"
+fi
+
+if [[ ! -s "$NOTES_FILE" ]]; then
+    python3 -I -c "
+import json, sys
+print(json.dumps({
+    'outcome': 'error',
+    'reason': 'release notes file is empty after generation',
+    'tag': sys.argv[1],
+    'timestamp': sys.argv[2],
+}), file=sys.stderr)
+" "$NEXT_TAG" "$NOW"
+    echo "AI_AGILE_STATUS: blocked"
+    exit 0
+fi
+
+echo "run-release-flow: publishing release $NEXT_TAG" >&2
+
+# Publish the GitHub Release.  Exclusion rules are applied by
+# release_note_generator.py (EXCLUDED_LABELS), so the notes file is already
+# filtered before this call.
+if gh release create "$NEXT_TAG" \
+        --repo "$REPO" \
+        --title "$NEXT_TAG" \
+        --notes-file "$NOTES_FILE"; then
+    python3 -I -c "
+import json, sys
+print(json.dumps({
+    'outcome': 'published',
+    'tag': sys.argv[1],
+    'merged_prs': int(sys.argv[2]),
+    'closed_issues': int(sys.argv[3]),
+    'last_release_date': sys.argv[4],
+    'timestamp': sys.argv[5],
+}), file=sys.stderr)
+" "$NEXT_TAG" "$MERGED_PRS" "$CLOSED_ISSUES" "$LAST_RELEASE_DATE" "$NOW"
+    echo "AI_AGILE_STATUS: complete"
+else
+    python3 -I -c "
+import json, sys
+print(json.dumps({
+    'outcome': 'error',
+    'reason': 'gh release create failed',
+    'tag': sys.argv[1],
+    'merged_prs': int(sys.argv[2]),
+    'timestamp': sys.argv[3],
+}), file=sys.stderr)
+" "$NEXT_TAG" "$MERGED_PRS" "$NOW"
+    echo "AI_AGILE_STATUS: blocked"
+    exit 1
+fi

@@ -203,7 +203,7 @@ def _fake_gh(tmp_path, responses: dict[str, str | None]) -> Path:
 
 
 def _run_script(tmp_path, fake_bin_dir: Path, repo="org/repo",
-                *, gh_token="fake-token"):
+                *, gh_token="fake-token", extra_env=None):
     """Run run-release-flow.sh with a fake gh binary."""
     env = {
         "PATH": str(fake_bin_dir) + ":" + os.environ["PATH"],
@@ -213,12 +213,21 @@ def _run_script(tmp_path, fake_bin_dir: Path, repo="org/repo",
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
+    if extra_env:
+        env.update(extra_env)
     return subprocess.run(
         ["bash", str(_SCRIPT)],
         env=env,
         capture_output=True,
         text=True,
     )
+
+
+def _make_notes_file(tmp_path):
+    """Write a minimal canned release-notes file and return its path."""
+    f = tmp_path / "canned-notes.md"
+    f.write_text("# Release Notes\n\nTest content.\n")
+    return f
 
 
 class TestRunReleaseFlowNoChange:
@@ -279,32 +288,175 @@ class TestRunReleaseFlowNoChange:
         assert record["outcome"] == "no-change"
 
 
-class TestRunReleaseFlowStub:
-    """Scenario R7: when changes exist the stub path exits complete without
-    creating a GitHub Release."""
+class TestRunReleaseFlowPublish:
+    """When merged PRs exist and gates pass, the flow creates a GitHub Release
+    and exits complete (issue #620)."""
 
-    def test_stub_path_exits_complete(self, tmp_path):
+    def test_publish_path_exits_complete(self, tmp_path):
+        """Scenario: passing validation and all gates publishes a GitHub Release."""
+        notes = _make_notes_file(tmp_path)
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
             "repos/org/repo/issues": _NO_ISSUES,
+            # git/refs/tags returns [] by default -> next tag v2.1.0
+            "releases/tags/v2.1.0": None,    # no duplicate
+            "release create": "",             # publish succeeds
         })
-        result = _run_script(tmp_path, fake_bin)
-        assert result.returncode == 0
+        result = _run_script(tmp_path, fake_bin,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
+        assert result.returncode == 0, f"script failed:\n{result.stderr}"
         assert "AI_AGILE_STATUS: complete" in result.stdout
 
-    def test_stub_path_does_not_call_release_create(self, tmp_path):
-        """Scenario R7: the stub must never call gh release create."""
-        # Record all gh invocations by appending args to a log file.
+    def test_publish_path_calls_release_create(self, tmp_path):
+        """Scenario: the publish path calls gh release create with the new tag."""
+        notes = _make_notes_file(tmp_path)
         log_file = tmp_path / "gh_calls.txt"
         gh_lines = [
             "#!/usr/bin/env bash",
             f"echo \"$@\" >> '{log_file}'",
-            "# Route canned responses.",
             "ARGS=\"$*\"",
             f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
             f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
             f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
+            # releases/tags/<tag> returns nothing (404) -> no duplicate
+            f"if [[ \"$ARGS\" == *'releases/tags/'* ]]; then exit 1; fi",
+            # release create succeeds
+            f"if [[ \"$ARGS\" == *'release create'* ]]; then exit 0; fi",
+            "printf '%s' '[]'",
+            "exit 0",
+        ]
+        gh_script = tmp_path / "gh"
+        gh_script.write_text("\n".join(gh_lines) + "\n")
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        result = _run_script(tmp_path, tmp_path,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
+        assert result.returncode == 0, f"script failed:\n{result.stderr}"
+        calls = log_file.read_text() if log_file.exists() else ""
+        assert "release create" in calls, (
+            f"expected 'gh release create' to be called; calls were:\n{calls}"
+        )
+
+    def test_publish_records_structured_outcome_in_stderr(self, tmp_path):
+        """Scenario: release metadata, status, and outcome are in orchestrator logs."""
+        notes = _make_notes_file(tmp_path)
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _ONE_ISSUE,
+            "releases/tags/v2.1.0": None,
+            "release create": "",
+        })
+        result = _run_script(tmp_path, fake_bin,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
+        json_line = next(
+            (line for line in result.stderr.splitlines()
+             if line.startswith("{") and "published" in line),
+            None,
+        )
+        assert json_line is not None, (
+            f"expected published JSON in stderr; got:\n{result.stderr}"
+        )
+        record = json.loads(json_line)
+        assert record["outcome"] == "published"
+        assert "tag" in record
+        assert "merged_prs" in record
+        assert "timestamp" in record
+
+
+class TestRunReleaseFlowGates:
+    """Publication gates: coverage threshold and duplicate-release prevention
+    (issue #620 acceptance criteria R3)."""
+
+    def test_coverage_threshold_gate_blocks_publication(self, tmp_path):
+        """Scenario: coverage threshold gate blocks publication when below threshold."""
+        # MERGED_PRS=1 but threshold=5 -> gate-failed, no release created
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _NO_ISSUES,
+            "releases/tags/v2.1.0": None,
+        })
+        result = _run_script(tmp_path, fake_bin,
+                             extra_env={"RELEASE_COVERAGE_THRESHOLD": "5"})
+        assert result.returncode == 0
+        assert "AI_AGILE_STATUS: complete" in result.stdout
+        json_line = next(
+            (line for line in result.stderr.splitlines()
+             if line.startswith("{") and "gate-failed" in line),
+            None,
+        )
+        assert json_line is not None, (
+            f"expected gate-failed JSON in stderr; got:\n{result.stderr}"
+        )
+        record = json.loads(json_line)
+        assert record["outcome"] == "gate-failed"
+        assert record["coverage_threshold"] == 5
+        assert record["merged_prs"] == 1
+
+    def test_coverage_threshold_gate_does_not_call_release_create(self, tmp_path):
+        """Coverage gate failure must not call gh release create."""
+        log_file = tmp_path / "gh_calls.txt"
+        gh_lines = [
+            "#!/usr/bin/env bash",
+            f"echo \"$@\" >> '{log_file}'",
+            "ARGS=\"$*\"",
+            f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'releases/tags/'* ]]; then exit 1; fi",
+            "printf '%s' '[]'",
+            "exit 0",
+        ]
+        gh_script = tmp_path / "gh"
+        gh_script.write_text("\n".join(gh_lines) + "\n")
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        _run_script(tmp_path, tmp_path,
+                    extra_env={"RELEASE_COVERAGE_THRESHOLD": "5"})
+        calls = log_file.read_text() if log_file.exists() else ""
+        assert "release create" not in calls, (
+            f"gate failure must not call 'gh release create'; calls were:\n{calls}"
+        )
+
+    def test_duplicate_release_skips_without_creating(self, tmp_path):
+        """Scenario: a rerun does not create a duplicate tag or release."""
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _NO_ISSUES,
+            # The release for the computed tag already exists -> skipped
+            "releases/tags/v2.1.0": json.dumps(
+                {"tag_name": "v2.1.0", "published_at": "2026-10-28T09:00:00Z"}
+            ),
+        })
+        result = _run_script(tmp_path, fake_bin)
+        assert result.returncode == 0
+        assert "AI_AGILE_STATUS: complete" in result.stdout
+        json_line = next(
+            (line for line in result.stderr.splitlines()
+             if line.startswith("{") and "skipped" in line),
+            None,
+        )
+        assert json_line is not None, (
+            f"expected skipped JSON in stderr; got:\n{result.stderr}"
+        )
+        record = json.loads(json_line)
+        assert record["outcome"] == "skipped"
+
+    def test_duplicate_release_does_not_call_release_create(self, tmp_path):
+        """A duplicate release detected must not call gh release create."""
+        existing = json.dumps(
+            {"tag_name": "v2.1.0", "published_at": "2026-10-28T09:00:00Z"}
+        )
+        log_file = tmp_path / "gh_calls.txt"
+        gh_lines = [
+            "#!/usr/bin/env bash",
+            f"echo \"$@\" >> '{log_file}'",
+            "ARGS=\"$*\"",
+            f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'releases/tags/'* ]]; then printf '%s' '{existing}'; exit 0; fi",
             "printf '%s' '[]'",
             "exit 0",
         ]
@@ -315,33 +467,12 @@ class TestRunReleaseFlowStub:
         assert result.returncode == 0
         calls = log_file.read_text() if log_file.exists() else ""
         assert "release create" not in calls, (
-            f"stub must not call 'gh release create'; calls were:\n{calls}"
+            f"duplicate detection must not call 'gh release create'; calls:\n{calls}"
         )
-
-    def test_stub_records_structured_outcome_in_stderr(self, tmp_path):
-        fake_bin = _fake_gh(tmp_path, {
-            "releases/latest": _ONE_RELEASE,
-            "pulls?state=closed": _ONE_PULL,
-            "repos/org/repo/issues": _ONE_ISSUE,
-        })
-        result = _run_script(tmp_path, fake_bin)
-        json_line = next(
-            (line for line in result.stderr.splitlines()
-             if line.startswith("{") and "stub" in line),
-            None,
-        )
-        assert json_line is not None, (
-            f"expected stub JSON in stderr; got:\n{result.stderr}"
-        )
-        record = json.loads(json_line)
-        assert record["outcome"] == "stub"
-        assert "merged_prs" in record
-        assert "closed_issues" in record
 
 
 class TestRunReleaseFlowRetry:
-    """Scenario R5/R6: a failed run leaves no residual state so re-triggering
-    starts cleanly."""
+    """Scenario R5/R6: retry and idempotency behavior."""
 
     def test_no_change_path_makes_no_writes(self, tmp_path):
         """The no-change path must not write to any file (idempotent)."""
@@ -358,27 +489,29 @@ class TestRunReleaseFlowRetry:
             f"no-change path must not create files; found: {new_files}"
         )
 
-    def test_stub_path_makes_no_writes(self, tmp_path):
-        """The stub path must not write to any file (idempotent)."""
-        fake_bin = _fake_gh(tmp_path, {
-            "releases/latest": _ONE_RELEASE,
-            "pulls?state=closed": _ONE_PULL,
-            "repos/org/repo/issues": _NO_ISSUES,
-        })
-        before = set(tmp_path.rglob("*"))
-        _run_script(tmp_path, fake_bin)
-        after = set(tmp_path.rglob("*"))
-        new_files = {p for p in after - before if p.is_file() and p.name != "gh"}
-        assert not new_files, (
-            f"stub path must not create files; found: {new_files}"
-        )
-
-    def test_two_consecutive_runs_produce_same_outcome(self, tmp_path):
-        """A re-trigger produces the same outcome as the first run."""
+    def test_two_consecutive_no_change_runs_produce_same_outcome(self, tmp_path):
+        """A re-trigger on the no-change path produces the same outcome."""
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _NO_PULLS,
             "repos/org/repo/issues": _NO_ISSUES,
+        })
+        r1 = _run_script(tmp_path, fake_bin)
+        r2 = _run_script(tmp_path, fake_bin)
+        assert r1.returncode == r2.returncode == 0
+        assert "AI_AGILE_STATUS: complete" in r1.stdout
+        assert "AI_AGILE_STATUS: complete" in r2.stdout
+
+    def test_duplicate_detection_makes_rerun_idempotent(self, tmp_path):
+        """A rerun after a published release exits complete via duplicate detection."""
+        existing = json.dumps(
+            {"tag_name": "v2.1.0", "published_at": "2026-10-28T09:00:00Z"}
+        )
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _NO_ISSUES,
+            "releases/tags/v2.1.0": existing,
         })
         r1 = _run_script(tmp_path, fake_bin)
         r2 = _run_script(tmp_path, fake_bin)

@@ -261,7 +261,7 @@ Reads period=week rows (last 12 months) and period=day rows (last 4 weeks) from 
 - **Applies to:** schedule `0 9 * * 3`
 - **Naming:** --
 
-Weekly release flow stub (issue #604 sub-issue 1/3). Fires on the weekly Wednesday cadence and supports manual dispatch. Checks for merged PRs or closed issues since the last GitHub Release; exits with a structured no-change outcome when none exist. This stub establishes the scheduling and dispatch infrastructure; no GitHub Release is created until sub-issue 2/3 merges.
+Weekly release flow (issue #604). Fires on the weekly Wednesday cadence and supports manual dispatch. Determines the previous published release boundary, discovers merged PRs and closed issues since that boundary, applies publication gates (coverage threshold, duplicate-release prevention), generates deterministic release-notes Markdown, and publishes a GitHub Release. A rerun with an existing tag exits cleanly without duplicating the release.
 
 ### `05_continuous/weekly-release`
 
@@ -269,4 +269,4 @@ Weekly release flow stub (issue #604 sub-issue 1/3). Fires on the weekly Wednesd
 - **Phase:** `05_continuous`
 - **Script:** `scripts/run-release-flow.sh`
 
-Checks for merged PRs and closed issues since the last GitHub Release. Exits without publishing when none exist (no-change run), recording a structured JSON outcome to stderr. When changes exist, records a structured stub outcome to stderr and exits without creating a GitHub Release (stub behavior until sub-issue 2/3 merges). Idempotent: makes no writes; safe to re-trigger after a prior failed run.
+Determines the previous published release boundary and discovers merged PRs and closed issues since that boundary. Applies gates: exits with a structured no-change outcome when nothing is new; skips with a structured skipped outcome when the computed tag already exists; records a gate-failed outcome when the coverage threshold is not met. Otherwise generates release-notes Markdown via release_note_generator.py and creates a GitHub Release. All outcomes are recorded as structured JSON to stderr.
