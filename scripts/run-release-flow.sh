@@ -130,9 +130,13 @@ fi
 # ---------------------------------------------------------------------------
 
 # Compute the next MINOR release tag from all existing vX.Y.Z tags.
+# Both the gh API call and the Python post-processing are wrapped in
+# conditionals so a failure produces a structured error rather than silently
+# falling back to a hardcoded version string (which would cause the
+# duplicate-release gate to fire indefinitely).
 NEXT_TAG=""
-if TAGS_JSON="$(gh api --paginate --slurp "repos/$REPO/git/refs/tags" 2>/dev/null)"; then
-    NEXT_TAG="$(printf '%s' "$TAGS_JSON" | python3 -I -c "
+if TAGS_JSON="$(gh api --paginate --slurp "repos/$REPO/git/refs/tags")"; then
+    if NEXT_TAG="$(printf '%s' "$TAGS_JSON" | python3 -I -c "
 import json, sys, re
 pages = json.load(sys.stdin)
 refs = [r for page in pages for r in page]
@@ -148,10 +152,21 @@ if not tags:
 tags.sort(reverse=True)
 major, minor, _ = tags[0]
 print('v{}.{}.0'.format(major, minor + 1))
-" 2>/dev/null || true)"
+")"; then
+        :
+    fi
 fi
 if [[ -z "$NEXT_TAG" ]]; then
-    NEXT_TAG="v2.1.0"
+    python3 -I -c "
+import json, sys
+print(json.dumps({
+    'outcome': 'error',
+    'reason': 'tag discovery failed: could not compute next release tag',
+    'timestamp': sys.argv[1],
+}), file=sys.stderr)
+" "$NOW"
+    echo "AI_AGILE_STATUS: blocked"
+    exit 0
 fi
 
 echo "run-release-flow: next release tag: $NEXT_TAG" >&2
@@ -202,13 +217,23 @@ if [[ -n "${RELEASE_NOTES_FILE_OVERRIDE:-}" ]]; then
     cp "$RELEASE_NOTES_FILE_OVERRIDE" "$NOTES_FILE"
     printf '{"prs_in_window":%s,"issues_included":0,"cross_repo_refs":[],"excluded":[],"reopened":[],"missing_release_notes":[],"prs_outside_window":[],"prs_covered":[]}' \
         "$MERGED_PRS" > "$DIAG_FILE"
-else
-    python3 -I "$SCRIPT_DIR/release_note_generator.py" \
+elif ! python3 -I "$SCRIPT_DIR/release_note_generator.py" \
         --repo "$REPO" \
         --start "$LAST_RELEASE_DATE" \
         --end   "$NOW" \
         --output   "$NOTES_FILE" \
-        --diagnostics "$DIAG_FILE"
+        --diagnostics "$DIAG_FILE"; then
+    python3 -I -c "
+import json, sys
+print(json.dumps({
+    'outcome': 'error',
+    'reason': 'release notes generation failed',
+    'tag': sys.argv[1],
+    'timestamp': sys.argv[2],
+}), file=sys.stderr)
+" "$NEXT_TAG" "$NOW"
+    echo "AI_AGILE_STATUS: blocked"
+    exit 0
 fi
 
 if [[ ! -s "$NOTES_FILE" ]]; then
@@ -258,5 +283,5 @@ print(json.dumps({
 }), file=sys.stderr)
 " "$NEXT_TAG" "$MERGED_PRS" "$NOW"
     echo "AI_AGILE_STATUS: blocked"
-    exit 1
+    exit 0
 fi

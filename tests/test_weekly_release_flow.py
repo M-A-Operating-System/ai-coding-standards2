@@ -520,6 +520,147 @@ class TestRunReleaseFlowRetry:
         assert "AI_AGILE_STATUS: complete" in r2.stdout
 
 
+class TestRunReleaseFlowErrors:
+    """Error paths: gh release create failure, empty notes file, tag discovery
+    failure.  All error outcomes must exit 0 and emit AI_AGILE_STATUS: blocked
+    (issue #620 RV-003, RV-004)."""
+
+    def test_release_create_failure_exits_zero_with_blocked_status(self, tmp_path):
+        """Scenario: gh release create failure must exit 0 with AI_AGILE_STATUS: blocked."""
+        notes = _make_notes_file(tmp_path)
+        log_file = tmp_path / "gh_calls.txt"
+        gh_lines = [
+            "#!/usr/bin/env bash",
+            f"echo \"$@\" >> '{log_file}'",
+            "ARGS=\"$*\"",
+            f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
+            # git/refs/tags returns [] -> NEXT_TAG = v2.1.0
+            f"if [[ \"$ARGS\" == *'git/refs/tags'* ]]; then printf '%s' '[[]]'; exit 0; fi",
+            # no duplicate for this tag
+            f"if [[ \"$ARGS\" == *'releases/tags/'* ]]; then exit 1; fi",
+            # release create fails
+            f"if [[ \"$ARGS\" == *'release create'* ]]; then exit 1; fi",
+            "printf '%s' '[]'",
+            "exit 0",
+        ]
+        gh_script = tmp_path / "gh"
+        gh_script.write_text("\n".join(gh_lines) + "\n")
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        result = _run_script(tmp_path, tmp_path,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
+        assert result.returncode == 0, (
+            f"script must exit 0 on release create failure; got {result.returncode};\n{result.stderr}"
+        )
+        assert "AI_AGILE_STATUS: blocked" in result.stdout
+
+    def test_release_create_failure_records_error_outcome(self, tmp_path):
+        """gh release create failure must record outcome: error in stderr."""
+        notes = _make_notes_file(tmp_path)
+        gh_lines = [
+            "#!/usr/bin/env bash",
+            "ARGS=\"$*\"",
+            f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'git/refs/tags'* ]]; then printf '%s' '[[]]'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'releases/tags/'* ]]; then exit 1; fi",
+            f"if [[ \"$ARGS\" == *'release create'* ]]; then exit 1; fi",
+            "printf '%s' '[]'",
+            "exit 0",
+        ]
+        gh_script = tmp_path / "gh"
+        gh_script.write_text("\n".join(gh_lines) + "\n")
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        result = _run_script(tmp_path, tmp_path,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
+        json_line = next(
+            (line for line in result.stderr.splitlines()
+             if line.startswith("{") and "error" in line),
+            None,
+        )
+        assert json_line is not None, (
+            f"expected outcome: error JSON in stderr; got:\n{result.stderr}"
+        )
+        record = json.loads(json_line)
+        assert record["outcome"] == "error"
+
+    def test_empty_notes_file_exits_zero_with_blocked_status(self, tmp_path):
+        """Scenario: empty notes file must exit 0 with AI_AGILE_STATUS: blocked."""
+        empty_notes = tmp_path / "empty-notes.md"
+        empty_notes.write_text("")
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _NO_ISSUES,
+            "releases/tags/v2.1.0": None,
+        })
+        result = _run_script(tmp_path, fake_bin,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(empty_notes)})
+        assert result.returncode == 0, (
+            f"script must exit 0 on empty notes; got {result.returncode};\n{result.stderr}"
+        )
+        assert "AI_AGILE_STATUS: blocked" in result.stdout
+
+    def test_empty_notes_file_records_error_outcome(self, tmp_path):
+        """Empty notes file must record outcome: error in stderr."""
+        empty_notes = tmp_path / "empty-notes.md"
+        empty_notes.write_text("")
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _NO_ISSUES,
+            "releases/tags/v2.1.0": None,
+        })
+        result = _run_script(tmp_path, fake_bin,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(empty_notes)})
+        json_line = next(
+            (line for line in result.stderr.splitlines()
+             if line.startswith("{") and "error" in line),
+            None,
+        )
+        assert json_line is not None, (
+            f"expected outcome: error JSON in stderr; got:\n{result.stderr}"
+        )
+        record = json.loads(json_line)
+        assert record["outcome"] == "error"
+
+    def test_tag_discovery_failure_exits_zero_with_blocked_status(self, tmp_path):
+        """Scenario: tag discovery API failure must exit 0 with AI_AGILE_STATUS: blocked
+        rather than silently falling back to a hardcoded version string (RV-001)."""
+        gh_lines = [
+            "#!/usr/bin/env bash",
+            "ARGS=\"$*\"",
+            f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
+            # tag discovery fails
+            "if [[ \"$ARGS\" == *'git/refs/tags'* ]]; then exit 1; fi",
+            "printf '%s' '[]'",
+            "exit 0",
+        ]
+        gh_script = tmp_path / "gh"
+        gh_script.write_text("\n".join(gh_lines) + "\n")
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        result = _run_script(tmp_path, tmp_path)
+        assert result.returncode == 0, (
+            f"script must exit 0 on tag discovery failure; got {result.returncode};\n{result.stderr}"
+        )
+        assert "AI_AGILE_STATUS: blocked" in result.stdout
+        json_line = next(
+            (line for line in result.stderr.splitlines()
+             if line.startswith("{") and "error" in line),
+            None,
+        )
+        assert json_line is not None, (
+            f"expected outcome: error JSON in stderr; got:\n{result.stderr}"
+        )
+        record = json.loads(json_line)
+        assert record["outcome"] == "error"
+        assert "tag discovery" in record["reason"]
+
+
 class TestRunReleaseFlowMissingEnv:
     """The script must exit blocked when required env vars are absent."""
 
