@@ -238,3 +238,16 @@ configuration instead, since there is no product ticket to classify.
 `gap-curator` and `debt-curator` de-duplicate and prioritise candidates
 into one rolled-up report each, rather than a firehose, so the human
 gates above are the only queue throttle.
+
+### Release flow
+
+A scheduled flow with no work item behind it (see
+[PRODUCT.md](PRODUCT.md#a-scheduled-flow-derives-its-own-dueness-from-the-record)).
+It fires on a weekly cron and supports manual dispatch.
+
+| Behaviour | Detail |
+|---|---|
+| Trigger | Weekly cron; manual dispatch |
+| No-change run | No merged PRs or closed issues since the last release: exits without publishing and records a structured no-change outcome |
+| Retry | Re-triggers with no residual state from a prior failed run |
+| Stub (sub-issue 1/3) | No GitHub Release is created; the existing Wednesday GitHub Actions workflow continues to publish releases unchanged until sub-issue 2/3 merges |
