@@ -12,18 +12,24 @@
 
 name: RELEASE - publish
 
-on:
-  # Weekly cadence: 09:00 UTC every Wednesday. GitHub Actions crons are always
-  # UTC; shift the hour if a local schedule is intended.
-  schedule:
-    - cron: '0 9 * * 3'  # 09:00 UTC on Wednesdays
+# Production cutover (issue #621): the weekly Wednesday cadence is now owned
+# by the orchestrator's weekly-release flow (pipeline.json + run-release-flow.sh).
+# This workflow no longer fires on a schedule.  Two triggers remain:
+#
+#   workflow_dispatch -- emergency manual release outside the normal pipeline;
+#                        use the orchestrator's weekly-release flow for the
+#                        standard path (see docs/product/orchestrator/release-migration.md).
+#   push: tags: v*   -- off-cycle release when a vX.Y.Z tag is pushed manually
+#                        (e.g. a major version cut or an emergency patch).
 
-  # Manual trigger for an on-demand release.
+on:
+  # Manual trigger for an on-demand release (emergency path only).
   workflow_dispatch:
 
   # Off-cycle release: pushing a vX.Y.Z tag publishes that exact tag. Pushes
-  # made with the default GITHUB_TOKEN (as the scheduled path below does) do not
-  # re-trigger this workflow, so tag creation here cannot cause a loop.
+  # made with the default GITHUB_TOKEN (as run-release-flow.sh does via the
+  # orchestrator) do not re-trigger this workflow, so tag creation by the
+  # orchestrator cannot cause a loop.
   push:
     tags:
       - 'v*'
