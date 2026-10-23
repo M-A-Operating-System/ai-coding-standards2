@@ -332,6 +332,17 @@ class TestCollate:
         assert entries == []
         assert any(e['issue'] == 5 for e in diag['excluded'])
 
+    def test_excluded_label_on_closing_pr_filters_issue_without_the_label(self):
+        """A PR carrying ignore-for-release excludes the issue it closes even
+        when the issue itself has no exclusion label (RV-001)."""
+        pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #5',
+                      labels=['ignore-for-release'])
+        issue5 = _make_issue(5, labels=['classification: bug'])
+        client = self._make_client([pr], {5: issue5})
+        entries, diag, _ = collate(client, 'owner/repo', _START, _END)
+        assert entries == []
+        assert any(e['issue'] == 5 for e in diag['excluded'])
+
     def test_reopened_issue_emits_diagnostic(self):
         pr = _make_pr(10, merged_at='2026-10-02T10:00:00Z', body='Closes #5')
         issue5 = _make_issue(5, state='open', labels=['classification: bug'],
