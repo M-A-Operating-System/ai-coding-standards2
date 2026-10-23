@@ -173,7 +173,7 @@ echo "run-release-flow: next release tag: $NEXT_TAG" >&2
 
 # Duplicate-release prevention gate: if a release for this tag already exists,
 # exit cleanly without creating a duplicate.
-if gh api "repos/$REPO/releases/tags/$NEXT_TAG" 2>/dev/null; then
+if gh api "repos/$REPO/releases/tags/$NEXT_TAG" >/dev/null 2>&1; then
     python3 -I -c "
 import json, sys
 print(json.dumps({
@@ -258,7 +258,7 @@ echo "run-release-flow: publishing release $NEXT_TAG" >&2
 if gh release create "$NEXT_TAG" \
         --repo "$REPO" \
         --title "$NEXT_TAG" \
-        --notes-file "$NOTES_FILE"; then
+        --notes-file "$NOTES_FILE" >/dev/null; then
     python3 -I -c "
 import json, sys
 print(json.dumps({

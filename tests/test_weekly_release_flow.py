@@ -306,7 +306,7 @@ class TestRunReleaseFlowPublish:
         result = _run_script(tmp_path, fake_bin,
                              extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
         assert result.returncode == 0, f"script failed:\n{result.stderr}"
-        assert "AI_AGILE_STATUS: complete" in result.stdout
+        assert result.stdout.strip() == "AI_AGILE_STATUS: complete"
 
     def test_publish_path_calls_release_create(self, tmp_path):
         """Scenario: the publish path calls gh release create with the new tag."""
@@ -431,7 +431,7 @@ class TestRunReleaseFlowGates:
         })
         result = _run_script(tmp_path, fake_bin)
         assert result.returncode == 0
-        assert "AI_AGILE_STATUS: complete" in result.stdout
+        assert result.stdout.strip() == "AI_AGILE_STATUS: complete"
         json_line = next(
             (line for line in result.stderr.splitlines()
              if line.startswith("{") and "skipped" in line),
@@ -516,8 +516,8 @@ class TestRunReleaseFlowRetry:
         r1 = _run_script(tmp_path, fake_bin)
         r2 = _run_script(tmp_path, fake_bin)
         assert r1.returncode == r2.returncode == 0
-        assert "AI_AGILE_STATUS: complete" in r1.stdout
-        assert "AI_AGILE_STATUS: complete" in r2.stdout
+        assert r1.stdout.strip() == "AI_AGILE_STATUS: complete"
+        assert r2.stdout.strip() == "AI_AGILE_STATUS: complete"
 
 
 class TestRunReleaseFlowErrors:
