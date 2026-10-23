@@ -77,7 +77,7 @@ fi
 CLOSED_ISSUES=0
 # -f/--raw-field (with --method GET) sends since as a properly URL-encoded
 # query parameter instead of interpolating it into the URL string by hand
-# (STD-ARCH-025: last_release_date is API-controlled today, but an
+# (STD-SEC-020: last_release_date is API-controlled today, but an
 # unvalidated value landing raw in a query string is the pattern that bites
 # later when that assumption quietly stops holding).
 if ISSUES_JSON="$(gh api --method GET --paginate --slurp \
