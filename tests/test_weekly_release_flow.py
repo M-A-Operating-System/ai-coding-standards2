@@ -33,27 +33,29 @@ from datetime import datetime, timezone
 def _t(text: str) -> datetime:
     return datetime.fromisoformat(text).replace(tzinfo=timezone.utc)
 
+
 _PIPELINE_PATH = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
 _SCRIPT = Path(__file__).parent.parent / "scripts" / "run-release-flow.sh"
 
-_EMPTY_RELEASES = json.dumps({"message": "Not Found"})
 _ONE_RELEASE = json.dumps({
     "tag_name": "v2.1.0",
     "published_at": "2026-10-01T09:00:00Z",
 })
-_NO_PULLS = json.dumps([])
-_ONE_PULL = json.dumps([{
+# --paginate --slurp wraps each page in an outer array (one page here).
+_NO_PULLS = json.dumps([[]])
+_ONE_PULL = json.dumps([[{
     "number": 10,
     "merged_at": "2026-10-15T12:00:00Z",
     "title": "Some fix",
-}])
-_NO_ISSUES = json.dumps([])
-_ONE_ISSUE = json.dumps([{
+}]])
+# --paginate --slurp wraps each page in an outer array (one page here).
+_NO_ISSUES = json.dumps([[]])
+_ONE_ISSUE = json.dumps([[{
     "number": 20,
     "pull_request": None,
     "closed_at": "2026-10-16T10:00:00Z",
     "title": "Some issue",
-}])
+}]])
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +126,19 @@ class TestWeeklyReleaseFlowPipelineShape:
             step, item, item.labels, {}, None, gh=MagicMock(), repo="org/repo"
         ) is False, "weekly-release must never be triggered by a work item"
 
+    def test_weekly_release_reachable_with_manual_override(self):
+        """Scenario R2: --manual-override is the documented escape hatch that
+        lets --interactive-result apply a person-produced result for this
+        schedule-triggered step to a specific issue (pipeline_orchestrator.py's
+        --manual-override CLI flag). Without the override it is unreachable
+        (see the sibling test above); with it, eligibility must flip to True."""
+        step = self._load_weekly_release_step()
+        item = WorkItem(number=1, kind="issue", title="t", labels=set(), url="u")
+        assert orch._should_run(
+            step, item, item.labels, {}, None, gh=MagicMock(), repo="org/repo",
+            manual_override=True,
+        ) is True, "weekly-release must be reachable when --manual-override is set"
+
     def test_weekly_release_schedule_does_not_collide_with_other_flows(self):
         """The cron expression must not duplicate an existing scheduled flow."""
         step = self._load_weekly_release_step()
@@ -157,21 +172,27 @@ class TestWeeklyReleaseFlowPipelineShape:
 # Script behavior tests (Scenarios R3/R4, R5/R6, R7)
 # ---------------------------------------------------------------------------
 
-def _fake_gh(tmp_path, responses: dict[str, str]) -> Path:
+def _fake_gh(tmp_path, responses: dict[str, str | None]) -> Path:
     """Write a fake gh binary that echoes canned responses for each API path.
 
     responses: {path_fragment: json_string}.  The fake gh looks for the first
     key that appears in the argument list and prints the matching response.
+    A value of None simulates gh's real behavior on a 404 (e.g. no prior
+    GitHub Release): nothing on stdout, non-zero exit, matching the bare
+    `gh api ... 2>/dev/null` error path the script guards with `if ...; then`.
     If no key matches, it prints '[]' and exits 0 so callers that do --jq
     still get a parseable result.
     """
     lines = ["#!/usr/bin/env bash", "ARGS=\"$*\""]
     for fragment, body in responses.items():
         safe_fragment = fragment.replace("'", "'\\''")
-        safe_body = body.replace("'", "'\\''").replace("\n", "\\n")
         lines.append(f"if [[ \"$ARGS\" == *'{safe_fragment}'* ]]; then")
-        lines.append(f"  printf '%s' '{safe_body}'")
-        lines.append(f"  exit 0")
+        if body is None:
+            lines.append(f"  exit 1")
+        else:
+            safe_body = body.replace("'", "'\\''").replace("\n", "\\n")
+            lines.append(f"  printf '%s' '{safe_body}'")
+            lines.append(f"  exit 0")
         lines.append("fi")
     lines.append("printf '%s' '[]'")
     lines.append("exit 0")
@@ -209,7 +230,7 @@ class TestRunReleaseFlowNoChange:
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _NO_PULLS,
-            "issues?state=closed": _NO_ISSUES,
+            "repos/org/repo/issues": _NO_ISSUES,
         })
         result = _run_script(tmp_path, fake_bin)
         assert result.returncode == 0
@@ -219,7 +240,7 @@ class TestRunReleaseFlowNoChange:
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _NO_PULLS,
-            "issues?state=closed": _NO_ISSUES,
+            "repos/org/repo/issues": _NO_ISSUES,
         })
         result = _run_script(tmp_path, fake_bin)
         # Structured JSON must appear in stderr.
@@ -237,12 +258,13 @@ class TestRunReleaseFlowNoChange:
         assert "timestamp" in record
 
     def test_no_change_when_no_prior_release(self, tmp_path):
-        """When there is no prior release (404), epoch date is used and an
-        empty PR/issue list still triggers no-change."""
+        """When there is no prior release (404, real gh exits non-zero with
+        no stdout), epoch date is used and an empty PR/issue list still
+        triggers no-change."""
         fake_bin = _fake_gh(tmp_path, {
-            "releases/latest": _EMPTY_RELEASES,
+            "releases/latest": None,
             "pulls?state=closed": _NO_PULLS,
-            "issues?state=closed": _NO_ISSUES,
+            "repos/org/repo/issues": _NO_ISSUES,
         })
         result = _run_script(tmp_path, fake_bin)
         assert result.returncode == 0
@@ -265,7 +287,7 @@ class TestRunReleaseFlowStub:
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
-            "issues?state=closed": _NO_ISSUES,
+            "repos/org/repo/issues": _NO_ISSUES,
         })
         result = _run_script(tmp_path, fake_bin)
         assert result.returncode == 0
@@ -282,7 +304,7 @@ class TestRunReleaseFlowStub:
             "ARGS=\"$*\"",
             f"if [[ \"$ARGS\" == *'releases/latest'* ]]; then printf '%s' '{_ONE_RELEASE}'; exit 0; fi",
             f"if [[ \"$ARGS\" == *'pulls?state=closed'* ]]; then printf '%s' '{_ONE_PULL}'; exit 0; fi",
-            f"if [[ \"$ARGS\" == *'issues?state=closed'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
+            f"if [[ \"$ARGS\" == *'repos/org/repo/issues'* ]]; then printf '%s' '{_NO_ISSUES}'; exit 0; fi",
             "printf '%s' '[]'",
             "exit 0",
         ]
@@ -300,7 +322,7 @@ class TestRunReleaseFlowStub:
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
-            "issues?state=closed": _ONE_ISSUE,
+            "repos/org/repo/issues": _ONE_ISSUE,
         })
         result = _run_script(tmp_path, fake_bin)
         json_line = next(
@@ -326,7 +348,7 @@ class TestRunReleaseFlowRetry:
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _NO_PULLS,
-            "issues?state=closed": _NO_ISSUES,
+            "repos/org/repo/issues": _NO_ISSUES,
         })
         before = set(tmp_path.rglob("*"))
         _run_script(tmp_path, fake_bin)
@@ -341,7 +363,7 @@ class TestRunReleaseFlowRetry:
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _ONE_PULL,
-            "issues?state=closed": _NO_ISSUES,
+            "repos/org/repo/issues": _NO_ISSUES,
         })
         before = set(tmp_path.rglob("*"))
         _run_script(tmp_path, fake_bin)
@@ -356,7 +378,7 @@ class TestRunReleaseFlowRetry:
         fake_bin = _fake_gh(tmp_path, {
             "releases/latest": _ONE_RELEASE,
             "pulls?state=closed": _NO_PULLS,
-            "issues?state=closed": _NO_ISSUES,
+            "repos/org/repo/issues": _NO_ISSUES,
         })
         r1 = _run_script(tmp_path, fake_bin)
         r2 = _run_script(tmp_path, fake_bin)

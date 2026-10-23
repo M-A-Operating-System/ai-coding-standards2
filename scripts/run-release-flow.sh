@@ -58,12 +58,13 @@ echo "run-release-flow: last release date: $LAST_RELEASE_DATE" >&2
 # ---------------------------------------------------------------------------
 
 MERGED_PRS=0
-if PULLS_JSON="$(gh api "repos/$REPO/pulls?state=closed&per_page=100" 2>/dev/null)"; then
+if PULLS_JSON="$(gh api --paginate --slurp "repos/$REPO/pulls?state=closed&per_page=100" 2>/dev/null)"; then
     MERGED_PRS="$(printf '%s' "$PULLS_JSON" \
         | python3 -I -c "
 import json, sys
 last = sys.argv[1]
-pulls = json.load(sys.stdin)
+pages = json.load(sys.stdin)
+pulls = [p for page in pages for p in page]
 count = sum(1 for p in pulls if p.get('merged_at') and p['merged_at'] > last)
 print(count)
 " "$LAST_RELEASE_DATE")"
@@ -74,12 +75,20 @@ fi
 # ---------------------------------------------------------------------------
 
 CLOSED_ISSUES=0
-if ISSUES_JSON="$(gh api "repos/$REPO/issues?state=closed&since=${LAST_RELEASE_DATE}&per_page=100" 2>/dev/null)"; then
+# -f/--raw-field (with --method GET) sends since as a properly URL-encoded
+# query parameter instead of interpolating it into the URL string by hand
+# (STD-ARCH-025: last_release_date is API-controlled today, but an
+# unvalidated value landing raw in a query string is the pattern that bites
+# later when that assumption quietly stops holding).
+if ISSUES_JSON="$(gh api --method GET --paginate --slurp \
+        -f state=closed -f "since=${LAST_RELEASE_DATE}" -f per_page=100 \
+        "repos/$REPO/issues" 2>/dev/null)"; then
     CLOSED_ISSUES="$(printf '%s' "$ISSUES_JSON" \
         | python3 -I -c "
 import json, sys
 last = sys.argv[1]
-issues = json.load(sys.stdin)
+pages = json.load(sys.stdin)
+issues = [i for page in pages for i in page]
 count = sum(
     1 for i in issues
     if i.get('pull_request') is None
@@ -129,3 +138,4 @@ print(json.dumps({
 " "$MERGED_PRS" "$CLOSED_ISSUES" "$LAST_RELEASE_DATE" "$NOW"
 
 echo "AI_AGILE_STATUS: complete"
+exit 0
