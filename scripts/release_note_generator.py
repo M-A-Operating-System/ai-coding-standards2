@@ -226,8 +226,13 @@ def collate(client, repo, start, end):
             continue
 
         issue_labels = [lbl['name'] for lbl in issue.get('labels', [])]
+        all_pr_labels = {
+            lbl['name']
+            for pr in closing_prs
+            for lbl in pr.get('labels', [])
+        }
 
-        excluded_present = EXCLUDED_LABELS & set(issue_labels)
+        excluded_present = EXCLUDED_LABELS & (set(issue_labels) | all_pr_labels)
         if excluded_present:
             diagnostics['excluded'].append({
                 'issue': issue_num,

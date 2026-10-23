@@ -224,9 +224,14 @@ def _run_script(tmp_path, fake_bin_dir: Path, repo="org/repo",
 
 
 def _make_notes_file(tmp_path):
-    """Write a minimal canned release-notes file and return its path."""
+    """Write a minimal canned release-notes file and return its path.
+
+    Includes a "## " category section, matching what render_markdown()
+    produces for a non-empty release -- a header-only file (no section) is
+    the empty-content case TestRunReleaseFlowErrors covers separately.
+    """
     f = tmp_path / "canned-notes.md"
-    f.write_text("# Release Notes\n\nTest content.\n")
+    f.write_text("# Release Notes\n\n## Enhancements\n\nTest content.\n")
     return f
 
 
@@ -307,6 +312,26 @@ class TestRunReleaseFlowPublish:
                              extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
         assert result.returncode == 0, f"script failed:\n{result.stderr}"
         assert result.stdout.strip() == "AI_AGILE_STATUS: complete"
+
+    def test_diagnostics_reach_stderr_before_tmpdir_cleanup(self, tmp_path):
+        """The generator's diagnostics file lives under the EXIT-trapped
+        scratch dir; it must be logged to stderr before that trap removes it,
+        or the counts are lost unread (RV-004)."""
+        notes = _make_notes_file(tmp_path)
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _NO_ISSUES,
+            "releases/tags/v2.1.0": None,
+            "release create": "",
+        })
+        result = _run_script(tmp_path, fake_bin,
+                             extra_env={"RELEASE_NOTES_FILE_OVERRIDE": str(notes)})
+        assert result.returncode == 0, f"script failed:\n{result.stderr}"
+        assert "diagnostics" in result.stderr, (
+            f"expected diagnostics to be logged to stderr; got:\n{result.stderr}"
+        )
+        assert "prs_in_window" in result.stderr
 
     def test_publish_path_calls_release_create(self, tmp_path):
         """Scenario: the publish path calls gh release create with the new tag."""
@@ -393,6 +418,35 @@ class TestRunReleaseFlowGates:
         assert record["outcome"] == "gate-failed"
         assert record["coverage_threshold"] == 5
         assert record["merged_prs"] == 1
+
+    def test_non_integer_coverage_threshold_exits_zero_with_blocked_status(self, tmp_path):
+        """A non-integer RELEASE_COVERAGE_THRESHOLD must not reach the `-lt`
+        arithmetic comparison under `set -e` (RV-003); it must be rejected
+        up front with a structured error and exit 0."""
+        fake_bin = _fake_gh(tmp_path, {
+            "releases/latest": _ONE_RELEASE,
+            "pulls?state=closed": _ONE_PULL,
+            "repos/org/repo/issues": _NO_ISSUES,
+            "releases/tags/v2.1.0": None,
+        })
+        result = _run_script(tmp_path, fake_bin,
+                             extra_env={"RELEASE_COVERAGE_THRESHOLD": "not-a-number"})
+        assert result.returncode == 0, (
+            f"script must exit 0 on a non-integer threshold; got "
+            f"{result.returncode}:\n{result.stderr}"
+        )
+        assert "AI_AGILE_STATUS: blocked" in result.stdout
+        json_line = next(
+            (line for line in result.stderr.splitlines()
+             if line.startswith("{") and "error" in line),
+            None,
+        )
+        assert json_line is not None, (
+            f"expected outcome: error JSON in stderr; got:\n{result.stderr}"
+        )
+        record = json.loads(json_line)
+        assert record["outcome"] == "error"
+        assert record["coverage_threshold"] == "not-a-number"
 
     def test_coverage_threshold_gate_does_not_call_release_create(self, tmp_path):
         """Coverage gate failure must not call gh release create."""

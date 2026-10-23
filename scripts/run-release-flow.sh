@@ -190,6 +190,19 @@ fi
 
 # Coverage threshold gate: at least RELEASE_COVERAGE_THRESHOLD merged PRs required.
 COVERAGE_THRESHOLD="${RELEASE_COVERAGE_THRESHOLD:-1}"
+if ! [[ "$COVERAGE_THRESHOLD" =~ ^[0-9]+$ ]]; then
+    python3 -I -c "
+import json, sys
+print(json.dumps({
+    'outcome': 'error',
+    'reason': 'RELEASE_COVERAGE_THRESHOLD is not a non-negative integer',
+    'coverage_threshold': sys.argv[1],
+    'timestamp': sys.argv[2],
+}), file=sys.stderr)
+" "$COVERAGE_THRESHOLD" "$NOW"
+    echo "AI_AGILE_STATUS: blocked"
+    exit 0
+fi
 if [[ "$MERGED_PRS" -lt "$COVERAGE_THRESHOLD" ]]; then
     python3 -I -c "
 import json, sys
@@ -236,12 +249,24 @@ print(json.dumps({
     exit 0
 fi
 
-if [[ ! -s "$NOTES_FILE" ]]; then
+# Diagnostics (excluded/missing-release-notes/cross-repo-ref counts) are
+# written by the generator but live in $TMPDIR_NOTES, which the EXIT trap
+# removes -- log them to stderr now so they reach the orchestrator's logs
+# rather than being deleted unread.
+if [[ -s "$DIAG_FILE" ]]; then
+    echo "run-release-flow: diagnostics: $(cat "$DIAG_FILE")" >&2
+fi
+
+# A header-only Markdown (no "## <category>" section) means every closing PR
+# was excluded or produced no coverable issue -- not a real set of release
+# notes. `-s` alone only rejects a literally empty file, which the header
+# text defeats, so check for at least one category section instead.
+if ! grep -q '^## ' "$NOTES_FILE"; then
     python3 -I -c "
 import json, sys
 print(json.dumps({
     'outcome': 'error',
-    'reason': 'release notes file is empty after generation',
+    'reason': 'release notes file has no content sections after generation',
     'tag': sys.argv[1],
     'timestamp': sys.argv[2],
 }), file=sys.stderr)
@@ -271,6 +296,7 @@ print(json.dumps({
 }), file=sys.stderr)
 " "$NEXT_TAG" "$MERGED_PRS" "$CLOSED_ISSUES" "$LAST_RELEASE_DATE" "$NOW"
     echo "AI_AGILE_STATUS: complete"
+    exit 0
 else
     python3 -I -c "
 import json, sys
