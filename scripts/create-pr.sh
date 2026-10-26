@@ -176,7 +176,24 @@ else
 
   # Get issue title for the PR title.
   ISSUE_TITLE=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq '.title')
-  PR_TITLE="${BRANCH}: ${ISSUE_TITLE:0:60}"
+  PR_TITLE="${ISSUE_TITLE}"
+
+  # Augment PR body with Release Notes when the issue has that section.
+  if [[ "${PR_CLOSES_ISSUE}" != "false" ]]; then
+    ISSUE_BODY=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}" --jq '.body // ""')
+    RELEASE_NOTES=$(python3 -c "
+import sys, re
+body = sys.stdin.read()
+m = re.search(r'(^### Release Notes\n.*?)(?=^#|\Z)', body, re.M | re.S)
+if m:
+    sys.stdout.write(m.group(1).rstrip())
+" <<< "${ISSUE_BODY}")
+    if [[ -n "${RELEASE_NOTES}" ]]; then
+      PR_BODY="${PR_BODY}
+
+${RELEASE_NOTES}"
+    fi
+  fi
 
   # Git identity for commits.
   git config user.email "github-actions[bot]@users.noreply.github.com"
