@@ -90,10 +90,19 @@ A `spike` or `bug` classification lowers the bar: a spike almost never
 needs decomposition (it produces knowledge, not merged code); a bug
 fix should rarely need more than 2 sub-issues.
 
-If the issue does **not** meet two or more heuristics, go to
+If this issue's own labels include `parent-issue:{N}` — i.e. it is itself
+a sub-issue a prior sizer run created — raise the bar instead: require
+**three or more** heuristics, not two. A sub-issue of a sub-issue needs
+materially stronger justification than a top-level epic, because each
+further decomposition level multiplies pipeline and approval overhead
+without necessarily adding deliverable value. Default to Step 3
+(pass-through) for a sub-issue unless the case for splitting it again is
+clearly stronger than the case that produced it.
+
+If the issue does **not** meet the applicable threshold above, go to
 **Step 3 — Pass-through path**.
 
-If it meets two or more, go to **Step 4 — Decomposition path**.
+If it meets the applicable threshold, go to **Step 4 — Decomposition path**.
 
 ---
 
@@ -119,10 +128,18 @@ sizing note:
 Analyse the issue body and identify the smallest, independently
 deployable units of work. Each sub-issue must satisfy all of:
 
-1. **Independently mergeable** — when only this sub-issue's PR is
-   merged (and later sub-issues are not yet started), the system
-   must still work correctly. No sub-issue should leave the codebase
-   in a broken intermediate state.
+1. **Independently mergeable, with an observable effect of its own** —
+   when only this sub-issue's PR is merged (and later sub-issues are not
+   yet started), the system must still work correctly, *and* a user or
+   operator must be able to observe or exercise something new because of
+   this sub-issue specifically. "Compiles, has tests, and sets up code the
+   next sub-issue will build on" is not enough — that is a sequential
+   pipeline step, not an independently deliverable unit. Before finalizing
+   the split, state in one sentence per sub-issue what becomes newly
+   observable once *only* that sub-issue has merged. If the honest answer
+   for a sub-issue is "nothing changes until a later sibling also merges,"
+   fold it into the sibling that does produce the observable effect rather
+   than keeping it separate.
 
 2. **Ordered by dependency** — if sub-issue B requires code from
    sub-issue A, A must be numbered lower. The coder for B will
@@ -373,6 +390,11 @@ Use the `Write` tool to create `$AI_AGILE_SCRATCH/result.json`:
   `outcome: "blocked"` and `message: "Issue scope too large even for
   decomposition — needs human narrowing."` instead of creating any
   sub-issues.
+- **A purely sequential pipeline-step split is not a valid decomposition
+  shape.** If every sub-issue after the first exists only to extend and
+  depend on the previous one, with no independent observable effect of
+  its own (see Step 4a #1), merge the chain into fewer, larger sub-issues
+  — or pass the issue through unsplit — instead of creating it.
 - **Do not close the parent issue.** It becomes a live tracking epic
   that provides context for all sub-issues.
 - **Spike issues pass through unconditionally.** A spike produces
