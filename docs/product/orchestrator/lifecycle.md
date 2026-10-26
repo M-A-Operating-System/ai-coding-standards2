@@ -143,10 +143,10 @@ are excluded, since there is no code to ship.
 | 4 | Stakeholder | Approves PRD | `prd-writer:approved` | **`prd-writer:approved`** — Stakeholder |
 | 5 | `issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` | — |
 | 6 | Reviewer | Approves the size | `size:approved` | **`size:approved`** — Reviewer |
-| 7 | `create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs` | `create-pr:complete` | — |
+| 7 | `create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs`; title = issue title verbatim | `create-pr:complete` | — |
 | 8 | `prd-docs-updater` | Writes the `docs/product/` + `docs/features/` changes | `prd-docs-updater:review` | — |
 | 9 | Stakeholder | Approves the design; design PR merges to `main` | `prd-docs-updater:approved` | **`prd-docs-updater:approved`** — Stakeholder |
-| 10 | `create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (`Closes #{N}`) | `create-pr:complete` | — |
+| 10 | `create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (title = issue title verbatim; body = `Closes #{N}`, with the issue's `### Release Notes` section appended if present) | `create-pr:complete` | — |
 | 11 | `coder` | Implements the issue; orchestrator commits and pushes | — | — |
 | 12 | `pr-reviewer` | Reviews code PR diff against spec | `pr-reviewer:review` | — |
 | 13 | Reviewer | Approves review | `pr-reviewer:approved` | **`pr:approved`** — Reviewer |
