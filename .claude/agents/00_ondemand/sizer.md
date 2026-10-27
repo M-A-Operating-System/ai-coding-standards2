@@ -56,7 +56,90 @@ If `$PRIOR_DECOMP` is **non-zero**, the human has reviewed and accepted
 the decomposition (they applied `sizer:approved` to trigger this re-run).
 Go directly to **Step 5 — Re-run after review**.
 
-If `$PRIOR_DECOMP` is **zero**, this is a first run. Continue to Step 1.
+If `$PRIOR_DECOMP` is **zero**, this is a first run. Continue to Step 0b.
+
+---
+
+## Step 0b — Guard against in-flight coder progress
+
+**This guard runs on every first-run invocation, immediately after Step 0.**
+Run all three checks before proceeding to Step 1. If any in-flight work is
+found, write `outcome: "blocked"` and stop — do not proceed to Step 1, do
+not create sub-issues, and do not request `epic` or `blocked` labels.
+
+The code branch for this issue is `issue-${ISSUE_NUMBER}`. The placeholder
+commit created when the branch is opened carries the message
+`chore: open branch for issue-${ISSUE_NUMBER}`. Commits beyond that
+placeholder are coder work that must not be overwritten by decomposition.
+
+**Check 1 — Branch commits past the placeholder:**
+
+```bash
+DEFAULT_BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch' 2>/dev/null || echo "main")
+BRANCH="issue-${ISSUE_NUMBER}"
+PLACEHOLDER_MSG="chore: open branch for ${BRANCH}"
+
+AHEAD_BY=$(gh api "repos/${REPO}/compare/${DEFAULT_BRANCH}...${BRANCH}" \
+  --jq '.ahead_by' 2>/dev/null || echo "0")
+```
+
+Interpret `AHEAD_BY`:
+
+- `0` (or the compare endpoint errors because the branch does not exist): no
+  commits to check; continue to Check 2.
+- `1`: fetch the single commit message and compare to `PLACEHOLDER_MSG`.
+
+  ```bash
+  SINGLE_MSG=$(gh api "repos/${REPO}/compare/${DEFAULT_BRANCH}...${BRANCH}" \
+    --jq '.commits[0].commit.message' 2>/dev/null || echo "")
+  ```
+
+  If the message matches `PLACEHOLDER_MSG`, the branch has only the
+  placeholder commit; continue to Check 2. If it does not match, record
+  the in-flight reason: `"code branch ${BRANCH} has 1 non-placeholder commit: ${SINGLE_MSG}"`.
+
+- Greater than `1`: record the in-flight reason:
+  `"code branch ${BRANCH} has ${AHEAD_BY} commits beyond ${DEFAULT_BRANCH}"`.
+
+**Check 2 — Open code PR:**
+
+```bash
+OPEN_PR=$(gh api \
+  "repos/${REPO}/pulls?head=${REPO%%/*}:${BRANCH}&state=open&per_page=1" \
+  --jq '.[0].number // empty' 2>/dev/null || echo "")
+```
+
+If `OPEN_PR` is non-empty and no reason is already recorded, record:
+`"open code PR #${OPEN_PR} exists for branch ${BRANCH}"`.
+
+**Check 3 — Merged code PR:**
+
+```bash
+MERGED_PR=$(gh api \
+  "repos/${REPO}/pulls?head=${REPO%%/*}:${BRANCH}&state=closed&per_page=5" \
+  --jq '[.[] | select(.merged_at != null)] | .[0].number // empty' \
+  2>/dev/null || echo "")
+```
+
+If `MERGED_PR` is non-empty and no reason is already recorded, record:
+`"merged code PR #${MERGED_PR} exists for branch ${BRANCH}"`.
+
+**Decision:**
+
+If **any** in-flight reason was recorded, use the `Write` tool to create
+`$AI_AGILE_SCRATCH/result.json`:
+
+```json
+{
+  "outcome": "blocked",
+  "summary": "Step 0b detected in-flight coder progress; blocking decomposition to prevent orphaned PR or branch contamination.",
+  "message": "Cannot decompose: {RECORDED_REASON}. Resolve the in-flight coder work before re-requesting sizing."
+}
+```
+
+Stop here. Do not continue to Step 1.
+
+If **no** reason was recorded, continue to **Step 1 — Read the issue**.
 
 ---
 
