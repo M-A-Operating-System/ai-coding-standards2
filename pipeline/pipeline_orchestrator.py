@@ -787,9 +787,15 @@ def flow_base_branch(agent_def: "AgentDef", work_item: "WorkItem") -> Optional[s
 
     None means "the repository's default branch" -- the caller's fallback,
     which the schema also mandates when the computed base does not exist.
+
+    When the pattern references {parent_number} but the item has no parent
+    (no parent-issue:{N} label), returns None so standalone issues continue
+    to branch from the repository default branch.
     """
     pattern = (agent_def.flow_naming or {}).get("base")
     if not pattern:
+        return None
+    if "{parent_number}" in pattern and _parent_issue_number(work_item) is None:
         return None
     return resolve_naming_pattern(pattern, work_item)
 
