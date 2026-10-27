@@ -92,12 +92,21 @@ fix should rarely need more than 2 sub-issues.
 
 If this issue's own labels include `parent-issue:{N}` — i.e. it is itself
 a sub-issue a prior sizer run created — raise the bar instead: require
-**three or more** heuristics, not two. A sub-issue of a sub-issue needs
+**four or more** heuristics, not two. A sub-issue of a sub-issue needs
 materially stronger justification than a top-level epic, because each
 further decomposition level multiplies pipeline and approval overhead
-without necessarily adding deliverable value. Default to Step 3
-(pass-through) for a sub-issue unless the case for splitting it again is
-clearly stronger than the case that produced it.
+without necessarily adding deliverable value. Treat Step 3 (pass-through)
+as the strong default for a sub-issue — split it again only when the
+case for doing so is obvious and clearly stronger than the case that
+produced it, not merely plausible.
+
+When scoring a sub-issue against H2 and H6, ignore the sizer's own
+template boilerplate (the "Backward-compatibility contract",
+"Dependencies", and section headers this agent writes into every
+sub-issue body) — count only the "Problem Statement" and "Acceptance
+Criteria" content the issue actually needs. That boilerplate inflates
+word count and can read as a "phase" on its own; it is not evidence
+that the sub-issue itself is too large.
 
 If the issue does **not** meet the applicable threshold above, go to
 **Step 3 — Pass-through path**.
@@ -134,12 +143,11 @@ deployable units of work. Each sub-issue must satisfy all of:
    operator must be able to observe or exercise something new because of
    this sub-issue specifically. "Compiles, has tests, and sets up code the
    next sub-issue will build on" is not enough — that is a sequential
-   pipeline step, not an independently deliverable unit. Before finalizing
-   the split, state in one sentence per sub-issue what becomes newly
-   observable once *only* that sub-issue has merged. If the honest answer
-   for a sub-issue is "nothing changes until a later sibling also merges,"
-   fold it into the sibling that does produce the observable effect rather
-   than keeping it separate.
+   pipeline step, not an independently deliverable unit. If you cannot
+   write a concrete observable-effect sentence for a candidate sub-issue
+   (see the Backward-compatibility contract in Step 4b, where this is
+   recorded), fold it into the sibling that does produce one rather than
+   keeping it separate.
 
 2. **Ordered by dependency** — if sub-issue B requires code from
    sub-issue A, A must be numbered lower. The coder for B will
@@ -183,8 +191,13 @@ cat > "$BODY_FILE" <<BODY
 
 When this PR is merged and later parts are not yet started, the
 system must work as follows:
-{Describe observable behaviour. Be explicit about what still uses the old path,
- what now uses the new path, and that the system remains functional.}
+{State in one concrete sentence what a user or operator can newly observe
+ or exercise because of this sub-issue alone — be explicit about what still
+ uses the old path, what now uses the new path, and that the system remains
+ functional. "Compiles, has tests, and sets up code a later sub-issue will
+ build on" does not count. If the honest answer is "nothing changes until a
+ later sibling also merges," this sub-issue should not exist separately —
+ fold it into the sibling that does produce the observable effect.}
 
 ---
 
