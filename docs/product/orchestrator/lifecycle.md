@@ -108,10 +108,12 @@ approved design reaches its target branch before any code is written:
 | **Build** | `issue-{N}` | code PR (tests + implementation) | Yes (`Closes #{N}`) | end of code review |
 
 Both branches are cut from — and their PRs target — the repository
-default branch (`main`) normally, `feature-{parent_N}` for a
-decomposition child (see [The ticket is too big](#the-ticket-is-too-big)),
-or `issue-{parent_N}` for a sub-issue carrying a `parent-issue:{N}` label,
-keeping partial-epic work isolated in the parent branch until the full
+default branch (`main`) normally, or `feature-{parent_N}` for a
+decomposition child -- a sub-issue carrying a `parent-issue:{N}` label,
+whether created by `large-decomposer` for a `size: L` ticket (see
+[The ticket is too big](#the-ticket-is-too-big)) or by `sizer`'s
+on-demand decomposition -- keeping partial-epic work isolated in the
+parent's own `feature-{parent_N}` integration branch until the full
 epic merges. In all cases the build starts from a tree that already
 contains the latest approved design.
 `prd-docs-updater`'s edit is scoped to what the PRD changed, never a

@@ -1,10 +1,10 @@
 # Feature: Orchestrator + Pipeline.json
 
-## Scenario: Sub-issue branches from and targets parent issue branch
+## Scenario: Sub-issue branches from and targets parent issue's feature branch
 
 **Given** issue #50 carries the label `parent-issue:42`
 **When** the orchestrator resolves the base branch for issue #50
-**Then** the design branch is named `issue-50-docs` and is cut from `issue-42`, the code branch is named `issue-50` and is cut from `issue-42`, and all PRs for issue #50 target `issue-42`
+**Then** the design branch is named `issue-50-docs` and is cut from `feature-42`, the code branch is named `issue-50` and is cut from `feature-42`, and all PRs for issue #50 target `feature-42`
 
 ## Scenario: Standalone issue branches from repository default branch
 
@@ -16,4 +16,4 @@
 
 **Given** issue #200 carries the label `parent-issue:100` and issue #100 carries the label `parent-issue:42`
 **When** the orchestrator resolves the base branch for issue #200
-**Then** the branches for issue #200 are cut from `issue-100`, not from `issue-42` or `main`, with no additional orchestrator logic beyond a single parent label lookup
+**Then** the branches for issue #200 are cut from `feature-100`, not from `feature-42` or `main`, with no additional orchestrator logic beyond a single parent label lookup
