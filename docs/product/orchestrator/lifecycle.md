@@ -47,7 +47,7 @@ satisfied. Phase 5 does not block any per-ticket flow.
 | `01_product_docs/create-docs-pr` | 1 | script | Opens the design PR (`issue-{N}-docs`), non-closing |
 | `01_product_docs/prd-docs-updater` | 1 | agent | Writes the scoped `docs/product/` + `docs/features/` change; copies approved Gherkin |
 | `01_product_docs/merge-docs-pr` | 1 | script | Merges the design PR to `main` ahead of the build phase |
-| `01_product_docs/create-pr` | 1 | script | Opens the code PR (`issue-{N}`), cut from the post-design `main` |
+| `01_product_docs/create-pr` | 1 | script | Opens the code PR (`issue-{N}`), cut from the post-design target branch |
 | `02_design/architect` | 2 | agent | Technical design — data model, API contracts, boundaries, NFRs |
 | `02_design/test-spec-writer` | 2 | agent | Derives a numbered Gherkin scenario list from the approved PRD |
 | `02_design/test-coverage-auditor` | 2 | agent | Confirms every PRD acceptance criterion maps to at least one scenario |
@@ -107,10 +107,15 @@ approved design reaches its target branch before any code is written:
 | **Design** | `issue-{N}-docs` | design PR (`docs/product/` + `docs/features/{feature}.md`) | No | `prd-docs-updater:approved` (Stakeholder) |
 | **Build** | `issue-{N}` | code PR (tests + implementation) | Yes (`Closes #{N}`) | end of code review |
 
-The code branch is cut from the post-design-merge target branch —
-`main` normally, `feature-{parent_N}` for a decomposition child (see
-[The ticket is too big](#the-ticket-is-too-big)) — so the build always
-starts from a tree that already contains the latest approved design.
+Both branches are cut from — and their PRs target — the repository
+default branch (`main`) normally, or `feature-{parent_N}` for a
+decomposition child -- a sub-issue carrying a `parent-issue:{N}` label,
+whether created by `large-decomposer` for a `size: L` ticket (see
+[The ticket is too big](#the-ticket-is-too-big)) or by `sizer`'s
+on-demand decomposition -- keeping partial-epic work isolated in the
+parent's own `feature-{parent_N}` integration branch until the full
+epic merges. In all cases the build starts from a tree that already
+contains the latest approved design.
 `prd-docs-updater`'s edit is scoped to what the PRD changed, never a
 full-file rewrite.
 
