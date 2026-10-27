@@ -191,15 +191,13 @@ cat > "$BODY_FILE" <<BODY
 
 When this PR is merged and later parts are not yet started, the
 system must work as follows:
-{Describe observable behaviour. Be explicit about what still uses the old path,
- what now uses the new path, and that the system remains functional.}
-
-State in one concrete sentence what a user or operator can newly observe
-or exercise because of this sub-issue alone. "Compiles, has tests, and
-sets up code a later sub-issue will build on" does not count. If the
-honest answer is "nothing changes until a later sibling also merges,"
-this sub-issue should not exist separately — fold it into the sibling
-that does produce the observable effect.
+{State in one concrete sentence what a user or operator can newly observe
+ or exercise because of this sub-issue alone — be explicit about what still
+ uses the old path, what now uses the new path, and that the system remains
+ functional. "Compiles, has tests, and sets up code a later sub-issue will
+ build on" does not count. If the honest answer is "nothing changes until a
+ later sibling also merges," this sub-issue should not exist separately —
+ fold it into the sibling that does produce the observable effect.}
 
 ---
 
