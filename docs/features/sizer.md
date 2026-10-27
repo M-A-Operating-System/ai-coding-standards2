@@ -19,3 +19,18 @@
 **Given** the sizer agent is invoked for an issue with no existing sub-issues and no prior decomposition in the comment history
 **When** the agent executes Step 0's bash check against the issue's comment history
 **Then** the agent proceeds through the normal sizing flow (Steps 1 and beyond) and the result.json summary field states that Step 0 found no prior decomposition
+
+## Scenario: Sizer blocks when code branch has commits past the placeholder
+**Given** an issue exists with `sizer:requested` applied and its code branch contains commits beyond the initial placeholder commit
+**When** the sizer agent runs for that issue
+**Then** the sizer result has `outcome` set to `"blocked"`, the message names the in-flight branch work, no sub-issues are created, and no `epic` or `blocked` labels are applied
+
+## Scenario: Sizer blocks when an open or merged code PR exists
+**Given** an issue exists with `sizer:requested` applied and an open or merged code pull request exists for that issue
+**When** the sizer agent runs for that issue
+**Then** the sizer result has `outcome` set to `"blocked"` and the message names the pull request, and no sub-issues are created
+
+## Scenario: Sizer proceeds normally when no coder progress exists
+**Given** an issue exists with `sizer:requested` applied and no commits beyond the placeholder exist on its code branch and no open or merged code PR exists
+**When** the sizer agent runs for that issue
+**Then** the sizer proceeds with normal pass-through sizing or decomposition exactly as it does today
