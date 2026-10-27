@@ -550,6 +550,27 @@ class TestTitleWritingRule:
         assert "skip the title change entirely" in step
         assert "canonical" in step
 
+    def test_step_7c_fallback_does_not_double_prefix(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_7c(text)
+        assert step, "Step 7c section not found"
+        assert "if the title does not already" in step, (
+            "Step 7c's leave-as-is fallback must check for an existing "
+            "bracketed category prefix before adding one, or a title that "
+            "already has one (stakeholder-authored, or from a prior "
+            "prd-writer pass) gets a second prefix prepended"
+        )
+
+    def test_step_8a_forbids_carrying_over_an_existing_prefix(self):
+        text = _load_prd_writer_text()
+        step = _extract_step_8a(text)
+        assert step, "Step 8a section not found"
+        assert "the result will carry two" in step, (
+            "Step 8a must warn against carrying an existing bracketed "
+            "prefix into the freely-rewritten title text, since the "
+            "template already adds its own prefix from the table"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Scenario: Material questions are returned without direct comments

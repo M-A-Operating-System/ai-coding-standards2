@@ -353,7 +353,10 @@ and benefit as the existing title. You may reorder, compress, or clarify
 wording, but you may not narrow, broaden, or otherwise change what the title
 claims the issue delivers. If you cannot produce a tighter title without
 altering what it claims, leave the existing title text as-is and only apply
-the classification prefix from 8a's table.
+the classification prefix from 8a's table **if the title does not already
+start with a bracketed category prefix** — if one is already present
+(stakeholder-authored, or left over from a prior prd-writer pass), leave it
+as-is rather than prepending a second one.
 
 Hold the result in `$NEW_TITLE` — you write neither title nor body here;
 Step 9 returns both together.
@@ -462,7 +465,7 @@ the first time it applies a body replace for this agent on this issue
 
 ### 8a — Build the new title
 
-Rewrite the issue title as a single, concise, outcome-oriented sentence that independently communicates the issue's purpose and expected delivered result for publication in release notes. Retain the classification prefix, preserve the intended scope, and do not invent requirements or benefits. Sizer-created canonical sub-issue titles remain exempt under Step 2.
+Rewrite the issue title as a single, concise, outcome-oriented sentence that independently communicates the issue's purpose and expected delivered result for publication in release notes. The new title's only bracketed category prefix is the one you add from the table below — do not carry over a bracketed prefix from the original title as part of the rewritten sentence itself, or the result will carry two. Preserve the intended scope, and do not invent requirements or benefits. Sizer-created canonical sub-issue titles remain exempt under Step 2.
 
 Map classification to prefix:
 
