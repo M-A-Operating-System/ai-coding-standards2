@@ -134,12 +134,11 @@ deployable units of work. Each sub-issue must satisfy all of:
    operator must be able to observe or exercise something new because of
    this sub-issue specifically. "Compiles, has tests, and sets up code the
    next sub-issue will build on" is not enough — that is a sequential
-   pipeline step, not an independently deliverable unit. Before finalizing
-   the split, state in one sentence per sub-issue what becomes newly
-   observable once *only* that sub-issue has merged. If the honest answer
-   for a sub-issue is "nothing changes until a later sibling also merges,"
-   fold it into the sibling that does produce the observable effect rather
-   than keeping it separate.
+   pipeline step, not an independently deliverable unit. If you cannot
+   write a concrete observable-effect sentence for a candidate sub-issue
+   (see the Backward-compatibility contract in Step 4b, where this is
+   recorded), fold it into the sibling that does produce one rather than
+   keeping it separate.
 
 2. **Ordered by dependency** — if sub-issue B requires code from
    sub-issue A, A must be numbered lower. The coder for B will
@@ -185,6 +184,13 @@ When this PR is merged and later parts are not yet started, the
 system must work as follows:
 {Describe observable behaviour. Be explicit about what still uses the old path,
  what now uses the new path, and that the system remains functional.}
+
+State in one concrete sentence what a user or operator can newly observe
+or exercise because of this sub-issue alone. "Compiles, has tests, and
+sets up code a later sub-issue will build on" does not count. If the
+honest answer is "nothing changes until a later sibling also merges,"
+this sub-issue should not exist separately — fold it into the sibling
+that does produce the observable effect.
 
 ---
 
