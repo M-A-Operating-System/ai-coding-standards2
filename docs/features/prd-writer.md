@@ -3,42 +3,42 @@
 ## Scenario: A pre-specified issue with the wrong notation gets Gherkin backfilled
 
 **Given** an issue contains substantive requirements in numbered or checklist form but no Given/When/Then
-**When** `prd-writer` runs Step 6d
+**When** `prd-writer` runs Step 7d
 **Then** it appends an `### Acceptance criteria (Gherkin)` section derived from the existing requirements, covering each distinct supported behavioral requirement without a scenario quota
 
 ## Scenario: Existing Gherkin coverage is left alone
 
 **Given** a pre-specified issue whose body already contains a `### Acceptance criteria (Gherkin)` section covering all distinct behavioral requirements
-**When** `prd-writer` runs Step 6d
-**Then** it adds no redundant scenarios -- Step 6d is a no-op
+**When** `prd-writer` runs Step 7d
+**Then** it adds no redundant scenarios -- Step 7d is a no-op
 
 ## Scenario: Backfill never invents requirements
 
 **Given** a source spec with N behavioural requirements, where only N distinct behavioral requirements exist
-**When** `prd-writer` runs Step 6d
+**When** `prd-writer` runs Step 7d
 **Then** it derives at most N scenarios, does not invent additional scenarios to meet a classification count, and preserves any nonbehavioral requirements as explicit checks
 
 ## Scenario: Non-behavioural requirements are not padded into scenarios
 
 **Given** a source spec containing requirements that describe only internal/structural behaviour (no user-observable surface)
-**When** `prd-writer` runs Step 6d
+**When** `prd-writer` runs Step 7d
 **Then** those requirements are not converted into scenarios on their own
 
 ## Scenario: Sizer-created sub-issues are covered
 
 **Given** a sizer-created sub-issue (detected via Step 2) with no Gherkin in its template-generated body
 **When** `prd-writer` processes it
-**Then** Step 6d still runs and backfills Gherkin from the sub-issue's mapped requirement range, the same as a standalone augmentation-mode issue
+**Then** Step 7d still runs and backfills Gherkin from the sub-issue's mapped requirement range, the same as a standalone augmentation-mode issue
 
 ## Scenario: Already-approved PRDs are not silently rewritten
 
 **Given** an issue already carrying `prd-writer:approved` from a prior run
 **When** `prd-writer` is re-invoked on that issue (e.g. a later pipeline step re-triggers it)
-**Then** Step 6d does not retroactively backfill Gherkin onto the already-approved spec -- backfill only applies on prd-writer's first pass
+**Then** Step 7d does not retroactively backfill Gherkin onto the already-approved spec -- backfill only applies on prd-writer's first pass
 
 ## Scenario: The derived section is clearly attributed and traceable
 
-**Given** Step 6d derives scenarios from source requirements
+**Given** Step 7d derives scenarios from source requirements
 **When** the section is appended
 **Then** each derived scenario is tagged back to its source requirement (e.g. `<!-- R24 -->`), and the section is labelled as derived by prd-writer, not presented as if the human wrote it
 
@@ -130,7 +130,7 @@
 
 **Given** either a sparse issue or a detailed pre-specified issue with a vague title
 **When** prd-writer prepares the issue title
-**Then** it uses Step 7a's single outcome-oriented sentence rule with the classification prefix, without inventing benefits or changing scope
+**Then** it uses Step 8a's single outcome-oriented sentence rule with the classification prefix, without inventing benefits or changing scope
 
 ## Scenario: New PRD begins with release-note summary
 

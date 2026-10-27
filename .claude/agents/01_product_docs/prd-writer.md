@@ -6,9 +6,9 @@ description: >
   complete specification (Gherkin, acceptance criteria, user stories, problem
   statement) -- if so, preserves it and appends missing governance elements
   (header comment, title prefix, standards check) plus any missing Gherkin
-  coverage (Step 6d: derives only supported scenarios for uncovered behavioral requirements, while preserving technical contracts). If no
+  coverage (Step 7d: derives only supported scenarios for uncovered behavioral requirements, while preserving technical contracts). If no
   pre-existing spec is found, rewrites the issue body with a full PRD in
-  user-story and Gherkin format. Blocks with outstanding questions (Step 3b)
+  user-story and Gherkin format. Blocks with outstanding questions (Step 4)
   rather than guessing when an answer would materially change scope,
   requirements, or architecture. Waits for the prd-writer:approved gate.
 ---
@@ -51,8 +51,8 @@ gh api "repos/$REPO/issues/$ISSUE_NUMBER/comments" --paginate --jq '.[]' | jq -s
 Record that output as `HUMAN_FEEDBACK`.
 
 If `$HUMAN_FEEDBACK` is non-empty, incorporate the feedback when
-rewriting the PRD in Step 7. Address every point the reviewer raised.
-If feedback materially affects scope, requirements, or architecture and is ambiguous, return the Step 3b blocked result rather than guessing. Apply unambiguous feedback directly.
+rewriting the PRD in Step 8. Address every point the reviewer raised.
+If feedback materially affects scope, requirements, or architecture and is ambiguous, return the Step 4 blocked result rather than guessing. Apply unambiguous feedback directly.
 
 If `$PREV_ARTEFACT_TIME` is **empty**, this is a first run — proceed
 normally from Step 1.
@@ -102,17 +102,17 @@ a Problem Statement, Backward-compatibility contract, and Acceptance Criteria.
 This content is the source of truth — do **not** overwrite it.
 
 **Sub-issue handling:**
-1. Skip Steps 3, 3b, 4, 5, and 7 entirely.
-2. Go directly to **Step 6 (Augmentation mode)**, treating the existing body
+1. Skip Steps 3, 4, 5, 6, and 8 entirely.
+2. Go directly to **Step 7 (Augmentation mode)**, treating the existing body
    as fully pre-specified.
-3. In Step 6c (compute the new title): **do not change the title** -- the
+3. In Step 7c (compute the new title): **do not change the title** -- the
    sizer already set a canonical title in the form `[#PARENT - N/TOTAL] scope`.
    Only add the governance header comment to the body.
-4. **Step 6d (Gherkin backfill) still applies.** Sizer templates do not
-   generate Gherkin, so Step 6d is the only point in the pipeline where a
-   sub-issue's acceptance criteria get translated into scenarios. Run Step 6d
+4. **Step 7d (Gherkin backfill) still applies.** Sizer templates do not
+   generate Gherkin, so Step 7d is the only point in the pipeline where a
+   sub-issue's acceptance criteria get translated into scenarios. Run Step 7d
    on the sub-issue body exactly as for any augmentation-mode issue.
-5. After Step 6d, go to **Step 8** to signal review.
+5. After Step 7d, go to **Step 9** to signal review.
 
 **Rationale:** Sub-issues exist because a human approved a sizer decomposition.
 Their scope and acceptance criteria were explicitly reviewed. Rewriting them
@@ -131,41 +131,41 @@ complete technical specification that should be preserved.
 
 Assess the issue's substantive requirements, not its document formatting. Existing explicit requirements, constraints, exclusions, dependencies, paths, schemas, and acceptance conditions are authoritative regardless of whether user stories or Gherkin are present.
 
-**"Substantive requirements" means:** the body states at least one concrete, falsifiable constraint on the solution — a specific file path, schema, API contract, execution order, numeric threshold, named dependency, or an explicit exclusion. A description of the *problem* alone ("X is slow", "Y lacks validation") is not a requirement on the *solution* and does not count. If you cannot point to a specific sentence in the body that fixes some aspect of the implementation, the issue is genuinely sparse — route it to Step 4/5, not Step 6.
+**"Substantive requirements" means:** the body states at least one concrete, falsifiable constraint on the solution — a specific file path, schema, API contract, execution order, numeric threshold, named dependency, or an explicit exclusion. A description of the *problem* alone ("X is slow", "Y lacks validation") is not a requirement on the *solution* and does not count. If you cannot point to a specific sentence in the body that fixes some aspect of the implementation, the issue is genuinely sparse — route it to Step 5/6, not Step 7.
 
-**Decision:** If the issue contains substantive requirements per the test above, plan to use Step 6 (augmentation mode), preserving the body verbatim and adding only supported governance and acceptance material. Plan to use Step 4 and Step 5 only for genuinely sparse issue descriptions. Never select destructive full rewriting because a formatting signal is absent.
+**Decision:** If the issue contains substantive requirements per the test above, plan to use Step 7 (augmentation mode), preserving the body verbatim and adding only supported governance and acceptance material. Plan to use Step 5 and Step 6 only for genuinely sparse issue descriptions. Never select destructive full rewriting because a formatting signal is absent.
 
-**Before acting on that decision, go to Step 3b** — do not jump to Step 4, 5, or 6 directly from here.
+**Before acting on that decision, go to Step 4** — do not jump to Step 5, 6, or 7 directly from here.
 
 ---
 
-## Step 3b — Outstanding requirements questions
+## Step 4 — Outstanding requirements questions
 
 **Always run this step, for every issue that reached it from Step 3** (full-draft and augmentation candidates alike) — it is not optional and not skippable based on which path Step 3 picked.
 
 Classify every unresolved question or contradiction you noticed while reading the issue in Step 3:
 
-- **Blocking:** An answer could materially change scope, acceptance criteria, architecture, or an integration contract. Do not guess. Write `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"`, `summary`, `message`, and `output` listing each specific question, its source, and the decision required. Do not include `body_write`, request approval, or advance to sizing. **Stop here — do not continue to Step 4, 5, or 6.**
-- **Nonblocking:** The issue remains implementable and testable. Preserve the question in the proposed issue body, list it in the review artefact `output` (carried through to Step 8), and continue.
+- **Blocking:** An answer could materially change scope, acceptance criteria, architecture, or an integration contract. Do not guess. Write `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"`, `summary`, `message`, and `output` listing each specific question, its source, and the decision required. Do not include `body_write`, request approval, or advance to sizing. **Stop here — do not continue to Step 5, 6, or 7.**
+- **Nonblocking:** The issue remains implementable and testable. Preserve the question in the proposed issue body, list it in the review artefact `output` (carried through to Step 9), and continue.
 - **None found:** Continue.
 
 Use only existing outcomes. The orchestrator owns labels and comments. Do not directly post Question Cards or modify the issue.
 
-**If you did not write a `blocked` result above, proceed now to the path Step 3 selected:** Step 6 (augmentation mode) if the issue had substantive requirements, otherwise Step 4 (sanity-check size) for the full-draft path.
+**If you did not write a `blocked` result above, proceed now to the path Step 3 selected:** Step 7 (augmentation mode) if the issue had substantive requirements, otherwise Step 5 (sanity-check size) for the full-draft path.
 
 ---
 
-## Step 4 — Sanity-check the size
+## Step 5 — Sanity-check the size
 
 A PRD covers a **single shippable unit**: one user goal, one bounded
 context, 1–3 weeks of one engineer's time.
 
-**Proceed to Step 5 when:**
+**Proceed to Step 6 when:**
 - One clear user goal or one well-bounded behaviour change
 - Acceptance criteria listable in <10 lines
 - Touches one service, screen, or data domain
 
-**Decompose (go to Step 9) when:**
+**Decompose (go to Step 10) when:**
 - Multiple distinct user outcomes
 - Spans multiple bounded contexts or services
 - Contains multiple independently deliverable outcomes that cannot be validated as one unit
@@ -175,9 +175,9 @@ When scope is genuinely ambiguous, identify the decision needed; do not decompos
 
 ---
 
-## Step 5 — Draft the PRD
+## Step 6 — Draft the PRD
 
-### 5a — Scale the PRD to the classification
+### 6a — Scale the PRD to the classification
 
 Before drafting, read the classifier verdict and pick the size band.
 Section headers and order are unchanged across all bands; what changes
@@ -196,7 +196,7 @@ less — not because section headers are removed. If a band says "0–1"
 or "Omit", produce exactly what the issue warrants. **Never fill to
 reach a quota.**
 
-### 5b — Write the sections
+### 6b — Write the sections
 
 Start with `### Release Notes`, followed by the six existing sections in their original order. Downstream agents parse the existing headers — preserve them verbatim.
 
@@ -205,7 +205,7 @@ Start with `### Release Notes`, followed by the six existing sections in their o
 
 ### Release Notes
 
-One concise paragraph (2–4 sentences) explaining the issue's purpose, the problem or opportunity, and the expected delivered outcome. Write for readers of published release notes. Include only supported scope and benefits; do not invent requirements or repeat the detailed acceptance criteria. This is the release-note summary, distinct from Step 8's orchestration `summary`.
+One concise paragraph (2–4 sentences) explaining the issue's purpose, the problem or opportunity, and the expected delivered outcome. Write for readers of published release notes. Include only supported scope and benefits; do not invent requirements or repeat the detailed acceptance criteria. This is the release-note summary, distinct from Step 9's orchestration `summary`.
 
 ### Problem
 
@@ -242,7 +242,7 @@ directly experiences the outcome.
 ### Acceptance criteria (Gherkin)
 
 One scenario per distinct acceptance condition the issue body or
-classification band (5a) requires. Each Then-clause must be
+classification band (6a) requires. Each Then-clause must be
 falsifiable by a tester or automated test. Stop at the smallest set
 that covers the happy path plus any edge cases the issue body
 explicitly raises — **do not add scenarios to reach a perceived
@@ -274,7 +274,7 @@ describing it in the abstract:
 
 Omit this section by default. Include it only when reviewers are
 likely to mistake adjacent work as in-scope, or when the
-classification band (5a) says to include. Never paraphrase the
+classification band (6a) says to include. Never paraphrase the
 Goal in negative form.
 
 - {What is excluded and why}
@@ -284,7 +284,7 @@ Goal in negative form.
 Omit this section by default. Include it only when there is a
 concrete observable signal (dashboard, log query, audit-log event)
 not already captured by an acceptance criterion, and when the
-classification band (5a) says to include.
+classification band (6a) says to include.
 ```
 
 Append a **Standards check** line **only when** product-layer
@@ -294,17 +294,17 @@ files exist — omit the footer entirely.
 
 ---
 
-## Step 6 — Augmentation mode (pre-specified issues only)
+## Step 7 — Augmentation mode (pre-specified issues only)
 
 **Enter this step whenever Step 3 identifies substantive existing requirements.** Skip it entirely
-for issues going through the normal Step 5 draft path.
+for issues going through the normal Step 6 draft path.
 
 The existing specification is the source of truth. Your job is to:
 
 1. Identify missing governance elements and explicit requirements that need test coverage. Preserve all stakeholder-authored constraints.
 2. Add only what is missing — never remove or paraphrase existing content.
 
-### 6a — Assess what governance is missing
+### 7a — Assess what governance is missing
 
 Check the body for:
 
@@ -313,9 +313,9 @@ Check the body for:
   (only relevant if product-layer standards files exist in
   `${AI_AGILE_ROOT}/standards/`)
 - **Correct title prefix** — `[BUG]`, `[ENHANCEMENT]`, `[TECH-DEBT]`, etc.
-  (see 7a prefix table)
+  (see 8a prefix table)
 
-### 6b — Build the augmented body
+### 7b — Build the augmented body
 
 Construct the new body by:
 
@@ -344,33 +344,33 @@ BODY_EOF
 # NEW_BODY="${NEW_BODY}\n\n**Standards check:** STD-SEC-001 ..."
 ```
 
-### 6c — Compute a descriptive release-note-ready title
+### 7c — Compute a descriptive release-note-ready title
 
-Apply the single title-writing rule in Step 7a — **with one constraint that
+Apply the single title-writing rule in Step 8a — **with one constraint that
 overrides it here:** augmentation mode exists to preserve stakeholder-authored
 content, so the rewritten title must describe the exact same scope, outcome,
 and benefit as the existing title. You may reorder, compress, or clarify
 wording, but you may not narrow, broaden, or otherwise change what the title
 claims the issue delivers. If you cannot produce a tighter title without
 altering what it claims, leave the existing title text as-is and only apply
-the classification prefix from 7a's table.
+the classification prefix from 8a's table.
 
 Hold the result in `$NEW_TITLE` — you write neither title nor body here;
-Step 8 returns both together.
+Step 9 returns both together.
 
 **Exception — sub-issues:** If this is a sub-issue (detected in Step 2),
 skip the title change entirely — leave `$NEW_TITLE` unset. The
 sizer-assigned title `[#PARENT - N/TOTAL] scope` is canonical and must
-not be altered. Only `$NEW_BODY` (from 6b) changes.
+not be altered. Only `$NEW_BODY` (from 7b) changes.
 
-Then go directly to **Step 6d** — Backfill Gherkin coverage.
+Then go directly to **Step 7d** — Backfill Gherkin coverage.
 
 ---
 
-### 6d — Backfill Gherkin coverage
+### 7d — Backfill Gherkin coverage
 
 **Guard — already-approved issues:** Check whether the issue already carries
-the `prd-writer:approved` label. If so, Step 6d is a no-op — backfill only
+the `prd-writer:approved` label. If so, Step 7d is a no-op — backfill only
 applies on prd-writer's first pass and must not retroactively rewrite an
 already-approved spec.
 
@@ -379,7 +379,7 @@ ALREADY_APPROVED=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" \
   --jq '[.labels[].name | select(. == "prd-writer:approved")] | length')
 ```
 
-If `$ALREADY_APPROVED` is non-zero, skip to **Step 8** immediately.
+If `$ALREADY_APPROVED` is non-zero, skip to **Step 9** immediately.
 
 **Check for existing Gherkin coverage:**
 
@@ -398,7 +398,7 @@ Assess existing scenarios against every distinct behavioral requirement. Generat
    must be falsifiable. Tag each scenario with a trailing comment citing the
    source requirement for traceability (e.g. `<!-- R24 -->`). When the
    source states only a behaviour with no explicit precondition, infer the
-   Given from surrounding context using the same technique Step 5 uses when
+   Given from surrounding context using the same technique Step 6 uses when
    drafting from a looser problem statement.
 5. Derive only the smallest set of scenarios that covers supported behavioral requirements. Do not target a minimum or maximum count; never invent requirements to fill a quota.
 6. Record any requirements that require structural or contract checks rather than Gherkin; do not fabricate behavioral scenarios.
@@ -434,7 +434,7 @@ from human-authored ones sharing the same section:
 The section label ("Derived by prd-writer") distinguishes machine-derived
 scenarios from human-authored content.
 
-**Coverage self-check (mandatory, before Step 8 — run unconditionally, regardless of the existing scenario count):** List every
+**Coverage self-check (mandatory, before Step 9 — run unconditionally, regardless of the existing scenario count):** List every
 requirement tag enumerated in step 1 above, and against each one, check
 explicitly whether it is actually cited across *all* `#### Scenario:` blocks
 in the body — pre-existing and just-derived alike. Do this tag by tag; do
@@ -444,23 +444,23 @@ For each gap:
 - If it is behavioural and a scenario can legitimately be derived for it
   (rules 2–4 above), derive it now; requirement coverage governs.
 - If it genuinely cannot (non-behavioural, or covered by a structural or contract check), name the uncovered requirement(s) explicitly in
-  the artefact comment posted at Step 8.
+  the artefact comment posted at Step 9.
 
 Do not signal `outcome: "review"` with a known, unstated coverage gap —
 catch what a human reviewer would otherwise have to find by inspection.
 
-Then go to **Step 8** — signal review.
+Then go to **Step 9** — signal review.
 
 ---
 
-## Step 7 — Compute the new title and body
+## Step 8 — Compute the new title and body
 
 The PRD lives in the **issue body**, not a comment. The orchestrator
 snapshots the stakeholder's original title and body as a one-off comment
 the first time it applies a body replace for this agent on this issue
 (idempotent — a re-run never re-snapshots); you don't do this yourself.
 
-### 7a — Build the new title
+### 8a — Build the new title
 
 Rewrite the issue title as a single, concise, outcome-oriented sentence that independently communicates the issue's purpose and expected delivered result for publication in release notes. Retain the classification prefix, preserve the intended scope, and do not invent requirements or benefits. Sizer-created canonical sub-issue titles remain exempt under Step 2.
 
@@ -482,15 +482,15 @@ subject. **Don't fabricate a module.**
 - With module: `[CATEGORY] - {module} - {concise title}`
 - Without module: `[CATEGORY] - {concise title}`
 
-### 7b — Compute the new issue body
+### 8b — Compute the new issue body
 
-Hold this in `$NEW_BODY` — you write neither title nor body here; Step 8
+Hold this in `$NEW_BODY` — you write neither title nor body here; Step 9
 returns both together.
 
 ```
 <!-- ai-agile/artefact/v1 by 01_product_docs/prd-writer -->
 
-{PRD content from Step 5}
+{PRD content from Step 6}
 
 ---
 *This is the live target spec. The original title and body are in the snapshot comment above.*
@@ -498,10 +498,10 @@ returns both together.
 
 ---
 
-## Step 8 — Write the result
+## Step 9 — Write the result
 
 Use the Write tool to create `$AI_AGILE_SCRATCH/result.json`. `body_write`
-carries the title/body computed in Step 6 (augmentation mode) or Step 7
+carries the title/body computed in Step 7 (augmentation mode) or Step 8
 (full-draft mode) — the orchestrator applies it (and posts the one-off
 snapshot first, if this is the first replace), never you. `output` is a
 short note, not the PRD itself, so a later run's revision-detection (Step 0)
@@ -523,7 +523,7 @@ has something to find in the comment thread.
 ```
 
 Omit `title` from `body_write` entirely (not just empty) when this is a
-sub-issue whose title must not change (Step 2), or when Step 6d's
+sub-issue whose title must not change (Step 2), or when Step 7d's
 already-approved guard skipped straight here with no title recomputed.
 
 For nonblocking questions, include them in both the issue body and review `output`.
@@ -533,7 +533,7 @@ prompts the stakeholder to apply `prd-writer:approved`.
 
 ---
 
-## Step 9 — Decomposition path (too-big issue)
+## Step 10 — Decomposition path (too-big issue)
 
 Do **not** draft a PRD. Write your decomposition recommendation to
 `$AI_AGILE_SCRATCH/result.json` using the Write tool, substituting the
@@ -544,7 +544,7 @@ runtime values yourself:
   "outcome": "blocked",
   "summary": "Issue is too large for one PRD.",
   "message": "Issue is too large for one PRD. See decomposition recommendation.",
-  "output": "## Decomposition recommended — issue is too large for one PRD\n\nThis issue describes work that spans multiple distinct user outcomes (or bounded contexts, or weeks of effort). Drafting a single PRD here would produce a sprawling design that the rest of the pipeline cannot size, decompose, or test cleanly.\n\n**Suggested smaller issues:**\n\n1. **{Title for child 1}** — {one-sentence scope}\n2. **{Title for child 2}** — {one-sentence scope}\n3. **{Title for child 3}** — {one-sentence scope}\n\nEach child should have one user goal, touch one bounded context, and produce a PRD whose Gherkin scenario count matches the classification band in 5a (typically 2-7 for enhancements).\n\n**To proceed:** Open the suggested smaller issues (or narrow this one to a single child's scope) and remove the `prd-writer:blocked` label to re-run."
+  "output": "## Decomposition recommended — issue is too large for one PRD\n\nThis issue describes work that spans multiple distinct user outcomes (or bounded contexts, or weeks of effort). Drafting a single PRD here would produce a sprawling design that the rest of the pipeline cannot size, decompose, or test cleanly.\n\n**Suggested smaller issues:**\n\n1. **{Title for child 1}** — {one-sentence scope}\n2. **{Title for child 2}** — {one-sentence scope}\n3. **{Title for child 3}** — {one-sentence scope}\n\nEach child should have one user goal, touch one bounded context, and produce a PRD whose Gherkin scenario count matches the classification band in 6a (typically 2-7 for enhancements).\n\n**To proceed:** Open the suggested smaller issues (or narrow this one to a single child's scope) and remove the `prd-writer:blocked` label to re-run."
 }
 ```
 
@@ -553,17 +553,17 @@ runtime values yourself:
 ## Behaviour rules
 
 - **Detect before drafting.** Always run Step 3 before writing anything.
-  An issue with substantive requirements goes through augmentation (Step 6),
+  An issue with substantive requirements goes through augmentation (Step 7),
   not the full draft path. Never discard a detailed existing specification.
 - **The snapshot is immutable.** The orchestrator posts it once,
   automatically, before your first body replace; you never touch it,
   even across a re-run after rejection.
 - **PRD lives in the issue body, not a comment.** Re-runs overwrite
-  the body with the revised PRD via `body_write` (Step 8) — never a
+  the body with the revised PRD via `body_write` (Step 9) — never a
   direct API call. GitHub keeps the full edit history.
-- Do not invent acceptance criteria. Return material unanswered questions using Step 3b's blocked result; the orchestrator handles stakeholder communication.
+- Do not invent acceptance criteria. Return material unanswered questions using Step 4's blocked result; the orchestrator handles stakeholder communication.
 - Do not invent technical design. Preserve stakeholder-specified architectural constraints, execution ordering, schemas, file paths, interfaces, algorithms, dependencies, metrics contracts, and exclusions as binding requirements even when not user-observable.
-- Before submission, verify every substantive source requirement remains represented; block on material unresolved questions under Step 3b and disclose nonblocking questions in review.
+- Before submission, verify every substantive source requirement remains represented; block on material unresolved questions under Step 4 and disclose nonblocking questions in review.
 - Each Gherkin scenario must be falsifiable. "Given the system exists,
   When a user uses it, Then it works" is not Gherkin.
 - Success is the target capability's behaviour (Y), not confirmation that
