@@ -237,3 +237,105 @@ class TestIssueFlowsAfterSizerPassThrough:
         })
         result = _should_run(agent, wi, wi.labels, pm, None, gh=_noop_gh(), repo="x/y")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Conformance: sizer.md contains the in-flight coder progress guard (issue #637)
+# ---------------------------------------------------------------------------
+
+class TestSizerInflightGuard:
+    """Conformance tests verifying sizer.md contains Step 0b -- the in-flight
+    coder progress guard that blocks decomposition when the coder has already
+    committed work or a code PR exists.
+
+    Traced scenarios (docs/features/sizer.md):
+      - Sizer blocks when code branch has commits past the placeholder (R1)
+      - Sizer blocks when an open or merged code PR exists (R2)
+      - Sizer proceeds normally when no coder progress exists (R3)
+    """
+
+    SIZER_MD = Path(__file__).parent.parent / ".claude" / "agents" / "00_ondemand" / "sizer.md"
+
+    def _text(self) -> str:
+        assert self.SIZER_MD.exists(), f"sizer agent not found: {self.SIZER_MD}"
+        return self.SIZER_MD.read_text()
+
+    def _guard_section(self, text: str) -> str:
+        """Extract the Step 0b guard section text."""
+        start = text.find("Step 0b")
+        assert start != -1, "Step 0b not found in sizer.md"
+        end = text.find("## Step 1", start)
+        return text[start:end] if end != -1 else text[start:]
+
+    def test_guard_step_present(self):
+        """sizer.md must contain Step 0b -- the in-flight coder progress guard."""
+        assert "Step 0b" in self._text()
+
+    def test_guard_checks_branch_commit_count(self):
+        """Guard must check commit count on the code branch (R1: branch commits)."""
+        section = self._guard_section(self._text())
+        assert "ahead_by" in section
+
+    def test_guard_checks_placeholder_commit(self):
+        """Guard must distinguish the placeholder commit from real coder commits (R1)."""
+        section = self._guard_section(self._text())
+        assert "placeholder" in section.lower()
+
+    def test_guard_checks_open_pr(self):
+        """Guard must check for an open code PR on the issue branch (R2)."""
+        section = self._guard_section(self._text())
+        assert "state=open" in section
+
+    def test_guard_checks_merged_pr(self):
+        """Guard must check for a merged code PR by inspecting merged_at (R2)."""
+        section = self._guard_section(self._text())
+        assert "merged_at" in section
+
+    def test_guard_writes_blocked_outcome(self):
+        """Guard must write outcome: blocked when in-flight work is detected (R1, R2)."""
+        section = self._guard_section(self._text())
+        assert '"blocked"' in section
+
+    def test_guard_no_epic_label_request(self):
+        """Guard blocked result must not request the epic label (R1, R2)."""
+        section = self._guard_section(self._text())
+        assert '"epic"' not in section
+
+    def test_guard_no_label_requests_at_all(self):
+        """Guard blocked result must request neither epic nor blocked labels
+        (AC1) -- the correct result.json example carries no label_requests
+        field at all, so this covers both without a string match on
+        'blocked', which also appears legitimately in the outcome field."""
+        section = self._guard_section(self._text())
+        assert "label_requests" not in section
+
+    def test_guard_appears_before_step_4(self):
+        """Guard must appear before Step 4 sub-issue creation, satisfying the
+        'runs before any sub-issue creation attempt' requirement (R1, R2, R3)."""
+        text = self._text()
+        guard_pos = text.find("Step 0b")
+        step4_pos = text.find("## Step 4")
+        assert guard_pos != -1, "Step 0b not found in sizer.md"
+        assert step4_pos != -1, "Step 4 not found in sizer.md"
+        assert guard_pos < step4_pos
+
+    def test_step_0_continues_to_0b_not_step_1(self):
+        """Step 0 must direct the first-run path to Step 0b, not directly to Step 1,
+        so the guard cannot be bypassed (R3: normal path still goes through 0b)."""
+        text = self._text()
+        step0_section = text[:text.find("## Step 0b")]
+        assert "Step 0b" in step0_section
+        assert "Continue to Step 1" not in step0_section
+
+    def test_guard_proceeds_to_step_1_when_clean(self):
+        """Step 0b itself must route on to Step 1 when no in-flight reason was
+        recorded, not just note that Step 0 points at Step 0b (R3)."""
+        section = self._guard_section(self._text())
+        assert "Step 1" in section
+
+    def test_guard_distinguishes_not_found_from_other_api_errors(self):
+        """Each check must fail loud on a genuine API error rather than folding
+        it into the same fallback as 'branch/PR not found' (RV-001, STD-ARCH-014)."""
+        section = self._guard_section(self._text())
+        assert "not found" in section.lower()
+        assert "could not confirm" in section.lower()
