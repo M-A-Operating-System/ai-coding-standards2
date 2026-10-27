@@ -8,7 +8,9 @@ description: >
   (header comment, title prefix, standards check) plus any missing Gherkin
   coverage (Step 6d: derives only supported scenarios for uncovered behavioral requirements, while preserving technical contracts). If no
   pre-existing spec is found, rewrites the issue body with a full PRD in
-  user-story and Gherkin format. Waits for the prd-writer:approved gate.
+  user-story and Gherkin format. Blocks with outstanding questions (Step 3b)
+  rather than guessing when an answer would materially change scope,
+  requirements, or architecture. Waits for the prd-writer:approved gate.
 ---
 
 # 01_product_docs/prd-writer
@@ -100,7 +102,7 @@ a Problem Statement, Backward-compatibility contract, and Acceptance Criteria.
 This content is the source of truth — do **not** overwrite it.
 
 **Sub-issue handling:**
-1. Skip Steps 3, 4, 5, and 7 entirely.
+1. Skip Steps 3, 3b, 4, 5, and 7 entirely.
 2. Go directly to **Step 6 (Augmentation mode)**, treating the existing body
    as fully pre-specified.
 3. In Step 6c (compute the new title): **do not change the title** -- the
@@ -129,18 +131,27 @@ complete technical specification that should be preserved.
 
 Assess the issue's substantive requirements, not its document formatting. Existing explicit requirements, constraints, exclusions, dependencies, paths, schemas, and acceptance conditions are authoritative regardless of whether user stories or Gherkin are present.
 
-**Decision:** If the issue contains substantive requirements, use Step 6 (augmentation mode), preserving the body verbatim and adding only supported governance and acceptance material. Use Step 4 and Step 5 only for genuinely sparse issue descriptions. Never select destructive full rewriting because a formatting signal is absent. Identify contradictions or missing decisions for stakeholder review rather than silently resolving them.
+**"Substantive requirements" means:** the body states at least one concrete, falsifiable constraint on the solution — a specific file path, schema, API contract, execution order, numeric threshold, named dependency, or an explicit exclusion. A description of the *problem* alone ("X is slow", "Y lacks validation") is not a requirement on the *solution* and does not count. If you cannot point to a specific sentence in the body that fixes some aspect of the implementation, the issue is genuinely sparse — route it to Step 4/5, not Step 6.
+
+**Decision:** If the issue contains substantive requirements per the test above, plan to use Step 6 (augmentation mode), preserving the body verbatim and adding only supported governance and acceptance material. Plan to use Step 4 and Step 5 only for genuinely sparse issue descriptions. Never select destructive full rewriting because a formatting signal is absent.
+
+**Before acting on that decision, go to Step 3b** — do not jump to Step 4, 5, or 6 directly from here.
 
 ---
 
 ## Step 3b — Outstanding requirements questions
 
-Before drafting or submitting, classify unresolved questions and contradictions:
+**Always run this step, for every issue that reached it from Step 3** (full-draft and augmentation candidates alike) — it is not optional and not skippable based on which path Step 3 picked.
 
-- **Blocking:** An answer could materially change scope, acceptance criteria, architecture, or an integration contract. Do not guess. Write `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"`, `summary`, `message`, and `output` listing each specific question, its source, and the decision required. Do not include `body_write`, request approval, or advance to sizing.
-- **Nonblocking:** The issue remains implementable and testable. Preserve the question in the proposed issue body, list it in the review artefact `output`, and return `outcome: "review"` through Step 8.
+Classify every unresolved question or contradiction you noticed while reading the issue in Step 3:
+
+- **Blocking:** An answer could materially change scope, acceptance criteria, architecture, or an integration contract. Do not guess. Write `$AI_AGILE_SCRATCH/result.json` with `outcome: "blocked"`, `summary`, `message`, and `output` listing each specific question, its source, and the decision required. Do not include `body_write`, request approval, or advance to sizing. **Stop here — do not continue to Step 4, 5, or 6.**
+- **Nonblocking:** The issue remains implementable and testable. Preserve the question in the proposed issue body, list it in the review artefact `output` (carried through to Step 8), and continue.
+- **None found:** Continue.
 
 Use only existing outcomes. The orchestrator owns labels and comments. Do not directly post Question Cards or modify the issue.
+
+**If you did not write a `blocked` result above, proceed now to the path Step 3 selected:** Step 6 (augmentation mode) if the issue had substantive requirements, otherwise Step 4 (sanity-check size) for the full-draft path.
 
 ---
 
@@ -335,7 +346,15 @@ BODY_EOF
 
 ### 6c — Compute a descriptive release-note-ready title
 
-Apply the single title-writing rule in Step 7a.
+Apply the single title-writing rule in Step 7a — **with one constraint that
+overrides it here:** augmentation mode exists to preserve stakeholder-authored
+content, so the rewritten title must describe the exact same scope, outcome,
+and benefit as the existing title. You may reorder, compress, or clarify
+wording, but you may not narrow, broaden, or otherwise change what the title
+claims the issue delivers. If you cannot produce a tighter title without
+altering what it claims, leave the existing title text as-is and only apply
+the classification prefix from 7a's table.
+
 Hold the result in `$NEW_TITLE` — you write neither title nor body here;
 Step 8 returns both together.
 
