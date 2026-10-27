@@ -92,12 +92,21 @@ fix should rarely need more than 2 sub-issues.
 
 If this issue's own labels include `parent-issue:{N}` — i.e. it is itself
 a sub-issue a prior sizer run created — raise the bar instead: require
-**three or more** heuristics, not two. A sub-issue of a sub-issue needs
+**four or more** heuristics, not two. A sub-issue of a sub-issue needs
 materially stronger justification than a top-level epic, because each
 further decomposition level multiplies pipeline and approval overhead
-without necessarily adding deliverable value. Default to Step 3
-(pass-through) for a sub-issue unless the case for splitting it again is
-clearly stronger than the case that produced it.
+without necessarily adding deliverable value. Treat Step 3 (pass-through)
+as the strong default for a sub-issue — split it again only when the
+case for doing so is obvious and clearly stronger than the case that
+produced it, not merely plausible.
+
+When scoring a sub-issue against H2 and H6, ignore the sizer's own
+template boilerplate (the "Backward-compatibility contract",
+"Dependencies", and section headers this agent writes into every
+sub-issue body) — count only the "Problem Statement" and "Acceptance
+Criteria" content the issue actually needs. That boilerplate inflates
+word count and can read as a "phase" on its own; it is not evidence
+that the sub-issue itself is too large.
 
 If the issue does **not** meet the applicable threshold above, go to
 **Step 3 — Pass-through path**.
