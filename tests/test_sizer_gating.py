@@ -318,3 +318,16 @@ class TestSizerInflightGuard:
         step0_section = text[:text.find("## Step 0b")]
         assert "Step 0b" in step0_section
         assert "Continue to Step 1" not in step0_section
+
+    def test_guard_proceeds_to_step_1_when_clean(self):
+        """Step 0b itself must route on to Step 1 when no in-flight reason was
+        recorded, not just note that Step 0 points at Step 0b (R3)."""
+        section = self._guard_section(self._text())
+        assert "Step 1" in section
+
+    def test_guard_distinguishes_not_found_from_other_api_errors(self):
+        """Each check must fail loud on a genuine API error rather than folding
+        it into the same fallback as 'branch/PR not found' (RV-001, STD-ARCH-014)."""
+        section = self._guard_section(self._text())
+        assert "not found" in section.lower()
+        assert "could not confirm" in section.lower()

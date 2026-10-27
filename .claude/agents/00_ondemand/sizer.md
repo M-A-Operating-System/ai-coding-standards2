@@ -72,6 +72,13 @@ commit created when the branch is opened carries the message
 `chore: open branch for issue-${ISSUE_NUMBER}`. Commits beyond that
 placeholder are coder work that must not be overwritten by decomposition.
 
+**Every check below must distinguish "the thing doesn't exist" (safe --
+continue) from any other API error (rate-limit, network, auth -- unsafe to
+treat as "no in-flight work"). Do not fold both cases into one
+`2>/dev/null || echo <empty>` fallback: that silently treats a real failure
+as "clean" and lets decomposition through, violating the fail-loud
+contract this guard exists to provide (STD-ARCH-014).**
+
 **Check 1 — Branch commits past the placeholder:**
 
 ```bash
@@ -79,14 +86,28 @@ DEFAULT_BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch' 2>/dev/null || ec
 BRANCH="issue-${ISSUE_NUMBER}"
 PLACEHOLDER_MSG="chore: open branch for ${BRANCH}"
 
+COMPARE_ERR=$(mktemp)
 AHEAD_BY=$(gh api "repos/${REPO}/compare/${DEFAULT_BRANCH}...${BRANCH}" \
-  --jq '.ahead_by' 2>/dev/null || echo "0")
+  --jq '.ahead_by' 2>"$COMPARE_ERR")
+COMPARE_STATUS=$?
 ```
 
-Interpret `AHEAD_BY`:
+Interpret the result:
 
-- `0` (or the compare endpoint errors because the branch does not exist): no
-  commits to check; continue to Check 2.
+- Exit `0`: the branch exists and compared cleanly; interpret `AHEAD_BY` as
+  below.
+- Non-zero exit **and** `$COMPARE_ERR` contains "not found" or "does not
+  exist": the branch genuinely doesn't exist yet (no coder work possible).
+  Treat as `AHEAD_BY=0` and continue to Check 2.
+- Non-zero exit for any other reason (rate-limit, network, auth, anything
+  not matching the above): this is Check 1's own blocking condition --
+  record the in-flight reason `"Step 0b could not confirm branch status
+  for ${BRANCH}: $(cat "$COMPARE_ERR")"` and skip straight to **Decision**
+  below without running Checks 2/3.
+
+Then, only on a clean (exit `0`) comparison, interpret `AHEAD_BY`:
+
+- `0`: no commits to check; continue to Check 2.
 - `1`: fetch the single commit message and compare to `PLACEHOLDER_MSG`.
 
   ```bash
@@ -104,24 +125,35 @@ Interpret `AHEAD_BY`:
 **Check 2 — Open code PR:**
 
 ```bash
+PR_ERR=$(mktemp)
 OPEN_PR=$(gh api \
   "repos/${REPO}/pulls?head=${REPO%%/*}:${BRANCH}&state=open&per_page=1" \
-  --jq '.[0].number // empty' 2>/dev/null || echo "")
+  --jq '.[0].number // empty' 2>"$PR_ERR")
+PR_STATUS=$?
 ```
 
-If `OPEN_PR` is non-empty and no reason is already recorded, record:
-`"open code PR #${OPEN_PR} exists for branch ${BRANCH}"`.
+If `$PR_STATUS` is non-zero, record the in-flight reason
+`"Step 0b could not confirm open-PR status for ${BRANCH}: $(cat "$PR_ERR")"`
+and skip to **Decision** -- a failed lookup is never "no PR found". Only
+when `$PR_STATUS` is `0`: if `OPEN_PR` is non-empty and no reason is
+already recorded, record `"open code PR #${OPEN_PR} exists for branch
+${BRANCH}"`.
 
 **Check 3 — Merged code PR:**
 
 ```bash
+MERGED_ERR=$(mktemp)
 MERGED_PR=$(gh api \
   "repos/${REPO}/pulls?head=${REPO%%/*}:${BRANCH}&state=closed&per_page=5" \
   --jq '[.[] | select(.merged_at != null)] | .[0].number // empty' \
-  2>/dev/null || echo "")
+  2>"$MERGED_ERR")
+MERGED_STATUS=$?
 ```
 
-If `MERGED_PR` is non-empty and no reason is already recorded, record:
+If `$MERGED_STATUS` is non-zero, record the in-flight reason
+`"Step 0b could not confirm merged-PR status for ${BRANCH}: $(cat
+"$MERGED_ERR")"` and skip to **Decision**. Only when `$MERGED_STATUS` is
+`0`: if `MERGED_PR` is non-empty and no reason is already recorded, record
 `"merged code PR #${MERGED_PR} exists for branch ${BRANCH}"`.
 
 **Decision:**
