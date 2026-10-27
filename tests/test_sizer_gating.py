@@ -301,6 +301,14 @@ class TestSizerInflightGuard:
         section = self._guard_section(self._text())
         assert '"epic"' not in section
 
+    def test_guard_no_label_requests_at_all(self):
+        """Guard blocked result must request neither epic nor blocked labels
+        (AC1) -- the correct result.json example carries no label_requests
+        field at all, so this covers both without a string match on
+        'blocked', which also appears legitimately in the outcome field."""
+        section = self._guard_section(self._text())
+        assert "label_requests" not in section
+
     def test_guard_appears_before_step_4(self):
         """Guard must appear before Step 4 sub-issue creation, satisfying the
         'runs before any sub-issue creation attempt' requirement (R1, R2, R3)."""

@@ -82,10 +82,24 @@ contract this guard exists to provide (STD-ARCH-014).**
 **Check 1 — Branch commits past the placeholder:**
 
 ```bash
-DEFAULT_BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch' 2>/dev/null || echo "main")
 BRANCH="issue-${ISSUE_NUMBER}"
 PLACEHOLDER_MSG="chore: open branch for ${BRANCH}"
 
+DEFAULT_BRANCH_ERR=$(mktemp)
+DEFAULT_BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch' 2>"$DEFAULT_BRANCH_ERR")
+DEFAULT_BRANCH_STATUS=$?
+```
+
+If `$DEFAULT_BRANCH_STATUS` is non-zero: this lookup failing is never safe
+to guess past (an assumed `main` could compare against the wrong ref and
+report a false "branch doesn't exist"). Record the in-flight reason
+`"Step 0b could not confirm the default branch for ${REPO}: $(cat
+"$DEFAULT_BRANCH_ERR")"` and skip straight to **Decision**, without running
+the compare below or Checks 2/3.
+
+Only when `$DEFAULT_BRANCH_STATUS` is `0`, continue:
+
+```bash
 COMPARE_ERR=$(mktemp)
 AHEAD_BY=$(gh api "repos/${REPO}/compare/${DEFAULT_BRANCH}...${BRANCH}" \
   --jq '.ahead_by' 2>"$COMPARE_ERR")
@@ -112,7 +126,7 @@ Then, only on a clean (exit `0`) comparison, interpret `AHEAD_BY`:
 
   ```bash
   SINGLE_MSG=$(gh api "repos/${REPO}/compare/${DEFAULT_BRANCH}...${BRANCH}" \
-    --jq '.commits[0].commit.message' 2>/dev/null || echo "")
+    --jq '.commits[0].commit.message' 2>/dev/null || echo "fetch-failed")
   ```
 
   If the message matches `PLACEHOLDER_MSG`, the branch has only the
