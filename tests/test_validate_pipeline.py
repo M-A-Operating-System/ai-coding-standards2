@@ -198,9 +198,11 @@ class TestNoSelfGrantedGateOrLifecycleLabel:
 
 
 def test_shipped_standard_delivery_targets_main_for_release():
-    """The released pipeline must branch and open delivery PRs against main,
-    never the retired beta integration branch."""
+    """The released pipeline must not target the retired beta integration branch.
+    Sub-issues use feature-{parent_number}; standalone issues fall back to the
+    repository default via flow_base_branch() returning None for items without
+    a parent-issue label (issue #638)."""
     pipeline = json.loads(PIPELINE_PATH.read_text())
     standard = pipeline["flows"]["standard-delivery"]
-    assert standard["naming"]["base"] == "main"
+    assert standard["naming"]["base"] == "feature-{parent_number}"
     assert "feature/393-orchestrator-target-design" not in PIPELINE_PATH.read_text()

@@ -393,3 +393,52 @@ class TestCommitAfterUsesTheFlowsBranch:
             result = _push_step_branch(agent, work_item, cwd="/tmp/wt")
         assert result is not None and "no naming.branch" in result
         run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Sub-issue base-branch resolution (issue #638)
+# Scenarios R1, R2, R3 from the acceptance criteria.
+# ---------------------------------------------------------------------------
+
+class TestSubIssueBaseBranch:
+    """flow_base_branch() routes sub-issues to their parent's feature branch
+    and leaves standalone issues on the repository default branch."""
+
+    def _coder_def(self):
+        return _agents_by_name()["03_execute/coder"]
+
+    def test_sub_issue_base_is_feature_branch_of_parent(self):
+        """R1: issue #50 with parent-issue:42 -> base = feature-42."""
+        import pipeline_orchestrator as po
+        wi = WorkItem(number=50, kind="issue", title="t",
+                      labels={"parent-issue:42"}, url="u")
+        assert po.flow_base_branch(self._coder_def(), wi) == "feature-42"
+
+    def test_sub_issue_flow_context_env_sets_base_branch(self):
+        """R1: BASE_BRANCH env var is set to the parent feature branch."""
+        import pipeline_orchestrator as po
+        wi = WorkItem(number=50, kind="issue", title="t",
+                      labels={"parent-issue:42"}, url="u")
+        env = po._flow_context_env(self._coder_def(), wi)
+        assert env.get("BASE_BRANCH") == "feature-42"
+        assert env["BRANCH"] == "issue-50"
+
+    def test_standalone_issue_base_is_none(self):
+        """R2: issue with no parent-issue label -> flow_base_branch returns None."""
+        import pipeline_orchestrator as po
+        wi = WorkItem(number=10, kind="issue", title="t", labels=set(), url="u")
+        assert po.flow_base_branch(self._coder_def(), wi) is None
+
+    def test_standalone_issue_flow_context_env_omits_base_branch(self):
+        """R2: BASE_BRANCH is not set for standalone issues."""
+        import pipeline_orchestrator as po
+        wi = WorkItem(number=10, kind="issue", title="t", labels=set(), url="u")
+        env = po._flow_context_env(self._coder_def(), wi)
+        assert "BASE_BRANCH" not in env
+
+    def test_grandchild_uses_one_hop_parent_only(self):
+        """R3: issue #200 with parent-issue:100 -> base = feature-100 (not feature-42)."""
+        import pipeline_orchestrator as po
+        wi = WorkItem(number=200, kind="issue", title="t",
+                      labels={"parent-issue:100"}, url="u")
+        assert po.flow_base_branch(self._coder_def(), wi) == "feature-100"
