@@ -15,7 +15,7 @@ authoritative and these tables are a view of it.
 | Flow | Applies to | Naming |
 |---|---|---|
 | `standard-delivery` | kind `issue` | branch `issue-{number}`; base `issue-{parent_number}`; PR `docs` on `issue-{number}-docs` (does not close the issue); PR `code` on `issue-{number}` (closes the issue) |
-| `epic-completion` | kind `issue`; labels `epic` | -- |
+| `epic-completion` | kind `issue`; labels `epic` | branch `issue-{number}`; base `issue-{parent_number}`; PR `code` on `issue-{number}` (closes the issue) |
 | `codebase-review` | schedule `0 3 * * 1` | -- |
 | `sizer` | kind `issue` | -- |
 | `new-agent` | kind `issue` | branch `issue-{number}` |
@@ -124,19 +124,22 @@ The groups below are this step's authoritative deny list, flattened at load time
 
 | Step | Kind | Unit | Trigger | Depends on | Human gate |
 |---|---|---|---|---|---|
-| `04_evaluate/epic-closer` | script | `item` | children `all_closed` | -- | -- |
+| `04_evaluate/create-pr` | script | `item` | children `all_closed` | -- | -- |
+| `04_evaluate/pr-reviewer` | agent | `item` | `create-pr:complete` | `04_evaluate/create-pr` | -- |
 
 ### Exclusions and retries
 
 | Step | Excluded classifications | Excluded labels | Max retries |
 |---|---|---|---|
-| `04_evaluate/epic-closer` | -- | -- | -- |
+| `04_evaluate/create-pr` | -- | -- | -- |
+| `04_evaluate/pr-reviewer` | -- | -- | `1` |
 
 ### Entitled activities
 
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
-| `04_evaluate/epic-closer` | -- | -- | -- |
+| `04_evaluate/create-pr` | -- | -- | `commit_after=false`, `commits_to="code"` |
+| `04_evaluate/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | -- | `commit_after=false` |
 
 ## Flow: `codebase-review`
 
