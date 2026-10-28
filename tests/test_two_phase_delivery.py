@@ -401,26 +401,26 @@ class TestCommitAfterUsesTheFlowsBranch:
 # ---------------------------------------------------------------------------
 
 class TestSubIssueBaseBranch:
-    """flow_base_branch() routes sub-issues to their parent's feature branch
-    and leaves standalone issues on the repository default branch."""
+    """flow_base_branch() routes sub-issues to their parent's own issue
+    branch and leaves standalone issues on the repository default branch."""
 
     def _coder_def(self):
         return _agents_by_name()["03_execute/coder"]
 
-    def test_sub_issue_base_is_feature_branch_of_parent(self):
-        """R1: issue #50 with parent-issue:42 -> base = feature-42."""
+    def test_sub_issue_base_is_parent_issue_branch(self):
+        """R1: issue #50 with parent-issue:42 -> base = issue-42."""
         import pipeline_orchestrator as po
         wi = WorkItem(number=50, kind="issue", title="t",
                       labels={"parent-issue:42"}, url="u")
-        assert po.flow_base_branch(self._coder_def(), wi) == "feature-42"
+        assert po.flow_base_branch(self._coder_def(), wi) == "issue-42"
 
     def test_sub_issue_flow_context_env_sets_base_branch(self):
-        """R1: BASE_BRANCH env var is set to the parent feature branch."""
+        """R1: BASE_BRANCH env var is set to the parent's issue branch."""
         import pipeline_orchestrator as po
         wi = WorkItem(number=50, kind="issue", title="t",
                       labels={"parent-issue:42"}, url="u")
         env = po._flow_context_env(self._coder_def(), wi)
-        assert env.get("BASE_BRANCH") == "feature-42"
+        assert env.get("BASE_BRANCH") == "issue-42"
         assert env["BRANCH"] == "issue-50"
 
     def test_standalone_issue_base_is_none(self):
@@ -437,8 +437,8 @@ class TestSubIssueBaseBranch:
         assert "BASE_BRANCH" not in env
 
     def test_grandchild_uses_one_hop_parent_only(self):
-        """R3: issue #200 with parent-issue:100 -> base = feature-100 (not feature-42)."""
+        """R3: issue #200 with parent-issue:100 -> base = issue-100 (not issue-42)."""
         import pipeline_orchestrator as po
         wi = WorkItem(number=200, kind="issue", title="t",
                       labels={"parent-issue:100"}, url="u")
-        assert po.flow_base_branch(self._coder_def(), wi) == "feature-100"
+        assert po.flow_base_branch(self._coder_def(), wi) == "issue-100"

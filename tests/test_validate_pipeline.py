@@ -74,7 +74,7 @@ class TestNamingTokens:
     def test_a_known_token_is_accepted(self):
         assert validate_naming_tokens(_flow(branch="issue-{number}")) == []
         assert validate_naming_tokens(
-            _flow(branch="issue-{number}", base="feature-{parent_number}")
+            _flow(branch="issue-{number}", base="issue-{parent_number}")
         ) == []
 
     def test_an_unknown_token_in_the_primary_branch_is_caught(self):
@@ -199,10 +199,11 @@ class TestNoSelfGrantedGateOrLifecycleLabel:
 
 def test_shipped_standard_delivery_targets_main_for_release():
     """The released pipeline must not target the retired beta integration branch.
-    Sub-issues use feature-{parent_number}; standalone issues fall back to the
-    repository default via flow_base_branch() returning None for items without
-    a parent-issue label (issue #638)."""
+    Sub-issues use issue-{parent_number} (their parent's own issue branch);
+    standalone issues fall back to the repository default via
+    flow_base_branch() returning None for items without a parent-issue
+    label (issue #638)."""
     pipeline = json.loads(PIPELINE_PATH.read_text())
     standard = pipeline["flows"]["standard-delivery"]
-    assert standard["naming"]["base"] == "feature-{parent_number}"
+    assert standard["naming"]["base"] == "issue-{parent_number}"
     assert "feature/393-orchestrator-target-design" not in PIPELINE_PATH.read_text()
