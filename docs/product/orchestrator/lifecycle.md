@@ -41,8 +41,9 @@ satisfied. Phase 5 does not block any per-ticket flow.
 | `00_ondemand/branch-cleanup` | 0 | agent | Recommends, then (on approval) deletes, stale remote branches |
 | `00_ondemand/issue-cleanup` | 0 | agent | Recommends, then (on approval) closes, complete or duplicate issues |
 | `00_ondemand/blocker` | 0 | script | Reciprocates `blocks:{this}` onto issue N given an existing `blockedby:{N}`, on request |
+| `00_ondemand/sizer` | 0 | agent | Standalone flow (triggered by `sizer:requested`, applied automatically by `request-sizing`): decomposes an oversized issue into sub-issues, or emits `complete` directly when it already fits a single cycle |
 | `01_product_docs/issue-classifier` | 1 | agent | Classifies the issue; validates required fields are present |
-| `01_product_docs/issue-sizer` | 1 | agent | Sizes the ticket (`S`/`M`/`L`) |
+| `01_product_docs/request-sizing` | 1 | script | Applies `sizer:requested` so the standalone `sizer` flow runs before `prd-writer` |
 | `01_product_docs/prd-writer` | 1 | agent | Drafts the PRD; rewrites the issue body into user-story + Gherkin format |
 | `01_product_docs/create-docs-pr` | 1 | script | Opens the design PR (`issue-{N}-docs`), non-closing |
 | `01_product_docs/prd-docs-updater` | 1 | agent | Writes the scoped `docs/product/` + `docs/features/` change; copies approved Gherkin |
@@ -142,11 +143,11 @@ are excluded, since there is no code to ship.
 |---|---|---|---|---|
 | 1 | Stakeholder | Opens issue | — | — |
 | 2 | `issue-classifier` | Validates required fields; classifies issue type | `issue-classifier:complete` | — |
-| 3 | `prd-writer` | Drafts PRD; rewrites issue body | `prd-writer:review` | — |
-| 4 | Stakeholder | Approves PRD | `prd-writer:approved` | **`prd-writer:approved`** — Stakeholder |
-| 5 | `issue-sizer` | Sizes the ticket; returns `size: M` | `issue-sizer:review` | — |
-| 6 | Reviewer | Approves the size | `size:approved` | **`size:approved`** — Reviewer |
-| 7 | `create-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs`; title = issue title verbatim | `create-pr:complete` | — |
+| 3 | `request-sizing` (script) | Applies `sizer:requested`, triggering the standalone `sizer` flow | `sizer:requested` | — |
+| 4 | `sizer` | Confirms the ticket fits a single cycle; emits `sizer:complete` directly (`self_gates`, issue #425) -- no gate for this path, only for decomposition | `sizer:complete` | — |
+| 5 | `prd-writer` | Drafts PRD; rewrites issue body | `prd-writer:review` | — |
+| 6 | Stakeholder | Approves PRD | `prd-writer:approved` | **`prd-writer:approved`** — Stakeholder |
+| 7 | `create-docs-pr` (script) | Opens the draft **design** PR on `issue-{N}-docs`; title = issue title verbatim | `create-docs-pr:complete` | — |
 | 8 | `prd-docs-updater` | Writes the `docs/product/` + `docs/features/` changes | `prd-docs-updater:review` | — |
 | 9 | Stakeholder | Approves the design; design PR merges to `main` | `prd-docs-updater:approved` | **`prd-docs-updater:approved`** — Stakeholder |
 | 10 | `create-pr` (script) | Opens the draft **code** PR on `issue-{N}` (title = issue title verbatim; body = `Closes #{N}`, with the issue's `### Release Notes` section appended if present) | `create-pr:complete` | — |
@@ -154,6 +155,15 @@ are excluded, since there is no code to ship.
 | 12 | `pr-reviewer` | Reviews code PR diff against spec | `pr-reviewer:review` | — |
 | 13 | Reviewer | Approves review | `pr-reviewer:approved` | **`pr:approved`** — Reviewer |
 | 14 | Reviewer | Reviews and merges the code PR | `pr.merged` → issue auto-closes | — |
+
+Sizing against a single cycle (steps 3-4) happens as its own standalone
+flow (`sizer`, triggered by the `sizer:requested` label on any issue --
+see [Two-phase design-to-build delivery](#two-phase-design-to-build-delivery)
+above), not as orchestrator code: it is a plain `type: "agent"` step in
+`pipeline.json`, the same way `epic-closer.sh` is a plain `type: "script"`
+step for epic completion (issue #211). An oversized ticket is decomposed
+here, before `prd-writer` runs, into sub-issues carrying `parent-issue:{N}`
+that each re-enter this same happy path on their own merits.
 
 Notes: `REQUEST_CHANGES` from `pr-reviewer` re-invokes `coder`, up to
 three cycles before requiring human sign-off; `pr-reviewer` cannot
