@@ -99,7 +99,7 @@
       },
       "naming": {
         "branch": "issue-{number}",
-        "base": "feature-{parent_number}",
+        "base": "issue-{parent_number}",
         "pull_requests": [
           {
             "id": "docs",
