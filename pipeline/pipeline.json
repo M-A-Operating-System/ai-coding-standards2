@@ -369,25 +369,84 @@
     },
 
     "epic-completion": {
-      "description": "Coordinating work: an epic is a parent whose children are the real work, and it has nothing to do while they run. Its one step becomes eligible only once every child issue (parent-issue:{N}) is closed -- trigger.children: all_closed, evaluated as ordinary step eligibility, with no epic-specific code in the orchestrator. The step never commits, so this flow declares no naming.",
+      "description": "Coordinating work: an epic is a parent whose children are the real work. Once all child issues (parent-issue:{N}) are closed, create-pr opens the epic's own code PR (issue-{N} -> issue-{parent_N} or -> main), then pr-reviewer reviews the accumulated diff with the same outcome_policy, review_gate, and human-gate as any other code PR. The epic closes when that PR merges via its Closes trailer.",
       "trigger": {
         "kind": "issue",
         "labels": ["epic"]
       },
+      "naming": {
+        "branch": "issue-{number}",
+        "base": "issue-{parent_number}",
+        "pull_requests": [
+          {
+            "id": "code",
+            "branch": "issue-{number}",
+            "closes_issue": true
+          }
+        ]
+      },
       "steps": [
         {
-          "agent": "04_evaluate/epic-closer",
+          "agent": "04_evaluate/create-pr",
           "type": "script",
-          "script": "scripts/epic-closer.sh",
+          "script": "scripts/create-pr.sh",
           "phase": "04_evaluate",
           "trigger": {
             "children": "all_closed"
           },
           "human_gate_after": false,
           "dependencies": [],
-          "budgets": { "max_wall_seconds": 60 },
+          "git_ops": {
+            "commit_after": false,
+            "commits_to": "code"
+          },
           "expected_effect": { "commits": false },
-          "description": "Closes a coordinating epic once every one of its children is closed: posts the epic-complete comment and closes the issue. Eligible only when trigger.children: all_closed holds -- the orchestrator counts the item's parent-issue:{N} children generically and hands this step AI_AGILE_CHILDREN_TOTAL / AI_AGILE_CHILDREN_OPEN. A flow that wants a review of the whole before the epic closes declares that step here ahead of this one, with no orchestrator change."
+          "description": "Opens the epic's own code PR (issue-{N} -> issue-{parent_N} or -> main) once every child issue is closed. Idempotent. The Closes trailer in the PR body closes the epic when the PR merges."
+        },
+        {
+          "agent": "04_evaluate/epic-pr-reviewer",
+          "phase": "04_evaluate",
+          "trigger": {
+            "label": "create-pr:complete"
+          },
+          "human_gate_after": false,
+          "resolve_pr_number": true,
+          "dependencies": [
+            "04_evaluate/create-pr"
+          ],
+          "max_retries": 1,
+          "session": {
+            "scope": "per_issue",
+            "resume": false
+          },
+          "extra_allowedTools": [
+            "Bash(gh pr review *)",
+            "Bash(gh pr ready *)",
+            "Bash(gh api *)",
+            "Bash(gh pr checks *)",
+            "Bash(gh run view *)"
+          ],
+          "model": "claude-sonnet-4-6",
+          "budgets": {
+            "max_turns": 80
+          },
+          "expected_effect": {
+            "commits": false,
+            "creates_issues": true
+          },
+          "git_ops": {
+            "commit_after": false
+          },
+          "post_steps": [
+            "scripts/mark-pr-ready.sh"
+          ],
+          "review_gate": true,
+          "outcome_policy": {
+            "kind": "review_findings",
+            "schema": "pipeline/schemas/pr-review.schema.json",
+            "require_head_match": true
+          },
+          "description": "Reviews the accumulated diff on the epic's issue-{N} PR after all children are closed, using the same outcome_policy, review_gate, and human-gate machinery as any other code PR. On APPROVE, marks the PR ready for human merge; the PR's Closes trailer closes the epic. On REQUEST CHANGES, :review is applied and a human must address findings before re-triggering -- there is no coder in this flow to auto-remediate."
         }
       ]
     },
