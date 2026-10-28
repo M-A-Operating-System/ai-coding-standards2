@@ -192,7 +192,15 @@ child of this item is closed" — a condition about other work items;
 see [`PRODUCT.md`](PRODUCT.md#coordinating-work-needs-a-trigger-that-can-look-outward).
 A step declares it as `trigger.children: all_closed`, evaluated with
 every other eligibility condition (issue #406); today's shipped
-`epic-completion` flow is the one flow that uses it.
+`epic-completion` flow is the one flow that uses it. When all children
+of a sizer-decomposed epic close, the `epic-completion` flow runs
+`03_execute/pr-reviewer` against the accumulated `issue-{N}` PR —
+using the same `review_loop`, `outcome_policy`, and human gate as any
+code PR — before closing the epic; the epic closes only after that PR
+merges. Nested epics trigger the same mechanism recursively: a
+sub-epic runs its own `pr-reviewer` against its `issue-{N}` →
+`issue-{parent_N}` PR and closes, which can then enable its parent's
+`trigger.children: all_closed` to fire.
 
 ### Many small tickets in a window
 
