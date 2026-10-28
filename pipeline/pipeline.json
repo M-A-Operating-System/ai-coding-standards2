@@ -404,7 +404,7 @@
           "description": "Opens the epic's own code PR (issue-{N} -> issue-{parent_N} or -> main) once every child issue is closed. Idempotent. The Closes trailer in the PR body closes the epic when the PR merges."
         },
         {
-          "agent": "04_evaluate/pr-reviewer",
+          "agent": "04_evaluate/epic-pr-reviewer",
           "phase": "04_evaluate",
           "trigger": {
             "label": "create-pr:complete"

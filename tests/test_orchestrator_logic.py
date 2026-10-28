@@ -4183,9 +4183,16 @@ class TestCommitAgentWorkScript:
         assert "03_execute/pr-reviewer" in post_steps_agents, (
             "pr-reviewer must use post_steps to trigger mark-pr-ready.sh"
         )
-        unexpected = [a for a in post_steps_agents if a != "03_execute/pr-reviewer"]
+        # A step that reuses pr-reviewer's own prompt under its own agent
+        # name (e.g. epic-pr-reviewer, a symlink -- issue #639) needs the
+        # same mark-pr-ready post_step; only a step unrelated to pr-reviewer
+        # entirely would be unexpected here.
+        unexpected = [
+            a for a in post_steps_agents
+            if a != "03_execute/pr-reviewer" and not a.endswith("/epic-pr-reviewer")
+        ]
         assert not unexpected, (
-            f"Only pr-reviewer should use post_steps — also found: {unexpected}"
+            f"Only pr-reviewer (or a reuse of it) should use post_steps — also found: {unexpected}"
         )
 
     def test_commit_after_derived_from_git_ops_in_pipeline(self):
@@ -6514,6 +6521,12 @@ class TestEpicCompletionIsDeclared:
     an epic whose children are all closed advances; one with an open child, or
     with no children at all, does not -- but reached through ordinary step
     eligibility, so any flow can declare the same trigger (issue #406, AC2).
+
+    Issue #639 replaced the old single `epic-closer` step (which closed the
+    epic directly) with `create-pr` (opens the epic's own issue-{N} code PR)
+    followed by `epic-pr-reviewer` (reviews that PR's accumulated diff, same
+    gate machinery as any other code PR); the PR's own `Closes #{N}` trailer
+    closes the epic on merge, so there is no longer a dedicated closer step.
     """
 
     PIPELINE_JSON = Path(__file__).parent.parent / "pipeline" / "pipeline.json"
@@ -6523,7 +6536,8 @@ class TestEpicCompletionIsDeclared:
         agents, _ = load_pipeline(self.PIPELINE_JSON)
         self.agents = agents
         self.pipeline_map = pipeline_by_name(agents)
-        self.step = self.pipeline_map["04_evaluate/epic-closer"]
+        self.step = self.pipeline_map["04_evaluate/create-pr"]
+        self.review_step = self.pipeline_map["04_evaluate/epic-pr-reviewer"]
 
     def _epic(self, labels=None, number=100):
         return WorkItem(
@@ -6543,7 +6557,7 @@ class TestEpicCompletionIsDeclared:
         assert self.step.flow_labels == ["epic"]
         assert self.step.trigger == {"children": "all_closed"}
         assert self.step.step_type == "script"
-        assert self.step.script_path == "scripts/epic-closer.sh"
+        assert self.step.script_path == "scripts/create-pr.sh"
 
     def test_eligible_once_every_child_is_closed(self):
         item = self._epic()
@@ -6583,60 +6597,25 @@ class TestEpicCompletionIsDeclared:
         assert env["AI_AGILE_CHILDREN_TOTAL"] == "2"
         assert env["AI_AGILE_CHILDREN_OPEN"] == "0"
         assert env["AI_AGILE_FLOW"] == "epic-completion"
-        # The flow declares no naming: this step never commits, so it is told
-        # no branch rather than one invented for it.
-        assert "BRANCH" not in env
+        # Unlike the old closer-only flow, epic-completion now declares
+        # naming (issue #639): this step commits to the "code" PR, so it is
+        # told the branch that PR's Closes trailer will close the epic on.
+        assert env["BRANCH"] == "issue-100"
+        assert env["PR_CLOSES_ISSUE"] == "true"
 
-    def test_closer_script_posts_the_completion_comment_and_closes(self, tmp_path):
-        """The declared step reproduces exactly what the sweep used to do."""
-        script = Path(__file__).parent.parent / "scripts" / "epic-closer.sh"
-        calls = tmp_path / "calls.log"
-        fake_bin = tmp_path / "bin"
-        fake_bin.mkdir()
-        (fake_bin / "gh").write_text(
-            "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> " + str(calls) + "\n"
+    def test_review_step_depends_on_create_pr_and_reuses_pr_reviewer_machinery(self):
+        """The review runs against the same PR create-pr just opened, using
+        the same gate/outcome machinery as any other code PR (no new agent
+        prompt -- epic-pr-reviewer is a symlink to 03_execute/pr-reviewer.md)."""
+        assert self.review_step.trigger == {"label": "create-pr:complete"}
+        assert "04_evaluate/create-pr" in self.review_step.dependencies
+        assert self.review_step.resolve_pr_number is True
+        agent_file = (
+            Path(__file__).parent.parent
+            / ".claude" / "agents" / "04_evaluate" / "epic-pr-reviewer.md"
         )
-        (fake_bin / "gh").chmod(0o755)
-
-        env = {
-            "PATH": f"{fake_bin}:{os.environ['PATH']}",
-            "REPO": "org/repo",
-            "ISSUE_NUMBER": "100",
-            "AI_AGILE_CHILDREN_TOTAL": "3",
-            "AI_AGILE_CHILDREN_OPEN": "0",
-        }
-        out = subprocess.run(
-            ["bash", str(script)], env=env, capture_output=True, text=True,
-        )
-        assert out.returncode == 0, out.stderr
-        assert out.stdout.strip().splitlines()[-1] == "AI_AGILE_STATUS: complete"
-
-        logged = calls.read_text()
-        assert "repos/org/repo/issues/100/comments" in logged
-        assert "## Epic complete" in logged
-        assert "All 3 sub-issue(s) have been closed. Closing this epic." in logged
-        assert "<!-- ai-agile/announcement/v1 by orchestrator -->" in logged
-        assert "state=closed" in logged
-        assert "state_reason=completed" in logged
-
-    def test_closer_script_refuses_while_a_child_is_open(self, tmp_path):
-        script = Path(__file__).parent.parent / "scripts" / "epic-closer.sh"
-        fake_bin = tmp_path / "bin"
-        fake_bin.mkdir()
-        (fake_bin / "gh").write_text("#!/usr/bin/env bash\nexit 0\n")
-        (fake_bin / "gh").chmod(0o755)
-        env = {
-            "PATH": f"{fake_bin}:{os.environ['PATH']}",
-            "REPO": "org/repo",
-            "ISSUE_NUMBER": "100",
-            "AI_AGILE_CHILDREN_TOTAL": "3",
-            "AI_AGILE_CHILDREN_OPEN": "1",
-        }
-        out = subprocess.run(
-            ["bash", str(script)], env=env, capture_output=True, text=True,
-        )
-        assert out.returncode == 0
-        assert out.stdout.strip().splitlines()[-1] == "AI_AGILE_STATUS: blocked"
+        assert agent_file.is_symlink()
+        assert agent_file.resolve().name == "pr-reviewer.md"
 
 
 # ---------------------------------------------------------------------------
@@ -6752,7 +6731,12 @@ class TestRelatedWorkItemEnv:
         shipped file, not just the isolated helper above."""
         agents, _ = orch.load_pipeline(orch.PIPELINE_PATH)
         with_it = sorted(a.agent for a in agents if a.resolve_pr_number)
-        assert with_it == ["03_execute/coder", "03_execute/merge-conflict", "03_execute/pr-reviewer"]
+        assert with_it == [
+            "03_execute/coder",
+            "03_execute/merge-conflict",
+            "03_execute/pr-reviewer",
+            "04_evaluate/epic-pr-reviewer",
+        ]
 
     def test_issue_number_resolved_for_pr_kind_via_branch_pattern(self):
         """The reverse direction (issue #433): a PR-kind invocation gets

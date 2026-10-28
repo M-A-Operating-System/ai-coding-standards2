@@ -112,7 +112,7 @@ Coordinating work: an epic is a parent whose children are the real work. Once al
 
 Opens the epic's own code PR (issue-{N} -> issue-{parent_N} or -> main) once every child issue is closed. Idempotent. The Closes trailer in the PR body closes the epic when the PR merges.
 
-### `04_evaluate/pr-reviewer`
+### `04_evaluate/epic-pr-reviewer`
 
 - **Kind:** agent
 - **Phase:** `04_evaluate`

@@ -125,21 +125,21 @@ The groups below are this step's authoritative deny list, flattened at load time
 | Step | Kind | Unit | Trigger | Depends on | Human gate |
 |---|---|---|---|---|---|
 | `04_evaluate/create-pr` | script | `item` | children `all_closed` | -- | -- |
-| `04_evaluate/pr-reviewer` | agent | `item` | `create-pr:complete` | `04_evaluate/create-pr` | -- |
+| `04_evaluate/epic-pr-reviewer` | agent | `item` | `create-pr:complete` | `04_evaluate/create-pr` | -- |
 
 ### Exclusions and retries
 
 | Step | Excluded classifications | Excluded labels | Max retries |
 |---|---|---|---|
 | `04_evaluate/create-pr` | -- | -- | -- |
-| `04_evaluate/pr-reviewer` | -- | -- | `1` |
+| `04_evaluate/epic-pr-reviewer` | -- | -- | `1` |
 
 ### Entitled activities
 
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
 | `04_evaluate/create-pr` | -- | -- | `commit_after=false`, `commits_to="code"` |
-| `04_evaluate/pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | -- | `commit_after=false` |
+| `04_evaluate/epic-pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | -- | `commit_after=false` |
 
 ## Flow: `codebase-review`
 
