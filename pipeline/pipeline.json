@@ -127,6 +127,7 @@
           "session": { "scope": "per_issue" },
           "model": "claude-haiku-4-5-20251001",
           "budgets": { "max_turns": 8 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false },
           "allowed_labels": { "add": ["classification: *"] },
           "description": "Classifies the issue as bug, feature, chore, or spike. Validates required fields (problem statement, acceptance criteria). Rejects malformed issues with a corrective comment."
@@ -144,6 +145,7 @@
           "dependencies": ["01_product_docs/issue-classifier"],
           "max_retries": 1,
           "exclude_labels": ["blocked"],
+          "stopOnLevel": 2,
           "expected_effect": { "commits": false },
           "description": "Scripted step (issue #565): applies sizer:requested to the issue so the standalone 00_ondemand/sizer flow runs automatically before prd-writer, instead of leaving sizing to a human applying the label by hand. A lifecycle status label like sizer:requested is only the orchestrator's to write (pipeline/validate.py's lifecycle-label check forbids any agent's own allowed_labels from covering one), so this is a scripted step rather than something an agent requests directly. Idempotent."
         },
@@ -162,6 +164,7 @@
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 45 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false },
           "description": "Drafts a Product Requirements Document for an appropriately-sized issue. Triggers on sizer:complete (issue #565) rather than issue-classifier:complete directly, so build never starts while sizing is pending or in progress -- request-sizing applies sizer:requested automatically, and the standalone 00_ondemand/sizer flow must reach a terminal outcome before this step becomes eligible. Rewrites the issue body with the PRD in user-story + Gherkin format and waits for stakeholder approval at the prd-writer:approved gate. Skipped for epic issues (parent issues decomposed by the sizer) and issues marked blocked."
         },
@@ -179,6 +182,7 @@
           "exclude_classifications": ["spike"],
           "exclude_labels": ["epic", "blocked"],
           "git_ops": { "commit_after": false, "commits_to": "docs" },
+          "stopOnLevel": 2,
           "expected_effect": { "commits": false },
           "description": "Scripted step (two-phase design->build, issue #247): opens the DESIGN pull request on the issue-{N}-docs branch with a non-closing body. prd-docs-updater commits the docs/product/ and docs/features/ changes to this branch; merge-docs-pr merges it to main at the prd-docs-updater:approved gate, ahead of the build phase. Thin wrapper over create-pr.sh; the branch and the non-closing body both come from this flow's naming.pull_requests entry 'docs'. Idempotent. Skipped for spike/epic/blocked issues."
         },
@@ -201,6 +205,7 @@
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 40 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": true },
           "description": "Runs after create-docs-pr opens the design PR. Copies the approved PRD's Gherkin scenarios into docs/features/{feature}.md (mechanical) and cross-checks the PRD against existing product documentation in docs/product/. Writes changes using its Write tool and commits them in its own worktree; the orchestrator then pushes the DESIGN branch (issue-{N}-docs, this flow's 'docs' pull request) so they land in the design PR. Posts a summary comment. self_gates: true -- the agent itself decides whether to gate on prd-docs-updater:approved (only when docs/product/ prose changed) or advance straight (mechanical docs/features/ copy only, or no changes needed); either way merge-docs-pr then publishes the design to main ahead of the build phase (two-phase design->build, issue #247). Skipped for spike issues. Skipped for epic/blocked issues."
         },
@@ -218,6 +223,7 @@
           "exclude_classifications": ["spike"],
           "exclude_labels": ["epic", "blocked"],
           "git_ops": { "commit_after": false, "commits_to": "docs" },
+          "stopOnLevel": 2,
           "expected_effect": { "commits": true },
           "description": "Scripted step (two-phase design->build, issue #247): merges the design PR (issue-{N}-docs) to main at the prd-docs-updater:approved gate, ahead of the build phase, so every subsequent (and parallel) build is cut from a main that already carries the latest approved design and design conflicts surface at this small docs merge. Idempotent -- if no open design PR exists it exits cleanly. Refuses to auto-merge a conflicting or protection-blocked PR (emits review for human resolution) rather than forcing it. Deterministic; does not invoke Claude CLI. Skipped for spike/epic/blocked issues."
         },
@@ -235,6 +241,7 @@
           "exclude_classifications": ["spike"],
           "exclude_labels": ["epic", "blocked"],
           "git_ops": { "commit_after": false, "commits_to": "code" },
+          "stopOnLevel": 2,
           "expected_effect": { "commits": false },
           "description": "Scripted step: creates the CODE branch (issue-{N}) and opens a draft PR with 'Closes #{N}' in the body, establishing the GitHub Development sidebar link. Runs after merge-docs-pr publishes the approved design to main (two-phase design->build, issue #247), so the code branch is cut from a main that already carries the latest design. Applies source-issue:{N} label via link-pr-to-issue.sh. Coder commits accumulate in this PR. Idempotent -- exits cleanly if branch and PR already exist. Deterministic; does not invoke Claude CLI. Skipped for spike issues (spikes produce no code to ship). Skipped for epic/blocked issues."
         },
@@ -261,6 +268,7 @@
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 100 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": true },
           "description": "Implements one GitHub issue in the consuming repository as a defensive programmer. Reads the approved scope and relevant project context, then modifies and tests that issue's code, committing it in its own worktree as it goes -- including incremental checkpoint commits during a long run so completed progress survives budget exhaustion, and a final commit before returning so the working tree is clean. The orchestrator then pushes what was committed and owns the PR lifecycle. The draft PR was opened by create-pr and stays draft until pr-reviewer completes. Skipped for spike issues -- spikes produce research findings, not code. Skipped for epic/blocked issues."
         },
@@ -279,6 +287,7 @@
           "exclude_classifications": ["spike"],
           "exclude_labels": ["epic", "blocked"],
           "budgets": { "max_wall_seconds": 900 },
+          "stopOnLevel": 2,
           "expected_effect": { "commits": false },
           "review_loop": {
             "re_invoke": "03_execute/coder",
@@ -320,6 +329,7 @@
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-haiku-4-5-20251001",
           "budgets": { "max_turns": 60 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false },
           "description": "Checks for merge conflicts on the issue PR after CI passes. If the branch is clean, immediately emits complete; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied, so the pipeline advances to pr-reviewer uninterrupted. If conflicts are found, emits review -- the pipeline pauses at the merge-conflict:approved gate until a human approves the resolution plan, then the coder is re-invoked to apply the agreed resolutions. Skipped for epic/blocked issues."
         },
@@ -346,6 +356,7 @@
           "exclude_labels": ["epic", "blocked"],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 80 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false, "creates_issues": true },
           "review_loop": {
             "re_invoke": "03_execute/coder",
@@ -400,6 +411,7 @@
             "commit_after": false,
             "commits_to": "code"
           },
+          "stopOnLevel": 2,
           "expected_effect": { "commits": false },
           "description": "Opens the epic's own code PR (issue-{N} -> issue-{parent_N} or -> main) once every child issue is closed. Idempotent. The Closes trailer in the PR body closes the epic when the PR merges."
         },
@@ -430,6 +442,7 @@
           "budgets": {
             "max_turns": 80
           },
+          "stopOnLevel": 1,
           "expected_effect": {
             "commits": false,
             "creates_issues": true
@@ -473,6 +486,7 @@
           ],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 80 },
+          "stopOnLevel": 3,
           "expected_effect": { "commits": false, "creates_issues": true },
           "description": "Weekly three-persona codebase review (Defensive Programmer, Security Analyst, Quality Assurance). Reads a durable coverage tracker, selects the next due codebase components, reviews them using pr-reviewer's finding schema (RV-NNN), checks for duplicate findings in still-open prior review issues, and requests a 'Technical Review - {date}' issue via result.json's creates_issue field. Cross-references docs/product/ only when code intent is unclear."
         }
@@ -503,6 +517,7 @@
           ],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 60 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false, "creates_issues": true },
           "allowed_labels": { "add": ["epic", "blocked"] },
           "description": "Ad-hoc issue sizer. Evaluates whether the issue fits a single development cycle. Small issues get a sizing note and emit complete directly; self_gates (issue #425) lets that :complete stand as-is with no gate label ever applied. Large issues are decomposed into ordered, independently-deliverable sub-issues; the parent is marked epic and the agent emits sizer:review so the human can inspect and edit the breakdown at the sizer:approved gate. On re-invocation after the human applies sizer:approved, emits complete (terminal for the parent). Triggered by applying the sizer:requested label to any issue."
@@ -533,6 +548,7 @@
           "extra_allowedTools": ["Edit(.claude/agents/**)", "Bash(git add *)", "Bash(git commit *)", "Bash(git status *)"],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 20 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": true },
           "description": "On-demand agent that scaffolds a new pipeline agent from a GitHub issue description. Reads the issue to determine the agent's name, phase, trigger, and purpose, then creates the agent prompt file and registers it in pipeline.json. Triggered by applying the new-agent:requested label to an issue."
         }
@@ -561,6 +577,7 @@
           ],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 200 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false },
           "description": "Ad-hoc agent that scans the consuming repo for existing knowledge files and ground-truth artifacts, then converts the timeless rules they imply into machine-readable standards/*.json. Presents proposed standards for human approval before writing. Triggered by applying the standards-migrator:requested label to any issue."
         }
@@ -591,6 +608,7 @@
           ],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 60 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false },
           "description": "Ad-hoc sweep agent. Evaluates every remote branch, classifies each as a deletion candidate or one to keep, and posts the recommendation for human approval. On re-invocation after a human approves specific branches in a reply comment, deletes exactly those branches and posts a summary. Triggered by applying the branch-cleanup:requested label to any issue."
         }
@@ -623,6 +641,7 @@
           ],
           "model": "claude-sonnet-4-6",
           "budgets": { "max_turns": 60 },
+          "stopOnLevel": 1,
           "expected_effect": { "commits": false },
           "description": "Ad-hoc backlog-hygiene sweep. Reads every open issue and classifies each as a complete-candidate, a duplicate-cluster member, or keep, and posts the recommendation for human approval. On re-invocation after a human names specific issues in a reply comment, closes exactly those issues with the correct state_reason and posts a summary. Triggered by applying the issue-cleanup:requested label to any issue."
         }
@@ -647,6 +666,7 @@
           "dependencies": [],
           "max_retries": 1,
           "budgets": { "max_wall_seconds": 60 },
+          "stopOnLevel": 2,
           "expected_effect": { "commits": false },
           "description": "Reciprocates a blockedby:/blocks: pair. A human applies blockedby:{N} to this issue directly -- that alone already gates eligibility -- then requests this step to add the symmetric blocks:{this} label onto issue N. Emits blocked (not failed) when no blockedby: label is present to reciprocate, so a mistaken request is visible rather than silently swallowed. Triggered by applying the blocker:requested label to any issue."
         }
@@ -669,6 +689,7 @@
           "dependencies": [],
           "max_retries": 1,
           "budgets": { "max_wall_seconds": 300 },
+          "stopOnLevel": 3,
           "expected_effect": { "commits": false },
           "description": "Computes per-agent and blended weekly aggregate records for the previous Mon-Sun week and appends them to records.jsonl on the ai-agile/metrics branch. Aggregate rows carry agent_id=metrics-aggregator (blended) or the real agent name (per-agent breakdown), period=week, and metric fields named {aggregation_fn}_{base_metric}[-{dimension}]. Idempotent: skips the append when the bucket is already aggregated."
         }
@@ -691,6 +712,7 @@
           "dependencies": [],
           "max_retries": 1,
           "budgets": { "max_wall_seconds": 300 },
+          "stopOnLevel": 3,
           "expected_effect": { "commits": false },
           "description": "Computes per-agent and blended daily aggregate records for the previous complete calendar day and appends them to records.jsonl on the ai-agile/metrics branch. Aggregate rows carry agent_id=metrics-aggregator (blended) or the real agent name (per-agent breakdown), period=day, and metric fields named {aggregation_fn}_{base_metric}[-{dimension}]. Idempotent: skips the append when the bucket is already aggregated."
         }
@@ -713,6 +735,7 @@
           "dependencies": [],
           "max_retries": 1,
           "budgets": { "max_wall_seconds": 600 },
+          "stopOnLevel": 3,
           "expected_effect": { "commits": false },
           "description": "Reads period=week rows (last 12 months) and period=day rows (last 4 weeks) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month (weekly) and 4-week (daily) charts for each metric via matplotlib (static PNG images). Assembles charts into portrait US Letter print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. The rendered PDF is written to AI_AGILE_SCRATCH, then committed to the ai-agile/reports branch so it persists after the run's scratch directory is removed."
         }
@@ -735,6 +758,7 @@
           "dependencies": [],
           "max_retries": 1,
           "budgets": { "max_wall_seconds": 600 },
+          "stopOnLevel": 2,
           "expected_effect": { "commits": false },
           "description": "Determines the previous published release boundary and discovers merged PRs and closed issues since that boundary. Applies gates: exits with a structured no-change outcome when nothing is new; skips with a structured skipped outcome when the computed tag already exists; records a gate-failed outcome when the coverage threshold is not met. Otherwise generates release-notes Markdown via release_note_generator.py and creates a GitHub Release. All outcomes are recorded as structured JSON to stderr."
         }
