@@ -328,6 +328,11 @@
           "default": "agent",
           "description": "'agent' invokes the Claude CLI with this step's prompt. 'script' runs the file at 'script' directly. The step contract binds both; a script meets most of it by construction and must still return one outcome and report honestly when it did nothing (PRODUCT.md, 'The step contract')."
         },
+        "stopOnLevel": {
+          "type": "integer",
+          "enum": [1, 2, 3],
+          "description": "The stop level at which this step halts the pipeline when it emits a non-complete outcome. 1 = agent steps (stop immediately, require human attention); 2 = ordinary script steps (stop at the pipeline operator level); 3 = scheduled maintenance flows (stop only at the owner/admin level). Introduced in issue #608."
+        },
         "script": {
           "type": "string",
           "description": "Repo-relative path. Required when type is 'script'."
