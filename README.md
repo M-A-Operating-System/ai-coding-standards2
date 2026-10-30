@@ -1,10 +1,14 @@
-# AI Agile
+# AI Agile - Governed AI Software Development Lifecycle
 
-**AI Agile is a complete, self-contained agentic framework for a
+**AI Agile, delivered by the ai-coding-standards2 repository, is a complete, self-contained agentic framework for a
 product-led software development lifecycle — dropped into any project repo
 as a single git submodule.** Specialised AI agents move every change from a
 GitHub issue through to shipped, tested, documented code, with humans
 approving at well-defined gates rather than performing the work.
+
+Engineering leaders using AI coding agents need a shared view of what is being built, whether it meets the agreed requirements, who approved it and what delivery cost. AI Agile connects that work through a GitHub-native process with inspectable artifacts, verification and accountable human gates. Its objective is to make AI-assisted software delivery visible, consistent and measurable while preserving engineering judgment.
+
+Read the [product overview](docs/public/index.md), [engineering-management approach](docs/public/engineering-management.md) and [product objectives](docs/public/objectives.md). These explain the outcomes; the existing product contract and pipeline remain authoritative for exact behavior.
 
 One submodule brings the whole SDLC: the pipeline graph, the deterministic
 orchestrator, every agent, the human gates, and the machine-readable

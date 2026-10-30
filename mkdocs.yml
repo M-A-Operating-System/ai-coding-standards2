@@ -1,0 +1,23 @@
+site_name: "AI Agile - Governed AI Software Development Lifecycle"
+site_description: "GitHub-native orchestration, shared standards, verification, human gates and delivery metrics for teams using AI coding agents."
+site_author: "M&A Operating System"
+site_url: "https://m-a-operating-system.github.io/ai-coding-standards2/"
+repo_url: "https://github.com/M-A-Operating-System/ai-coding-standards2"
+repo_name: "ai-coding-standards2"
+edit_uri: "edit/main/docs/public/"
+docs_dir: "docs/public"
+site_dir: "site"
+theme:
+  name: mkdocs
+  custom_dir: docs/theme
+  highlightjs: false
+nav:
+  - Product overview: index.md
+  - Engineering management: engineering-management.md
+  - Objectives and evidence: objectives.md
+plugins:
+  - search
+markdown_extensions:
+  - tables
+  - toc:
+      permalink: true

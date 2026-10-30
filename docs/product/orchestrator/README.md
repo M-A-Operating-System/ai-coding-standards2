@@ -11,6 +11,10 @@ whole lifecycle; this repo stays the sole definition of every agent,
 pipeline stage, gate, and standard. The only thing a project owns locally is
 its ADRs — the exceptions it records against the centrally-defined standards.
 
+## Engineering outcomes
+
+The framework helps a team maintain visibility, verification and responsibility as coding agents do more of the work. Read the [public overview](../../public/index.md) and [management objectives](PRODUCT.md#engineering-management-objectives) for the problem and intended outcomes. A shared delivery record, review evidence and measured process improvement are the product's management value; full-session capture and guaranteed correctness are not implied.
+
 ---
 
 ## New here? Start here
