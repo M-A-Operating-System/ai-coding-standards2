@@ -577,11 +577,13 @@ class TestTieredStopLevels:
             assert result is True, f"Expected stop_on_level={sol} to be unblocked when not stopped"
 
     def test_interactive_mode_does_not_block_any_step(self, monkeypatch):
-        """Interactive runs do not receive a non-zero active_stop_level (R3b).
+        """Interactive runs are not blocked by the stop level (R3b).
 
         process_work_item() zeroes out active_stop_level for interactive runs
-        before passing it to _should_run(), so this function never sees a
-        non-zero level in interactive mode.
+        before passing it to _should_run(), as covered above. This test
+        instead exercises _should_run()'s own defensive `_HEADLESS` guard
+        directly: even if a non-zero active_stop_level somehow reached it
+        with _HEADLESS False, the step would still not be blocked.
         """
         from pipeline_orchestrator import _should_run
         monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", False)
@@ -589,10 +591,10 @@ class TestTieredStopLevels:
         wi = self._make_work_item()
         for sol in (1, 2, 3):
             agent = self._make_agent_def(stop_on_level=sol)
-            # active_stop_level=0 because process_work_item zeroes it for interactive
-            result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=0)
+            result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=3)
             assert result is True, (
-                f"Expected stop_on_level={sol} to be unblocked in interactive mode"
+                f"Expected stop_on_level={sol} to be unblocked in interactive mode "
+                "even with a non-zero active_stop_level"
             )
 
     def test_is_pipeline_stopped_returns_level_from_marker(self, tmp_path, monkeypatch):
@@ -610,6 +612,17 @@ class TestTieredStopLevels:
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker)
         level, reason = is_pipeline_stopped()
         assert level == 3
+
+    def test_is_pipeline_stopped_clamps_out_of_range_level_to_3(self, tmp_path, monkeypatch):
+        """An invalid level (e.g. 0, which is falsy, or anything outside 1-3)
+        must not silently disable the stop -- fail-safe to level 3 instead."""
+        marker = tmp_path / ".pipeline-stop"
+        for bad_level in (0, -1, 4, 99):
+            marker.write_text(json.dumps({"reason": "test", "level": bad_level}))
+            monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker)
+            level, reason = is_pipeline_stopped()
+            assert level == 3, f"Expected level {bad_level} to clamp to 3, got {level}"
+            assert level, "The clamped level must be truthy so callers still treat this as stopped"
 
 
 # ---------------------------------------------------------------------------

@@ -2253,6 +2253,13 @@ def is_pipeline_stopped() -> tuple[int, str]:
     except (json.JSONDecodeError, ValueError, TypeError):
         return 3, "pipeline stopped (malformed marker)"
 
+    if level not in (1, 2, 3):
+        # Fail-safe: an out-of-range level (including 0, which is falsy and
+        # would otherwise make every caller treat this as "not stopped")
+        # means the marker itself is malformed. Treat it as a full stop
+        # rather than silently disabling the one thing it was written to do.
+        return 3, f"pipeline stopped (invalid level {level!r} in marker; treated as 3)"
+
     return level, reason
 
 
@@ -2269,7 +2276,7 @@ def clear_stop() -> bool:
         return False
 
 
-def _check_controls(repo: str) -> Literal["run", "pause", "stop"]:
+def _check_controls(repo: str) -> Literal["run", "pause"]:
     """Check repository-level pause signal.
 
     Called once per work item at the entry of process_work_item(). Returns
@@ -8895,9 +8902,9 @@ def _wake(args) -> "Optional[RunContext]":
     # stop -- no steps will run, so exit here. Level 1-2 stops are tiered:
     # per-step eligibility in _should_run() blocks only the affected steps;
     # the orchestrator loads the pipeline and lets unaffected steps proceed.
-    stopped, stop_reason = is_pipeline_stopped()
-    if stopped:
-        if stopped >= 3 and args.headless:
+    stop_level, stop_reason = is_pipeline_stopped()
+    if stop_level:
+        if stop_level >= 3 and args.headless:
             log.warning(
                 "Pipeline is STOPPED: %s. No agents will be invoked. "
                 "(Clear the .pipeline-stop marker or use `--clear-stop` to resume.)",
@@ -8916,7 +8923,7 @@ def _wake(args) -> "Optional[RunContext]":
             log.warning(
                 "Pipeline stop level %d active: steps at or below this level will be "
                 "blocked. Higher-priority steps proceed. (%s)",
-                stopped, stop_reason or "no reason recorded",
+                stop_level, stop_reason or "no reason recorded",
             )
 
     if not args.repo:
