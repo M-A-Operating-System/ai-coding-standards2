@@ -1643,7 +1643,7 @@ no `classification:` label).
 | `agent.failed` | The step crashed, timed out, or exited without a sentinel |
 | `gate.approved` | A human applied the gate label; gate promotion ran |
 | `lock.reclaimed` | A stale `:wip` was force-reclaimed |
-| `system.emergency_stop` | The stop marker was detected — headless, the orchestrator exits without invoking anything; interactive, it is logged and the run proceeds |
+| `system.emergency_stop` | The stop marker was detected — headless, the orchestrator blocks each step whose `stop_on_level` is at or below the active level (a marker with no `level` field defaults to level 3, blocking all steps); interactive, it is logged and the run proceeds |
 
 ---
 
@@ -1840,7 +1840,7 @@ command spawns steps that are themselves `headless` regardless.
 | How long an approval waits | Until someone next looks | Immediately | A person being present is the difference |
 | How you address the pipeline | Labels and comments on the issue | The same, or in your own words to the chat-AI, which writes them for you | Only the channel differs; what lands on the issue is identical |
 | Who writes a gate label | Only the person, from their own account | The orchestrator, on a confirmation the driver relays | The decision is the person's either way; only the evidence available to show it differs (MI-7) |
-| Whether the emergency stop applies | Halts the run before any step | Logged, and the run proceeds | A person driving one issue by hand is not unattended, and stopping them too would remove the means of investigating whatever caused the stop |
+| Whether the emergency stop applies | Blocks steps at or below the active stop level before they are invoked (a marker with no `level` field defaults to level 3, blocking all steps) | Logged, and the run proceeds | A person driving one issue by hand is not unattended, and stopping them too would remove the means of investigating whatever caused the stop |
 | How many items advance at once | Several, where their components do not overlap — one run working through them in turn | Several, where their components do not overlap — one instance per item, each started by a person | The invariant is identical; only the shape differs |
 
 Everything else is governed by the promises above and must be
