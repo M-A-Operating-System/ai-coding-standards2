@@ -165,12 +165,19 @@ file — the two pipeline workflows were committed in the seed step — so the
 Onboard token needs no `workflow` scope.
 
 The `ai_emergency_stop.yml` workflow is the operator kill switch:
-emergency-stop writes a `.pipeline-stop` marker (which the orchestrator checks
-before invoking any agent) and cancels in-flight runs. There is no restart
-workflow — restarting is just clearing the committed marker (`git rm
-.pipeline-stop` and push; `--clear-stop` only removes the local file and must
-still be committed and pushed to resume the hosted pipeline), which an owner can run at any
-time; the stop workflow's run summary prints these instructions. Unlike the
+emergency-stop writes a `.pipeline-stop` marker and cancels in-flight runs.
+The marker declares a stop level (1, 2, or 3); the orchestrator checks it
+before invoking any step and blocks every step whose `stopOnLevel` field is at
+or below the active level. Level 1 halts AI agent steps, level 2 halts all
+pipeline steps except maintenance, and level 3 halts everything. A marker
+without a `level` field is treated as level 3. See PRODUCT.md, "The emergency
+stop", for the full model.
+
+There is no restart workflow — restarting is just clearing the committed marker
+(`git rm .pipeline-stop` and push; `--clear-stop` only removes the local file
+and must still be committed and pushed to resume the hosted pipeline), which an
+owner can run at any time; the stop workflow's run summary prints these
+instructions. Unlike the
 other installed workflows, the emergency stop is copied **without** the
 submodule-init step injected — it reads nothing from the submodule, so it must
 not depend on a submodule fetch to run when you need to stop the pipeline.
