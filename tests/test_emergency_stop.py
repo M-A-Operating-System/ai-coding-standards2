@@ -18,13 +18,14 @@ from pipeline_orchestrator import (
 # ---------------------------------------------------------------------------
 
 class TestIsPipelineStopped:
-    def test_returns_false_when_no_marker(self, tmp_path, monkeypatch):
+    def test_returns_zero_when_no_marker(self, tmp_path, monkeypatch):
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", tmp_path / ".pipeline-stop")
         stopped, reason = is_pipeline_stopped()
-        assert stopped is False
+        assert stopped == 0
         assert reason == ""
 
-    def test_returns_true_with_reason_when_marker_exists(self, tmp_path, monkeypatch):
+    def test_returns_level_3_with_reason_when_marker_has_no_level(self, tmp_path, monkeypatch):
+        """A marker without a level field defaults to level 3 (stops everything)."""
         marker_path = tmp_path / ".pipeline-stop"
         marker_path.write_text(json.dumps({
             "stopped_at": "2026-06-01T12:00:00Z",
@@ -33,8 +34,21 @@ class TestIsPipelineStopped:
         }))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
         stopped, reason = is_pipeline_stopped()
-        assert stopped is True
+        assert stopped == 3
         assert reason == "bad prompt deployed"
+
+    def test_returns_explicit_level_when_marker_has_level_field(self, tmp_path, monkeypatch):
+        """A marker with an explicit level field returns that level."""
+        marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({
+            "stopped_at": "2026-06-01T12:00:00Z",
+            "reason": "partial stop",
+            "level": 2,
+        }))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
+        stopped, reason = is_pipeline_stopped()
+        assert stopped == 2
+        assert reason == "partial stop"
 
     def test_no_auto_expiry(self, tmp_path, monkeypatch):
         """Stop marker has no time field and must never be auto-deleted."""
@@ -46,24 +60,24 @@ class TestIsPipelineStopped:
         }))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
         stopped, reason = is_pipeline_stopped()
-        assert stopped is True
+        assert stopped == 3
         assert reason == "old stop from the past"
         assert marker_path.exists(), "Stop marker must NOT be auto-deleted"
 
-    def test_malformed_marker_returns_stopped_true(self, tmp_path, monkeypatch):
-        """Malformed JSON in marker defaults to stopped (fail-safe)."""
+    def test_malformed_marker_returns_level_3(self, tmp_path, monkeypatch):
+        """Malformed JSON in marker defaults to level 3 (fail-safe, stops everything)."""
         marker_path = tmp_path / ".pipeline-stop"
         marker_path.write_text("this is not json {{{")
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
         stopped, reason = is_pipeline_stopped()
-        assert stopped is True
+        assert stopped == 3
 
     def test_missing_reason_field_returns_default(self, tmp_path, monkeypatch):
         marker_path = tmp_path / ".pipeline-stop"
         marker_path.write_text(json.dumps({"stopped_at": "2026-06-01T00:00:00Z"}))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
         stopped, reason = is_pipeline_stopped()
-        assert stopped is True
+        assert stopped == 3
         assert reason == "pipeline stopped"
 
 
@@ -232,56 +246,39 @@ class TestMainStopMarkerBehavior:
         assert not marker_path.exists(), "--clear-stop must delete the stop marker"
         assert not loaded, "--clear-stop must exit before loading the pipeline"
 
-    def test_stop_marker_detected_mid_loop(self, tmp_path, monkeypatch):
-        """Stop detected at entry of process_work_item() must prevent all work for that item.
+    def test_stop_marker_present_during_run_does_not_exit_early_for_level1(self, tmp_path, monkeypatch):
+        """A level-1 stop does not cause main() to exit before loading the pipeline.
 
-        Under the refactored architecture, _check_controls() is called once per work item
-        at the top of process_work_item(). When it returns "stop", the function returns 0
-        immediately — before promote_gated_agents or any agent invocation.
+        Stop is evaluated per-step in _should_run(); main() only exits early for
+        level-3 (full) stops. A level-1 stop marker must allow the pipeline to
+        load and run higher-priority steps.
         """
         marker_path = tmp_path / ".pipeline-stop"
+        marker_path.write_text(json.dumps({
+            "stopped_at": "2026-06-01T12:00:00Z",
+            "reason": "low-priority stop",
+            "level": 1,
+        }))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker_path)
 
-        call_count = 0
+        loaded = []
 
-        def fake_is_stopped():
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return (False, "")   # startup check in main() — not stopped
-            return (True, "mid-run stop")  # per-item check via _check_controls() — stopped
-
-        promote_calls = []
-
-        def fake_promote(labels, agents, work_item, gh, **kw):
-            promote_calls.append(work_item)
-            return labels
-
-        wi1 = MagicMock()
-        wi1.labels = set()
-        wi1.number = 1
-        wi2 = MagicMock()
-        wi2.labels = set()
-        wi2.number = 2
-
-        gh_mock = MagicMock()
-        gh_mock.list_open_issues.return_value = [wi1, wi2]
+        def fake_load(path):
+            loaded.append(True)
+            return [], []
 
         with patch.object(pipeline_orchestrator, "parse_args",
                           return_value=self._make_args(headless=True)), \
              patch.object(pipeline_orchestrator, "is_pipeline_paused", return_value=(False, None, None)), \
-             patch.object(pipeline_orchestrator, "is_pipeline_stopped", side_effect=fake_is_stopped), \
-             patch.object(pipeline_orchestrator, "load_pipeline", return_value=([], [])), \
-             patch.object(pipeline_orchestrator, "GitHubClient", return_value=gh_mock), \
-             patch.object(pipeline_orchestrator, "promote_gated_agents", side_effect=fake_promote), \
+             patch.object(pipeline_orchestrator, "load_pipeline", side_effect=fake_load), \
+             patch.object(pipeline_orchestrator, "_emit_audit_event"), \
+             patch.object(pipeline_orchestrator, "GitHubClient") as MockGH, \
              patch("subprocess.run", return_value=MagicMock(returncode=0)), \
              patch.dict(os.environ, {"GITHUB_TOKEN": "fake-token"}):
+            MockGH.return_value.list_open_issues.return_value = []
             pipeline_orchestrator.main()
 
-        assert len(promote_calls) == 0, (
-            "promote_gated_agents must not be called when _check_controls() returns 'stop'; "
-            f"got {len(promote_calls)} call(s)"
-        )
+        assert loaded, "load_pipeline must be called for a level-1 stop (not a full stop)"
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +286,7 @@ class TestMainStopMarkerBehavior:
 # ---------------------------------------------------------------------------
 
 class TestCheckControls:
-    """Tests for the consolidated _check_controls() guard function."""
+    """Tests for the _check_controls() guard function (pause only; stop is per-step)."""
 
     def test_returns_run_when_neither_stopped_nor_paused(self, tmp_path, monkeypatch):
         """Returns 'run' when no stop or pause marker is present."""
@@ -297,14 +294,19 @@ class TestCheckControls:
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
         assert _check_controls("test/repo") == "run"
 
-    def test_returns_stop_when_stop_marker_exists(self, tmp_path, monkeypatch, capsys):
-        """Returns 'stop' when a stop marker is present and running headless."""
+    def test_returns_run_when_stop_marker_exists(self, tmp_path, monkeypatch):
+        """Returns 'run' even when a stop marker is present.
+
+        Stop is now evaluated per-step in _should_run(), not at the work-item
+        level in _check_controls(). The work-item loop proceeds so that
+        high-priority steps (above the active stop level) can still run.
+        """
         stop_path = tmp_path / ".pipeline-stop"
         stop_path.write_text(json.dumps({"reason": "test stop", "stopped_at": "2026-01-01T00:00:00Z"}))
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
         monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
-        assert _check_controls("test/repo") == "stop"
+        assert _check_controls("test/repo") == "run"
 
     def test_returns_pause_when_pause_marker_active(self, tmp_path, monkeypatch):
         """Returns 'pause' when a non-expired pause marker is present."""
@@ -316,8 +318,12 @@ class TestCheckControls:
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
         assert _check_controls("test/repo") == "pause"
 
-    def test_stop_takes_priority_over_pause(self, tmp_path, monkeypatch):
-        """Returns 'stop' even when both stop and pause markers are present (headless)."""
+    def test_pause_applies_independently_of_stop_marker(self, tmp_path, monkeypatch):
+        """Returns 'pause' when both stop and pause markers are present.
+
+        Stop no longer affects _check_controls(); pause still applies
+        regardless of any stop marker present.
+        """
         import datetime
         stop_path = tmp_path / ".pipeline-stop"
         stop_path.write_text(json.dumps({"reason": "test stop"}))
@@ -327,7 +333,7 @@ class TestCheckControls:
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
         monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
-        assert _check_controls("test/repo") == "stop"
+        assert _check_controls("test/repo") == "pause"
 
     def test_returns_run_when_pause_marker_expired(self, tmp_path, monkeypatch):
         """Returns 'run' when pause marker exists but has expired."""
@@ -338,30 +344,6 @@ class TestCheckControls:
         monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", tmp_path / ".pipeline-stop")
         monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", pause_path)
         assert _check_controls("test/repo") == "run"
-
-    def test_process_work_item_returns_zero_when_stopped(self, tmp_path, monkeypatch):
-        """process_work_item returns 0 immediately when _check_controls detects stop (headless)."""
-        from pipeline_orchestrator import process_work_item, AgentDef, WorkItem
-        stop_path = tmp_path / ".pipeline-stop"
-        stop_path.write_text(json.dumps({"reason": "test stop", "stopped_at": "2026-01-01T00:00:00Z"}))
-        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", stop_path)
-        monkeypatch.setattr(pipeline_orchestrator, "PAUSE_MARKER_PATH", tmp_path / ".pipeline-pause")
-        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
-
-        promote_calls = []
-
-        def fake_promote(labels, agents, work_item, gh, **kw):
-            promote_calls.append(True)
-            return labels
-
-        wi = WorkItem(number=1, kind="issue", title="test", labels=set(), url="https://example.com/1")
-        gh = MagicMock()
-
-        with patch.object(pipeline_orchestrator, "promote_gated_agents", side_effect=fake_promote):
-            result = process_work_item(wi, [], {}, gh, dry_run=False, repo="test/repo")
-
-        assert result == 0
-        assert len(promote_calls) == 0, "promote_gated_agents must not run when stop is detected at entry"
 
     def test_process_work_item_returns_zero_when_paused(self, tmp_path, monkeypatch):
         """process_work_item returns 0 immediately when _check_controls detects pause."""
@@ -387,6 +369,260 @@ class TestCheckControls:
 
         assert result == 0
         assert len(promote_calls) == 0, "promote_gated_agents must not run when pause is detected at entry"
+
+
+# ---------------------------------------------------------------------------
+# TestAgentDefStopOnLevel
+# ---------------------------------------------------------------------------
+
+class TestAgentDefStopOnLevel:
+    """AgentDef gains a stop_on_level field with a default of 1."""
+
+    def test_default_stop_on_level_is_1(self):
+        """AgentDef.stop_on_level defaults to 1 when pipeline.json omits stopOnLevel."""
+        from pipeline_orchestrator import AgentDef
+        agent_def = AgentDef(
+            agent="test/agent",
+            phase="test",
+            objects=["issue"],
+            trigger={"label": "test:pending"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+        )
+        assert agent_def.stop_on_level == 1
+
+    def test_stop_on_level_can_be_set_explicitly(self):
+        """stop_on_level can be overridden when constructing AgentDef."""
+        from pipeline_orchestrator import AgentDef
+        agent_def = AgentDef(
+            agent="test/agent",
+            phase="test",
+            objects=["issue"],
+            trigger={"label": "test:pending"},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description="test",
+            stop_on_level=3,
+        )
+        assert agent_def.stop_on_level == 3
+
+    def test_load_pipeline_reads_stop_on_level_from_json(self, tmp_path):
+        """_steps_from_flows passes stopOnLevel from pipeline.json into AgentDef.stop_on_level."""
+        import json as _json
+        from pipeline_orchestrator import _steps_from_flows
+        minimal = {
+            "flows": {
+                "standard-delivery": {
+                    "trigger": {"kind": "issue"},
+                    "steps": [
+                        {
+                            "agent": "01_product_docs/issue-classifier",
+                            "phase": "01_product_docs",
+                            "trigger": {"event": "issue.opened"},
+                            "dependencies": [],
+                            "human_gate_after": False,
+                            "stopOnLevel": 2,
+                            "description": "test",
+                        }
+                    ],
+                }
+            }
+        }
+        steps = _steps_from_flows(minimal)
+        assert steps[0].stop_on_level == 2
+
+    def test_load_pipeline_defaults_stop_on_level_when_omitted(self, tmp_path):
+        """stop_on_level defaults to 1 when stopOnLevel is absent from pipeline.json."""
+        from pipeline_orchestrator import _steps_from_flows
+        minimal = {
+            "flows": {
+                "standard-delivery": {
+                    "trigger": {"kind": "issue"},
+                    "steps": [
+                        {
+                            "agent": "01_product_docs/issue-classifier",
+                            "phase": "01_product_docs",
+                            "trigger": {"event": "issue.opened"},
+                            "dependencies": [],
+                            "human_gate_after": False,
+                            "description": "test",
+                        }
+                    ],
+                }
+            }
+        }
+        steps = _steps_from_flows(minimal)
+        assert steps[0].stop_on_level == 1
+
+
+# ---------------------------------------------------------------------------
+# TestTieredStopLevels
+# ---------------------------------------------------------------------------
+
+class TestTieredStopLevels:
+    """Per-step eligibility checks against active stop levels (R3a, R4, R2a, R2b).
+
+    active_stop_level is computed by process_work_item() (from is_pipeline_stopped())
+    and passed to _should_run(); these tests pass it directly to keep tests
+    independent of file-system state.
+    """
+
+    def _make_agent_def(self, stop_on_level, trigger_label="trigger:pending"):
+        from pipeline_orchestrator import AgentDef
+        return AgentDef(
+            agent=f"test/agent-sol{stop_on_level}",
+            phase="test",
+            objects=["issue"],
+            trigger={"label": trigger_label},
+            dependencies=[],
+            human_gate_after=False,
+            human_gate_label=None,
+            description=f"agent with stop_on_level {stop_on_level}",
+            stop_on_level=stop_on_level,
+        )
+
+    def _make_work_item(self, trigger_label="trigger:pending"):
+        from pipeline_orchestrator import WorkItem
+        return WorkItem(
+            number=1,
+            kind="issue",
+            title="test issue",
+            labels={trigger_label},
+            url="https://example.com/1",
+        )
+
+    def test_level1_stop_blocks_step_with_stop_on_level_1(self, monkeypatch):
+        """Level-1 stop blocks a step whose stop_on_level is 1 (R3a)."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        agent = self._make_agent_def(stop_on_level=1)
+        wi = self._make_work_item()
+        result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=1)
+        assert result is False
+
+    def test_level1_stop_does_not_block_step_with_stop_on_level_2(self, monkeypatch):
+        """Level-1 stop leaves a step with stop_on_level 2 unblocked (R4)."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        agent = self._make_agent_def(stop_on_level=2)
+        wi = self._make_work_item()
+        result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=1)
+        assert result is True
+
+    def test_level1_stop_does_not_block_step_with_stop_on_level_3(self, monkeypatch):
+        """Level-1 stop leaves a step with stop_on_level 3 unblocked (R4)."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        agent = self._make_agent_def(stop_on_level=3)
+        wi = self._make_work_item()
+        result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=1)
+        assert result is True
+
+    def test_level2_stop_blocks_step_with_stop_on_level_1(self, monkeypatch):
+        """Level-2 stop blocks a step with stop_on_level 1 (R3a)."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        agent = self._make_agent_def(stop_on_level=1)
+        wi = self._make_work_item()
+        result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=2)
+        assert result is False
+
+    def test_level2_stop_blocks_step_with_stop_on_level_2(self, monkeypatch):
+        """Level-2 stop blocks a step with stop_on_level 2 (R3a)."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        agent = self._make_agent_def(stop_on_level=2)
+        wi = self._make_work_item()
+        result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=2)
+        assert result is False
+
+    def test_level2_stop_does_not_block_step_with_stop_on_level_3(self, monkeypatch):
+        """Level-2 stop leaves a step with stop_on_level 3 unblocked (R4)."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        agent = self._make_agent_def(stop_on_level=3)
+        wi = self._make_work_item()
+        result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=2)
+        assert result is True
+
+    def test_level3_stop_blocks_all_steps(self, monkeypatch):
+        """Level-3 stop blocks steps at all levels (R3a)."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        wi = self._make_work_item()
+        for sol in (1, 2, 3):
+            agent = self._make_agent_def(stop_on_level=sol)
+            result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=3)
+            assert result is False, f"Expected stop_on_level={sol} to be blocked at level-3 stop"
+
+    def test_no_stop_does_not_block_any_step(self, monkeypatch):
+        """When active_stop_level is 0 (not stopped), no step is blocked."""
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", True)
+
+        wi = self._make_work_item()
+        for sol in (1, 2, 3):
+            agent = self._make_agent_def(stop_on_level=sol)
+            result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=0)
+            assert result is True, f"Expected stop_on_level={sol} to be unblocked when not stopped"
+
+    def test_interactive_mode_does_not_block_any_step(self, monkeypatch):
+        """Interactive runs are not blocked by the stop level (R3b).
+
+        process_work_item() zeroes out active_stop_level for interactive runs
+        before passing it to _should_run(), as covered above. This test
+        instead exercises _should_run()'s own defensive `_HEADLESS` guard
+        directly: even if a non-zero active_stop_level somehow reached it
+        with _HEADLESS False, the step would still not be blocked.
+        """
+        from pipeline_orchestrator import _should_run
+        monkeypatch.setattr(pipeline_orchestrator, "_HEADLESS", False)
+
+        wi = self._make_work_item()
+        for sol in (1, 2, 3):
+            agent = self._make_agent_def(stop_on_level=sol)
+            result = _should_run(agent, wi, wi.labels, {}, None, active_stop_level=3)
+            assert result is True, (
+                f"Expected stop_on_level={sol} to be unblocked in interactive mode "
+                "even with a non-zero active_stop_level"
+            )
+
+    def test_is_pipeline_stopped_returns_level_from_marker(self, tmp_path, monkeypatch):
+        """is_pipeline_stopped returns the level from the marker file (R2a)."""
+        marker = tmp_path / ".pipeline-stop"
+        marker.write_text(json.dumps({"reason": "test", "level": 2}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker)
+        level, reason = is_pipeline_stopped()
+        assert level == 2
+
+    def test_is_pipeline_stopped_defaults_to_level3_when_no_level_field(self, tmp_path, monkeypatch):
+        """is_pipeline_stopped defaults to level 3 when marker has no level field (R2b)."""
+        marker = tmp_path / ".pipeline-stop"
+        marker.write_text(json.dumps({"reason": "old format marker"}))
+        monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker)
+        level, reason = is_pipeline_stopped()
+        assert level == 3
+
+    def test_is_pipeline_stopped_clamps_out_of_range_level_to_3(self, tmp_path, monkeypatch):
+        """An invalid level (e.g. 0, which is falsy, or anything outside 1-3)
+        must not silently disable the stop -- fail-safe to level 3 instead."""
+        marker = tmp_path / ".pipeline-stop"
+        for bad_level in (0, -1, 4, 99):
+            marker.write_text(json.dumps({"reason": "test", "level": bad_level}))
+            monkeypatch.setattr(pipeline_orchestrator, "STOP_MARKER_PATH", marker)
+            level, reason = is_pipeline_stopped()
+            assert level == 3, f"Expected level {bad_level} to clamp to 3, got {level}"
+            assert level, "The clamped level must be truthy so callers still treat this as stopped"
 
 
 # ---------------------------------------------------------------------------
