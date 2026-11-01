@@ -69,6 +69,7 @@ in a prompt (see
 **The state machine**
 - [Labels record state; the artefact holds it](#labels-record-state-the-artefact-holds-it)
 - [Correcting the record](#correcting-the-record)
+- [The emergency stop](#the-emergency-stop)
 - [Eligibility and order decide which item runs next](#eligibility-and-order-decide-which-item-runs-next)
 - [A component label lets unrelated work run at once](#a-component-label-lets-unrelated-work-run-at-once)
 - [Every step has the same four parts](#every-step-has-the-same-four-parts)
@@ -371,6 +372,37 @@ step never recorded, one that cannot be read back, and a step that has no
 subject at all each leave the record alone. Not being able to establish a
 subject is not evidence that a record is stale, and must never be read as
 such.
+
+### The emergency stop
+
+An operator can halt the pipeline at any time by creating a `.pipeline-stop`
+marker in the repository. The orchestrator checks for this marker before
+invoking any step and, in headless mode, blocks every step whose `stopOnLevel`
+is at or below the active level declared in the marker.
+
+Three stop levels correspond to three granularities of halt:
+
+| Level | What it halts | Typical use |
+|---|---|---|
+| 1 | Steps with `stopOnLevel: 1` — AI agent steps | Pause AI-driven work while keeping script steps running |
+| 2 | Steps with `stopOnLevel: 1` or `2` — all pipeline steps except maintenance | Pause ordinary pipeline work while allowing scheduled maintenance |
+| 3 | All steps (`stopOnLevel: 1`, `2`, and `3`) | Full pipeline shutdown |
+
+Each step in `pipeline.json` carries a `stopOnLevel` field — an integer from 1
+to 3 — declaring its category for emergency stop purposes. The default when the
+field is omitted is 1. A step with `stopOnLevel: 1` is blocked by any active
+stop; a step with `stopOnLevel: 3` is blocked only by a full-pipeline stop.
+
+**Backward compatibility.** A `.pipeline-stop` marker that carries no `level`
+field is treated as level 3, blocking all steps. This preserves the behaviour
+of markers written before the tiered model was introduced.
+
+In interactive mode the marker is logged and the run proceeds — a person
+driving one issue by hand is not unattended, and stopping them too would remove
+the means of investigating what caused the stop. See [What is allowed to
+differ](#what-is-allowed-to-differ).
+
+---
 
 ### Eligibility and order decide which item runs next
 

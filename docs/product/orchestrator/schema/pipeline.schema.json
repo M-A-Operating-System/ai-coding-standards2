@@ -277,6 +277,12 @@
           "type": "string",
           "description": "Which model this step runs on, chosen when the step was declared -- a step does not choose its own model, any more than it chooses its own permissions (AS-1). Agent-type steps only."
         },
+        "stopOnLevel": {
+          "type": "integer",
+          "enum": [1, 2, 3],
+          "default": 1,
+          "description": "Categorises this step for the tiered emergency stop. An emergency stop at level N blocks all steps whose stopOnLevel is at or below N. 1 (default): AI agent step, blocked by any active stop. 2: ordinary script step, blocked by a level-2 or level-3 stop. 3: maintenance step, blocked only by a full-pipeline (level-3) stop. A marker with no level field defaults to level 3, blocking all steps."
+        },
 
         "expected_effect": {
           "type": "object",
