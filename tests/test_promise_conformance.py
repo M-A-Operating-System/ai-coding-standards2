@@ -1417,9 +1417,9 @@ _MODE_BRANCHES: dict[str, str] = {
     # for an unattended tick, the session's own actor with human: true
     # otherwise. Nothing else in the record varies (MI-6 pins that).
     "_make_audit_event": "Who starts a step",
-    # The emergency stop halts a headless tick before any step and is logged,
-    # not obeyed, when a person is driving one issue by hand.
-    "_check_controls": "Whether the emergency stop applies",
+    # The emergency stop is gated on _HEADLESS: a headless tick skips steps at
+    # or below the active stop level; an interactive session logs and ignores.
+    # _check_controls() no longer branches here -- stop is per-step (issue #615).
     "_wake": "Whether the emergency stop applies",
     # A headless run has no session to inherit auth from and needs
     # ANTHROPIC_API_KEY; an interactive one uses the session's own login.

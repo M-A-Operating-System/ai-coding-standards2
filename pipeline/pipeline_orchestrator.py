@@ -265,6 +265,7 @@ class AgentDef:
     max_wall_seconds: Optional[int] = None  # per-step override of budgets.max_wall_seconds; None means use the pipeline-wide default
     expected_effect: dict = field(default_factory=dict)  # {"commits": bool, "creates_issues": bool} — what this step is supposed to change (MI-6)
     allowed_labels: dict = field(default_factory=dict)    # {"add": [...], "remove": [...]} — label patterns this step may request
+    stop_on_level: int = 1  # halt eligibility when the active stop level >= this value (pipeline.json: stopOnLevel); default 1 when omitted
 
     @property
     def label_key(self) -> str:
@@ -620,6 +621,7 @@ def _steps_from_flows(raw: dict) -> list[AgentDef]:
                 max_wall_seconds=_budgets.get("max_wall_seconds"),
                 expected_effect=dict(entry.get("expected_effect") or {}),
                 allowed_labels=dict(entry.get("allowed_labels") or {}),
+                stop_on_level=int(entry.get("stopOnLevel", 1)),
             ))
     return agents
 
@@ -2220,34 +2222,38 @@ def clear_pause() -> bool:
     return False
 
 
-def is_pipeline_stopped() -> tuple[bool, str]:
-    """Return (stopped, reason). No auto-expiry — must be cleared explicitly.
+def is_pipeline_stopped() -> tuple[int, str]:
+    """Return (active_level, reason). Level 0 means not stopped; 1-3 means stopped at that level.
 
     The stop marker is a JSON file at STOP_MARKER_PATH containing:
         { "stopped_at": "<ISO-8601>", "reason": "...", "stopped_by": "github-actions" }
+    and optionally:
+        { "level": 2 }  -- tier at which the stop applies (default: 3)
 
-    Unlike the pause marker, the stop marker has no time field and is never
-    auto-cleared. It persists until an owner clears it -- by deleting the
-    committed marker (git rm .pipeline-stop) or running --clear-stop.
+    A marker with no level field is treated as level 3, stopping everything
+    as before. Unlike the pause marker, the stop marker has no time field and
+    is never auto-cleared. It persists until an owner clears it -- by deleting
+    the committed marker (git rm .pipeline-stop) or running --clear-stop.
     """
     try:
         raw = STOP_MARKER_PATH.read_text()
     except FileNotFoundError:
-        return False, ""
+        return 0, ""
     except OSError as exc:
         log.warning(
             "Stop marker at %s could not be read (%s); ignoring.",
             STOP_MARKER_PATH, exc,
         )
-        return False, ""
+        return 0, ""
 
     try:
         marker = json.loads(raw)
         reason = marker.get("reason", "pipeline stopped")
-    except (json.JSONDecodeError, ValueError):
-        reason = "pipeline stopped (malformed marker)"
+        level = int(marker.get("level", 3))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return 3, "pipeline stopped (malformed marker)"
 
-    return True, reason
+    return level, reason
 
 
 def clear_stop() -> bool:
@@ -2264,25 +2270,16 @@ def clear_stop() -> bool:
 
 
 def _check_controls(repo: str) -> Literal["run", "pause", "stop"]:
-    """Check repository-level pause and stop signals.
+    """Check repository-level pause signal.
 
     Called once per work item at the entry of process_work_item(). Returns
-    "stop" if an emergency stop marker is active (headless runs only),
     "pause" if a rate-limit pause marker is active, or "run" if the pipeline
-    should proceed.
-
-    Stop is gated on _HEADLESS: interactive runs log the marker but return
-    "run" so a human driving a specific issue is not blocked by a scheduled
-    automation stop. Pause always applies regardless of invocation mode.
+    should proceed. Stop is now evaluated per-step in _should_run() so that
+    a tiered stop level can block only the steps at or below that level.
 
     repo is accepted for future multi-repo extensibility but unused in the
     current file-based implementation.
     """
-    stopped, _stop_reason = is_pipeline_stopped()
-    if stopped:
-        if _HEADLESS:
-            return "stop"
-        log.warning("Operating in interactive mode, ignoring pipeline stop.")
     paused, _pause_reason, _until = is_pipeline_paused()
     if paused:
         return "pause"
@@ -5456,6 +5453,7 @@ def _should_run(
     gh=None,
     repo: str = "",
     manual_override: bool = False,
+    active_stop_level: int = 0,
 ) -> Optional[bool]:
     """Evaluate whether an agent should be dispatched for a work item.
 
@@ -5535,6 +5533,20 @@ def _should_run(
                 agent_def.agent, _blocking_label,
             )
             return False
+
+    # Per-step stop level check. In headless runs, block the step when the
+    # active stop level covers it (stop_on_level <= active_stop_level).
+    # active_stop_level is computed once by the caller (process_work_item)
+    # to avoid repeated file reads and to keep this function testable without
+    # file system mocks. Interactive runs do not receive a non-zero
+    # active_stop_level from process_work_item (the _HEADLESS gate there
+    # handles the log-and-ignore behaviour).
+    if _HEADLESS and active_stop_level > 0 and agent_def.stop_on_level <= active_stop_level:
+        log.info(
+            "  stop %-40s  [stop level %d covers stop_on_level %d]",
+            agent_def.agent, active_stop_level, agent_def.stop_on_level,
+        )
+        return False
 
     current_status = agent_status(labels, agent_def.label_key)
 
@@ -8096,10 +8108,31 @@ def process_work_item(
             )
             return 0
 
+    # Compute the active stop level once for this work item pass. Headless
+    # runs use it to block individual steps below the active tier (per-step
+    # eligibility, issue #615). Interactive runs log-and-ignore at every
+    # level so a human driving a specific issue is never blocked by a stop
+    # that was meant for scheduled automation.
+    _item_stop_level, _item_stop_reason = is_pipeline_stopped()
+    if _item_stop_level > 0:
+        if _HEADLESS:
+            log.info(
+                "  stop    active level %d for #%d — steps at or below this level "
+                "will be skipped (%s)",
+                _item_stop_level, work_item.number, _item_stop_reason,
+            )
+        else:
+            log.warning(
+                "Interactive mode: ignoring stop level %d for #%d (%s).",
+                _item_stop_level, work_item.number, _item_stop_reason,
+            )
+            _item_stop_level = 0  # interactive runs do not propagate the stop
+
     for agent_def in agents:
         should_run = _should_run(
             agent_def, work_item, labels, pipeline_map, concurrency,
             gh=gh, repo=repo, manual_override=manual_override,
+            active_stop_level=_item_stop_level,
         )
         if should_run is None:
             break
@@ -8858,9 +8891,13 @@ def _wake(args) -> "Optional[RunContext]":
     # Unlike the rate-limit pause, the stop marker is never auto-cleared.
     # Headless/scheduled runs respect the marker; interactive runs log it
     # and proceed (an operator stopping automation does not also halt themselves).
+    # Level 3 (or a marker with no level field, which defaults to 3) is a full
+    # stop -- no steps will run, so exit here. Level 1-2 stops are tiered:
+    # per-step eligibility in _should_run() blocks only the affected steps;
+    # the orchestrator loads the pipeline and lets unaffected steps proceed.
     stopped, stop_reason = is_pipeline_stopped()
     if stopped:
-        if args.headless:
+        if stopped >= 3 and args.headless:
             log.warning(
                 "Pipeline is STOPPED: %s. No agents will be invoked. "
                 "(Clear the .pipeline-stop marker or use `--clear-stop` to resume.)",
@@ -8873,7 +8910,14 @@ def _wake(args) -> "Optional[RunContext]":
                 outcome_detail=stop_reason or "no reason recorded",
             ))
             return None
-        log.warning("Operating in interactive mode, ignoring pipeline stop.")
+        if not args.headless:
+            log.warning("Operating in interactive mode, ignoring pipeline stop.")
+        else:
+            log.warning(
+                "Pipeline stop level %d active: steps at or below this level will be "
+                "blocked. Higher-priority steps proceed. (%s)",
+                stopped, stop_reason or "no reason recorded",
+            )
 
     if not args.repo:
         log.error("--repo is required or set $GITHUB_REPOSITORY")
