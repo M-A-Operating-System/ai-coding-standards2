@@ -80,6 +80,21 @@ def test_result_json_remains_required():
     assert '"review"' in text
 
 
+def test_prompt_forbids_copying_blocking_from_a_prior_rendered_comment():
+    """pr-review.schema.json's Finding definition has no `blocking` property
+    (additionalProperties: false) -- that field is the orchestrator's own
+    computed verdict, added only when it renders a review comment for
+    coder's Mode B. Step 1 has the model read artefact comments for PDD
+    context, which on a re-run includes its own prior rendered review
+    showing that annotation; without an explicit warning, the model
+    reproduces it in result.json and fails schema validation outright,
+    aborting the review (seen in practice on issue #498's epic-completion
+    PR once a prior review had already been rendered)."""
+    text = " ".join(_text().split())
+    assert "never carries `blocking`" in text or "never carries blocking" in text
+    assert "fails schema validation" in text
+
+
 def test_permissions_model_is_unchanged_and_still_allows_github_reads():
     pipeline = json.loads(PIPELINE.read_text())
     step = next(
