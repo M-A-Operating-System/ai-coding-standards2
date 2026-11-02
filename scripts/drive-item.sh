@@ -102,6 +102,14 @@ if echo "$_initial_labels" | grep -qx "epic" && echo "$_initial_labels" | grep -
             fi
             echo "drive-item: child #${_child_num} of epic #${ISSUE_NUMBER}"
             _child_rc=0
+            # Deliberate full ambient-environment inheritance (STD-SEC-022):
+            # this is the script invoking itself, not a new trust boundary --
+            # the child runs under the exact same interactive session, the
+            # same already-authenticated gh identity, and the same REPO this
+            # invocation itself received. There is nothing to allowlist
+            # because no new environment is being constructed; it is the
+            # same one this process is already running in, same as every
+            # other subprocess call in this script (gh, python3) makes.
             REPO="${REPO}" bash "$0" "${_child_num}" "$@" || _child_rc=$?
             if [[ $_child_rc -ne 0 ]]; then
                 echo "drive-item: child #${_child_num} halted (exit ${_child_rc}); stopping epic drive."
