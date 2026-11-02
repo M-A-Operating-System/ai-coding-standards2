@@ -191,6 +191,16 @@ A defect never carries `effort`; an improvement never carries `type` or
 Use `confidence` for confidence that the finding is real, not for impact.
 Omit optional `standard` and `adr` fields when they do not apply.
 
+A finding never carries `blocking`. A prior run's rendered review comment
+(read as part of Step 1's artefact-comment context, or re-encountered on a
+re-run reviewing the same unresolved findings) shows each finding annotated
+with a `blocking` field -- that annotation is the orchestrator's own computed
+verdict, added when it rendered that past comment, never part of this step's
+own output schema. Reproducing it in a fresh `result.json` fails schema
+validation (`pr-review.schema.json` disallows it) and aborts the review
+outright. Write each finding using exactly the two shapes above, nothing
+copied from a previously rendered comment.
+
 For an improvement, rate the work itself:
 
 - `simple` — small and mechanical, obvious from `fix` alone.

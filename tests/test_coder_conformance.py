@@ -454,14 +454,14 @@ class TestCoderMdStep8ReadsPrReviewerArtefactFromIssueNotPr:
 
     Given coder.md's Step 8 pr-reviewer-artefact lookup
     When a reader inspects the gh api call carrying the
-    "ai-agile/artefact/v1 by 03_execute/pr-reviewer" marker
+    "ai-agile/artefact/v1 by" marker for pr-reviewer's provenance tags
     Then it queries issues/$ISSUE_NUMBER/comments, not issues/$PR_NUMBER/comments
     """
 
     def _artefact_lookup_line(self, text: str) -> str:
         lines = text.splitlines()
         for i, line in enumerate(lines):
-            if "ai-agile/artefact/v1 by 03_execute/pr-reviewer" in line:
+            if "ai-agile/artefact/v1 by" in line and "pr-reviewer" in line:
                 # The gh api call and its jq continuation may span two lines
                 # joined by a trailing backslash -- join with the preceding
                 # line when that's the case, so the whole logical statement
@@ -487,6 +487,23 @@ class TestCoderMdStep8ReadsPrReviewerArtefactFromIssueNotPr:
             "coder.md Step 8 must not look for pr-reviewer's artefact under "
             "issues/$PR_NUMBER/comments -- that thread never receives it "
             "(issue #510)"
+        )
+
+    def test_artefact_lookup_also_matches_epic_pr_reviewer(self):
+        """Issue #609: this file is reused verbatim as 04_evaluate/coder for
+        the epic-completion flow, whose review is posted by
+        04_evaluate/epic-pr-reviewer (a symlink to this same pr-reviewer.md),
+        not 03_execute/pr-reviewer. A lookup matching only the latter finds
+        no review artifact on an epic PR and silently falls through to
+        "no diff, nothing to do" instead of reading the findings that
+        triggered the re-invocation."""
+        text = _load_coder_text()
+        line = self._artefact_lookup_line(_extract_b1(text))
+        assert "04_evaluate/epic-pr-reviewer" in line, (
+            "coder.md Step 8's pr-reviewer-artefact lookup must also match "
+            "04_evaluate/epic-pr-reviewer's provenance tag, or the "
+            "epic-completion review_loop's coder re-invocation never sees "
+            "the findings it was re-invoked to fix (issue #609)"
         )
 
 
