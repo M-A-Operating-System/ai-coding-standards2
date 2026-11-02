@@ -275,7 +275,7 @@ Computes per-agent and blended daily aggregate records for the previous complete
 - **Applies to:** schedule `0 2 * * 1`
 - **Naming:** --
 
-Weekly performance report (issue #534). Reads weekly-aggregate rows (period=week) and daily-aggregate rows (period=day) from the ai-agile/metrics branch, generates per-metric charts via matplotlib, assembles them into print-styled HTML, and renders a PDF via WeasyPrint. Left charts show 12 months of weekly data; right charts show 4 weeks of daily data. Runs 2 hours after metrics-aggregation on Mondays to allow the weekly aggregation step to complete first.
+Weekly performance report (issue #534). Reads weekly-aggregate rows (period=week) and daily-aggregate rows (period=day) from the ai-agile/metrics branch, generates per-metric charts via matplotlib, assembles them into print-styled HTML, and renders a PDF via WeasyPrint. Left charts show 12 months of weekly data; right charts show 2 months of daily data. Runs 2 hours after metrics-aggregation on Mondays to allow the weekly aggregation step to complete first.
 
 ### `05_continuous/metrics-report`
 
@@ -283,7 +283,7 @@ Weekly performance report (issue #534). Reads weekly-aggregate rows (period=week
 - **Phase:** `05_continuous`
 - **Script:** `scripts/generate-metrics-report.sh`
 
-Reads period=week rows (last 12 months) and period=day rows (last 4 weeks) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month (weekly) and 4-week (daily) charts for each metric via matplotlib (static PNG images). Assembles charts into portrait US Letter print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. The rendered PDF is written to AI_AGILE_SCRATCH, then committed to the ai-agile/reports branch so it persists after the run's scratch directory is removed.
+Reads period=week rows (last 12 months) and period=day rows (last 2 months) from records.jsonl on the ai-agile/metrics branch. Generates paired 12-month (weekly) and 2-month (daily) charts for each metric via matplotlib (static PNG images). Assembles charts into portrait US Letter print-styled HTML with four chart rows per page and renders to PDF via WeasyPrint. By-agent metrics (cost, duration) use a per-agent total bar chart; all other metrics use dual line charts. The rendered PDF is written to AI_AGILE_SCRATCH, then committed to the ai-agile/reports branch so it persists after the run's scratch directory is removed.
 
 ## Flow: `weekly-release`
 
