@@ -112,12 +112,34 @@ Coordinating work: an epic is a parent whose children are the real work. Once al
 
 Opens the epic's own code PR (issue-{N} -> issue-{parent_N} or -> main) once every child issue is closed. Idempotent. The Closes trailer in the PR body closes the epic when the PR merges.
 
+### `04_evaluate/coder`
+
+- **Kind:** agent
+- **Phase:** `04_evaluate`
+
+Cleans up the epic's own accumulated diff once every child issue has closed. The standard-delivery coder step excludes epic/blocked issues -- all real implementation happens in the sub-issues -- so the epic's own issue-{N} PR has historically carried no coder-produced changes of its own; this is where any epic-level follow-up (resolving an epic-pr-reviewer finding, tidying a cross-sub-issue loose end) gets made, committed to the branch create-pr opened. Reports complete with nothing to push when there is genuinely nothing to clean up.
+
+### `04_evaluate/ci-gate`
+
+- **Kind:** script
+- **Phase:** `04_evaluate`
+- **Script:** `scripts/ci-gate.sh`
+
+Scripted CI gate for the epic's own PR, identical in mechanics to the standard-delivery ci-gate: polls GitHub check-runs until all pass (complete), any fails (review -- re-invokes coder up to 3 cycles), or the 14-minute timeout expires (blocked for human intervention).
+
+### `04_evaluate/merge-conflict`
+
+- **Kind:** agent
+- **Phase:** `04_evaluate`
+
+Checks for merge conflicts on the epic's own PR after CI passes, identical in mechanics to the standard-delivery merge-conflict step. A clean branch advances uninterrupted; conflicts pause at merge-conflict:approved until a human approves the resolution, then coder re-applies it.
+
 ### `04_evaluate/epic-pr-reviewer`
 
 - **Kind:** agent
 - **Phase:** `04_evaluate`
 
-Reviews the accumulated diff on the epic's issue-{N} PR after all children are closed, using the same outcome_policy, review_gate, and human-gate machinery as any other code PR. On APPROVE, marks the PR ready for human merge; the PR's Closes trailer closes the epic. On REQUEST CHANGES, :review is applied and a human must address findings before re-triggering -- there is no coder in this flow to auto-remediate.
+Reviews the accumulated diff on the epic's issue-{N} PR -- including any cleanup coder committed -- after all children are closed and CI/merge-conflict pass, using the same outcome_policy, review_gate, and human-gate machinery as any other code PR. On APPROVE, marks the PR ready for human merge; the PR's Closes trailer closes the epic. On REQUEST CHANGES, the orchestrator automatically re-invokes coder (clearing ci-gate/merge-conflict so they re-run), up to 3 cycles; only after that is human sign-off required.
 
 ## Flow: `codebase-review`
 

@@ -125,13 +125,19 @@ The groups below are this step's authoritative deny list, flattened at load time
 | Step | Kind | Unit | Trigger | Depends on | Human gate |
 |---|---|---|---|---|---|
 | `04_evaluate/create-pr` | script | `item` | children `all_closed` | -- | -- |
-| `04_evaluate/epic-pr-reviewer` | agent | `item` | `create-pr:complete` | `04_evaluate/create-pr` | -- |
+| `04_evaluate/coder` | agent | `item` | `create-pr:complete` | `04_evaluate/create-pr` | -- |
+| `04_evaluate/ci-gate` | script | `item` | `coder:complete` | `04_evaluate/coder` | -- |
+| `04_evaluate/merge-conflict` | agent | `item` | `ci-gate:complete` | `04_evaluate/ci-gate` | `merge-conflict:approved` |
+| `04_evaluate/epic-pr-reviewer` | agent | `item` | `merge-conflict:complete` | `04_evaluate/merge-conflict` | -- |
 
 ### Exclusions and retries
 
 | Step | Excluded classifications | Excluded labels | Max retries |
 |---|---|---|---|
 | `04_evaluate/create-pr` | -- | -- | -- |
+| `04_evaluate/coder` | -- | -- | `1` |
+| `04_evaluate/ci-gate` | -- | -- | `1` |
+| `04_evaluate/merge-conflict` | -- | -- | `1` |
 | `04_evaluate/epic-pr-reviewer` | -- | -- | `1` |
 
 ### Entitled activities
@@ -139,7 +145,50 @@ The groups below are this step's authoritative deny list, flattened at load time
 | Step | Additional entitlements | Declared prohibitions | Git operations |
 |---|---|---|---|
 | `04_evaluate/create-pr` | -- | -- | `commit_after=false`, `commits_to="code"` |
+| `04_evaluate/coder` | `Bash` | `destructive-git-operations`, `repository-safety-bypass`, `sensitive-host-access` | `commit_after=true`, `commits_to="code"` |
+| `04_evaluate/ci-gate` | -- | -- | -- |
+| `04_evaluate/merge-conflict` | `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh pr comment *)`, `Bash(gh run view *)`, `Bash(gh run list *)`, `Bash(git fetch *)` _(+8 more)_ | -- | -- |
 | `04_evaluate/epic-pr-reviewer` | `Bash(gh pr review *)`, `Bash(gh pr ready *)`, `Bash(gh api *)`, `Bash(gh pr checks *)`, `Bash(gh run view *)` | -- | `commit_after=false` |
+
+### Deny rule groups: `04_evaluate/coder`
+
+The groups below are this step's authoritative deny list, flattened at load time (no separate `deniedTools` declared). The matcher sees the command string as written; a command reached through an interpreter wrapper (e.g. `bash -c '...'`) is not matched and is documented as the deny list's known limitation.
+
+**destructive-git-operations** -- Destructive Git operations that rewrite or discard local or remote history, delete references, or mirror repository state.
+
+- `Bash(git reset --hard*)`
+- `Bash(git commit --amend*)`
+- `Bash(git commit * --amend*)`
+- `Bash(git branch -D *)`
+- `Bash(git branch --delete --force *)`
+- `Bash(git update-ref -d *)`
+- `Bash(git push --force*)`
+- `Bash(git push * --force*)`
+- `Bash(git push --force-with-lease*)`
+- `Bash(git push * --force-with-lease*)`
+- `Bash(git push --delete*)`
+- `Bash(git push * --delete*)`
+- `Bash(git push --mirror*)`
+- `Bash(git push * --mirror*)`
+
+**repository-safety-bypass** -- Repository control-plane changes or validation bypasses that can redirect Git behavior or skip commit and push safeguards.
+
+- `Bash(git config *)`
+- `Bash(git commit --no-verify*)`
+- `Bash(git commit * --no-verify*)`
+- `Bash(git push --no-verify*)`
+- `Bash(git push * --no-verify*)`
+
+**sensitive-host-access** -- Host-level access paths that can expose environment credentials or move data through direct external shell and file-transfer sessions.
+
+- `Bash(env)`
+- `Bash(env *)`
+- `Bash(printenv)`
+- `Bash(printenv *)`
+- `Bash(ssh *)`
+- `Bash(scp *)`
+- `Bash(sftp *)`
+
 
 ## Flow: `codebase-review`
 

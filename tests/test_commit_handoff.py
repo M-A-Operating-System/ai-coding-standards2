@@ -237,6 +237,10 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
     # Naming it here keeps the guard live for every other step and makes the
     # exception something a reader can see, rather than a hole in the check.
     _KNOWN_PUSHING_STEP = "03_execute/merge-conflict"
+    # 04_evaluate/merge-conflict (issue #609) is a symlink to the same
+    # merge-conflict.md prompt, reused for the epic's own PR -- it shares the
+    # same known, named rebase-push exception.
+    _KNOWN_PUSHING_STEPS = {_KNOWN_PUSHING_STEP, "04_evaluate/merge-conflict"}
 
     def test_every_committing_step_is_told_to_commit(self):
         """The grant is necessary and not sufficient.
@@ -407,8 +411,8 @@ class TestWhatTheStepIsAndIsNotToldItMayDo:
             for tool in set(defaults) | set(agent_def.extra_allowedTools)
             if tool.startswith("Bash(git push")
         }
-        assert offenders <= {self._KNOWN_PUSHING_STEP}, (
-            f"{sorted(offenders - {self._KNOWN_PUSHING_STEP})} granted git push; "
+        assert offenders <= self._KNOWN_PUSHING_STEPS, (
+            f"{sorted(offenders - self._KNOWN_PUSHING_STEPS)} granted git push; "
             "the orchestrator owns the branch ref (PRODUCT.md, 'What lands in git')"
         )
 

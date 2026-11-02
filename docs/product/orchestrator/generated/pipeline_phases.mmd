@@ -20,7 +20,11 @@ flowchart TD
     end
     subgraph 04_evaluate["04 Evaluate"]
         n_04_evaluate__create_pr("create-pr")
+        n_04_evaluate__coder["coder"]
+        n_04_evaluate__ci_gate("ci-gate")
+        n_04_evaluate__merge_conflict["merge-conflict"]
         n_04_evaluate__epic_pr_reviewer["epic-pr-reviewer"]
+        gate__n_04_evaluate__merge_conflict{"merge-conflict:approved"}
     end
     subgraph 00_ondemand["00 Ondemand"]
         entry_n_00_ondemand__sizer(["sizer:requested"])
@@ -60,6 +64,7 @@ flowchart TD
     n_01_product_docs__prd_writer --> gate__n_01_product_docs__prd_writer
     n_01_product_docs__prd_docs_updater --> gate__n_01_product_docs__prd_docs_updater
     n_03_execute__merge_conflict --> gate__n_03_execute__merge_conflict
+    n_04_evaluate__merge_conflict --> gate__n_04_evaluate__merge_conflict
     n_00_ondemand__sizer --> gate__n_00_ondemand__sizer
     n_01_product_docs__issue_classifier --> n_01_product_docs__request_sizing
     n_01_product_docs__request_sizing --> n_01_product_docs__prd_writer
@@ -71,9 +76,14 @@ flowchart TD
     n_03_execute__coder --> n_03_execute__ci_gate
     n_03_execute__ci_gate --> n_03_execute__merge_conflict
     gate__n_03_execute__merge_conflict --> n_03_execute__pr_reviewer
-    n_04_evaluate__create_pr --> n_04_evaluate__epic_pr_reviewer
+    n_04_evaluate__create_pr --> n_04_evaluate__coder
+    n_04_evaluate__coder --> n_04_evaluate__ci_gate
+    n_04_evaluate__ci_gate --> n_04_evaluate__merge_conflict
+    gate__n_04_evaluate__merge_conflict --> n_04_evaluate__epic_pr_reviewer
     n_03_execute__ci_gate -. review ≤3 .-> n_03_execute__coder
     n_03_execute__pr_reviewer -. review ≤3 .-> n_03_execute__coder
+    n_04_evaluate__ci_gate -. review ≤3 .-> n_04_evaluate__coder
+    n_04_evaluate__epic_pr_reviewer -. review ≤3 .-> n_04_evaluate__coder
     n_01_product_docs__issue_classifier -->|malformed| term_rejected
     n_03_execute__ci_gate -->|timeout| term_blocked
     n_03_execute__pr_reviewer -->|APPROVE| term_ready

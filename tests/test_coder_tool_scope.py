@@ -21,6 +21,10 @@ SCHEMA_PATH = REPO_ROOT / "pipeline" / "schemas" / "pipeline.schema.json"
 STEPS_MD = REPO_ROOT / "docs" / "product" / "orchestrator" / "generated" / "pipeline-steps.md"
 
 _CODER_AGENT = "03_execute/coder"
+# 04_evaluate/coder (issue #609) is a symlink to the same coder.md prompt,
+# reused for the epic's own cleanup pass -- it legitimately shares the same
+# broad Bash grant, so the "only coder gets this" check must know about it too.
+_CODER_AGENTS = {_CODER_AGENT, "04_evaluate/coder"}
 
 _FULL_DENY_LIST = [
     "Bash(git reset --hard*)",
@@ -322,7 +326,7 @@ class TestDeniedCommandReachedThroughInterpreterWrapperIsNotBlocked:
         pipeline = _pipeline()
         for flow in pipeline["flows"].values():
             for step in flow.get("steps", []):
-                if step.get("agent") == _CODER_AGENT:
+                if step.get("agent") in _CODER_AGENTS:
                     continue
                 extra = step.get("extra_allowedTools", [])
                 assert "Bash" not in extra, (

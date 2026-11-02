@@ -6537,6 +6537,9 @@ class TestEpicCompletionIsDeclared:
         self.agents = agents
         self.pipeline_map = pipeline_by_name(agents)
         self.step = self.pipeline_map["04_evaluate/create-pr"]
+        self.coder_step = self.pipeline_map["04_evaluate/coder"]
+        self.ci_gate_step = self.pipeline_map["04_evaluate/ci-gate"]
+        self.merge_conflict_step = self.pipeline_map["04_evaluate/merge-conflict"]
         self.review_step = self.pipeline_map["04_evaluate/epic-pr-reviewer"]
 
     def _epic(self, labels=None, number=100):
@@ -6603,13 +6606,62 @@ class TestEpicCompletionIsDeclared:
         assert env["BRANCH"] == "issue-100"
         assert env["PR_CLOSES_ISSUE"] == "true"
 
-    def test_review_step_depends_on_create_pr_and_reuses_pr_reviewer_machinery(self):
-        """The review runs against the same PR create-pr just opened, using
-        the same gate/outcome machinery as any other code PR (no new agent
-        prompt -- epic-pr-reviewer is a symlink to 03_execute/pr-reviewer.md)."""
-        assert self.review_step.trigger == {"label": "create-pr:complete"}
-        assert "04_evaluate/create-pr" in self.review_step.dependencies
+    def test_coder_step_depends_on_create_pr_and_reuses_coder_machinery(self):
+        """The epic's own cleanup pass runs in the same PR create-pr just
+        opened, using the same coder machinery any sub-issue's coder step
+        uses (no new agent prompt -- 04_evaluate/coder is a symlink to
+        03_execute/coder.md). Unlike standard-delivery's coder, this step is
+        NOT excluded for epic/blocked issues -- it exists specifically to run
+        on them, once every child has closed."""
+        assert self.coder_step.trigger == {"label": "create-pr:complete"}
+        assert "04_evaluate/create-pr" in self.coder_step.dependencies
+        assert self.coder_step.resolve_pr_number is True
+        assert self.coder_step.commit_after is True
+        assert self.coder_step.commits_to == "code"
+        agent_file = (
+            Path(__file__).parent.parent
+            / ".claude" / "agents" / "04_evaluate" / "coder.md"
+        )
+        assert agent_file.is_symlink()
+        assert agent_file.resolve().name == "coder.md"
+
+    def test_ci_gate_step_depends_on_coder_and_can_re_invoke_it(self):
+        assert self.ci_gate_step.trigger == {"label": "coder:complete"}
+        assert "04_evaluate/coder" in self.ci_gate_step.dependencies
+        assert self.ci_gate_step.step_type == "script"
+        assert self.ci_gate_step.script_path == "scripts/ci-gate.sh"
+        assert self.ci_gate_step.review_loop == {
+            "re_invoke": "04_evaluate/coder",
+            "max_cycles": 3,
+        }
+
+    def test_merge_conflict_step_depends_on_ci_gate_and_reuses_merge_conflict_machinery(self):
+        assert self.merge_conflict_step.trigger == {"label": "ci-gate:complete"}
+        assert "04_evaluate/ci-gate" in self.merge_conflict_step.dependencies
+        assert self.merge_conflict_step.resolve_pr_number is True
+        assert self.merge_conflict_step.human_gate_label == "merge-conflict:approved"
+        agent_file = (
+            Path(__file__).parent.parent
+            / ".claude" / "agents" / "04_evaluate" / "merge-conflict.md"
+        )
+        assert agent_file.is_symlink()
+        assert agent_file.resolve().name == "merge-conflict.md"
+
+    def test_review_step_depends_on_merge_conflict_and_reuses_pr_reviewer_machinery(self):
+        """The review runs against the same PR create-pr opened (now
+        including any cleanup coder committed), using the same gate/outcome
+        machinery as any other code PR (no new agent prompt -- epic-pr-reviewer
+        is a symlink to 03_execute/pr-reviewer.md). On REQUEST CHANGES it can
+        now re-invoke coder itself, same as standard-delivery's pr-reviewer,
+        clearing ci-gate/merge-conflict so they re-run against the fix."""
+        assert self.review_step.trigger == {"label": "merge-conflict:complete"}
+        assert "04_evaluate/merge-conflict" in self.review_step.dependencies
         assert self.review_step.resolve_pr_number is True
+        assert self.review_step.review_loop == {
+            "re_invoke": "04_evaluate/coder",
+            "max_cycles": 3,
+            "also_clear": ["04_evaluate/ci-gate", "04_evaluate/merge-conflict"],
+        }
         agent_file = (
             Path(__file__).parent.parent
             / ".claude" / "agents" / "04_evaluate" / "epic-pr-reviewer.md"
@@ -6735,7 +6787,9 @@ class TestRelatedWorkItemEnv:
             "03_execute/coder",
             "03_execute/merge-conflict",
             "03_execute/pr-reviewer",
+            "04_evaluate/coder",
             "04_evaluate/epic-pr-reviewer",
+            "04_evaluate/merge-conflict",
         ]
 
     def test_issue_number_resolved_for_pr_kind_via_branch_pattern(self):
