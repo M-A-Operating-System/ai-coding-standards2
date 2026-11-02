@@ -1,8 +1,8 @@
 # maos-coder
 
-Run the `03_execute/coder` pipeline agent as a real subprocess, spawned by the
+Run the `04_evaluate/coder` pipeline agent as a real subprocess, spawned by the
 orchestrator exactly as the headless (GitHub Actions) path does -- native
-`--allowedTools` enforcement, nothing emulated (MI-3). Implements one GitHub issue in the consuming repository as a defensive programmer.
+`--allowedTools` enforcement, nothing emulated (MI-3). Cleans up the epic's own accumulated diff once every child issue has closed.
 
 This command never applies labels, posts artefacts, or performs the step's
 own work -- the orchestrator does that, in `pipeline_orchestrator.py`, the
@@ -21,13 +21,13 @@ auto-detects a PR number too, when one is given instead.
    SCRIPT=pipeline/pipeline_orchestrator.py
    [ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/pipeline/pipeline_orchestrator.py
    ```
-2. Make `03_execute/coder` eligible this tick even if it is not the pipeline's natural
+2. Make `04_evaluate/coder` eligible this tick even if it is not the pipeline's natural
    next step — a manual override that bypasses only the trigger-label check;
    unmet dependencies still block it (harmless if it's already eligible):
    ```bash
    gh issue edit $ARGUMENTS --repo "$REPO" --add-label "coder:requested"
    ```
-3. Run one orchestrator tick scoped to this issue — this spawns `03_execute/coder` as
+3. Run one orchestrator tick scoped to this issue — this spawns `04_evaluate/coder` as
    a real subprocess with native `--allowedTools`, identical to the headless
    path, and performs every label transition, artefact comment, and commit
    itself:

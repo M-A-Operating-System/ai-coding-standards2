@@ -4,7 +4,7 @@ Work through the `04_evaluate/epic-pr-reviewer` pipeline step's own instructions
 the chat-AI, in this session. This is not an agent invocation (MI-3,
 "Headless and interactive") — no subprocess is spawned, and no tool-access
 enforcement is attempted; this session's own normal permissions apply
-throughout. Reviews the accumulated diff on the epic's issue-{N} PR after all children are closed, ….
+throughout. Reviews the accumulated diff on the epic's issue-{N} PR -- including any cleanup coder ….
 
 The orchestrator still performs every label transition, artefact comment,
 body write, and commit — never this command by hand (same core rule as

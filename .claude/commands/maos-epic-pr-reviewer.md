@@ -2,7 +2,7 @@
 
 Run the `04_evaluate/epic-pr-reviewer` pipeline agent as a real subprocess, spawned by the
 orchestrator exactly as the headless (GitHub Actions) path does -- native
-`--allowedTools` enforcement, nothing emulated (MI-3). Reviews the accumulated diff on the epic's issue-{N} PR after all children are closed, ….
+`--allowedTools` enforcement, nothing emulated (MI-3). Reviews the accumulated diff on the epic's issue-{N} PR -- including any cleanup coder ….
 
 This command never applies labels, posts artefacts, or performs the step's
 own work -- the orchestrator does that, in `pipeline_orchestrator.py`, the

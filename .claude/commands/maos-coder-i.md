@@ -1,10 +1,10 @@
 # maos-coder-i
 
-Work through the `03_execute/coder` pipeline step's own instructions directly, with
+Work through the `04_evaluate/coder` pipeline step's own instructions directly, with
 the chat-AI, in this session. This is not an agent invocation (MI-3,
 "Headless and interactive") — no subprocess is spawned, and no tool-access
 enforcement is attempted; this session's own normal permissions apply
-throughout. Implements one GitHub issue in the consuming repository as a defensive programmer.
+throughout. Cleans up the epic's own accumulated diff once every child issue has closed.
 
 The orchestrator still performs every label transition, artefact comment,
 body write, and commit — never this command by hand (same core rule as
@@ -23,7 +23,7 @@ auto-detects a PR number too, when one is given instead.
    SCRIPT=pipeline/pipeline_orchestrator.py
    [ -f "$SCRIPT" ] || SCRIPT=ai-coding-standards2/pipeline/pipeline_orchestrator.py
    ```
-2. Make `03_execute/coder` eligible even if it is not the pipeline's natural next step
+2. Make `04_evaluate/coder` eligible even if it is not the pipeline's natural next step
    (stays in place until Phase 2 consumes it):
    ```bash
    gh issue edit $ARGUMENTS --repo "$REPO" --add-label "coder:requested"
@@ -31,7 +31,7 @@ auto-detects a PR number too, when one is given instead.
 3. Resolve the step's prompt, tool context, and scratch directory —
    resolve-only mode; mutates no GitHub state:
    ```bash
-   RESOLVED=$(python3 "$SCRIPT" --repo "$REPO" --agent 03_execute/coder --issue $ARGUMENTS --print-prompt)
+   RESOLVED=$(python3 "$SCRIPT" --repo "$REPO" --agent 04_evaluate/coder --issue $ARGUMENTS --print-prompt)
    AI_AGILE_SCRATCH=$(echo "$RESOLVED" | jq -r '.env.AI_AGILE_SCRATCH')
    AI_AGILE_SCRATCH="$AI_AGILE_SCRATCH" bash scripts/scratch-setup.sh
    ```
@@ -55,7 +55,7 @@ auto-detects a PR number too, when one is given instead.
    difference recorded is attribution: a person performed this activity, not
    a spawned agent.
    ```bash
-   python3 "$SCRIPT" --repo "$REPO" --agent 03_execute/coder --issue $ARGUMENTS --interactive-result
+   python3 "$SCRIPT" --repo "$REPO" --agent 04_evaluate/coder --issue $ARGUMENTS --interactive-result
    ```
 7. Report what happened from the resulting labels. If `coder:requested` is
    still present afterward, nothing was applied — the orchestrator's own
