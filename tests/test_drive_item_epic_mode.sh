@@ -343,6 +343,130 @@ fi
 
 teardown
 
+# ---------------------------------------------------------------------------
+# R1 (#658): when the children-driving loop finishes and GitHub confirms
+# every child issue is closed, drive-item.sh falls through to the
+# single-issue tick loop to drive the epic itself through epic-completion.
+#
+# Traces to
+# docs/features/maos-run-epic-completion-flow-automation-after-all-children-close.md:
+#   Scenario: Epic-completion flow triggers after all children close
+# ---------------------------------------------------------------------------
+sub_issues_list="601 602"
+setup_epic_mocks
+# Labels for the epic -- four reads:
+#   1) initial _initial_labels at script start
+#   2) re-read after all children confirmed closed
+#   3) _halting_labels() check in tick 1 (no halting labels)
+#   4) after=$(_labels) in tick 1 (same as read 2 -> "advanced nothing" -> exit 0)
+set_issue_labels 600 "epic,blocked
+epic,blocked
+epic,blocked
+epic,blocked"
+# Both children are pre-closed; the driving loop skips them, and the
+# post-loop all-closed check confirms them.
+set_issue_state 601 "closed"
+set_issue_state 602 "closed"
+
+rc=0
+run_drive 600 || rc=$?
+
+if [[ $rc -eq 0 ]]; then
+  pass "epic-completion (#658): exits 0 after driving epic through tick loop when all children are closed"
+else
+  fail "epic-completion (#658): should exit 0 when all children are closed; got rc=${rc}"
+fi
+
+if grep -q "all children of epic #600 are closed" "${WORK_DIR}/out.txt" && \
+   grep -q "continuing to drive epic through epic-completion" "${WORK_DIR}/out.txt"; then
+  pass "epic-completion (#658): reports all children closed and continues to drive epic"
+else
+  fail "epic-completion (#658): should report all children closed and continue to drive epic"
+fi
+
+if grep -q "drive-item: tick.*on #600" "${WORK_DIR}/out.txt"; then
+  pass "epic-completion (#658): epic's own tick loop was entered after all children closed"
+else
+  fail "epic-completion (#658): epic's own tick loop should be entered after all children closed"
+fi
+
+teardown
+
+# ---------------------------------------------------------------------------
+# R2 (#658): a human gate raised by the epic-completion flow is relayed
+# exactly as child gates are relayed (exit 2), not silently skipped.
+#
+# Traces to:
+#   Scenario: Human gate from epic-completion flow is relayed without auto-approval
+# ---------------------------------------------------------------------------
+sub_issues_list="601"
+setup_epic_mocks
+# Labels for the epic:
+#   1) initial read -> epic+blocked (enters epic mode)
+#   2) re-read after all children confirmed closed
+#   3) _halting_labels() in tick 1 -> "coder:review" (gate halts the loop)
+set_issue_labels 600 "epic,blocked
+epic,blocked
+coder:review"
+set_issue_state 601 "closed"
+
+rc=0
+run_drive 600 || rc=$?
+
+if [[ $rc -eq 2 ]]; then
+  pass "epic-completion (#658): gate from the epic's own flow is relayed (exit 2)"
+else
+  fail "epic-completion (#658): gate from the epic's own flow should be relayed (exit 2); got rc=${rc}"
+fi
+
+if grep -q "halted on #600" "${WORK_DIR}/out.txt"; then
+  pass "epic-completion (#658): halt is reported on the epic issue itself"
+else
+  fail "epic-completion (#658): halt should be reported on the epic issue itself"
+fi
+
+teardown
+
+# ---------------------------------------------------------------------------
+# R3 (#658): epic-completion does NOT trigger when any child issue is still
+# open after the driving loop finishes -- only fires once every child is
+# confirmed closed in GitHub.
+#
+# Traces to:
+#   Scenario: Epic-completion flow does not trigger while a child issue remains open
+# ---------------------------------------------------------------------------
+sub_issues_list="601"
+setup_epic_mocks
+set_issue_labels 600 "epic,blocked"
+# Child 601 is open; its pipeline settles (exit 0) but the GitHub issue
+# stays open (no state file -> default "open").
+set_issue_labels 601 "child601:complete
+child601:complete
+child601:complete"
+
+rc=0
+run_drive 600 || rc=$?
+
+if [[ $rc -eq 0 ]]; then
+  pass "epic-completion (#658): exits 0 when a child is not yet closed after driving"
+else
+  fail "epic-completion (#658): should exit 0 when a child is not closed; got rc=${rc}"
+fi
+
+if grep -q "child #601 is not closed" "${WORK_DIR}/out.txt"; then
+  pass "epic-completion (#658): reports the not-closed child and skips epic-completion"
+else
+  fail "epic-completion (#658): should report the not-closed child and skip epic-completion"
+fi
+
+if grep -q "drive-item: tick.*on #600" "${WORK_DIR}/out.txt"; then
+  fail "epic-completion (#658): epic tick loop must not be entered when a child is not closed"
+else
+  pass "epic-completion (#658): epic tick loop is not entered when a child is not closed"
+fi
+
+teardown
+
 echo
 echo "drive-item.sh epic mode: ${PASS} passed, ${FAIL} failed"
 [[ $FAIL -eq 0 ]]

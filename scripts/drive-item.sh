@@ -116,7 +116,36 @@ if echo "$_initial_labels" | grep -qx "epic" && echo "$_initial_labels" | grep -
             fi
         done <<< "$_sub_issue_numbers"
         echo "drive-item: all children of epic #${ISSUE_NUMBER} completed."
-        exit 0
+        # Before triggering epic-completion, confirm every child issue is
+        # actually closed in GitHub. A child whose pipeline settled without
+        # the GitHub issue closing must not advance the epic (issue #658).
+        _all_children_closed=true
+        while IFS= read -r _check_num; do
+            [[ -z "$_check_num" ]] && continue
+            [[ ! "$_check_num" =~ ^[0-9]+$ ]] && continue
+            [[ "$_check_num" == "${ISSUE_NUMBER}" ]] && continue
+            _check_state=$(gh api "repos/${REPO}/issues/${_check_num}" \
+                --jq '.state' 2>/dev/null || echo "unknown")
+            if [[ "$_check_state" != "closed" ]]; then
+                _all_children_closed=false
+                echo "drive-item: child #${_check_num} is not closed" \
+                    "(state: ${_check_state}); not triggering epic-completion" \
+                    "for epic #${ISSUE_NUMBER}."
+                break
+            fi
+        done <<< "$_sub_issue_numbers"
+
+        if [[ "$_all_children_closed" != "true" ]]; then
+            exit 0
+        fi
+
+        echo "drive-item: all children of epic #${ISSUE_NUMBER} are closed;" \
+            "continuing to drive epic through epic-completion."
+        # Re-read the epic's current labels so the tick loop below starts
+        # from the current state rather than the stale initial labels
+        # captured before children were driven (issue #658).
+        _initial_labels=$(_labels)
+        # Fall through to the single-issue tick loop below.
     fi
 fi
 
