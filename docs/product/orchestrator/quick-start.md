@@ -40,6 +40,8 @@ mode. For the concept and comparison, see
 4. When a human gate is reached, Claude pauses and prompts you to approve or request changes.
 5. Apply the `{agent}:approved` label (or ask Claude to apply it) and Claude continues.
 
+**Epic issues:** If `{issue_number}` carries the `epic` and `blocked` labels and has a non-empty native sub-issue list, `/maos-run` discovers each child issue via the sub-issues API and drives them through their own pipelines in sub-issue order. Each child's human gates are surfaced individually. The command stops and reports clearly the first time any child halts for a human decision rather than continuing to the next child.
+
 **"It worked":** Claude reports the first agent step completing, shows the resulting label, and links to the artefact comment on GitHub.
 
 ---
