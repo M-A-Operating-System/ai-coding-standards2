@@ -66,10 +66,70 @@ _halting_labels() {
     _labels | grep -E ':(review|blocked|failed)$' || true
 }
 
+_initial_labels=$(_labels)
+
+# Epic mode: when the item carries both "epic" and "blocked" labels and has a
+# non-empty native sub-issue list, drive each child in sub-issue order and stop
+# at the first child that halts for a human decision.
+if echo "$_initial_labels" | grep -qx "epic" && echo "$_initial_labels" | grep -qx "blocked"; then
+    _sub_issue_err=$(mktemp)
+    if ! _sub_issue_numbers=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/sub_issues" \
+        --paginate --jq '.[].number' 2>"${_sub_issue_err}"); then
+        echo "drive-item: WARNING: could not fetch sub-issues for epic #${ISSUE_NUMBER}" \
+            "(gh api failed: $(head -1 "${_sub_issue_err}")); falling back to the" \
+            "single-issue path." >&2
+        _sub_issue_numbers=""
+    fi
+    rm -f "${_sub_issue_err}"
+    if [[ -n "$_sub_issue_numbers" ]]; then
+        echo "drive-item: #${ISSUE_NUMBER} is an epic; driving children in sub-issue order"
+        while IFS= read -r _child_num; do
+            [[ -z "$_child_num" ]] && continue
+            if [[ ! "$_child_num" =~ ^[0-9]+$ ]]; then
+                echo "drive-item: WARNING: skipping non-numeric child '${_child_num}'" \
+                    "from epic #${ISSUE_NUMBER}'s sub-issue list" >&2
+                continue
+            fi
+            if [[ "$_child_num" == "${ISSUE_NUMBER}" ]]; then
+                echo "drive-item: WARNING: skipping child #${_child_num} -- an epic cannot" \
+                    "be its own sub-issue" >&2
+                continue
+            fi
+            _child_state=$(gh api "repos/${REPO}/issues/${_child_num}" --jq '.state' 2>/dev/null || echo "")
+            if [[ "$_child_state" == "closed" ]]; then
+                echo "drive-item: child #${_child_num} already closed; skipping."
+                continue
+            fi
+            echo "drive-item: child #${_child_num} of epic #${ISSUE_NUMBER}"
+            _child_rc=0
+            # Deliberate full ambient-environment inheritance (STD-SEC-022,
+            # ADR-004): this is the script invoking itself, not a new trust
+            # boundary -- the child runs under the exact same interactive
+            # session, the same already-authenticated gh identity, and the
+            # same REPO this invocation itself received. There is nothing to
+            # allowlist because no new environment is being constructed; it
+            # is the same one this process is already running in.
+            REPO="${REPO}" bash "$0" "${_child_num}" "$@" || _child_rc=$?
+            if [[ $_child_rc -ne 0 ]]; then
+                echo "drive-item: child #${_child_num} halted (exit ${_child_rc}); stopping epic drive."
+                exit $_child_rc
+            fi
+        done <<< "$_sub_issue_numbers"
+        echo "drive-item: all children of epic #${ISSUE_NUMBER} completed."
+        exit 0
+    fi
+fi
+
 tick=0
+_pending_before="${_initial_labels}"
 while (( tick < MAX_TICKS )); do
     tick=$(( tick + 1 ))
-    before=$(_labels)
+    if [[ -n "${_pending_before+x}" ]]; then
+        before="${_pending_before}"
+        unset _pending_before
+    else
+        before=$(_labels)
+    fi
 
     echo "drive-item: tick ${tick} on #${ISSUE_NUMBER}"
     # No shell `timeout` around this: agent-heavy steps legitimately take
